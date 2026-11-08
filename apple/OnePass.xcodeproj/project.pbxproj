@@ -20,6 +20,7 @@
 		0653DC989198E82BBBFF45B3 /* OnePassWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */; };
 		0792B9A17998C8FFA5C457A9 /* PublicSessionMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49841660587A002A57EE289D /* PublicSessionMonitor.swift */; };
 		0810BE8E5A9F50A6D568D9FD /* NewLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 766D5CFC89128E356E135A97 /* NewLoginView.swift */; };
+		09143FB0AA558656CD729452 /* OnboardingIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4A3F76B5D0905BDA9813EF /* OnboardingIntro.swift */; };
 		0B6E58B02964EE1E945B9C16 /* SearchTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */; };
 		0C1F0AF7291B0BE18AD31812 /* IntentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9506E7AEA529E14EF1B426 /* IntentBridge.swift */; };
 		0C3A47427E3A471666F650B4 /* OnePassNotifications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BC80221CE7ABDFFC4E080905 /* OnePassNotifications.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -408,6 +409,7 @@
 		37A148525A5253544CE1AB8D /* AgentsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsSettings.swift; sourceTree = "<group>"; };
 		3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultsSettings.swift; sourceTree = "<group>"; };
 		3E39401146054BC9E721F184 /* GeneratePasswordIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratePasswordIntent.swift; sourceTree = "<group>"; };
+		3E4A3F76B5D0905BDA9813EF /* OnboardingIntro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingIntro.swift; sourceTree = "<group>"; };
 		3E5A4B3BD06C13AC7742D5DB /* HomeTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTab.swift; sourceTree = "<group>"; };
 		3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettings.swift; sourceTree = "<group>"; };
 		3FFB44CC51A27D430FC17378 /* DemoData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoData.swift; sourceTree = "<group>"; };
@@ -966,6 +968,7 @@
 				9344AE02FE1EBBF9E0E47FE0 /* KitPrinter.swift */,
 				95190D978CCD258D8EDDE9FB /* KitShareController.swift */,
 				EDB2F5985704FFAAE54D3FEF /* OnboardingFlow.swift */,
+				3E4A3F76B5D0905BDA9813EF /* OnboardingIntro.swift */,
 				214B39B3C661A8FF88275223 /* OnboardingSteps.swift */,
 				EDE8A47A5BA20B9A5392E7B7 /* SecretKeyCaptureGuard.swift */,
 				07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */,
@@ -1935,6 +1938,7 @@
 				C90860D5CEE2203B6ADB77C2 /* Nearby.swift in Sources */,
 				B6F74C3A30CD7A8C8205842C /* NewItemMenu.swift in Sources */,
 				C0BBE79D412D429E2E0A5C77 /* OnboardingFlow.swift in Sources */,
+				09143FB0AA558656CD729452 /* OnboardingIntro.swift in Sources */,
 				56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */,
 				7D0DDE3FABB48308DBAC99CD /* OnePassApp.swift in Sources */,
 				C468E1114DE58EEDDBE28A0A /* OnePassShortcuts.swift in Sources */,

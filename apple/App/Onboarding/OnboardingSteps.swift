@@ -301,89 +301,95 @@ private struct WelcomeStep: View {
         if Platform.isMac {
             AppGlyph(size: 64).accessibilityHidden(true)
         } else {
-            AppGlyph(size: 96).padding(.top, 36).padding(.bottom, 4)
+            AppGlyph(size: 88).padding(.top, 28).padding(.bottom, 2)
         }
-        Text("onboarding.welcomeToOnepass")
-            .font(.system(size: Platform.isMac ? 32 : 34, weight: .bold))
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.isHeader)
-        Text(subtitle)
-            .font(Platform.isMac ? .system(size: 15) : .system(size: 17))
-            .foregroundStyle(.secondary)
-            .lineSpacing(2)
-            .fixedSize(horizontal: false, vertical: true)
-        VStack(spacing: 10) {
-            choice(
-                "Créer un coffre", "Première fois sur OnePass", symbol: "plus", prominent: true,
-                identifier: "onboarding.create"
-            ) { model.choose(.create) }
-            choice(
-                "J'ai mon Emergency Kit", "Aucun autre appareil sous la main", symbol: "doc.text",
-                identifier: "onboarding.restore"
-            ) { model.choose(.restore) }
-            choice(
-                "J'ai déjà OnePass sur un autre appareil", "Connexion par QR code", symbol: "qrcode",
-                identifier: "onboarding.pair"
-            ) { model.choose(.pair) }
+        VStack(alignment: .leading, spacing: 6) {
+            Text("onboarding.welcomeToOnepass")
+                .font(.system(size: Platform.isMac ? 32 : 34, weight: .bold))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text("onboarding.welcome.howToStart")
+                .font(Platform.isMac ? .system(size: 15) : .system(size: 17))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.top, 8)
+        VStack(spacing: 14) {
+            createButton
+            VStack(spacing: 0) {
+                row(
+                    "onboarding.welcome.restore", "onboarding.welcome.restoreDetail", symbol: "doc.text",
+                    identifier: "onboarding.restore"
+                ) { model.choose(.restore) }
+                Divider().padding(.leading, 62)
+                row(
+                    "onboarding.welcome.pair", "onboarding.welcome.pairDetail", symbol: "qrcode",
+                    identifier: "onboarding.pair"
+                ) { model.choose(.pair) }
+            }
+            .card()
+        }
+        .padding(.top, 10)
     }
 
-    private var subtitle: LocalizedStringResource {
-        if Platform.isMac {
-            "Tous tes mots de passe, passkeys, cartes et documents, chiffrés avec une cryptographie qui résiste aux ordinateurs quantiques."
-        } else {
-            "Mots de passe, passkeys, cartes et documents, chiffrés sur ton \(Platform.deviceName) avec une crypto qui résiste aux ordinateurs quantiques."
+    /// The first-time path, the one most people take: full width, in the accent wash.
+    private var createButton: some View {
+        Button { model.choose(.create) } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "plus")
+                    .font(.system(size: 17, weight: .bold))
+                    .frame(width: 34, height: 34)
+                    .background(.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("onboarding.welcome.create")
+                        .font(.system(size: Platform.isMac ? 16 : 17, weight: .semibold))
+                    Text("onboarding.welcome.createDetail")
+                        .font(.system(size: 13.5))
+                        .opacity(0.85)
+                }
+                .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.right").font(.body.weight(.semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity)
+            .background {
+                Color.clear.washBackground(
+                    Theme.Wash.accent, flat: Theme.accent,
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
+        .onboardingPressable()
+        .visionHoverEffect()
+        .accessibilityIdentifier("onboarding.create")
     }
 
-    private func choice(
+    private func row(
         _ title: LocalizedStringResource, _ subtitle: LocalizedStringResource, symbol: String,
-        prominent: Bool = false, soon: Bool = false,
         identifier: String, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                Color.clear
-                    .frame(width: 40, height: 40)
-                    .background {
-                        if prominent {
-                            Color.clear.washBackground(
-                                Theme.Wash.accent, flat: Theme.accent,
-                                in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        } else {
-                            RoundedRectangle(cornerRadius: 11, style: .continuous).fill(.fill.secondary)
-                        }
-                    }
-                    .overlay {
-                        Image(systemName: symbol)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(prominent ? Color.white : Color.primary)
-                    }
+                Image(systemName: symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: Platform.isMac ? 15 : 16, weight: .semibold))
-                    Text(subtitle).font(.system(size: 13.5)).foregroundStyle(.secondary)
+                    Text(title).font(.system(size: Platform.isMac ? 14.5 : 16, weight: .medium))
+                    Text(subtitle).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
-                if soon {
-                    Text("onboarding.soon")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.fill.secondary, in: Capsule())
-                } else if Platform.isMac {
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
-                }
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
             }
-            .padding(Platform.isMac ? 16 : 16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
             .contentShape(Rectangle())
-            .card()
         }
         .onboardingPressable()
         .visionHoverEffect()
-        .disabled(soon)
-        .opacity(soon ? 0.55 : 1)
         .accessibilityIdentifier(identifier)
     }
 }

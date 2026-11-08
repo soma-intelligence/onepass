@@ -876,21 +876,38 @@ struct OnboardingFlow: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var model: OnboardingModel?
+    /// The three cards before the welcome screen, on a first launch only.
+    @State private var showIntro = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if let model {
                 #if os(macOS)
-                MacOnboardingLayout(model: model)
+                if showIntro {
+                    OnboardingIntro(finish: finishIntro).transition(.opacity)
+                } else {
+                    MacOnboardingLayout(model: model).transition(.opacity)
+                }
                 #elseif os(visionOS)
                 // A floating glass card in the window.
-                PhoneOnboardingLayout(model: model)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: 640)
-                    .glassBackgroundEffect()
-                    .padding(32)
+                Group {
+                    if showIntro {
+                        OnboardingIntro(finish: finishIntro).transition(.opacity)
+                    } else {
+                        PhoneOnboardingLayout(model: model).transition(.opacity)
+                    }
+                }
+                .padding(.vertical, 20)
+                .frame(maxWidth: 640)
+                .glassBackgroundEffect()
+                .padding(32)
                 #else
-                PhoneOnboardingLayout(model: model)
+                if showIntro {
+                    OnboardingIntro(finish: finishIntro).transition(.opacity)
+                } else {
+                    PhoneOnboardingLayout(model: model).transition(.opacity)
+                }
                 #endif
             } else {
                 // An empty Group never appears: keep a view so onAppear runs.
@@ -902,7 +919,11 @@ struct OnboardingFlow: View {
             // Restore only when the store holds an account whose Secret Key this device lacks,
             // whatever the reason the onboarding is on screen.
             let restoreOnly = app.session.needsSecretKey && app.session.state != .noAccount
-            if model == nil { model = OnboardingModel(model: app, restoreOnly: restoreOnly) }
+            if model == nil {
+                // Before the model: its init consumes `onboardingStart`.
+                showIntro = OnboardingIntro.shouldShow(for: app, restoreOnly: restoreOnly)
+                model = OnboardingModel(model: app, restoreOnly: restoreOnly)
+            }
         }
         .onChange(of: app.session.needsSecretKey) { _, needed in
             // "Créer un nouveau coffre": the restore-only flow gives way to the full onboarding.
@@ -919,6 +940,11 @@ struct OnboardingFlow: View {
             if phase == .background { model?.sceneWentToBackground() }
         }
         #endif
+    }
+
+    private func finishIntro() {
+        OnboardingIntro.markSeen()
+        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .smooth(duration: 0.35)) { showIntro = false }
     }
 }
 
