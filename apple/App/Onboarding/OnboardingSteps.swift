@@ -345,7 +345,7 @@ private struct WelcomeStep: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(prominent ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.fill.secondary))
+                    .fill(prominent ? AnyShapeStyle(Theme.Wash.accent) : AnyShapeStyle(.fill.secondary))
                     .frame(width: 40, height: 40)
                     .overlay {
                         Image(systemName: symbol)

@@ -249,13 +249,32 @@ private struct PhoneWatchtowerCard: View {
             .foregroundStyle(.white)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Self.fill(card), in: .rect(cornerRadius: PhoneCard.radius, style: .continuous))
+            .modifier(CardFill(card: card))
             .contentShape(.rect(cornerRadius: PhoneCard.radius))
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(Text("browse.showItems"))
         .accessibilityIdentifier("watchtower.show.\(card.id)")
+    }
+
+    /// Red issue cards get the alert wash; the others keep their flat fill.
+    private struct CardFill: ViewModifier {
+        let card: WatchtowerCard
+
+        func body(content: Content) -> some View {
+            let fill = PhoneWatchtowerCard.fill(card)
+            let shape = RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous)
+            if PhoneWatchtowerCard.isAlert(card) {
+                content.washBackground(Theme.Wash.alert(fill), flat: fill, in: shape)
+            } else {
+                content.background(fill, in: shape)
+            }
+        }
+    }
+
+    static func isAlert(_ card: WatchtowerCard) -> Bool {
+        ["compromised", "expiring", "breached_site", "provider_exposed"].contains(card.id)
     }
 
     /// Issues in red or orange, chances to do better (passkeys, codes) in the accent or blue, each a

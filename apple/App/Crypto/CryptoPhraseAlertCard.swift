@@ -11,6 +11,8 @@ import VaultKit
 struct CryptoPhraseAlertCard: View {
     @Environment(AppModel.self) private var model
 
+    private static let fill = Color(red: 0.70, green: 0.30, blue: 0.0)
+
     var body: some View {
         let wallets = model.cryptoWatch.unprotectedFundedWallets
         Group {
@@ -48,7 +50,9 @@ struct CryptoPhraseAlertCard: View {
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(red: 0.70, green: 0.30, blue: 0.0), in: .rect(cornerRadius: PhoneCard.radius, style: .continuous))
+                    .washBackground(
+                        Theme.Wash.alert(Self.fill), flat: Self.fill,
+                        in: RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous))
                     .contentShape(.rect(cornerRadius: PhoneCard.radius))
                 }
                 .buttonStyle(PressableButtonStyle())

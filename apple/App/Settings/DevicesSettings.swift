@@ -320,8 +320,9 @@ private struct DeviceRow<Actions: View>: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
-                .background(
-                    (revokedAt == nil ? Theme.accent : Color.gray).gradient,
+                .washBackground(
+                    revokedAt == nil ? AnyShapeStyle(Theme.Wash.accent) : AnyShapeStyle(Color.gray),
+                    flat: revokedAt == nil ? Theme.accent : Color.gray,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {

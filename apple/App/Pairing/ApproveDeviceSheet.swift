@@ -131,7 +131,7 @@ struct ApproveDeviceSheet: View {
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 48, height: 48)
-                        .background(Theme.accent.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .washBackground(Theme.Wash.accent, flat: Theme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(peer.name).font(.headline)
