@@ -34,7 +34,6 @@ struct CryptoPhraseAlertCard: View {
                             Text("crypto.watchtower.title").font(.headline)
                             Text("crypto.watchtower.body")
                                 .font(.subheadline)
-                                .opacity(0.9)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(16)
