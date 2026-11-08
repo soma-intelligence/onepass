@@ -6,7 +6,7 @@ import VaultKit
 /// `-OnePassSnapshot <folder>` (Debug, Mac): with the demo data, renders the app's own window
 /// (frame and toolbar included) into PNGs at 1280 x 820, light then dark, then quits. Uses
 /// `cacheDisplay`, so no screen recording permission is needed. Fictional data only.
-/// Screens: list and detail, edit, vault by date, trash, search, Bienvenue, Réglages (its own
+/// Screens: list and detail, edit, vault by date, trash, Watchtower, search, Bienvenue, Réglages (its own
 /// window), then the lock screen last (`scripts/screenshots.sh`).
 @MainActor
 enum Snapshot {
@@ -67,6 +67,13 @@ enum Snapshot {
             model.selection = .trash
             model.selectedItem = nil
             await capture(directory, "mac-trash-\(suffix)")
+
+            // Watchtower page: the analysis of the demo vault runs when the page opens.
+            model.page = .watchtower
+            model.selectedItem = nil
+            try? await Task.sleep(for: .seconds(3))
+            await capture(directory, "mac-watchtower-\(suffix)")
+            model.page = .items
 
             model.selection = .all
             model.selectedItem = login.map { ItemRef(vaultID: $0.vaultId, itemID: $0.id) }
