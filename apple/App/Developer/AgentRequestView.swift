@@ -30,12 +30,14 @@ enum AgentRequestText {
         }
     }
 
-    static func detailValue(_ value: String) -> String {
+    static func detailValue(_ value: String, label: String = "") -> String {
+        // Only the browser row names a browser kind: "cdp" elsewhere (a tab
+        // title, a site) is shown as it is.
+        if label == "browser" && value == "cdp" { return String(localized: "developer.cdpBrowser") }
         switch value {
-        case "yes": String(localized: "oui")
-        case "no": String(localized: "developer.no")
-        case "cdp": String(localized: "developer.cdpBrowser")
-        default: value
+        case "yes": return String(localized: "oui")
+        case "no": return String(localized: "developer.no")
+        default: return value
         }
     }
 
@@ -187,7 +189,7 @@ struct AgentRequestView: View {
                 ForEach(Array(body_.details.enumerated()), id: \.offset) { _, d in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(AgentRequestText.detailLabel(d.label)).font(.caption).foregroundStyle(.secondary)
-                        Text(AgentRequestText.detailValue(d.value))
+                        Text(AgentRequestText.detailValue(d.value, label: d.label))
                             .font(.system(.callout, design: .monospaced))
                             .lineLimit(4)
                     }

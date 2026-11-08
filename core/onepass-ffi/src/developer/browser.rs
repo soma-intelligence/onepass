@@ -176,7 +176,10 @@ fn role_values(
                 put(R::CcName, Zeroizing::new(cardholder));
                 put(R::CcNumber, number.0);
                 if !exp_month.is_empty() && !exp_year.is_empty() {
-                    let yy = &exp_year[exp_year.len().saturating_sub(2)..];
+                    // The last two characters (the extension's `slice(-2)`),
+                    // never a byte slice.
+                    let n = exp_year.chars().count();
+                    let yy: String = exp_year.chars().skip(n.saturating_sub(2)).collect();
                     put(R::CcExp, Zeroizing::new(format!("{exp_month}/{yy}")));
                 }
                 put(R::CcExpMonth, Zeroizing::new(exp_month));

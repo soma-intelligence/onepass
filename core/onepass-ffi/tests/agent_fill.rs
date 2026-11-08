@@ -541,6 +541,18 @@ fn add_card(rig: &Rig) {
     rig.session.save_item(card).unwrap();
 }
 
+/// The fill entries of the MCP audit log, oldest first, as stored (the
+/// log verifies; the raw lines carry the destination the report leaves out).
+fn fill_audit(rig: &Rig) -> Vec<Value> {
+    let report = rig.session.clone().audit_report(rig.data()).unwrap();
+    assert_eq!(report.problem, None);
+    let log = std::fs::read_to_string(rig.dir.path().join("dev").join("audit.log")).unwrap();
+    log.lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .filter(|e| e["action"].as_str().is_some_and(|a| a.starts_with("fill_")))
+        .collect()
+}
+
 /// No `Runtime.*` command ever reached the browser.
 fn no_runtime(cdp: &FakeCdp) {
     assert!(
@@ -633,6 +645,26 @@ fn cdp_target_fills_a_local_fake_page() {
     );
     assert!(refusal(&reply).starts_with("origin_mismatch"), "{reply}");
     assert_eq!(rig.ui.asked.lock().unwrap().len(), 2);
+
+    // One entry per call: the fill (origin, submitted), the fill that
+    // failed after approval, the refusal at the probe. No value in any.
+    let audit = fill_audit(&rig);
+    assert_eq!(audit.len(), 3, "{audit:?}");
+    for e in &audit {
+        assert_eq!(e["action"], "fill_login");
+        assert_eq!(e["destination"], ATLAS);
+        let line = e.to_string();
+        assert!(
+            !line.contains(PASSWORD) && !line.contains("alex@atlas.dev"),
+            "{line}"
+        );
+    }
+    assert_eq!(audit[0]["outcome"], "ok");
+    assert_eq!(audit[0]["field"], "submitted");
+    assert_eq!(audit[1]["outcome"], "origin_mismatch");
+    assert_eq!(audit[1]["decision"], "once");
+    assert!(audit[1]["field"].is_null(), "{:?}", audit[1]);
+    assert_eq!(audit[2]["outcome"], "origin_mismatch");
     rig.host.stop();
 }
 
@@ -655,6 +687,9 @@ fn cdp_target_with_remote_host_is_cdp_not_local() {
         assert!(refusal(&reply).starts_with("cdp_not_local"), "{reply}");
     }
     assert!(rig.ui.asked.lock().unwrap().is_empty());
+    let audit = fill_audit(&rig);
+    assert_eq!(audit.len(), 2, "{audit:?}");
+    assert!(audit.iter().all(|e| e["outcome"] == "cdp_not_local"));
     rig.host.stop();
 }
 
@@ -744,5 +779,15 @@ fn cdp_card_never_clicks() {
             .any(|d| d.label == "browser" && d.value == "cdp")
     );
     drop(asked);
+    let audit = fill_audit(&rig);
+    assert_eq!(audit.len(), 2, "{audit:?}");
+    assert_eq!(audit[0]["action"], "fill_card");
+    assert_eq!(audit[0]["outcome"], "submit_not_allowed");
+    assert_eq!(audit[1]["action"], "fill_card");
+    assert_eq!(audit[1]["outcome"], "ok");
+    assert_eq!(audit[1]["field"], "filled");
+    assert_eq!(audit[1]["destination"], ATLAS);
+    let line = audit[1].to_string();
+    assert!(!line.contains(CARD_NUMBER) && !line.contains(CVV), "{line}");
     rig.host.stop();
 }

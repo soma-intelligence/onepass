@@ -183,7 +183,7 @@ struct ApprovalView: View {
                 ForEach(Array(details.enumerated()), id: \.offset) { _, d in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(Self.detailLabel(d.label)).font(.caption).foregroundStyle(.secondary)
-                        Text(Self.detailValue(d.value)).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        Text(Self.detailValue(d.value, label: d.label)).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
                             .lineLimit(4)
                     }
                 }
@@ -250,7 +250,9 @@ struct ApprovalView: View {
     /// French names of the detail lines the servers send (fixed English keys).
     static func detailLabel(_ label: String) -> String { AgentRequestText.detailLabel(label) }
 
-    static func detailValue(_ value: String) -> String { AgentRequestText.detailValue(value) }
+    static func detailValue(_ value: String, label: String = "") -> String {
+        AgentRequestText.detailValue(value, label: label)
+    }
 
     static func actionTitle(_ action: String) -> String { AgentRequestText.actionTitle(action) }
 }

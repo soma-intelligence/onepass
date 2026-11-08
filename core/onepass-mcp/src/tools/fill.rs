@@ -441,7 +441,10 @@ impl<P: VaultPort> McpTools<P> {
             field: None,
         }];
         let remember = kind == FillKind::Login && !item.reprompt;
-        let key = json!([item.id.to_string(), matched]).to_string();
+        // The grant also names the browser: a window opened for the
+        // extension never covers a page driven over CDP, nor the reverse.
+        let browser = if cdp { "cdp" } else { "chrome" };
+        let key = json!([item.id.to_string(), matched, browser]).to_string();
         self.approve(
             client,
             action,
@@ -1269,6 +1272,27 @@ mod tests {
                 .iter()
                 .all(|(l, _)| l != "browser")
         );
+    }
+
+    #[test]
+    fn login_grant_window_is_per_browser_target() {
+        let window = Decision::AllowFor(Duration::from_secs(900));
+        let cdp = json!({"cdp": "ws://127.0.0.1:9222/devtools/page/x"});
+        for (first, second) in [(chrome(), cdp.clone()), (cdp.clone(), chrome())] {
+            let mut f = fx(vec![window, window, Decision::AllowOnce]);
+            let mut args = login_args(&f.github.clone());
+            args["target"] = first.clone();
+            ok(f.call(args.clone()));
+            // Same target within the window: no prompt.
+            ok(f.call(args.clone()));
+            assert_eq!(f.approver.calls().len(), 1);
+            assert_eq!(f.entries()[1].decision, "remembered");
+            // The other target, same item and site: asked again.
+            args["target"] = second.clone();
+            ok(f.call(args.clone()));
+            assert_eq!(f.approver.calls().len(), 2, "{first} then {second}");
+            assert_ne!(f.entries()[2].decision, "remembered");
+        }
     }
 
     #[test]
