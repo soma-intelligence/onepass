@@ -370,6 +370,8 @@ struct FoldSplitView: View {
             }
             .animation(.spring(duration: 0.35, bounce: 0.2), value: dragging)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("fold.split")
         .environment(\.itemDragStarted) { ref in
             dragging = ref
             dragToken &+= 1
