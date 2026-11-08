@@ -34,19 +34,20 @@ export class BadKey extends Error {}
 
 const bad = () => new Refusal("bad_signature");
 
+/** Signature headers that parsed and passed the skew check; body not seen yet. */
+export interface CheckedHeaders {
+  params: SignatureParams;
+  sig: Uint8Array;
+  digest: string;
+}
+
 /**
- * Steps 1 to 3 of spec 4.7, without any key: strict parse of
- * `Signature-Input` and `Signature`, `|now - created| <= 300`, the
- * `Content-Digest` of the body received, and the signature base (which also
- * refuses a target outside the alphabet the URL parser keeps intact).
+ * Steps 1 and 2 of spec 4.7, without the body or any key: strict parse of
+ * `Signature-Input` and `Signature`, `|now - created| <= 300`, and the
+ * `Content-Digest` header present. Lets a route refuse a request before it
+ * reads a large body.
  */
-export function checkRequest(
-  method: string,
-  target: string,
-  headers: HeaderSource,
-  body: Uint8Array,
-  nowSecs: number,
-): Checked {
+export function checkHeaders(headers: HeaderSource, nowSecs: number): CheckedHeaders {
   const input = headers.get("signature-input");
   const signature = headers.get("signature");
   const digest = headers.get("content-digest");
@@ -62,14 +63,37 @@ export function checkRequest(
   } catch {
     throw new Refusal("stale_request");
   }
-  if (proto.contentDigest(body) !== digest) throw bad();
+  return { params: parsed.params, sig: parsed.sig, digest };
+}
+
+/**
+ * Step 3 of spec 4.7 once the body is read: the `Content-Digest` of the
+ * body received, and the signature base (which also refuses a target
+ * outside the alphabet the URL parser keeps intact).
+ */
+export function checkBody(method: string, target: string, head: CheckedHeaders, body: Uint8Array): Checked {
+  if (proto.contentDigest(body) !== head.digest) throw bad();
   let base: Uint8Array;
   try {
-    base = proto.signatureBase(method, target, digest, parsed.params);
+    base = proto.signatureBase(method, target, head.digest, head.params);
   } catch {
     throw bad();
   }
-  return { params: parsed.params, sig: parsed.sig, base };
+  return { params: head.params, sig: head.sig, base };
+}
+
+/**
+ * Steps 1 to 3 of spec 4.7, without any key: `checkHeaders`, then
+ * `checkBody`.
+ */
+export function checkRequest(
+  method: string,
+  target: string,
+  headers: HeaderSource,
+  body: Uint8Array,
+  nowSecs: number,
+): Checked {
+  return checkBody(method, target, checkHeaders(headers, nowSecs), body);
 }
 
 // ------------------------------------------------------------- Ed25519 keys

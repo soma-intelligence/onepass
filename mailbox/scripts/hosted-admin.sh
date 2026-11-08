@@ -29,8 +29,9 @@
 #       Ages that mailbox's tombstones past 90 days and runs the maintenance
 #       (the conformance suite's purge step).
 #   mailbox/scripts/hosted-admin.sh e2e-teardown
-#       Deletes every mailbox of plan `conformance` (rows and Storage
-#       objects), its invites and the plan.
+#       Deletes every mailbox of plan `conformance` and their children (rows
+#       in one transaction, then their Storage objects), its invites and the
+#       plan. Run it again if it fails: it picks up where it stopped.
 #
 # This file is ONEPASS_MAILBOX_E2E_ADMIN for a conformance run against the
 # hosted URL (it answers reset-rate and purge like e2e-admin.sh).
@@ -192,16 +193,58 @@ SQL
         ;;
     e2e-teardown)
         conformance_present || { echo "no plan conformance: nothing to tear down"; exit 0; }
-        # macOS ships bash 3.2: no mapfile, and an empty array trips set -u.
+        # The conformance mailboxes and their children (sharing creates them
+        # on plans shared and contact).
+        set_sql="with recursive s (id) as (
+    select id from onepass_mailbox.mailboxes where plan = 'conformance'
+    union
+    select m.id from onepass_mailbox.mailboxes m join s on m.parent_id = s.id
+)
+select id from s"
+        # Their ids are kept in a file until their Storage objects are gone:
+        # a run that fails after the database step finds them there again.
+        pending="$workdir/supabase/.temp/e2e-teardown-mailboxes"
+        touch "$pending"
+        sql <<<"select encode(id, 'hex') as h from (${set_sql}) x" | column h >>"$pending"
+        sort -u -o "$pending" "$pending"
         mailboxes=()
-        while IFS= read -r line; do mailboxes+=("$line"); done < <(sql <<<"select encode(id, 'hex') as h
-            from onepass_mailbox.mailboxes where plan = 'conformance'" | column h)
-        echo "conformance mailboxes: ${#mailboxes[@]}"
+        while IFS= read -r line; do
+            if printf '%s' "$line" | grep -Eq '^[0-9a-f]{32}$'; then mailboxes+=("$line"); fi
+        done <"$pending"
+        echo "conformance mailboxes (children included): ${#mailboxes[@]}"
+        # Database first, in one transaction: every row that references
+        # them, then children before parents. A failure leaves every row in
+        # place.
+        sql >/dev/null <<SQL
+begin;
+select set_config('onepass.maintenance', 'on', true);
+create temporary table t_gone on commit drop as
+${set_sql};
+delete from onepass_mailbox.push_queue where mailbox_id in (select id from t_gone);
+-- push_targets exists only from 20261101120100 on (its rows also go with
+-- their credentials, on delete cascade).
+do \$\$
+begin
+    if to_regclass('onepass_mailbox.push_targets') is not null then
+        delete from onepass_mailbox.push_targets where mailbox_id in (select id from t_gone);
+    end if;
+end
+\$\$;
+delete from onepass_mailbox.locators where mailbox_id in (select id from t_gone);
+delete from onepass_mailbox.nonces where mailbox_id in (select id from t_gone);
+delete from onepass_mailbox.used_tickets where mailbox_id in (select id from t_gone);
+delete from onepass_mailbox.records where mailbox_id in (select id from t_gone);
+delete from onepass_mailbox.blob_graves where mailbox_id in (select id from t_gone);
+delete from onepass_mailbox.blobs where mailbox_id in (select id from t_gone);
+delete from onepass_mailbox.credentials where mailbox_id in (select id from t_gone);
+delete from onepass_mailbox.mailboxes where id in (select id from t_gone) and parent_id is not null;
+delete from onepass_mailbox.mailboxes where id in (select id from t_gone);
+commit;
+SQL
+        # Then Storage, once the rows are gone: the objects under those
+        # mailboxes' prefixes (announced or not), removed through the
+        # Storage API with the service key (never printed).
         if [ "${#mailboxes[@]}" -gt 0 ]; then
-            list="$(printf "decode('%s', 'hex')," "${mailboxes[@]}")"
-            list="${list%,}"
-            # Storage objects of those mailboxes (announced or not), removed
-            # through the Storage API with the service key (never printed).
             prefixes="$(printf "'%s/'," "${mailboxes[@]}")"
             prefixes="${prefixes%,}"
             objects=()
@@ -222,20 +265,8 @@ print(next(k["api_key"] for k in d if k.get("name") == "service_role"))
                         --data-binary @- <<<"$body"
                 done
             fi
-            sql >/dev/null <<SQL
-begin;
-select set_config('onepass.maintenance', 'on', true);
-delete from onepass_mailbox.push_queue where mailbox_id in (${list});
-delete from onepass_mailbox.nonces where mailbox_id in (${list});
-delete from onepass_mailbox.used_tickets where mailbox_id in (${list});
-delete from onepass_mailbox.records where mailbox_id in (${list});
-delete from onepass_mailbox.blob_graves where mailbox_id in (${list});
-delete from onepass_mailbox.blobs where mailbox_id in (${list});
-delete from onepass_mailbox.credentials where mailbox_id in (${list});
-delete from onepass_mailbox.mailboxes where id in (${list});
-commit;
-SQL
         fi
+        rm -f "$pending"
         sql >/dev/null <<SQL
 begin;
 select set_config('onepass.maintenance', 'on', true);

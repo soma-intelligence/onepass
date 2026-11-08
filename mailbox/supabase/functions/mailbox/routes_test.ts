@@ -3,7 +3,7 @@ import * as proto from "./proto.ts";
 import { type Code, CODES } from "./errors.ts";
 import type { Arg, Db, Fn, Row, Tx } from "./db.ts";
 import type { Signer } from "./storage.ts";
-import { type Deps, DROP_MAX, handler as makeHandler } from "./routes.ts";
+import { type Deps, DROP_MAX, handler as makeHandler, mapBounded, SIGN_PARALLEL, SMALL_BODY } from "./routes.ts";
 import { DEFAULT_IP_SOURCE, FALLBACK_ADDRESS, ipKey } from "./ip.ts";
 
 /**
@@ -166,15 +166,19 @@ Deno.test("GET /v1/config answers ServerConfig without the database", async () =
   assertEquals(db.calls.length, 0);
 });
 
-Deno.test("a body of 4 MiB + 1 is 413 without SQL", async () => {
+Deno.test("a body of 4 MiB + 1 is 413, without SQL when Content-Length says so", async () => {
   const k = await newKey();
   const db = new FakeDb(withKey(k));
   const h = handler(deps(db));
   const big = new Uint8Array(proto.COMMIT_BODY_MAX + 1);
   const target = `/v1/mailboxes/${MHEX}/commit`;
   // Announced by Content-Length.
-  await assertError(await h(await signed(k, "POST", target, big), IP), "too_large");
-  // Streamed without a length: the read stops past the cap.
+  const announced = await signed(k, "POST", target, big);
+  announced.headers.set("content-length", String(big.length));
+  await assertError(await h(announced, IP), "too_large");
+  assertEquals(db.calls.length, 0);
+  // Streamed without a length: the gate and the key lookup come first on
+  // commit, then the read stops past the cap.
   let pulled = 0;
   const stream = new ReadableStream<Uint8Array>({
     pull(c) {
@@ -187,7 +191,7 @@ Deno.test("a body of 4 MiB + 1 is 413 without SQL", async () => {
   const headers = await signedHeaders(k, { method: "POST", target, body: big, created: NOW / 1000 });
   const req = new Request(url(target), { method: "POST", headers, body: stream });
   await assertError(await h(req, IP), "too_large");
-  assertEquals(db.calls.length, 0);
+  assertEquals(db.fns(), ["ip_gate", "credential_key"]);
 });
 
 Deno.test("an unsigned or badly signed request on a signed route makes no SQL call", async () => {
@@ -198,13 +202,30 @@ Deno.test("an unsigned or badly signed request on a signed route makes no SQL ca
   await assertError(await h(new Request(url(target)), IP), "bad_signature");
   await assertError(await h(await signed(k, "GET", target, undefined, NOW / 1000 - 301), IP), "stale_request");
   // A changed body never reaches the lookup either (digest).
-  const t2 = `/v1/mailboxes/${MHEX}/commit`;
+  const t2 = `/v1/mailboxes/${MHEX}/grants`;
   const hs = await signedHeaders(k, { method: "POST", target: t2, body: new Uint8Array([1, 2]), created: NOW / 1000 });
   await assertError(
     await h(new Request(url(t2), { method: "POST", headers: hs, body: new Uint8Array([1, 3]) }), IP),
     "bad_signature",
   );
+  // On commit (a large body) the headers and the skew are checked before
+  // any SQL too.
+  const t3 = `/v1/mailboxes/${MHEX}/commit`;
+  await assertError(await h(new Request(url(t3), { method: "POST", body: new Uint8Array([1]) }), IP), "bad_signature");
+  await assertError(
+    await h(await signed(k, "POST", t3, new Uint8Array([1]), NOW / 1000 - 301), IP),
+    "stale_request",
+  );
   assertEquals(db.calls.length, 0);
+  // There a changed body is refused after the gate and the lookup, never
+  // reaching an entry point.
+  const hs3 = await signedHeaders(k, { method: "POST", target: t3, body: new Uint8Array([1, 2]), created: NOW / 1000 });
+  await assertError(
+    await h(new Request(url(t3), { method: "POST", headers: hs3, body: new Uint8Array([1, 3]) }), IP),
+    "bad_signature",
+  );
+  assertEquals(db.fns(), ["ip_gate", "credential_key"]);
+  db.calls = [];
 
   // A well formed signature over another target needs the key to be found
   // wrong: the gate and the lookup run, never an entry point (no nonce).
@@ -215,6 +236,118 @@ Deno.test("an unsigned or badly signed request on a signed route makes no SQL ca
   });
   await assertError(await h(new Request(url(target), { headers: wrongTarget }), IP), "bad_signature");
   assertEquals(db.fns(), ["ip_gate", "credential_key"]);
+});
+
+/** A body streamed without Content-Length; counts the bytes the handler pulled. */
+function counted(size: number): { stream: ReadableStream<Uint8Array>; pulled: () => number } {
+  let pulled = 0;
+  // highWaterMark 0: nothing is pulled until the handler reads.
+  const stream = new ReadableStream<Uint8Array>({
+    pull(c) {
+      if (pulled >= size) return c.close();
+      const n = Math.min(65536, size - pulled);
+      pulled += n;
+      c.enqueue(new Uint8Array(n));
+    },
+  }, { highWaterMark: 0 });
+  return { stream, pulled: () => pulled };
+}
+
+Deno.test("GET and DELETE take no body: refused malformed before any read or SQL", async () => {
+  const k = await newKey();
+  const db = new FakeDb(withKey(k));
+  const h = handler(deps(db));
+  const routes: [string, string][] = [
+    ["GET", "/v1/config"],
+    ["GET", `/v1/mailboxes/${MHEX}`],
+    ["DELETE", `/v1/mailboxes/${MHEX}`],
+    ["DELETE", `/v1/mailboxes/${MHEX}/credentials/${MHEX}`],
+    ["GET", `/v1/mailboxes/${MHEX}/records/1/${MHEX}`],
+    ["GET", `/v1/rendezvous/${MHEX}/0/0`],
+    ["DELETE", `/v1/rendezvous/${MHEX}`],
+    ["GET", `/v1/drops/${MHEX}/0`],
+    ["DELETE", `/v1/drops/${MHEX}`],
+  ];
+  for (const [method, target] of routes) {
+    // Announced by Content-Length: nothing is read. (A Request built here
+    // cannot carry a GET body; the header alone is refused.)
+    const big = counted(proto.COMMIT_BODY_MAX);
+    const headers = await signedHeaders(k, { method, target, body: new Uint8Array(1), created: NOW / 1000 });
+    headers.set("content-length", String(proto.COMMIT_BODY_MAX));
+    const r1 = await h(
+      new Request(url(target), { method, headers, body: method === "GET" ? undefined : big.stream }),
+      IP,
+    );
+    await assertError(r1, "malformed");
+    assertEquals(big.pulled(), 0, `${method} ${target} read nothing`);
+    if (method === "GET") continue;
+    // Streamed: the first chunk ends the read.
+    const s = counted(proto.COMMIT_BODY_MAX);
+    const h2 = await signedHeaders(k, { method, target, body: new Uint8Array(1), created: NOW / 1000 });
+    await assertError(await h(new Request(url(target), { method, headers: h2, body: s.stream }), IP), "malformed");
+    assert(s.pulled() <= 2 * 65536, `${method} ${target} stopped early`);
+  }
+  assertEquals(db.calls.length, 0);
+});
+
+Deno.test("routes of small messages take at most SMALL_BODY, 413 past it without SQL", async () => {
+  const k = await newKey();
+  const db = new FakeDb(withKey(k));
+  const h = handler(deps(db));
+  const over = new Uint8Array(SMALL_BODY + 1);
+  for (
+    const [method, target] of [
+      ["POST", "/v1/mailboxes"],
+      ["POST", `/v1/mailboxes/${MHEX}/credentials`],
+      ["POST", `/v1/mailboxes/${MHEX}/grants`],
+      ["PUT", `/v1/mailboxes/${MHEX}/credentials/${MHEX}/role`],
+      ["PUT", `/v1/mailboxes/${MHEX}/locator`],
+      ["POST", `/v1/mailboxes/${MHEX}/children`],
+      ["PUT", `/v1/mailboxes/${MHEX}/push`],
+      ["PUT", `/v1/mailboxes/${MHEX}/push-targets/${MHEX}`],
+    ]
+  ) {
+    await assertError(await h(await signed(k, method, target, over), IP), "too_large");
+  }
+  assertEquals(db.calls.length, 0);
+});
+
+Deno.test("commit by an unknown credential is refused before its body is read", async () => {
+  const k = await newKey();
+  const db = new FakeDb((fn) => (fn === "ip_gate" ? [ok()] : [{ status: "unknown_credential", retry_after: null }]));
+  const h = handler(deps(db));
+  const target = `/v1/mailboxes/${MHEX}/commit`;
+  const s = counted(proto.COMMIT_BODY_MAX);
+  const headers = await signedHeaders(k, {
+    method: "POST",
+    target,
+    body: new Uint8Array(proto.COMMIT_BODY_MAX),
+    created: NOW / 1000,
+  });
+  await assertError(
+    await h(new Request(url(target), { method: "POST", headers, body: s.stream }), IP),
+    "unknown_credential",
+  );
+  assertEquals(db.fns(), ["ip_gate", "credential_key"]);
+  assert(s.pulled() <= 2 * 65536, "the body was not read");
+
+  // A rate limited address is counted and refused there too, before the read.
+  const gated = new FakeDb((fn) => (fn === "ip_gate" ? [{ status: "rate_limited", retry_after: 3 }] : [ok()]));
+  const s2 = counted(proto.COMMIT_BODY_MAX);
+  const h2 = await signedHeaders(k, {
+    method: "POST",
+    target,
+    body: new Uint8Array(proto.COMMIT_BODY_MAX),
+    created: NOW / 1000,
+  });
+  await assertError(
+    await handler(deps(gated))(new Request(url(target), { method: "POST", headers: h2, body: s2.stream }), IP),
+    "rate_limited",
+    3,
+  );
+  assertEquals(gated.fns(), ["ip_gate"]);
+  assertEquals(gated.commits, 1);
+  assert(s2.pulled() <= 2 * 65536, "the body was not read");
 });
 
 // ------------------------------------------------------------ SQL errors
@@ -800,6 +933,124 @@ Deno.test("blob downloads: one entry per hash asked, null when not referenced", 
       urls: [[sha1, null], [sha2, `https://storage.test/download/${MHEX}/${toHex(sha2)}.3?token=t`]],
     }),
   );
+});
+
+/** A signer that answers after a tick and records how many calls were in flight. */
+class SlowSigner implements Signer {
+  inFlight = 0;
+  peak = 0;
+  calls = 0;
+  private async one(kind: string, n: string): Promise<string> {
+    this.calls++;
+    this.inFlight++;
+    this.peak = Math.max(this.peak, this.inFlight);
+    await new Promise((r) => setTimeout(r, 1));
+    this.inFlight--;
+    return `https://storage.test/${kind}/${n}?token=t`;
+  }
+  upload(n: string) {
+    return this.one("upload", n);
+  }
+  download(n: string) {
+    return this.one("download", n);
+  }
+}
+
+function shaOf(i: number): Uint8Array {
+  const s = new Uint8Array(32);
+  s[0] = i >> 8;
+  s[1] = i & 0xff;
+  return s;
+}
+
+/** postcard varint of a u32. */
+function varint(n: number): number[] {
+  const out: number[] = [];
+  while (n >= 0x80) {
+    out.push((n & 0x7f) | 0x80);
+    n >>>= 7;
+  }
+  out.push(n);
+  return out;
+}
+
+Deno.test("blob URLs of a 1 000 blob batch are signed SIGN_PARALLEL at a time, in order", async () => {
+  const k = await newKey();
+  const n = 1000;
+  const shas = Array.from({ length: n }, (_, i) => shaOf(i));
+  const name = (s: Uint8Array) => `${MHEX}/${toHex(s)}.9`;
+  // Uploads: every other blob needs one.
+  const up = new FakeDb(
+    withKey(k, () => shas.map((s, i) => ok({ sha256: s, needs_upload: i % 2 === 0, object_name: name(s) }))),
+  );
+  const signer = new SlowSigner();
+  const body = new Uint8Array([1, ...varint(n), ...shas.flatMap((s) => [...s, 0x81, 0x80, 0x01])]);
+  const r = await handler(deps(up, { signer }))(
+    await signed(k, "POST", `/v1/mailboxes/${MHEX}/blobs/uploads`, body),
+    IP,
+  );
+  assertEquals(r.status, 200);
+  assertEquals(signer.calls, n / 2);
+  assertEquals(signer.peak, SIGN_PARALLEL);
+  assertEquals(
+    await bytes(r),
+    proto.encodeBlobUrls({
+      urls: shas.map((s, i) => [s, i % 2 === 0 ? `https://storage.test/upload/${name(s)}?token=t` : null]),
+    }),
+  );
+
+  // Downloads: one entry per hash asked, in the order asked (sorted, as the
+  // proto requires), whatever order SQL answers in.
+  const down = new FakeDb(
+    withKey(k, () => [...shas].reverse().map((s) => ok({ sha256: s, size: 20000, object_name: name(s) }))),
+  );
+  const ds = new SlowSigner();
+  const asked = shas;
+  const lb = new Uint8Array([1, ...varint(n), ...asked.flatMap((s) => [...s])]);
+  const r2 = await handler(deps(down, { signer: ds }))(
+    await signed(k, "POST", `/v1/mailboxes/${MHEX}/blobs/downloads`, lb),
+    IP,
+  );
+  assertEquals(r2.status, 200);
+  assertEquals(ds.calls, n);
+  assertEquals(ds.peak, SIGN_PARALLEL);
+  assertEquals(
+    await bytes(r2),
+    proto.encodeBlobUrls({ urls: asked.map((s) => [s, `https://storage.test/download/${name(s)}?token=t`]) }),
+  );
+});
+
+Deno.test("mapBounded keeps the order, the bound, and stops starting calls after a failure", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  let started = 0;
+  const out = await mapBounded(Array.from({ length: 50 }, (_, i) => i), 4, async (i) => {
+    started++;
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, i % 3));
+    inFlight--;
+    return i * 2;
+  });
+  assertEquals(out, Array.from({ length: 50 }, (_, i) => i * 2));
+  assertEquals(peak, 4);
+  assertEquals(started, 50);
+  assertEquals(await mapBounded([], 16, () => Promise.resolve(1)), []);
+
+  started = 0;
+  let failure: unknown;
+  try {
+    await mapBounded(Array.from({ length: 100 }, (_, i) => i), 4, async (i) => {
+      started++;
+      await new Promise((r) => setTimeout(r, 1));
+      if (i === 5) throw new Error("signing failed");
+      return i;
+    });
+  } catch (e) {
+    failure = e;
+  }
+  assert(failure instanceof Error && failure.message === "signing failed");
+  assert(started < 100, `stopped early (started ${started})`);
 });
 
 Deno.test("enroll: request signed by the ticket's new key, ticket signed by the approver", async () => {

@@ -410,16 +410,16 @@ select onepass_test.ok(onepass_test.put_blob('e', 'E', 1, onepass_test.sha(1), 2
 reset role;
 insert into onepass_mailbox.locators (locator, mailbox_id) values (onepass_test.loc(7), onepass_test.mbx('E'));
 
--- Not before an hour.
-select onepass_mailbox.maintenance(now() + interval '59 minutes');
+-- Not before 3 hours (past the 2 hour life of an upload URL).
+select onepass_mailbox.maintenance(now() + interval '2 hours 59 minutes');
 select onepass_test.ok(
     (select count(*) = 2 from onepass_mailbox.records where mailbox_id = onepass_test.mbx('E'))
     and (select count(*) = 1 from onepass_mailbox.credentials where mailbox_id = onepass_test.mbx('E'))
     and (select count(*) = 2 from onepass_mailbox.blobs where mailbox_id = onepass_test.mbx('E'))
     and not exists (select 1 from onepass_mailbox.blob_graves where mailbox_id = onepass_test.mbx('E')),
-    'purge_waits_an_hour');
+    'purge_waits_3_hours');
 
-select onepass_mailbox.maintenance(now() + interval '2 hours');
+select onepass_mailbox.maintenance(now() + interval '3 hours 1 minute');
 select onepass_test.ok(
     (select array_agg(g.object_name order by g.object_name) from onepass_mailbox.blob_graves g
      where g.mailbox_id = onepass_test.mbx('E') and g.taken_at is null)

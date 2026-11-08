@@ -134,7 +134,8 @@ race (`DELETE /v1/mailboxes/{m}`, spec D.5): only the creator credential,
 still a manager, within 24 hours, while no other credential has made a
 request or enrolled. `mailboxes.deleted_at` is then set. Every request on it
 answers `404 not_found` (a record that a live mailbox does not hold answers
-`404 absent` instead, so the two never mix). About an hour later `maintenance` purges it: its
+`404 absent` instead, so the two never mix). About 3 hours later (past the 2 hour life of an upload
+URL signed before the deletion) `maintenance` purges it: its
 credentials, records, locators and blob rows go (the blob objects through
 `blob_graves` and mailbox-gc), the empty `mailboxes` row stays. From then on
 its requests answer `403 unknown_credential`. Both answers mean the same
@@ -221,6 +222,16 @@ cd ../mailbox && scripts/hosted-admin.sh e2e-teardown   # mailboxes, objects, pl
 run the suite only while nobody else uses the instance.
 
 ## Troubleshooting
+
+### Revoked credentials and the credential row cap
+
+A revoked credential keeps its row for 7 days (its device is told `403 revoked_credential`), then
+`maintenance` deletes it (clearing the `enrolled_by` / `granted_by` of credentials that named it);
+after that its device gets `403 unknown_credential`, which clients treat the same way. Grants and
+enrollments answer `422 quota` while a mailbox holds 4 times its plan's `max_credentials`
+credentials that are active or were revoked within the last 7 days, so a grant and revoke loop
+cannot grow the table. Device upgrades never reach it. A mailbox that hits it frees up at the
+latest 7 days after its last revocations (migration 20261108130000).
 
 ### Deadlocks (40P01) on credential changes
 

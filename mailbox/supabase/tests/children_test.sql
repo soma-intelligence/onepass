@@ -370,8 +370,8 @@ select onepass_test.raises($$select onepass_test.child(null, 'd', 'D', 2, onepas
     'OP404', 'not_found', 'deleted_parent_creates_no_child');
 reset role;
 
--- The purge an hour later empties a deleted child like any mailbox.
-select onepass_mailbox.maintenance(now() + interval '2 hours');
+-- The purge 3 hours later empties a deleted child like any mailbox.
+select onepass_mailbox.maintenance(now() + interval '4 hours');
 select onepass_test.ok(
     (select count(*) = 0 from onepass_mailbox.credentials where mailbox_id = onepass_test.mbx('V'))
     and (select count(*) = 0 from onepass_mailbox.records where mailbox_id = onepass_test.mbx('V'))

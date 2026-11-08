@@ -12,7 +12,10 @@ export interface Signer {
    * URL to upload one object. Its lifetime is Storage's, not ours: the
    * upload signing endpoint takes no expiry and uses
    * SIGNED_UPLOAD_URL_EXPIRATION_TIME (2 h by default), still far below the
-   * 24 h after which an unreferenced blob is collected (spec 4.11).
+   * 24 h after which an unreferenced blob is collected (spec 4.11), and
+   * below the 3 h after which a deleted mailbox is purged (migration
+   * 20261108130000). Keep that setting under 3 h: an object uploaded after
+   * its rows are gone is only found by the hourly orphan sweep.
    */
   upload(objectName: string): Promise<string>;
   /** URL to download one object, valid DOWNLOAD_URL_SECS. */

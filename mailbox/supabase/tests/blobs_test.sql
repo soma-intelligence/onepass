@@ -180,6 +180,10 @@ select onepass_test.answers(
     $$select * from onepass_test.put_blob('a', 'A', 1, null, onepass_test.sha(2), 20000)$$,
     'malformed', 'commit_blob_size_mismatch_refused');
 reset role;
+-- The object of the right size from here on (maintenance collects an
+-- announced blob stored with the wrong size at once: scan_fixes_test.sql).
+update storage.objects set metadata = '{"size": 20000}'
+where name = onepass_test.oname('A', onepass_test.sha(2));
 -- B's object with A's hash name: A's commit only sees objects under A's prefix.
 select onepass_test.object('B', onepass_test.sha(3), 20000);
 set local role onepass_mailbox_api;

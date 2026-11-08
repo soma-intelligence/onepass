@@ -3,17 +3,43 @@
 // far), the per-IP gate and the key lookup (one committed transaction),
 // Ed25519, strict body decode, one entry point in one transaction, then the
 // response. The database, Storage and the clock are injected (index.ts).
+//
+// Body caps: a route whose body must be empty (every GET and DELETE) reads
+// none, a route of small messages at most SMALL_BODY, and only commit, the
+// blob routes, rendezvous frames and drops take more. On the signed routes
+// of large bodies (commit and the two blob routes) the signature headers,
+// the skew, the per-IP gate and the key lookup come before the body is read:
+// a request with no valid credential is refused, and counted by the gate,
+// before 4 MiB are buffered and hashed. The digest and Ed25519 follow the
+// read as on every other route.
 import * as proto from "./proto.ts";
 import { CODES, isSqlCode, Refusal } from "./errors.ts";
 import { a, type Arg, type Db, type Fn, refusalFromSqlError, type Row } from "./db.ts";
 import type { Signer } from "./storage.ts";
 import { clientAddress, ipKeyer, type IpSource } from "./ip.ts";
-import { BadKey, type Checked, checkRequest, edVerify, importCredentialKey, verifySignature } from "./verify.ts";
+import {
+  BadKey,
+  checkBody,
+  type Checked,
+  checkHeaders,
+  checkRequest,
+  edVerify,
+  importCredentialKey,
+  verifySignature,
+} from "./verify.ts";
 
 /** The function's own prefix in the path the gateway hands over. */
 export const PREFIX = "/mailbox";
 /** Step of the rendezvous long poll. */
 export const RDV_POLL_MS = 500;
+/**
+ * Body cap of the routes of small messages (create, enroll, grants, roles,
+ * locator, locate, children, push): the largest of them, a SetPush with a
+ * 4096 byte token, is far below it.
+ */
+export const SMALL_BODY = 8 << 10;
+/** Upload URLs signed at once by one announce (Storage round trips in flight). */
+export const SIGN_PARALLEL = 16;
 
 export interface Deps {
   db: Db;
@@ -90,10 +116,23 @@ async function call(db: Db, fn: Fn, args: Arg[]): Promise<Row[]> {
   }
 }
 
-/** Body bytes, at most `max`: 413 as soon as more is announced or read. */
-async function readBody(req: Request, max: number): Promise<Uint8Array> {
+/**
+ * The refusal of a body over the cap: malformed on a route whose body must
+ * be empty (as the route itself would say), 413 otherwise.
+ */
+function overCap(max: number): Refusal {
+  return new Refusal(max === 0 ? "malformed" : "too_large");
+}
+
+/** Refuses a Content-Length over `max` (or not a number) without reading anything. */
+function checkLength(req: Request, max: number) {
   const len = req.headers.get("content-length");
-  if (len !== null && (!/^[0-9]+$/.test(len) || Number(len) > max)) throw new Refusal("too_large");
+  if (len !== null && (!/^[0-9]+$/.test(len) || Number(len) > max)) throw overCap(max);
+}
+
+/** Body bytes, at most `max`: refused as soon as more is announced or read. */
+async function readBody(req: Request, max: number): Promise<Uint8Array> {
+  checkLength(req, max);
   if (!req.body) return new Uint8Array();
   const reader = req.body.getReader();
   const parts: Uint8Array[] = [];
@@ -104,7 +143,7 @@ async function readBody(req: Request, max: number): Promise<Uint8Array> {
     total += value.length;
     if (total > max) {
       await reader.cancel().catch(() => {});
-      throw new Refusal("too_large");
+      throw overCap(max);
     }
     parts.push(value);
   }
@@ -141,6 +180,8 @@ interface Ctx {
   ipKey: () => Promise<Uint8Array>;
   nowSecs: number;
   checked?: Checked;
+  /** The credential's key, when the route looked it up before reading the body. */
+  key?: Uint8Array;
 }
 
 interface Route {
@@ -166,14 +207,19 @@ function requireEmpty(c: Ctx) {
 }
 
 /**
- * Per-IP gate and key lookup in one committed transaction, then Ed25519.
- * Returns the public key the request verified against.
+ * Per-IP gate and key lookup in one committed transaction. Returns the
+ * credential's public key, not yet checked against any signature.
  */
-async function lookupKey(c: Ctx, mailbox: Uint8Array, credential: Uint8Array): Promise<Uint8Array> {
-  const ipk = await c.ipKey();
+async function lookupKey(
+  db: Db,
+  ipKey: () => Promise<Uint8Array>,
+  mailbox: Uint8Array,
+  credential: Uint8Array,
+): Promise<Uint8Array> {
+  const ipk = await ipKey();
   let out: { refusal: Refusal | null; key: Uint8Array | null };
   try {
-    out = await c.deps.db.transaction(async (tx) => {
+    out = await db.transaction(async (tx) => {
       const gate = inBand((await tx.call("ip_gate", [a.bytea(ipk)]))[0]);
       if (gate) return { refusal: gate, key: null };
       const rows = await tx.call("credential_key", [a.bytea(mailbox), a.bytea(credential)]);
@@ -195,8 +241,36 @@ async function lookupKey(c: Ctx, mailbox: Uint8Array, credential: Uint8Array): P
 
 /** A signed route whose key is an enrolled credential of the path mailbox. */
 async function authenticate(c: Ctx, mailbox: Uint8Array) {
-  const key = await lookupKey(c, mailbox, c.checked!.params.keyid);
+  const key = c.key ?? await lookupKey(c.deps.db, c.ipKey, mailbox, c.checked!.params.keyid);
   await verifySignature(c.checked!, key);
+}
+
+/**
+ * `f` over `items`, at most `limit` calls in flight, results in the order of
+ * `items`. The first failure is thrown once the calls in flight settle; no
+ * new call starts after it.
+ */
+export async function mapBounded<T, R>(items: T[], limit: number, f: (x: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const i = next++;
+      try {
+        out[i] = await f(items[i]);
+      } catch (e) {
+        failed = true;
+        throw e;
+      }
+    }
+  };
+  const settled = await Promise.allSettled(
+    Array.from({ length: Math.min(Math.max(limit, 1), items.length) }, worker),
+  );
+  const bad = settled.find((r) => r.status === "rejected");
+  if (bad) throw (bad as PromiseRejectedResult).reason;
+  return out;
 }
 
 function record(r: Row) {
@@ -567,14 +641,20 @@ async function blobUploads(c: Ctx): Promise<Response> {
   const refused = inBand(rows[0]);
   if (refused) throw refused;
   const asked = new Set(ann.blobs.map((b) => hex(b[0])));
-  const urls: [Uint8Array, string | null][] = [];
+  const wanted: { sha: Uint8Array; name: string | null }[] = [];
   for (const r of rows) {
     const sha = r.sha256 as Uint8Array;
     if (!(sha instanceof Uint8Array) || !asked.delete(hex(sha))) throw new Refusal("retry");
     const name = objectName(m, sha, r.object_name);
-    urls.push([sha, r.needs_upload === true ? await c.deps.signer.upload(name) : null]);
+    wanted.push({ sha, name: r.needs_upload === true ? name : null });
   }
   if (asked.size !== 0) throw new Refusal("retry");
+  // Up to 1 000 URLs: SIGN_PARALLEL Storage calls at a time, not one by one.
+  const urls: [Uint8Array, string | null][] = await mapBounded(
+    wanted,
+    SIGN_PARALLEL,
+    async (w) => [w.sha, w.name === null ? null : await c.deps.signer.upload(w.name)],
+  );
   urls.sort((x, y) => compare(x[0], y[0]));
   return postcard(proto.encodeBlobUrls({ urls }));
 }
@@ -592,11 +672,10 @@ async function blobDownloads(c: Ctx): Promise<Response> {
     const sha = r.sha256 as Uint8Array;
     found.set(hex(sha), objectName(m, sha, r.object_name));
   }
-  const urls: [Uint8Array, string | null][] = [];
-  for (const sha of look.blobs) {
+  const urls: [Uint8Array, string | null][] = await mapBounded(look.blobs, SIGN_PARALLEL, async (sha) => {
     const name = found.get(hex(sha));
-    urls.push([sha, name === undefined ? null : await c.deps.signer.download(name)]);
-  }
+    return [sha, name === undefined ? null : await c.deps.signer.download(name)];
+  });
   return postcard(proto.encodeBlobUrls({ urls }));
 }
 
@@ -662,7 +741,7 @@ async function enroll(c: Ctx): Promise<Response> {
   const expires = BigInt(t.expires_at);
   if (expires < 0n || expires > BigInt(c.nowSecs) + 86_400n) throw new Refusal("malformed");
 
-  const approverKey = await lookupKey(c, m, e.ticket.approver_credential);
+  const approverKey = await lookupKey(c.deps.db, c.ipKey, m, e.ticket.approver_credential);
   if (!(await edVerify(approverKey, proto.ticketSignedBytes(t), e.ticket.sig))) throw new Refusal("bad_signature");
 
   const p = c.checked!.params;
@@ -789,24 +868,52 @@ async function dropDelete(c: Ctx): Promise<Response> {
 }
 
 const MAX = proto.COMMIT_BODY_MAX;
+/** No body at all: every GET and DELETE. */
+const NONE = 0;
+/**
+ * BlobAnnounce or BlobLookup of 1 000 blobs (PAGE_MAX_RECORDS): at most 32
+ * bytes of hash and a 5 byte size each, under 40 000 bytes.
+ */
+const BLOB_BODY = 64 << 10;
 const KIND = "(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)";
 const N = "(0|[1-9][0-9]{0,3})";
 
 const ROUTES: Route[] = [
-  { method: "GET", re: /^\/v1\/config$/, auth: "none", query: "none", maxBody: MAX, run: config },
-  { method: "POST", re: /^\/v1\/mailboxes$/, auth: "body_key", query: "none", maxBody: MAX, run: create },
-  { method: "GET", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: info },
-  { method: "DELETE", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: MAX, run: deleteMailbox },
-  { method: "POST", re: new RegExp(`^${MB}/children$`), auth: "signed", query: "none", maxBody: MAX, run: createChild },
-  { method: "PUT", re: new RegExp(`^${MB}/locator$`), auth: "signed", query: "none", maxBody: MAX, run: setLocator },
+  { method: "GET", re: /^\/v1\/config$/, auth: "none", query: "none", maxBody: NONE, run: config },
+  { method: "POST", re: /^\/v1\/mailboxes$/, auth: "body_key", query: "none", maxBody: SMALL_BODY, run: create },
+  { method: "GET", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: NONE, run: info },
+  { method: "DELETE", re: new RegExp(`^${MB}$`), auth: "signed", query: "none", maxBody: NONE, run: deleteMailbox },
+  {
+    method: "POST",
+    re: new RegExp(`^${MB}/children$`),
+    auth: "signed",
+    query: "none",
+    maxBody: SMALL_BODY,
+    run: createChild,
+  },
+  {
+    method: "PUT",
+    re: new RegExp(`^${MB}/locator$`),
+    auth: "signed",
+    query: "none",
+    maxBody: SMALL_BODY,
+    run: setLocator,
+  },
   { method: "POST", re: /^\/v1\/locate$/, auth: "none", query: "none", maxBody: 64, run: locate },
-  { method: "POST", re: new RegExp(`^${MB}/credentials$`), auth: "body_key", query: "none", maxBody: MAX, run: enroll },
+  {
+    method: "POST",
+    re: new RegExp(`^${MB}/credentials$`),
+    auth: "body_key",
+    query: "none",
+    maxBody: SMALL_BODY,
+    run: enroll,
+  },
   {
     method: "DELETE",
     re: new RegExp(`^${MB}/credentials/${H}$`),
     auth: "signed",
     query: "none",
-    maxBody: MAX,
+    maxBody: NONE,
     run: revoke,
   },
   {
@@ -814,27 +921,27 @@ const ROUTES: Route[] = [
     re: new RegExp(`^${MB}/credentials/${H}/role$`),
     auth: "signed",
     query: "none",
-    maxBody: MAX,
+    maxBody: SMALL_BODY,
     run: setRole,
   },
-  { method: "POST", re: new RegExp(`^${MB}/grants$`), auth: "signed", query: "none", maxBody: MAX, run: grant },
-  { method: "PUT", re: new RegExp(`^${MB}/push$`), auth: "signed", query: "none", maxBody: MAX, run: setPush },
+  { method: "POST", re: new RegExp(`^${MB}/grants$`), auth: "signed", query: "none", maxBody: SMALL_BODY, run: grant },
+  { method: "PUT", re: new RegExp(`^${MB}/push$`), auth: "signed", query: "none", maxBody: SMALL_BODY, run: setPush },
   {
     method: "PUT",
     re: new RegExp(`^${MB}/push-targets/${H}$`),
     auth: "signed",
     query: "none",
-    maxBody: MAX,
+    maxBody: SMALL_BODY,
     run: setPushTarget,
   },
-  { method: "GET", re: new RegExp(`^${MB}/changes$`), auth: "signed", query: "changes", maxBody: MAX, run: changes },
+  { method: "GET", re: new RegExp(`^${MB}/changes$`), auth: "signed", query: "changes", maxBody: NONE, run: changes },
   { method: "POST", re: new RegExp(`^${MB}/commit$`), auth: "signed", query: "none", maxBody: MAX, run: commit },
   {
     method: "GET",
     re: new RegExp(`^${MB}/records/${KIND}/${H}$`),
     auth: "signed",
     query: "none",
-    maxBody: MAX,
+    maxBody: NONE,
     run: recordRoute,
   },
   {
@@ -842,7 +949,7 @@ const ROUTES: Route[] = [
     re: new RegExp(`^${MB}/blobs/uploads$`),
     auth: "signed",
     query: "none",
-    maxBody: MAX,
+    maxBody: BLOB_BODY,
     run: blobUploads,
   },
   {
@@ -850,7 +957,7 @@ const ROUTES: Route[] = [
     re: new RegExp(`^${MB}/blobs/downloads$`),
     auth: "signed",
     query: "none",
-    maxBody: MAX,
+    maxBody: BLOB_BODY,
     run: blobDownloads,
   },
   {
@@ -866,7 +973,7 @@ const ROUTES: Route[] = [
     re: new RegExp(`^/v1/rendezvous/${H}/([01])/${N}$`),
     auth: "none",
     query: "wait",
-    maxBody: MAX,
+    maxBody: NONE,
     run: rdvGet,
   },
   {
@@ -874,7 +981,7 @@ const ROUTES: Route[] = [
     re: new RegExp(`^/v1/rendezvous/${H}$`),
     auth: "none",
     query: "none",
-    maxBody: MAX,
+    maxBody: NONE,
     run: rdvClose,
   },
   {
@@ -890,7 +997,7 @@ const ROUTES: Route[] = [
     re: new RegExp(`^/v1/drops/${H}/([0-3])$`),
     auth: "none",
     query: "none",
-    maxBody: MAX,
+    maxBody: NONE,
     run: dropGet,
   },
   {
@@ -898,7 +1005,7 @@ const ROUTES: Route[] = [
     re: new RegExp(`^/v1/drops/${H}$`),
     auth: "none",
     query: "none",
-    maxBody: MAX,
+    maxBody: NONE,
     run: dropDelete,
   },
 ];
@@ -931,7 +1038,7 @@ export function handler(deps: Deps): (req: Request) => Promise<Response> {
       const { route, groups } = found;
       const query = url.search.startsWith("?") ? url.search.slice(1) : url.search;
       if (route.query === "none" && url.search !== "") throw new Refusal("malformed");
-      const body = await readBody(req, route.maxBody);
+      checkLength(req, route.maxBody);
       const nowSecs = Math.floor(deps.now() / 1000);
       // @onepass-target: the path after the function's prefix, then `?` and
       // the query when there is one (spec 4.7).
@@ -939,8 +1046,19 @@ export function handler(deps: Deps): (req: Request) => Promise<Response> {
       const address = clientAddress(req.headers, deps.ipSource);
       let key: Promise<Uint8Array> | null = null;
       const ipKey = () => (key ??= keyer(deps.now(), address));
-      const ctx: Ctx = { deps, req, target, query, groups, body, ipKey, nowSecs };
-      if (route.auth !== "none") {
+      // A signed route of large bodies (the path names the mailbox): headers,
+      // skew, the per-IP gate and the key lookup before the body is read.
+      let head: ReturnType<typeof checkHeaders> | undefined;
+      let early: Uint8Array | undefined;
+      if (route.auth === "signed" && route.maxBody > SMALL_BODY) {
+        head = checkHeaders(req.headers, nowSecs);
+        early = await lookupKey(deps.db, ipKey, unhex(groups[0]), head.params.keyid);
+      }
+      const body = await readBody(req, route.maxBody);
+      const ctx: Ctx = { deps, req, target, query, groups, body, ipKey, nowSecs, key: early };
+      if (head) {
+        ctx.checked = checkBody(req.method, target, head, body);
+      } else if (route.auth !== "none") {
         ctx.checked = checkRequest(req.method, target, req.headers, body, nowSecs);
       }
       return await route.run(ctx);
