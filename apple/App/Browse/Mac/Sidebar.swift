@@ -134,8 +134,7 @@ struct Sidebar: View {
                 // Under Watchtower while there is something to review (the open page keeps its row).
                 if !duplicates.groups.isEmpty || model.page == .duplicates {
                     pageRow("duplicates.title", symbol: "square.on.square", color: .orange, page: .duplicates,
-                        id: "sidebar.duplicates")
-                        .badge(duplicates.groups.count)
+                        id: "sidebar.duplicates", badge: duplicates.groups.count)
                 }
                 pageRow("crypto.title", symbol: "bitcoinsign", color: CoinIcon.color("bitcoin"), page: .crypto,
                     id: "sidebar.crypto")
@@ -371,7 +370,7 @@ struct Sidebar: View {
     }
 
     private func pageRow(
-        _ title: LocalizedStringKey, symbol: String, color: Color, page: BrowsePage, id: String
+        _ title: LocalizedStringKey, symbol: String, color: Color, page: BrowsePage, id: String, badge: Int = 0
     ) -> some View {
         Label {
             Text(title)
@@ -379,6 +378,9 @@ struct Sidebar: View {
             SymbolTile(symbol: symbol, color: color, size: SymbolTile.sidebarSize)
         }
         .visionHoverEffect()
+        // The badge goes before the tag, as on the counted rows: put after it, the row lost its
+        // selection tag and a click did nothing.
+        .badge(badge)
         .tag(Destination.page(page))
         .accessibilityIdentifier(id)
     }
