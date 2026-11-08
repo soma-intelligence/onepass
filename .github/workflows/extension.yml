@@ -56,6 +56,9 @@ jobs:
       - name: Audit (all dependencies)
         run: npm audit
         continue-on-error: true
+      # The lab unit tests launch Chromium, so it is installed before them.
+      - name: Install Chromium for Playwright
+        run: npx playwright install chromium
       - name: Typecheck, unit tests, build
         run: npm run check
       - name: SBOM (CycloneDX)
@@ -66,8 +69,6 @@ jobs:
           name: sbom-extension
           path: extension/sbom/extension.cdx.json
           if-no-files-found: error
-      - name: Install Chromium for Playwright
-        run: npx playwright install chromium
       # Real-site bench on its pruned recordings (no network): the content-script probe and the
       # core planner on every recorded page, against the pinned verdicts. Blocking on regression.
       - name: Real-site bench, offline
