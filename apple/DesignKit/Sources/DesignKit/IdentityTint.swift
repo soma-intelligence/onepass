@@ -16,8 +16,9 @@ public enum IdentityTint {
 
     /// The dominant saturated color of an icon: the pixels with alpha above 0.5 are read from a
     /// 16 x 16 sRGB copy, near-gray, near-black and near-white ones dropped, the rest bucketed by
-    /// hue (12 buckets of 30 degrees), and the mean of the fullest bucket returned (a tie goes to
-    /// the lower bucket). A mean over a multicolor logo would be mud. Nil when no pixel qualifies.
+    /// hue (12 buckets of 30 degrees centered on 0, 30, ... 330, so reds either side of 0 share
+    /// one), and the mean of the fullest bucket returned (a tie goes to the lower bucket). A mean
+    /// over a multicolor logo would be mud. Nil when no pixel qualifies.
     public static func dominant(of image: CGImage) -> Color? {
         let side = sampleSide
         var pixels = [UInt8](repeating: 0, count: side * side * 4)
@@ -57,7 +58,7 @@ public enum IdentityTint {
             }
             hue = (hue * 60).truncatingRemainder(dividingBy: 360)
             if hue < 0 { hue += 360 }
-            let bucket = min(Int(hue / 30), hueBuckets - 1)
+            let bucket = Int((hue + 15) / 30) % hueBuckets
             sums[bucket].red += red
             sums[bucket].green += green
             sums[bucket].blue += blue

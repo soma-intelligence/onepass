@@ -73,6 +73,29 @@ struct IdentityTintTests {
         #expect(close(dominant, pureRed))
     }
 
+    /// 16 x 16 image of horizontal bands, each `rows` tall, from the bottom up.
+    private func bands(_ bands: [(rows: Int, rgb: (Double, Double, Double))]) -> CGImage {
+        let side = 16
+        let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        var y = 0
+        for band in bands {
+            context.setFillColor(red: band.rgb.0, green: band.rgb.1, blue: band.rgb.2, alpha: 1)
+            context.fill(CGRect(x: 0, y: y, width: side, height: band.rows))
+            y += band.rows
+        }
+        return context.makeImage()!
+    }
+
+    @Test func redsEitherSideOfZeroShareABucket() throws {
+        // About 30% at hue 355, 30% at hue 5 and 40% pure green: the two reds are one hue, so red wins.
+        let image = bands([(5, (1, 0, 1.0 / 12)), (5, (1, 1.0 / 12, 0)), (6, (0, 1, 0))])
+        let dominant = try #require(IdentityTint.dominant(of: image)).resolve(in: EnvironmentValues())
+        #expect(dominant.red > 0.9 && dominant.green < 0.1 && dominant.blue < 0.1)
+    }
+
     @Test func grayBlackAndWhitePixelsDoNotCount() throws {
         #expect(IdentityTint.dominant(of: solidImage(side: 8, rgb: (0, 0, 0))) == nil)
         #expect(IdentityTint.dominant(of: solidImage(side: 8, rgb: (1, 1, 1))) == nil)
