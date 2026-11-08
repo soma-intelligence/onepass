@@ -47,6 +47,9 @@ struct ItemDetailView: View {
     @State private var timeline: [FfiTimelineEvent] = []
     /// "Copier en JSON" asks first: the JSON holds every secret of the item.
     @State private var confirmCopyJSON = false
+    /// The icon the header draws (iPhone and iPad): the identity wash behind it takes its color.
+    @State private var headerIcon: Data?
+    @Environment(\.colorScheme) private var colorScheme
 
     init(ref: ItemRef, standalone: Bool = false) {
         self.ref = ref
@@ -125,10 +128,29 @@ struct ItemDetailView: View {
 
     // MARK: - Detail
 
+    #if os(iOS)
+    /// The brand color of a card network, else the icon's average, else the category color, as a
+    /// 30% tall wash from the top edge (status bar included). Flat fallback is no wash at all.
+    private func identityWash(_ item: FfiItem) -> some View {
+        let color = IdentityTint.color(
+            brand: item.itemType == .creditCard ? item.cardBrandName : nil,
+            siteIcon: headerIcon.flatMap(ItemIcon.drawnImage),
+            category: ItemCategory.of(item.itemType).color)
+        return Color.clear
+            .containerRelativeFrame(.vertical) { height, _ in height * 0.30 }
+            .washBackground(
+                Theme.Wash.identity(color, dark: colorScheme == .dark), flat: .clear, in: Rectangle()
+            )
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+    #endif
+
     private func detail(_ item: FfiItem) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                ItemHeader(item: item)
+                ItemHeader(item: item) { headerIcon = $0 }
                     .padding(.horizontal, 4)
                     .padding(.bottom, 4)
                 if let actionError {
@@ -179,6 +201,11 @@ struct ItemDetailView: View {
         .defaultScrollAnchor(.top)
         #if os(macOS)
         .scrollIndicators(.never)
+        #endif
+        #if os(iOS)
+        // A soft wash in the item's identity color, fixed at the top like the page's tint. It sits
+        // under the content and the navigation bar, and never takes a touch.
+        .background(alignment: .top) { identityWash(item) }
         #endif
         .groupedScreen()
         .environment(\.openURL, OpenURLAction { url in

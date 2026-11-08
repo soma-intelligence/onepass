@@ -158,6 +158,11 @@ public struct ItemIcon: View {
         return context.makeImage()
     }
 
+    /// The image the icon draws, for the app to read (the identity wash averages it).
+    public nonisolated static func drawnImage(_ data: Data) -> CGImage? {
+        prepared(data)?.image
+    }
+
     /// The decoded, trimmed image alone.
     nonisolated static func filled(_ data: Data) -> CGImage? {
         prepared(data)?.image

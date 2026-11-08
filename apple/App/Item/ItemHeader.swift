@@ -7,7 +7,11 @@ import VaultKit
 struct ItemHeader: View {
     @Environment(AppModel.self) private var model
     let item: FfiItem
+    /// Tells the detail which icon data the header draws, so the identity wash follows it.
+    var onIcon: (Data?) -> Void = { _ in }
     @State private var siteIcon: Data?
+
+    private var iconData: Data? { siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title) }
 
     private var vault: FfiVault? { model.session.allVaults.first { $0.id == item.vaultId } }
 
@@ -38,7 +42,7 @@ struct ItemHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            ItemIcon(type: item.itemType, title: item.title, siteIcon: siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title), size: 64, brand: item.cardBrandName)
+            ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: 64, brand: item.cardBrandName)
                 .favoriteBadge(item.favorite, iconSize: 64)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -72,6 +76,7 @@ struct ItemHeader: View {
             }
             Spacer(minLength: 0)
         }
+        .onChange(of: iconData, initial: true) { _, data in onIcon(data) }
         .task(id: primaryURL) {
             guard let url = primaryURL else {
                 siteIcon = nil
