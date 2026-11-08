@@ -12,6 +12,9 @@ import AppKit
 public protocol PasteboardWriter: Sendable {
     /// Writes local only (no Universal Clipboard), marked concealed when asked.
     func write(_ s: String, concealed: Bool, expiresAfter: TimeInterval)
+    /// Writes a PNG image the same way: local only, always concealed (it may carry a secret, such as
+    /// a Wi-Fi QR code).
+    func writeImage(png: Data, expiresAfter: TimeInterval)
     /// Clears the pasteboard only if nothing was copied since our last `write`.
     func clearIfUnchanged()
 }
@@ -50,6 +53,26 @@ public final class SystemPasteboard: PasteboardWriter {
         board.prepareForNewContents(with: .currentHostOnly)
         board.setString(s, forType: .string)
         if concealed { board.setData(Data(), forType: Self.concealedType) }
+        let count = board.changeCount
+        ownChange.withLock { $0 = count }
+        #endif
+    }
+
+    public func writeImage(png: Data, expiresAfter: TimeInterval) {
+        #if canImport(UIKit)
+        let board = UIPasteboard.general
+        board.setItems(
+            [[UTType.png.identifier: png]],
+            options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(expiresAfter)])
+        let count = board.changeCount
+        ownChange.withLock { $0 = count }
+        #elseif canImport(AppKit)
+        let board = self.board
+        board.prepareForNewContents(with: .currentHostOnly)
+        board.setData(png, forType: .png)
+        // TIFF too: some Mac apps paste only that.
+        if let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation { board.setData(tiff, forType: .tiff) }
+        board.setData(Data(), forType: Self.concealedType)
         let count = board.changeCount
         ownChange.withLock { $0 = count }
         #endif
@@ -94,6 +117,16 @@ public final class Clipboard {
 
     public func copy(_ value: String, concealed: Bool) {
         pasteboard.write(value, concealed: concealed, expiresAfter: clearAfter)
+        armClear()
+    }
+
+    /// A PNG image (concealed, local only), cleared like a copied value.
+    public func copyImage(png: Data) {
+        pasteboard.writeImage(png: png, expiresAfter: clearAfter)
+        armClear()
+    }
+
+    private func armClear() {
         expiresAt = clock.now.addingTimeInterval(clearAfter)
         timer?.cancel()
         let delay = clearAfter

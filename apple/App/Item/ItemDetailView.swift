@@ -1050,25 +1050,18 @@ private struct WifiQRCard: View {
         return renderer.cgImage
     }
 
-    /// The image holds the password: marked concealed and cleared after 90 s, like a copied secret.
+    /// The image holds the password: through the session clipboard, like a copied secret (local only,
+    /// concealed, cleared after 90 s and on lock or quit).
     @MainActor private func copyImage() {
         guard let image = rendered() else { return }
         #if os(macOS)
-        let board = NSPasteboard.general
-        board.clearContents()
-        board.writeObjects([NSImage(cgImage: image, size: NSSize(width: 260, height: 260))])
-        board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
-        board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        let count = board.changeCount
-        Task {
-            try? await Task.sleep(for: .seconds(90))
-            if board.changeCount == count { board.clearContents() }
-        }
+        let rep = NSBitmapImageRep(cgImage: image)
+        rep.size = NSSize(width: 260, height: 260)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return }
         #else
-        UIPasteboard.general.setItems(
-            [["public.png": UIImage(cgImage: image).pngData() ?? Data()]],
-            options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(90)])
+        guard let png = UIImage(cgImage: image).pngData() else { return }
         #endif
+        model.session.copyImage(png: png)
     }
 
     @MainActor private func printImage() {

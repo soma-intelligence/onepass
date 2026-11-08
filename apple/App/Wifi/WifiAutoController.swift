@@ -101,7 +101,8 @@ final class WifiAutoController {
         guard let inputs = try? await session.wifiRouterInputs() else { return }
         if let installer {
             let ledger = store(for: session)
-            let hidden = session.hiddenVaultIDs
+            // Hidden vaults, and vaults someone else can write: never installed on their own.
+            let hidden = session.wifiAutoExcludedVaults
             #if os(iOS)
             var position: WifiPosition?
             if WifiAutoSync.needsPosition(inputs: inputs, hiddenVaults: hidden, store: ledger),

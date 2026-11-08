@@ -1263,6 +1263,13 @@ public final class VaultSession {
         noteActivity()
     }
 
+    /// A PNG image that carries a secret (the Wi-Fi QR code): local only, concealed, cleared after
+    /// 90 s and on lock, like `copy`.
+    public func copyImage(png: Data) {
+        clipboard.copyImage(png: png)
+        noteActivity()
+    }
+
     // MARK: - Reprompt
 
     /// `reprompt` items: when biometric unlock is enrolled, Face ID / Touch ID (or the device

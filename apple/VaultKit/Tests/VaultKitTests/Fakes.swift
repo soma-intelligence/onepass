@@ -118,6 +118,7 @@ final class FailingWriteKeychain: KeychainStore {
 final class FakePasteboard: PasteboardWriter {
     struct State {
         var contents: String?
+        var image: Data?
         var concealed = false
         var expiresAfter: TimeInterval?
         var changeCount = 0
@@ -130,7 +131,19 @@ final class FakePasteboard: PasteboardWriter {
     func write(_ s: String, concealed: Bool, expiresAfter: TimeInterval) {
         state.withLock {
             $0.contents = s
+            $0.image = nil
             $0.concealed = concealed
+            $0.expiresAfter = expiresAfter
+            $0.changeCount += 1
+            $0.ownChange = $0.changeCount
+        }
+    }
+
+    func writeImage(png: Data, expiresAfter: TimeInterval) {
+        state.withLock {
+            $0.contents = nil
+            $0.image = png
+            $0.concealed = true
             $0.expiresAfter = expiresAfter
             $0.changeCount += 1
             $0.ownChange = $0.changeCount
@@ -141,6 +154,7 @@ final class FakePasteboard: PasteboardWriter {
         state.withLock {
             guard $0.ownChange == $0.changeCount else { return }
             $0.contents = nil
+            $0.image = nil
             $0.changeCount += 1
             $0.ownChange = nil
         }

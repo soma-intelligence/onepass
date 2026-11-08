@@ -490,7 +490,36 @@ public enum WifiProfileMerge {
     }
 }
 
+extension WifiSelection {
+    /// Whether a vault's routers may be installed without the user asking: a vault no one else can
+    /// write. A private vault qualifies; a shared one only when every other member reads only (and
+    /// is not an owner). Otherwise another member could add a router for an access point they
+    /// control and the device would join it on its own. The capture direction already refuses
+    /// shared vaults. "Rejoindre" (the user asked) is not affected.
+    public static func autoInstallTrusted(shared: FfiSharedVault?, accountID: String?) -> Bool {
+        guard let shared else { return true }
+        guard let accountID, !accountID.isEmpty else { return false }
+        return shared.members.allSatisfy { $0.accountId == accountID || ($0.role == .read && !$0.owner) }
+    }
+}
+
 extension VaultSession {
+    /// The vaults an automatic Wi-Fi pass skips: the hidden ones, and every vault someone else can
+    /// write (`WifiSelection.autoInstallTrusted`). A vault with items but unknown to the session is
+    /// skipped too.
+    public var wifiAutoExcludedVaults: Set<String> {
+        let accountID = settings.accountID
+        var excluded = hiddenVaultIDs
+        for id in Set(summaries.map(\.vaultId)).union(allVaults.map(\.id)) {
+            let vault = allVaults.first { $0.id == id }
+            let shared = sharing.sharedVaults.first { $0.vaultId == id } ?? vault?.shared
+            if vault == nil || !WifiSelection.autoInstallTrusted(shared: shared, accountID: accountID) {
+                excluded.insert(id)
+            }
+        }
+        return excluded
+    }
+
     /// The Wi-Fi fields of every router item of the vaults this session sees, read without
     /// touching the recents (a background job, not the user opening items).
     public func wifiRouterInputs() async throws -> [WifiRouterInput] {

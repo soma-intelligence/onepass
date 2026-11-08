@@ -66,4 +66,14 @@ struct SystemKeychainTests {
         relaunched.lock()
         await relaunched.waitForReleasedSessions()
     }
+
+    /// Any same-user process can add items to the classic (file) keychain, so a Release build adopts
+    /// only the Secret Key from there, never drafts, pairings or the RNG seed.
+    @Test func onlyTheSecretKeyIsAdoptedFromTheFileKeychain() {
+        #expect(SystemKeychain.adoptsFromFileKeychain(SecretKeyVault.key(for: "A1B2")))
+        #expect(!SystemKeychain.adoptsFromFileKeychain("autofill.generated-drafts"))
+        #expect(!SystemKeychain.adoptsFromFileKeychain("autofill.generated-drafts.work"))
+        #expect(!SystemKeychain.adoptsFromFileKeychain(BridgePairingStore.key))
+        #expect(!SystemKeychain.adoptsFromFileKeychain(DeviceRngSeed.key))
+    }
 }

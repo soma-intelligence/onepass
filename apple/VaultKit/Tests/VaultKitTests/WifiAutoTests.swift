@@ -465,4 +465,23 @@ struct WifiSessionTests {
         let networks = WifiSelection.networks(inputs)
         #expect(networks.first?.security == .wpa3Personal)
     }
+
+    /// Automatic install trusts only vaults no one else can write.
+    @Test func autoInstallTrustsOnlyVaultsNoOneElseCanWrite() {
+        func member(_ id: String, _ role: FfiRole, owner: Bool = false) -> FfiMember {
+            FfiMember(accountId: id, nameLocal: id, role: role, owner: owner, level: .verified, keysChanged: false, keyPending: false)
+        }
+        func shared(_ members: [FfiMember]) -> FfiSharedVault {
+            FfiSharedVault(
+                vaultId: "v", name: "v", role: .manage, owner: true, generation: 1, members: members,
+                identityPending: false, mcpHidden: false)
+        }
+        let me = member("me", .manage, owner: true)
+        #expect(WifiSelection.autoInstallTrusted(shared: nil, accountID: "me"))
+        #expect(WifiSelection.autoInstallTrusted(shared: shared([me, member("b0b", .read)]), accountID: "me"))
+        #expect(!WifiSelection.autoInstallTrusted(shared: shared([me, member("b0b", .write)]), accountID: "me"))
+        #expect(!WifiSelection.autoInstallTrusted(shared: shared([me, member("b0b", .manage)]), accountID: "me"))
+        #expect(!WifiSelection.autoInstallTrusted(shared: shared([me, member("b0b", .read, owner: true)]), accountID: "me"))
+        #expect(!WifiSelection.autoInstallTrusted(shared: shared([me]), accountID: nil))
+    }
 }

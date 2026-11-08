@@ -10,9 +10,11 @@ import Security
 /// write to the classic (file) keychain without access group, and every lookup that
 /// finds nothing in the data protection keychain also looks there; deletes clear both.
 /// Release builds write to the data protection keychain only, but a lookup that finds nothing in
-/// the access group still looks without one: an item a Debug build of the same app left there (the
-/// app's own default group, or the classic keychain) is found, copied into the access group and
-/// removed from where it was, so switching build never loses the Secret Key.
+/// the access group still looks without one: an item a Debug build of the same app left in another
+/// group this app is entitled to is found, copied into the access group and removed from where it
+/// was, so switching build never loses the Secret Key. The classic (file) keychain is searched for
+/// the Secret Key only (`adoptsFromFileKeychain`): any process of the same user can add an item
+/// there, so drafts, pairings and seeds found there are never trusted.
 public struct SystemKeychain: KeychainStore {
     public static let missingEntitlement: OSStatus = -34018
 
@@ -48,17 +50,33 @@ public struct SystemKeychain: KeychainStore {
         // its own group (named exactly, so the new copy is never matched).
         guard accessGroup != nil, let stray = try strayItem(key) else { return nil }
         try write(key, stray.data)
-        var remove = baseQuery(key, legacy: true)
+        var remove = strayQuery(key, fileKeychain: stray.fileKeychain)
         if let group = stray.group { remove[kSecAttrAccessGroup as String] = group }
         _ = SecItemDelete(remove as CFDictionary)
         return stray.data
         #endif
     }
 
-    /// The item for `key` outside `accessGroup` (any group this app can read), with its group.
-    private func strayItem(_ key: String) throws -> (data: Data, group: String?)? {
+    /// Keys a Release build may adopt from the classic (file) keychain: the Secret Key only, the item
+    /// the migration exists for. A planted Secret Key gains an attacker nothing (it does not match the
+    /// account's keys, so the unlock fails). Every other key (generated-password drafts, browser
+    /// pairings, the RNG seed) is read from the data protection keychain only, whose access groups
+    /// the system enforces.
+    static func adoptsFromFileKeychain(_ key: String) -> Bool {
+        key.hasPrefix("secretkey.")
+    }
+
+    /// The item for `key` outside `accessGroup`: first in the other data protection keychain groups
+    /// this app is entitled to, then (Secret Key only) in the classic keychain.
+    private func strayItem(_ key: String) throws -> (data: Data, group: String?, fileKeychain: Bool)? {
+        if let found = try strayItem(key, fileKeychain: false) { return found }
+        guard Self.adoptsFromFileKeychain(key) else { return nil }
+        return try strayItem(key, fileKeychain: true)
+    }
+
+    private func strayItem(_ key: String, fileKeychain: Bool) throws -> (data: Data, group: String?, fileKeychain: Bool)? {
         // Attributes of every match first (data cannot be asked for all matches at once).
-        var query = baseQuery(key, legacy: true)
+        var query = strayQuery(key, fileKeychain: fileKeychain)
         query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitAll
         var result: CFTypeRef?
@@ -70,7 +88,7 @@ public struct SystemKeychain: KeychainStore {
         }
         let groups = ((result as? [[String: Any]]) ?? []).map { $0[kSecAttrAccessGroup as String] as? String }
         guard let found = groups.first(where: { $0 != accessGroup }) else { return nil }
-        var one = baseQuery(key, legacy: true)
+        var one = strayQuery(key, fileKeychain: fileKeychain)
         if let found { one[kSecAttrAccessGroup as String] = found }
         one[kSecReturnData as String] = true
         one[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -80,7 +98,15 @@ public struct SystemKeychain: KeychainStore {
             if read == errSecItemNotFound { return nil }
             throw KeychainError.unexpectedStatus(read)
         }
-        return (bytes, found)
+        return (bytes, found, fileKeychain)
+    }
+
+    /// No access group: the data protection keychain (every group this app is entitled to), or the
+    /// classic keychain when `fileKeychain` is true.
+    private func strayQuery(_ key: String, fileKeychain: Bool) -> [String: Any] {
+        var query = baseQuery(key, legacy: true)
+        if !fileKeychain { query[kSecUseDataProtectionKeychain as String] = true }
+        return query
     }
 
     /// Attributes only: the secret data is never loaded.
