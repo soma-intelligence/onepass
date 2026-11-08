@@ -454,7 +454,7 @@ struct WatchtowerCardView: View {
     }
 
     private func cardBody(ids: Set<String>, alert: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             HStack(alignment: .firstTextBaseline) {
                 Text(unavailable == nil ? "\(ids.count)" : "–")
                     .font(.system(size: 40, weight: .bold, design: .rounded))

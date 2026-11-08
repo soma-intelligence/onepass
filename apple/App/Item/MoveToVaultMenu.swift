@@ -67,7 +67,7 @@ struct VaultToolbarMenu: View {
         Button {
             open.toggle()
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Space.s) {
                 if let current {
                     VaultIconTile(icon: current.meta.icon, colorName: current.meta.color, size: 16)
                     Text(current.meta.name).lineLimit(1)
@@ -80,7 +80,7 @@ struct VaultToolbarMenu: View {
             }
             .font(.body.weight(.medium))
             .foregroundStyle(hovering || open ? .primary : .secondary)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, 5)
             .background(hovering || open ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear), in: Capsule())
             .contentShape(Capsule())
@@ -93,7 +93,7 @@ struct VaultToolbarMenu: View {
                 Text("term.vault")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, Theme.Space.s)
                     .padding(.top, 4)
                     .padding(.bottom, 2)
                 ForEach(model.session.vaults, id: \.id) { vault in
@@ -104,7 +104,7 @@ struct VaultToolbarMenu: View {
                     .accessibilityIdentifier("item.vault.move.\(vault.id)")
                 }
             }
-            .padding(6)
+            .padding(Theme.Space.s)
             .frame(width: 220)
         }
         .accessibilityLabel(Text("item.vault \(current?.meta.name ?? "")"))
@@ -151,7 +151,7 @@ private struct VaultPickRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: Theme.Space.m) {
                 VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 22)
                 Text(vault.meta.name).lineLimit(1)
                 Spacer(minLength: 8)
@@ -163,7 +163,7 @@ private struct VaultPickRow: View {
             }
             .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.vertical, Theme.Space.s)
             .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(.clear),
                 in: .rect(cornerRadius: 9, style: .continuous))
             .contentShape(.rect(cornerRadius: 9, style: .continuous))
