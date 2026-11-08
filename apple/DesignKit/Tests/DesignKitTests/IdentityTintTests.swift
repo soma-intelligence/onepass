@@ -35,14 +35,57 @@ struct IdentityTintTests {
         #expect(close(IdentityTint.fallback(.orange), .orange))
     }
 
-    @Test func transparentIconHasNoAverage() {
-        #expect(IdentityTint.average(of: solidImage(side: 8, alpha: 0)) == nil)
-        #expect(IdentityTint.average(of: solidImage(side: 1, rgb: (0, 0, 1))) != nil)
+    /// 32 x 32 image in four quadrants, in order: top left, top right, bottom left, bottom right.
+    private func quadrants(_ colors: [(Double, Double, Double)]) -> CGImage {
+        let side = 32
+        let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        for (i, c) in colors.enumerated() {
+            context.setFillColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
+            context.fill(CGRect(x: (i % 2) * 16, y: (i / 2) * 16, width: 16, height: 16))
+        }
+        return context.makeImage()!
     }
 
-    @Test func averageIsTheMeanColor() throws {
-        let average = try #require(IdentityTint.average(of: solidImage(side: 40, rgb: (1, 0, 0))))
-        #expect(close(average, pureRed))
+    @Test func transparentIconHasNoDominantColor() {
+        #expect(IdentityTint.dominant(of: solidImage(side: 8, alpha: 0)) == nil)
+        #expect(IdentityTint.dominant(of: solidImage(side: 1, rgb: (0, 0, 1))) != nil)
+    }
+
+    @Test func dominantOfASolidColorIsThatColor() throws {
+        let dominant = try #require(IdentityTint.dominant(of: solidImage(side: 40, rgb: (1, 0, 0))))
+        #expect(close(dominant, pureRed))
+    }
+
+    @Test func dominantIsTheBiggestHueBucketNotTheMean() throws {
+        // Red, red, yellow, green: the mean would be olive, the dominant hue is red.
+        let image = quadrants([(1, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)])
+        let dominant = try #require(IdentityTint.dominant(of: image))
+        #expect(close(dominant, pureRed))
+    }
+
+    @Test func tieGoesToTheLowerBucket() throws {
+        // Red (bucket 0), yellow (2), green (4), blue (8), one quadrant each: red wins.
+        let image = quadrants([(0, 0, 1), (1, 1, 0), (0, 1, 0), (1, 0, 0)])
+        let dominant = try #require(IdentityTint.dominant(of: image))
+        #expect(close(dominant, pureRed))
+    }
+
+    @Test func grayBlackAndWhitePixelsDoNotCount() throws {
+        #expect(IdentityTint.dominant(of: solidImage(side: 8, rgb: (0, 0, 0))) == nil)
+        #expect(IdentityTint.dominant(of: solidImage(side: 8, rgb: (1, 1, 1))) == nil)
+        #expect(IdentityTint.dominant(of: solidImage(side: 8, rgb: (0.5, 0.5, 0.5))) == nil)
+        // Black ink around a small blue mark: the blue is the identity.
+        let image = quadrants([(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 1)])
+        #expect(close(try #require(IdentityTint.dominant(of: image)), Color(.sRGB, red: 0, green: 0, blue: 1, opacity: 1)))
+    }
+
+    @Test func monochromeIconGivesTheAccent() {
+        #expect(close(IdentityTint.color(brand: nil, siteIcon: solidImage(side: 8), category: .blue), Theme.accent))
+        let gray = solidImage(side: 8, rgb: (0.5, 0.5, 0.5))
+        #expect(close(IdentityTint.color(brand: nil, siteIcon: gray, category: .blue), Theme.accent))
     }
 
     @Test func order() {

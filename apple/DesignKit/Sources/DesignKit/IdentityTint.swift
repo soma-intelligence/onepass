@@ -9,9 +9,16 @@ public enum IdentityTint {
     /// Colors with an HSB saturation under this read as gray and use the accent instead.
     private static let minimumSaturation = 0.15
 
-    /// The mean color of the pixels with alpha above 0.5, drawn into a 16 x 16 sRGB context.
-    /// Nil when no pixel qualifies.
-    public static func average(of image: CGImage) -> Color? {
+    /// Pixels need at least this HSB saturation and brightness to count as a color (not gray, black or white).
+    private static let minimumPixelSaturation = 0.25
+    private static let minimumPixelBrightness = 0.2
+    private static let hueBuckets = 12
+
+    /// The dominant saturated color of an icon: the pixels with alpha above 0.5 are read from a
+    /// 16 x 16 sRGB copy, near-gray, near-black and near-white ones dropped, the rest bucketed by
+    /// hue (12 buckets of 30 degrees), and the mean of the fullest bucket returned (a tie goes to
+    /// the lower bucket). A mean over a multicolor logo would be mud. Nil when no pixel qualifies.
+    public static func dominant(of image: CGImage) -> Color? {
         let side = sampleSide
         var pixels = [UInt8](repeating: 0, count: side * side * 4)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
@@ -28,30 +35,49 @@ public enum IdentityTint {
         }
         guard drawn else { return nil }
 
-        var red = 0.0, green = 0.0, blue = 0.0
-        var count = 0.0
+        var sums = [(red: Double, green: Double, blue: Double, count: Double)](
+            repeating: (0, 0, 0, 0), count: hueBuckets)
         for i in stride(from: 0, to: pixels.count, by: 4) {
             let alpha = Double(pixels[i + 3]) / 255
             guard alpha > 0.5 else { continue }
             // The context stores premultiplied components, so divide the alpha back out.
-            red += Double(pixels[i]) / 255 / alpha
-            green += Double(pixels[i + 1]) / 255 / alpha
-            blue += Double(pixels[i + 2]) / 255 / alpha
-            count += 1
+            let red = min(Double(pixels[i]) / 255 / alpha, 1)
+            let green = min(Double(pixels[i + 1]) / 255 / alpha, 1)
+            let blue = min(Double(pixels[i + 2]) / 255 / alpha, 1)
+            let high = max(red, green, blue)
+            let chroma = high - min(red, green, blue)
+            guard high >= minimumPixelBrightness, chroma / high >= minimumPixelSaturation else { continue }
+            var hue: Double
+            if high == red {
+                hue = (green - blue) / chroma
+            } else if high == green {
+                hue = 2 + (blue - red) / chroma
+            } else {
+                hue = 4 + (red - green) / chroma
+            }
+            hue = (hue * 60).truncatingRemainder(dividingBy: 360)
+            if hue < 0 { hue += 360 }
+            let bucket = min(Int(hue / 30), hueBuckets - 1)
+            sums[bucket].red += red
+            sums[bucket].green += green
+            sums[bucket].blue += blue
+            sums[bucket].count += 1
         }
-        guard count > 0 else { return nil }
+        var best = 0
+        for bucket in 1..<hueBuckets where sums[bucket].count > sums[best].count { best = bucket }
+        let winner = sums[best]
+        guard winner.count > 0 else { return nil }
         return Color(
-            .sRGB, red: min(red / count, 1), green: min(green / count, 1), blue: min(blue / count, 1),
-            opacity: 1)
+            .sRGB, red: winner.red / winner.count, green: winner.green / winner.count,
+            blue: winner.blue / winner.count, opacity: 1)
     }
 
-    /// The first of the brand color, the site icon average and the category color, then `fallback(_:)`.
+    /// The first of the brand color, the icon's dominant color, then the category color. An icon
+    /// with no color in it (a black or white logo) takes the accent, not the category color.
     public static func color(brand: String?, siteIcon: CGImage?, category: Color) -> Color {
-        let picked =
-            brand.flatMap(ItemIcon.brandColor)
-            ?? siteIcon.flatMap(average(of:))
-            ?? category
-        return fallback(picked)
+        if let color = brand.flatMap(ItemIcon.brandColor) { return fallback(color) }
+        guard let siteIcon else { return fallback(category) }
+        return dominant(of: siteIcon) ?? Theme.accent
     }
 
     /// The accent for a color too gray to tint a wash (black, white and grays), else the color.
