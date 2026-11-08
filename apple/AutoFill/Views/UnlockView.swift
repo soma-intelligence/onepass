@@ -356,9 +356,10 @@ struct UnlockView: View {
         guard model.screen == .locked else { return }
         switch session.lastError {
         case .wrongPassword?:
-            let count = settings.failedUnlocks
-            message = count > 1
-                ? String(localized: "views.wrongPasswordAttempts \(count)")
+            // The attempts left before the unlock waits; at none, the wait message takes over.
+            let left = VaultSession.lockoutThreshold - settings.failedUnlocks
+            message = left > 0
+                ? String(localized: "views.wrongPasswordLeft \(left)")
                 : String(localized: "views.incorrectPassword")
         case .lockedOut?, .passwordRequired?, nil:
             message = nil

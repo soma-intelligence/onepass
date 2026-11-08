@@ -2724,31 +2724,80 @@
         }
       }
     },
-    "views.wrongPasswordAttempts %lld" : {
+    "views.wrongPasswordLeft %lld" : {
+      "comment" : "Unlock refused: wrong master password, with the attempts left before the unlock waits (30 s, then longer).",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wrong password (%lld attempts)."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Wrong password. %lld attempt left before a wait."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Wrong password. %lld attempts left before a wait."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Contraseña incorrecta (%lld intentos)."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Contraseña incorrecta. Te queda %lld intento antes de una espera."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Contraseña incorrecta. Te quedan %lld intentos antes de una espera."
+                }
+              }
+            }
           }
         },
         "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mot de passe incorrect (%lld essais)."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mot de passe incorrect. Encore %lld essai avant une attente."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mot de passe incorrect. Encore %lld essais avant une attente."
+                }
+              }
+            }
           }
         },
         "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Password errata (%lld tentativi)."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Password errata. Ti resta %lld tentativo prima di un'attesa."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Password errata. Ti restano %lld tentativi prima di un'attesa."
+                }
+              }
+            }
           }
         }
       }

@@ -459,9 +459,10 @@ struct LockView: View {
             let failure = VaultError(error)
             switch failure {
             case .wrongPassword:
-                let count = model.settings.failedUnlocks
-                message = count > 1
-                    ? String(localized: "lock.wrongPasswordAttempts \(count)")
+                // The attempts left before the unlock waits; at none, the wait message takes over.
+                let left = VaultSession.lockoutThreshold - model.settings.failedUnlocks
+                message = left > 0
+                    ? String(localized: "lock.wrongPasswordLeft \(left)")
                     : String(localized: "lock.incorrectPassword")
                 withAnimation(.linear(duration: 0.42)) { refusals += 1 }
             case .lockedOut:
