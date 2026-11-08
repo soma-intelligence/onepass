@@ -14,9 +14,12 @@ final class ScreenshotUITests: XCTestCase {
         let ready: String
         /// The iPhone tabs (Accueil, Éléments, Watchtower) exist on iPhone only.
         var phoneOnly = false
+        /// Overrides `ready` on iPhone when the screen differs there.
+        var phoneReady: String?
     }
 
-    /// The list waits for its first row by title (a lazy list only exposes the rows on screen).
+    /// The list waits for its first row by title (a lazy list only exposes the rows on screen). On iPhone
+    /// the search tab shows the category tiles until something is typed, so it waits on the Login tile.
     private static let screens: [Screen] = [
         Screen(name: "welcome", arguments: isolated + ["-OnePassUITestReset", "YES"], ready: "onboarding.create"),
         Screen(name: "home", arguments: demo, ready: "home.profile", phoneOnly: true),
@@ -25,7 +28,8 @@ final class ScreenshotUITests: XCTestCase {
             name: "watchtower", arguments: demo + ["-OnePassDemoTab", "watchtower"], ready: "page.watchtower",
             phoneOnly: true),
         Screen(name: "locked", arguments: demo + ["-OnePassDemoLocked", "YES"], ready: "lock.password"),
-        Screen(name: "list", arguments: demo + ["-OnePassDemoTab", "search"], ready: "list.row.API Cartes Atlas"),
+        Screen(name: "list", arguments: demo + ["-OnePassDemoTab", "search"], ready: "list.row.API Cartes Atlas",
+            phoneReady: "search.browse.login"),
         Screen(name: "detail", arguments: demo + ["-OnePassDemoItem", "Forge Atlas"], ready: "item.title"),
         Screen(
             name: "edit", arguments: demo + ["-OnePassDemoItem", "Forge Atlas", "-OnePassDebugEdit", "YES"],
@@ -71,7 +75,8 @@ final class ScreenshotUITests: XCTestCase {
                 app.launchArguments += screen.arguments
                 app.launch()
                 // The demo account is created with the real Argon2id cost.
-                let ready = app.descendants(matching: .any)[screen.ready].firstMatch
+                let readyID = device == "iphone" ? (screen.phoneReady ?? screen.ready) : screen.ready
+                let ready = app.descendants(matching: .any)[readyID].firstMatch
                 XCTAssertTrue(ready.waitForExistence(timeout: 90), "\(screen.name) not shown")
                 // Let transitions and the keyboard settle.
                 Thread.sleep(forTimeInterval: 1.5)

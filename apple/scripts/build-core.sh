@@ -89,6 +89,14 @@ CURRENT="$MODE $(fingerprint)"
 
 if [ -d "$XCFRAMEWORK" ] && [ -f "$SWIFT_OUT/onepass_ffi.swift" ] \
   && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$CURRENT" ]; then
+  # SWIFT_OUT is one file shared by every mode, but the bindings are not identical: the test build
+  # (dev-fast-kdf) exports extra functions (testSoftwarePqHalf, ...). Put this mode's bindings back
+  # when another mode overwrote them since (make core then make test).
+  if [ -f "$OUT_DIR/generated/onepass_ffi.swift" ] \
+    && ! cmp -s "$OUT_DIR/generated/onepass_ffi.swift" "$SWIFT_OUT/onepass_ffi.swift"; then
+    echo "core ($MODE): restoring this mode's Swift bindings"
+    cp "$OUT_DIR/generated/onepass_ffi.swift" "$SWIFT_OUT/onepass_ffi.swift"
+  fi
   echo "core ($MODE): up to date"
   exit 0
 fi
@@ -137,8 +145,7 @@ for target in "${TARGETS[@]}"; do
   (cd "$CORE_DIR" && env "${unset_args[@]}" cargo build -p onepass-ffi ${CARGO_ARGS[@]+"${CARGO_ARGS[@]}"} --target "$target")
 done
 
-# Bindings: identical for both modes (they only depend on the exported
-# interface). Generated from the macOS static library.
+# Bindings: they depend on the exported interface, which the dev-fast-kdf test build extends. Generated from the macOS static library.
 MAC_LIB="$TARGET_DIR/aarch64-apple-darwin/$PROFILE_DIR/libonepass_ffi.a"
 GEN_DIR="$OUT_DIR/generated"
 rm -rf "$GEN_DIR"
