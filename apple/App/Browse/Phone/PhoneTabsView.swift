@@ -69,7 +69,7 @@ struct PhoneTabsView: View {
             Tab(value: PhoneTab.items) {
                 stack(.items) { ItemsTab() }
             } label: {
-                tabLabel("Éléments", "rectangle.stack", .items)
+                tabLabel("Éléments", "list.bullet.rectangle.portrait", .items)
             }
             .accessibilityIdentifier("tab.items")
             Tab(value: PhoneTab.watchtower) {

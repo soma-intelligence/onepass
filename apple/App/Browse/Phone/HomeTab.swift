@@ -72,7 +72,7 @@ struct HomeTab: View {
                         }
                         if showsRecents {
                             HomeListCard(
-                                title: "Récents", symbol: "clock.fill", color: Color(white: 0.55), isOpen: $recentsOpen,
+                                title: "Récents", symbol: "clock.arrow.circlepath", color: Color(white: 0.55), isOpen: $recentsOpen,
                                 items: recents, list: nil,
                                 emptyText: "browse.itemsOpenAppearHere", id: "home.recents")
                         }
@@ -93,7 +93,7 @@ struct HomeTab: View {
                     Toggle("À proximité", systemImage: "location", isOn: $showsNearby)
                     Toggle("Profil", systemImage: "person.crop.circle", isOn: $showsProfile)
                     Toggle("Favoris", systemImage: "star", isOn: $showsFavorites)
-                    Toggle("Récents", systemImage: "clock", isOn: $showsRecents)
+                    Toggle("Récents", systemImage: "clock.arrow.circlepath", isOn: $showsRecents)
                     Toggle("crypto.title", systemImage: "bitcoinsign", isOn: $showsCrypto)
                 }
             }

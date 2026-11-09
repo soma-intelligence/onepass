@@ -90,6 +90,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab; Général
+    /// keeps its symbol on its tint.
+    var artwork: String? {
+        self == .general ? nil : "settings-\(rawValue)"
+    }
+
     /// The page's content, without its own navigation container.
     @MainActor @ViewBuilder var content: some View {
         switch self {
@@ -217,7 +223,7 @@ struct SettingsView: View {
 
     private func row(_ page: SettingsPage) -> some View {
         NavigationLink(value: page) {
-            SettingsRowLabel(title: page.title, symbol: page.symbol, color: page.tint)
+            SettingsRowLabel(title: page.title, symbol: page.symbol, color: page.tint, artwork: page.artwork)
         }
         .accessibilityIdentifier("settings.\(page.rawValue)")
     }
@@ -252,12 +258,22 @@ struct SettingsRowLabel: View {
     let title: LocalizedStringKey
     let symbol: String
     let color: Color
+    /// A drawn tile from Assets, in place of the symbol on its tint.
+    var artwork: String? = nil
 
     var body: some View {
         Label {
             Text(title)
         } icon: {
-            SymbolTile(symbol: symbol, color: color, size: 29)
+            if let artwork {
+                Image(artwork)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 29, height: 29)
+                    .accessibilityHidden(true)
+            } else {
+                SymbolTile(symbol: symbol, color: color, size: 29)
+            }
         }
     }
 }
@@ -355,11 +371,18 @@ struct MacSettingsView: View {
         Label {
             Text(page.title)
         } icon: {
-            Image(systemName: page.symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(page.tint, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+            if let artwork = page.artwork {
+                Image(artwork)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 26, height: 26)
+            } else {
+                Image(systemName: page.symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(page.tint, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+            }
         }
         .padding(.vertical, 3)
         .tag(page)
