@@ -98,6 +98,12 @@ export interface BgExt {
   /** The front window and its tabs (the agent channel's probe, agent.ts). */
   windows?: {
     getLastFocused(q: { populate: true; windowTypes?: ("normal" | "popup")[] }): Promise<{ id?: number; tabs?: WindowTab[] }>;
+    /** A small window for the popup page when the browser cannot open the toolbar popup (menu_pair). */
+    create?(o: { url: string; type: "popup"; width: number; height: number; focused?: boolean }): Promise<unknown>;
+  };
+  /** The toolbar button: `openPopup` shows the popup from the worker (absent or failing in some browsers). */
+  action?: {
+    openPopup?(): Promise<void>;
   };
   /** Wakes of the service worker (the agent channel reopens its port). Chromium returns a promise, Firefox nothing. */
   alarms?: {

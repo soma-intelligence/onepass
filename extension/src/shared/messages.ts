@@ -489,6 +489,8 @@ export type UiToBg =
   /** "Enregistrer un nouveau login": the save prompt in its edit view. */
   | { type: "menu_new_login"; token: string }
   | { type: "menu_unlock"; token: string }
+  /** "Appairer avec OnePass" in a menu of an unpaired extension: opens the popup, where pairing happens. */
+  | { type: "menu_pair"; token: string }
   /**
    * iOS (spec 2026-11-03-ios-safari-autofill 4): the unlock sheet in the menu. `menu_vault` reads
    * the native vault (refused with "unsupported" where there is none, macOS and the other

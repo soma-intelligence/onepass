@@ -497,7 +497,7 @@ describe("inline menu", () => {
   it("unpaired, host missing and malformed replies", async () => {
     let s = setup(() => ({ err: "unpaired" }));
     await s.handle.ready;
-    expect(text(s.r)).toContain("Appairer OnePass depuis la barre d'outils");
+    expect(text(s.r)).toContain("OnePass n'est pas appairé");
     s = setup(() => ({ err: "host_missing" }));
     await s.handle.ready;
     expect(text(s.r)).toContain("App OnePass introuvable");
@@ -543,6 +543,31 @@ describe("inline menu", () => {
       await handle.ready;
       expect(r.querySelector("[data-signup]")).toBeNull();
     }
+  });
+
+  it("unpaired: Appairer avec OnePass asks the worker to open the popup", async () => {
+    const { r, handle, worker, clock } = setup((m) => (m.type === "menu_init" ? { err: "unpaired" } : ok()));
+    await handle.ready;
+    clock.advance(300);
+    button(r, "Appairer avec OnePass").click();
+    await Promise.resolve();
+    expect(worker.sent.at(-1)).toEqual({ type: "menu_pair", token: TOKEN });
+  });
+
+  it("signup form puts Générer un mot de passe above the site's logins", async () => {
+    const { r, handle } = setup(def, "signup");
+    await handle.ready;
+    const rows = [...r.querySelectorAll("[role=option]")].map((x) => x.querySelector(".t1")?.textContent);
+    expect(rows[0]).toBe("Générer un mot de passe");
+    expect(rows).toContain("Atlas Cloud");
+  });
+
+  it("change-password form keeps Générer un mot de passe below the logins", async () => {
+    const { r, handle } = setup(def, "change_password");
+    await handle.ready;
+    const rows = [...r.querySelectorAll("[role=option]")].map((x) => x.querySelector(".t1")?.textContent);
+    expect(rows[0]).not.toBe("Générer un mot de passe");
+    expect(rows).toContain("Générer un mot de passe");
   });
 
   it("signup form offers Générer un mot de passe", async () => {

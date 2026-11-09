@@ -351,6 +351,25 @@ describe("chain driver", () => {
     expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(1);
   });
 
+  it("an outcome a live overlay already showed does not follow the user to the next page", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/captcha`, page(`${SITE}/captcha`, [loginForm], { captcha: true }), "doc-1");
+    await t.runner.start(7, "it_01");
+    expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "captcha" });
+    // The overlay of that page opens on the ended chain and shows "CAPTCHA détecté" (no poll follows).
+    expect(await t.runner.state(7, true, "doc-1")).toMatchObject({ reason: "captcha" });
+    const shown = () => toTab(t, "show_frame").filter((m) => m.kind === "overlay");
+    const n = shown().length;
+    // The user goes on to another page of the site with no form: no outcome shown again.
+    t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
+    await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-2");
+    expect(shown().length).toBe(n);
+    // An overlay opening there (the offer of a sign-in form) gets no ended chain: the offer shows.
+    expect(await t.runner.state(7, true, "doc-2")).toBeNull();
+    // The page where it ended still shows it.
+    expect(await t.runner.state(7, true, "doc-1")).toMatchObject({ reason: "captcha" });
+  });
+
   it("no overlay offer over an open menu", async () => {
     const t = await setup();
     t.ext.setFrame(7, 0, `${SITE}/login`, "doc-1");

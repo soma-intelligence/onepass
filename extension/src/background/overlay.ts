@@ -207,12 +207,12 @@ export class Overlays {
     rec.offered = offered;
     rec.accounts = shown;
     await this.tokens.update(token, rec);
-    return { origin: rec.origin, accounts, chain: await this.deps.chain.state(rec.tabId, true) };
+    return { origin: rec.origin, accounts, chain: await this.deps.chain.state(rec.tabId, true, rec.documentId) };
   }
 
   async state(token: string, ui: UiContext) {
     const rec = await this.record(token, ui);
-    return { chain: await this.deps.chain.state(rec.tabId) };
+    return { chain: await this.deps.chain.state(rec.tabId, false, rec.documentId) };
   }
 
   async start(token: string, ui: UiContext, itemId: string, provider?: ProviderId, accountId?: string): Promise<object> {

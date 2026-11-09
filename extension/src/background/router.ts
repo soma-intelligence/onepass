@@ -431,6 +431,7 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "menu_generate":
       case "menu_new_login":
       case "menu_unlock":
+      case "menu_pair":
       case "menu_vault":
       case "menu_resume":
       case "menu_close":

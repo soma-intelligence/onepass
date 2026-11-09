@@ -152,7 +152,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const lateChain: ChainDriver = {
     start: (...a) => (chainRef.current ? chainRef.current.start(...a) : Promise.resolve()),
     stop: (t) => (chainRef.current ? chainRef.current.stop(t) : Promise.resolve()),
-    state: (t, o) => (chainRef.current ? chainRef.current.state(t, o) : Promise.resolve(null)),
+    state: (t, o, d) => (chainRef.current ? chainRef.current.state(t, o, d) : Promise.resolve(null)),
     closed: (t, o, d) => chainRef.current?.closed?.(t, o, d) ?? Promise.resolve(),
     providerOnly: (t, d) => chainRef.current?.providerOnly?.(t, d) ?? Promise.resolve(null),
   };
@@ -668,6 +668,24 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         askedUnlock(m.token);
         await openApp();
         return session.request({ op: "unlock" });
+      },
+      menu_pair: async (m, from) => {
+        // The menu of an unpaired extension: its button opens the popup, where pairing happens.
+        const rec = await menuRecord(m.token, from);
+        keys.drop(m.token);
+        await menus.revokeFrame(rec.tabId, rec.frameId);
+        await removeFrame(ext.tabs, rec, "menu");
+        try {
+          if (!ext.action?.openPopup) throw new Error("no openPopup");
+          await ext.action.openPopup();
+          return {};
+        } catch {
+          // Chromium before 127, Firefox without a user gesture, a window without a toolbar: the
+          // popup page in its own window pairs the same way.
+          if (!ext.windows?.create) throw new BgError("refused");
+          await ext.windows.create({ url: ext.runtime.getURL("popup.html"), type: "popup", width: 420, height: 600, focused: true });
+          return {};
+        }
       },
       menu_vault: async (m, from) => {
         await menuRecord(m.token, from);

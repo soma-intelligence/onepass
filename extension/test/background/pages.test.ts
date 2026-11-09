@@ -356,6 +356,25 @@ describe("menu extras", () => {
     expect(await mac.ext.send({ type: "popup_vault" }, popup)).toEqual({ err: "invalid" });
   });
 
+  it("menu_pair closes the menu and opens the popup, else the popup page in a window", async () => {
+    const { ext } = await setup();
+    let opened = 0;
+    const windows: unknown[] = [];
+    (ext as unknown as { action: unknown }).action = { openPopup: async () => void opened++ };
+    let { token, ui } = await menu(ext);
+    expect(await ext.send({ type: "menu_pair", token }, ui)).toEqual({ ok: {} });
+    expect(opened).toBe(1);
+    expect(ext.sentToTabs.at(-1)?.message).toEqual({ type: "remove_frame", kind: "menu" });
+    // The browser refuses openPopup: the popup page in its own window.
+    (ext as unknown as { action: unknown }).action = { openPopup: async () => Promise.reject(new Error("no")) };
+    (ext as unknown as { windows: unknown }).windows = { getLastFocused: async () => ({}), create: async (o: unknown) => void windows.push(o) };
+    ({ token, ui } = await menu(ext));
+    expect(await ext.send({ type: "menu_pair", token }, ui)).toEqual({ ok: {} });
+    expect(windows).toEqual([{ url: `${ext.runtime.getURL("popup.html")}`, type: "popup", width: 420, height: 600, focused: true }]);
+    // A spent token cannot open it again.
+    expect(await ext.send({ type: "menu_pair", token }, ui)).toHaveProperty("err");
+  });
+
   it("menu_unlock asks the host, menu_close removes the frame", async () => {
     const { ext, client, opened } = await setup();
     const { token, ui } = await menu(ext);

@@ -401,7 +401,24 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       );
       body = messageBlock(t("ui.onepassLocked"), undefined, btn);
     } else if (code === "unpaired") {
-      body = messageBlock(t("menu.pairOnepassFromToolbar"));
+      // Pairing happens in the popup: the button opens it (its own window where the browser cannot).
+      const btn = h(
+        "button",
+        {
+          class: "btn btn-primary",
+          attrs: { type: "button", "data-opt": "" },
+          on: {
+            click: guard.wrap(() => {
+              if (!token) return;
+              void call(deps.send, { type: "menu_pair", token }, parseEmpty).then((r) => {
+                if (!r.ok) renderState(r.code, origin);
+              });
+            }),
+          },
+        },
+        t("popup.pairWithOnepass"),
+      );
+      body = messageBlock(t("popup.onepassNotPaired"), undefined, btn);
     } else if (code === "host_missing") {
       body = messageBlock(
         t("ui.onepassAppNotFound"),
@@ -528,11 +545,16 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     }
     const empty = init.items.length === 0 ? h("p", { class: "message-detail empty" }, emptyText(init)) : null;
     const extras: HTMLElement[] = [];
+    // On a sign-up form the strong password comes first, above the logins the site already has
+    // (they stay reachable below); the passkey choice, when offered, already leads the list.
+    const lead: HTMLElement[] = [];
     if (NEW_PASSWORD_FORMS.has(init.formKind)) {
-      extras.push(
+      const first = init.formKind === "signup" && !init.signup?.passkey;
+      (first ? lead : extras).push(
         option({
           label: t("menu.generatePassword"),
           lead: glyphTile("key", 16),
+          ...(first ? { act: fill, accent: true } : {}),
           run: async () => {
             if (!token) return;
             const r = await call(deps.send, { type: "menu_generate", token }, parseEmpty);
@@ -557,9 +579,13 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       );
     }
     // Only options inside the listbox: the logins in one inset group, the other actions in a second.
-    const groups = [list.childElementCount > 0 ? list : null, extras.length > 0 ? h("div", { class: "menu-group menu-foot" }, ...extras) : null];
+    const groups = [
+      lead.length > 0 ? h("div", { class: "menu-group menu-lead" }, ...lead) : null,
+      list.childElementCount > 0 ? list : null,
+      extras.length > 0 ? h("div", { class: "menu-group menu-foot" }, ...extras) : null,
+    ];
     const listbox =
-      list.childElementCount + extras.length > 0
+      lead.length + list.childElementCount + extras.length > 0
         ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": t("menu.onepassSuggestions") } }, ...groups)
         : null;
     const logins = init.items.filter((x) => x.kind === "login").length;

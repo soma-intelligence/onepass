@@ -23,9 +23,10 @@ export interface ChainDriver {
   /**
    * What the overlay shows; null when no chain ran in this tab. `opening`:
    * for an overlay that just opened, where a chain that ended a while ago
-   * gives way to the offer of the page.
+   * gives way to the offer of the page. `documentId`: the overlay's top document; an outcome a
+   * live overlay already showed there is not shown again on another document.
    */
-  state(tabId: number, opening?: boolean): Promise<ChainView | null>;
+  state(tabId: number, opening?: boolean, documentId?: string): Promise<ChainView | null>;
   /** The user closed the overlay of this top document: not offered again there. */
   closed?(tabId: number, origin: string, documentId?: string): Promise<void>;
   /**

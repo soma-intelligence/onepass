@@ -183,6 +183,12 @@ export class ChainRunner implements ChainDriver {
   private readonly navs = new Map<number, number>();
   /** Per tab: the end (endedAt) whose outcome was shown again after the page changed. */
   private readonly endShown = new Map<number, number>();
+  /**
+   * Per tab: the end (endedAt) a live overlay already displayed, and its top document. Once seen
+   * there, the outcome does not follow the user to the next page (founder review 2026-11-09:
+   * "CAPTCHA détecté" stayed on the page after the CAPTCHA page).
+   */
+  private readonly endSeen = new Map<number, { endedAt: number; doc: string }>();
   private readonly now: () => number;
   private readonly timers: NonNullable<ChainDeps["timers"]>;
 
@@ -272,15 +278,27 @@ export class ChainRunner implements ChainDriver {
     });
   }
 
-  async state(tabId: number, opening = false): Promise<ChainView | null> {
+  async state(tabId: number, opening = false, documentId?: string): Promise<ChainView | null> {
     return this.serial(tabId, async () => {
       let s = await this.load(tabId);
       if (!s) return null;
       s = await this.onTick(s);
       const keep = opening ? END_SHOWN_MS : ENDED_VIEW_MS;
-      if (s.status !== "running" && s.endedAt !== undefined && this.now() - s.endedAt > keep) return null;
+      if (s.status !== "running" && s.endedAt !== undefined) {
+        if (this.now() - s.endedAt > keep) return null;
+        // An overlay opening on another document: an outcome already seen gives way to the offer.
+        if (opening && this.seenElsewhere(tabId, s.endedAt, documentId)) return null;
+        // An overlay that gets the outcome shows it (at its opening, or polling): seen in that document.
+        if (documentId !== undefined) this.endSeen.set(tabId, { endedAt: s.endedAt, doc: documentId });
+      }
       return chainView(s);
     });
+  }
+
+  /** The outcome of the end `endedAt` was already displayed, in another top document than `doc`. */
+  private seenElsewhere(tabId: number, endedAt: number, doc: string | undefined): boolean {
+    const seen = this.endSeen.get(tabId);
+    return seen !== undefined && seen.endedAt === endedAt && seen.doc !== doc;
   }
 
   /** The user closed the overlay: no more offers in that document. */
@@ -330,7 +348,7 @@ export class ChainRunner implements ChainDriver {
     }
     // A chain that just ended as the page left (another domain, say): its
     // outcome shows once on the page it led to, so the user knows why.
-    if (s && from.frameId === 0 && s.endedAt !== undefined && this.now() - s.endedAt <= END_SHOWN_MS && this.endShown.get(from.tabId) !== s.endedAt) {
+    if (s && from.frameId === 0 && s.endedAt !== undefined && this.now() - s.endedAt <= END_SHOWN_MS && this.endShown.get(from.tabId) !== s.endedAt && !this.seenElsewhere(from.tabId, s.endedAt, view.top.documentId)) {
       this.endShown.set(from.tabId, s.endedAt);
       if (await this.showOverlay(view.top)) return;
       this.endShown.delete(from.tabId);
@@ -448,6 +466,7 @@ export class ChainRunner implements ChainDriver {
     this.offered.delete(tabId);
     this.navs.delete(tabId);
     this.endShown.delete(tabId);
+    this.endSeen.delete(tabId);
     await this.deps.area.remove(PREFIX + tabId);
   }
 
