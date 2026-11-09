@@ -1,4 +1,5 @@
 import CoreLocation
+import MapKit
 import os
 import DesignKit
 import SwiftUI
@@ -12,8 +13,10 @@ import UIKit
 /// The user's position, "when in use" only. Nothing is asked at launch: the permission prompt
 /// shows the first time the user taps "Utiliser ma position" or opens "À proximité".
 ///
-/// Privacy: the position stays on the device. It is compared with the items' places in memory
-/// (`VaultSession.nearbyItems`) and is never sent anywhere, not even to Apple's geocoder.
+/// Privacy: the position is compared with the items' places in memory, on the device
+/// (`VaultSession.nearbyItems`), and is never sent to a geocoder. Only the maps drawn around it
+/// (the "À proximité" empty state, the iPhone home card) load Apple map tiles of the area, so
+/// Apple sees which area is shown, as in any MapKit map.
 @MainActor
 final class LocationAccess: NSObject, CLLocationManagerDelegate {
     static let shared = LocationAccess()
@@ -225,6 +228,8 @@ struct NearbyTile: View {
 /// button to the settings), no fix, or nothing around.
 struct NearbyStatusView: View {
     let phase: NearbyLoader.Phase
+    /// Where the search started: "Rien à proximité" draws the map of the area behind its text.
+    var origin: CLLocationCoordinate2D? = nil
     let retry: () -> Void
 
     var body: some View {
@@ -256,7 +261,43 @@ struct NearbyStatusView: View {
             EmptyState(
                 title: String(localized: "browse.nothingNearby"), systemImage: "mappin.slash",
                 message: String(localized: "browse.addPlaceToItem"))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background { if let origin { NearbyMapBackdrop(center: origin) } }
             .accessibilityIdentifier("list.nearby.empty")
         }
+    }
+}
+
+/// The area around the position behind "Rien à proximité": a still, grey MapKit map with the
+/// 2 km circle, fading out to transparent towards the edges (nothing opaque over the list's title
+/// or bars). Decoration only: no gestures, no places of interest, hidden from VoiceOver.
+struct NearbyMapBackdrop: View {
+    let center: CLLocationCoordinate2D
+    var radius: Double = LocationIndex.nearbyRadius
+
+    var body: some View {
+        Map(initialPosition: .region(MKCoordinateRegion(
+            center: center, latitudinalMeters: radius * 3, longitudinalMeters: radius * 3)),
+            interactionModes: []) {
+            MapCircle(center: center, radius: radius)
+                .foregroundStyle(.clear)
+                .stroke(.primary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [2, 4]))
+        }
+        .mapStyle(.standard(emphasis: .muted, pointsOfInterest: .excludingAll))
+        .mapControlVisibility(.hidden)
+        .saturation(0)
+        .opacity(0.75)
+        // Fully clear at the frame's edges: no line where the map ends under the title or bars.
+        .mask {
+            EllipticalGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.7), location: 0.5),
+                    .init(color: .clear, location: 1),
+                ],
+                center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

@@ -136,7 +136,7 @@ struct CategoryListView: View {
 
     @ViewBuilder private var emptyState: some View {
         if filter == .nearby, query.isEmpty {
-            NearbyStatusView(phase: nearby.phase) { Task { await nearby.load(session) } }
+            NearbyStatusView(phase: nearby.phase, origin: nearby.origin) { Task { await nearby.load(session) } }
         } else {
             ItemListEmptyState(reason: EmptyListReason(filter: filter, query: query)) {
                 model.showNewItemPicker = true
