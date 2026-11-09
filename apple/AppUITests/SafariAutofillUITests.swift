@@ -591,9 +591,28 @@ final class SafariAutofillUITests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 30), "signup page not loaded")
         Thread.sleep(forTimeInterval: 1.5)
         let pw = safari.webViews.secureTextFields.firstMatch
+        let before = name.frame.minY
         pw.tap()
         dismissStrongPasswordOffer()
         Thread.sleep(forTimeInterval: 1)
+        // Keyboard up and the page scrolled: every icon on its own field.
+        if safari.keyboards.count == 0 { focus(pw) }
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertGreaterThan(safari.keyboards.count, 0, "no keyboard on the password field")
+        print("Signup: page scrolled by \(Int(before - name.frame.minY)) pt for the keyboard")
+        attachScreenshot("signup-keyboard-icons")
+        assertIconsOnFields("signup, keyboard up", focused: pw)
+        // The user scrolls the page a little with the keyboard still up: the icons follow.
+        let page = safari.webViews.firstMatch
+        // Slow and short (no fling): the password field stays above the keyboard.
+        page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+            .press(forDuration: 0.1, thenDragTo: page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28)),
+                   withVelocity: .slow, thenHoldForDuration: 0.5)
+        Thread.sleep(forTimeInterval: 1.5)
+        print("Signup: page scrolled by \(Int(before - name.frame.minY)) pt after the drag")
+        attachScreenshot("signup-scrolled-icons")
+        assertIconsOnFields("signup, keyboard up, page dragged", focused: nil)
+        if safari.keyboards.count == 0 { focus(pw) }
         let row = safari.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@",
             "Create the account with a strong password", "Créer le compte avec un mot de passe fort")).firstMatch
         let icon = safari.descendants(matching: .any)
@@ -661,6 +680,9 @@ final class SafariAutofillUITests: XCTestCase {
             focus(field)
             field.typeText(v)
         }
+        // Keyboard up on the city field, the page scrolled to it: the form's icon on its field.
+        attachScreenshot("address-keyboard-icons")
+        assertIconsOnFields("address, keyboard up", focused: nil, needOne: false)
         submitPage(["Continuer vers le paiement"])
         decideOnCard(["Save", "Enregistrer"], expect: ["Save this address", "Enregistrer cette adresse"])
 
@@ -675,6 +697,7 @@ final class SafariAutofillUITests: XCTestCase {
                 focus(field)
                 field.typeText(v)
             }
+            assertIconsOnFields("card, keyboard up", focused: nil, needOne: false)
             submitPage(["Payer 12,00 €"])
         }
         typeCard()
@@ -1069,6 +1092,30 @@ final class SafariAutofillUITests: XCTestCase {
     }
 
     /// Our in-page sheet can open on focus: put away, typing goes on in the page.
+    /// Every OnePass icon on the screen sits on a page field (its centre inside the field's frame),
+    /// and the focused field, when given, carries one. Catches icons drawn off their fields when
+    /// iOS scrolls the page for the keyboard.
+    private func assertIconsOnFields(_ tag: String, focused: XCUIElement?, needOne: Bool = true) {
+        let screen = safari.windows.firstMatch.frame
+        let fields = (safari.webViews.textFields.allElementsBoundByIndex + safari.webViews.secureTextFields.allElementsBoundByIndex)
+            .map(\.frame).filter { !$0.isEmpty }
+        let icons = safari.descendants(matching: .any)
+            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"]))
+            .allElementsBoundByIndex.map(\.frame)
+            .filter { !$0.isEmpty && screen.contains(CGPoint(x: $0.midX, y: $0.midY)) }
+        for f in icons {
+            let c = CGPoint(x: f.midX, y: f.midY)
+            XCTAssertTrue(fields.contains { $0.contains(c) }, "\(tag): icon at \(f) on no field (fields \(fields))")
+        }
+        let spans = fields.map { [Int($0.minY), Int($0.maxY)] }
+        print("\(tag): \(icons.count) icon(s) on screen at y \(icons.map { Int($0.midY) }), fields at y \(spans)")
+        if needOne { XCTAssertFalse(icons.isEmpty, "\(tag): no icon on screen") }
+        if let focused {
+            let ff = focused.frame
+            XCTAssertTrue(icons.contains { ff.contains(CGPoint(x: $0.midX, y: $0.midY)) }, "\(tag): the focused field \(ff) has no icon")
+        }
+    }
+
     /// A page field tapped until it has the keyboard (a card or sheet left from the previous page
     /// can take the first tap while it goes away).
     private func focus(_ field: XCUIElement) {
