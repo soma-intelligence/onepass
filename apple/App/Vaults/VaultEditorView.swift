@@ -88,8 +88,41 @@ enum VaultStyle {
         "star", "cart", "creditcard", "airplane", "graduationcap", "gamecontroller",
     ]
 
+    /// How a vault's mark is drawn. Stored after the symbol in the vault's icon string
+    /// ("person.fill#glass"), so it syncs with the vault without a new field in the core: an older
+    /// app reads an unknown symbol and draws a folder, nothing breaks. No suffix is the classic disc.
+    enum Mark: String, CaseIterable {
+        case classic = ""
+        case tinted
+        case glass
+
+        var label: String {
+            switch self {
+            case .classic: String(localized: "vaults.style.classic")
+            case .tinted: String(localized: "vaults.style.tinted")
+            case .glass: String(localized: "vaults.style.glass")
+            }
+        }
+    }
+
+    static let markSeparator: Character = "#"
+
+    /// The stored icon string split into its symbol (as stored) and its mark. An unknown mark is
+    /// drawn classic.
+    static func split(_ icon: String) -> (symbol: String, mark: Mark) {
+        guard let index = icon.firstIndex(of: markSeparator) else { return (icon, .classic) }
+        let suffix = String(icon[icon.index(after: index)...])
+        return (String(icon[..<index]), Mark(rawValue: suffix) ?? .classic)
+    }
+
+    /// The icon string to store for `symbol` drawn as `mark`.
+    static func compose(symbol: String, mark: Mark) -> String {
+        mark == .classic ? symbol : symbol + String(markSeparator) + mark.rawValue
+    }
+
     /// The symbol to draw: a stored legacy outline name becomes its filled sibling.
-    static func symbol(_ icon: String) -> String {
+    static func symbol(_ stored: String) -> String {
+        let icon = split(stored).symbol
         if icons.contains(icon) { return icon }
         if legacy.contains(icon) { return icons.contains(icon + ".fill") ? icon + ".fill" : icon }
         return "folder.fill"
@@ -133,10 +166,62 @@ struct VaultIconTile: View {
     let icon: String
     let colorName: String
     var size: CGFloat = 30
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        switch VaultStyle.split(icon).mark {
+        case .classic: classic
+        case .tinted: tinted
+        case .glass: glass
+        }
+    }
+
+    private var dark: Bool { colorScheme == .dark }
+
+    /// "Teinté": a pale disc of the color, the symbol in the color.
+    private var tinted: some View {
         let color = VaultBadge.color(named: colorName)
-        Circle()
+        return Circle()
+            .fill(color.opacity(dark ? 0.22 : 0.14))
+            .frame(width: size, height: size)
+            .overlay {
+                Image(systemName: VaultStyle.symbol(icon))
+                    .font(.system(size: size * 0.44, weight: .semibold))
+                    .foregroundStyle(dark ? color.mix(with: .white, by: 0.25) : color.mix(with: .black, by: 0.1))
+            }
+            .accessibilityHidden(true)
+    }
+
+    /// "Verre": a translucent disc of the color, light on its upper half, a hairline rim brighter at
+    /// the top, the symbol in white.
+    private var glass: some View {
+        let color = VaultBadge.color(named: colorName)
+        return Circle()
+            .fill(color.opacity(dark ? 0.55 : 0.7))
+            .overlay {
+                Circle()
+                    .fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top, endPoint: .center))
+                    .padding(size * 0.03)
+            }
+            .overlay {
+                Circle().strokeBorder(
+                    LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.08)], startPoint: .top,
+                        endPoint: .bottom),
+                    lineWidth: max(0.5, size * 0.025))
+            }
+            .frame(width: size, height: size)
+            .overlay {
+                Image(systemName: VaultStyle.symbol(icon))
+                    .font(.system(size: size * 0.42, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .accessibilityHidden(true)
+    }
+
+    /// The first mark: a gradient disc with a sheen and the symbol in white.
+    private var classic: some View {
+        let color = VaultBadge.color(named: colorName)
+        return Circle()
             .fill(LinearGradient(colors: [color.mix(with: .white, by: 0.22), color, color.mix(with: .black, by: 0.18)],
                 startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay {
@@ -167,6 +252,7 @@ struct VaultEditorView: View {
 
     @State private var name: String
     @State private var icon: String
+    @State private var mark: VaultStyle.Mark
     @State private var color: String
     /// Stays on the device in Travel Mode (synced with the vault).
     @State private var travelSafe: Bool
@@ -182,9 +268,14 @@ struct VaultEditorView: View {
         self.onDone = onDone
         _name = State(initialValue: vault?.meta.name ?? "")
         _icon = State(initialValue: vault.map { VaultStyle.symbol($0.meta.icon) } ?? "folder.fill")
+        // A new vault starts tinted; an existing one keeps its mark (classic when it has none).
+        _mark = State(initialValue: vault.map { VaultStyle.split($0.meta.icon).mark } ?? .tinted)
         _color = State(initialValue: vault?.meta.color ?? "blue")
         _travelSafe = State(initialValue: vault?.meta.travelSafe ?? false)
     }
+
+    /// The icon string saved with the vault: the symbol and its mark.
+    private var stored: String { VaultStyle.compose(symbol: icon, mark: mark) }
 
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canSave: Bool { !trimmed.isEmpty && !saving }
@@ -194,10 +285,11 @@ struct VaultEditorView: View {
             Form {
                 Section {
                     VStack(spacing: 14) {
-                        VaultIconTile(icon: icon, colorName: color, size: 76)
+                        VaultIconTile(icon: stored, colorName: color, size: 76)
                             .shadow(color: VaultBadge.color(named: color).opacity(0.35), radius: 14, y: 6)
                             .animation(.spring(duration: 0.35, bounce: 0.3), value: color)
                             .animation(.spring(duration: 0.35, bounce: 0.3), value: icon)
+                            .animation(.spring(duration: 0.35, bounce: 0.3), value: mark)
                         TextField("vaults.vaultName", text: $name, prompt: Text("Projet Atlas"))
                             .labelsHidden()
                             .textFieldStyle(.plain)
@@ -213,6 +305,15 @@ struct VaultEditorView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
+                }
+                Section("vaults.style") {
+                    HStack(spacing: 18) {
+                        ForEach(VaultStyle.Mark.allCases, id: \.self) { option in
+                            markButton(option)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
                 }
                 Section("vaults.color") {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)], spacing: 10) {
@@ -356,7 +457,7 @@ struct VaultEditorView: View {
         } label: {
             ZStack {
                 if selected {
-                    VaultIconTile(icon: symbol, colorName: color, size: 40)
+                    VaultIconTile(icon: VaultStyle.compose(symbol: symbol, mark: mark), colorName: color, size: 40)
                 } else {
                     Circle()
                         .fill(tint.opacity(0.16))
@@ -382,6 +483,30 @@ struct VaultEditorView: View {
         .accessibilityLabel(Text(VaultStyle.iconLabel(symbol)))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("vault.editor.icon.\(symbol)")
+    }
+
+    /// A mark to choose, drawn with the vault's symbol and color, its name under it.
+    private func markButton(_ option: VaultStyle.Mark) -> some View {
+        let selected = mark == option
+        let tint = VaultBadge.color(named: color)
+        return Button {
+            withAnimation(.spring(duration: 0.3, bounce: 0.3)) { mark = option }
+        } label: {
+            VStack(spacing: 6) {
+                VaultIconTile(icon: VaultStyle.compose(symbol: icon, mark: option), colorName: color, size: 40)
+                    .padding(3)
+                    .overlay { Circle().strokeBorder(selected ? tint : .clear, lineWidth: 2) }
+                Text(option.label)
+                    .font(.caption)
+                    .foregroundStyle(selected ? .primary : .secondary)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .visionHoverEffect()
+        .accessibilityLabel(Text(option.label))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("vault.editor.mark.\(option == .classic ? "classic" : option.rawValue)")
     }
 
     /// A color dot; the chosen one gets a ring a little away from it.
@@ -412,7 +537,7 @@ struct VaultEditorView: View {
         errorMessage = nil
         // The MCP flag is set from Réglages > Développeur, with the signed policy: kept as is here.
         let meta = FfiVaultMeta(
-            name: trimmed, icon: icon, color: color,
+            name: trimmed, icon: stored, color: color,
             travelSafe: travelSafe, mcpAccess: vault?.meta.mcpAccess ?? false)
         Task {
             defer { saving = false }
