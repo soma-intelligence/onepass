@@ -105,6 +105,12 @@ final class WatchtowerModel {
         run(session, key: key)
     }
 
+    /// `refresh`, then waits for the analysis to end: pull to refresh keeps its dial turning until then.
+    func refreshAndWait(_ session: VaultSession) async {
+        refresh(session)
+        await running?.value
+    }
+
     /// Posts the new alertable findings of a finished report (one notification, counts only).
     private func alert(_ report: FfiWatchtowerReport) {
         guard notify else { return }

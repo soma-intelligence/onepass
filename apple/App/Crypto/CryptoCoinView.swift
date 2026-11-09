@@ -95,7 +95,7 @@ struct CryptoCoinView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .refreshable { await watch.refresh() }
+        .vaultRefresh { await watch.refresh() }
         .onChange(of: watch.settings.period) { Task { await watch.refreshIfStale() } }
         .sheet(item: $receive) { a in
             CryptoReceiveSheet(addresses: [a])

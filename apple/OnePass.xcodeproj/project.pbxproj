@@ -203,6 +203,7 @@
 		D61F8F4E86F33CC8B8CA8DC3 /* WifiAutoController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */; };
 		D830BB8FBE565123BF120EC6 /* onepass-icons.bin in Resources */ = {isa = PBXBuildFile; fileRef = E364C6482B7E724032103715 /* onepass-icons.bin */; };
 		D91670480E50E01B5C477A14 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */; };
+		DC9F51AA8F5C84974A3A6590 /* VaultDialRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3167F0DA8CE073FFD98680F /* VaultDialRefresh.swift */; };
 		DDD0D59CFD3CA351228B580B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C1B99E34B1CA7214163402DD /* Localizable.xcstrings */; };
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
 		E04761763662B47771A1A831 /* LockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D40167C0D7679C74A6D594D /* LockView.swift */; };
@@ -522,6 +523,7 @@
 		C09CB3FCA94E45F15C4C5C10 /* CategoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryListView.swift; sourceTree = "<group>"; };
 		C12E0E8286297CA68D0517E2 /* DeveloperSettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsPage.swift; sourceTree = "<group>"; };
 		C1B99E34B1CA7214163402DD /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		C3167F0DA8CE073FFD98680F /* VaultDialRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultDialRefresh.swift; sourceTree = "<group>"; };
 		C4A344652AA716F92A12D10F /* OnePassWatchWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWatchWidgets.swift; sourceTree = "<group>"; };
 		C4D10599D0904E67A521ADAA /* MacWifi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacWifi.swift; sourceTree = "<group>"; };
 		C4F2DF2CA186D03636F66C20 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
@@ -1039,6 +1041,7 @@
 				F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */,
 				FF8AF3D2E817BD4D4E9F0520 /* Nearby.swift */,
 				7B2925B4FDDDE6B2DE7EEA58 /* TravelSuggestionCard.swift */,
+				C3167F0DA8CE073FFD98680F /* VaultDialRefresh.swift */,
 			);
 			path = Browse;
 			sourceTree = "<group>";
@@ -1990,6 +1993,7 @@
 				5AD704952C61BCF3A67100E6 /* TravelSettings.swift in Sources */,
 				4B37189A8299C4D3E43A62BE /* TravelSuggestionCard.swift in Sources */,
 				7FFA5A905F221E281C2B3934 /* UrlListEditor.swift in Sources */,
+				DC9F51AA8F5C84974A3A6590 /* VaultDialRefresh.swift in Sources */,
 				8DA415577E16E2A2EC1F29F0 /* VaultEditorView.swift in Sources */,
 				23057CC4E6C58D81940A688A /* VaultsSettings.swift in Sources */,
 				7345B42DF21289CAABCA9089 /* VerifyContactView.swift in Sources */,

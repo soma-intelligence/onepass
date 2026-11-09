@@ -58,7 +58,7 @@ struct CryptoPortfolioView: View {
                     .accessibilityIdentifier("crypto.settings")
             }
         }
-        .refreshable { await watch.refresh() }
+        .vaultRefresh { await watch.refresh() }
         .task {
             await model.prepareCryptoWatch()
             await watch.refreshIfStale()

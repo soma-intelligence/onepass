@@ -72,7 +72,7 @@ struct WatchtowerTab: View {
         .toolbar {
             PhoneRootToolbar()
         }
-        .refreshable { watchtower.refresh(model.session) }
+        .vaultRefresh { await watchtower.refreshAndWait(model.session) }
         .task(id: model.session.summariesRevision) {
             watchtower.refreshIfNeeded(model.session)
             _ = try? await model.session.seenByFormerMemberItems()

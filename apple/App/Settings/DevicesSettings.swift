@@ -118,7 +118,7 @@ struct DevicesSettings: View {
         .settingsPage("Appareils")
         .task { await reload() }
         #if os(iOS)
-        .refreshable { await reload() }
+        .vaultRefresh { await reload() }
         #endif
         #if os(iOS) || os(macOS)
         .sheet(isPresented: $approving, onDismiss: { Task { await reload() } }) {
