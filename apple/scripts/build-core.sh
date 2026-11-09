@@ -169,7 +169,9 @@ for target in "${TARGETS[@]}"; do
   (cd "$CORE_DIR" && env "${unset_args[@]}" cargo build -p onepass-ffi ${CARGO_ARGS[@]+"${CARGO_ARGS[@]}"} --target "$target")
 done
 
-# Bindings: they depend on the exported interface, which the dev-fast-kdf test build extends. Generated from the macOS static library.
+# Bindings: they depend on the exported interface, which the dev-fast-kdf
+# feature extends (test mode). Generated from the macOS static library and
+# kept in $OUT_DIR/generated for the cache check above.
 MAC_LIB="$TARGET_DIR/aarch64-apple-darwin/$PROFILE_DIR/libonepass_ffi.a"
 GEN_DIR="$OUT_DIR/generated"
 rm -rf "$GEN_DIR"
