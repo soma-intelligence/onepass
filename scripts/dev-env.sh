@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Source this file (`. scripts/dev-env.sh`) before building or testing in a
 # checkout, especially when several checkouts build at the same time.
 # scripts/verify.sh sources it for you.
