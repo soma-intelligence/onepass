@@ -16,8 +16,10 @@
 #   build-core.sh test      macOS arm64 only, debug profile + dev-fast-kdf
 #                           -> apple/build/test/OnePassFFI.xcframework
 #
-# Idempotent: nothing is rebuilt while the fingerprint of the Rust sources
-# (.rs, Cargo.toml, Cargo.lock under core/) is unchanged. One stamp per mode.
+# Idempotent: nothing is rebuilt while the stamp next to the XCFramework
+# (.core-stamp) matches: mode, profile, features, target list, rustc version,
+# RUSTFLAGS, this script and every file under core/ (.rs, Cargo.toml,
+# Cargo.lock, uniffi.toml, data files). One stamp per output directory.
 # Always builds with `-p onepass-ffi`, never `--workspace`, so the CLI's
 # dev-fast-kdf feature is never unified into a shipped build.
 set -euo pipefail
@@ -30,16 +32,23 @@ esac
 
 export PATH="$HOME/.cargo/bin:$PATH"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$APPLE_DIR/.." && pwd)"
+
+# The sccache server must start before the deployment targets below are
+# exported: a server started by one of this script's compiles would keep all
+# four in its environment ("conflicting deployment targets" in aws-lc).
+if [ "${RUSTC_WRAPPER:-}" = sccache ] || [ "${RUSTC_WRAPPER:-}" = "$(command -v sccache 2>/dev/null)" ]; then
+  "$ROOT_DIR/scripts/sccache-start.sh" || true
+fi
+
 # Match the package deployment targets so the linker does not warn about
 # objects built for a newer OS (C code in aws-lc and SQLite follows these).
 export MACOSX_DEPLOYMENT_TARGET=26.0
 export IPHONEOS_DEPLOYMENT_TARGET=26.0
 export WATCHOS_DEPLOYMENT_TARGET=26.0
 export XROS_DEPLOYMENT_TARGET=26.0
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ROOT_DIR="$(cd "$APPLE_DIR/.." && pwd)"
 CORE_DIR="$ROOT_DIR/core"
 TARGET_DIR="${ONEPASS_CORE_TARGET_DIR:-$CORE_DIR/target}"
 # Cargo writes where this script reads the libraries back. An inherited
@@ -83,9 +92,31 @@ fingerprint() {
   # A different script also invalidates the output.
   shasum -a 256 "$SCRIPT_DIR/build-core.sh" | cut -d' ' -f1
 }
-# shipped and dev share an output directory: the mode is part of the stamp so
-# switching modes always rebuilds.
-CURRENT="$MODE $(fingerprint)"
+# Everything that decides what the XCFramework contains. shipped and dev share
+# an output directory and test has its own: the mode, profile, features and
+# target list are all in the stamp, so a test (dev-fast-kdf) build is never
+# taken for a dev or shipped one, and switching modes always rebuilds. The
+# toolchain (rust-toolchain.toml picks it in core/) and RUSTFLAGS count too.
+stamp_content() {
+  echo "mode: $MODE"
+  echo "profile: $PROFILE_DIR"
+  echo "cargo args: ${CARGO_ARGS[*]-}"
+  echo "targets: ${TARGETS[*]}"
+  echo "rustflags: ${RUSTFLAGS:-} ${CARGO_ENCODED_RUSTFLAGS:-}"
+  (cd "$CORE_DIR" && rustc -vV) | sed 's/^/rustc /'
+  echo "sources: $(fingerprint | tr '\n' ' ')"
+}
+CURRENT="$(stamp_content)"
+
+# dev and shipped must never carry the dev KDF floor, cached or not: checked
+# before the stamp, so even an up-to-date build is refused if the graph
+# changed underneath it.
+if [ "$MODE" != test ] \
+  && (cd "$CORE_DIR" && cargo tree -p onepass-ffi -e features,no-dev -i onepass-core \
+        --target aarch64-apple-darwin) | grep -q 'feature "dev-fast-kdf"'; then
+  echo "core ($MODE): refusing to build, dev-fast-kdf is enabled in the dependency graph" >&2
+  exit 1
+fi
 
 if [ -d "$XCFRAMEWORK" ] && [ -f "$SWIFT_OUT/onepass_ffi.swift" ] \
   && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$CURRENT" ]; then
@@ -97,17 +128,10 @@ if [ -d "$XCFRAMEWORK" ] && [ -f "$SWIFT_OUT/onepass_ffi.swift" ] \
     echo "core ($MODE): restoring this mode's Swift bindings"
     cp "$OUT_DIR/generated/onepass_ffi.swift" "$SWIFT_OUT/onepass_ffi.swift"
   fi
-  echo "core ($MODE): up to date"
+  echo "core ($MODE): up to date (stamp $STAMP)"
   exit 0
 fi
-
-# A shipped build must never carry the dev KDF floor.
-if [ "$MODE" = shipped ] \
-  && (cd "$CORE_DIR" && cargo tree -p onepass-ffi -e features,no-dev -i onepass-core \
-        --target aarch64-apple-darwin) | grep -q 'feature "dev-fast-kdf"'; then
-  echo "core (shipped): refusing to build, dev-fast-kdf is enabled in the dependency graph" >&2
-  exit 1
-fi
+[ -f "$STAMP" ] && echo "core ($MODE): stamp differs, rebuilding"
 
 mkdir -p "$OUT_DIR"
 rm -f "$STAMP"
