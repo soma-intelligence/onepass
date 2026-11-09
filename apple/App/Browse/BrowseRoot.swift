@@ -157,13 +157,10 @@ struct BrowseRoot: View {
     }
 
     #if os(iOS)
-    /// The unfolded iPhone: list and detail side by side, the new item sheet as on iPad.
+    /// The unfolded iPhone: the phone's tabs and the detail side by side. The tabs present the
+    /// new item sheet themselves, as on the folded phone.
     private var foldSplit: some View {
-        @Bindable var model = model
-        return FoldSplitView()
-            .sheet(isPresented: $model.showNewItemPicker) {
-                NewItemSheet()
-            }
+        FoldSplitView()
     }
     #endif
 
@@ -195,7 +192,7 @@ struct BrowseRoot: View {
 
     private var handlesRevealInTabs: Bool {
         #if os(iOS)
-        usesTabs
+        usesTabs || isFold
         #else
         false
         #endif
@@ -210,7 +207,7 @@ struct BrowseRoot: View {
 
     private var phoneNewItemShown: Bool {
         #if os(iOS)
-        usesTabs && (model.showNewItemPicker || model.newItemDraft != nil)
+        (usesTabs || isFold) && (model.showNewItemPicker || model.newItemDraft != nil)
         #else
         false
         #endif

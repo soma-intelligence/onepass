@@ -181,7 +181,7 @@ struct SearchTab: View {
         // No gesture on the link: a simultaneous tap gesture on a NavigationLink in a List swallowed
         // the tap on iOS 27 and the result never opened. The search is noted when the selection
         // moves to the opened result (`onChange(of: model.selectedItem)` above).
-        NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
+        PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
             ItemListRow(summary: summary, vaultName: vaultName)
         }
         .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))

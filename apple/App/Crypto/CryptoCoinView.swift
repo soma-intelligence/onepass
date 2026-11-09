@@ -141,7 +141,7 @@ struct CryptoCoinView: View {
                     }
                 }
                 #if os(iOS)
-                NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: part.vaultID, itemID: part.itemID))) {
+                PhoneItemLink(ref: ItemRef(vaultID: part.vaultID, itemID: part.itemID)) {
                     Label("crypto.coin.openItem", systemImage: "wallet.bifold")
                 }
                 #endif
