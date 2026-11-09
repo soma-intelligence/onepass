@@ -39,7 +39,7 @@ struct DeveloperPage: View {
                         button: String(localized: "browse.viewCli")
                     ) { guide = .cli }
                     DeveloperCard(
-                        tile: AnyView(PageTile(symbol: "checkmark.shield.fill", color: Theme.accent, size: 34)),
+                        tile: AnyView(PageTile(symbol: "shield.lefthalf.filled", color: Theme.accent, size: 34)),
                         title: String(localized: "browse.secretsOnDisk"),
                         message: String(localized: "browse.findsWeakReusedOr"),
                         button: String(localized: "browse.viewWatchtower")

@@ -129,14 +129,14 @@ struct Sidebar: View {
                     filter: .favorites, id: "library.favorites")
                 row("Passkeys", symbol: "person.badge.key.fill", color: Self.passkeysColor, count: counts.passkeys,
                     filter: .passkeys, id: "library.passkeys")
-                pageRow("Watchtower", symbol: "checkmark.shield.fill", color: Self.watchtowerColor, page: .watchtower,
+                pageRow("Watchtower", symbol: "shield.lefthalf.filled", color: Self.watchtowerColor, page: .watchtower,
                     id: "sidebar.watchtower")
                 // Under Watchtower while there is something to review (the open page keeps its row).
                 if !duplicates.groups.isEmpty || model.page == .duplicates {
                     pageRow("duplicates.title", symbol: "square.on.square", color: .orange, page: .duplicates,
                         id: "sidebar.duplicates", badge: duplicates.groups.count)
                 }
-                pageRow("crypto.title", symbol: "bitcoinsign", color: CoinIcon.color("bitcoin"), page: .crypto,
+                pageRow("crypto.title", symbol: "bitcoinsign.circle", color: CoinIcon.color("bitcoin"), page: .crypto,
                     id: "sidebar.crypto")
                 pageRow("Développeur", symbol: "chevron.left.forwardslash.chevron.right", color: Self.developerColor,
                     page: .developer, id: "sidebar.developer")

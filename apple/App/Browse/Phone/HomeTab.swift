@@ -94,7 +94,7 @@ struct HomeTab: View {
                     Toggle("Profil", systemImage: "person.crop.circle", isOn: $showsProfile)
                     Toggle("Favoris", systemImage: "star", isOn: $showsFavorites)
                     Toggle("Récents", systemImage: "clock.arrow.circlepath", isOn: $showsRecents)
-                    Toggle("crypto.title", systemImage: "bitcoinsign", isOn: $showsCrypto)
+                    Toggle("crypto.title", systemImage: "bitcoinsign.circle", isOn: $showsCrypto)
                 }
             }
         }
@@ -127,7 +127,7 @@ struct HomeTab: View {
                 Button {
                     openTab(.watchtower)
                 } label: {
-                    HomeTile(title: "Watchtower", symbol: "checkmark.shield.fill", color: Sidebar.watchtowerColor) {
+                    HomeTile(title: "Watchtower", symbol: "shield.lefthalf.filled", color: Sidebar.watchtowerColor) {
                         if let score {
                             Text(score, format: .number).foregroundStyle(ScoreGauge.color(score))
                         } else {
@@ -685,7 +685,7 @@ private struct HomeCryptoCard: View {
             if watched {
                 NavigationLink(value: PhoneRoute.crypto) {
                     HStack(spacing: Theme.Space.m) {
-                        SymbolTile(symbol: "bitcoinsign", color: .orange, size: 34)
+                        SymbolTile(symbol: "bitcoinsign.circle", color: .orange, size: 34)
                         VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                             Text("crypto.title").font(.headline)
                             if let p = watch.isEnabled ? watch.portfolio() : nil, !p.holdings.isEmpty {

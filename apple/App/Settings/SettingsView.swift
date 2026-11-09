@@ -61,12 +61,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .autofill: "key.viewfinder"
         case .sync: "arrow.triangle.2.circlepath.icloud"
         case .accounts: "person.2.fill"
-        case .vaults: "square.stack.3d.up.fill"
+        case .vaults: "lock.rectangle.stack.fill"
         case .contacts: "person.crop.circle.badge.checkmark"
         case .family: "figure.2.and.child.holdinghands"
         case .devices: "laptopcomputer.and.iphone"
         case .travel: "airplane"
-        case .crypto: "bitcoinsign"
+        case .crypto: "bitcoinsign.circle"
         case .developer: "chevron.left.forwardslash.chevron.right"
         case .about: "info.circle"
         }
@@ -90,10 +90,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab; Général
-    /// keeps its symbol on its tint.
+    /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab.
     var artwork: String? {
-        self == .general ? nil : "settings-\(rawValue)"
+        "settings-\(rawValue)"
     }
 
     /// The page's content, without its own navigation container.

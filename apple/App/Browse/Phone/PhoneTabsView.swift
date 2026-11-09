@@ -52,7 +52,8 @@ struct PhoneTabsView: View {
 
     /// A tab's label: the outline symbol, its filled form when the tab is selected.
     private func tabLabel(_ title: LocalizedStringKey, _ symbol: String, _ value: PhoneTab) -> some View {
-        Label(title, systemImage: tab == value ? symbol + ".fill" : symbol)
+        // A symbol already half filled (Watchtower's shield) has no ".fill" variant: it stays as is.
+        Label(title, systemImage: tab == value && !symbol.hasSuffix(".filled") ? symbol + ".fill" : symbol)
             .environment(\.symbolVariants, .none)
     }
 
@@ -75,7 +76,7 @@ struct PhoneTabsView: View {
             Tab(value: PhoneTab.watchtower) {
                 stack(.watchtower) { WatchtowerTab() }
             } label: {
-                tabLabel("Watchtower", "checkmark.shield", .watchtower)
+                tabLabel("Watchtower", "shield.lefthalf.filled", .watchtower)
             }
             .accessibilityIdentifier("tab.watchtower")
             Tab("common.search", systemImage: "magnifyingglass", value: PhoneTab.search, role: .search) {

@@ -13,7 +13,7 @@ struct WatchtowerPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeader(
-                    title: "Watchtower", symbol: "checkmark.shield.fill", color: Theme.accent,
+                    title: "Watchtower", symbol: "shield.lefthalf.filled", color: Theme.accent,
                     message: String(localized: "browse.watchtowerFindsPasswordsTo")
                 ) {
                     ScoreGauge(score: watchtower.report.map { Int($0.score) })
