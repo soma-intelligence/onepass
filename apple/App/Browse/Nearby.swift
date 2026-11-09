@@ -1,5 +1,4 @@
 import CoreLocation
-import MapKit
 import os
 import DesignKit
 import SwiftUI
@@ -13,10 +12,8 @@ import UIKit
 /// The user's position, "when in use" only. Nothing is asked at launch: the permission prompt
 /// shows the first time the user taps "Utiliser ma position" or opens "À proximité".
 ///
-/// Privacy: the position is compared with the items' places in memory, on the device
-/// (`VaultSession.nearbyItems`), and is never sent to a geocoder. Only the maps drawn around it
-/// (the "À proximité" empty state, the iPhone home card) load Apple map tiles of the area, so
-/// Apple sees which area is shown, as in any MapKit map.
+/// Privacy: the position stays on the device. It is compared with the items' places in memory
+/// (`VaultSession.nearbyItems`) and is never sent anywhere, not even to Apple's geocoder.
 @MainActor
 final class LocationAccess: NSObject, CLLocationManagerDelegate {
     static let shared = LocationAccess()
@@ -228,8 +225,6 @@ struct NearbyTile: View {
 /// button to the settings), no fix, or nothing around.
 struct NearbyStatusView: View {
     let phase: NearbyLoader.Phase
-    /// Where the search started: "Rien à proximité" draws the map of the area behind its text.
-    var origin: CLLocationCoordinate2D? = nil
     let retry: () -> Void
 
     var body: some View {
@@ -262,42 +257,37 @@ struct NearbyStatusView: View {
                 title: String(localized: "browse.nothingNearby"), systemImage: "mappin.slash",
                 message: String(localized: "browse.addPlaceToItem"))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background { if let origin { NearbyMapBackdrop(center: origin) } }
+            .background { NearbyMapBackdrop() }
             .accessibilityIdentifier("list.nearby.empty")
         }
     }
 }
 
-/// The area around the position behind "Rien à proximité": a still, grey MapKit map with the
-/// 2 km circle, fading out to transparent towards the edges (nothing opaque over the list's title
-/// or bars). Decoration only: no gestures, no places of interest, hidden from VoiceOver.
+/// Behind "Rien à proximité": a drawn city plan (streets, a river, a park) in fine lines, tinted
+/// with the secondary text color and fading out towards the edges. A fixed image bundled with the
+/// app, the same for everyone: it shows no real place and needs no position. Decoration only,
+/// hidden from VoiceOver.
 struct NearbyMapBackdrop: View {
-    let center: CLLocationCoordinate2D
-    var radius: Double = LocationIndex.nearbyRadius
-
     var body: some View {
-        Map(initialPosition: .region(MKCoordinateRegion(
-            center: center, latitudinalMeters: radius * 3, longitudinalMeters: radius * 3)),
-            interactionModes: []) {
-            MapCircle(center: center, radius: radius)
-                .foregroundStyle(.clear)
-                .stroke(.primary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [2, 4]))
-        }
-        .mapStyle(.standard(emphasis: .muted, pointsOfInterest: .excludingAll))
-        .mapControlVisibility(.hidden)
-        .saturation(0)
-        .opacity(0.75)
-        // Fully clear at the frame's edges: no line where the map ends under the title or bars.
-        .mask {
-            EllipticalGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black.opacity(0.7), location: 0.5),
-                    .init(color: .clear, location: 1),
-                ],
-                center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        Image("nearby-map")
+            .resizable()
+            .interpolation(.high)
+            // A fixed scale, whatever the window: streets keep the size of a city plan.
+            .frame(width: 520, height: 520)
+            .foregroundStyle(.secondary)
+            .opacity(0.45)
+            .mask {
+                EllipticalGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black.opacity(0.6), location: 0.5),
+                        .init(color: .clear, location: 1),
+                    ],
+                    center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }

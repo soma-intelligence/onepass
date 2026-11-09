@@ -563,7 +563,7 @@ struct ItemListColumn: View {
 
     @ViewBuilder private var emptyState: some View {
         if isNearby, query.isEmpty {
-            NearbyStatusView(phase: nearby.phase, origin: nearby.origin) { Task { await nearby.load(session) } }
+            NearbyStatusView(phase: nearby.phase) { Task { await nearby.load(session) } }
         } else {
             ItemListEmptyState(reason: EmptyListReason(filter: model.selection, query: query)) {
                 model.showNewItemPicker = true
