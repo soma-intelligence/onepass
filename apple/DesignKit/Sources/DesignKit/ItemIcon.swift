@@ -167,6 +167,18 @@ public struct ItemIcon: View {
     /// app icon, so a row of glyphs and app icons lines up. The tile is a quiet grey of the
     /// appearance (a one color mark is drawn in the text color on it), light for a colored mark
     /// that is mostly black in dark mode, dark for one almost all white in light mode.
+    /// A mark keeps a tile only when it would vanish on the list without one: a colored mark mostly
+    /// black in dark mode, or almost all white in light mode. Any other mark (a one color glyph, drawn
+    /// in the text color, or a colored logo) is drawn bare and larger.
+    static func markNeedsTile(monochrome: Bool, pale: Double, dark darkShare: Double, darkMode: Bool) -> Bool {
+        if monochrome { return false }
+        return darkMode ? darkShare > 0.5 : pale > 0.85
+    }
+
+    /// How much larger a bare mark is drawn than the framed image: the long side reaches the whole
+    /// square, less a hair (`markMaxSide` times this is 0.96).
+    static let bareMarkScale: CGFloat = 0.96 / markMaxSide
+
     static func markBackground(monochrome: Bool, pale: Double, dark darkShare: Double, darkMode: Bool) -> Color {
         let neutral = darkMode ? Color(white: 0.2) : Color(white: 0.95)
         if monochrome { return neutral }
@@ -253,6 +265,20 @@ public struct ItemIcon: View {
         Group {
             if image == nil, let brand, let color = Self.brandColor(brand) {
                 BrandCard(brand: brand, color: color, width: side)
+                    .frame(width: side, height: side)
+            } else if let image, case .mark(let monochrome, let pale, let darkShare) = treatment,
+                !Self.markNeedsTile(monochrome: monochrome, pale: pale, dark: darkShare, darkMode: colorScheme == .dark)
+            {
+                // A mark that reads on the list as it is: bare, no tile, larger. The image holds it
+                // at `markOpticalSide` (long side at most `markMaxSide`), so `bareMarkScale` brings
+                // the long side to the full square at most.
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .renderingMode(monochrome ? .template : .original)
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .foregroundStyle(.primary)
+                    .frame(width: side * Self.bareMarkScale, height: side * Self.bareMarkScale)
                     .frame(width: side, height: side)
             } else if let image, case .mark(let monochrome, let pale, let darkShare) = treatment {
                 let tile = Self.markBackground(monochrome: monochrome, pale: pale, dark: darkShare, darkMode: colorScheme == .dark)

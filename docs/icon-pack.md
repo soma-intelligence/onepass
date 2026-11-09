@@ -65,10 +65,11 @@ Le binaire (environ 11 Mo) n'est remplacé qu'à une version de l'app, jamais ch
 
 ## Rendu dans les listes
 
-Comme dans les listes d'Apple, chaque icône occupe la même tuile carrée aux coins arrondis, avec un filet fin :
+Chaque icône occupe le même carré, pour que les lignes s'alignent :
 
 - une icône d'app (artwork plein bord, ou carré arrondi sur fond transparent) remplit la tuile ;
-- toute autre marque est posée au centre d'une tuile grise discrète (claire en mode clair, sombre en mode sombre ; claire pour une marque surtout noire en mode sombre, sombre pour une marque presque blanche en mode clair), recadrée sur son encre puis mise à une même taille optique : la racine carrée de l'aire de sa boîte fait 58 % de la tuile, son grand côté au plus 74 %. Une marque d'une couleur prend la couleur du texte.
+- toute autre marque est recadrée sur son encre puis mise à une même taille optique (la racine carrée de l'aire de sa boîte fait 58 % de la tuile, son grand côté au plus 74 %), et dessinée sans tuile, agrandie d'un facteur 0,96/0,74 : son grand côté atteint au plus 96 % du carré. Une marque d'une couleur prend la couleur du texte ;
+- une marque en couleurs garde une tuile grise discrète seulement quand elle disparaîtrait sans : surtout noire en mode sombre (tuile claire), presque blanche en mode clair (tuile sombre).
 
 Le réglage « Icônes des sites » coupé : ni pack ni icône de site, aucune requête.
 
