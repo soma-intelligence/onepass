@@ -189,7 +189,10 @@ if [ "$RUST_ALL" = 1 ] || [ "${#RUST_CRATES[@]}" -gt 0 ]; then
   sel=(--workspace)
   if [ "$RUST_ALL" = 0 ]; then sel=(); for c in "${RUST_CRATES[@]}"; do sel+=(-p "$c"); done; fi
   feat=(); [ "$NEEDS_FAST_KDF" = 1 ] && feat=(--features onepass-core/dev-fast-kdf)
-  claim=(); [ -n "${CARGO_TARGET_DIR:-}" ] && claim=("$SELF" __claim-target)
+  # dev-env.sh, sourced before the run, exports CARGO_TARGET_DIR only for a
+  # shared target directory.
+  claim=()
+  case "${ONEPASS_SHARED_TARGET:-}" in "" | 0 | no | false) ;; *) claim=("$SELF" __claim-target) ;; esac
   step "rust nextest" core 1 - ${claim[@]+"${claim[@]}"} cargo nextest run --profile verify "${sel[@]}" ${feat[@]+"${feat[@]}"}
   doc=()
   if [ "$ALL" = 1 ] || { [ "$RUST_ALL" = 1 ] && [ "${#DOC_CRATES[@]}" -gt 0 ]; }; then
