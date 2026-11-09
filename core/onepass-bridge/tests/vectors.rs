@@ -298,6 +298,98 @@ fn session_vectors(record: &onepass_bridge::pairing::PairingRecord) -> Value {
     ])
 }
 
+/// Open and sign in (`take_sign_in`, `pending.rs`): the request and reply
+/// on the wire, and the take rules, each case run on a fresh entry recorded
+/// at `recorded_at` by the production `PendingStore`.
+fn sign_in_vectors() -> Value {
+    use onepass_bridge::pending::{PENDING_TTL, PendingStore};
+    use std::str::FromStr;
+
+    const T: u64 = 1_800_000_000;
+    let item = onepass_core::Id::from_str("0192f1a0-5a1e-7000-8000-00000000a7a5").unwrap();
+    let item_url = "https://atlas-cloud.test/login";
+    let request = Request::TakeSignIn {
+        id: 7,
+        origin: "https://www.atlas-cloud.test".into(),
+        top_origin: "https://www.atlas-cloud.test".into(),
+    };
+    let reply = |item_id: Option<String>| {
+        serde_json::to_value(Reply::Ok {
+            id: 7,
+            ok: Box::new(Response::SignIn { item_id }),
+        })
+        .unwrap()
+    };
+    let case = |name: &str, origin: &str, top: &str, at: u64| {
+        let dir = std::env::temp_dir().join(format!(
+            "onepass-sign-in-vectors-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = PendingStore::new(&dir);
+        store.record(item, item_url, T).unwrap();
+        let taken = store.take(origin, top, at).map(|i| i.to_string());
+        let again = store.take(origin, top, at).map(|i| i.to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+        obj(vec![
+            ("name", json!(name)),
+            ("origin", json!(origin)),
+            ("top_origin", json!(top)),
+            ("at", json!(at)),
+            ("item_id", json!(taken)),
+            ("item_id_again", json!(again)),
+        ])
+    };
+    let site = "https://www.atlas-cloud.test";
+    obj(vec![
+        ("ttl", json!(PENDING_TTL)),
+        ("item_id", json!(item.to_string())),
+        ("item_url", json!(item_url)),
+        ("recorded_at", json!(T)),
+        ("request", serde_json::to_value(&request).unwrap()),
+        ("reply_some", reply(Some(item.to_string()))),
+        ("reply_none", reply(None)),
+        (
+            "cases",
+            Value::Array(vec![
+                case("same_site", site, site, T + 1),
+                case(
+                    "exact_host",
+                    "https://atlas-cloud.test",
+                    "https://atlas-cloud.test",
+                    T + 1,
+                ),
+                case(
+                    "wrong_host",
+                    "https://evil.test",
+                    "https://evil.test",
+                    T + 1,
+                ),
+                case(
+                    "lookalike",
+                    "https://atlas-cloud.test.evil.test",
+                    "https://atlas-cloud.test.evil.test",
+                    T + 1,
+                ),
+                case("expired", site, site, T + PENDING_TTL),
+                case(
+                    "http",
+                    "http://atlas-cloud.test",
+                    "http://atlas-cloud.test",
+                    T + 1,
+                ),
+                case("cross_site_frame", site, "https://evil.test", T + 1),
+                case(
+                    "same_site_other_origin_frame",
+                    "https://login.atlas-cloud.test",
+                    site,
+                    T + 1,
+                ),
+            ]),
+        ),
+    ])
+}
+
 fn generate() -> Vec<(&'static str, Value)> {
     let (pairing, record) = pairing_vectors();
     let session = session_vectors(&record);
@@ -305,6 +397,7 @@ fn generate() -> Vec<(&'static str, Value)> {
         ("kem.json", kem_vectors()),
         ("pairing.json", pairing),
         ("session.json", session),
+        ("sign_in.json", sign_in_vectors()),
     ]
 }
 

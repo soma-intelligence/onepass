@@ -47,6 +47,7 @@ import { KeyRelay, type MenuField, type MenuRecord, MenuTokens } from "./menu";
 import { isSafari, openApp as openAppNative, openTransport } from "./native";
 import { type NativeVault, type NativeVaultCall, nativeVault } from "./safari";
 import { NeverSave } from "./never-save";
+import { OpenSignIn } from "./open-sign-in";
 import { FillNotes } from "./notes";
 import { HostCompat } from "./host-compat";
 import { Overlays, type UnlockAsked, removeFrame, resizeFrame } from "./overlay";
@@ -467,6 +468,22 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const suggestions = new Suggestions({ generator, filler, saveFlow, area: ext.storage.local, ...(opts.now ? { now: opts.now } : {}) });
   /** Menu token to the suggestion its preview row shows (opened from the ghost, or on the menu's first preview). */
   const menuSuggestions = new Map<string, string>();
+  // Open and sign in from the app: the chain starts on the pending item's sign-in page.
+  const openSignIn = new OpenSignIn({
+    session,
+    chain,
+    chainRunning,
+    frames,
+    unlock: async (tabId) => {
+      const state = await vaultOf({ op: "vault_state" });
+      if (state) {
+        if (!state.locked) return true;
+        const after = await vaultOf({ op: "unlock_biometric" });
+        return after !== null && !after.locked;
+      }
+      return !(await unlockOp(tabId));
+    },
+  });
   session.onLocked(() => {
     saveFlow.clearGenerated();
     suggestions.clear();
@@ -1561,6 +1578,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     autoPill,
     saves: savePrompts,
     analyses,
+    openSignIn,
     popup,
     handlers,
     /** The classifier model of a model build (loaded on first use), null in the default build. */
@@ -1583,6 +1601,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         void autoPill.onAnalysis(cs.tabId, cs.frameId).catch(() => undefined);
         if (cs.frameId !== 0) return;
         void providerFlows.onAnalysis(a, cs).catch(() => undefined);
+        void openSignIn.onAnalysis(a, cs).catch(() => undefined);
       });
       ext.webNavigation.onCommitted.addListener((d) => {
         // A new document takes its held suggestions with it (a new top one, every frame's).
@@ -1606,6 +1625,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         for (const [m, st] of menuSuggestions) if (!suggestions.recordOf(st)) menuSuggestions.delete(m);
         savePrompts.forgetTab(tabId);
         notes.onTabRemoved(tabId);
+        openSignIn.forgetTab(tabId);
         for (const k of planMenus.keys()) if (k.startsWith(`${tabId}:`)) planMenus.delete(k);
         for (const k of lockedGestures.keys()) if (k.startsWith(`${tabId}:`)) lockedGestures.delete(k);
         for (const k of replays.keys()) if (k.startsWith(`${tabId}:`)) replays.delete(k);

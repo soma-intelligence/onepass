@@ -2,6 +2,7 @@
 
 #![allow(dead_code)]
 
+use onepass_bridge::pending::PendingStore;
 use onepass_bridge::service::{AccountTag, VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError, Result};
 use onepass_core::Id;
@@ -79,6 +80,8 @@ pub struct FakeVault {
     pub client: Option<[u8; 16]>,
     /// `delete` of this item fails (a host write error), nothing deleted.
     pub fail_delete: Option<Id>,
+    /// Open and sign in: pending sign-ins, when a test sets a directory.
+    pub pending: Option<PendingStore>,
 }
 
 /// Account key and label of the fixture's second account (`two_accounts`).
@@ -316,6 +319,7 @@ impl FakeVault {
             noauto: noauto.id,
         };
         let vault = FakeVault {
+            pending: None,
             locked: false,
             approve_reprompt: false,
             history: Vec::new(),
@@ -442,6 +446,10 @@ impl FakeVault {
 }
 
 impl VaultAccess for FakeVault {
+    fn take_pending_sign_in(&mut self, origin: &str, top_origin: &str, now: u64) -> Option<Id> {
+        self.pending.as_ref()?.take(origin, top_origin, now)
+    }
+
     fn status(&self) -> VaultStatus {
         VaultStatus {
             locked: self.locked,

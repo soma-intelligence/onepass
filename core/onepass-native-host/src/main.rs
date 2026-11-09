@@ -4,7 +4,9 @@
 //! serves one browser connection over stdio. `onepass-native-host approve
 //! <code> [--config <path>]` approves a pending pairing (`file` mode).
 //! `onepass-native-host prepare [--config <path>]` builds the fixture
-//! vault cache ahead of the first connection.
+//! vault cache ahead of the first connection. `onepass-native-host sign-in
+//! <item-id> <url> [--config <path>]` records an open and sign in in
+//! `data_dir`, as the app does when the user taps a login's website.
 
 mod config;
 mod fixture;
@@ -19,8 +21,11 @@ use std::process::ExitCode;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, sync_channel};
 use std::thread;
 
+use std::str::FromStr;
+
 use onepass_bridge::framing::write_frame;
 use onepass_bridge::host::{Conn, Frame, Limits, spawn_reader};
+use onepass_bridge::pending::PendingStore;
 use onepass_bridge::service::VaultAccess;
 
 use crate::config::{Approval, Config, HostError, Reprompt, Source, Unlock, extension_id};
@@ -43,6 +48,8 @@ struct Args {
     approve: Option<String>,
     /// `prepare`.
     prepare: bool,
+    /// `sign-in <item-id> <url>`.
+    sign_in: Option<(String, String)>,
     /// Caller arguments given by the browser.
     positional: Vec<String>,
 }
@@ -75,10 +82,23 @@ fn parse_args(raw: Vec<String>) -> Result<Args, HostError> {
         None
     };
     let prepare = positional.first().map(String::as_str) == Some("prepare");
+    let sign_in = if positional.first().map(String::as_str) == Some("sign-in") {
+        match (positional.get(1), positional.get(2)) {
+            (Some(id), Some(url)) => Some((id.clone(), url.clone())),
+            _ => {
+                return Err(HostError::new(
+                    "usage: onepass-native-host sign-in <item-id> <url>",
+                ));
+            }
+        }
+    } else {
+        None
+    };
     Ok(Args {
         config,
         approve,
         prepare,
+        sign_in,
         positional,
     })
 }
@@ -89,6 +109,16 @@ fn approve(cfg: &Config, code: &str) -> Result<(), HostError> {
         .map_err(|e| HostError::new(format!("data directory: {}", e.kind())))?;
     write_atomic(&cfg.data_dir.join(APPROVED_FILE), code.trim().as_bytes())
         .map_err(|e| HostError::new(format!("cannot write {APPROVED_FILE}: {}", e.kind())))
+}
+
+/// `sign-in <item-id> <url>`: record a pending sign-in in `data_dir`.
+fn sign_in(cfg: &Config, item_id: &str, url: &str) -> Result<(), HostError> {
+    let id = onepass_core::Id::from_str(item_id.trim())
+        .map_err(|_| HostError::new("sign-in: bad item id"))?;
+    PendingStore::new(cfg.data_dir.clone())
+        .record(id, url, now())
+        .map(|_| ())
+        .map_err(|e| HostError::new(format!("sign-in: {e}")))
 }
 
 /// `prepare`: build the fixture vault cache now, so that the first
@@ -210,6 +240,7 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
         (Source::Fixture { path }, true) => {
             let path = path.clone();
             let cache = cfg.data_dir.join(FIXTURE_CACHE);
+            let pending_dir = cfg.data_dir.clone();
             serve(&mut conn, move || {
                 let mut v = fixture::load_fixture_cached(&path, &cache)?;
                 v.set_locked(!unlocked);
@@ -217,18 +248,21 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
                 if let Some(dir) = &deferred {
                     v.set_deferred_unlock(dir);
                 }
+                v.set_pending_dir(pending_dir);
                 Ok(v)
             });
         }
         (Source::Dev { path }, true) => {
             let dir = path.clone().unwrap_or_else(|| cfg.data_dir.clone());
             let vlog = log.clone();
+            let pending_dir = cfg.data_dir.clone();
             serve(&mut conn, move || {
                 let mut v = vault::load_dev(dir, unlocked, &vlog);
                 v.set_allow_reprompt(allow_reprompt);
                 if let Some(dir) = &deferred {
                     v.set_deferred_unlock(dir);
                 }
+                v.set_pending_dir(pending_dir);
                 Ok(v)
             });
         }
@@ -240,6 +274,9 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
 fn main() -> ExitCode {
     let result = parse_args(std::env::args().skip(1).collect()).and_then(|args| {
         let cfg = Config::load(&Config::locate(args.config)?)?;
+        if let Some((id, url)) = &args.sign_in {
+            return sign_in(&cfg, id, url);
+        }
         match args.approve {
             Some(code) => approve(&cfg, &code),
             None if args.prepare => prepare(&cfg),
@@ -279,6 +316,12 @@ mod tests {
         assert_eq!(a.positional, args(&["chrome-extension://x/"]));
 
         assert!(parse_args(args(&["approve"])).is_err());
+        let a = parse_args(args(&["sign-in", "id", "https://atlas-cloud.test"])).unwrap();
+        assert_eq!(
+            a.sign_in,
+            Some(("id".to_owned(), "https://atlas-cloud.test".to_owned()))
+        );
+        assert!(parse_args(args(&["sign-in", "id"])).is_err());
         assert!(parse_args(args(&["--config"])).is_err());
 
         let a = parse_args(args(&["prepare", "--config", "/c.json"])).unwrap();
