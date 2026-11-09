@@ -62,7 +62,7 @@ struct PushRegistrationTests {
         #expect(fake.rounds == 1)
     }
 
-    @Test func silentPushBudgetRespected() async throws {
+    @Test(.tags(.slow)) func silentPushBudgetRespected() async throws {
         let (store, dir) = try store()
         defer { try? FileManager.default.removeItem(at: dir) }
         let fake = FakeMailboxSync()

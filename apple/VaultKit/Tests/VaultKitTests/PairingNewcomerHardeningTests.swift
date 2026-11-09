@@ -22,7 +22,7 @@ struct PairingNewcomerHardeningTests {
 
     /// A first connection that never answers does not take the service away: the approver who
     /// scanned the QR still gets the code (M2).
-    @Test(.timeLimit(.minutes(2))) func silentFirstConnectionDoesNotBlockApprover() async throws {
+    @Test(.tags(.slow), .timeLimit(.minutes(2))) func silentFirstConnectionDoesNotBlockApprover() async throws {
         let f = try await PairingFixture(server: true)
         defer { f.cleanUp() }
         let n = PairingNewcomerFlow(
@@ -52,7 +52,7 @@ struct PairingNewcomerHardeningTests {
 
     /// A key exchange above 16 KiB closes that connection without reading it, and a malformed one
     /// only renews the code: the pairing goes on (M2).
-    @Test(.timeLimit(.minutes(2))) func hostileKeyExchangesOnlyRenewTheCode() async throws {
+    @Test(.tags(.slow), .timeLimit(.minutes(2))) func hostileKeyExchangesOnlyRenewTheCode() async throws {
         let f = try await PairingFixture(server: true)
         defer { f.cleanUp() }
         let n = PairingNewcomerFlow(

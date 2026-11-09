@@ -211,7 +211,7 @@ struct IdentityStoreSyncTests {
         #expect(site.serviceIdentifier.type == .domain)
     }
 
-    @Test func notifierDeliversPosts() async throws {
+    @Test(.tags(.slow)) func notifierDeliversPosts() async throws {
         let notifier = StoreChangeNotifier(name: "me.somalabs.onepass.tests.\(UUID().uuidString)")
         let stream = notifier.changes()
         let received = Task {
