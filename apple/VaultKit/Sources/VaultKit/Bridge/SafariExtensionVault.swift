@@ -8,6 +8,8 @@ import os
 /// or Touch ID under the app's biometric policy, or the master password) and serves the bridge on it
 /// in this process (`BridgeServer.connectInProcess`, ruling I1). The session dies with the process
 /// (ruling I3) and locks itself after the app's auto-lock delay without a request, at most 15 minutes.
+/// One account only: the bridge is told this session as its `primary` entry (`setSession`), so every
+/// slot it names back is that one.
 ///
 /// Anti-loop rule: a biometric attempt never starts while another runs, and never within
 /// `biometricGap` of the end of the previous one. The sheet adds its own rule (one automatic try per
@@ -235,10 +237,12 @@ public final class SafariExtensionVault {
         }
 
         /// The sheet unlocks on iOS; the bridge's `unlock` only reports the state.
-        func unlockRequested() {}
+        func unlockRequested(pairingId: String, originHost: String?) {}
 
         /// Blocks this bridge thread (never the main one) until Face ID answers, at most 2 min.
-        func confirmReprompt(vaultId: String, itemId: String) -> Bool {
+        func confirmReprompt(
+            slot: String, vaultId: String, itemId: String, pairingId: String, originHost: String?
+        ) -> Bool {
             let done = DispatchSemaphore(value: 0)
             let answer = Answer()
             Task { @MainActor [weak owner] in
@@ -249,8 +253,13 @@ public final class SafariExtensionVault {
             return answer.value
         }
 
-        func vaultChanged() {
+        func vaultChanged(slot: String, vaultId: String?) {
             Task { @MainActor [weak owner] in await owner?.wroteVault() }
+        }
+
+        /// A secret served to the page: a request, as far as the idle clock goes.
+        func fillServed(slot: String, pairingId: String, kind: String) {
+            Task { @MainActor [weak owner] in owner?.noteActivity() }
         }
 
         func note(message: String) {

@@ -88,4 +88,65 @@ struct SafariSetupBrowserReturnTests {
         let r7 = r.consume(now: t0.addingTimeInterval(1))
         #expect(!r7)
     }
+
+    /// Cold launch: the link starts the app and Touch ID answers before the extension's bridge
+    /// session is up, so the browser's request comes after the unlock.
+    @Test func requestRightAfterALinkUnlockReturnsOnce() {
+        var r = BrowserReturn()
+        r.linkOpened(now: t0)
+        let atUnlock = r.consume(now: t0.addingTimeInterval(2))
+        #expect(!atUnlock)
+        let late = r.confirmLate(now: t0.addingTimeInterval(4))
+        #expect(late)
+        let twice = r.confirmLate(now: t0.addingTimeInterval(5))
+        #expect(!twice)
+    }
+
+    @Test func linkAloneNeverReturns() {
+        var r = BrowserReturn()
+        r.linkOpened(now: t0)
+        let atUnlock = r.consume(now: t0.addingTimeInterval(2))
+        #expect(!atUnlock)
+        // No request from a paired browser: the app stays in front.
+        let nextUnlock = r.consume(now: t0.addingTimeInterval(3))
+        #expect(!nextUnlock)
+    }
+
+    @Test func lateRequestOnlyRightAfterTheUnlock() {
+        var r = BrowserReturn()
+        r.linkOpened(now: t0)
+        _ = r.consume(now: t0.addingTimeInterval(2))
+        let tooLate = r.confirmLate(now: t0.addingTimeInterval(2 + BrowserReturn.lateWindow + 1))
+        #expect(!tooLate)
+        // Without the link, or with a link too old at the unlock, a request while unlocked hides nothing.
+        var own = BrowserReturn()
+        _ = own.consume(now: t0)
+        let ownUnlock = own.confirmLate(now: t0.addingTimeInterval(1))
+        #expect(!ownUnlock)
+        var old = BrowserReturn()
+        old.linkOpened(now: t0)
+        _ = old.consume(now: t0.addingTimeInterval(BrowserReturn.window + 1))
+        let oldLink = old.confirmLate(now: t0.addingTimeInterval(BrowserReturn.window + 2))
+        #expect(!oldLink)
+    }
+
+    @Test func openedByHandCancelsTheLateReturnToo() {
+        var r = BrowserReturn()
+        r.linkOpened(now: t0)
+        _ = r.consume(now: t0.addingTimeInterval(1))
+        r.cancel()
+        let late = r.confirmLate(now: t0.addingTimeInterval(2))
+        #expect(!late)
+    }
+
+    /// Warm path: the link and the bridge request both come before the unlock, which returns once.
+    @Test func linkThenRequestReturnsAtTheUnlockOnly() {
+        var r = BrowserReturn()
+        r.linkOpened(now: t0)
+        r.arm(now: t0.addingTimeInterval(1))
+        let atUnlock = r.consume(now: t0.addingTimeInterval(3))
+        #expect(atUnlock)
+        let late = r.confirmLate(now: t0.addingTimeInterval(4))
+        #expect(!late)
+    }
 }

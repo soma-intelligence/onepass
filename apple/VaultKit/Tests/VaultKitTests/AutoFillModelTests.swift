@@ -54,11 +54,12 @@ private final class Fixture {
     }
 
     func model(
-        _ request: AutoFillRequest, session: VaultSession? = nil, ownAppIDs: Set<String> = [ownApp]
+        _ request: AutoFillRequest, session: VaultSession? = nil, ownAppIDs: Set<String> = [ownApp],
+        window: AutoFillUnlockWindow? = nil
     ) -> (AutoFillModel, VaultSession, Completions) {
         let session = session ?? self.session()
         let completions = Completions()
-        let model = AutoFillModel(session: session, request: request, ownAppIDs: ownAppIDs) {
+        let model = AutoFillModel(session: session, request: request, ownAppIDs: ownAppIDs, unlockWindow: window) {
             completions.results.append($0)
         }
         return (model, session, completions)
@@ -1486,5 +1487,458 @@ struct AutoFillProviderTests {
             event: .formDidDisappear, displayName: "Instagram")
         #expect(AutoFillModel.defaultTitle(for: save) == "Instagram")
         #expect(AutoFillRequest.savePassword(save).primaryService?.shownName == "Instagram")
+    }
+}
+
+// MARK: - Identities behind the vault
+
+@MainActor
+@Suite("AutoFill provider publication")
+struct AutoFillPublicationTests {
+    /// A change the store never received (a sync applied while locked, a publication that never
+    /// ended) is published by the next unlock in the provider, inside the interval too, and the
+    /// store is replaced before the request shows its list.
+    @Test func providerPublishesWhenBehindAndWaits() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, _) = try await f.seed()
+        seed.lock()
+        await seed.waitForAutofillIdentities()
+
+        // A first request: the interval now holds.
+        let (first, firstSession, _) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await first.start()
+        await first.unlock(password: testPassword)
+        first.cancel()
+        await firstSession.waitForAutofillIdentities()
+        #expect(!firstSession.autofillIdentitiesBehind)
+
+        // A Login written where the store cannot be reached: the marks say behind.
+        var silent = f.environment
+        silent.identityStore = NoIdentityStore()
+        let elsewhere = VaultSession(environment: silent)
+        try await elsewhere.unlock(password: testPassword)
+        try await addLogin(elsewhere, title: "Nouveau", url: "https://nouveau.exemple.fr")
+        elsewhere.lock()
+        await elsewhere.waitForAutofillIdentities()
+        #expect(!store.identities.contains { $0.service == "nouveau.exemple.fr" })
+        #expect(elsewhere.autofillIdentitiesBehind)
+
+        let (model, session, _) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await model.start()
+        await model.unlock(password: testPassword)
+        // No waiting here: the publication ended before the list came up.
+        #expect(store.identities.contains { $0.service == "nouveau.exemple.fr" })
+        #expect(!session.autofillIdentitiesBehind)
+        let published = store.replaceCount
+        model.cancel()
+        await session.waitForAutofillIdentities()
+
+        // Up to date again: the next request inside the interval publishes nothing.
+        let (again, againSession, _) = f.model(.credentialList(services: ["example.com"], passkey: nil))
+        await again.start()
+        await again.unlock(password: testPassword)
+        again.cancel()
+        await againSession.waitForAutofillIdentities()
+        #expect(store.replaceCount == published)
+    }
+
+    /// A sync applied while the provider's account is locked: the next QuickType fill publishes too.
+    @Test func directFillPublishesWhenBehind() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        await seed.waitForAutofillIdentities()
+        let before = store.replaceCount
+        // What the sync layer calls after a remote change set, here on a locked session.
+        await seed.reload()
+        #expect(seed.autofillIdentitiesBehind)
+
+        let (model, session, done) = f.model(
+            .credential(recordID: "\(login.vaultId):\(login.id)", kind: .password, passkey: nil, service: "example.com"))
+        await model.start()
+        await model.unlock(password: testPassword)
+        #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+        #expect(store.replaceCount > before)
+        #expect(!session.autofillIdentitiesBehind)
+    }
+}
+
+// MARK: - "Always use for this app"
+
+@MainActor
+@Suite("AutoFill app binding")
+struct AutoFillAppBindingTests {
+    private let chat = AutoFillService.app("com.example.chat", displayName: "Chat")
+
+    private func list(
+        _ f: Fixture, _ request: AutoFillRequest
+    ) async throws -> (AutoFillModel, VaultSession, Completions, [FfiAutofillCandidate], [FfiAutofillCandidate]) {
+        let (model, session, done) = f.model(request)
+        await model.start()
+        await model.unlock(password: testPassword)
+        guard case .list(let matches, let others) = model.screen else {
+            Issue.record("expected the list, got \(model.screen)")
+            throw CancellationError()
+        }
+        return (model, session, done, matches, others)
+    }
+
+    /// A Login picked from the other items for an app is only bound when asked: a plain choice
+    /// fills and remembers nothing.
+    @Test func plainChoiceNeverBinds() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+
+        let (model, _, done, matches, others) = try await list(f, .credentialList(services: [chat], passkey: nil))
+        #expect(matches.isEmpty)
+        let other = try #require(others.first { $0.itemId == login.id })
+        #expect(model.rememberableApp(for: other) == chat)
+        await model.choose(other)
+        #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+
+        let (again, _, _, againMatches, againOthers) = try await list(f, .credentialList(services: [chat], passkey: nil))
+        #expect(againMatches.isEmpty)
+        #expect(againOthers.contains { $0.itemId == login.id })
+        again.cancel()
+    }
+
+    /// "Always use for this app": the App ID goes into the Login's `apps`, the Login is filled, and
+    /// the next request for that app offers it as a match (nothing more to ask).
+    @Test func alwaysUseBindsTheAppAndRanksItFirst() async throws {
+        let store = InMemoryIdentityStore()
+        let f = try Fixture(identityStore: store)
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        await seed.waitForAutofillIdentities()
+        let posts = f.watchPosts()
+
+        let (model, session, done, _, others) = try await list(f, .credentialList(services: [chat], passkey: nil))
+        let other = try #require(others.first { $0.itemId == login.id })
+        await model.choose(other, alwaysForApp: true)
+        #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+        #expect(session.state == .locked)
+        #expect(await eventually { posts.count >= 1 })
+        // Published before the session locked: the app's QuickType bar has it next time.
+        #expect(store.identities.contains { $0.serviceIsApp && $0.service == "com.example.chat" })
+
+        let check = f.session()
+        try await check.unlock(password: testPassword)
+        let item = try await check.loadItem(vaultID: login.vaultId, itemID: login.id)
+        #expect(item.apps == ["com.example.chat"])
+        #expect(item.urls.map(\.url) == ["https://example.com"])
+        #expect(field("password", in: item) == .password(value: loginPassword))
+        check.lock()
+
+        let (next, _, _, matches, nextOthers) = try await list(f, .credentialList(services: [chat], passkey: nil))
+        #expect(matches.map(\.itemId) == [login.id])
+        #expect(!nextOthers.contains { $0.itemId == login.id })
+        // A match is never asked again.
+        #expect(next.rememberableApp(for: try #require(matches.first)) == nil)
+        next.cancel()
+    }
+
+    /// A web domain is never bound this way, nor a list without any service.
+    @Test func sitesAndServicelessListsAreNeverBound() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+
+        let (site, _, siteDone, _, siteOthers) = try await list(
+            f, .credentialList(services: ["autre.exemple.fr"], passkey: nil))
+        let other = try #require(siteOthers.first { $0.itemId == login.id })
+        #expect(site.rememberableApp(for: other) == nil)
+        await site.choose(other, alwaysForApp: true)
+        #expect(siteDone.results == [.password(user: loginUser, password: loginPassword)])
+
+        let (bare, _, bareDone, _, bareOthers) = try await list(f, .credentialList(services: [], passkey: nil))
+        let listed = try #require(bareOthers.first { $0.itemId == login.id })
+        #expect(bare.rememberableApp(for: listed) == nil)
+        await bare.choose(listed, alwaysForApp: true)
+        #expect(bareDone.results == [.password(user: loginUser, password: loginPassword)])
+
+        let check = f.session()
+        try await check.unlock(password: testPassword)
+        let item = try await check.loadItem(vaultID: login.vaultId, itemID: login.id)
+        #expect(item.apps.isEmpty)
+        #expect(item.urls.map(\.url) == ["https://example.com"])
+        check.lock()
+    }
+
+    /// A one-time code list of an app binds the same way and fills the code.
+    @Test func oneTimeCodeListBindsToo() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+
+        let (model, _, done, _, others) = try await list(f, .oneTimeCodeList(services: [chat]))
+        let other = try #require(others.first { $0.itemId == login.id })
+        #expect(model.rememberableApp(for: other) == chat)
+        await model.choose(other, alwaysForApp: true)
+        guard case .oneTimeCode(let code)? = done.results.first else {
+            Issue.record("expected a code, got \(done.results)")
+            return
+        }
+        #expect(code.count == 6)
+
+        let (next, _, _, matches, _) = try await list(f, .oneTimeCodeList(services: [chat]))
+        #expect(matches.map(\.itemId) == [login.id])
+        next.cancel()
+    }
+}
+
+// MARK: - Unlock reuse (90 seconds, same service)
+
+@MainActor
+@Suite("AutoFill unlock reuse")
+struct AutoFillUnlockReuseTests {
+    private func direct(_ login: FfiItem, _ kind: FfiAutofillKind = .password, service: AutoFillService = "example.com")
+        -> AutoFillRequest
+    {
+        .credential(recordID: "\(login.vaultId):\(login.id)", kind: kind, passkey: nil, service: service)
+    }
+
+    /// Account, a Login of example.com with a code, Face ID enrolled, locked.
+    private func enrolled(_ f: Fixture) async throws -> FfiItem {
+        let (seed, login) = try await f.seed()
+        try await seed.enrollBiometrics(password: testPassword)
+        seed.lock()
+        return login
+    }
+
+    private func fromWindow(_ request: AutoFillRequest, _ window: AutoFillUnlockWindow) async -> AutoFillResult? {
+        await AutoFillModel.resultFromUnlockWindow(for: request, window: window, account: nil, ownAppIDs: [ownApp])
+    }
+
+    /// Face ID once: the password page and the one-time code of the same site are then answered
+    /// without interface, until the 90 seconds are over.
+    @Test func biometricUnlockAnswersTheSameServiceWithoutInterface() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let login = try await enrolled(f)
+        let window = AutoFillUnlockWindow(deviceLock: FakeDeviceLockSignal())
+
+        let (model, session, done) = f.model(direct(login), window: window)
+        await model.start()
+        #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+        #expect(model.isFinished)
+        // Kept for the window instead of locked.
+        #expect(session.state == .unlocked)
+        #expect(window.holds(session))
+
+        #expect(await fromWindow(direct(login), window) == .password(user: loginUser, password: loginPassword))
+        // Another host of the same registrable domain is the same site.
+        #expect(await fromWindow(direct(login, service: "www.example.com"), window)
+            == .password(user: loginUser, password: loginPassword))
+        guard case .oneTimeCode(let code)? = await fromWindow(direct(login, .oneTimeCode), window) else {
+            Issue.record("expected a code from the window")
+            return
+        }
+        #expect(code.count == 6)
+        #expect(session.state == .unlocked)
+
+        f.h.clock.advance(AutoFillUnlockWindow.duration)
+        #expect(await fromWindow(direct(login), window) == nil)
+        #expect(session.state == .locked)
+        #expect(!window.isOpen)
+        // The normal path again: the system is told to show the interface.
+        #expect(AutoFillModel.resultWithoutUserInteraction(for: direct(login), ownAppIDs: [ownApp])
+            == .cancelled(.userInteractionRequired))
+    }
+
+    /// The app locks the account after the fill (its own session, its own process): the provider's
+    /// window is dead at the next QuickType tap.
+    @Test func anAppLockAfterTheFillEndsTheWindow() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let login = try await enrolled(f)
+        let window = AutoFillUnlockWindow(deviceLock: FakeDeviceLockSignal())
+
+        let (model, session, done) = f.model(direct(login), window: window)
+        await model.start()
+        #expect(done.results.count == 1)
+        #expect(window.holds(session))
+
+        let app = f.session()
+        f.h.clock.advance(4)
+        app.lock()
+        #expect(await fromWindow(direct(login), window) == nil)
+        #expect(session.state == .locked)
+        #expect(!window.isOpen)
+    }
+
+    /// A master password that opens the session while a Face ID attempt is still up: the late end
+    /// of that attempt, returned or thrown, never counts as a biometric unlock.
+    @Test(arguments: [false, true])
+    func aPasswordUnlockBesideALateBiometricAttemptNeverOpensTheWindow(biometricFails: Bool) async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        _ = try await enrolled(f)
+        let window = AutoFillUnlockWindow(deviceLock: FakeDeviceLockSignal())
+        let (model, session, done) = f.model(.credentialList(services: ["example.com"], passkey: nil), window: window)
+
+        // The system sheet stays up until the test lets it go.
+        let sheet = Mutex((up: false, release: false))
+        f.h.keyring.duringNextDecrypt {
+            sheet.withLock { $0.up = true }
+            while !sheet.withLock({ $0.release }) { Thread.sleep(forTimeInterval: 0.005) }
+        }
+        if biometricFails { f.h.keyring.failNextDecrypt(with: .userFallback) }
+        let attempt = Task { await model.start() }
+        #expect(await eventually { sheet.withLock { $0.up } })
+
+        await model.unlock(password: testPassword)
+        guard case .list(let matches, _) = model.screen else {
+            Issue.record("expected the list, got \(model.screen)")
+            return
+        }
+        #expect(session.state == .unlocked)
+        sheet.withLock { $0.release = true }
+        await attempt.value
+        #expect(session.state == .unlocked)
+
+        await model.choose(try #require(matches.first))
+        #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+        #expect(session.state == .locked)
+        #expect(!window.isOpen)
+    }
+
+    /// Face ID, then the session locks and the master password opens it again: that second unlock
+    /// is not biometric, nothing is kept.
+    @Test func aPasswordUnlockAfterABiometricOneNeverOpensTheWindow() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        _ = try await enrolled(f)
+        let window = AutoFillUnlockWindow(deviceLock: FakeDeviceLockSignal())
+        let (model, session, done) = f.model(.credentialList(services: ["example.com"], passkey: nil), window: window)
+        await model.start()
+        #expect(session.state == .unlocked)
+
+        guard case .list(let matches, _) = model.screen else {
+            Issue.record("expected the list, got \(model.screen)")
+            return
+        }
+        // Locked under the list (auto-lock), then opened again with the master password.
+        session.lock(publishPending: false, stampsAccountLock: false)
+        try await session.unlock(password: testPassword)
+        await model.choose(try #require(matches.first))
+        #expect(done.results.count == 1)
+        #expect(session.state == .locked)
+        #expect(!window.isOpen)
+    }
+
+    /// A master password typed in the provider never opens the window.
+    @Test func masterPasswordUnlockNeverOpensTheWindow() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        let window = AutoFillUnlockWindow(deviceLock: FakeDeviceLockSignal())
+
+        let (model, session, done) = f.model(direct(login), window: window)
+        await model.start()
+        #expect(model.screen == .locked)
+        await model.unlock(password: testPassword)
+        #expect(done.results == [.password(user: loginUser, password: loginPassword)])
+        #expect(session.state == .locked)
+        #expect(!window.isOpen)
+        #expect(await fromWindow(direct(login), window) == nil)
+    }
+
+    /// Inside the window, a passkey, an item marked `reprompt` and a Login of another site still
+    /// take the interface; the window stays for the covered requests.
+    @Test func passkeysRepromptAndForeignRecordsStillAsk() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        var guarded = try await addLogin(seed, title: "Banque", url: "https://example.com", user: "banque")
+        guarded.reprompt = true
+        guarded = try await seed.save(guarded)
+        let foreign = try await addLogin(seed, title: "Ailleurs", url: "https://ailleurs.org", user: "autre")
+        let passkey = try await seed.createPasskey(FfiPasskeyCreation(
+            vaultId: login.vaultId, itemId: login.id, rpId: "example.com", userName: loginUser,
+            userHandle: Data([1, 2]), clientDataHash: clientDataHash, excludedCredentialIds: []))
+        try await seed.enrollBiometrics(password: testPassword)
+        seed.lock()
+        let window = AutoFillUnlockWindow(deviceLock: FakeDeviceLockSignal())
+
+        let (model, session, done) = f.model(direct(login), window: window)
+        await model.start()
+        #expect(done.results.count == 1)
+        #expect(window.holds(session))
+
+        let assertion = AutoFillRequest.credential(
+            recordID: "\(login.vaultId):\(login.id)", kind: .passkey,
+            passkey: PasskeyRequest(
+                rpID: "example.com", clientDataHash: clientDataHash, allowedCredentialIDs: [passkey.credentialId]))
+        #expect(await fromWindow(assertion, window) == nil)
+        #expect(await fromWindow(direct(guarded), window) == nil)
+        // A record that does not belong to the asked site is never filled there.
+        #expect(await fromWindow(direct(foreign), window) == nil)
+        #expect(await fromWindow(direct(login), window) != nil)
+        #expect(window.holds(session))
+        window.end()
+        #expect(session.state == .locked)
+    }
+
+    /// A request for another service ends the window, even when the first service comes back.
+    @Test func anotherServiceEndsTheWindow() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let login = try await enrolled(f)
+        let window = AutoFillUnlockWindow(deviceLock: FakeDeviceLockSignal())
+
+        let (model, session, _) = f.model(direct(login), window: window)
+        await model.start()
+        #expect(window.holds(session))
+        #expect(await fromWindow(direct(login, service: "ailleurs.org"), window) == nil)
+        #expect(session.state == .locked)
+        #expect(await fromWindow(direct(login), window) == nil)
+    }
+
+    /// Nothing is kept after a cancel, with the setting off, or on a shared device.
+    @Test func cancelSettingOffAndSharedModeKeepNothing() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let login = try await enrolled(f)
+        let window = AutoFillUnlockWindow(deviceLock: FakeDeviceLockSignal())
+
+        let (list, listSession, _) = f.model(.credentialList(services: ["example.com"], passkey: nil), window: window)
+        await list.start()
+        #expect(listSession.state == .unlocked)
+        list.cancel()
+        #expect(listSession.state == .locked)
+        #expect(!window.isOpen)
+
+        f.h.settings.autofillUnlockReuse = false
+        let (off, offSession, offDone) = f.model(direct(login), window: window)
+        await off.start()
+        #expect(offDone.results.count == 1)
+        #expect(offSession.state == .locked)
+        #expect(!window.isOpen)
+        f.h.settings.autofillUnlockReuse = true
+
+        // A list choice after Face ID keeps the unlock like a QuickType fill.
+        let (pick, pickSession, pickDone) = f.model(.credentialList(services: ["example.com"], passkey: nil), window: window)
+        await pick.start()
+        guard case .list(let matches, _) = pick.screen else {
+            Issue.record("expected the list, got \(pick.screen)")
+            return
+        }
+        await pick.choose(try #require(matches.first))
+        #expect(pickDone.results.count == 1)
+        #expect(window.holds(pickSession))
+        // Shared mode, set while the window is open: the next lookup ends it.
+        f.h.settings.deviceMode = .shared
+        #expect(await fromWindow(direct(login), window) == nil)
+        #expect(pickSession.state == .locked)
     }
 }

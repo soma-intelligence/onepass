@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import Observation
 import OnePassCore
 import os
 
@@ -11,7 +12,15 @@ import os
 /// the keychain, confirms `reprompt` items with Touch ID and follows the session (a lock here locks
 /// the bridge). Safari and known signed browsers pair without a code (spec
 /// 2026-11-02-browser-auto-pairing); this class also writes the browsers' native messaging
-/// manifests and keeps the user's revocations.
+/// manifests and keeps the user's revocations. A secret served to a browser counts as use of the
+/// vault, for `fillWindow` at most after the user was last in the app, and the biometric unlock a
+/// browser asked for answers one `reprompt` check of that browser for that site
+/// (`BridgeUnlockCredit`).
+///
+/// Several accounts on this Mac (ruling C, 2026-11-10): the bridge is told the primary account and
+/// each added account the user made available in browsers, with its session while it is unlocked
+/// and none while it is locked. The lock state the browsers see is the primary account's; a locked
+/// added account gives nothing and asks nothing.
 @MainActor
 @Observable
 public final class BrowserBridge {
@@ -45,19 +54,70 @@ public final class BrowserBridge {
     /// taken by another running copy of the app.
     public private(set) var isRunning = false
 
+    /// What an extension asks of the app's window.
+    public enum Attention: Sendable, Equatable {
+        /// A pairing code to compare: the window comes forward and stays.
+        case pairing
+        /// "Déverrouiller dans OnePass": the lock screen comes forward, then the browser again.
+        case unlock
+    }
+
+    /// Called on the main actor when an extension asks to pair or to unlock. A request that comes
+    /// before the app listens (a browser already waiting when the app launches) is kept and
+    /// delivered when this is set.
+    @ObservationIgnored public var attentionRequested: ((Attention) -> Void)? {
+        didSet {
+            guard let attentionRequested, let waiting = waitingAttention else { return }
+            waitingAttention = nil
+            attentionRequested(waiting)
+        }
+    }
+    @ObservationIgnored private var waitingAttention: Attention?
+
+    /// Set by the app around the lock screen's biometric check of the primary account: an unlock of
+    /// it that lands meanwhile is the biometric one (`BridgeUnlockCredit`), any other is not.
+    @ObservationIgnored public var biometricUnlockRunning = false
+
+    /// One account as last told to the bridge (no session, no key: tests and diagnosis).
+    struct Published: Equatable, Sendable {
+        let slot: String
+        let name: String
+        let unlocked: Bool
+        let excluded: [String]
+    }
+
+    /// The accounts the bridge serves now, primary first. Empty before the start, and when the
+    /// bridge refused the list (everything is then locked for the browsers).
+    @ObservationIgnored private(set) var published: [Published] = []
+
+    /// The primary account's session: the one whose lock the browsers see, and that approves pairings.
     @ObservationIgnored private let session: VaultSession
+    /// Every account of this Mac; nil serves the one session alone.
+    @ObservationIgnored private let accounts: AccountSessions?
     @ObservationIgnored private let store: BridgePairingStore
     @ObservationIgnored private let container: SharedContainer
     @ObservationIgnored private var server: BridgeServer?
+    @ObservationIgnored private var credit = BridgeUnlockCredit()
+    /// Per account (slot): when it was unlocked or the user was last in the app with it on screen,
+    /// whichever is later. Served fills keep an account open only `fillWindow` past this.
+    @ObservationIgnored private var present: [String: Date] = [:]
+
+    /// How long after the last unlock, or the last time the user was in the app, the fills served to
+    /// the browsers still restart an account's idle delay. Past it they no longer do, so a paired
+    /// client that keeps asking cannot hold a vault open for ever.
+    public static let fillWindow: TimeInterval = 12 * 60 * 60
 
     /// Info.plist key: Chrome and Firefox extension ids the app serves (Safari always is).
     public static let allowedExtensionsKey = "OnePassBrowserExtensions"
 
+    /// `session`: the primary account. `accounts`: every account of this Mac, whose unlocked ones the
+    /// browsers reach too; nil (or a single account) serves `session` alone, as before.
     public init(
-        session: VaultSession, container: SharedContainer = .resolve(),
+        session: VaultSession, accounts: AccountSessions? = nil, container: SharedContainer = .resolve(),
         keychain: (any KeychainStore)? = nil
     ) {
         self.session = session
+        self.accounts = accounts
         self.container = container
         let keychain =
             keychain
@@ -71,23 +131,50 @@ public final class BrowserBridge {
     public func start(bundle: Bundle = .main) {
         guard server == nil, container.isShared else { return }
         let allowed = Self.allowedExtensions(bundle.object(forInfoDictionaryKey: Self.allowedExtensionsKey))
-        let audit = container.databaseFolder.appendingPathComponent("bridge-audit.jsonl").path
-        let delegate = Delegate(owner: self, store: store)
-        let server = BridgeServer(
-            delegate: delegate, pairings: store.load(), allowedExtensions: allowed, auditPath: audit)
+        let journal = container.databaseFolder.appendingPathComponent("bridge-audit.jsonl")
+        let server = makeServer(allowed: allowed, journal: journal)
         do {
             try server.start(groupContainer: container.root.path)
         } catch {
             return
         }
-        server.setBlockedAuto(extensionIds: store.blockedAuto())
-        self.server = server
+        adopt(server)
         isRunning = true
         refreshManifests(bundle: bundle, allowed: allowed)
-        session.coreSessionChanged = { [weak self] core in self?.sessionChanged(core) }
-        session.hiddenVaultsChanged = { [weak self] ids in self?.excluded(ids) }
-        excluded(session.hiddenVaultIDs)
         refreshPaired()
+    }
+
+    /// The bridge of this app, not listening yet.
+    func makeServer(allowed: [String], journal: URL) -> BridgeServer {
+        BridgeServer(
+            delegate: Delegate(owner: self, store: store), pairings: store.load(),
+            allowedExtensions: allowed, auditPath: journal.path)
+    }
+
+    /// Serves `server`: the accounts are told to it now and at each of their changes. `start` calls
+    /// it once the socket listens; tests call it on a server that does not.
+    func adopt(_ server: BridgeServer) {
+        server.setBlockedAuto(extensionIds: store.blockedAuto())
+        // Pages are routed to the account that claims their domain, as system AutoFill does.
+        server.setRoutingFolder(folder: accounts?.store.folder.path)
+        self.server = server
+        // "Disponible dans les navigateurs" turned on or off: told in the same turn.
+        accounts?.browserAvailabilityChanged = { [weak self] in self?.publish() }
+        publish()
+        watchAccounts()
+    }
+
+    /// An account was added, removed, renamed, or its session was just made: the bridge is told
+    /// again. Also called by itself on every directory change, unlock, lock and hidden vault.
+    public func accountsChanged() {
+        publish()
+    }
+
+    /// The user is in the app, or just left it, with the account in `slot` on screen: its served
+    /// fills count as use for `fillWindow` from now.
+    public func userPresent(slot: String) {
+        guard let vault = vault(slot), vault.state == .unlocked else { return }
+        present[slot] = vault.environment.clock.now
     }
 
     /// The Info.plist value: ids separated by spaces or commas (a build setting), or an array.
@@ -105,6 +192,8 @@ public final class BrowserBridge {
         server?.stop()
         server?.setSession(session: nil, accountName: "")
         server = nil
+        published = []
+        present = [:]
         isRunning = false
         requests = []
     }
@@ -116,12 +205,20 @@ public final class BrowserBridge {
     }
 
     /// "Approuver": Touch ID (or the watch) on an unlocked vault, then the code is accepted.
-    /// Without biometrics, or locked, the pairing is refused: the user unlocks, enrolls and retries.
+    /// Touch ID refused or cancelled: the pairing is refused. Locked or Touch ID off (when the tap
+    /// comes, or by the time the check answers): nothing is answered, the request waits on its sheet
+    /// for the user to unlock or enroll, until the extension gives up.
     public func approve(_ id: UInt64) async {
         guard let request = requests.first(where: { $0.id == id }) else { return }
+        guard canApprove else { return }
         let prompt = String(
             localized: "bridge.pairWithOnepass \(request.browser)", bundle: VaultKitStrings.bundle)
         let ok = await session.confirmUserPresence(prompt: prompt)
+        if !ok, session.state != .unlocked {
+            // A lock during the check (sleep, the idle delay) is not the user's refusal.
+            BridgeLog.note("pairing approval interrupted by a lock")
+            return
+        }
         BridgeLog.note(ok ? "pairing approved" : "pairing refused: no user presence (locked or Touch ID off)")
         server?.answerPairing(requestId: id, approved: ok)
         requests.removeAll { $0.id == id }
@@ -166,23 +263,137 @@ public final class BrowserBridge {
         if !written.isEmpty { BridgeLog.note("native messaging manifests written: \(written.count)") }
     }
 
+    // MARK: - Accounts
+
+    private static let primarySlot = AccountDirectoryStore.primarySlot
+
+    private struct Served {
+        let slot: String
+        let name: String
+        /// Nil for an added account whose session was not made this launch (it is locked).
+        let vault: VaultSession?
+    }
+
+    /// The accounts the browsers may reach, primary first: the primary one, and each added account
+    /// that is signed in (bound to its store) and that the user made available in browsers (off by
+    /// default: a paired browser reads every account listed here). One account: its name stays
+    /// "OnePass", as before.
+    private func roster() -> [Served] {
+        guard let accounts, accounts.hasSeveralAccounts else {
+            return [Served(slot: Self.primarySlot, name: "OnePass", vault: session)]
+        }
+        return accounts.profiles.compactMap { profile in
+            if profile.isPrimary {
+                return Served(slot: profile.slot, name: Self.name(profile, session), vault: session)
+            }
+            guard profile.accountID != nil, accounts.isAvailableInBrowsers(profile.slot) else { return nil }
+            let vault = accounts.madeSession(profile.slot)
+            return Served(slot: profile.slot, name: Self.name(profile, vault), vault: vault)
+        }
+    }
+
+    /// The account's label, else its profile name (the primary account has no label until named).
+    private static func name(_ profile: AccountProfile, _ vault: VaultSession?) -> String {
+        if !profile.label.isEmpty { return profile.label }
+        let shown = vault?.environment.settings.displayName ?? ""
+        return shown.isEmpty ? "OnePass" : shown
+    }
+
+    /// The session of the account in `slot`, if it was made.
+    private func vault(_ slot: String) -> VaultSession? {
+        if slot == Self.primarySlot { return session }
+        return accounts?.madeSession(slot)
+    }
+
+    /// Tells the bridge every account: its session while unlocked, none while locked, and the vaults
+    /// it hides. Each session made so far reports its unlocks, locks and hidden vaults here at once
+    /// (a lock drops the session from the bridge in the same turn).
+    private func publish() {
+        guard let server else { return }
+        let roster = roster()
+        var list: [FfiBridgeAccount] = []
+        var told: [Published] = []
+        for account in roster {
+            if let vault = account.vault { follow(vault, slot: account.slot) }
+            let core = account.vault?.coreSession
+            // First seen unlocked (it was before the bridge started): its window starts here.
+            if core != nil, present[account.slot] == nil, let vault = account.vault {
+                present[account.slot] = vault.environment.clock.now
+            }
+            let hidden = (account.vault?.hiddenVaultIDs ?? []).sorted()
+            list.append(
+                FfiBridgeAccount(
+                    slot: account.slot, session: core, accountName: account.name, excludedVaultIds: hidden))
+            told.append(Published(slot: account.slot, name: account.name, unlocked: core != nil, excluded: hidden))
+        }
+        do {
+            try server.setSessions(accounts: list)
+            published = told
+        } catch {
+            // Refused whole (a slot or a vault id it cannot read), the previous list kept: nothing
+            // stale may stay served, so the browsers see a locked app.
+            server.setSession(session: nil, accountName: "")
+            published = []
+            BridgeLog.note("accounts refused by the bridge: locked for the browsers")
+        }
+    }
+
+    private func follow(_ vault: VaultSession, slot: String) {
+        vault.coreSessionChanged = { [weak self] core in self?.sessionChanged(slot, core) }
+        vault.hiddenVaultsChanged = { [weak self] _ in self?.publish() }
+    }
+
+    /// The directory changed (an account added, removed, renamed, reordered, switched to).
+    private func watchAccounts() {
+        guard let accounts else { return }
+        withObservationTracking {
+            _ = accounts.revision
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, self.server != nil else { return }
+                self.publish()
+                self.watchAccounts()
+            }
+        }
+    }
+
     // MARK: - From the bridge threads (through `Delegate`)
 
-    func sessionChanged(_ core: Session?) {
-        server?.setSession(session: core, accountName: "OnePass")
+    /// The account in `slot` unlocked (`core`) or locked (nil).
+    func sessionChanged(_ slot: String, _ core: Session?) {
+        present[slot] = core != nil ? vault(slot)?.environment.clock.now : nil
+        if slot == Self.primarySlot {
+            if core != nil {
+                credit.unlocked(biometric: biometricUnlockRunning, now: session.environment.clock.now)
+            } else {
+                credit.clear()
+            }
+        }
+        publish()
     }
 
-    private func excluded(_ ids: Set<String>) {
-        try? server?.setExcludedVaults(vaultIds: ids.sorted())
+    /// The bridge released a secret of the account in `slot` to a browser, after all its checks (it
+    /// says so itself, `BridgeDelegate.fillServed`): the user is at work with that vault, so its idle
+    /// delay starts again. Nothing else from a browser does that (status polls, pairing, refused
+    /// requests, agent fills), or a page could hold a vault open. And only for `fillWindow` after the
+    /// account was unlocked or the user was last in the app: past that, the delay runs out.
+    func fillServed(account slot: String = AccountDirectoryStore.primarySlot) {
+        guard let vault = vault(slot), vault.state == .unlocked, let since = present[slot] else { return }
+        guard vault.environment.clock.now.timeIntervalSince(since) <= Self.fillWindow else { return }
+        vault.noteBrowserFill()
     }
 
-    fileprivate func show(_ r: FfiBridgePairingRequest) {
+    private func ask(_ attention: Attention) {
+        if let attentionRequested { attentionRequested(attention) } else { waitingAttention = attention }
+    }
+
+    func show(_ r: FfiBridgePairingRequest) {
         BridgeLog.note("pairing request shown")
         requests.removeAll { $0.id == r.requestId }
         requests.append(
             Request(id: r.requestId, extensionName: r.extName, browser: r.browser, code: r.code))
         // The code must be on screen while the extension shows it.
-        NotificationCenter.default.post(name: Self.unlockRequestedNotification, object: nil)
+        ask(.pairing)
     }
 
     fileprivate func ended(_ id: UInt64) {
@@ -201,23 +412,49 @@ public final class BrowserBridge {
         blocked = store.blockedAuto()
     }
 
-    fileprivate func wroteVault() async {
-        await session.bridgeWroteVault()
+    /// The bridge wrote to the account in `slot`: that account reloads and pushes.
+    func wroteVault(slot: String) async {
+        await vault(slot)?.bridgeWroteVault()
     }
 
-    fileprivate func unlockRequested() {
-        // An unlock, not a pairing: the app may give the front back to the browser after it (MS-03).
-        NotificationCenter.default.post(
-            name: Self.unlockRequestedNotification, object: nil, userInfo: [Self.unlockOpKey: true])
+    /// The paired client `pairing` asked to unlock (never a pairing), for the page on `host` when it
+    /// said: the app may give the front back to the browser after it (MS-03), the Touch ID that
+    /// answers names that site, and a biometric unlock answers one `reprompt` check of that client
+    /// for that site. The request is for the primary account, whose lock is the one the browsers see.
+    func unlockRequested(pairing: String, host: String?) {
+        if session.state != .unlocked {
+            let now = session.environment.clock.now
+            credit.unlockRequested(now: now, pairing: pairing, host: host)
+            // A prompt for a site the user is not signing in to looks wrong, as it should.
+            session.biometricPrompt = credit.requestedHost(now: now).map { site in
+                VaultSession.BiometricPrompt(
+                    text: String(localized: "session.unlockOnepassFor \(site)", bundle: VaultKitStrings.bundle),
+                    until: now.addingTimeInterval(BridgeUnlockCredit.requestWindow))
+            }
+        }
+        ask(.unlock)
     }
 
-    fileprivate func confirmReprompt() async -> Bool {
+    /// Touch ID for an item marked `reprompt` of the account in `slot`, asked on that account's own
+    /// session, for the paired client `pairing` and the page on `host` (nil: the extension's own
+    /// window). An account that is locked, or unknown here, refuses.
+    func confirmReprompt(slot: String, pairing: String, host: String?) async -> Bool {
+        guard let vault = vault(slot) else { return false }
+        // The Touch ID that just unlocked the primary vault for this browser and this site answers
+        // once, for an item of that account only.
+        if slot == Self.primarySlot, vault.state == .unlocked,
+            credit.consume(now: vault.environment.clock.now, pairing: pairing, host: host)
+        {
+            BridgeLog.note("reprompt answered by the unlock")
+            vault.noteActivity()
+            return true
+        }
         let prompt = String(localized: "bridge.fillProtectedItem", bundle: VaultKitStrings.bundle)
-        return await session.confirmUserPresence(prompt: prompt)
+        return await vault.confirmUserPresence(prompt: prompt)
     }
 
     /// Called on Rust bridge threads; every UI step hops to the main actor.
-    private final class Delegate: BridgeDelegate, @unchecked Sendable {
+    final class Delegate: BridgeDelegate, @unchecked Sendable {
         weak var owner: BrowserBridge?
         let store: BridgePairingStore
 
@@ -246,24 +483,34 @@ public final class BrowserBridge {
             store.touch(pairingId, at: at)
         }
 
-        func unlockRequested() {
-            Task { @MainActor [weak owner] in owner?.unlockRequested() }
+        func unlockRequested(pairingId: String, originHost: String?) {
+            Task { @MainActor [weak owner] in owner?.unlockRequested(pairing: pairingId, host: originHost) }
         }
 
         /// Blocks this bridge thread (never the main one) until Touch ID answers, at most 2 min.
-        func confirmReprompt(vaultId: String, itemId: String) -> Bool {
+        func confirmReprompt(
+            slot: String, vaultId: String, itemId: String, pairingId: String, originHost: String?
+        ) -> Bool {
             let done = DispatchSemaphore(value: 0)
             let answer = Answer()
             Task { @MainActor [weak owner] in
-                answer.value = await owner?.confirmReprompt() ?? false
+                answer.value =
+                    await owner?.confirmReprompt(slot: slot, pairing: pairingId, host: originHost) ?? false
                 done.signal()
             }
             guard done.wait(timeout: .now() + 120) == .success else { return false }
             return answer.value
         }
 
-        func vaultChanged() {
-            Task { @MainActor [weak owner] in await owner?.wroteVault() }
+        /// `vaultId` is nil when several vaults of the account may have changed: the whole account
+        /// reloads either way.
+        func vaultChanged(slot: String, vaultId: String?) {
+            Task { @MainActor [weak owner] in await owner?.wroteVault(slot: slot) }
+        }
+
+        /// A secret was served, every check passed (never a plan, a save, a refusal or an agent's).
+        func fillServed(slot: String, pairingId: String, kind: String) {
+            Task { @MainActor [weak owner] in owner?.fillServed(account: slot) }
         }
 
         func note(message: String) {
@@ -287,11 +534,6 @@ enum BridgeLog {
 }
 
 extension BrowserBridge {
-    /// Posted when an extension asks to unlock or to pair: the app activates its window.
-    public static let unlockRequestedNotification = Notification.Name("me.somalabs.onepass.bridge.unlock")
-    /// In `unlockRequestedNotification`'s userInfo when an extension asked to unlock (not to pair).
-    public static let unlockOpKey = "unlockOp"
-
     /// "Déverrouiller dans OnePass": opened by the Safari extension's handler and by the relay of
     /// Chrome and Firefox through LaunchServices, from the process that served the user's click.
     /// Since macOS 14 the app cannot bring itself forward while the browser is in front; a link

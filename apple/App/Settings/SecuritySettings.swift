@@ -2,8 +2,8 @@ import SwiftUI
 import VaultKit
 
 /// Sécurité: biometric unlock (asks the master password to turn on), Apple Watch (Mac), the
-/// 14 day password reminder, device mode, visible vaults (shared mode), lock now, delete the account
-/// (App Review 5.1.1(v): this device and iCloud).
+/// 14 day password reminder, the 90 second AutoFill unlock, device mode, visible vaults (shared mode),
+/// lock now, delete the account (App Review 5.1.1(v): this device and iCloud).
 struct SecuritySettings: View {
     @Environment(AppModel.self) private var model
 
@@ -39,6 +39,7 @@ struct SecuritySettings: View {
         let _ = model.settingsRevision
         Form {
             unlockSection
+            autofillReuseSection
             Section {
                 Button("settings.security.changePassword", systemImage: "key") { changingPassword = true }
                     .accessibilityIdentifier("settings.changePassword")
@@ -149,6 +150,23 @@ struct SecuritySettings: View {
             Text("settings.unlock")
         } footer: {
             unlockFooter(personal: personal)
+        }
+    }
+
+    /// "Remplir 90 secondes sans redemander" (on by default): after Face ID or Touch ID in the
+    /// AutoFill provider, the passwords and codes of the same site or app are filled for 90 seconds
+    /// without asking again. Personal devices only: a shared device never keeps an unlock.
+    @ViewBuilder private var autofillReuseSection: some View {
+        if settings.deviceMode.biometricsAllowed, hardwareAvailable {
+            Section {
+                Toggle("settings.security.autofillReuse", isOn: Binding(
+                    get: { settings.autofillUnlockReuse },
+                    set: { on in model.updateSettings { $0.autofillUnlockReuse = on } }
+                ))
+                .accessibilityIdentifier("settings.autofillReuse")
+            } footer: {
+                Text("settings.security.autofillReuse.footer \(biometry)")
+            }
         }
     }
 

@@ -122,6 +122,19 @@ struct AccountDetailSettings: View {
                     } footer: {
                         Text("accounts.detail.domains.footer")
                     }
+                    #if os(macOS)
+                    // Every paired browser reads the accounts it is given: an added account only
+                    // once the user says so, here (off by default).
+                    Section {
+                        Toggle("accounts.detail.browsers", isOn: Binding(
+                            get: { model.accounts.isAvailableInBrowsers(slot) },
+                            set: { model.accounts.setAvailableInBrowsers(slot, $0) }
+                        ))
+                        .accessibilityIdentifier("settings.accounts.detail.browsers")
+                    } footer: {
+                        Text("accounts.detail.browsers.footer")
+                    }
+                    #endif
                     Section {
                         Button("accounts.detail.remove", role: .destructive) { confirmingRemoval = true }
                             .accessibilityIdentifier("settings.accounts.detail.remove")

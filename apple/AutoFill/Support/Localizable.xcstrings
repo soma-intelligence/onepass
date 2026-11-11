@@ -781,6 +781,126 @@
         }
       }
     },
+    "views.alwaysUse.confirm" : {
+      "comment" : "AutoFill list: dialog button that binds the picked login to the asking app, then fills it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always Use for This App"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar siempre para esta app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours utiliser pour cette app"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa sempre per questa app"
+          }
+        }
+      }
+    },
+    "views.alwaysUse.detail %@" : {
+      "comment" : "AutoFill list: dialog message under views.alwaysUse.title; %@ is the App ID the system gave for the asking app",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App ID: %@\nOnePass will suggest this login first in this app next time."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID de la app: %@\nOnePass sugerirá este inicio de sesión primero en esta app la próxima vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identifiant de l'app : %@\nOnePass proposera ce login en premier dans cette app la prochaine fois."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID dell'app: %@\nOnePass suggerirà questo login per primo in questa app la prossima volta."
+          }
+        }
+      }
+    },
+    "views.alwaysUse.once" : {
+      "comment" : "AutoFill list: dialog button that fills the picked login without remembering it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just This Once"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo esta vez"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seulement cette fois"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo questa volta"
+          }
+        }
+      }
+    },
+    "views.alwaysUse.title %@" : {
+      "comment" : "AutoFill list: dialog title after picking a login from the other items while an app asks; %@ is the app's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always Use This Login for %@?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Usar siempre este inicio de sesión para %@?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours utiliser ce login pour %@ ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usare sempre questo login per %@?"
+          }
+        }
+      }
+    },
     "views.app" : {
       "extractionState" : "manual",
       "localizations" : {

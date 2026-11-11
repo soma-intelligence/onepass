@@ -1002,6 +1002,64 @@
         }
       }
     },
+    "accounts.detail.browsers" : {
+      "comment" : "Account settings (Mac): switch that lets the paired browsers reach an added account.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available in browsers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible en los navegadores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible dans les navigateurs"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponibile nei browser"
+          }
+        }
+      }
+    },
+    "accounts.detail.browsers.footer" : {
+      "comment" : "Account settings (Mac): footer of the \"Available in browsers\" switch.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While this account is unlocked, the browsers paired with this Mac can fill its items. Off, they only see the main account."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mientras esta cuenta esté desbloqueada, los navegadores asociados a este Mac pueden rellenar sus elementos. Desactivado, solo ven la cuenta principal."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tant que ce compte est déverrouillé, les navigateurs associés à ce Mac peuvent remplir ses éléments. Désactivé, ils ne voient que le compte principal."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finché questo account è sbloccato, i browser associati a questo Mac possono compilare i suoi elementi. Se disattivato, vedono solo l'account principale."
+          }
+        }
+      }
+    },
     "accounts.detail.color" : {
       "comment" : "Account settings: header of the color swatches.",
       "localizations" : {
@@ -30180,6 +30238,96 @@
         }
       }
     },
+    "onboarding.autoFill.onDetail" : {
+      "comment" : "Onboarding > AutoFill step: text under onboarding.autoFill.onTitle",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your logins, codes and passkeys are suggested in apps and Safari."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus inicios de sesión, códigos y llaves de acceso se sugieren en las apps y en Safari."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tes identifiants, codes et passkeys sont proposés dans les apps et Safari."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I tuoi login, codici e passkey vengono suggeriti nelle app e in Safari."
+          }
+        }
+      }
+    },
+    "onboarding.autoFill.onTitle" : {
+      "comment" : "Onboarding > AutoFill step: title once OnePass is the AutoFill provider",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass Fills Your Passwords"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass rellena tus contraseñas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass remplit tes mots de passe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass compila le tue password"
+          }
+        }
+      }
+    },
+    "onboarding.autoFill.settingsHint" : {
+      "comment" : "Onboarding > AutoFill step: note shown when the system prompt did not turn OnePass on",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on OnePass in the system settings, then come back here. “Later”: the card on the home screen will offer it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa OnePass en los ajustes del sistema y vuelve aquí. «Más tarde»: la tarjeta del inicio te lo volverá a proponer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active OnePass dans les réglages du système, puis reviens ici. « Plus tard » : la carte de l'accueil le proposera encore."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva OnePass nelle impostazioni di sistema, poi torna qui. «Più tardi»: la scheda della schermata principale te lo riproporrà."
+          }
+        }
+      }
+    },
     "onboarding.bothEntriesMustMatch" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46533,6 +46681,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La tua Secret Key non cambia: il tuo Emergency Kit resta valido. Gli altri dispositivi ti chiederanno la nuova password."
+          }
+        }
+      }
+    },
+    "settings.security.autofillReuse" : {
+      "comment" : "Réglages > Sécurité: toggle, keep the AutoFill provider unlocked 90 seconds for the same site or app",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill for 90 Seconds Without Asking Again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rellenar 90 segundos sin volver a pedir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplir 90 secondes sans redemander"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compila per 90 secondi senza richiedere"
+          }
+        }
+      }
+    },
+    "settings.security.autofillReuse.footer %@" : {
+      "comment" : "Réglages > Sécurité: footer of settings.security.autofillReuse; %@ is Face ID, Touch ID or Optic ID",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After %@ in AutoFill, OnePass fills the password and the code of the same site or app for 90 seconds without asking again. Passkeys and items set to “Confirm Before Showing” always ask."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Después de %@ en el autorrelleno, OnePass rellena durante 90 segundos la contraseña y el código del mismo sitio o de la misma app sin volver a pedirlo. Las llaves de acceso y los elementos con «Confirmar antes de mostrar» siempre lo piden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Après %@ dans le remplissage automatique, OnePass remplit pendant 90 secondes le mot de passe et le code du même site ou de la même app sans le redemander. Les passkeys et les éléments « Confirmer avant d'afficher » le demandent toujours."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dopo %@ nel riempimento automatico, OnePass compila per 90 secondi la password e il codice dello stesso sito o della stessa app senza richiederlo. Le passkey e gli elementi con «Conferma prima di mostrare» lo chiedono sempre."
           }
         }
       }

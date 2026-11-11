@@ -9,6 +9,11 @@ import Observation
 /// session is locked, and `store-changed` is posted if this request wrote. Every call after that is
 /// ignored. Errors are left in `session.lastError` for the interface; integrity failures show
 /// `integrityFailure`, and a session locked meanwhile (auto-lock) goes back to the unlock screen.
+///
+/// One exception to the lock (owner ruling of 2026-11-10): a password or a code filled after Face ID
+/// / Touch ID hands its session to the `AutoFillUnlockWindow` it was given, which keeps it 90
+/// seconds for the same service and answers its next requests without interface
+/// (`resultFromUnlockWindow`).
 @MainActor
 @Observable
 public final class AutoFillModel {
@@ -54,24 +59,34 @@ public final class AutoFillModel {
     @ObservationIgnored private var listedServices: [String: AutoFillService] = [:]
     /// The configuration screen asked for an unlock to publish the suggestions.
     @ObservationIgnored private var publishingFromConfiguration = false
+    /// Where a session unlocked with Face ID / Touch ID is kept after a fill (nil: always locked).
+    @ObservationIgnored private let unlockWindow: AutoFillUnlockWindow?
+    /// The unlock of this request that Face ID / Touch ID made itself: when, and the session
+    /// generation it opened (any lock or other unlock since moves the generation on). Never set by
+    /// a master password.
+    @ObservationIgnored private var biometricUnlock: (at: Date, generation: Int)?
     /// Where the generated passwords filled but not saved yet wait (G3).
     private var drafts: GeneratedPasswordDrafts { GeneratedPasswordDrafts(environment: session.environment) }
     /// The language dates and country names are inserted in (text insertion).
     @ObservationIgnored public var locale: Locale = .autoupdatingCurrent
 
     /// `ownAppIDs`: the containing app's bundle identifier, with and without the team prefix.
+    /// `unlockWindow`: the provider's window (nil keeps a fresh session per request, locked at
+    /// the end).
     public init(
         session: VaultSession, request: AutoFillRequest, ownAppIDs: Set<String>,
-        complete: @escaping (AutoFillResult) -> Void
+        unlockWindow: AutoFillUnlockWindow? = nil, complete: @escaping (AutoFillResult) -> Void
     ) {
         self.session = session
         self.request = request
         self.ownAppIDs = ownAppIDs
+        self.unlockWindow = unlockWindow
         onComplete = complete
     }
 
-    /// Answer to a `...WithoutUserInteraction` call (no session: the extension is never unlocked
-    /// outside a request). A save coming from OnePass itself, or of a generated password just filled,
+    /// Answer to a `...WithoutUserInteraction` call without any session (the provider asks
+    /// `resultFromUnlockWindow` first: outside that window, the extension is never unlocked outside
+    /// a request). A save coming from OnePass itself, or of a generated password just filled,
     /// ends as saved without writing; a conditional passkey registration (automatic upgrade by the
     /// site) fails, since a passkey is never created without an explicit choice (ruling A9); everything
     /// else asks for the interface. Never nil today.
@@ -162,7 +177,20 @@ public final class AutoFillModel {
     /// Face ID / Touch ID. A refusal or cancel stays on `locked` (password field).
     public func unlockWithBiometrics() async {
         guard !isFinished, screen == .locked else { return }
-        try? await session.unlockWithBiometrics()
+        let before = session.generation
+        do {
+            try await session.unlockWithBiometrics()
+            // Only this call's own success may open the unlock window. It did not throw, and it is
+            // the unlock that opened the session: exactly one generation further (an unlock begins
+            // one). A session already open leaves the generation alone; a master password typed
+            // beside the system sheet begins its own unlock, supersedes this one and moves it
+            // further. The state alone would credit Face ID with that password's unlock.
+            if session.state == .unlocked, session.generation == before &+ 1 {
+                biometricUnlock = (session.environment.clock.now, session.generation)
+            }
+        } catch {
+            // Refused, cancelled or failed: whatever opens the session next is not this call.
+        }
         await afterUnlockAttempt()
     }
 
@@ -187,11 +215,12 @@ public final class AutoFillModel {
     }
 
     /// Unlocked: the screen of the request, or a direct answer. First the generated passwords still
-    /// waiting are saved (G3), and the identities are published if this provider has not done so for
-    /// a while (G10: QuickType works without opening the app).
+    /// waiting are saved (G3), and the identities are published when the store is behind the vault,
+    /// or when this provider has not done so for a while (G10: QuickType works without opening the
+    /// app).
     private func proceed() async {
         await saveWaitingDrafts()
-        await publishIdentitiesIfStale()
+        await publishIdentitiesIfNeeded()
         guard !isFinished, session.state == .unlocked else {
             recover(finishing: false)
             return
@@ -229,14 +258,27 @@ public final class AutoFillModel {
     nonisolated static let publishInterval: TimeInterval = 600
     nonisolated static let publishedAtKey = "onepass.autofill.providerPublishedAt"
 
-    /// Publishes the identities (metadata only, the core's `autofillIdentities`) once per
-    /// `publishInterval` after an unlock in the provider. An added account publishes nothing (its
-    /// environment has `NoIdentityStore`, ruling P6, unchanged).
-    private func publishIdentitiesIfStale() async {
+    /// Publishes the identities (metadata only, the core's `autofillIdentities`: passwords, passkeys
+    /// and one-time codes alike) after an unlock in the provider.
+    ///
+    /// Behind the vault (a sync applied while locked, a write whose publication never ended, the
+    /// app never opened since): published now and waited for, at most the session's limit, before
+    /// the request goes on, so the store is right when control goes back to the system. Otherwise
+    /// once per `publishInterval` without waiting, which also refills a store the system emptied.
+    /// An added account publishes nothing (its environment has `NoIdentityStore`, ruling P6,
+    /// unchanged).
+    private func publishIdentitiesIfNeeded() async {
         guard !isFinished, session.state == .unlocked, session.environment.settings.quickTypeSuggestions else { return }
         let defaults = session.environment.settings.baseDefaults
         let key = Self.publishedAtKey + (session.environment.settings.scope.map { ".\($0)" } ?? "")
         let now = session.environment.clock.now
+        if session.autofillIdentitiesBehind {
+            // A store that is off (an added account, the provider turned off) reads nothing.
+            guard await session.environment.identityStore.isEnabled(), !isFinished else { return }
+            await session.publishAutofillIdentitiesNow()
+            defaults.set(now, forKey: key)
+            return
+        }
         let last = defaults.object(forKey: key) as? Date
         if let last, last <= now, now.timeIntervalSince(last) < Self.publishInterval { return }
         defaults.set(now, forKey: key)
@@ -388,24 +430,75 @@ public final class AutoFillModel {
 
     /// A Login of the list: its username and password, or its current one-time code.
     /// Ignored unless `candidate` is on the current `list` screen.
-    public func choose(_ candidate: FfiAutofillCandidate) async {
+    ///
+    /// `alwaysForApp` ("Always use for this app", asked by the interface, never assumed): when
+    /// `rememberableApp(for:)` names an app, its App ID is added to the Login's `apps` before the
+    /// fill, so the next request of that app offers the Login as a match. A site is never bound,
+    /// and a binding that cannot be written (a read-only vault) never stops the fill.
+    public func choose(_ candidate: FfiAutofillCandidate, alwaysForApp: Bool = false) async {
         guard !isFinished, session.state == .unlocked, let kind = listKind, listed(candidate) != nil else { return }
+        let app = alwaysForApp ? rememberableApp(for: candidate) : nil
         do {
-            let item = try await session.loadItem(vaultID: candidate.vaultId, itemID: candidate.itemId)
-            let service = listedServices["\(candidate.vaultId):\(candidate.itemId)"]
+            var item = try await session.loadItem(vaultID: candidate.vaultId, itemID: candidate.itemId)
+            var service = listedServices["\(candidate.vaultId):\(candidate.itemId)"]
+            let result: AutoFillResult
             if kind == .oneTimeCode {
-                guard let result = try oneTimeCodeResult(item) else {
+                guard let code = try oneTimeCodeResult(item) else {
                     finish(.cancelled(.credentialNotFound))
                     return
                 }
-                await noteUse(item, service: service)
-                finish(result)
+                result = code
             } else {
-                await noteUse(item, service: service)
-                finish(passwordResult(item))
+                result = passwordResult(item)
             }
+            var bound = false
+            if let app, let saved = await bind(item, to: app) {
+                item = saved
+                service = app
+                bound = true
+            }
+            let published = await noteUse(item, service: service)
+            // The app's new identity reaches the store before the session locks.
+            if bound, !published { await session.publishAutofillIdentitiesNow() }
+            finish(result)
         } catch {
             recover(finishing: false)
+        }
+    }
+
+    // MARK: - "Always use for this app"
+
+    /// The app a Login picked from the other items can be bound to: the first app the request
+    /// names, when `candidate` is on the list and matched none of the request's services. Nil for
+    /// a match (nothing to remember), a request of sites only, and a list without any service:
+    /// only an App ID the system gave is ever bound, never a web domain.
+    public func rememberableApp(for candidate: FfiAutofillCandidate) -> AutoFillService? {
+        guard !isFinished, listKind != nil, case .list(_, let others) = screen,
+            others.contains(where: { $0.vaultId == candidate.vaultId && $0.itemId == candidate.itemId }),
+            listedServices["\(candidate.vaultId):\(candidate.itemId)"] == nil
+        else { return nil }
+        let services: [AutoFillService] =
+            switch request {
+            case .credentialList(let services, _): services
+            case .oneTimeCodeList(let services): services
+            default: []
+            }
+        return services.first { $0.isApp && !$0.identifier.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    /// Adds the App ID of `app` to the `apps` of `item` and saves it. Nil when nothing was saved
+    /// (the error is cleared: the fill goes on without the binding).
+    private func bind(_ item: FfiItem, to app: AutoFillService) async -> FfiItem? {
+        guard !item.apps.contains(app.identifier) else { return item }
+        var item = item
+        item.apps.append(app.identifier)
+        do {
+            let saved = try await session.save(item)
+            wrote = true
+            return saved
+        } catch {
+            if session.state == .unlocked { session.lastError = nil }
+            return nil
         }
     }
 
@@ -564,19 +657,22 @@ public final class AutoFillModel {
     /// (not throttled) does the request post `store-changed` and publish the new ranks before the
     /// session locks. Best effort: a failure never stops the fill; an integrity failure leaves its
     /// state as for any other call, any other error is cleared. Nil `service` (a Login from `others`,
-    /// or a direct request without a service) remembers nothing.
-    private func noteUse(_ item: FfiItem, service: AutoFillService?) async {
-        guard let service, !service.identifier.isEmpty, !isFinished else { return }
+    /// or a direct request without a service) remembers nothing. True when the identities were
+    /// published.
+    @discardableResult
+    private func noteUse(_ item: FfiItem, service: AutoFillService?) async -> Bool {
+        guard let service, !service.identifier.isEmpty, !isFinished else { return false }
         let written: Bool
         do {
             written = try await session.noteAutofillUse(recordID: "\(item.vaultId):\(item.id)", for: service)
         } catch {
             if session.state == .unlocked { session.lastError = nil }
-            return
+            return false
         }
-        guard written else { return }
+        guard written else { return false }
         wrote = true
         await session.publishAutofillIdentitiesNow()
+        return true
     }
 
     private func assertion(
@@ -887,7 +983,7 @@ public final class AutoFillModel {
         guard !isFinished else { return }
         isFinished = true
         screen = .finished
-        session.lock(publishPending: false)
+        session.lock(publishPending: false, stampsAccountLock: false)
         if wrote { session.environment.storeChanges.post() }
     }
 
@@ -895,10 +991,86 @@ public final class AutoFillModel {
         guard !isFinished else { return }
         isFinished = true
         screen = .finished
-        session.lock(publishPending: false)
+        if !keepUnlocked(after: result) { session.lock(publishPending: false, stampsAccountLock: false) }
         // The environment's notifier is `store-changed` in production (tests use their own name).
         if wrote { session.environment.storeChanges.post() }
         onComplete(result)
+    }
+
+    // MARK: - Unlock window (90 seconds, same service)
+
+    /// A password or a code filled after Face ID / Touch ID: the session goes to the unlock window
+    /// instead of being locked. Everything else (a cancel, a save, a passkey, a master password
+    /// unlock, no window) locks as before; the window itself refuses a shared device, the setting
+    /// turned off and a request without a service.
+    private func keepUnlocked(after result: AutoFillResult) -> Bool {
+        // Still the very unlock Face ID made: no lock and no other unlock since.
+        guard let unlockWindow, let unlock = biometricUnlock, session.generation == unlock.generation
+        else { return false }
+        let unlockedAt = unlock.at
+        switch result {
+        case .password, .oneTimeCode: break
+        default: return false
+        }
+        let services: [AutoFillService] =
+            switch request {
+            case .credentialList(let services, _): services
+            case .oneTimeCodeList(let services): services
+            case .credential(_, .password, _, let service?), .credential(_, .oneTimeCode, _, let service?): [service]
+            default: []
+            }
+        return unlockWindow.open(session: session, services: services, method: .biometrics, unlockedAt: unlockedAt)
+    }
+
+    /// Answer to `provideCredentialWithoutUserInteraction` inside the unlock window: the password or
+    /// the current code of the identity's Login, without interface and without a second Face ID,
+    /// when `window` holds a session for the request's service and `account` (nil: the primary one).
+    ///
+    /// Nil is the normal path (`resultWithoutUserInteraction`, then the interface and Face ID): no
+    /// window for that service, a passkey, a request without service, a Login marked `reprompt`,
+    /// one that no longer matches the service, or any error. The session stays with the window.
+    public static func resultFromUnlockWindow(
+        for request: AutoFillRequest, window: AutoFillUnlockWindow, account: String?, ownAppIDs: Set<String>
+    ) async -> AutoFillResult? {
+        guard case .credential(_, let kind, nil, let service?) = request, kind != .passkey,
+            let session = window.session(for: service, kind: kind, account: account)
+        else { return nil }
+        let model = AutoFillModel(session: session, request: request, ownAppIDs: ownAppIDs) { _ in }
+        guard let result = await model.fillFromWindow() else { return nil }
+        // Ended while the answer was read (the 90 seconds, a lock): the normal path.
+        return window.holds(session) ? result : nil
+    }
+
+    /// The fill of a direct request on a session the unlock window keeps: never locks it, never
+    /// shows a screen. Nil when the request cannot be answered this way.
+    private func fillFromWindow() async -> AutoFillResult? {
+        guard !isFinished, session.state == .unlocked,
+            case .credential(let recordID, let kind, nil, let service?) = request
+        else { return nil }
+        do {
+            // Extra protection (`reprompt`) always asks; a stale identity falls back to the list.
+            guard let item = try await fillableLogin(recordID: recordID), !item.reprompt else { return nil }
+            let matching = try await session.autofillCandidates(for: service, includeAll: false)
+            guard matching.contains(where: { $0.itemId == item.id && $0.vaultId == item.vaultId }) else { return nil }
+            let result: AutoFillResult
+            switch kind {
+            case .password:
+                result = passwordResult(item)
+            case .oneTimeCode:
+                guard let code = try oneTimeCodeResult(item) else { return nil }
+                result = code
+            case .passkey:
+                return nil
+            }
+            await noteUse(item, service: service)
+            isFinished = true
+            screen = .finished
+            if wrote { session.environment.storeChanges.post() }
+            return result
+        } catch {
+            if session.state == .unlocked { session.lastError = nil }
+            return nil
+        }
     }
 
     // MARK: - Helpers

@@ -194,6 +194,37 @@ struct AccountSessionsTests {
         }
     }
 
+    /// "Lock everything" ends the unlock the AutoFill provider may keep for every account, also one
+    /// whose session was never made in this launch of the app.
+    @Test func lockAllStampsAccountsWithoutASessionToo() async throws {
+        let h = try AccountsHarness()
+        defer { h.cleanUp() }
+        try await h.createAccount(in: "primary", name: "Quentin Caron")
+        let work = try h.accounts.beginAdding(kind: .business, label: "Soma Labs", color: .orange)
+        try await h.createAccount(in: work, name: "Quentin, Soma Labs")
+        h.accounts.lockAll()
+
+        // A new launch: only the primary account's session exists.
+        let relaunched = AccountSessions(store: h.store, primary: h.accounts.primary, defaults: h.defaults) { _, _, _ in
+            h.accounts.primary.environment
+        }
+        #expect(relaunched.madeSession(work) == nil)
+        let stamps = SharedAccountLockStamps()
+        let workSettings = VaultSettings(defaults: h.defaults, scope: work)
+        let primarySettings = h.accounts.primary.environment.settings
+        let before = try #require(stamps.latest(for: workSettings))
+        let beforePrimary = try #require(stamps.latest(for: primarySettings))
+
+        h.clock.advance(60)
+        relaunched.lockAll()
+        let after = try #require(stamps.latest(for: workSettings))
+        #expect(after.mark != before.mark)
+        #expect(after.lockedAt == h.clock.now)
+        #expect(relaunched.madeSession(work) == nil)
+        // The primary account, whose session exists, stamps its own lock as before.
+        #expect(stamps.latest(for: primarySettings)?.mark != beforePrimary.mark)
+    }
+
     @Test func aStoreHoldingAnotherAccountIsRefused() async throws {
         let h = try AccountsHarness()
         defer { h.cleanUp() }

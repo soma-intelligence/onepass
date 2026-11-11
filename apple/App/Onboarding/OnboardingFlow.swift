@@ -8,6 +8,9 @@ enum OnboardingStep: Hashable, Sendable {
     case welcome, device, password, secretKey, biometrics, visibleVaults, restore, done
     /// "J'ai déjà OnePass sur un autre appareil": the mode, then the QR, code and password.
     case pairMode, pairing
+    /// "Remplis tes mots de passe avec OnePass": once the account exists, asks the system to turn
+    /// the AutoFill provider on. Skippable; never among the steps when the provider is already on.
+    case autoFill
 }
 
 enum OnboardingPath: Sendable {
@@ -148,9 +151,31 @@ final class OnboardingModel {
 
     @ObservationIgnored private let model: AppModel
 
+    /// The AutoFill step is among the steps: the provider was not known to be on when this
+    /// onboarding began (decided once, so the steps never move under the user). Passed over on
+    /// arrival when the provider is on by then.
+    let autoFillOffered: Bool
+    /// The system prompt is up.
+    private(set) var autoFillRequesting = false
+    /// The request was made and the provider is still off (the prompt was refused, or the system
+    /// settings were opened instead): the step says where to turn it on.
+    private(set) var autoFillAsked = false
+    /// OnePass is the system AutoFill provider (read again on every return to the foreground).
+    var autoFillEnabled: Bool { model.autofillEnabled == true }
+
+    private static func offersAutoFill(_ model: AppModel) -> Bool {
+        #if DEBUG
+        // UI tests walk the steps by their buttons: the system prompt stays out of them unless a
+        // test asks for the step (`-OnePassOnboardingAutoFill YES`).
+        if TestIsolation.isActive, !UserDefaults.standard.bool(forKey: "OnePassOnboardingAutoFill") { return false }
+        #endif
+        return model.autofillEnabled != true
+    }
+
     init(model: AppModel, restoreOnly: Bool) {
         self.model = model
         self.restoreOnly = restoreOnly
+        autoFillOffered = Self.offersAutoFill(model)
         if restoreOnly {
             path = .restore
             step = .restore
@@ -203,6 +228,7 @@ final class OnboardingModel {
             // A guest session opens its own screen: nothing follows.
             guard pairDeviceMode != .public else { return steps }
             if biometricsOffered { steps.append(.biometrics) }
+            if autoFillOffered { steps.append(.autoFill) }
             if mode == .shared { steps.append(.visibleVaults) }
             steps.append(.done)
             return steps
@@ -210,6 +236,8 @@ final class OnboardingModel {
         var steps: [OnboardingStep] = restoreOnly ? [] : [.welcome, .device]
         steps.append(contentsOf: path == .create ? [.password, .secretKey] : [.restore])
         if biometricsOffered { steps.append(.biometrics) }
+        // Right after the account exists and its unlock is set: the provider, asked once.
+        if autoFillOffered { steps.append(.autoFill) }
         if mode == .shared { steps.append(.visibleVaults) }
         steps.append(.done)
         return steps
@@ -251,9 +279,13 @@ final class OnboardingModel {
     private func advance() {
         errorMessage = nil
         let all = steps
-        if let index = all.firstIndex(of: step), index + 1 < all.count {
+        guard let index = all.firstIndex(of: step) else { return }
+        var next = index + 1
+        // Turned on meanwhile (in the system settings): nothing to ask.
+        if next < all.count, all[next] == .autoFill, autoFillEnabled { next += 1 }
+        if next < all.count {
             movingForward = true
-            step = all[index + 1]
+            step = all[next]
         }
     }
 
@@ -370,6 +402,7 @@ final class OnboardingModel {
             default: nil
             }
         case .biometrics: String(localized: "Activer \(biometryName)")
+        case .autoFill: autoFillEnabled ? String(localized: "common.continue") : String(localized: "app.turnOnOnepass")
         case .restore: String(localized: "common.unlock")
         case .done: String(localized: "app.openOnepass")
         default: String(localized: "common.continue")
@@ -383,6 +416,7 @@ final class OnboardingModel {
         case .secretKey: return kitStoredOffline
         // Enabled: the success shows for a moment before the next step.
         case .biometrics: return !biometricsEnabled
+        case .autoFill: return !autoFillRequesting
         case .restore: return !restoreKey.trimmingCharacters(in: .whitespaces).isEmpty && !restorePassword.isEmpty
         case .pairing:
             if pairing?.state == .receivedFull { return !restorePassword.isEmpty }
@@ -395,7 +429,15 @@ final class OnboardingModel {
     /// The typed code reads as a pairing code (8 characters of the alphabet).
     var joinCodeValid: Bool { (try? pairingRendezvousServiceName(code: joinCode)) != nil }
 
-    var canSkip: Bool { step == .biometrics && !busy && !biometricsEnabled }
+    var canSkip: Bool {
+        guard !busy else { return false }
+        switch step {
+        case .biometrics: return !biometricsEnabled
+        // "Plus tard": the tip card of Accueil offers it again.
+        case .autoFill: return !autoFillRequesting && !autoFillEnabled
+        default: return false
+        }
+    }
 
     func primary() async {
         guard primaryEnabled else { return }
@@ -405,6 +447,7 @@ final class OnboardingModel {
         case .password: await createAccount()
         case .secretKey: advance()
         case .biometrics: await enrollBiometrics()
+        case .autoFill: await turnOnAutoFill()
         case .visibleVaults: advance()
         case .restore: await restore()
         case .done: finish()
@@ -546,6 +589,30 @@ final class OnboardingModel {
         } catch {
             fail(VaultError(error).localizedMessage, next: .retry)
         }
+    }
+
+    /// "Activer OnePass": the system prompt (the system settings when it does not show,
+    /// `AppModel.requestAutoFillActivation`), then on to the next step once the provider is on.
+    /// Still off: the step stays, with "Plus tard".
+    private func turnOnAutoFill() async {
+        if autoFillEnabled {
+            advance()
+            return
+        }
+        guard !autoFillRequesting else { return }
+        autoFillRequesting = true
+        await model.requestAutoFillActivation()
+        autoFillRequesting = false
+        guard autoFillEnabled else {
+            autoFillAsked = true
+            return
+        }
+        guard step == .autoFill else { return }
+        successPulse &+= 1
+        // The success shows on this step for a moment, then the next one comes in.
+        try? await Task.sleep(for: .milliseconds(1100))
+        guard step == .autoFill else { return }
+        advance()
     }
 
     private func restore() async {
@@ -861,6 +928,7 @@ final class OnboardingModel {
         case .password: String(localized: "Mot de passe maître")
         case .secretKey: "Secret Key"
         case .biometrics: biometryName
+        case .autoFill: String(localized: "term.autofill")
         case .visibleVaults: String(localized: "Coffres visibles")
         case .restore: "Emergency Kit"
         case .done: String(localized: "common.done")

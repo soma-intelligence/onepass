@@ -119,6 +119,8 @@ public final class VaultSession {
     @ObservationIgnored private let identitySync: IdentityStoreSync
     /// Identity store requests (refresh, clear), forwarded in order.
     @ObservationIgnored private var identityChain: Task<Void, Never>?
+    /// Whether the identity store is behind the vault, shared with the AutoFill provider.
+    @ObservationIgnored private let identityLedger: IdentityPublishLedger
     /// Set by `refuseStore`: every read of the store ends in this failure.
     @ObservationIgnored private var refusedStore: VaultError?
     /// Observes `StoreChangeNotifier`; cancelled on deinit (the extension makes one session per request).
@@ -152,7 +154,9 @@ public final class VaultSession {
         hiddenVaultIDs = environment.settings.hiddenVaultIDs
         autoLock = AutoLock(now: environment.clock.now)
         clipboard = Clipboard(pasteboard: environment.pasteboard, clock: environment.clock)
-        identitySync = IdentityStoreSync(client: environment.identityStore, debounce: environment.identityDebounce)
+        identityLedger = IdentityPublishLedger(settings: environment.settings)
+        identitySync = IdentityStoreSync(
+            client: environment.identityStore, debounce: environment.identityDebounce, ledger: identityLedger)
         evaluateStoredAccount()
         observeStoreChanges()
     }
@@ -205,11 +209,15 @@ public final class VaultSession {
             }
             await refresh()
             refreshAutofillIdentities()
-        case .noAccount, .locked: evaluateStoredAccount()
+        case .noAccount, .locked:
+            // Nothing can be read while locked: the identity store is behind until the next
+            // unlock, in the app or in the AutoFill provider, publishes.
+            identityLedger.markChanged()
+            evaluateStoredAccount()
         case .failed(let error) where error == .deviceRevoked:
             // On the removed screen: a sync commit may have erased it, or moved its date.
             runQuarantineClock()
-        case .unlocking, .failed: break
+        case .unlocking, .failed: identityLedger.markChanged()
         }
     }
 
@@ -344,6 +352,7 @@ public final class VaultSession {
     /// throttle and biometric wish, and the system identity store. Other accounts on the device are
     /// untouched (their own Keychain items, keyed by their account id).
     private func forgetErasedAccount() {
+        stampAccountLock()
         if let accountID = settings.accountID {
             do {
                 try secretKeys.remove(accountID: accountID)
@@ -371,6 +380,7 @@ public final class VaultSession {
     /// user erases the device (`eraseRevokedDevice`).
     func lockRevokedDevice() {
         let wasOpen = session != nil
+        stampAccountLock()
         generation &+= 1
         endAgentWindow()
         if let session {
@@ -440,6 +450,7 @@ public final class VaultSession {
     /// Idempotent: it runs again at each re-read until the erased screen was shown.
     private func finishQuarantineErase(_ notice: FfiErasedNotice) {
         quarantineEraseAt = nil
+        stampAccountLock()
         if let session {
             self.session = nil
             release(session)
@@ -828,9 +839,27 @@ public final class VaultSession {
         biometricsRevision += 1
     }
 
+    /// The reason one biometric unlock shows instead of "Déverrouiller OnePass" (`biometricPrompt`).
+    public struct BiometricPrompt: Sendable, Equatable {
+        public let text: String
+        /// Past this, the usual wording.
+        public let until: Date
+
+        public init(text: String, until: Date) {
+            self.text = text
+            self.until = until
+        }
+    }
+
+    /// Set by the Mac browser bridge when a paired browser asks to unlock for a site: the next
+    /// biometric unlock names that site, so a prompt the user did not cause there looks wrong. Taken
+    /// by that unlock, whatever its outcome; ignored once out of date.
+    @ObservationIgnored public var biometricPrompt: BiometricPrompt?
+
     /// Face ID, Touch ID or Apple Watch. Any refusal (reboot, 14 days, biometry change, cancel) ends in
     /// `locked` with `VaultError.passwordRequired`, so the UI shows the password field.
-    public func unlockWithBiometrics() async throws {
+    /// `prompt`: the reason shown; nil shows `biometricPrompt` when one waits, else the usual one.
+    public func unlockWithBiometrics(prompt: String? = nil) async throws {
         if state == .unlocked { return }
         try checkStoreUsable()
         guard settings.deviceMode.biometricsAllowed, biometrics.isAvailable else {
@@ -840,7 +869,11 @@ public final class VaultSession {
         let gen = beginUnlocking()
         let key: SecretBytes
         do {
-            var auk = try await biometrics.unlock(accountID: accountID, prompt: Self.unlockPrompt)
+            let waiting = biometricPrompt
+            biometricPrompt = nil
+            let reason =
+                prompt ?? waiting.flatMap { environment.clock.now <= $0.until ? $0.text : nil } ?? Self.unlockPrompt
+            var auk = try await biometrics.unlock(accountID: accountID, prompt: reason)
             key = SecretBytes(taking: &auk)
         } catch {
             biometricsRevision += 1
@@ -980,7 +1013,10 @@ public final class VaultSession {
     /// `publishPending: false` (the AutoFill extension, whose own writes are published by
     /// `publishAutofillIdentitiesNow`): a refresh still waiting is dropped, not published, so each
     /// request does not replace the system store again.
-    public func lock(publishPending: Bool = true) {
+    /// `stampsAccountLock: false` (the AutoFill provider's own end of request only): every other
+    /// lock is stamped for the account, which ends the unlock the provider may still keep.
+    public func lock(publishPending: Bool = true, stampsAccountLock: Bool = true) {
+        if stampsAccountLock { stampAccountLock() }
         generation &+= 1
         // A profile edit still waiting stays `profilePending`: written at the next unlock.
         profileTask?.cancel()
@@ -1011,6 +1047,13 @@ public final class VaultSession {
         if wasOpen { notifySync { await $0.sessionLocked() } }
     }
 
+    /// The account was locked here (Lock button, auto-lock, "lock everything", a revoked or erased
+    /// device, "Données refusées"): stamped in the shared suite, where the AutoFill provider reads
+    /// it before it answers from an unlock it kept (`AutoFillUnlockWindow`).
+    private func stampAccountLock() {
+        SharedAccountLockStamps.record(for: settings, at: environment.clock.now)
+    }
+
     private func clearMemory() {
         sharing = SharingSnapshot()
         devices = []
@@ -1030,6 +1073,12 @@ public final class VaultSession {
     /// Any user interaction: restarts the inactivity delay.
     public func noteActivity() {
         autoLock.noteActivity(environment.clock.now)
+    }
+
+    /// The browser bridge released a secret after all its checks (`BrowserBridge.fillServed`): use of
+    /// the vault, also while the app is hidden behind the browser.
+    public func noteBrowserFill() {
+        autoLock.noteServedFill(environment.clock.now)
     }
 
     public func scenePhaseChanged(_ phase: ScenePhaseKind) {
@@ -1355,7 +1404,11 @@ public final class VaultSession {
         let written = try await read {
             try $0.noteAutofillUse(recordId: recordID, service: service, excludedVaultIds: excluded)
         }
-        if written { notifySync { await $0.localChangesWritten() } }
+        if written {
+            // The identity ranks moved: behind until the caller, or the next unlock, publishes.
+            identityLedger.markChanged()
+            notifySync { await $0.localChangesWritten() }
+        }
         return written
     }
 
@@ -1462,10 +1515,23 @@ public final class VaultSession {
         }
     }
 
-    /// Publishes the AutoFill identities (debounced). Does nothing unless unlocked with the
-    /// "Suggestions au-dessus du clavier" setting on. A lock keeps what was published: suggestions
-    /// must work while OnePass is locked.
+    /// The identity set may have changed: publishes the AutoFill identities (debounced). Does nothing
+    /// unless unlocked with the "Suggestions au-dessus du clavier" setting on. A lock keeps what was
+    /// published: suggestions must work while OnePass is locked. Whatever becomes of this refresh (a
+    /// lock that drops it, a process killed), the store counts as behind until a publication ends.
     public func refreshAutofillIdentities() {
+        identityLedger.markChanged()
+        scheduleIdentityRefresh()
+    }
+
+    /// The system identity store may not hold the vault's current identities (a sync applied while
+    /// locked, a publication that never ended, nothing published yet). Read by the AutoFill
+    /// provider after an unlock: behind, it publishes and waits before it goes on.
+    public var autofillIdentitiesBehind: Bool { identityLedger.isBehind }
+
+    /// The debounced publication alone, for an unlock: nothing changed, the store is only brought
+    /// up to date (the system empties it when the provider is turned off).
+    private func scheduleIdentityRefresh() {
         guard state == .unlocked, let session, settings.quickTypeSuggestions else { return }
         let excluded = excludedVaultIDs
         let settings = settings
@@ -1527,11 +1593,13 @@ public final class VaultSession {
         let excluded = excludedVaultIDs
         let settings = settings
         let sync = identitySync
+        let ledger = identityLedger
         enqueueIdentity {
-            guard settings.quickTypeSuggestions,
-                let list = try? await CoreThread.run({ try session.autofillIdentities(excludedVaultIds: excluded) })
+            guard settings.quickTypeSuggestions else { return }
+            let generation = ledger.generation
+            guard let list = try? await CoreThread.run({ try session.autofillIdentities(excludedVaultIds: excluded) })
             else { return }
-            await sync.replaceNow(list)
+            await sync.replaceNow(list, generation: generation)
         }
         guard let chain = identityChain else { return }
         await Self.wait(for: chain, atMost: limit)
@@ -1544,10 +1612,11 @@ public final class VaultSession {
     public func publishAutofillIdentitiesSoon() async {
         guard state == .unlocked, let session, settings.quickTypeSuggestions else { return }
         let excluded = excludedVaultIDs
+        let generation = identityLedger.generation
         guard let list = try? await CoreThread.run({ try session.autofillIdentities(excludedVaultIds: excluded) })
         else { return }
         let sync = identitySync
-        enqueueIdentity { await sync.replaceSoon(list) }
+        enqueueIdentity { await sync.replaceSoon(list, generation: generation) }
     }
 
     /// Returns when `task` ends or after `limit`, whichever comes first (the task keeps running).
@@ -1910,6 +1979,7 @@ public final class VaultSession {
     /// `clear` (account erased). The store call itself is queued, not awaited.
     private func publishPendingIdentities(from session: Session, excluded: [String]) {
         let sync = identitySync
+        let generation = identityLedger.generation
         let reading = Task {
             try? await CoreThread.run { try session.autofillIdentities(excludedVaultIds: excluded) }
         }
@@ -1925,7 +1995,7 @@ public final class VaultSession {
                 Self.identityLog.error("Lock: AutoFill identities unreadable, published at the next unlock")
                 return
             }
-            await sync.replaceSoon(list)
+            await sync.replaceSoon(list, generation: generation)
         }
     }
 
@@ -1982,7 +2052,9 @@ public final class VaultSession {
         startAutoLockTimer()
         notifySync { await $0.sessionUnlocked(session) }
         if snapshot.purged > 0 { notifySync { await $0.localChangesWritten() } }
-        refreshAutofillIdentities()
+        // Every unlock publishes; a purge changed the identity set too.
+        if snapshot.purged > 0 { identityLedger.markChanged() }
+        scheduleIdentityRefresh()
     }
 
     private func apply(_ snapshot: Snapshot) {
@@ -2041,6 +2113,7 @@ public final class VaultSession {
     /// "Données refusées": keys dropped, nothing in memory, state `failed` until `refresh`.
     private func enterFailed(_ failure: VaultError) -> VaultError {
         let wasOpen = session != nil
+        stampAccountLock()
         generation &+= 1
         if let session {
             self.session = nil

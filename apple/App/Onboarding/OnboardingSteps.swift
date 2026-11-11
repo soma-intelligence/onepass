@@ -14,6 +14,7 @@ struct OnboardingStepContent: View {
             case .password: PasswordStep(model: model)
             case .secretKey: SecretKeyStep(model: model)
             case .biometrics: BiometricsStep(model: model)
+            case .autoFill: AutoFillStep(model: model)
             case .visibleVaults: VisibleVaultsStep(model: model)
             case .restore: RestoreStep(model: model)
             case .done: DoneStep(model: model)
@@ -859,6 +860,56 @@ private struct BiometricsStep: View {
             .toggleStyle(.checkbox)
             .disabled(enabled)
         #endif
+    }
+}
+
+// MARK: - Remplissage automatique
+
+/// Once the account exists: asks the system to make OnePass the AutoFill provider (the system
+/// prompt, the system settings when it does not show). "Plus tard" goes on without it: the tip
+/// card of Accueil offers it again. Never among the steps when the provider is already on.
+private struct AutoFillStep: View {
+    let model: OnboardingModel
+
+    var body: some View {
+        let enabled = model.autoFillEnabled
+        VStack(spacing: 18) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Platform.isMac ? 48 : 32, style: .continuous)
+                    .fill(enabled ? AnyShapeStyle(Color.green.opacity(0.12)) : AnyShapeStyle(.fill.tertiary))
+                if enabled {
+                    CalmCheckmark(size: Platform.isMac ? 64 : 80)
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: "key.viewfinder")
+                        .font(.system(size: Platform.isMac ? 46 : 60, weight: .light))
+                        .foregroundStyle(Theme.accent)
+                        .symbolEffect(.pulse, options: .repeating, isActive: model.autoFillRequesting)
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: Platform.isMac ? 96 : 128, height: Platform.isMac ? 96 : 128)
+            .padding(.top, Platform.isMac ? 0 : 28)
+            .animation(.smooth(duration: 0.35), value: enabled)
+            .accessibilityHidden(true)
+            StepTitle(
+                title: enabled ? "onboarding.autoFill.onTitle" : "browse.fillPasswordsWithOnepass",
+                subtitle: enabled ? "onboarding.autoFill.onDetail" : "browse.loginsCodesAndPasskeys",
+                centered: !Platform.isMac)
+                .contentTransition(.opacity)
+                .accessibilityIdentifier(enabled ? "onboarding.autoFillOn" : "onboarding.autoFillOffer")
+            if !enabled {
+                // Asked and still off: the system settings are where it is turned on.
+                let note: LocalizedStringResource =
+                    model.autoFillAsked ? "onboarding.autoFill.settingsHint" : "onboarding.laterCanTurnIt"
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(Platform.isMac ? .leading : .center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
     }
 }
 

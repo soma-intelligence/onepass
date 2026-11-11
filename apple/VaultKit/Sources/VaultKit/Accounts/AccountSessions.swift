@@ -163,9 +163,46 @@ public final class AccountSessions {
         sessions[slot]?.lock()
     }
 
-    /// Every account, the hidden ones included ("Tout verrouiller", the Lock Control, Siri).
+    /// Every account, the hidden ones included ("Tout verrouiller", the Lock Control, Siri, and on the
+    /// Mac sleep, the screen lock, fast user switching and quitting). An account without a session
+    /// here may still be open in the AutoFill provider: its lock is stamped too, which ends the
+    /// unlock the provider keeps (`SharedAccountLockStamps`; a session stamps its own lock).
     public func lockAll() {
         for session in sessions.values { session.lock() }
+        let now = primary.environment.clock.now
+        for profile in profiles where sessions[profile.slot] == nil {
+            SharedAccountLockStamps.record(for: VaultSettings(defaults: settingsDefaults, scope: profile.slot), at: now)
+        }
+    }
+
+    // MARK: - Browsers
+
+    private static let browsersKey = "onepass.availableInBrowsers"
+
+    /// Told when "Disponible dans les navigateurs" changes (the Mac bridge tells the browsers at once).
+    @ObservationIgnored public var browserAvailabilityChanged: (() -> Void)?
+
+    /// Whether the browsers paired with this Mac may reach the account in `slot` while it is unlocked.
+    /// The primary account always. An added account only once the user said so, here, for that account:
+    /// off by default, since every paired browser reads every account it is given. Kept with the
+    /// account's own settings, and gone with them when the account leaves the device.
+    public func isAvailableInBrowsers(_ slot: String) -> Bool {
+        _ = revision
+        if slot == AccountDirectoryStore.primarySlot { return true }
+        return browserDefaults(slot).bool(forKey: Self.browsersKey)
+    }
+
+    public func setAvailableInBrowsers(_ slot: String, _ available: Bool) {
+        guard slot != AccountDirectoryStore.primarySlot, profile(slot) != nil,
+            isAvailableInBrowsers(slot) != available
+        else { return }
+        browserDefaults(slot).set(available, forKey: Self.browsersKey)
+        revision &+= 1
+        browserAvailabilityChanged?()
+    }
+
+    private func browserDefaults(_ slot: String) -> ScopedDefaults {
+        ScopedDefaults(settingsDefaults, prefix: ScopedDefaults.prefix(forSlot: slot))
     }
 
     /// Forwards a scene phase to every account (each applies its own delay).

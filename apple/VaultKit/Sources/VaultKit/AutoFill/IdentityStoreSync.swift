@@ -100,7 +100,10 @@ public final class InMemoryIdentityStore: IdentityStoreClient {
 /// `schedule` debounces: only the last request of a burst runs, `debounce` after it. Store operations
 /// run one after the other, in request order, so a `clear` is never overtaken by an earlier refresh.
 /// A disabled store is left alone; a failing identity provider (session locked meanwhile, store error)
-/// keeps the store as it was.
+/// keeps the store as it was. Every replacement that reached the store is noted in the ledger, which
+/// tells the app and the provider whether the store is behind the vault. Always a full replacement:
+/// the incremental calls need the store's own state to be known, and it is not (the system empties
+/// it when the provider is turned off).
 public actor IdentityStoreSync {
     private let client: any IdentityStoreClient
     private let debounce: Duration
@@ -117,15 +120,20 @@ public actor IdentityStoreSync {
     private let marks = Mutex(Marks())
     /// The request mark of the latest scheduled refresh.
     private var pendingMark = 0
+    /// Told each time the store was replaced, and when it was emptied (nil: nobody to tell).
+    private let ledger: IdentityPublishLedger?
 
     private struct Marks {
         var requested = 0
         var settled = 0
     }
 
-    public init(client: any IdentityStoreClient, debounce: Duration = .seconds(1)) {
+    public init(
+        client: any IdentityStoreClient, debounce: Duration = .seconds(1), ledger: IdentityPublishLedger? = nil
+    ) {
         self.client = client
         self.debounce = debounce
+        self.ledger = ledger
     }
 
     /// Counts a refresh request before it reaches `schedule` (the caller queues it): until that
@@ -166,23 +174,26 @@ public actor IdentityStoreSync {
 
     /// Replaces the store with `identities` without the debounce (a pending debounced refresh is
     /// dropped), and returns once done. A disabled store is left alone; errors are ignored.
-    public func replaceNow(_ identities: [FfiAutofillIdentity]) async {
-        replaceSoon(identities)
+    /// `generation`: the ledger mark read before `identities` were (nil: the ledger is not told).
+    public func replaceNow(_ identities: [FfiAutofillIdentity], generation: String? = nil) async {
+        replaceSoon(identities, generation: generation)
         await chain?.value
     }
 
     /// `replaceNow` without waiting for the store (an XPC call): queued in order, so a later `clear`
     /// still runs after it.
-    public func replaceSoon(_ identities: [FfiAutofillIdentity]) {
+    public func replaceSoon(_ identities: [FfiAutofillIdentity], generation: String? = nil) {
         revision &+= 1
         pending?.cancel()
         pending = nil
         settlePending()
         let current = revision
         let client = client
+        let ledger = ledger
         enqueue {
             guard await self.isCurrent(current), await client.isEnabled() else { return }
-            try? await client.replaceAll(identities)
+            guard (try? await client.replaceAll(identities)) != nil else { return }
+            if let generation { ledger?.markPublished(generation) }
         }
     }
 
@@ -194,7 +205,11 @@ public actor IdentityStoreSync {
         pending = nil
         settlePending()
         let client = client
-        enqueue { try? await client.removeAll() }
+        let ledger = ledger
+        enqueue {
+            try? await client.removeAll()
+            ledger?.reset()
+        }
         await chain?.value
     }
 
@@ -233,14 +248,18 @@ public actor IdentityStoreSync {
     ) {
         guard expected == revision else { return }
         let client = client
+        let ledger = ledger
         enqueue {
             guard await self.isCurrent(expected), await client.isEnabled() else { return }
+            // Read before the identities: a change made meanwhile leaves the store behind.
+            let generation = ledger?.generation
             guard let list = try? await identities() else { return }
             // Still the latest request once read: from here on it publishes (a lock's
             // `takePending` sees nothing waiting). A later `clear` is queued after it.
             guard await self.claim(expected) else { return }
             await self.afterRead?()
-            try? await client.replaceAll(list)
+            guard (try? await client.replaceAll(list)) != nil else { return }
+            if let generation { ledger?.markPublished(generation) }
         }
     }
 

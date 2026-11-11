@@ -29,11 +29,10 @@ struct OnePassApp: App {
         Window("OnePass", id: "main") {
             root
                 .frame(minWidth: 820, minHeight: 600)
-                // The app outlives its window (menu bar icon): a closed window locks and ends a
-                // guest session, as quitting does (ruling A7).
+                // The app outlives its window (menu bar icon): a closed window ends a guest session,
+                // as quitting does (ruling A7), but keeps the vault open for the browsers.
                 .onDisappear {
-                    model.publicSession?.end()
-                    model.lock()
+                    model.mainWindowClosed()
                 }
                 // No window-wide material: the split view's sidebar keeps the system's blurred,
                 // translucent material while the list and detail stay on the opaque window
@@ -75,7 +74,7 @@ struct OnePassApp: App {
                 .tint(Theme.accent)
         }
         // Menu bar icon: opens the window from anywhere, and the app stays there once the window is
-        // closed (closing it locks, like quitting did).
+        // closed (the vault stays open until the idle delay, sleep, the screen lock or quitting).
         MenuBarExtra {
             MenuBarMenu(model: model)
         } label: {
@@ -197,26 +196,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if ONEPASS_CLOUDKIT
         NSApplication.shared.registerForRemoteNotifications()
         #endif
-        // Lock on system sleep and on screen lock, like the lock button (no confirmation).
+        // Lock on system sleep, on screen lock and when another user takes the screen (fast user
+        // switching), like "Tout verrouiller" (no confirmation). With auto-lock on "Jamais" and the
+        // window closed, these are what locks an always-on Mac.
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(lockNow), name: NSWorkspace.willSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(lockNow), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(lockNow), name: Self.screenLocked, object: nil)
     }
 
     static let screenLocked = Notification.Name("com.apple.screenIsLocked")
 
-    /// Delivered on the main thread (workspace and distributed notifications both).
+    /// Delivered on the main thread (workspace and distributed notifications both). Every account,
+    /// not only the one on screen: the browsers and the agents reach accounts that are not shown.
     @objc private func lockNow() {
-        model?.lock()
+        model?.lockAll()
     }
 
-    /// Quit (also after the last window closed): `lock()` drops the keys and clears our clipboard
-    /// value, which macOS would otherwise keep after the process is gone (no system expiration).
+    /// Quit (the app outlives its window, which no longer locks): locking every account drops the
+    /// keys and clears our clipboard value, which macOS would otherwise keep after the process is
+    /// gone (no system expiration).
     func applicationWillTerminate(_ notification: Notification) {
         // Quitting or closing the window ends a guest session (ruling A7).
         model?.publicSession?.end()
-        model?.lock()
+        model?.lockAll()
     }
 
     func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
@@ -229,7 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model?.didRegisterPush(token: deviceToken)
     }
 
-    /// The menu bar icon keeps the app running; the closed window has already locked.
+    /// The menu bar icon keeps the app running, the vault as it was (`AppModel.mainWindowClosed`).
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 

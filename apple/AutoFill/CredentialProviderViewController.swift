@@ -21,8 +21,11 @@ private typealias HostingController = NSHostingController
 /// `extensionContext` call.
 ///
 /// One `VaultSession` and one `AutoFillModel` per request, built from the shared environment
-/// without sync. The model locks the session before it completes; a session is never kept for a
-/// later request. The `...WithoutUserInteraction` entry points never unlock: they answer with
+/// without sync. The model locks the session before it completes, with one exception (owner ruling
+/// of 2026-11-10): after Face ID / Touch ID, a filled password or code leaves its session to
+/// `AutoFillUnlockWindow.shared` for 90 seconds, for the same site or app and the same account.
+/// The `...WithoutUserInteraction` entry points never unlock: inside that window a password or a
+/// code of the same service is answered from the kept session, everything else answers with
 /// `AutoFillModel.resultWithoutUserInteraction` (password generation reads no vault data).
 ///
 /// When the system dismisses the interface (or starts another request on this controller) before
@@ -42,6 +45,8 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     private var appeared = false
     /// The `start` of a request prepared before the sheet came up.
     private var pendingStart: (() -> Void)?
+    /// The unlock kept after Face ID / Touch ID: in this process's memory only.
+    private var unlockWindow: AutoFillUnlockWindow { .shared }
 
     #if os(macOS)
     /// No nib: an `NSViewController` without one must create its own view.
@@ -104,12 +109,32 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     // MARK: - Direct requests (QuickType suggestions)
 
+    /// Inside the unlock window (Face ID less than 90 seconds ago, same service and account), a
+    /// password or a one-time code is answered here, without interface. Otherwise the system is
+    /// told to show it.
     override func provideCredentialWithoutUserInteraction(for credentialRequest: any ASCredentialRequest) {
         guard let request = Self.directRequest(credentialRequest) else {
             answer(.cancelled(.credentialNotFound), for: nil)
             return
         }
-        answerWithoutInterface(request)
+        let window = unlockWindow
+        // Nothing kept (the usual case, and always after the process was restarted): the normal path.
+        guard window.isOpen else {
+            answerWithoutInterface(request)
+            return
+        }
+        let account = Self.accountScope(for: request)
+        let ownAppIDs = Self.ownAppIDs()
+        Task { @MainActor [weak self] in
+            let filled = await AutoFillModel.resultFromUnlockWindow(
+                for: request, window: window, account: account, ownAppIDs: ownAppIDs)
+            guard let self else { return }
+            if let filled {
+                self.answer(filled, for: request)
+            } else {
+                self.answerWithoutInterface(request)
+            }
+        }
     }
 
     override func prepareInterfaceToProvideCredential(for credentialRequest: any ASCredentialRequest) {
@@ -137,6 +162,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             answer(.cancelled(.failed), for: nil)
             return
         }
+        noteRequestForUnlockWindow(request)
         answerWithoutInterface(request)
     }
 
@@ -160,7 +186,9 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     @available(iOS 26.2, *)
     override func performWithoutUserInteractionIfPossible(savePasswordRequest: ASSavePasswordRequest) {
-        answerWithoutInterface(.savePassword(Self.saveRequest(savePasswordRequest)))
+        let request = AutoFillRequest.savePassword(Self.saveRequest(savePasswordRequest))
+        noteRequestForUnlockWindow(request)
+        answerWithoutInterface(request)
     }
 
     @available(iOS 26.2, *)
@@ -210,9 +238,19 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         requestEnded = false
         let token = requestToken
         let environment = Self.environment(for: request, slot: slot)
+        // A request for another service or account ends the unlock window; one with an interface
+        // always unlocks its own fresh session.
+        Self.observeDeviceLock()
+        if case .configuration = request {
+            unlockWindow.end()
+        } else {
+            unlockWindow.requestArrived(for: request.primaryService, account: environment.settings.scope)
+        }
         let session = VaultSession(environment: environment)
-        let model = AutoFillModel(session: session, request: request, ownAppIDs: Self.ownAppIDs()) {
-            [weak self] result in
+        let model = AutoFillModel(
+            session: session, request: request, ownAppIDs: Self.ownAppIDs(),
+            unlockWindow: Self.reusesUnlock ? unlockWindow : nil
+        ) { [weak self] result in
             self?.finish(result, for: request, token: token)
         }
         self.session = session
@@ -262,6 +300,54 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         return AutoFillAccounts(accounts: accounts, current: current ?? store.slot(for: request))
     }
 
+    /// The settings scope of the account routing gives `request` (nil: the primary account), as
+    /// the unlock window compares it with the account of the session it keeps.
+    private static func accountScope(for request: AutoFillRequest) -> String? {
+        let slot = AccountDirectoryStore(container: .resolve()).slot(for: request)
+        return slot == AccountDirectoryStore.primarySlot ? nil : slot
+    }
+
+    /// False after an isolated launch of the app (UI tests, Debug builds): their requests each
+    /// unlock on their own, as the tests assert, and the window is never opened.
+    private static var reusesUnlock: Bool {
+        #if DEBUG
+        return !UITestIsolation.isMarked(container: .resolve())
+        #else
+        return true
+        #endif
+    }
+
+    /// A request without interface that the window never answers: one for another service or
+    /// account still ends it.
+    private func noteRequestForUnlockWindow(_ request: AutoFillRequest) {
+        guard unlockWindow.isOpen else { return }
+        unlockWindow.requestArrived(for: request.primaryService, account: Self.accountScope(for: request))
+    }
+
+    /// The device locked: the unlock window ends at once (its session is locked, the keys dropped)
+    /// when this process is running to hear it. Registered once per process. iOS posts the
+    /// protected data notification when the device locks with a passcode; the Mac posts the screen
+    /// lock one. A suspended process hears nothing: the window itself reads the device lock as a
+    /// counter at each use (`DeviceLockSignal`), which is what refuses the fill.
+    private static func observeDeviceLock() {
+        guard !observingDeviceLock else { return }
+        observingDeviceLock = true
+        let end: @Sendable (Notification) -> Void = { _ in
+            Task { @MainActor in AutoFillUnlockWindow.shared.end() }
+        }
+        #if os(iOS)
+        _ = NotificationCenter.default.addObserver(
+            forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main, using: end)
+        #else
+        _ = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main, using: end)
+        _ = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main, using: end)
+        #endif
+    }
+
+    private static var observingDeviceLock = false
+
     private func answerWithoutInterface(_ request: AutoFillRequest) {
         // A filled generated password waits in the account's keychain until a Login holds it (G3).
         var drafts: GeneratedPasswordDrafts?
@@ -275,13 +361,17 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     }
 
     /// Ends the current request with an interface, if any: an unfinished model is abandoned (session
-    /// locked, no completion), the session is locked and dropped, and the view is removed.
+    /// locked, no completion), the session is locked and dropped, and the view is removed. A
+    /// session its model left to the unlock window is only dropped here: the window locks it.
     private func tearDown() {
         requestEnded = true
         pendingStart = nil
         model?.abandon()
         model = nil
-        session?.lock(publishPending: false)
+        if let session, !unlockWindow.holds(session) {
+            // The end of a request, not a lock of the account: no stamp for the other processes.
+            session.lock(publishPending: false, stampsAccountLock: false)
+        }
         session = nil
         guard let hosting else { return }
         #if os(iOS)

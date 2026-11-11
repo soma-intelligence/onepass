@@ -22,8 +22,9 @@ struct ItemRef: Hashable, Sendable {
 final class AppModel {
     /// Every account of the device and their sessions (multi-account spec 6).
     let accounts: AccountSessions
-    /// The session of the account shown. Process-wide services (widgets, watch, browser bridge, agents,
-    /// phone approvals) stay on the primary account (ruling P7).
+    /// The session of the account shown. Process-wide services (widgets, watch, agents, phone
+    /// approvals) stay on the primary account (ruling P7); the browser bridge serves every unlocked
+    /// account, under the primary account's lock (ruling C).
     var session: VaultSession { accounts.active }
     /// The primary account's session.
     var primarySession: VaultSession { accounts.primary }
@@ -364,7 +365,7 @@ final class AppModel {
         #if os(macOS)
         browserBridge =
             demo == nil && !isolated && !storeSplit && resolved.isShared
-            ? BrowserBridge(session: session, container: resolved) : nil
+            ? BrowserBridge(session: session, accounts: accounts, container: resolved) : nil
         #if ONEPASS_CLOUDKIT
         let macChannel: (any RemoteChannel)? = demo == nil && !isolated && !storeSplit ? CloudKitRemoteChannel(containerIdentifier: Self.cloudKitContainer) : nil
         #else
@@ -498,15 +499,24 @@ final class AppModel {
         let phoneApprovals = self.phoneApprovals
         tasks.append(Task { await phoneApprovals.start() })
         if let browserBridge {
-            browserBridge.start()
             // "Déverrouiller dans OnePass" from an extension: the app comes forward on its lock screen.
-            tasks.append(Task { [weak self] in
-                for await note in NotificationCenter.default.notifications(named: BrowserBridge.unlockRequestedNotification) {
-                    // A pairing request shows its sheet and stays; only an unlock goes back to the browser.
-                    let unlock = note.userInfo?[BrowserBridge.unlockOpKey] as? Bool == true
-                    self?.showForUnlock(fromBrowser: unlock)
+            // Set before the socket listens, so what a waiting browser asks at launch is not lost.
+            browserBridge.attentionRequested = { [weak self] attention in
+                guard let self else { return }
+                switch attention {
+                case .unlock: self.showForUnlock(fromBrowser: true)
+                // A pairing request shows its sheet and stays; only an unlock goes back to the browser.
+                case .pairing: self.showForPairing()
                 }
-            })
+            }
+            // The browsers reach every unlocked account (ruling C): a session made later (an account
+            // switched to or added) reports its unlocks and locks to the bridge from the start.
+            let created = accounts.sessionCreated
+            accounts.sessionCreated = { [weak browserBridge] slot, session in
+                created?(slot, session)
+                browserBridge?.accountsChanged()
+            }
+            browserBridge.start()
         }
         #endif
         tasks.append(Task { [weak self] in await self?.refreshAutoFillStatus() })
@@ -710,6 +720,12 @@ final class AppModel {
 
     /// The app's aggregate scene phase (forwarded from `OnePassApp`), not a single window's.
     func scenePhaseChanged(_ phase: ScenePhase) {
+        #if os(macOS)
+        // The user comes to the app, or leaves it: from here the fills served to the browsers keep
+        // the account on screen open for `BrowserBridge.fillWindow` at most.
+        if phase == .active || appWasActive { browserBridge?.userPresent(slot: accounts.activeSlot) }
+        appWasActive = phase == .active
+        #endif
         switch phase {
         case .active:
             biometricAutoPrompt.scenePhaseChanged(.active)
@@ -753,6 +769,11 @@ final class AppModel {
             break
         }
     }
+
+    #if os(macOS)
+    /// The app was in front at the last scene phase.
+    @ObservationIgnored private var appWasActive = false
+    #endif
 
     #if os(iOS) || os(visionOS)
     @ObservationIgnored private var backgroundLock: Task<Void, Never>?
@@ -851,11 +872,18 @@ final class AppModel {
     /// presentation's automatic try, and the privacy shield stays down for it.
     func biometricPromptStarted() {
         biometricAutoPrompt.promptStarted()
+        #if os(macOS)
+        // The bridge serves the primary account: only its biometric unlock answers a browser's request.
+        browserBridge?.biometricUnlockRunning = session === primarySession
+        #endif
     }
 
     /// The prompt answered. Its sheet may still be leaving (scene inactive): the shield stays down
     /// until the scene is active again. Nothing is armed here: after a prompt only the button asks.
     func biometricPromptEnded() {
+        #if os(macOS)
+        browserBridge?.biometricUnlockRunning = false
+        #endif
         #if os(iOS) || os(visionOS)
         let active = UIApplication.shared.applicationState == .active
         #else
@@ -1196,11 +1224,49 @@ final class AppModel {
     /// LaunchServices by the extension's process, is what brings the app forward.
     /// `fromBrowser`: a paired extension asked the bridge to unlock (MS-03), not the `onepass://unlock`
     /// link any page or app can open: only then does the app give the front back once unlocked.
+    /// Cold launch: the link starts the app and may unlock it before the extension's bridge session
+    /// is up; the request that follows that unlock still sends the app back (`BrowserReturn`).
     func showForUnlock(fromBrowser: Bool = false) {
+        if fromBrowser, primarySession.state == .unlocked {
+            // The vault the bridge serves is open already: nothing to show, and the app does not
+            // jump over the browser. After a cold launch this request is the one the link's unlock
+            // was for: back to the browser, as that unlock would have gone.
+            if browserReturn.confirmLate() { NSApplication.shared.hide(nil) }
+            return
+        }
+        // The bridge serves the primary account: its lock screen answers a browser, not another
+        // account left on screen (an edit in progress there is never thrown away for it).
+        if fromBrowser, accounts.activeSlot != AccountDirectoryStore.primarySlot, !editorDirty {
+            switchAccount(to: AccountDirectoryStore.primarySlot)
+        }
         if session.state != .unlocked {
             biometricAutoPrompt.unlockRequested()
-            if fromBrowser { browserReturn.arm() }
+            if fromBrowser { browserReturn.arm() } else { browserReturn.linkOpened() }
         }
+        mainWindowRequest &+= 1
+        NSApplication.shared.activate()
+    }
+
+    /// The main window closed; the app stays in the menu bar. The vault stays open for the browsers
+    /// (owner ruling 2026-11-10): the idle delay, sleep, the screen lock and quitting lock it.
+    /// "Immédiatement" still locks here, as whenever the app leaves the screen: each account obeys
+    /// its own setting, shown or not. A guest session ends (ruling A7), and a code link left waiting
+    /// is dropped with its secret.
+    func mainWindowClosed() {
+        publicSession?.end()
+        dropPendingOtpLink()
+        if settings.autoLockDelay.locksInBackground { lock() }
+        for entry in accounts.openSessions
+        where entry.session !== session && entry.session.state == .unlocked
+            && entry.session.environment.settings.autoLockDelay.locksInBackground
+        {
+            entry.session.lock()
+        }
+    }
+
+    /// An extension asks to pair: the window comes forward for the sheet with its code, and stays.
+    func showForPairing() {
+        if session.state != .unlocked { biometricAutoPrompt.unlockRequested() }
         mainWindowRequest &+= 1
         NSApplication.shared.activate()
     }

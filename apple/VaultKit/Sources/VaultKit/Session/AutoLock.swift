@@ -15,6 +15,14 @@ struct AutoLock {
 
     mutating func noteActivity(_ now: Date) { lastActivity = now }
 
+    /// A secret served to a browser while the app is behind it: the user is at work with the vault,
+    /// so the delay starts again from now, background time included (a plain `noteActivity` never
+    /// outlives the background stamp).
+    mutating func noteServedFill(_ now: Date) {
+        lastActivity = now
+        if backgroundedAt != nil { backgroundedAt = now }
+    }
+
     mutating func enterBackground(_ now: Date) {
         if backgroundedAt == nil { backgroundedAt = now }
     }

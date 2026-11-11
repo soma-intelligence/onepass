@@ -11,6 +11,11 @@ import VaultKit
 /// opens on the search, focused, with the Logins used last first. "Nouveau login" creates, saves and
 /// fills a Login with a generated password (MACAPP-03). With several accounts, a menu switches the
 /// account (MACAPP-06). On the Mac, the arrows move a selection and Return fills it (MACAPP-08).
+///
+/// A Login picked from the other items while an app asks (its App ID came with the request) is
+/// offered once to be kept for that app: "Always use for this app" writes the App ID into the
+/// Login, which is then a match there; "Just this once" only fills. Never bound without the tap.
+/// The dialog names the app and shows its App ID, the only part the app does not choose freely.
 struct CandidateListView: View {
     let model: AutoFillModel
     let session: VaultSession
@@ -30,6 +35,13 @@ struct CandidateListView: View {
     @FocusState private var searchFocused: Bool
     /// The keyboard selection (Mac): an index in `keyboardRows`.
     @State private var selection = 0
+    /// A Login picked from the other items that the asking app can remember.
+    @State private var bindOffer: BindOffer?
+
+    private struct BindOffer {
+        let candidate: FfiAutofillCandidate
+        let app: AutoFillService
+    }
     #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #endif
@@ -95,6 +107,34 @@ struct CandidateListView: View {
                 showOthers = true
                 searchFocused = true
             }
+        }
+        .confirmationDialog(
+            Text("views.alwaysUse.title \(bindOffer?.app.shownName ?? "")"),
+            isPresented: Binding(get: { bindOffer != nil }, set: { if !$0 { bindOffer = nil } }),
+            titleVisibility: .visible, presenting: bindOffer
+        ) { offer in
+            Button("views.alwaysUse.confirm") {
+                act { await model.choose(offer.candidate, alwaysForApp: true) }
+            }
+            .accessibilityIdentifier("autofill.alwaysUse.confirm")
+            Button("views.alwaysUse.once") {
+                act { await model.choose(offer.candidate) }
+            }
+            .accessibilityIdentifier("autofill.alwaysUse.once")
+            Button("common.cancel", role: .cancel) {}
+        } message: { offer in
+            // The App ID as the system gave it, under the name the app chose for itself: a
+            // look-alike name cannot pass for another app.
+            Text("views.alwaysUse.detail \(offer.app.identifier)")
+        }
+    }
+
+    /// Fills `candidate`, after asking whether the app should remember it when it can.
+    private func pick(_ candidate: FfiAutofillCandidate) {
+        if let app = model.rememberableApp(for: candidate) {
+            bindOffer = BindOffer(candidate: candidate, app: app)
+        } else {
+            act { await model.choose(candidate) }
         }
     }
 
@@ -264,7 +304,7 @@ struct CandidateListView: View {
         let fillsSecret = fillsSecret(candidate)
         if fillsSecret {
             Button {
-                act { await model.choose(candidate) }
+                pick(candidate)
             } label: {
                 row(candidate, detail: candidate.user, badge: oneTimeCode ? .code : nil)
                     .background(selectedKey == candidate.key ? Theme.accent.opacity(0.14) : .clear)
@@ -363,7 +403,7 @@ struct CandidateListView: View {
         guard rows.indices.contains(selection) else { return }
         let candidate = rows[selection]
         if fillsSecret(candidate) {
-            act { await model.choose(candidate) }
+            pick(candidate)
         } else if let ref = candidate.passkeys.first {
             act { await model.choosePasskey(ref, in: candidate) }
         }

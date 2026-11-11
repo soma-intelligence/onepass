@@ -6409,6 +6409,35 @@
         }
       }
     },
+    "session.unlockOnepassFor %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock OnePass to sign in to %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquear OnePass para iniciar sesión en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déverrouiller OnePass pour te connecter à %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca OnePass per accedere a %@"
+          }
+        }
+      }
+    },
     "session.unreadablePassphrase" : {
       "extractionState" : "manual",
       "localizations" : {
