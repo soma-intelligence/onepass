@@ -6,10 +6,13 @@
 // response, plus the canary), pairing through the popup, and the helpers the
 // drivers use (in-field menu, overlay, chain state). launchPlain gives the
 // passkey control a browser without the extension behind the same nets.
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+// Start states (host-control.ts): the vault as the popup sees it, the locked
+// menu's unlock button, the overlay's other logins, and the fill-smart
+// command dispatched in the service worker (the keyboard shortcut's handler).
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Browser, type BrowserContext, type Frame, type Page, type Worker, chromium, expect } from "@playwright/test";
+import { type Browser, type BrowserContext, type Frame, type Locator, type Page, type Worker, chromium, expect } from "@playwright/test";
 import { loadCert } from "../../e2e/cert.ts";
 import { installHost, type InstalledHost } from "../../e2e/host.ts";
 import { CANARY_PATH } from "../../e2e/server.ts";
@@ -20,6 +23,8 @@ import { DEFAULT_PROFILE_ID } from "../gen/population.ts";
 import { accountRow, overlayRowSelector } from "./account.ts";
 import type { LabServer } from "../server/server.ts";
 import { EXT_ROOT, type LabState } from "./global-setup.ts";
+import { hostPids, patchHostConfig, stopHost, UNLOCK_APPROVED, UNLOCK_PENDING, unlockDelayMs, UnlockStandIn } from "./host-control.ts";
+import type { StartHost } from "./start-state.ts";
 
 /** Past the click guard of a freshly shown extension frame (see e2e/fixtures.ts). */
 export const GUARD_WAIT_MS = Math.max(CLICK_GUARD_MS, MOVE_GUARD_MS) + 150;
@@ -65,26 +70,72 @@ export interface Lab {
   pickRow(menu: Frame, title: string): Promise<void>;
   /** Whether the overlay lists an account with this exact title (sso: item title and provider, account.ts) within `timeout`. */
   overlayHas(overlay: Frame, title: string, timeout?: number): Promise<boolean>;
-  /** Clicks "Se connecter" on the overlay account `title`. */
-  overlayStart(overlay: Frame, title: string): Promise<void>;
+  /** Clicks "Se connecter" on the overlay account `title`; `before` runs right before the click. */
+  overlayStart(overlay: Frame, title: string, before?: () => Promise<void>): Promise<void>;
+  /** Whether the overlay is the generic card of a locked vault (no account named), within `timeout`. */
+  overlayGeneric(overlay: Frame, timeout?: number): Promise<boolean>;
+  /** Clicks "Se connecter" on the generic card; `before` runs right before the click. */
+  overlayStartGeneric(overlay: Frame, before?: () => Promise<void>): Promise<void>;
   /**
    * Clicks the OnePass icon of `selector` in `scope` with the mouse, where
    * content/icon.ts draws it (a trusted click, as a user's), once the field
    * shows (within `timeout`) and the page analysis had time to attach it.
+   * `before` runs right before the click (a cold start stops the host there).
    */
-  clickIcon(page: Page, scope: Frame, selector: string, timeout: number): Promise<void>;
+  clickIcon(page: Page, scope: Frame, selector: string, timeout: number, before?: () => Promise<void>): Promise<void>;
   /**
    * Runs `trigger` (the site's own passkey button) and returns the OnePass
    * passkey window it opened (popup passkey.html#<token>, a page of the
    * context), or undefined when none opened within `timeout`.
    */
   passkeyWindow(trigger: () => Promise<void>, timeout: number): Promise<Page | undefined>;
-  /** The toolbar Fill on `page`: the popup's `popup_smart_fill` with `page` as the active tab. */
-  toolbarFill(page: Page): Promise<void>;
+  /** The toolbar Fill on `page`: the popup's `popup_smart_fill` with `page` as the active tab; `before` runs right before it. */
+  toolbarFill(page: Page, before?: () => Promise<void>): Promise<void>;
   /** The latest chain started on `https://<site>`, if any. */
   chainState(site: string): Promise<ChainView | null>;
+  /**
+   * The vault's lock state as the popup reads it (`popup_status`). Opens the
+   * session when the host is not connected (so it warms a stopped host) and
+   * never unlocks. Undefined when the host did not answer.
+   */
+  vaultStatus(): Promise<{ locked: boolean } | undefined>;
+  /** LAB_DEBUG: what the worker keeps of unlocks and chains (`storage.session`, no secret there), the host's last log lines and its unlock files. */
+  debugState(): Promise<string>;
+  /** Whether the lab can run the fill-smart command (the service worker lets it dispatch the command event). */
+  canShortcut(): Promise<boolean>;
+  /** The fill-smart command with `page` as the active tab: what Ctrl+Shift+L (Command+Shift+L) runs. */
+  shortcut(page: Page): Promise<void>;
+  /**
+   * What a menu that cannot fill yet shows: "waiting" (the gesture that opened it already asked the app to
+   * unlock or to start; it goes on by itself), or "button" (the fallback: "Déverrouiller dans OnePass" on a
+   * locked vault, "Ouvrir OnePass" when the app does not answer). Undefined: neither.
+   */
+  menuUnlockState(menu: Frame): Promise<"waiting" | "button" | undefined>;
+  /** Presses the menu's unlock (or open) button once the click guard allows it. */
+  menuUnlock(menu: Frame): Promise<void>;
+  /** Whether `menu` lists any row now. */
+  menuHasRows(menu: Frame): Promise<boolean>;
+  /** Opens the overlay's "Autres identifiants" list; false when the overlay has none. */
+  overlayOpenOthers(overlay: Frame): Promise<boolean>;
+  /** Whether the opened list offers the account `title`. */
+  overlayOtherHas(overlay: Frame, title: string, timeout?: number): Promise<boolean>;
+  /** Clicks the row of the one other login `title` that hangs under the pill (exactly two logins); false when there is no such row. */
+  overlayPickSecond(overlay: Frame, title: string, before?: () => Promise<void>): Promise<boolean>;
+  /** Picks the account `title` in the opened list. */
+  overlayPickOther(overlay: Frame, title: string): Promise<void>;
+  /** Whether an extension frame of `page` says OnePass is locked. */
+  lockedShown(page: Page): Promise<boolean>;
+  /** What the start states ask of this profile's native host (start-state.ts). */
+  startHost: StartHost;
   close(): Promise<void>;
 }
+
+/** UI strings the drivers read (the lab runs the extension in French). */
+const UNLOCK_BUTTONS = /^\s*(Déverrouiller dans OnePass|Ouvrir OnePass)\s*$/;
+const WAITING_TEXTS = ["Déverrouille OnePass pour continuer", "Ouverture de OnePass"];
+const LOCKED_TEXT = "OnePass est verrouillé";
+/** The extension's keyboard command (manifests/base.json `commands`, background/app.ts FILL_SMART_COMMAND). */
+const FILL_SMART_COMMAND = "fill-smart";
 
 /**
  * Every non-loopback response seen by any browser of this process. A close
@@ -242,6 +293,37 @@ export async function focusField(p: Page, scope: Frame, selector: string, timeou
   }
 }
 
+/** How many times the user taps a control the extension shows as held back before she gives up. */
+const HELD_TAPS = 4;
+
+/**
+ * A click on a control of an extension frame, as a user makes it. The frames ignore a click that
+ * comes within 300 ms of their content showing, and the guard starts again when the browser first
+ * declares the frame visible (IntersectionObserver v2: measured 110 to 210 ms after a menu's rows
+ * show, later on a busy machine), a time the bench cannot see: a click after a fixed wait lands
+ * before or after it by chance. The frame then shows the control pressed (`held`) so the user taps
+ * again (src/shared/click-guard.ts), and the bench does the same once the control is released.
+ * It stays one gesture: the same intent, the same control. A control that stays held is left
+ * alone (the scenario then fails on what it shows).
+ */
+async function userClick(target: Locator, timeout = 5_000): Promise<void> {
+  // A user's click lands in the tab in front (the worker asks the app nothing for another tab).
+  await target.page().bringToFront();
+  for (let tap = 1; ; tap++) {
+    await target.click({ timeout });
+    // The held state is set in the click's own handler.
+    const held = await target.evaluate((el) => el.classList.contains("held"), undefined, { timeout: 1_000 }).catch(() => false);
+    if (!held || tap >= HELD_TAPS) return;
+    if (process.env.LAB_DEBUG) console.log(`[lab debug] click held back by the frame's guard (tap ${tap}): tapping again`);
+    await target.evaluate((el) => new Promise<void>((done) => {
+      const end = Date.now() + 1_500;
+      const look = () => (!el.classList.contains("held") || Date.now() >= end ? done() : void setTimeout(look, 30));
+      look();
+    }), undefined, { timeout: 3_000 }).catch(() => undefined);
+    await sleep(60);
+  }
+}
+
 /** The overlay rows of the account `title` (an sso "<brand> via <Provider>": the brand's row for that provider). */
 function overlayAccount(overlay: Frame, title: string) {
   const row = accountRow(title);
@@ -277,7 +359,9 @@ export async function launchLab(state: LabState, world: World, server: LabServer
   }
   const context = ctx;
   let nets: Awaited<ReturnType<typeof guard>> = { remote: [], pending: [] };
+  let standIn: UnlockStandIn | undefined;
   const close = async () => {
+    standIn?.stop();
     try {
       await context.close();
       await Promise.all(nets.pending);
@@ -312,6 +396,22 @@ export async function launchLab(state: LabState, world: World, server: LabServer
       }
     };
     const sessionStorage = async () => (await worker()).evaluate(() => chrome.storage.session.get(null)) as Promise<Record<string, unknown>>;
+    const watcher = (standIn = new UnlockStandIn(host.dataDir, unlockDelayMs()));
+    const deferredUnlock = state.caps?.deferredUnlock === true;
+    const startHost: StartHost = {
+      running() {
+        const pids = hostPids(host.config);
+        return pids === undefined ? undefined : pids.length > 0;
+      },
+      stop: () => stopHost(host.config),
+      configure({ locked, deferred }) {
+        // The host refuses unknown keys: `unlock` only when it has the control (undefined drops the key).
+        patchHostConfig(host.config, { unlocked: !locked, unlock: deferred && deferredUnlock ? "file" : undefined });
+      },
+      status: () => lab.vaultStatus(),
+      deferredUnlock,
+      standIn: { start: () => watcher.start(), stop: () => watcher.stop() },
+    };
 
     const lab: Lab = {
       context, id, host, server, world,
@@ -359,18 +459,27 @@ export async function launchLab(state: LabState, world: World, server: LabServer
       async pickRow(menu, title) {
         const row = menuRowOf(menu, title);
         await sleep(GUARD_WAIT_MS);
-        await row.first().click();
+        await userClick(row.first());
       },
       async overlayHas(overlay, title, timeout = 5_000) {
         const account = overlayAccount(overlay, title);
         return account.first().waitFor({ state: "visible", timeout }).then(() => true, () => false);
       },
-      async overlayStart(overlay, title) {
+      async overlayStart(overlay, title, before) {
         const account = overlayAccount(overlay, title);
         await sleep(GUARD_WAIT_MS);
-        await account.first().getByRole("button", { name: "Se connecter" }).click();
+        await before?.();
+        await userClick(account.first().getByRole("button", { name: "Se connecter" }));
       },
-      async clickIcon(p, scope, selector, timeout) {
+      async overlayGeneric(overlay, timeout = 2_000) {
+        return overlay.locator(".ov-pill[data-generic]").first().waitFor({ state: "visible", timeout }).then(() => true, () => false);
+      },
+      async overlayStartGeneric(overlay, before) {
+        await sleep(GUARD_WAIT_MS);
+        await before?.();
+        await userClick(overlay.locator(".ov-pill[data-generic] button.ov-signin").first());
+      },
+      async clickIcon(p, scope, selector, timeout, before) {
         const end = Date.now() + timeout;
         let box = await fieldBox(p, scope, selector);
         while (!box) {
@@ -381,6 +490,9 @@ export async function launchLab(state: LabState, world: World, server: LabServer
         await sleep(ICON_SETTLE_MS);
         // The layout may have moved while the page settled.
         box = (await fieldBox(p, scope, selector)) ?? box;
+        await before?.();
+        // A user's click lands in the tab in front: the worker asks the app nothing for another tab.
+        await p.bringToFront();
         await p.mouse.click(box.x + box.width - ICON_CENTER_FROM_RIGHT, box.y + box.height / 2);
       },
       async passkeyWindow(trigger, timeout) {
@@ -389,11 +501,12 @@ export async function launchLab(state: LabState, world: World, server: LabServer
         await trigger();
         return opened;
       },
-      async toolbarFill(p) {
+      async toolbarFill(p, before) {
         const popup = await context.newPage();
         try {
           await popup.goto(`chrome-extension://${id}/popup.html`);
           await p.bringToFront();
+          await before?.();
           await popup.evaluate(() => chrome.runtime.sendMessage({ type: "popup_smart_fill" }).catch(() => undefined));
         } finally {
           await popup.close();
@@ -404,6 +517,83 @@ export async function launchLab(state: LabState, world: World, server: LabServer
           .filter((c) => c.siteOrigin === `https://${site}`).sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
         return chains.at(-1) ?? null;
       },
+      async debugState() {
+        const kept = Object.entries(await sessionStorage().catch(() => ({}) as Record<string, unknown>))
+          .filter(([k]) => /^(overlay|unlock|unlock-chain|chain|menu):/.test(k))
+          .map(([k, v]) => `${k.split(":")[0]} ${JSON.stringify(v).slice(0, 400)}`);
+        const files = [UNLOCK_PENDING, UNLOCK_APPROVED].filter((f) => existsSync(join(host.dataDir, f)));
+        return [`unlock files: ${files.join(", ") || "none"}`, `host pids: ${JSON.stringify(hostPids(host.config))}`, ...kept, ...host.log().trim().split("\n").slice(-14)].join("\n    ");
+      },
+      async vaultStatus() {
+        const popup = await context.newPage();
+        try {
+          await popup.goto(`chrome-extension://${id}/popup.html`);
+          const r = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "popup_status" }).catch(() => null))) as
+            { ok?: { locked?: unknown } } | null;
+          return typeof r?.ok?.locked === "boolean" ? { locked: r.ok.locked } : undefined;
+        } catch {
+          return undefined;
+        } finally {
+          await popup.close().catch(() => undefined);
+        }
+      },
+      async canShortcut() {
+        return (await worker()).evaluate(() => {
+          const ev = chrome.commands?.onCommand as unknown as { dispatch?: unknown; hasListeners?: () => boolean } | undefined;
+          return typeof ev?.dispatch === "function" && ev.hasListeners?.() === true;
+        }).catch(() => false);
+      },
+      async shortcut(p) {
+        await p.bringToFront();
+        await (await worker()).evaluate((command) => {
+          (chrome.commands.onCommand as unknown as { dispatch(c: string): void }).dispatch(command);
+        }, FILL_SMART_COMMAND);
+      },
+      async menuUnlockState(menu) {
+        if (await menu.getByRole("button", { name: UNLOCK_BUTTONS }).first().isVisible().catch(() => false)) return "button";
+        const text = await menu.locator("body").innerText({ timeout: 1_000 }).catch(() => "");
+        return WAITING_TEXTS.some((t) => text.includes(t)) ? "waiting" : undefined;
+      },
+      async menuUnlock(menu) {
+        await sleep(GUARD_WAIT_MS);
+        await userClick(menu.getByRole("button", { name: UNLOCK_BUTTONS }).first());
+      },
+      async menuHasRows(menu) {
+        return (await menu.locator("button.row").count().catch(() => 0)) > 0;
+      },
+      async overlayOpenOthers(overlay) {
+        const others = overlay.locator("button.ov-others:not(.ov-other)").first();
+        if (!(await others.isVisible().catch(() => false))) return false;
+        await sleep(GUARD_WAIT_MS);
+        await userClick(others);
+        return true;
+      },
+      async overlayPickSecond(overlay, title, before) {
+        const row = overlay.locator("button.ov-other").filter({ has: overlay.locator(".t1", { hasText: exact(accountRow(title).title) }) }).first();
+        if (!(await row.isVisible().catch(() => false))) return false;
+        await sleep(GUARD_WAIT_MS);
+        await before?.();
+        await userClick(row);
+        return true;
+      },
+      async overlayOtherHas(overlay, title, timeout = 5_000) {
+        const row = overlay.locator("li.ov-opt").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+        return row.first().waitFor({ state: "visible", timeout }).then(() => true, () => false);
+      },
+      async overlayPickOther(overlay, title) {
+        const row = overlay.locator("li.ov-opt").filter({ has: overlay.locator(".t1", { hasText: exact(title) }) });
+        await sleep(GUARD_WAIT_MS);
+        await userClick(row.first());
+      },
+      async lockedShown(p) {
+        for (const f of p.frames()) {
+          if (!f.url().startsWith("chrome-extension://")) continue;
+          const text = await f.locator("body").innerText({ timeout: 1_000 }).catch(() => "");
+          if (text.includes(LOCKED_TEXT)) return true;
+        }
+        return false;
+      },
+      startHost,
       close,
     };
     return lab;

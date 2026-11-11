@@ -95,7 +95,20 @@ describe("popup background", () => {
     const { send, client, opened } = await setup();
     expect(await send({ type: "popup_unlock" })).toHaveProperty("ok");
     expect(opened.n).toBe(1);
-    expect(client.requests.at(-1)).toEqual({ op: "unlock" });
+    // Over a page: the unlock names its origin (the tab's top frame).
+    expect(client.requests.at(-1)).toEqual({ op: "unlock", origin: SITE });
+  });
+
+  it("Déverrouiller dans OnePass with no page to fill in front (a browser page, plain http): the unlock names no origin", async () => {
+    const { ext, send, client } = await setup();
+    for (const tab of [null, { id: 7, url: "chrome://extensions/" }, { id: 7, url: "http://atlas.dev/login" }]) {
+      ext.activeTab = tab;
+      expect(await send({ type: "popup_unlock" })).toHaveProperty("ok");
+      expect(client.requests.at(-1)).toEqual({ op: "unlock" });
+    }
+    ext.activeTab = { id: 7, url: "http://127.0.0.1:8080/login" };
+    await send({ type: "popup_unlock" });
+    expect(client.requests.at(-1)).toEqual({ op: "unlock", origin: "http://127.0.0.1:8080" });
   });
 
   it("suggestions for the active tab origin, from the browser", async () => {

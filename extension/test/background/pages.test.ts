@@ -1,7 +1,7 @@
 // Background handlers of the in-page extension pages: menu extras, overlay
 // and save prompt.
 import type { NativeVault, NativeVaultCall } from "../../src/background/safari";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackground } from "../../src/background/app";
 import type { ChainDriver } from "../../src/background/chain/types";
 import { contentSender } from "../../src/background/frames";
@@ -10,6 +10,8 @@ import { DISMISS_QUIET_MS, SAVE_TTL_MS, cardQuietKey, loginQuietKey, titleFromSi
 import { BgError } from "../../src/background/session";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import type { ChainView } from "../../src/shared/ui";
+import { UNLOCK_WAIT_MS } from "../../src/shared/unlock";
+import { BridgeAppError } from "../../src/bridge/client";
 import { type Answer, FakeClient, record } from "./fake-client";
 import { EXT_ID, FakeExt, NO_REPLY, csSender, uiSender } from "./fake-ext";
 
@@ -33,10 +35,33 @@ const summary = (id: string, extra: Record<string, unknown> = {}) => ({
 
 /** The vault has nothing for any site (a click into a field must not open an empty menu). */
 let emptyVault = false;
+/** What `status` and `unlock` say of the vault; null: the defaults (open). Reset after each test. */
+let appLocked: boolean | null = null;
+/** Runs when the app is asked to unlock. */
+let onUnlock: (() => void) | null = null;
+/** The vault answers `locked` to what needs it open (lists, plans). */
+let listLocked = false;
+/** The plan the bridge gives (and a third login, "used last"); null: no plan. */
+let planFor: Record<string, unknown> | null = null;
+/** The app does not answer `unlock` (it could not be opened). */
+let client_unlock_fails = false;
+/** What `vaults` answers for a request (the routed list of a page); null: the two default vaults. */
+let vaultsFor: ((r: Record<string, unknown>) => unknown) | null = null;
+afterEach(() => {
+  vaultsFor = null;
+  appLocked = null;
+  onUnlock = null;
+  client_unlock_fails = false;
+  listLocked = false;
+  planFor = null;
+});
 
 const answer: Answer = (r) => {
   if (emptyVault && (r.op === "list_for_origin" || r.op === "list_fillable")) return { items: [] };
+  if (listLocked && (r.op === "list_for_origin" || r.op === "plan_fill")) return new BridgeAppError("locked", "vault locked");
   switch (r.op) {
+    case "plan_fill":
+      return planFor ? { plan: planFor } : {};
     case "list_for_origin":
       return {
         items: [
@@ -46,14 +71,20 @@ const answer: Answer = (r) => {
             has_password: false,
             methods: [{ provider: "google", account_email: "alex.perso@example.com" }],
           }),
+          ...(planFor ? [summary("it_03", { title: "Atlas Team", subtitle: "team@atlas.dev" })] : []),
         ],
       };
     case "vaults":
+      if (vaultsFor) return vaultsFor(r);
       return { vaults: [{ id: "v1", name: "Personnel", color: null }, { id: "v2", name: "Projet Atlas", color: "#0E7490" }] };
     case "generate":
       return { password: "Gen-Pass-123", entropy_bits: 90 };
     case "unlock":
-      return { locked: false };
+      if (client_unlock_fails) return new BridgeAppError("host_missing", "no app");
+      onUnlock?.();
+      return { locked: appLocked ?? false };
+    case "status":
+      return appLocked === null ? {} : { locked: appLocked, account: "Camille", vaults: 1 };
     case "check_credentials":
       return checkAnswer;
     case "save_login":
@@ -79,7 +110,10 @@ class FakeChain implements ChainDriver {
   readonly calls: unknown[][] = [];
   readonly opts: unknown[] = [];
   view: ChainView | null = null;
+  /** `start` fails with this code (a locked vault, no app), starting nothing. */
+  fail: "locked" | "host_missing" | "not_found" | null = null;
   async start(tabId: number, itemId: string, viaProvider?: string, opts?: unknown) {
+    if (this.fail) throw new BgError(this.fail);
     this.calls.push(["start", tabId, itemId, viaProvider]);
     this.opts.push(opts);
   }
@@ -91,7 +125,7 @@ class FakeChain implements ChainDriver {
   }
 }
 
-async function setup(clock = { t: 1_000_000 }, nativeVault?: (call: NativeVaultCall) => Promise<NativeVault | null>) {
+async function setup(clock = { t: 1_000_000 }, nativeVault?: (call: NativeVaultCall) => Promise<NativeVault | null>, opens = true) {
   const ext = new FakeExt();
   const pairings = new MemoryPairingStore();
   await new Store(ext, pairings).setPairing(record());
@@ -106,7 +140,7 @@ async function setup(clock = { t: 1_000_000 }, nativeVault?: (call: NativeVaultC
     now: () => clock.t,
     openApp: async () => {
       opened.n++;
-      return true;
+      return opens;
     },
     ...(nativeVault ? { nativeVault } : {}),
   });
@@ -152,7 +186,7 @@ describe("menu extras", () => {
     expect(await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui)).toEqual({ ok: {} });
     // Identifier, password, then the code: the chain, not a one-page fill.
     expect(chain.calls).toEqual([["start", 7, "it_01", undefined]]);
-    expect(chain.opts).toEqual([{ anchorRef: "e1" }]);
+    expect(chain.opts).toEqual([{ anchorRef: "e1", picked: "menu" }]);
     expect(client.requests.some((r) => r.op === "fill_login")).toBe(false);
     expect(ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "remove_frame").at(-1)?.message).toEqual({ type: "remove_frame", kind: "menu" });
     expect(await ext.send({ type: "menu_init", token }, ui)).toEqual({ err: "invalid" });
@@ -178,6 +212,88 @@ describe("menu extras", () => {
     };
     const { token, ui } = await menu(ext);
     await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui);
+    expect(client.requests.some((r) => r.op === "fill_login")).toBe(true);
+  });
+
+  describe("a menu row whose sign-in finds the vault locked or the app missing: no second click", () => {
+    const cards = (ext: FakeExt) => ext.sentToTabs.filter((x) => (x.message as { type: string; kind?: string }).type === "show_frame" && (x.message as { kind?: string }).kind === "overlay");
+    const cardOf = (ext: FakeExt) => {
+      const m = cards(ext).at(-1)?.message as { url: string; ref?: string };
+      const token = hashOf(m.url);
+      return { token, ref: m.ref, ui: uiSender(`overlay.html#${token}`, 7) };
+    };
+
+    it("a login row: the app is asked at once, a card waits where the menu was, the sign-in starts after the unlock, once", async () => {
+      const { ext, chain, client, opened, clock } = await setup();
+      const { token, ui } = await menu(ext);
+      chain.fail = "locked";
+      appLocked = true;
+      listLocked = true;
+      expect(await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui)).toEqual({ ok: {} });
+      expect(opened.n).toBe(1);
+      expect(client.requests.filter((r) => r.op === "unlock")).toHaveLength(1);
+      expect(chain.calls).toEqual([]);
+      const card = cardOf(ext);
+      expect(card.ref).toBe("e1");
+      expect(ext.session.data.get(`overlay:${card.token}`)).toMatchObject({ tabId: 7, origin: SITE, documentId: "doc-1", pending: { kind: "start", itemId: "it_01", sent: true } });
+      // The card loads while locked: it waits, it lists nothing.
+      expect(await ext.send({ type: "overlay_init", token: card.token }, card.ui)).toEqual({ ok: { origin: SITE, accounts: [], chain: null, waiting: "locked" } });
+      chain.fail = null;
+      appLocked = false;
+      listLocked = false;
+      clock.t += 1500;
+      expect(await ext.send({ type: "overlay_state", token: card.token }, card.ui)).toEqual({ ok: { chain: null } });
+      expect(chain.calls).toEqual([["start", 7, "it_01", undefined]]);
+      clock.t += 1500;
+      await ext.send({ type: "overlay_state", token: card.token }, card.ui);
+      expect(chain.calls).toHaveLength(1);
+      expect(opened.n).toBe(1);
+    });
+
+    it("a provider row waits and resumes with its provider and the picked account", async () => {
+      const { ext, chain, clock } = await setup();
+      const { token, ui } = await menu(ext);
+      chain.fail = "host_missing";
+      appLocked = true;
+      expect(await ext.send({ type: "menu_signin", token, itemId: "it_02", provider: "google", accountId: "g_pro" }, ui)).toEqual({ ok: {} });
+      const card = cardOf(ext);
+      expect(ext.session.data.get(`overlay:${card.token}`)).toMatchObject({ pending: { kind: "start", itemId: "it_02", provider: "google", accountId: "g_pro" } });
+      chain.fail = null;
+      appLocked = false;
+      clock.t += 1500;
+      await ext.send({ type: "overlay_state", token: card.token }, card.ui);
+      expect(chain.calls).toEqual([["start", 7, "it_02", "google"]]);
+      expect(chain.opts).toEqual([{ accountId: "g_pro" }]);
+    });
+
+    it("the app cannot be opened: the error as before, no card", async () => {
+      const { ext, chain } = await setup(undefined, undefined, false);
+      const { token, ui } = await menu(ext);
+      chain.fail = "locked";
+      client_unlock_fails = true;
+      expect(await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui)).toEqual({ err: "locked" });
+      expect(cards(ext)).toEqual([]);
+    });
+  });
+
+  it("menu_pick in a child frame of exactly the top frame's origin runs the chain too; of another origin of the site it fills", async () => {
+    const { ext, chain, client } = await setup();
+    const open = async (url: string, doc: string) => {
+      ext.setFrame(7, 4, url, doc);
+      const r = (await ext.send({ type: "open_menu", fieldRef: "e1", formRef: "f1", formKind: "login" }, csSender(url, 7, 4, { documentId: doc }))) as { ok: { url: string } };
+      const token = hashOf(r.ok.url);
+      const ui = uiSender(`menu.html#${token}`, 7);
+      await ext.send({ type: "menu_init", token }, ui);
+      return { token, ui };
+    };
+    const same = await open(`${SITE}/frame`, "doc-4");
+    expect(await ext.send({ type: "menu_pick", token: same.token, itemId: "it_01" }, same.ui)).toEqual({ ok: {} });
+    expect(chain.calls).toEqual([["start", 7, "it_01", undefined]]);
+    // No anchor in the top frame: the field lives in the child.
+    expect(chain.opts).toEqual([{ picked: "menu" }]);
+    const other = await open("https://login.atlas-cloud.test/frame", "doc-5");
+    await ext.send({ type: "menu_pick", token: other.token, itemId: "it_01" }, other.ui);
+    expect(chain.calls).toHaveLength(1);
     expect(client.requests.some((r) => r.op === "fill_login")).toBe(true);
   });
 
@@ -277,7 +393,7 @@ describe("menu extras", () => {
     expect(sent.at(-2)).toEqual({ type: "remove_frame", kind: "menu" });
     expect(ext.sentToTabs.at(-1)).toEqual({
       tabId: 7,
-      message: { type: "smart_fill", fieldRef: "e1", origin: SITE },
+      message: { type: "smart_fill", fieldRef: "e1", formRef: "f1", origin: SITE },
       options: { documentId: "doc-1" },
     });
     // Once: the token died with the menu, and a second resume is refused.
@@ -290,7 +406,7 @@ describe("menu extras", () => {
     const { token, ui } = await menu(ext);
     await ext.send({ type: "menu_unlock", token }, ui);
     expect(await ext.send({ type: "menu_resume", token }, uiSender(`menu.html#${token}`, 8))).toEqual({ err: "invalid" });
-    clock.t += 3 * 60 * 1000 + 1;
+    clock.t += UNLOCK_WAIT_MS + 1;
     expect(await ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
     expect(ext.sentToTabs.some((x) => (x.message as { type: string }).type === "smart_fill")).toBe(false);
 
@@ -305,7 +421,7 @@ describe("menu extras", () => {
     expect(await ext.send({ type: "menu_resume", token: t3 }, ui3)).toEqual({ ok: {} });
     const fills = ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "smart_fill");
     // The frame that asked, pinned to its document: never the top frame, never a whole-page fill.
-    expect(fills).toEqual([{ tabId: 7, message: { type: "smart_fill", fieldRef: "e1", origin: SITE }, options: { documentId: "doc-3" } }]);
+    expect(fills).toEqual([{ tabId: 7, message: { type: "smart_fill", fieldRef: "e1", formRef: "f1", origin: SITE }, options: { documentId: "doc-3" } }]);
   });
 
   it("MS-03: menu_resume is refused once the menu's document changed", async () => {
@@ -379,7 +495,7 @@ describe("menu extras", () => {
     const { ext, client, opened } = await setup();
     const { token, ui } = await menu(ext);
     expect(await ext.send({ type: "menu_unlock", token }, ui)).toEqual({ ok: { locked: false } });
-    expect(client.requests.at(-1)).toEqual({ op: "unlock" });
+    expect(client.requests.at(-1)).toEqual({ op: "unlock", origin: SITE });
     // The click's process brings the app forward (macOS ignores the app's own activation).
     expect(opened.n).toBe(1);
     expect(await ext.send({ type: "menu_close", token }, ui)).toEqual({ ok: {} });
@@ -456,6 +572,301 @@ describe("overlay", () => {
       ["stop", 7],
     ]);
     expect(chain.opts).toEqual([{}, { accountId: "g_pro" }, {}]);
+  });
+
+  describe("a click on the card with the vault locked: asked at once, the sign-in starts by itself after the unlock", () => {
+    /** The card, opened and listed while unlocked; then the vault locks. */
+    async function lockedCard(nativeVault?: (call: NativeVaultCall) => Promise<NativeVault | null>, opens = true) {
+      const t = await setup(undefined, nativeVault, opens);
+      const token = await t.bg.overlays.open(t.top);
+      const ui = uiSender(`overlay.html#${token}`, 7);
+      await t.ext.send({ type: "overlay_init", token }, ui);
+      t.chain.fail = "locked";
+      appLocked = true;
+      const unlock = () => {
+        t.chain.fail = null;
+        appLocked = false;
+      };
+      const state = () => t.ext.send({ type: "overlay_state", token }, ui);
+      const unlocks = () => t.client.requests.filter((r) => r.op === "unlock").length;
+      return { ...t, token, ui, unlock, state, unlocks };
+    }
+
+    it("the app comes forward with its unlock; the card waits; unlocked, the chain starts once with what was clicked", async () => {
+      const t = await lockedCard();
+      expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_02", provider: "google", accountId: "g_pro" }, t.ui)).toEqual({ ok: { waiting: "locked" } });
+      expect(t.opened.n).toBe(1);
+      expect(t.unlocks()).toBe(1);
+      expect(t.chain.calls).toEqual([]);
+      // What is kept: ids and a time on the card's own token, in storage.session (a restart keeps it).
+      expect(t.ext.session.data.get(`overlay:${t.token}`)).toMatchObject({
+        tabId: 7,
+        origin: SITE,
+        documentId: "doc-1",
+        pending: { kind: "start", itemId: "it_02", provider: "google", accountId: "g_pro", at: 1_000_000, sent: true },
+      });
+      expect(await t.state()).toEqual({ ok: { chain: null, waiting: "locked" } });
+      // Polled twice a second: the app is asked for its state once a second at most.
+      const before = t.client.requests.filter((r) => r.op === "status").length;
+      await t.state();
+      await t.state();
+      expect(t.client.requests.filter((r) => r.op === "status")).toHaveLength(before);
+      t.unlock();
+      t.clock.t += 1500;
+      expect(await t.state()).toEqual({ ok: { chain: null } });
+      expect(t.chain.calls).toEqual([["start", 7, "it_02", "google"]]);
+      expect(t.chain.opts).toEqual([{ accountId: "g_pro" }]);
+      // One attempt.
+      t.clock.t += 1500;
+      await t.state();
+      expect(t.chain.calls).toHaveLength(1);
+      expect((t.ext.session.data.get(`overlay:${t.token}`) as { pending?: unknown }).pending).toBeUndefined();
+      expect(t.opened.n).toBe(1);
+      expect(t.unlocks()).toBe(1);
+    });
+
+    it("the app unlocks at once (or Face ID on iOS in the click): the chain starts in the click's own call", async () => {
+      let t = await lockedCard();
+      onUnlock = t.unlock;
+      expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui)).toEqual({ ok: {} });
+      expect(t.chain.calls).toEqual([["start", 7, "it_01", undefined]]);
+
+      // iOS: the vault of the handler, unlocked by the click's Face ID; the app is never opened.
+      const calls: string[] = [];
+      let vaultLocked = true;
+      t = await lockedCard(async (call) => {
+        calls.push(call.op);
+        if (call.op === "unlock_biometric") {
+          vaultLocked = false;
+          t.unlock();
+        }
+        return { locked: vaultLocked, account: "Camille", biometry: "faceID" };
+      });
+      expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui)).toEqual({ ok: {} });
+      expect(calls).toEqual(["vault_state", "unlock_biometric"]);
+      expect(t.chain.calls).toEqual([["start", 7, "it_01", undefined]]);
+      expect(t.opened.n).toBe(0);
+
+      // iOS, Face ID cancelled: locked, nothing waits.
+      t = await lockedCard(async () => ({ locked: true, account: "Camille", biometry: "faceID" }));
+      expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui)).toEqual({ err: "locked" });
+      expect(await t.state()).toEqual({ ok: { chain: null } });
+    });
+
+    it("the app cannot be opened: locked as before, nothing waits; another start error is not an unlock", async () => {
+      let t = await lockedCard(undefined, false);
+      expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui)).toEqual({ err: "locked" });
+      t.unlock();
+      t.clock.t += 1500;
+      expect(await t.state()).toEqual({ ok: { chain: null } });
+      expect(t.chain.calls).toEqual([]);
+
+      t = await lockedCard();
+      t.chain.fail = "not_found";
+      expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui)).toEqual({ err: "not_found" });
+      expect(t.opened.n).toBe(0);
+    });
+
+    it("nothing starts past 90 s, in another document or origin, from another tab, or after Annuler", async () => {
+      let t = await lockedCard();
+      await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui);
+      t.unlock();
+      t.clock.t += UNLOCK_WAIT_MS + 1;
+      expect(await t.state()).toEqual({ ok: { chain: null } });
+      expect(t.chain.calls).toEqual([]);
+      // Too late once, too late for good.
+      t.clock.t -= UNLOCK_WAIT_MS;
+      await t.state();
+      expect(t.chain.calls).toEqual([]);
+
+      for (const [url, doc] of [[`${SITE}/login`, "doc-2"], ["https://other.example/login", "doc-1"], ["http://atlas-cloud.test/login", "doc-1"]] as const) {
+        t = await lockedCard();
+        await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui);
+        t.unlock();
+        t.clock.t += 1500;
+        t.ext.setFrame(7, 0, url, doc);
+        expect(await t.state()).toEqual({ ok: { chain: null } });
+        // Refused once: the page coming back changes nothing.
+        t.ext.setFrame(7, 0, `${SITE}/login`, "doc-1");
+        t.clock.t += 1500;
+        await t.state();
+        expect(t.chain.calls).toEqual([]);
+      }
+
+      t = await lockedCard();
+      await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui);
+      t.unlock();
+      t.clock.t += 1500;
+      expect(await t.ext.send({ type: "overlay_state", token: t.token }, uiSender(`overlay.html#${t.token}`, 8))).toEqual({ err: "invalid" });
+      expect(t.chain.calls).toEqual([]);
+
+      t = await lockedCard();
+      await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui);
+      await t.ext.send({ type: "overlay_stop", token: t.token }, t.ui);
+      t.unlock();
+      t.clock.t += 1500;
+      expect(await t.state()).toEqual({ ok: { chain: null } });
+      expect(t.chain.calls).toEqual([["stop", 7]]);
+    });
+
+    it("the app is not running: launched by the click, the card waits for it, asks its unlock once it answers, then starts", async () => {
+      const t = await lockedCard();
+      t.chain.fail = "host_missing";
+      // Launched, not answering yet.
+      const down = vi.spyOn(t.bg.session, "request").mockRejectedValue(new BgError("host_missing"));
+      expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui)).toEqual({ ok: { waiting: "host_missing" } });
+      expect(t.opened.n).toBe(1);
+      expect(await t.state()).toEqual({ ok: { chain: null, waiting: "host_missing" } });
+      // It runs, locked: its unlock is asked now, once.
+      down.mockRestore();
+      t.clock.t += 1500;
+      expect(await t.state()).toEqual({ ok: { chain: null, waiting: "locked" } });
+      t.clock.t += 1500;
+      await t.state();
+      expect(t.unlocks()).toBe(1);
+      t.unlock();
+      t.clock.t += 1500;
+      expect(await t.state()).toEqual({ ok: { chain: null } });
+      expect(t.chain.calls).toEqual([["start", 7, "it_01", undefined]]);
+      expect(t.opened.n).toBe(1);
+    });
+  });
+
+  describe("a generic card on a sign-in page reached with the vault locked", () => {
+    async function generic(opens = true) {
+      const t = await setup(undefined, undefined, opens);
+      appLocked = true;
+      listLocked = true;
+      const token = await t.bg.overlays.open(t.top, undefined, true);
+      const ui = uiSender(`overlay.html#${token}`, 7);
+      const unlock = () => {
+        appLocked = false;
+        listLocked = false;
+      };
+      return { ...t, token, ui, unlock };
+    }
+    const smart = (ext: FakeExt) => ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "smart_fill");
+
+    it("the tab committed another page between the card's own check and the resume: nothing is sent there", async () => {
+      const t = await generic();
+      await t.ext.send({ type: "overlay_init", token: t.token }, t.ui);
+      await t.ext.send({ type: "overlay_unlock", token: t.token }, t.ui);
+      t.unlock();
+      t.clock.t += 1500;
+      // The first look at the top frame after the vault answered open is the card's check: the
+      // page commits right after it.
+      const statuses = () => t.client.requests.filter((r) => r.op === "status").length;
+      const before = statuses();
+      const real = t.ext.webNavigation.getFrame;
+      let moved = false;
+      t.ext.webNavigation.getFrame = async (d) => {
+        const f = await real(d);
+        if (!moved && d.frameId === 0 && statuses() > before) {
+          moved = true;
+          t.ext.setFrame(7, 0, "https://evil.test/login", "doc-9");
+        }
+        return f;
+      };
+      await t.ext.send({ type: "overlay_state", token: t.token }, t.ui);
+      expect(moved).toBe(true);
+      expect(smart(t.ext)).toEqual([]);
+    });
+
+    it("says nothing of the vault: no account, no item, only that it is generic", async () => {
+      const t = await generic();
+      expect(await t.ext.send({ type: "overlay_init", token: t.token }, t.ui)).toEqual({ ok: { origin: SITE, accounts: [], chain: null, generic: true } });
+      // Nothing can be started from it by id.
+      expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui)).toEqual({ err: "invalid" });
+    });
+
+    it("its click asks the app once; unlocked, the page's own plan runs once (the chain, or the menu), in the card's document", async () => {
+      const t = await generic();
+      await t.ext.send({ type: "overlay_init", token: t.token }, t.ui);
+      expect(await t.ext.send({ type: "overlay_unlock", token: t.token }, t.ui)).toEqual({ ok: { waiting: "locked" } });
+      expect(t.opened.n).toBe(1);
+      expect(t.client.requests.filter((r) => r.op === "unlock")).toHaveLength(1);
+      expect(t.ext.session.data.get(`overlay:${t.token}`)).toMatchObject({ pending: { kind: "page", sent: true } });
+      expect(await t.ext.send({ type: "overlay_state", token: t.token }, t.ui)).toEqual({ ok: { chain: null, waiting: "locked" } });
+      expect(smart(t.ext)).toEqual([]);
+      t.unlock();
+      t.clock.t += 1500;
+      expect(await t.ext.send({ type: "overlay_state", token: t.token }, t.ui)).toEqual({ ok: { chain: null } });
+      // Bound to the card's document and origin: the content script checks the origin again.
+      expect(smart(t.ext)).toEqual([{ tabId: 7, message: { type: "smart_fill", origin: SITE }, options: { documentId: "doc-1" } }]);
+      t.clock.t += 1500;
+      await t.ext.send({ type: "overlay_state", token: t.token }, t.ui);
+      expect(smart(t.ext)).toHaveLength(1);
+      // The plan that smart fill sends is the resumed gesture: it asks the app nothing more.
+      expect(t.opened.n).toBe(1);
+      // Open now: the card lists the site's sign-ins like any card.
+      const init = (await t.ext.send({ type: "overlay_init", token: t.token }, t.ui)) as { ok: { accounts: unknown[]; generic?: boolean } };
+      expect(init.ok.accounts).toHaveLength(2);
+      expect(init.ok.generic).toBeUndefined();
+    });
+
+    it("nothing runs past 90 s, in another document, or when the app cannot be opened; only a generic card unlocks", async () => {
+      let t = await generic();
+      await t.ext.send({ type: "overlay_unlock", token: t.token }, t.ui);
+      t.unlock();
+      t.clock.t += UNLOCK_WAIT_MS + 1;
+      await t.ext.send({ type: "overlay_state", token: t.token }, t.ui);
+      expect(smart(t.ext)).toEqual([]);
+
+      t = await generic();
+      await t.ext.send({ type: "overlay_unlock", token: t.token }, t.ui);
+      t.unlock();
+      t.ext.setFrame(7, 0, `${SITE}/login`, "doc-2");
+      t.clock.t += 1500;
+      await t.ext.send({ type: "overlay_state", token: t.token }, t.ui);
+      expect(smart(t.ext)).toEqual([]);
+
+      t = await generic(false);
+      client_unlock_fails = true;
+      expect(await t.ext.send({ type: "overlay_unlock", token: t.token }, t.ui)).toEqual({ err: "locked" });
+      client_unlock_fails = false;
+
+      const plain = await setup();
+      const token = await plain.bg.overlays.open(plain.top);
+      expect(await plain.ext.send({ type: "overlay_unlock", token }, uiSender(`overlay.html#${token}`, 7))).toEqual({ err: "invalid" });
+    });
+  });
+
+  it("the card's first account is the one the page's plan would sign in with (used last on this site)", async () => {
+    const { ext, bg, top } = await setup();
+    planFor = { intent: "login", action: "open_chain", confidence: "high", alternatives: ["it_01"], reasons: ["last_on_site"], groups: [{ form_ref: "f1", kind: "login", item_id: "it_03", fields: [{ field_ref: "f1e0", role: "username" }, { field_ref: "f1e1", role: "current_password" }] }] };
+    ext.tabReply = (_tab, m) =>
+      (m as { type: string }).type === "plan_request"
+        ? { ok: true, context: { forms: [{ form_ref: "f1", intent_hints: { kind: "login", signup_words: false, reset_words: false, checkout_words: false, ignore: false }, step_index: null, fields: [{ field_ref: "f1e0", role: "username", confidence: 1, visible: true, prefilled: "empty" }, { field_ref: "f1e1", role: "current_password", confidence: 1, visible: true, prefilled: "empty" }], buttons: [] }], typed_username_hash: null } }
+        : undefined;
+    const token = await bg.overlays.open(top);
+    const init = (await ext.send({ type: "overlay_init", token }, uiSender(`overlay.html#${token}`, 7))) as { ok: { accounts: { itemId: string }[] } };
+    expect(init.ok.accounts.map((a) => a.itemId)).toEqual(["it_03", "it_01", "it_02"]);
+    // A plan that cannot choose (the menu), or none: the order of the list as it is.
+    planFor = { ...planFor, action: "show_menu", confidence: "low", reasons: ["tie"] };
+    const again = await bg.overlays.open(top);
+    const init2 = (await ext.send({ type: "overlay_init", token: again }, uiSender(`overlay.html#${again}`, 7))) as { ok: { accounts: { itemId: string }[] } };
+    expect(init2.ok.accounts.map((a) => a.itemId)).toEqual(["it_01", "it_02", "it_03"]);
+  });
+
+  it("contract with the Mac app: a card's cold launch sends `unlock` once when the app answers, even already unlocked", async () => {
+    const t = await setup();
+    const token = await t.bg.overlays.open(t.top);
+    const ui = uiSender(`overlay.html#${token}`, 7);
+    await t.ext.send({ type: "overlay_init", token }, ui);
+    t.chain.fail = "host_missing";
+    const down = vi.spyOn(t.bg.session, "request").mockRejectedValue(new BgError("host_missing"));
+    expect(await t.ext.send({ type: "overlay_start", token, itemId: "it_01" }, ui)).toEqual({ ok: { waiting: "host_missing" } });
+    // The app runs, unlocked through its launch link before the bridge connected.
+    down.mockRestore();
+    t.chain.fail = null;
+    appLocked = false;
+    t.clock.t += 1500;
+    expect(await t.ext.send({ type: "overlay_state", token }, ui)).toEqual({ ok: { chain: null } });
+    expect(t.client.requests.filter((r) => r.op === "unlock")).toHaveLength(1);
+    expect(t.chain.calls).toEqual([["start", 7, "it_01", undefined]]);
+    t.clock.t += 1500;
+    await t.ext.send({ type: "overlay_state", token }, ui);
+    expect(t.client.requests.filter((r) => r.op === "unlock")).toHaveLength(1);
   });
 
   it("the provider account last picked on a site is the default there", async () => {
@@ -734,6 +1145,69 @@ describe("save prompt", () => {
     expect(await ext.send({ type: "save_init", token }, uiSender("save.html", 7))).toMatchObject({ ok: { defaultVault: "v2" } });
   });
 
+  describe("several accounts: a save goes to the account its page routes to", () => {
+    // The app lists the routed account's vaults first when the request names the page.
+    const perso = { id: "v1", name: "Personnel", color: null, account: "Camille" };
+    const work = { id: "w1", name: "Equipe", color: null, account: "Atlas SAS" };
+    const routed = (r: Record<string, unknown>) => ({ vaults: r.origin === SITE ? [work, perso] : [perso, work] });
+
+    it("the save sheet lists the vaults for its page and defaults to the first of that list", async () => {
+      vaultsFor = routed;
+      const { ext, bg, client } = await setup();
+      const token = await bg.saves.open(pending);
+      expect(await ext.send({ type: "save_init", token }, uiSender("save.html", 7))).toMatchObject({ ok: { defaultVault: "w1", vaults: [{ id: "w1" }, { id: "v1" }] } });
+      expect(client.requests.filter((r) => r.op === "vaults")).toEqual([{ op: "vaults", origin: SITE }]);
+    });
+
+    it("the vault last used on another site, in another account, is not the default here; this site's own last choice is", async () => {
+      vaultsFor = routed;
+      const { ext, bg } = await setup();
+      await ext.local.set({ saveVaults: { last: "v1", sites: { "other.test": "v1" } } });
+      let token = await bg.saves.open(pending);
+      expect(await ext.send({ type: "save_init", token }, uiSender("save.html", 7))).toMatchObject({ ok: { defaultVault: "w1" } });
+      await ext.send({ type: "save_decide", token, decision: "dismiss" }, uiSender("save.html", 7));
+      // The user once chose the personal vault for this very site: kept.
+      await ext.local.set({ saveVaults: { last: "v1", sites: { "atlas-cloud.test": "v1" } } });
+      token = await bg.saves.open(pending);
+      expect(await ext.send({ type: "save_init", token }, uiSender("save.html", 7))).toMatchObject({ ok: { defaultVault: "v1" } });
+    });
+
+    it("Save sends the user's explicit vault as it is; a choice that is not listed falls to the page's default", async () => {
+      vaultsFor = routed;
+      const { ext, bg, client } = await setup();
+      let token = await bg.saves.open(pending);
+      await ext.send({ type: "save_decide", token, decision: "save", edits: { ...edits, vaultId: "v1" } }, uiSender("save.html", 7));
+      expect(client.requests.find((r) => r.op === "save_login")).toMatchObject({ vault_id: "v1" });
+      client.requests.length = 0;
+      await ext.local.remove("saveVaults");
+      token = await bg.saves.open({ ...pending, username: "other@atlas.dev" });
+      await ext.send({ type: "save_decide", token, decision: "save", edits: { ...edits, username: "other@atlas.dev", vaultId: "" } }, uiSender("save.html", 7));
+      expect(client.requests.find((r) => r.op === "save_login")).toMatchObject({ vault_id: "w1" });
+      expect(client.requests.filter((r) => r.op === "vaults").every((r) => r.origin === SITE)).toBe(true);
+    });
+
+    it("no list to choose from: `vault_id` is empty, the app's default vault for the page", async () => {
+      vaultsFor = () => ({ vaults: [] });
+      const { ext, bg, client } = await setup();
+      const token = await bg.saves.open(pending);
+      await ext.send({ type: "save_decide", token, decision: "save", edits: { ...edits, vaultId: "" } }, uiSender("save.html", 7));
+      expect(client.requests.find((r) => r.op === "save_login")).toMatchObject({ vault_id: "", origin: SITE });
+      expect(ext.local.data.get("saveVaults")).toBeUndefined();
+    });
+
+    it("an app from before `origin` on `vaults`: asked again without it, once for the session", async () => {
+      vaultsFor = (r) => ("origin" in r ? new BridgeAppError("invalid", "unknown field") : { vaults: [perso, work] });
+      const { ext, bg, client } = await setup();
+      let token = await bg.saves.open(pending);
+      expect(await ext.send({ type: "save_init", token }, uiSender("save.html", 7))).toMatchObject({ ok: { defaultVault: "v1" } });
+      expect(client.requests.filter((r) => r.op === "vaults")).toEqual([{ op: "vaults", origin: SITE }, { op: "vaults" }]);
+      await ext.send({ type: "save_decide", token, decision: "dismiss" }, uiSender("save.html", 7));
+      token = await bg.saves.open(pending);
+      await ext.send({ type: "save_init", token }, uiSender("save.html", 7));
+      expect(client.requests.filter((r) => r.op === "vaults")).toEqual([{ op: "vaults", origin: SITE }, { op: "vaults" }, { op: "vaults" }]);
+    });
+  });
+
   it("left unanswered: the sign-in waits in the popup (no password there), Save from the popup saves it", async () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open(pending);
@@ -766,6 +1240,8 @@ describe("save prompt", () => {
       expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender("save.html", 7))).toEqual({ ok: { outcome: "already" } });
       expect(opened.n).toBe(1);
       expect(client.requests.map((r) => r.op)).toEqual(expect.arrayContaining(["unlock", "check_credentials"]));
+      // The card's unlock names the top origin of its tab.
+      expect(client.requests.find((r) => r.op === "unlock")).toEqual({ op: "unlock", origin: SITE });
       expect(client.requests.some((r) => r.op === "save_login")).toBe(false);
       const t2 = await bg.saves.open({ ...pending, locked: true });
       checkAnswer = { status: "update", item_id: "it_01", title: "Atlas Cloud" };

@@ -411,7 +411,7 @@ export const TERMS: readonly Term[] = [
     w: { additional_name: 9, given_name: -6, full_name: -3 },
   },
   {
-    re: /\b(nom de naissance|nom de jeune fille|birth ?name|maiden ?name|name at birth|birth ?surname|birth (?:last|family) ?name|surname at birth|geburtsname|geb name|madchenname|apellido de nacimiento|apellido de soltera|cognome di nascita|cognome da nubile|nome de nascimento|nome de solteira|geboortenaam|meisjesnaam)\b/,
+    re: /\b(nom de naissance|nom de jeune fille|birth ?name|maiden ?name|name at birth|birth ?surname|birth (?:last|family) ?name|surname at birth|geburtsname|geb name|madchenname|apellido de nacimiento|apellido de soltera|apell nac|cognome di nascita|cognome da nubile|nome de nascimento|nome de solteira|geboortenaam|meisjesnaam)\b/,
     w: { birth_name: 10, family_name: -6, given_name: -4, full_name: -4, bday: -7 },
   },
   { re: /\b(sexe|genre|sex|gender|geschlecht|sexo|genero|sesso|genere|geslacht)\b/, w: { sex: 6 } },

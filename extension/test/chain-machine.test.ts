@@ -130,7 +130,29 @@ describe("penalty", () => {
     expect(r).toEqual({ ok: { outcome: "filled" } });
     expect(toTab(t, "submit")).toHaveLength(submitsBefore);
     expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "repeat" });
-    expect(t.client.requests.at(-1)).toEqual(expect.objectContaining({ op: "fill_login", ctx: "menu", item_id: "it_01" }));
+    // The plan's own fill: not a row the user picked.
+    expect(t.client.requests.at(-1)).toEqual(expect.objectContaining({ op: "fill_login", ctx: "chain", item_id: "it_01" }));
+  });
+
+  it("captcha_after_a_submit_sets_the_penalty_like_repeat", async () => {
+    const t = await setup(() => plan({ action: "open_chain", groups: [loginGroup("it_01")] }));
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]), "doc-1");
+    await t.runner.start(7, "it_01");
+    expect(toTab(t, "submit")).toHaveLength(1);
+    // The site answers the submitted password with its challenge.
+    t.ext.navigate(7, 0, `${SITE}/check`, "doc-2");
+    await analyze(t, `${SITE}/check`, { ...page(`${SITE}/check`), captcha: true }, "doc-2");
+    expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "captcha" });
+    expect(t.ext.session.data.get(PENALTY)).toEqual({ at: t.clock.t });
+  });
+
+  it("captcha_before_any_submit_sets_no_penalty", async () => {
+    const t = await setup(() => plan({ action: "open_chain", groups: [loginGroup("it_01")] }));
+    await analyze(t, `${SITE}/login`, { ...page(`${SITE}/login`, [loginForm]), captcha: true }, "doc-1");
+    await t.runner.start(7, "it_01");
+    expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "captcha" });
+    expect(toTab(t, "submit")).toHaveLength(0);
+    expect(t.ext.session.data.get(PENALTY)).toBeUndefined();
   });
 
   it("done_clears_penalty_and_notes_fill", async () => {

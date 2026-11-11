@@ -5,10 +5,10 @@
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "permissions": ["storage", "nativeMessaging", "webNavigation", "scripting", "activeTab", "alarms"],
-  "host_permissions": ["https://*/*"],
+  "host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"],
   "content_scripts": [
     {
-      "matches": ["https://*/*"],
+      "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"],
       "js": ["content.js"],
       "all_frames": true,
       "run_at": "document_idle"
@@ -42,7 +42,7 @@
   "web_accessible_resources": [
     {
       "resources": ["menu.html", "overlay.html", "save.html", "menu.js", "overlay.js", "save.js"],
-      "matches": ["https://*/*"]
+      "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"]
     }
   ],
   "content_security_policy": {

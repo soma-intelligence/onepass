@@ -54,6 +54,7 @@ import {
 } from "../shared/messages";
 import { buttonClass } from "./context";
 import { BUTTON_SELECTOR } from "./detect/forms";
+import { findPasskeySignIn } from "./detect/passkey-button";
 import type { RefRegistry } from "./detect/refs";
 import { composedClosest, composedContains } from "./detect/shadow";
 import { type Geometry, isRendered } from "./detect/visibility";
@@ -118,6 +119,12 @@ export interface SubmitWatcher {
   /** One-click signup: clicks the button of `ref` only if it is rendered and still reads as a passkey button. */
   clickPasskey(ref: string): boolean;
   /**
+   * A gesture on a sign-in page with no form: clicks the page's one rendered button that reads as
+   * a passkey sign-in ("Use passkey", "Sign in with a passkey"). None, several, or one that makes
+   * a passkey or an account: nothing clicked.
+   */
+  clickPasskeySignIn(): boolean;
+  /**
    * Chain and plan: submits a form (its button, then `requestSubmit`, then
    * Enter). `planned` (a plan's submit): only that very form, never a copy a
    * re-render put in its place, and never when one of its buttons reads as
@@ -144,7 +151,8 @@ function controlsOf(form: HTMLFormElement): Element[] {
 
 /**
  * Whether a submission to the URL in attribute `raw` (an `action` or `formaction`) stays on the
- * page's site: same registrable domain, no HTTPS to HTTP downgrade. Only a missing or exactly empty
+ * page's site: same registrable domain, no HTTPS to HTTP downgrade; from a page that is not https
+ * (http on a loopback host), the page's exact origin only. Only a missing or exactly empty
  * attribute means the page itself (`page`); any other value, whitespace included, is resolved as the
  * browser does, against the document base URL (`base`, which a `<base href>` sets). `javascript:`
  * posts nothing anywhere. Any other scheme, or an unparsable URL, is refused.
@@ -162,6 +170,9 @@ export function submitTargetAllowed(raw: string | null, base: string, page: stri
   const from = parseOrigin(page);
   if (!to || !from) return false;
   if (from.https && !to.https) return false;
+  // A page that is not https (a local development server): the registrable domain says nothing
+  // there, another port is another server. Its exact origin, or nothing.
+  if (!from.https) return to.origin === from.origin;
   return sameSite(u.href, page);
 }
 
@@ -470,6 +481,12 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       // Relabelled since the plan (or never one): refused, nothing clicked.
       if (!(el instanceof HTMLElement) || !isRendered(el, geometry) || buttonClass(el) !== "passkey") return false;
       el.click();
+      return true;
+    },
+    clickPasskeySignIn() {
+      const one = findPasskeySignIn(doc, geometry);
+      if (!one) return false;
+      one.click();
       return true;
     },
     submitForm(formRef, planned = false) {

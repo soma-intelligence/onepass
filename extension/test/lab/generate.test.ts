@@ -22,7 +22,7 @@ import { Rng } from "../../lab/gen/rng.ts";
 const FIXED = patternsJson as unknown as Patterns;
 const ALL_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp",
   "login_passkey", "sso", "signup", "checkout_card", "address", "identity", "multi_step"];
-const PINNED_DIGEST_V4 = "3dd6a60fd66f7950bde52ad1a1a0b8e0eaf7b09a6cbb559e15781e19053dafa1";
+const PINNED_DIGEST_V4 = "7ac7e54bd20c424c8fb8d69aed9b1ad2e1b9c17ca72e4c912763d0c42a961a42";
 const digest = (w: unknown) => createHash("sha256").update(JSON.stringify(w)).digest("hex");
 const dom = (html: string): Document => new DOMParser().parseFromString(html, "text/html");
 const LOGIN_FLOWS: FlowId[] = ["login_single", "login_username_first", "login_email_then_password", "login_totp", "login_passkey", "sso", "multi_step"];
@@ -342,11 +342,8 @@ describe("generate", () => {
     expect(expectationFor(site({}), "lookalike").expect).toBe("nofill");
     expect(expectationFor(site({ flow: "login_passkey" }), "passkey_control")).toEqual({ expect: "pass" });
     expect(expectationFor(site({ traits: ["honeypot", "iframe_same_origin"] }), "one_click")).toEqual({ expect: "pass" });
-    // Provider buttons are read in French and English only (src/shared/providers.ts).
-    expect(expectationFor(site({ flow: "sso", labelLang: "es" }), "one_click")).toEqual({ expect: "xfail", reason: "provider button fr/en only (shared/providers.ts)" });
-    expect(expectationFor(site({ flow: "sso", labelLang: "de" }), "one_click").expect).toBe("xfail");
-    for (const l of ["it", "pt", "nl"]) expect(expectationFor(site({ flow: "sso", labelLang: l }), "one_click").expect).toBe("xfail");
-    expect(expectationFor(site({ flow: "sso", labelLang: "zh" }), "one_click")).toEqual({ expect: "pass" });
+    // Provider buttons are read in every label language of the generator (src/shared/providers.ts, since 2026-11-10).
+    for (const l of ["fr", "en", "es", "de", "it", "pt", "nl"]) expect(expectationFor(site({ flow: "sso", labelLang: l }), "one_click")).toEqual({ expect: "pass" });
   });
 
   it("no_secret_in_scenarios", () => {

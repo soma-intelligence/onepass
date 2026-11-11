@@ -130,12 +130,21 @@ export interface OverlayAccount {
   totp?: boolean;
   /** The vault the item lives in: named on the card when the site's logins span several vaults. */
   vault?: { id: string; name: string };
+  /** Label of the item's account, when the host says several accounts answer. */
+  account?: string;
+  /** The login is offered through an associated site. */
+  associated?: true;
 }
 
 export interface OverlayInit {
   origin: string;
   accounts: OverlayAccount[];
   chain: ChainView | null;
+  /**
+   * The vault is locked and this card was shown on a page that reads as a sign-in: it names no
+   * account and holds nothing of the vault. Its one button unlocks, then the page's plan runs.
+   */
+  generic?: true;
 }
 
 export interface SaveInit {

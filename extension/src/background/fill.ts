@@ -181,8 +181,8 @@ export class Filler {
     const values = only(all, roles);
     const h = hintsFor(hints, roles);
     const written = Object.keys(values).length;
-    // A planned group whose roles got no value: nothing to write.
-    if (roles !== undefined && written === 0) return 0;
+    // No value at all (a planned group whose roles got none, a step the item has nothing for): nothing to write.
+    if (written === 0) return 0;
     // The host may have taken seconds (Touch ID): the page could have moved.
     await this.verify(t);
     const msg: BgToCs = { type: "fill", origin: t.origin, formRef: t.formRef, values };

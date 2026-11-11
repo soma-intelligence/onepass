@@ -118,11 +118,31 @@ export type DriverId = "one_click" | "menu_fill" | "lookalike" | "passkey_contro
 /** Driver sets a run plays: "current" (overlay, menu, lookalike, passkey control) and "smart_fill" (field icon, plan). */
 export type DriverGroup = "current" | "smart_fill";
 export type Expect = "pass" | "xfail" | "nofill";
+/**
+ * What the vault and the host are when the user's gesture happens: unlocked with the host running (the historical
+ * start), vault locked (the lab's stand-in for Touch ID approves the unlock), or host not running (cold).
+ */
+export type StartState = "unlocked_warm" | "locked" | "cold";
+export const START_STATES: readonly StartState[] = ["unlocked_warm", "locked", "cold"];
+/** How the user starts OnePass: the field's icon, the toolbar Fill, the fill-smart shortcut, the overlay's account, ArrowDown in a field. */
+export type Trigger = "field_icon" | "toolbar" | "shortcut" | "overlay_row" | "menu_key";
 export interface Scenario {
-  id: string /* "<site index>:<driver>", "<profile>:<site index>:<driver>" in a multi-profile world */; site: number; driver: DriverId;
+  /**
+   * "<site index>:<driver>", "<profile>:<site index>:<driver>" in a multi-profile world; then "/shortcut" for a
+   * smart_fill started by the keyboard command and "@<start>" for a start state other than unlocked_warm.
+   */
+  id: string; site: number; driver: DriverId;
   expect: Expect; reason?: string;
   profile?: string;               // multi-profile worlds only (absent: the default profile)
   behaviour?: Behaviour;          // menu_fill under a non-default behaviour: judged on the fill, not on the user's later action
+  start?: StartState;             // absent: unlocked_warm
+  shortcut?: boolean;             // smart_fill started by the fill-smart command instead of the field's icon
+  /** Account profiles (population.ts): the vault item the user means, the account that must sign in, the stated outcome. */
+  account?: {
+    title: string; username: string; outcome: string;
+    /** The user signed in with it on this site before: the driver makes that site memory first. */
+    lastUsed?: boolean;
+  };
 }
 export interface IdpAccount { email: string; password: string; name: string; itemTitle: string; }
 export interface FixtureFile { _comment: string; account: string; vaults: { name: string; color?: string }[]; items: unknown[]; }

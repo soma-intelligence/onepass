@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BridgeAppError } from "../../src/bridge/client";
 import { BgError, toBgError } from "../../src/background/session";
-import { type PasskeyWindows, Passkeys, createPasskeyRouter } from "../../src/background/passkey";
+import { PASSKEY_ARM_MS, type PasskeyWindows, Passkeys, createPasskeyRouter } from "../../src/background/passkey";
 import type { CsContext, UiContext } from "../../src/background/frames";
 import type { ChainView } from "../../src/shared/ui";
 import type { PasskeyRequest, PasskeyResult } from "../../src/shared/messages";
@@ -327,6 +327,92 @@ describe("passkey other device", () => {
   });
 });
 
+describe("passkey after a plan a gesture started (armGet)", () => {
+  it("the item the plan chose holds the passkey the page asks for: signed without the window, once", async () => {
+    const t = setup({ chain: null });
+    t.pk.armGet(cs(), ITEM);
+    const r = await t.pk.request(cs(), "r1", GET, false);
+    expect(r.kind).toBe("assertion");
+    expect(t.windows.created).toHaveLength(0);
+    expect(t.requests.find((x) => x.op === "passkey_get")).toMatchObject({ ctx: "chain", item_id: ITEM, credential_id: CRED });
+    // Spent: the next request there asks in the window as ever.
+    void t.pk.request(cs(), "r2", GET, true);
+    await flush();
+    expect(t.windows.created).toHaveLength(1);
+  });
+
+  it("an rpId that is not the page's host or a parent of it is never signed for the plan's item (the list alone does not decide)", async () => {
+    // The host fake lists the passkey whatever the rpId: the worker's own check must refuse.
+    for (const rpId of ["evil.test", "cloud.test", "xatlas-cloud.test", "app.login.atlas-cloud.test"]) {
+      const t = setup({ chain: null });
+      t.pk.armGet(cs(), ITEM);
+      void t.pk.request(cs(), "r1", { ...GET, rpId }, false);
+      await flush();
+      expect(t.ops()).not.toContain("passkey_get");
+      // Spent all the same: one sign-in per gesture.
+      void t.pk.request(cs(), "r2", GET, false);
+      await flush();
+      expect(t.ops()).not.toContain("passkey_get");
+    }
+    // A parent of the page's host is the site's own rp.
+    const t = setup({ chain: null });
+    t.pk.armGet(cs(), ITEM);
+    const r = await t.pk.request(cs(), "r1", { ...GET, rpId: "atlas-cloud.test" }, false);
+    expect(r.kind).toBe("assertion");
+  });
+
+  it("the page asks for a passkey that item does not hold: the window, and the arming is spent", async () => {
+    const t = setup({ chain: null });
+    t.pk.armGet(cs(), OTHER_ITEM);
+    void t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    expect(t.windows.created).toHaveLength(1);
+    expect(t.ops()).not.toContain("passkey_get");
+  });
+
+  it("only in that top document, at that origin, in time; never for a creation; never without a gesture-started plan", async () => {
+    // Too late.
+    let t = setup({ chain: null });
+    t.pk.armGet(cs(), ITEM);
+    t.clock.t += PASSKEY_ARM_MS + 1;
+    void t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    expect(t.ops()).not.toContain("passkey_get");
+    // Another document of the tab.
+    t = setup({ chain: null });
+    t.pk.armGet(cs(), ITEM);
+    void t.pk.request(cs({ documentId: "doc-other" }), "r1", GET, true);
+    await flush();
+    expect(t.ops()).not.toContain("passkey_get");
+    // A child frame, and an http page, are never armed.
+    t = setup({ chain: null });
+    t.pk.armGet(cs({ frameId: 3 }), ITEM);
+    t.pk.armGet(cs({ origin: "http://atlas-cloud.test" }), ITEM);
+    void t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    expect(t.ops()).not.toContain("passkey_get");
+    // A creation always asks.
+    t = setup({ chain: null });
+    t.pk.armGet(cs(), ITEM);
+    void t.pk.request(cs(), "r1", CREATE, true);
+    await flush();
+    expect(t.windows.created).toHaveLength(1);
+    expect(t.ops()).not.toContain("passkey_create");
+    // Nothing armed: a request without user activation gets the browser's own API.
+    t = setup({ chain: null });
+    expect(await t.pk.request(cs(), "r1", GET, false)).toEqual({ kind: "fallback" });
+  });
+
+  it("a navigation of the top frame disarms", async () => {
+    const t = setup({ chain: null });
+    t.pk.armGet(cs(), ITEM);
+    for (const l of t.nav) l({ tabId: cs().tabId, frameId: 0, url: `${ORIGIN}/next` });
+    void t.pk.request(cs(), "r1", GET, true);
+    await flush();
+    expect(t.ops()).not.toContain("passkey_get");
+  });
+});
+
 describe("passkey in a sign-in chain", () => {
   const running = (itemId: string, status: ChainView["status"] = "running", site = "atlas-cloud.test"): ChainView => ({
     itemId,
@@ -387,6 +473,8 @@ describe("passkey creation", () => {
     await flush();
     const init = await t.pk.init(t.tokenOf(), t.ui());
     expect(init).toMatchObject({ kind: "create", userName: "alex@atlas.dev", rpId: "atlas-cloud.test", vaults: [{ id: "v1", name: "Personnel" }, { id: "v2", name: "Travail" }] });
+    // Listed for the page: the vaults of the account it routes to come first.
+    expect(t.requests.find((r) => r.op === "vaults")).toEqual({ op: "vaults", origin: ORIGIN });
     await expect(t.pk.save(t.tokenOf(), t.ui(), "v9")).rejects.toMatchObject({ code: "invalid" });
     await t.pk.save(t.tokenOf(), t.ui(), "v2");
     expect(await p).toEqual({

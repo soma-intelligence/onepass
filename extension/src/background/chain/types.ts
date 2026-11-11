@@ -3,6 +3,7 @@
 // nothing (tests of the pages that do not need a chain).
 import type { FieldRole, FillIntent, ProviderId } from "../../shared/messages";
 import type { ChainView } from "../../shared/ui";
+import type { CsContext } from "../frames";
 
 export type { ChainView };
 
@@ -13,6 +14,13 @@ export interface StartOptions {
   anchorRef?: string;
   /** Started by a fill plan: the roles of its main form and its intent, for `note_fill` at `done`. */
   planned?: { roles: FieldRole[]; intent: FillIntent };
+  /**
+   * The user clicked this very item's row there. The chain's first fill is that pick and says so
+   * to the bridge (`ctx`): a login offered through an associated domain is served to a pick
+   * only. Every later step is the chain's own (`ctx: "chain"`). Never set for a start the user
+   * did not pick a row for (a plan, the overlay's button).
+   */
+  picked?: "menu";
 }
 
 export interface ChainDriver {
@@ -35,6 +43,16 @@ export interface ChainDriver {
    * logins linked to one of them.
    */
   providerOnly?(tabId: number, documentId?: string): Promise<ProviderId[] | null>;
+  /**
+   * The providers whose sign-in buttons top document `documentId` shows, with or without a
+   * sign-in form beside them (empty: none, or another document by now).
+   */
+  providersShown?(tabId: number, documentId?: string): Promise<ProviderId[]>;
+  /**
+   * The frame a sign-in would act in, in `tabId` (spec C1): the top frame, or the child frame of
+   * exactly its origin that holds the sign-in form. Null: no page to act on.
+   */
+  acting?(tabId: number): Promise<CsContext | null>;
 }
 
 /** No chain support: start and stop do nothing, no state. */

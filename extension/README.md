@@ -80,7 +80,10 @@ Le fichier JSON est lu par `onepass-native-host` (`--config <fichier>`, sinon `O
 | `source` | `{"kind":"fixture","path":...}` ou `{"kind":"dev"}` (voir ci-dessous) |
 | `approval` | `auto` (build debug uniquement, refusé par un binaire release) ou `file` |
 | `unlocked` | coffre déverrouillé au démarrage, `true` par défaut |
+| `unlock` | réponse à la requête `unlock` d'un coffre verrouillé : `instant` (défaut, le coffre s'ouvre tout de suite) ou `file` (déverrouillage différé, voir ci-dessous) |
 | `reprompt` | `deny` (défaut) ou `allow` : réponse aux items qui demandent une nouvelle authentification |
+
+Déverrouillage différé (`"unlock": "file"`, avec `"unlocked": false`) : l'hôte se comporte comme l'app pendant que Touch ID est affiché. À la requête `unlock`, il écrit `<data_dir>/unlock-pending`, répond qu'il est encore verrouillé et le reste. Il s'ouvre quand `<data_dir>/unlock-approved` existe (vérifié avant chaque requête suivante), puis retire les deux fichiers ; une approbation sans demande n'ouvre rien. Pour approuver à la main : `touch <data_dir>/unlock-approved` après avoir fait le geste dans le navigateur. C'est le mode qui exerce l'attente puis la reprise de l'extension (menu, carte, chaîne) ; le laboratoire l'utilise pour ses départs verrouillés, avec un délai d'approbation réglable (`LAB_UNLOCK_DELAY_MS`, 800 ms par défaut). L'hôte répond aussi `{"ok":true}` au message simple `open_app` (il n'a pas d'app à mettre au premier plan), comme `onepass-relay` en production.
 
 Source `fixture` : items fictifs d'un fichier JSON (par exemple `core/onepass-native-host/fixtures/e2e.json`, Alex Martin et `atlas-cloud.test`), chargés dans un vrai coffre chiffré en mémoire. Build debug uniquement : un binaire release la refuse.
 

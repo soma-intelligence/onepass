@@ -1,18 +1,21 @@
 // Command line of the autofill lab (spec 9), run by `node --experimental-strip-types`:
-//   lab    --seed <s> --sites <n> [--drivers current,smart_fill] [--profiles <n>] [--workers 4] [--report <md>] [--classifier heuristic|gbm|encoder [--model-dir <dir>]]
-//   repro  --seed <s> --site <i> [--sites <n>] [--drivers ...] [--profiles <n>] [--classifier <k> [--model-dir <dir>]]
+//   lab    --seed <s> --sites <n> [--drivers current,smart_fill] [--profiles <n> | --accounts p0,p1,p2,p3] [--starts unlocked_warm,locked,cold] [--triggers icon,shortcut] [--out <dir>] [--workers 4] [--report <md>] [--classifier heuristic|gbm|encoder [--model-dir <dir>]]
+//   repro  --seed <s> --site <i> [--sites <n>] [--drivers ...] [--profiles <n> | --accounts ...] [--starts ...] [--triggers ...] [--out <dir>] [--classifier <k> [--model-dir <dir>]]
 //   compare --out <dir> <dir> <dir> --md <file> [--real-rows <rows.jsonl>]   (classifier comparison, decision rule of the spec)
 //   report --out <dir> [--md <file>]
 //   dataset --seed <s> --forms <n> [--workers <k>]   (labelled field dataset, lab/dataset/build.ts)
 // `lab` and `repro` run the Playwright lab with the LAB_* variables, then write
 // the report; the exit code is 1 when the run is red (a leak, a wrong item or
 // an auto-submit outside a sign-in). --sites defaults to 200, --drivers to current.
+// --starts, --triggers and --accounts widen the scenarios (start states, the
+// fill-smart shortcut, account profiles); --out names the result folder
+// (default lab/out/<seed>, which a new run of the same seed writes again).
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseDriverGroups } from "./gen/generate.ts";
-import type { Profile } from "./gen/population.ts";
+import { parseDriverGroups, parseStarts, parseTriggers } from "./gen/generate.ts";
+import { accountProfiles, type Profile } from "./gen/population.ts";
 import { classifierInfo, classifierOptions } from "./classifier-info.ts";
 import { compareDirs, compareRuns } from "./compare.ts";
 import { scoreRows } from "./dataset/heuristic-eval.ts";
@@ -74,6 +77,18 @@ function readMeta(out: string): { date?: string; commit?: string; durationMin?: 
   }
 }
 
+/** The LAB_* variables of the scenario dimensions asked on the command line (checked here, so a typo stops before the build). */
+function dimensions(a: Args): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (a.starts !== undefined) env.LAB_STARTS = parseStarts(a.starts).join(",");
+  if (a.triggers !== undefined) env.LAB_TRIGGERS = parseTriggers(a.triggers).join(",");
+  if (a.accounts !== undefined) {
+    if (a.profiles !== undefined && Number(a.profiles) > 1) throw new Error("--accounts and --profiles do not mix (same profile ids)");
+    env.LAB_ACCOUNTS = accountProfiles(a.accounts.split(",").map((x) => x.trim()).filter(Boolean)).map((p) => p.id).join(",");
+  }
+  return env;
+}
+
 /** Write <out>/report.md (and `md` when given); returns the number of leaks. */
 function writeReport(out: string, md: string | undefined): number {
   const world = JSON.parse(readFileSync(join(out, "world.json"), "utf8")) as { seed: string; sites: unknown[]; profiles?: Profile[] };
@@ -90,7 +105,9 @@ function writeReport(out: string, md: string | undefined): number {
   const oc = summary.oneClickTotal;
   console.log(`lab report: ${o.total} scenarios (+${summary.control.total} control), rate ${(o.rate * 100).toFixed(1)} %, ${o.fail} fail, ${leaks} leak, `
     + `${summary.wrongItem.length} wrong_item, ${summary.autoSubmitOutsideLogin.length} auto_submit_outside_login, `
-    + `one click current ${oc.current.ok}/${oc.current.total} smart_fill ${oc.smart_fill.ok}/${oc.smart_fill.total} -> ${join(out, "report.md")}`);
+    + `one click current ${oc.current.ok}/${oc.current.total} smart_fill ${oc.smart_fill.ok}/${oc.smart_fill.total}, `
+    + `one gesture signed in ${summary.oneGesture.reduce((n, c) => n + c.ok, 0)}/${summary.oneGesture.reduce((n, c) => n + c.total, 0)}`
+    + `${summary.skipped.length > 0 ? `, ${summary.skipped.length} skipped` : ""} -> ${join(out, "report.md")}`);
   return isRed(summary) ? Math.max(leaks, 1) : leaks;
 }
 
@@ -175,10 +192,10 @@ async function main(argv: string[]): Promise<number> {
     if (a.workers !== undefined) posInt(a, "workers", 1);
     const cls = classifierOptions(a);
     if (cls.kind !== undefined && cls.kind !== "heuristic") classifierInfo(cls.kind, cls.modelDir); // fail early on a missing model
-    const out = absolute(join("lab", "out", `${seed}${cls.suffix}`));
+    const out = absolute(a.out ?? join("lab", "out", `${seed}${cls.suffix}`));
     const profiles = a.profiles !== undefined ? posInt(a, "profiles", 1) : 1;
     const drivers = parseDriverGroups(a.drivers ?? "current").join(",");
-    const env = { LAB_DRIVERS: drivers, LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_OUT: out, ...cls.env };
+    const env = { LAB_DRIVERS: drivers, LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_OUT: out, ...dimensions(a), ...cls.env };
     return runLab(env, out, a.workers, a.report, a, seed, sites);
   }
   if (cmd === "repro") {
@@ -194,10 +211,10 @@ async function main(argv: string[]): Promise<number> {
     else sites = DEFAULT_SITES;
     if (site >= sites) throw new Error(`--site ${site} is outside the world (${sites} sites; pass --sites for another size)`);
     // A separate directory keeps the original run's results and report intact.
-    const reproOut = absolute(join("lab", "out", `${seed}${cls.suffix}-repro-${site}`));
+    const reproOut = absolute(a.out ?? join("lab", "out", `${seed}${cls.suffix}-repro-${site}`));
     const profiles = a.profiles !== undefined ? posInt(a, "profiles", 1) : 1;
     const drivers = parseDriverGroups(a.drivers ?? "current").join(",");
-    return runLab({ LAB_DRIVERS: drivers, LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_ONLY: String(site), LAB_OUT: reproOut, ...cls.env }, reproOut, a.workers, a.report, a, seed, sites);
+    return runLab({ LAB_DRIVERS: drivers, LAB_SEED: seed, LAB_SITES: String(sites), LAB_PROFILES: String(profiles), LAB_ONLY: String(site), LAB_OUT: reproOut, ...dimensions(a), ...cls.env }, reproOut, a.workers, a.report, a, seed, sites);
   }
   if (cmd === "dataset") {
     const args = ["--experimental-strip-types", "lab/dataset/build.ts", "--seed", need(a, "seed"), "--forms", String(posInt(a, "forms", 1))];
@@ -207,7 +224,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "report") {
     return writeReport(absolute(need(a, "out")), a.md) ? 1 : 0;
   }
-  console.error("usage: lab --seed <s> --sites <n> [--drivers current,smart_fill] [--profiles <n>] [--workers 4] [--report <md>] [--classifier <k> [--model-dir <dir>]] | compare --out <dir> <dir> <dir> --md <file> [--real-rows <jsonl>] | repro --seed <s> --site <i> [--sites <n>] [--profiles <n>] | report --out <dir> [--md <file>] | dataset --seed <s> --forms <n> [--workers <k>]");
+  console.error("usage: lab --seed <s> --sites <n> [--drivers current,smart_fill] [--profiles <n> | --accounts p0,p1,p2,p3] [--starts unlocked_warm,locked,cold] [--triggers icon,shortcut] [--out <dir>] [--workers 4] [--report <md>] [--classifier <k> [--model-dir <dir>]] | compare --out <dir> <dir> <dir> --md <file> [--real-rows <jsonl>] | repro --seed <s> --site <i> [--sites <n>] [--profiles <n> | --accounts ...] [--starts ...] [--triggers ...] [--out <dir>] | report --out <dir> [--md <file>] | dataset --seed <s> --forms <n> [--workers <k>]");
   return 2;
 }
 

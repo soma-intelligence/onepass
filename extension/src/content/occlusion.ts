@@ -10,6 +10,13 @@
 // that takes the pointer, an element the page slipped above us before the observer put the host
 // back).
 //
+// A transform, translate, scale, rotate or zoom on `<html>` (or on any ancestor the page managed
+// to give our host) is hidden too: such an ancestor becomes the containing block of our fixed
+// host and moves it on the screen, while the page keeps its content in place with the inverse on
+// `<body>`. Neither the hit test (it still finds the host) nor IntersectionObserver v2 (it
+// tolerates a 2D translation) sees that slide. frames.ts watches the layer's position as well
+// (`Shell.shift`).
+//
 // Limit: a popover inside a closed shadow root the browser does not let us read (no
 // `openOrClosedShadowRoot`: Firefox, Safari) is not seen. Chromium has IntersectionObserver v2,
 // which sees every cover; the callers use it there as well.
@@ -68,31 +75,48 @@ export function topLayerOpen(doc: Document, scopes?: Scopes, near?: Box): boolea
   return false;
 }
 
-/**
- * True when the root element's own style dims or hides every descendant, ours included: opacity
- * below 1, a filter, a mask or a clip-path. Same rule as IntersectionObserver v2 `isVisible` for an
- * ancestor (any non-neutral value fails), so a page cannot fade the real page out and leave a
- * decoy in the top layer.
- */
-export function rootHidden(doc: Document): boolean {
-  const html = doc.documentElement;
-  const view = doc.defaultView;
-  if (!html || !view) return false;
+/** Properties that move or resize every descendant of the element they are set on (`none` when unset). */
+const MOVING = ["transform", "translate", "scale", "rotate"] as const;
+/** Most ancestors of our host looked at (it is a child of `<html>`: one, unless the page moved it). */
+const MAX_HOST_ANCESTORS = 16;
+
+/** `el`'s own style dims, hides or moves its descendants. */
+function hides(view: Window, el: Element): boolean {
   let s: CSSStyleDeclaration;
   try {
-    s = view.getComputedStyle(html);
+    s = view.getComputedStyle(el);
   } catch {
     return false;
   }
   const o = Number.parseFloat(s.opacity);
   if (Number.isFinite(o) && o < 1) return true;
   const set = (v: string) => v !== "" && v !== "none";
-  return (
-    set(s.getPropertyValue("filter")) ||
-    set(s.getPropertyValue("mask-image")) ||
-    set(s.getPropertyValue("-webkit-mask-image")) ||
-    set(s.getPropertyValue("clip-path"))
-  );
+  if (set(s.getPropertyValue("filter")) || set(s.getPropertyValue("mask-image")) || set(s.getPropertyValue("-webkit-mask-image")) || set(s.getPropertyValue("clip-path"))) {
+    return true;
+  }
+  if (MOVING.some((p) => set(s.getPropertyValue(p)))) return true;
+  const zoom = s.getPropertyValue("zoom").trim();
+  return !(zoom === "" || zoom === "normal" || zoom === "1" || zoom === "100%");
+}
+
+/**
+ * True when the root element's own style dims, hides or moves every descendant, ours included:
+ * opacity below 1, a filter, a mask or a clip-path (same rule as IntersectionObserver v2
+ * `isVisible` for an ancestor: any non-neutral value fails, so a page cannot fade the real page
+ * out and leave a decoy in the top layer), and any transform, translate, scale, rotate or zoom
+ * (they move our fixed host on the screen). `from`: the parent of our host when it is not the
+ * root element (the page re-parented it): every ancestor from there up is held to the same rule.
+ */
+export function rootHidden(doc: Document, from?: Element | null): boolean {
+  const html = doc.documentElement;
+  const view = doc.defaultView;
+  if (!html || !view) return false;
+  if (hides(view, html)) return true;
+  let n: Element | null = from ?? null;
+  for (let i = 0; n && n !== html && i < MAX_HOST_ANCESTORS; n = n.parentElement, i++) {
+    if (hides(view, n)) return true;
+  }
+  return false;
 }
 
 /** The topmost element at a viewport point, as hit testing sees it; undefined where the engine has no hit test. */

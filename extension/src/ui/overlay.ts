@@ -3,15 +3,31 @@
 //
 // - the offer: a pill with the first login (the site's icon, with the
 //   provider's official mark for a "Sign in with" login, its title and the
-//   account in full, never cut), a text "Se connecter" and x; "Autres
-//   identifiants" hangs under it when the site has others and opens a
-//   searchable list of every login (arrows, Enter, pointer). When the logins
-//   live in several vaults, each names its vault on a coloured chip;
+//   account in full, never cut), a text "Se connecter" and x. The worker
+//   lists first the account the page's plan would pick (the one used last
+//   on this site). With exactly one other login, that login hangs under the
+//   pill as a row of its own: one click signs in with it. With more,
+//   "Autres identifiants" hangs there and opens a searchable list of every
+//   login (arrows, Enter, pointer). When the logins live in several vaults,
+//   each names its vault on a coloured chip;
 // - the progress, in place of the card the user clicked (or under the field
 //   when started from the menu): the account at the top, one line that says
 //   what happens now ("Ouverture de Google…"), "Annuler" at any time;
 // - the result: "Connecté" (the card then leaves by itself), or a precise
 //   stop with what to do next, and "Réessayer" when trying again can help.
+//
+// A click that finds the vault locked (or the app not running) asks the app
+// at once: the card then waits ("Déverrouille OnePass pour continuer",
+// "Annuler"), polled like a running chain, and the worker starts or continues
+// the sign-in the moment the vault opens. No second click; past the shared
+// deadline the offer (or the stop with "Réessayer") comes back.
+//
+// A sign-in page reached with the vault locked gets a generic card: the
+// vault cannot say who matches, so the card names no account and holds
+// nothing of it. Its one button is the gesture: the worker unlocks, then runs
+// the page's own plan (the chain for the best login, or the menu when the
+// plan cannot choose). The card waits like any other and then shows what the
+// worker started; with nothing to show it loads again, or leaves.
 //
 // The progress and result cards keep the close button detached at their
 // right; everything follows the system appearance. The service
@@ -24,6 +40,7 @@ import { t, tn } from "../shared/i18n";
 import type { ProviderId, UiToBg } from "../shared/messages";
 import type { ChainPhase, ChainView, OverlayAccount, OverlayInit, StepState, StopReason } from "../shared/ui";
 import {
+  accountNotes,
   markTouch,
   ClickGuard,
   type FrameDeps,
@@ -45,7 +62,7 @@ import {
   tokenFromHash,
   vaultChip,
 } from "./components";
-import { parseEmpty, parseOverlayInit, parseOverlayState } from "./parse";
+import { type OverlayWaiting, parseEmpty, parseOverlayInit, parseOverlayStart, parseOverlayState } from "./parse";
 
 export const POLL_MS = 500;
 /** "Connecté" stays this long, then the card leaves by itself. */
@@ -163,6 +180,9 @@ const STATE_TEXT: Readonly<Record<StepState, string>> = {
   stopped: t("overlay.stopped"),
 };
 
+/** After the unlock a generic card asked: polls given to the page's plan to start its chain before the card loads again. */
+const PAGE_LOOKS = 6;
+
 /** One login the card can start: a way to sign in, and the provider account it uses. */
 interface Entry {
   way: OverlayAccount;
@@ -207,6 +227,14 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   let stepsOpen = false;
   /** The way the user clicked: the progress names its account until the worker reports it. */
   let picked: OverlayAccount | null = null;
+  /** The card waits for an unlock asked in the app: what it shows now (polls rebuild nothing). */
+  let waitUi: { kind: OverlayWaiting; status: HTMLElement } | null = null;
+  /** This card came up generic (locked vault): once the vault answers with no login for the site, it leaves. */
+  let wasGeneric = false;
+  /** The card waited for an unlock asked for its page (generic card): once over with no chain, it loads again. */
+  let pageWait = false;
+  /** Looks left for the chain the page's plan may start after that unlock (the plan runs in the page, a moment later). */
+  let pageLooks = 0;
   /** The picker of every login for this site ("Other logins"), open or not, and its search. */
   let pickerOpen = false;
   let query = "";
@@ -254,13 +282,20 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       ),
     );
 
-  /** The site's icon on a round tile, with the provider's mark at its corner. */
-  const artOf = (letter: string, provider: ProviderId | undefined) =>
-    provider ? brandTile(init?.origin ?? null, letter, provider, 34, true) : siteTile(init?.origin ?? null, letter, 34, true);
+  /**
+   * The site's icon on a round tile, with the provider's mark at its corner. A card of a locked
+   * vault (generic, or waiting for its page's unlock) shows a letter: the icon is a request to the
+   * site's server, and one made only while locked would tell the site so.
+   */
+  const artOf = (letter: string, provider: ProviderId | undefined) => {
+    const from = pageWait || init?.generic === true ? null : (init?.origin ?? null);
+    return provider ? brandTile(from, letter, provider, 34, true) : siteTile(from, letter, 34, true);
+  };
 
   const renderMessage = (code: string) => {
     stopPolling();
     chainUi = null;
+    waitUi = null;
     const title =
       code === "unpaired"
         ? t("menu.pairOnepassFromToolbar")
@@ -276,9 +311,15 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     if (a.provider) msg.provider = a.provider;
     if (a.provider && accountId !== undefined) msg.accountId = accountId;
     picked = email !== undefined ? { ...a, email, subtitle: email } : a;
-    const r = await call(deps.send, msg, parseEmpty);
+    const r = await call(deps.send, msg, parseOverlayStart);
     if (!r.ok) {
       renderMessage(r.code);
+      return;
+    }
+    if (r.value.waiting) {
+      // Locked, or the app not running: the click asked the app, the sign-in starts after its unlock.
+      renderWaiting(r.value.waiting, null);
+      startPolling();
       return;
     }
     const first: ChainView = { itemId: a.itemId, status: "running", steps: [], title: a.title, email: picked.subtitle, phase: "signin" };
@@ -320,6 +361,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       { class: "ov-line2" },
       name ? h("span", { class: "ov-via" }, `${name} · `) : null,
       h("span", { class: "ov-email" }, who),
+      ...accountNotes(e.way),
       vaults && e.way.vault ? vaultChip(e.way.vault) : null,
     );
   };
@@ -352,8 +394,20 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => startEntry(e)) } }, t("popup.signIn")),
       closeButton(),
     );
-    const others =
-      list.length > 1
+    const second = list.length === 2 ? list[1] : undefined;
+    const others = second
+      ? // Exactly one other login: it hangs under the pill itself, one click signs in with it.
+        h(
+          "button",
+          {
+            class: "ov-others ov-other",
+            attrs: { type: "button", "aria-label": t("overlay.signInAsOther", { account: second.email ?? second.way.subtitle }), ...(second.way.provider ? { "data-provider": second.way.provider } : {}) },
+            on: { click: guard.wrap(() => startEntry(second)) },
+          },
+          h("span", { class: "t1" }, second.way.title),
+          accountLine(second, showVaults(list)),
+        )
+      : list.length > 1
         ? h(
             "button",
             {
@@ -443,13 +497,70 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     input.focus();
   };
 
+  /**
+   * The generic card: the site, "Sign in with OnePass", that it is locked, one button. Its click
+   * asks the worker to unlock and to run the page's plan; nothing here comes from the vault.
+   */
+  const renderGeneric = (): void => {
+    stopPolling();
+    cancelClose();
+    chainUi = null;
+    waitUi = null;
+    picked = null;
+    const host = hostOf(init!.origin);
+    let asked = false;
+    const unlock = async (): Promise<void> => {
+      // One request per card: a second click while it is answered asks nothing more.
+      if (!token || asked) return;
+      asked = true;
+      const r = await call(deps.send, { type: "overlay_unlock", token }, parseOverlayStart);
+      if (!r.ok) {
+        renderMessage(r.code);
+        return;
+      }
+      pageWait = true;
+      pageLooks = PAGE_LOOKS;
+      // Waiting for the app, or open already (the page's plan is on its way): polled either way.
+      if (r.value.waiting) renderWaiting(r.value.waiting, null);
+      startPolling();
+    };
+    const pill = h(
+      "div",
+      { class: "ov-pill", attrs: { "data-generic": "" } },
+      h("h1", { class: "sr-only" }, t("overlay.signInToHost", { host })),
+      // A letter, never the site's icon (no request to the site while locked, see `artOf`).
+      siteTile(null, host.charAt(0).toUpperCase(), 36, true),
+      h("span", { class: "stack" }, h("span", { class: "t1" }, t("overlay.signInWithOnepass")), h("span", { class: "ov-line2" }, h("span", { class: "ov-email" }, t("ui.onepassLocked")))),
+      h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => void unlock()) } }, t("popup.signIn")),
+      closeButton(),
+    );
+    show(h("div", { class: "ov-pill-wrap" }, pill));
+  };
+
   function renderIdle(): void {
     stopPolling();
     cancelClose();
     chainUi = null;
+    waitUi = null;
     picked = null;
     if (!init) return;
+    if (pageWait) {
+      // The unlock asked for the page is over and no chain runs: what the vault now says (the
+      // site's logins; the menu the plan opened has already taken this card's place).
+      pageWait = false;
+      void load();
+      return;
+    }
+    if (init.generic) {
+      renderGeneric();
+      return;
+    }
     const list = entries();
+    // A card that came up locked and now finds nothing for this site has nothing to offer.
+    if (wasGeneric && list.length === 0) {
+      closeOverlay();
+      return;
+    }
     if (pickerOpen && list.length > 1) renderPicker(list);
     else renderPill(list);
   }
@@ -533,7 +644,30 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     remeasure();
   }
 
+  /**
+   * The app was asked to unlock for this card (the click on it, or its chain locked mid-way), or
+   * is still starting: one line that says which, the account, "Annuler". The worker goes on by
+   * itself once the vault opens; polls only change the line.
+   */
+  function renderWaiting(kind: OverlayWaiting, c: ChainView | null): void {
+    const line = kind === "locked" ? t("ui.unlockToContinue") : t("ui.openingOnepass");
+    if (waitUi) {
+      if (waitUi.kind !== kind) waitUi.status.textContent = line;
+      waitUi.kind = kind;
+      return;
+    }
+    cancelClose();
+    chainUi = null;
+    const status = h("span", { class: "ov-status", attrs: { role: "status", "aria-live": "polite" } }, line);
+    const cancelBtn = h("button", { class: "btn-link ov-cancel", attrs: { type: "button" }, on: { click: guard.wrap(cancel) } }, t("common.cancel"));
+    const who: ChainView = c ?? { itemId: picked?.itemId ?? "", status: "running", steps: [] };
+    const now = h("li", { class: "ov-step ov-now" }, h("span", { class: "spinner", attrs: { "aria-hidden": "true" } }), status);
+    show(shell(h("div", { class: "ov-card ov-run" }, whoNode(who, cancelBtn), h("ul", { class: "ov-steps" }, now)), closeButton(cancel)));
+    waitUi = { kind, status };
+  }
+
   function renderChain(c: ChainView): void {
+    waitUi = null;
     const key = JSON.stringify(c);
     if (chainUi && chainUi.last === key) return;
     const mode = c.status === "running" ? "running" : "ended";
@@ -630,8 +764,16 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       renderMessage(r.code);
       return;
     }
-    if (r.value.chain) renderChain(r.value.chain);
-    else renderIdle();
+    if (r.value.waiting) {
+      renderWaiting(r.value.waiting, r.value.chain);
+      startPolling();
+    } else if (r.value.chain) {
+      pageWait = false;
+      renderChain(r.value.chain);
+    } else if (pageWait && pageLooks-- > 0) {
+      // The vault is open; the plan the page runs now may start a chain within a moment.
+      startPolling();
+    } else renderIdle();
   }
 
   async function load(): Promise<void> {
@@ -648,7 +790,14 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       renderMessage(r.code);
       return;
     }
+    if (init?.generic) wasGeneric = true;
     init = r.value;
+    if (r.value.waiting) {
+      // The chain stopped locked on this page and the app was asked: the card waits, then it goes on.
+      renderWaiting(r.value.waiting, init.chain);
+      startPolling();
+      return;
+    }
     // A chain that stopped on an earlier page keeps its reason on screen.
     if (init.chain) {
       renderChain(init.chain);

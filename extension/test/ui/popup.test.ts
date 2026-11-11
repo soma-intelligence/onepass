@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
+import { UNLOCK_WAIT_TRIES } from "../../src/ui/components";
 import { CLIPBOARD_CLEAR_MS, GENERATOR_TYPES, mountPopup } from "../../src/ui/popup";
 import { FakeWorker, ManualTimers, type Reply, button, login, root, text } from "./helpers";
 
@@ -70,6 +71,21 @@ describe("popup", () => {
     await handle.settled();
     expect(w.sent.find((m) => m.type === "popup_pending_decide")).toEqual({ type: "popup_pending_decide", id, decision: "save" });
     expect(text(r)).not.toContain("Enregistrer le login pour linear.app ?");
+  });
+
+  it("rows name their account when the host says several accounts answer, and mark an associated site", async () => {
+    const w = worker((m) =>
+      m.type === "popup_suggestions"
+        ? { ok: { domain: "atlas-cloud.test", items: [login("it_01", { account: "Soma Labs", associated: true }), login("it_02", { title: "Other" })] } }
+        : null,
+    );
+    const { r, handle } = setup(w);
+    await handle.ready;
+    const rows = [...r.querySelectorAll("button.row")];
+    expect(rows[0]!.textContent).toContain("Soma Labs");
+    expect(rows[0]!.textContent).toContain("Site associé");
+    expect(rows[1]!.textContent).not.toContain("Site associé");
+    expect(r.querySelectorAll(".row-account")).toHaveLength(1);
   });
 
   it("unpaired: Appairer avec OnePass, then the code and its two buttons", async () => {
@@ -202,7 +218,7 @@ describe("popup", () => {
     expect(w.types().filter((t) => t === "popup_unlock_biometric")).toHaveLength(1);
   });
 
-  it("locked: after a minute without unlock, the button comes back", async () => {
+  it("locked: after 90 s without unlock, the button comes back", async () => {
     const w = worker((m) => {
       if (m.type === "popup_status") return { ok: { ...STATUS, locked: true } };
       if (m.type === "popup_unlock") return { ok: { locked: true } };
@@ -212,13 +228,17 @@ describe("popup", () => {
     await handle.ready;
     button(r, "Déverrouiller dans OnePass").click();
     await handle.settled();
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < UNLOCK_WAIT_TRIES - 1; i++) {
       timers.runTimeouts();
       await handle.settled();
     }
+    // Still waiting just before the shared deadline.
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    timers.runTimeouts();
+    await handle.settled();
     expect(text(r)).toContain("OnePass est verrouillé");
     expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
-    expect(w.types().filter((t) => t === "popup_status").length).toBeLessThanOrEqual(62);
+    expect(w.types().filter((t) => t === "popup_status").length).toBeLessThanOrEqual(UNLOCK_WAIT_TRIES + 2);
   });
 
   it("locked: Déverrouiller dans OnePass", async () => {

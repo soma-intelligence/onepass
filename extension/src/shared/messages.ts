@@ -223,7 +223,12 @@ export interface FormInfo {
 export interface PageAnalysis {
   url: string;
   forms: FormInfo[];
+  /** A CAPTCHA challenge is shown to the user now: the chain stops. */
   captcha: boolean;
+  /** A CAPTCHA widget sits on the page and asks nothing (yet): no stop; a refused submit there is named a CAPTCHA. */
+  captchaWidget?: boolean;
+  /** The page shows one button that reads as a passkey sign-in: a sign-in page even with no field and no provider button. */
+  passkeySignIn?: boolean;
   push: boolean;
   providerButtons: { provider: ProviderId; ref: string }[];
   accountChooser: { email: string; ref: string }[];
@@ -302,6 +307,10 @@ export type PlanGroupKind = "login" | "card" | "identity" | "generated_password"
 /** Rust `ReasonCode`. */
 export type PlanReason =
   | "single_candidate"
+  /** Several accounts, one of them saved for this exact host, no memory: confident, may submit. */
+  | "sole_exact_host"
+  /** Offered through Apple's shared-credentials list, never used on this site: shown in the menu, never submitted. */
+  | "associated_domain"
   | "last_on_site"
   | "same_shape"
   | "typed_username"
@@ -437,9 +446,11 @@ export type CsToBg =
    * `formRef` and `fieldRef`: the form and field of an icon click (the run
    * keeps that form's groups only, the progress shows under the field);
    * absent for the popup and the command (the whole plan runs). The origins
-   * of the context are the background's.
+   * of the context are the background's. `bare`: a gesture without a field
+   * in a frame that has none to open the menu under (a locked vault then has
+   * no menu to wait in: a card of the page waits instead).
    */
-  | { type: "plan_context"; formRef?: string; fieldRef?: string; context: PlanContextBody }
+  | { type: "plan_context"; formRef?: string; fieldRef?: string; context: PlanContextBody; bare?: true }
   /**
    * Model builds only (Task 15): features of one form (never a field value), one label per field
    * back. An empty list is the handshake: the worker answers its model kind, or null.
@@ -497,13 +508,20 @@ export type UiToBg =
    * browsers); the two others unlock it with Face ID or Touch ID, or the master password.
    */
   | { type: "menu_vault"; token: string }
-  /** `gesture`: a tap on the Face ID button (the fill resumes); absent for the menu's automatic try. */
+  /**
+   * Face ID (or Touch ID) in the iOS sheet. `gesture`: a tap on its button, the fill resumes.
+   * Absent: the menu's one automatic try; it resumes the fill too when a trusted gesture (the
+   * field icon, the command) opened this menu on the locked vault, and only unlocks otherwise.
+   */
   | { type: "menu_unlock_biometric"; token: string; gesture?: true }
   | { type: "menu_unlock_password"; token: string; password: string }
   /**
-   * Unlocked in the app after this menu asked (`menu_unlock`, Touch ID on the Mac): the menu's
-   * field runs its plan again in the menu's frame, once. The iOS sheet's unlocks resume in their
-   * own call (`menu_unlock_biometric` with `gesture`, `menu_unlock_password`), never by this.
+   * The menu asks whether the unlock asked for it in the app is done (Touch ID on the Mac): asked
+   * by its own button (`menu_unlock`), or already by the trusted gesture that opened it on a
+   * locked vault or a missing app (the menu then waits with no second click). Open: its field
+   * runs its plan again in the menu's frame, once. Still locked or still starting: "locked" /
+   * "host_missing", nothing is used up. Never asked for this menu: "invalid". The iOS sheet's
+   * unlocks resume in their own call (`menu_unlock_biometric`, `menu_unlock_password`), never by this.
    */
   | { type: "menu_resume"; token: string }
   | { type: "menu_close"; token: string }
@@ -519,6 +537,11 @@ export type UiToBg =
   | { type: "overlay_state"; token: string }
   | { type: "overlay_start"; token: string; itemId: string; provider?: ProviderId; accountId?: string }
   | { type: "overlay_resize"; token: string; height: number }
+  /**
+   * The click on a generic card (shown on a sign-in page reached with the vault locked, nothing
+   * of the vault on it): the app is asked to unlock, then the page's own plan runs, once.
+   */
+  | { type: "overlay_unlock"; token: string }
   | { type: "overlay_stop"; token: string }
   | { type: "overlay_close"; token: string }
   | { type: "save_init"; token: string }
@@ -583,6 +606,11 @@ export type BgToCs =
   /** The user chose a passkey: click this button only if it still reads as a passkey button. */
   | { type: "click_passkey"; origin: string; ref: string }
   /**
+   * A gesture on a sign-in page with no form: press the page's one button that reads as a
+   * passkey sign-in (the worker armed the site's one passkey account for the request it makes).
+   */
+  | { type: "click_passkey_signin"; origin: string }
+  /**
    * `planned`: a submit decided by a fill plan. The content script then
    * refuses a re-rendered copy of the form (no lineage substitution) and a
    * form whose submit control reads as pay or create at click time.
@@ -591,9 +619,11 @@ export type BgToCs =
   /**
    * Run smart fill in this frame as if its user clicked (popup Fill, `fill-smart` command).
    * `fieldRef`, `origin`: the field of a menu the user unlocked from, its plan run once after the
-   * unlock (MS-03, IOSSAF-02); only that field, only at that origin.
+   * unlock (MS-03, IOSSAF-02); only that field, only at that origin. `formRef`: that menu's form.
+   * A page that redrew the form while the unlock was pending has killed the field's ref: the one
+   * copy of that very form (same identity, `FormLineage`) takes the fill, or nothing does.
    */
-  | { type: "smart_fill"; fieldRef?: string; origin?: string }
+  | { type: "smart_fill"; fieldRef?: string; formRef?: string; origin?: string }
   /** The page context of this frame, for a plan made without a click (popup line, chain replan): replied, never sent. */
   | { type: "plan_request" }
   /** `origin`: when set, shown only by a frame still at exactly this origin (no documentId pin). */

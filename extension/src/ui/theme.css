@@ -499,6 +499,10 @@ html:has(> body.island), body.island { background: transparent; }
 .ov-others::before, .ov-others::after { content: ""; position: absolute; top: 0; width: 12px; height: 12px; pointer-events: none; }
 .ov-others::before { left: -12px; background: radial-gradient(circle at 0 100%, transparent 11.5px, var(--elevated) 12px); }
 .ov-others::after { right: -12px; background: radial-gradient(circle at 100% 100%, transparent 11.5px, var(--elevated) 12px); }
+/* The one other login, in place of the tab: its title, then its account, on one line. */
+.ov-other { max-width: 100%; gap: 8px; }
+.ov-other .t1 { flex-shrink: 0; font-size: 13px; font-weight: 600; }
+.ov-other .ov-line2 { min-width: 0; font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-others svg { transform: rotate(90deg); color: var(--text2); }
 .ov-others:hover svg { color: var(--text); }
 .brand-art { position: relative; flex-shrink: 0; display: inline-flex; }

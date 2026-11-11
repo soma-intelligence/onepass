@@ -118,9 +118,11 @@ export class Frames {
   }
 
   /**
-   * Spec 8.4 step 2: HTTPS, still the origin (and document, when known)
-   * bound when the gesture started, and the top frame or a frame of the
-   * same registrable domain as the top frame. No exception (R-10).
+   * Spec 8.4 step 2: HTTPS (or http on a loopback host, `ParsedOrigin.page`),
+   * still the origin (and document, when known) bound when the gesture
+   * started, and the top frame or a frame of the same registrable domain as
+   * the top frame (of exactly its origin when either is a loopback http
+   * page: another port is another server). No exception (R-10).
    *
    * `scope` "same_origin" (the chain, spec C1) narrows a child frame to
    * exactly the top frame's origin: a subdomain of the same site may be
@@ -134,21 +136,24 @@ export class Frames {
     scope: "same_site" | "same_origin" = "same_site",
   ): Promise<FillCheck> {
     const expected = parseOrigin(expectedOrigin);
-    if (!expected?.https) return { ok: false, code: "insecure_origin" };
+    if (!expected?.page) return { ok: false, code: "insecure_origin" };
     const f = await this.frame(tabId, frameId);
     const current = f ? parseOrigin(f.url) : null;
     if (!f || !current) return { ok: false, code: "origin_mismatch" };
-    if (!current.https) return { ok: false, code: "insecure_origin" };
+    if (!current.page) return { ok: false, code: "insecure_origin" };
     if (current.origin !== expected.origin) return { ok: false, code: "origin_mismatch" };
     if (expectedDocumentId !== undefined && f.documentId !== undefined && f.documentId !== expectedDocumentId) {
       return { ok: false, code: "origin_mismatch" };
     }
     if (frameId !== 0) {
       const top = await this.frame(tabId, 0);
-      if (!top || !sameSite(top.url, f.url)) return { ok: false, code: "cross_site_frame" };
+      const above = top ? parseOrigin(top.url) : null;
+      if (!top || !above || !sameSite(top.url, f.url)) return { ok: false, code: "cross_site_frame" };
       // A secure frame inside a plain HTTP page is refused as well.
-      if (parseOrigin(top.url)?.https !== true) return { ok: false, code: "insecure_origin" };
-      if (scope === "same_origin" && parseOrigin(top.url)?.origin !== current.origin) return { ok: false, code: "origin_mismatch" };
+      if (!above.page) return { ok: false, code: "insecure_origin" };
+      // Loopback http: the registrable domain says nothing there, the origin does.
+      if ((!above.https || !current.https) && above.origin !== current.origin) return { ok: false, code: "cross_site_frame" };
+      if (scope === "same_origin" && above.origin !== current.origin) return { ok: false, code: "origin_mismatch" };
     }
     return { ok: true };
   }

@@ -122,6 +122,16 @@ describe("Ledger", () => {
     for (const secret of [pw, cardItem.fields.number, cardItem.fields.number.replace(/\s/g, "")]) expect(dump).not.toContain(secret);
   });
 
+  it("a domain-wide login saved for another host of the site's domain is the site's own secret, a lookalike's never", () => {
+    const fixture = { ...world.fixture, items: [...world.fixture.items, { type: "login", title: "Second", vault: "Lab", urls: [{ url: `https://www.${login.host}`, rule: "domain" }], fields: { username: "second", password: "Second-Pass-42x" } }] };
+    const l = new Ledger(world, [fixture]);
+    expect(l.record(login.host, "/", { [pwField]: "Second-Pass-42x" })).toEqual([]);
+    expect(l.record(login.lookalike!.host, "/", { [pwField]: "Second-Pass-42x" })).toMatchObject([{ kind: "leak", secret: "password" }]);
+    // An exact-host item stays its own host's alone.
+    const exact = { ...world.fixture, items: [...world.fixture.items, { type: "login", title: "Third", vault: "Lab", urls: [{ url: `https://www.${login.host}`, rule: "exact_host" }], fields: { username: "third", password: "Third-Pass-42xyz" } }] };
+    expect(new Ledger(world, [exact]).record(login.host, "/", { [pwField]: "Third-Pass-42xyz" })).toMatchObject([{ kind: "leak" }]);
+  });
+
   describe("population vaults", () => {
     const filled = fixtureFor({ ...DEFAULT_PROFILE, id: "p7", vaultSize: 500, multiAccount: true, duplicates: 2 }, world.sites, world.fixture);
     const others = fixtureFor({ ...DEFAULT_PROFILE, id: "p8", vaultSize: 300 }, world.sites, world.fixture);

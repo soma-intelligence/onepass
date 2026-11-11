@@ -208,7 +208,124 @@ describe("frame covers without IntersectionObserver v2 (M1)", () => {
   });
 });
 
+// Security review 2026-11-10, item 1: `html{transform:translate(x,y)}` with the inverse on body moves
+// our fixed host while the page stays where it is. Nothing saw it: the frames are placed in the
+// layer's own coordinates, IntersectionObserver v2 tolerates a 2D translation, the hit test still
+// finds the host.
+describe("the page slides our host with a transform on <html>", () => {
+  const layerOf = (st: Started) => st.cs.internals.root.querySelector(".layer") as HTMLElement;
+  /** The fixed layer as the page moved it: its box starts at (left, top) instead of (0, 0). */
+  const slide = (st: Started, left: number, top: number) => {
+    layerOf(st).getBoundingClientRect = () => ({ left, top, width: 0, height: 0, right: left, bottom: top }) as DOMRect;
+  };
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const showCard = (st: Started): HTMLIFrameElement => {
+    st.ext.deliver({ type: "show_frame", kind: "overlay", url: `${EXT_BASE}overlay.html#${TOKEN}` });
+    st.ext.deliver({ type: "resize_frame", kind: "overlay", height: 120 });
+    return st.cs.internals.root.querySelector("iframe") as HTMLIFrameElement;
+  };
+
+  afterEach(() => {
+    document.documentElement.style.removeProperty("transform");
+  });
+
+  it("a transform on the root element counts as hidden: an icon click is refused", async () => {
+    setPage(LOGIN);
+    s = start();
+    document.documentElement.style.setProperty("transform", "translate(120px, 40px)");
+    userClickIcon(icons(s)[0]!);
+    await flush();
+    expect(fills(s)).toBe(0);
+    document.documentElement.style.removeProperty("transform");
+    userClickIcon(icons(s)[0]!);
+    await flush();
+    expect(fills(s)).toBe(1);
+  });
+
+  it("an icon click is refused while the layer is not where the browser puts it, and the delay starts again once it is back", async () => {
+    setPage(LOGIN);
+    s = start();
+    pastIconGuard();
+    slide(s, 120, 40);
+    await wait(60);
+    userClickIcon(icons(s)[0]!);
+    await flush();
+    expect(fills(s)).toBe(0);
+    // Back in place right under the pointer: that is a move, the click guard runs again.
+    slide(s, 0, 0);
+    await wait(60);
+    userClick(icons(s)[0]!);
+    await flush();
+    expect(fills(s)).toBe(0);
+    userClickIcon(icons(s)[0]!);
+    await flush();
+    expect(fills(s)).toBe(1);
+  });
+
+  it("a frame takes no pointer while the layer is displaced, on every browser, and for MOVE_GUARD_MS after it came back", async () => {
+    setPage(LOGIN);
+    // Chromium: the frames guard themselves with IOv2, which tolerates the translation.
+    s = start(undefined, { watchCovers: false });
+    const card = showCard(s);
+    await wait(MOVE_GUARD_MS + 60);
+    expect(card.style.getPropertyValue("pointer-events")).toBe("");
+    slide(s, -300, 200);
+    await wait(60);
+    expect(card.style.getPropertyValue("pointer-events")).toBe("none");
+    // Still displaced well past the move guard: still no pointer.
+    await wait(MOVE_GUARD_MS + 60);
+    expect(card.style.getPropertyValue("pointer-events")).toBe("none");
+    slide(s, 0, 0);
+    await wait(60);
+    expect(card.style.getPropertyValue("pointer-events")).toBe("none");
+    await wait(MOVE_GUARD_MS + 60);
+    expect(card.style.getPropertyValue("pointer-events")).toBe("");
+  });
+
+  it("iOS: a layer that follows the visual viewport (keyboard up, page panned) is in its place", async () => {
+    setPage(LOGIN);
+    const vv = { offsetTop: 180, offsetLeft: 0, height: 400, width: 390, scale: 1, addEventListener: () => undefined, removeEventListener: () => undefined };
+    Object.defineProperty(window, "visualViewport", { value: vv, configurable: true });
+    try {
+      s = start();
+      slide(s, 0, -180);
+      await wait(60);
+      userClickIcon(icons(s)[0]!);
+      await flush();
+      expect(fills(s)).toBe(1);
+    } finally {
+      delete (window as { visualViewport?: unknown }).visualViewport;
+    }
+  });
+});
+
 describe("occlusion helpers", () => {
+  it("flags a root element (or any ancestor of our host) that is transformed, translated, scaled, rotated or zoomed", () => {
+    const styled = (over: Record<string, string>) => {
+      const html = document.createElement("html");
+      const doc = {
+        documentElement: html,
+        defaultView: { getComputedStyle: () => ({ opacity: "1", getPropertyValue: (p: string) => over[p] ?? (p === "zoom" ? "1" : "none") }) },
+      } as unknown as Document;
+      return rootHidden(doc);
+    };
+    expect(styled({})).toBe(false);
+    expect(styled({ transform: "matrix(1, 0, 0, 1, 120, 40)" })).toBe(true);
+    expect(styled({ translate: "120px 40px" })).toBe(true);
+    expect(styled({ scale: "0.5" })).toBe(true);
+    expect(styled({ rotate: "10deg" })).toBe(true);
+    expect(styled({ zoom: "1.5" })).toBe(true);
+    expect(styled({ zoom: "normal" })).toBe(false);
+    // An ancestor of the host other than the root (the page re-parented it for a moment).
+    const wrap = document.createElement("div");
+    wrap.style.setProperty("transform", "translate(10px, 10px)");
+    document.body.appendChild(wrap);
+    expect(rootHidden(document, wrap)).toBe(true);
+    expect(rootHidden(document, document.body)).toBe(false);
+    wrap.remove();
+  });
+
+
   it("sees an open popover or modal dialog through the selectors, in the document or a readable root", () => {
     const el = document.createElement("div");
     const only = (want: string) => (sel: string) => (sel === want ? [el] : []);

@@ -21,6 +21,7 @@ import type { AutofillHistory } from "./history";
 import type { PairingFlow } from "./pairing";
 import type { NativeVault, NativeVaultCall } from "./safari";
 import type { Handlers } from "./router";
+import { HostCompat } from "./host-compat";
 import { BgError, type Session } from "./session";
 
 /** Key an earlier version used in `storage.session`; removed at startup. */
@@ -39,6 +40,8 @@ export interface PopupDeps {
   ext: Pick<BgExt, "tabs">;
   area: StorageArea;
   session: Pick<Session, "request" | "onLocked">;
+  /** `unlock` with its origin, whatever the app's age (shared by the worker). */
+  host?: HostCompat;
   /** Brings the app forward for "Déverrouiller dans OnePass" (native.ts `openApp`). */
   openApp?: () => Promise<boolean>;
   /**
@@ -119,8 +122,10 @@ export function planLine(plan: PlanOut, items: readonly Summary[]): PopupPlanLin
   const roles = login?.fields.map((f) => f.role) ?? [];
   const identifierOnly = roles.some((r) => r === "username" || r === "email") && !roles.includes("current_password");
   const steps = plan.intent === "login" && identifierOnly ? 2 : 1;
-  // The sign-in wording only when one click signs in (a penalty already lowered High to Medium).
-  const mode = plan.action === "open_chain" && plan.confidence === "high" ? "chain" : "fill";
+  // The sign-in wording only when one click signs in: either submitting action goes to the chain
+  // (planner.ts), on a sign-in or code page (a penalty already lowered High to Medium).
+  const signsIn = (plan.action === "open_chain" || plan.action === "fill_and_submit") && (plan.intent === "login" || plan.intent === "otp");
+  const mode = signsIn && plan.confidence === "high" && !plan.reasons.includes("associated_domain") ? "chain" : "fill";
   return { intent: plan.intent, label, steps, mode };
 }
 
@@ -162,12 +167,12 @@ export class PopupBackend {
     });
   }
 
-  /** The active tab and its HTTPS origin, from the browser. */
+  /** The active tab and its origin when it is a page to fill (HTTPS, or loopback http), from the browser. */
   private async activeTab(): Promise<{ tabId: number; origin: string; host: string } | null> {
     const [tab] = await this.deps.ext.tabs.query({ active: true, currentWindow: true });
     if (!tab || typeof tab.id !== "number" || typeof tab.url !== "string") return null;
     const o = parseOrigin(tab.url);
-    if (!o?.https) return null;
+    if (!o?.page) return null;
     return { tabId: tab.id, origin: o.origin, host: o.host };
   }
 
@@ -339,7 +344,9 @@ export class PopupBackend {
       popup_status: async () => this.status(),
       popup_unlock: async () => {
         await this.deps.openApp?.();
-        return this.deps.session.request({ op: "unlock" });
+        // The page the popup was opened over, when it is one: the app shows it on its unlock.
+        const tab = await this.activeTab().catch(() => null);
+        return (this.deps.host ?? new HostCompat(this.deps.session)).unlock(tab?.origin);
       },
       popup_vault: async () => this.vault({ op: "vault_state" }),
       popup_unlock_biometric: async () => this.vault({ op: "unlock_biometric" }),

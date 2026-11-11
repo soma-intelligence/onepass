@@ -92,7 +92,20 @@ export function summary(v: unknown): Summary {
       return { provider: oneOf<ProviderId>(x.provider, PROVIDERS), account_email: str(x.account_email, 320) };
     }, 32),
     match: o.match === null || o.match === undefined ? null : oneOf<"exact_host" | "domain">(o.match, ["exact_host", "domain"]),
+    ...accountNoteOf(o),
   };
+}
+
+/** The optional account label and associated-site flag of a summary or an overlay account: absent, or well formed. */
+function accountNoteOf(o: Record<string, unknown>): { account?: string; associated?: true } {
+  const out: { account?: string; associated?: true } = {};
+  if (o.account !== undefined) out.account = str(o.account, 256);
+  // Only ever true: the host leaves it out otherwise.
+  if (o.associated !== undefined) {
+    if (o.associated !== true) throw new Bad();
+    out.associated = true;
+  }
+  return out;
 }
 
 export const parseMenuInit = (v: unknown): MenuInit | null =>
@@ -170,6 +183,7 @@ function account(v: unknown): OverlayAccount {
   if (o.accountId !== undefined) a.accountId = str(o.accountId, 128);
   if (o.accounts !== undefined) a.accounts = list(o.accounts, providerChoice, 32);
   if (o.totp !== undefined) a.totp = bool(o.totp);
+  Object.assign(a, accountNoteOf(o));
   if (o.vault !== undefined) {
     const v = obj(o.vault);
     a.vault = { id: str(v.id, 128), name: str(v.name, 256) };
@@ -177,14 +191,39 @@ function account(v: unknown): OverlayAccount {
   return a;
 }
 
-export const parseOverlayInit = (v: unknown): OverlayInit | null =>
+/** What a card that asked for an unlock waits for: the unlock in the app, or the app itself. */
+export type OverlayWaiting = "locked" | "host_missing";
+const OVERLAY_WAITS = ["locked", "host_missing"];
+
+/** `waiting`: a card that came up for a chain stopped `locked` on its page (no list while locked). */
+export const parseOverlayInit = (v: unknown): (OverlayInit & { waiting?: OverlayWaiting }) | null =>
   guard(() => {
     const o = obj(v);
-    return { origin: origin(o.origin), accounts: list(o.accounts, account, 64), chain: chain(o.chain) };
+    const init: OverlayInit & { waiting?: OverlayWaiting } = { origin: origin(o.origin), accounts: list(o.accounts, account, 64), chain: chain(o.chain) };
+    if (o.waiting !== undefined) init.waiting = oneOf<OverlayWaiting>(o.waiting, OVERLAY_WAITS);
+    if (o.generic !== undefined) {
+      // Only ever true, and never beside an account.
+      if (o.generic !== true || init.accounts.length > 0) throw new Bad();
+      init.generic = true;
+    }
+    return init;
   });
 
-export const parseOverlayState = (v: unknown): { chain: ChainView | null } | null =>
-  guard(() => ({ chain: chain(obj(v).chain) }));
+/** `waiting`: the app was asked to unlock for this card; the sign-in goes on by itself after it. */
+export const parseOverlayState = (v: unknown): { chain: ChainView | null; waiting?: OverlayWaiting } | null =>
+  guard(() => {
+    const o = obj(v);
+    const s: { chain: ChainView | null; waiting?: OverlayWaiting } = { chain: chain(o.chain) };
+    if (o.waiting !== undefined) s.waiting = oneOf<OverlayWaiting>(o.waiting, OVERLAY_WAITS);
+    return s;
+  });
+
+/** Reply of `overlay_start`: started, or `waiting` for the unlock the click asked. */
+export const parseOverlayStart = (v: unknown): { waiting?: OverlayWaiting } | null =>
+  guard(() => {
+    const o = obj(v);
+    return o.waiting === undefined ? {} : { waiting: oneOf<OverlayWaiting>(o.waiting, OVERLAY_WAITS) };
+  });
 
 export const parseSaveInit = (v: unknown): SaveInit | null =>
   guard(() => {

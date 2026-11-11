@@ -2,7 +2,13 @@
 // rates and renders a French Markdown report. Results carry field names, hosts
 // and verdicts, never a value, so neither does the report. Type-only import:
 // this module runs under `node --experimental-strip-types` through cli.ts.
-import type { Profile } from "./gen/population.ts";
+// Since the gesture accounting, the report also has "one gesture, signed in"
+// by start state, trigger and flow family (results that store their gestures),
+// the account profiles' stated outcomes, and the scenarios skipped for a
+// missing host control. Skipped results are out of every older number.
+import { START_STATES, type StartState, type Trigger } from "./gen/model.ts";
+import { ACCOUNT_OUTCOME, type Profile } from "./gen/population.ts";
+import { type FlowFamily, flowFamily } from "./run/gestures.ts";
 import type { Result } from "./run/oracle.ts";
 
 export interface Rate {
@@ -16,7 +22,31 @@ export interface OneClickRate { total: number; ok: number; rate: number }
 /** The current drivers (overlay for sign-ins, in-field menu for forms) against smart_fill. */
 export interface OneClickPair { current: OneClickRate; smart_fill: OneClickRate }
 
+/** One cell of "one gesture, signed in": the measured scenarios of a start state, a trigger and a flow family. */
+export interface OneGestureCell {
+  start: StartState; trigger: Trigger; family: FlowFamily;
+  /** Scenarios whose goal is a session, measured (no bench error, not skipped). */
+  total: number;
+  /** The oracle saw the session, whatever the gestures. */
+  signedIn: number;
+  /** Signed in with exactly one deliberate gesture. */
+  ok: number;
+  /** Of `ok`, those that also took an unlock approval (+1 biometric). */
+  biometric: number;
+}
+
+/** What an account profile's scenarios did from one start state with one trigger (measured ones only). */
+export interface AccountRow { profile: string; start: StartState; trigger: Trigger; total: number; signedIn: number; oneGesture: number; wrongAccount: number }
+
 export interface Summary {
+  /** "One gesture, signed in" cells, account profiles apart in `accounts` (empty for a run from before the gesture accounting). */
+  oneGesture: OneGestureCell[];
+  /** Whether any result stores its gestures. */
+  hasGestures: boolean;
+  /** Scenarios whose start state could not be set up: out of every rate. */
+  skipped: Result[];
+  /** Account profiles (results that state an outcome), by profile. */
+  accounts: AccountRow[];
   overall: Rate;
   byFlow: Record<string, Rate>;
   byTrait: Record<string, Rate>;
@@ -120,7 +150,47 @@ export function isRed(s: Summary): boolean {
   return s.leaks.length > 0 || s.wrongItem.length > 0 || s.autoSubmitOutsideLogin.length > 0 || s.otherPersonFilled.length > 0 || benchFailed;
 }
 
-export function summarize(all: Result[]): Summary {
+/** The "one gesture, signed in" cells of the results that store their gestures and have a session to see. */
+function oneGestureCells(results: Result[]): OneGestureCell[] {
+  const cells = new Map<string, OneGestureCell>();
+  for (const r of results) {
+    const family = flowFamily(r.flow);
+    if (family === undefined || r.signedIn === undefined || r.gestures === undefined || r.trigger === undefined) continue;
+    const start = r.startState ?? "unlocked_warm";
+    const key = `${start}|${r.trigger}|${family}`;
+    let c = cells.get(key);
+    if (!c) cells.set(key, (c = { start, trigger: r.trigger, family, total: 0, signedIn: 0, ok: 0, biometric: 0 }));
+    c.total++;
+    if (r.signedIn) c.signedIn++;
+    if (r.oneGesture === true) {
+      c.ok++;
+      if ((r.biometric ?? 0) > 0) c.biometric++;
+    }
+  }
+  return [...cells.values()];
+}
+
+function accountRows(results: Result[]): AccountRow[] {
+  const rows = new Map<string, AccountRow>();
+  for (const r of results) {
+    if (r.outcome === undefined || r.signedIn === undefined || r.trigger === undefined) continue;
+    const id = r.profile ?? "p0";
+    const start = r.startState ?? "unlocked_warm";
+    const key = `${id}|${start}|${r.trigger}`;
+    let row = rows.get(key);
+    if (!row) rows.set(key, (row = { profile: id, start, trigger: r.trigger, total: 0, signedIn: 0, oneGesture: 0, wrongAccount: 0 }));
+    row.total++;
+    if (r.signedIn) row.signedIn++;
+    if (r.oneGesture) row.oneGesture++;
+    if (r.cause === "wrong_account" || r.cause === "wrong_item") row.wrongAccount++;
+  }
+  const order = (a: AccountRow) => `${a.profile}|${START_STATES.indexOf(a.start)}|${a.trigger}`;
+  return [...rows.values()].sort((a, b) => order(a).localeCompare(order(b)));
+}
+
+export function summarize(every: Result[]): Summary {
+  // A skipped scenario was not played: it is in no rate and no table but its own list.
+  const all = every.filter((r) => r.verdict !== "skipped");
   const results = all.filter((r) => r.driver !== CONTROL_DRIVER);
   const checks = all.filter((r) => r.driver === CONTROL_DRIVER);
   const overall = emptyRate();
@@ -132,6 +202,11 @@ export function summarize(all: Result[]): Summary {
   const oneClick = pairRates(results, (r) => r.oneClick === true);
   const goalMet = pairRates(results, (r) => MET.has(r.verdict));
   return {
+    // A site with several accounts is another question: those results have their own table.
+    oneGesture: oneGestureCells(results.filter((r) => r.outcome === undefined)),
+    hasGestures: results.some((r) => r.gestures !== undefined),
+    skipped: bySiteDriver(every.filter((r) => r.verdict === "skipped")),
+    accounts: accountRows(results),
     overall,
     byFlow: group(results, (r) => [r.flow]),
     // A site with several traits counts once under each of them.
@@ -195,6 +270,64 @@ function oneClickTable(s: Summary): string[] {
   return out;
 }
 
+const START_FR: Record<StartState, string> = { unlocked_warm: "déverrouillé, hôte en marche", locked: "verrouillé", cold: "hôte arrêté" };
+const TRIGGER_FR: Record<Trigger, string> = {
+  field_icon: "icône du champ", overlay_row: "compte de l'overlay", shortcut: "raccourci clavier",
+  toolbar: "bouton de la barre d'outils", menu_key: "menu du champ (flèche bas)",
+};
+/** The triggers every table shows, measured or not; the two others only when a scenario used them. */
+const MAIN_TRIGGERS: readonly Trigger[] = ["field_icon", "overlay_row", "shortcut"];
+const OTHER_TRIGGERS: readonly Trigger[] = ["toolbar", "menu_key"];
+const FAMILIES: readonly FlowFamily[] = ["password", "totp", "passkey", "sso", "multi_step", "signup"];
+
+/** "ok/total (rate)", with the unlock approvals of the successes apart. */
+function gestureCell(cells: OneGestureCell[]): string {
+  const total = cells.reduce((n, c) => n + c.total, 0);
+  if (total === 0) return "sans scénario";
+  const ok = cells.reduce((n, c) => n + c.ok, 0);
+  const bio = cells.reduce((n, c) => n + c.biometric, 0);
+  return `${ok}/${total} (${pct(ok / total)})${bio > 0 ? `, +1 biométrie : ${bio}` : ""}`;
+}
+
+/** "One gesture, signed in" by start state, trigger and flow family. */
+function oneGestureTable(s: Summary): string[] {
+  if (!s.hasGestures) return ["Ce passage date d'avant le comptage des gestes : ses résultats ne disent pas combien de gestes chaque scénario a demandés.", ""];
+  const out = [
+    "Connecté (l'oracle a vu la session du bon compte sur le site) avec exactement un geste délibéré. Chaque geste compte : l'icône, une ligne ou le raccourci de OnePass, le bouton de déverrouillage, un choix dans une liste, et aussi l'appui de l'utilisateur sur le bouton du site et chaque champ qu'il tape. L'approbation du déverrouillage (Touch ID, jouée par le banc) est comptée à part : « +1 biométrie » dit combien de réussites en ont eu besoin. Seuls les flux dont le but est une session, hors scénarios sans but, erreurs du labo et scénarios sautés ; les profils à plusieurs comptes par site ont leur tableau plus bas. « Réussite en un clic » ci-dessus garde son ancien calcul, où l'appui sur le bouton du site ne comptait pas.",
+    "",
+    `| État de départ | Déclencheur | ${FAMILIES.join(" | ")} | Total |`,
+    `| --- | --- | ${FAMILIES.map(() => "---").join(" | ")} | --- |`,
+  ];
+  const pick = (start: StartState, trigger: Trigger, family?: FlowFamily) =>
+    s.oneGesture.filter((c) => c.start === start && c.trigger === trigger && (family === undefined || c.family === family));
+  const rows: [StartState, Trigger][] = [];
+  for (const start of START_STATES) {
+    for (const trigger of [...MAIN_TRIGGERS, ...OTHER_TRIGGERS]) {
+      if (MAIN_TRIGGERS.includes(trigger) || pick(start, trigger).length > 0) rows.push([start, trigger]);
+    }
+  }
+  for (const [start, trigger] of rows) {
+    out.push(`| ${START_FR[start]} | ${TRIGGER_FR[trigger]} | ${FAMILIES.map((f) => gestureCell(pick(start, trigger, f))).join(" | ")} | ${gestureCell(pick(start, trigger))} |`);
+  }
+  out.push("", "### Connecté, quel que soit le nombre de gestes", "", "| État de départ | Déclencheur | Connectés | En un geste |", "| --- | --- | --- | --- |");
+  for (const [start, trigger] of rows) {
+    const cells = pick(start, trigger);
+    const total = cells.reduce((n, c) => n + c.total, 0);
+    if (total === 0) continue;
+    const signedIn = cells.reduce((n, c) => n + c.signedIn, 0);
+    const ok = cells.reduce((n, c) => n + c.ok, 0);
+    out.push(`| ${START_FR[start]} | ${TRIGGER_FR[trigger]} | ${signedIn}/${total} (${pct(signedIn / total)}) | ${ok}/${total} (${pct(ok / total)}) |`);
+  }
+  out.push("");
+  if (s.accounts.length > 0) {
+    out.push("### Plusieurs comptes sur un site", "", "Le résultat attendu de chaque profil est écrit sous « Par profil ».", "",
+      "| Profil | État de départ | Déclencheur | Scénarios mesurés | Connectés | En un geste | Mauvais compte |", "| --- | --- | --- | --- | --- | --- | --- |");
+    for (const a of s.accounts) out.push(`| ${a.profile} | ${START_FR[a.start]} | ${TRIGGER_FR[a.trigger]} | ${a.total} | ${a.signedIn} | ${a.oneGesture} | ${a.wrongAccount} |`);
+    out.push("");
+  }
+  return out;
+}
+
 const BEHAVIOUR_FR: Record<Profile["behaviour"], string> = {
   complete: "va au bout", partial: "vide un champ rempli avant d'envoyer", corrects_field: "corrige un champ rempli avant d'envoyer",
   abandons_step: "abandonne après la première étape",
@@ -205,6 +338,11 @@ function profileLines(profiles: Profile[] | undefined): string[] {
   if (!profiles || profiles.length === 0) return [];
   const out = ["Profils simulés (l'oracle juge le remplissage de l'extension, jamais la correction de l'utilisateur) :", ""];
   for (const p of profiles) {
+    // An account profile is its stated outcome (population.ts), not a drawn vault.
+    if (p.accounts) {
+      out.push(`- ${p.id} : ${ACCOUNT_OUTCOME[p.accounts]}`);
+      continue;
+    }
     const vault = p.vaultSize === 0 ? "coffre vide" : p.vaultSize === 1 ? "coffre du monde seul" : `coffre de ${p.vaultSize} éléments`;
     const extras = [p.duplicates > 0 ? `${p.duplicates} doublon(s)` : "", p.multiAccount ? "plusieurs comptes par site" : ""].filter(Boolean);
     out.push(`- ${p.id} : ${[vault, ...extras, `pays ${p.country}, langue ${p.lang}`, BEHAVIOUR_FR[p.behaviour]].join(", ")}`);
@@ -244,6 +382,7 @@ export function renderReport(world: { seed: string; sites: number; profiles?: Pr
   const other = s.otherPersonFilled.length;
   l.push(`- Autre personne remplie (\`other_person_filled\`) : ${other}${other > 0 ? " (le passage est rouge)" : ""}`, "");
   l.push("## Réussite en un clic", "", ...oneClickTable(s));
+  l.push("## Un geste, connecté", "", ...oneGestureTable(s));
   l.push("## Taux de réussite", "");
   l.push(...table("Par flux", s.byFlow), ...table("Par trait", s.byTrait), ...table("Par langue", s.byLang), ...table("Par pilote", s.byDriver), ...table("Par profil", s.byProfile), ...profileLines(world.profiles));
 
@@ -304,5 +443,13 @@ export function renderReport(world: { seed: string; sites: number; profiles?: Pr
   l.push("## Instables", "");
   if (s.flaky.length === 0) l.push("Aucun.", "");
   else l.push("Réussis au second essai, en profil neuf :", "", ...s.flaky.map(scenarioLine), "");
+  if (s.skipped.length > 0) {
+    l.push("## Scénarios sautés", "", "L'état de départ n'a pas pu être mis en place : rien n'a été joué, et ces scénarios ne sont dans aucun taux.", "");
+    for (const [cause, rs] of countBy(s.skipped, (r) => r.cause ?? "sans cause")) {
+      const starts = [...new Set(rs.map((r) => r.startState ?? "unlocked_warm"))].sort().join(", ");
+      l.push(`- ${cause} : ${rs.length} scénario(s), état de départ : ${starts}`);
+    }
+    l.push("");
+  }
   return l.join("\n");
 }

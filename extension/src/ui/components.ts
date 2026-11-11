@@ -11,6 +11,7 @@ import type { ProviderId, UiToBg } from "../shared/messages";
 import { t, tn } from "../shared/i18n";
 import { POINTER_QUERIES, touchDevice } from "../shared/layout";
 import { PROVIDERS } from "../shared/providers";
+import { UNLOCK_WAIT_MS } from "../shared/unlock";
 import { type ArtKind, art } from "./art";
 import type { ObserveVisibility } from "../shared/click-guard";
 
@@ -368,6 +369,18 @@ export function vaultColor(id: string): string {
   return VAULT_COLORS[n % VAULT_COLORS.length]!;
 }
 
+/**
+ * What the host adds to a row's second line: the account the item belongs to (sent only when
+ * several accounts answer) and "associated site" for a login offered through one. Muted text,
+ * each after a middle dot; nothing when the host sent neither.
+ */
+export function accountNotes(x: { account?: string; associated?: true }): HTMLSpanElement[] {
+  const out: HTMLSpanElement[] = [];
+  if (x.account !== undefined && x.account !== "") out.push(h("span", { class: "meta row-account" }, ` · ${x.account}`));
+  if (x.associated === true) out.push(h("span", { class: "meta row-assoc" }, ` · ${t("ui.associatedSite")}`));
+  return out;
+}
+
 /** The vault as a small coloured chip: a dot and its name. */
 export function vaultChip(v: { id: string; name: string }): HTMLSpanElement {
   const chip = h("span", { class: "vault-chip" }, h("span", { class: "vault-dot", attrs: { "aria-hidden": "true" } }), v.name);
@@ -601,9 +614,9 @@ export function markTouch(doc: Document): void {
 
 // ---- timers ----
 
-/** After "Déverrouiller dans OnePass": one status check a second, for a minute. */
+/** After an unlock was asked in the app: one check a second, for the shared deadline (90 s). */
 export const UNLOCK_POLL_MS = 1000;
-export const UNLOCK_WAIT_TRIES = 60;
+export const UNLOCK_WAIT_TRIES = Math.round(UNLOCK_WAIT_MS / UNLOCK_POLL_MS);
 
 export interface Timers {
   setTimeout(fn: () => void, ms: number): unknown;

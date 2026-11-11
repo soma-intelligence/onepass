@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BridgeError } from "../../src/bridge/bytes";
 import { BridgeAppError } from "../../src/bridge/client";
 import { PairingFlow } from "../../src/background/pairing";
-import { BgError, RECONNECT_DELAYS_MS, Session, toBgError } from "../../src/background/session";
+import { BgError, MISSING_QUIET_MS, RECONNECT_DELAYS_MS, Session, toBgError } from "../../src/background/session";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import { FakeClient, record } from "./fake-client";
 import { FakeExt } from "./fake-ext";
@@ -119,6 +119,93 @@ describe("Session", () => {
     expect(slept).toEqual([1000, 2000, 4000]);
     // The first try plus three retries.
     expect(made).toBe(4);
+  });
+
+  it("after the host was found missing, the next openings try once for a while, then retry in full again", async () => {
+    const { store } = await paired();
+    const slept: number[] = [];
+    const clock = { t: 1_000_000 };
+    let made = 0;
+    let up = false;
+    const s = new Session({
+      store,
+      newClient: () => {
+        made++;
+        return new FakeClient(undefined, async () => {
+          if (!up) throw new BridgeError("transport", "Specified native messaging host not found.");
+        });
+      },
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+      now: () => clock.t,
+    });
+    expect((await rejection(s.getClient())).code).toBe("host_missing");
+    expect(made).toBe(4);
+    // A page that waits asks every second: one try each, no 7 s of retries.
+    clock.t += 1000;
+    expect((await rejection(s.getClient())).code).toBe("host_missing");
+    expect(made).toBe(5);
+    expect(slept).toEqual([1000, 2000, 4000]);
+    // Each miss keeps it quick; past the quiet window the retries are back.
+    clock.t += MISSING_QUIET_MS + 1;
+    expect((await rejection(s.getClient())).code).toBe("host_missing");
+    expect(made).toBe(9);
+    // The app is there: the quick try connects, and the next miss is patient again.
+    clock.t += 1000;
+    up = true;
+    const c = (await s.getClient()) as FakeClient;
+    expect(made).toBe(10);
+    up = false;
+    c.drop();
+    slept.length = 0;
+    expect((await rejection(s.getClient())).code).toBe("host_missing");
+    expect(slept).toEqual([1000, 2000, 4000]);
+  });
+
+  it("a missing host is woken once per opening, only for the requests of a trusted gesture", async () => {
+    const { store } = await paired();
+    const clock = { t: 1_000_000 };
+    let made = 0;
+    let up = false;
+    let launched = false;
+    const s = new Session({
+      store,
+      newClient: () => {
+        const n = ++made;
+        return new FakeClient(undefined, async () => {
+          // Once launched, the app answers from the third try on.
+          if (!up && !(launched && n >= 3)) throw new BridgeError("transport", "Specified native messaging host not found.");
+          up = true;
+        });
+      },
+      sleep: async () => undefined,
+      now: () => clock.t,
+    });
+    let woken = 0;
+    const wake = async () => {
+      woken++;
+      launched = true;
+      return true;
+    };
+    // No gesture: nothing launches the app.
+    expect((await rejection(s.getClient())).code).toBe("host_missing");
+    expect(woken).toBe(0);
+    clock.t += MISSING_QUIET_MS + 1;
+    made = 0;
+    // A gesture: woken at the first failed try, once, and the retries find the app.
+    await s.withWake(wake, () => s.getClient());
+    expect(woken).toBe(1);
+    expect(made).toBe(3);
+    // Connected: nothing to wake.
+    await s.withWake(wake, () => s.getClient());
+    expect(woken).toBe(1);
+    // The wake does not outlive the gesture's requests.
+    ((await s.getClient()) as FakeClient).drop();
+    up = false;
+    launched = false;
+    expect((await rejection(s.getClient())).code).toBe("host_missing");
+    expect(woken).toBe(1);
   });
 
   it("a throwing connectNative counts as a failed attempt", async () => {

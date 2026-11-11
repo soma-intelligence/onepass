@@ -38,6 +38,7 @@ import type { FormGenerator } from "./generate";
 import type { UiContext } from "./frames";
 import type { NeverSave } from "./never-save";
 import { removeFrame, resizeFrame } from "./overlay";
+import { HostCompat } from "./host-compat";
 import { BgError, type Session } from "./session";
 import { type BoundRecord, FrameTokens } from "./tokens";
 
@@ -188,6 +189,10 @@ export interface SaveDeps {
   area?: StorageArea;
   /** Brings the app forward before an unlock (a card opened while locked). */
   openApp?: () => Promise<boolean>;
+  /** The top-frame origin of `tabId` when it is a page: what the card's `unlock` names. */
+  unlockOrigin?: (tabId: number) => Promise<string | undefined>;
+  /** `unlock` and `vaults` with their origin, whatever the app's age (shared by the worker). */
+  host?: HostCompat;
   /**
    * iOS: the vault lives in the Safari extension's own process (no app to bring forward). Save
    * on a card opened while locked unlocks it there with Face ID or Touch ID, the user's tap
@@ -208,8 +213,10 @@ export class SavePrompts {
   /** Keyed hashes of put-away credentials, with when. */
   private readonly dismissed = new Map<string, number>();
   private quietKeyHmac: Promise<CryptoKey> | null = null;
+  private readonly host: HostCompat;
 
   constructor(private readonly deps: SaveDeps) {
+    this.host = deps.host ?? new HostCompat(deps.session);
     this.tokens = new FrameTokens<SaveRecord>({
       prefix: "save:",
       ttlMs: SAVE_TTL_MS,
@@ -276,7 +283,8 @@ export class SavePrompts {
     let locked = rec.locked === true;
     if (rec.kind !== "provider_link") {
       try {
-        const r = await this.deps.session.request({ op: "vaults" });
+        // Routed for the page: the vaults of its account first.
+        const r = await this.host.vaults(rec.origin);
         vaults = r.vaults.map((v) => {
           const out: SaveInit["vaults"][number] = { id: v.id, name: v.name };
           if (typeof v.account === "string" && v.account !== "") out.account = v.account;
@@ -337,12 +345,20 @@ export class SavePrompts {
     return out;
   }
 
-  /** The vault Save picks first among `vaults`: this site's last, the last one, the first. */
-  async defaultVault(site: string, vaults: readonly { id: string }[]): Promise<string | undefined> {
+  /**
+   * The vault Save picks first among `vaults`, listed for the page (`vaults` with its origin: the
+   * account the page routes to comes first). The one this site's last save went to (the user's
+   * own choice); else the last one used, when it is of that same account; else the first, the
+   * routed account's default. Never the last-used vault of another account.
+   */
+  async defaultVault(site: string, vaults: readonly { id: string; account?: string }[]): Promise<string | undefined> {
     const m = await this.vaultMemory();
-    const ids = new Set(vaults.map((v) => v.id));
-    for (const id of [m.sites[site], m.last]) if (id !== undefined && ids.has(id)) return id;
-    return vaults[0]?.id;
+    const here = m.sites[site];
+    if (here !== undefined && vaults.some((v) => v.id === here)) return here;
+    const first = vaults[0];
+    const last = m.last === undefined ? undefined : vaults.find((v) => v.id === m.last);
+    if (first && last && last.account === first.account) return last.id;
+    return first?.id;
   }
 
   private async rememberVault(site: string, vaultId: string): Promise<void> {
@@ -445,7 +461,7 @@ export class SavePrompts {
       if (native === false) throw new BgError("locked");
       if (native === null) {
         await this.deps.openApp?.().catch(() => false);
-        const u = await this.deps.session.request({ op: "unlock" });
+        const u = await this.host.unlock(await this.deps.unlockOrigin?.(h.tabId).catch(() => undefined));
         if (u.locked) throw new BgError("locked");
       }
       const r = await this.deps.session.request({
@@ -481,7 +497,8 @@ export class SavePrompts {
       if (password === "") throw new BgError("invalid");
       // The vault list names the vault in the outcome; a card opened locked had none: the default one now.
       // A host that cannot list (yet) leaves the choice as is: save_login answers for it.
-      const listed = await this.deps.session.request({ op: "vaults" }).catch(() => ({ vaults: [] }));
+      // An explicit choice goes as it is. No list: `""`, the default vault of the page's account.
+      const listed = await this.host.vaults(h.origin).catch(() => ({ vaults: [] }));
       const vaults = Array.isArray(listed.vaults) ? listed.vaults : [];
       const vaultId =
         vaults.length === 0 || vaults.some((v) => v.id === edits.vaultId) ? edits.vaultId : await this.defaultVault(site, vaults);
@@ -499,7 +516,7 @@ export class SavePrompts {
         tags: edits.tags.filter((t) => !RESERVED_TAGS.has(t.trim())),
       });
       saved = r.item_id;
-      await this.rememberVault(site, vaultId);
+      if (vaultId !== "") await this.rememberVault(site, vaultId);
     }
     await this.deps.onSaved?.(h.tabId, h.origin, saved).catch(() => undefined);
     const out: SaveOutcome = { outcome: status === "update" ? "updated" : "saved" };
@@ -512,10 +529,11 @@ export class SavePrompts {
     const site = parseOrigin(rec.origin)?.site ?? rec.origin;
     let vaultName: string | undefined;
     const vaultFor = async (): Promise<string> => {
-      const listed = await this.deps.session.request({ op: "vaults" }).catch(() => ({ vaults: [] }));
+      const listed = await this.host.vaults(rec.origin).catch(() => ({ vaults: [] }));
       const vaults = Array.isArray(listed.vaults) ? listed.vaults : [];
       const id = vaults.length === 0 || vaults.some((v) => v.id === edits.vaultId) ? edits.vaultId : await this.defaultVault(site, vaults);
-      if (id === undefined || id === "") throw new BgError("not_found");
+      // `""` (no list to choose from): the default vault of the page's account.
+      if (id === undefined) throw new BgError("not_found");
       vaultName = vaults.find((v) => v.id === id)?.name;
       return id;
     };
@@ -549,13 +567,13 @@ export class SavePrompts {
         exp_month: c.exp_month,
         exp_year: c.exp_year,
       });
-      await this.rememberVault(site, vaultId);
+      if (vaultId !== "") await this.rememberVault(site, vaultId);
     } else {
       const v = rec.identity;
       if (!v) throw new BgError("invalid");
       const vaultId = await vaultFor();
       await this.deps.session.request({ op: "save_identity", ctx: "save_prompt", origin: rec.origin, vault_id: vaultId, title: edits.title.trim(), ...v });
-      await this.rememberVault(site, vaultId);
+      if (vaultId !== "") await this.rememberVault(site, vaultId);
     }
     // Cards and identities are not logins of this site: no site memory note.
     const out: SaveOutcome = { outcome: "saved" };
@@ -649,7 +667,8 @@ export class SavePrompts {
   async pendingList(): Promise<PendingSave[]> {
     const now = (this.deps.now ?? Date.now)();
     const out: PendingSave[] = [];
-    let vaults: { id: string; name: string }[] | null = null;
+    // Per origin: each waiting sign-in names the vault its own page routes to.
+    const listed = new Map<string, { id: string; name: string; account?: string }[]>();
     for (const w of [...this.waiting.values()].reverse()) {
       if (now - w.at > PENDING_SAVE_TTL_MS) {
         this.forget(w.id);
@@ -658,7 +677,11 @@ export class SavePrompts {
       const p: PendingSave = { id: w.id, origin: w.origin, site: w.site, username: w.username, status: w.update ? w.status : "new" };
       if (w.update) p.title = w.update.title;
       else if (!w.locked) {
-        vaults ??= await this.deps.session.request({ op: "vaults" }).then((r) => r.vaults, () => []);
+        let vaults = listed.get(w.origin);
+        if (!vaults) {
+          vaults = await this.host.vaults(w.origin).then((r) => r.vaults, () => []);
+          listed.set(w.origin, vaults);
+        }
         const id = await this.defaultVault(w.site, vaults);
         const name = vaults.find((v) => v.id === id)?.name;
         if (name !== undefined) p.vault = name;
@@ -682,7 +705,7 @@ export class SavePrompts {
       return {};
     }
     if (decision === "update" && !w.update) throw new BgError("invalid");
-    const vaults = w.locked || decision === "update" ? [] : (await this.deps.session.request({ op: "vaults" })).vaults;
+    const vaults = w.locked || decision === "update" ? [] : (await this.host.vaults(w.origin)).vaults;
     const edits: SaveEdits = {
       title: titleFromSite(w.site),
       username: w.username,

@@ -95,11 +95,13 @@ export function openTransport(runtime: RuntimeApi): Transport {
 const OPEN_APP = { onepass: 1, op: "open_app" } as const;
 
 /**
- * "Déverrouiller dans OnePass": since macOS 14 the app cannot bring itself
- * forward while the browser is in front, so the process that serves this
- * click asks LaunchServices to open `onepass://unlock` (the Safari handler in
- * Safari, a fresh `onepass-relay` elsewhere). It also launches the app when it
- * is not running. Never a bridge frame. True when the host says it did.
+ * "Déverrouiller dans OnePass", and any trusted gesture that finds the vault
+ * locked or the app not running (app.ts decides, never a page load or a
+ * timer): since macOS 14 the app cannot bring itself forward while the
+ * browser is in front, so the process that serves this click asks
+ * LaunchServices to open `onepass://unlock` (the Safari handler in Safari, a
+ * fresh `onepass-relay` elsewhere). It also launches the app when it is not
+ * running. Never a bridge frame. True when the host says it did.
  */
 export async function openApp(runtime: Pick<BgExt["runtime"], "getURL" | "sendNativeMessage">): Promise<boolean> {
   const send = runtime.sendNativeMessage;

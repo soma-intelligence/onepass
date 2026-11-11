@@ -25,6 +25,12 @@
 //   in the signup menu, the site's next creation in that top document, within
 //   PASSKEY_ARM_MS and once, counts as activated (`armCreate`): it opens the
 //   window, which still asks;
+// - a plan a trusted gesture started (the field icon, the command, the toolbar's
+//   Fill) that chose a login arms that item for this top document (`armGet`):
+//   the page's next `get` there, within PASSKEY_ARM_MS and once, is signed
+//   without the window when that very item holds a passkey the page asks for
+//   (the gesture on that plan is the consent, as a chain's click is). Any other
+//   item, document, frame or origin, a creation, a second request: the window;
 // - one window per document: a second request while one is open is refused;
 // - the page (MAIN world) only ever gets the final assertion or registration.
 import type { RequestFor } from "../bridge/client";
@@ -45,6 +51,7 @@ import { newToken } from "../shared/tokens";
 import type { ChainDriver } from "./chain/types";
 import type { BgExt, Event, MessageListener } from "./ext";
 import { type CsContext, type Frames, type UiContext, contentSender, extensionSender } from "./frames";
+import { HostCompat } from "./host-compat";
 import { BgError, type Session, toBgError } from "./session";
 
 /** COSE ES256: the only algorithm the host signs with. */
@@ -63,6 +70,11 @@ export const PASSKEY_PROBES_PER_MIN = 6;
 const MINUTE = 60 * 1000;
 /** One-click signup: a passkey creation chosen in the menu counts as activated this long, once. */
 export const PASSKEY_ARM_MS = 15 * 1000;
+
+/** `rpId` is `host` or a parent domain of it (the host refuses public suffixes and other sites). */
+function rpOfHost(rpId: string, host: string): boolean {
+  return host !== "" && rpId !== "" && (rpId === host || host.endsWith(`.${rpId}`));
+}
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
 const REQ_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
@@ -85,6 +97,8 @@ export interface PasskeyWindows {
 
 export interface PasskeyDeps {
   session: Pick<Session, "request">;
+  /** `vaults` with its origin, whatever the app's age (shared by the worker). */
+  host?: HostCompat;
   frames: Pick<Frames, "ancestorsOfOrigin" | "checkFillTarget" | "frameOrigin">;
   chain: Pick<ChainDriver, "state">;
   windows?: PasskeyWindows;
@@ -150,6 +164,8 @@ export class Passkeys {
   private readonly probes = new Map<number, number[]>();
   /** Per tab: a creation the user chose in the signup menu (`armCreate`), one, until `until`. */
   private readonly armed = new Map<number, { origin: string; documentId: string | undefined; until: number }>();
+  /** Per tab: the login a gesture-started plan chose (`armGet`), one sign-in with it, until `until`. */
+  private readonly armedGet = new Map<number, { origin: string; documentId: string | undefined; itemId: string; until: number }>();
   /** Chains (`tabId:itemId:startedAt`) that already signed once without a window. */
   private readonly chainSigned = new Set<string>();
   private readonly timers: NonNullable<PasskeyDeps["timers"]>;
@@ -168,7 +184,10 @@ export class Passkeys {
       for (const e of this.early.values()) {
         if (e.tabId === d.tabId && (d.frameId === 0 || d.frameId === e.frameId)) e.gone = true;
       }
-      if (d.frameId === 0) this.armed.delete(d.tabId);
+      if (d.frameId === 0) {
+        this.armed.delete(d.tabId);
+        this.armedGet.delete(d.tabId);
+      }
       for (const p of [...this.byToken.values()]) {
         if (p.cs.tabId === d.tabId && (d.frameId === 0 || d.frameId === p.cs.frameId)) this.finish(p, fail("NotAllowedError"));
       }
@@ -178,6 +197,7 @@ export class Passkeys {
       this.opened.delete(tabId);
       this.probes.delete(tabId);
       this.armed.delete(tabId);
+      this.armedGet.delete(tabId);
       this.forgetChains(tabId);
       for (const k of [...this.cooldown.keys()]) if (k.startsWith(`${tabId}:`)) this.cooldown.delete(k);
     });
@@ -204,6 +224,33 @@ export class Passkeys {
     const o = parseOrigin(cs.origin);
     if (cs.frameId !== 0 || !o?.https) return;
     this.armed.set(cs.tabId, { origin: o.origin, documentId: cs.documentId, until: this.now() + PASSKEY_ARM_MS });
+  }
+
+  /**
+   * A plan a trusted gesture started in top document `cs` chose the login `itemId`: the page's
+   * next passkey sign-in there, within `PASSKEY_ARM_MS` and once, is signed for that item without
+   * the choice window, if it holds a passkey the page asks for. Child frames and http pages are
+   * never armed; a navigation of the top frame disarms.
+   */
+  armGet(cs: CsContext, itemId: string): void {
+    const o = parseOrigin(cs.origin);
+    if (cs.frameId !== 0 || !o?.https) return;
+    this.armedGet.set(cs.tabId, { origin: o.origin, documentId: cs.documentId, itemId, until: this.now() + PASSKEY_ARM_MS });
+  }
+
+  /** Drops the sign-in arming of `tabId` (the button it was for could not be pressed). */
+  disarmGet(tabId: number): void {
+    this.armedGet.delete(tabId);
+  }
+
+  /** Spends the sign-in arming of this tab; the item, if the request is from that very top document in time. */
+  private takeArmedGet(cs: CsContext): string | null {
+    const a = this.armedGet.get(cs.tabId);
+    if (!a) return null;
+    this.armedGet.delete(cs.tabId);
+    if (this.now() > a.until || cs.frameId !== 0 || cs.origin !== a.origin) return null;
+    if (a.documentId !== undefined && cs.documentId !== a.documentId) return null;
+    return a.itemId;
   }
 
   /** Uses the arming of this create's tab, if it is this very top document (one creation). */
@@ -272,8 +319,7 @@ export class Passkeys {
     const key = `${cs.tabId}:${chain.itemId}:${chain.startedAt}`;
     if (cs.frameId !== 0 || this.chainSigned.has(key)) return null;
     if (chain.origin === undefined || chain.origin !== cs.origin) return null;
-    const host = hostOf(cs.origin);
-    if (host === "" || !(rpId === host || host.endsWith(`.${rpId}`))) return null;
+    if (!rpOfHost(rpId, hostOf(cs.origin))) return null;
     if (chain.provider !== undefined && !(chain.phase === "back" || chain.phase === "signin" || chain.phase === "code")) return null;
     return { itemId: chain.itemId, key };
   }
@@ -313,8 +359,13 @@ export class Passkeys {
     const chain = req.kind === "get" ? await this.silentChain(c) : null;
     // A creation the user chose in the signup menu (one-click signup): as if activated.
     const armed = req.kind === "create" && this.takeArmed(c.cs);
+    // A sign-in right after a gesture-started plan chose a login here: that item, once.
+    // Spent whatever the rpId; used only for an rp that is this page's host or a parent of it,
+    // as a chain's silent assertion (the worker's own check, before the host's).
+    const taken = req.kind === "get" && !chain ? this.takeArmedGet(c.cs) : null;
+    const planned = taken !== null && rpOfHost(rpId, hostOf(c.cs.origin)) ? taken : null;
     const canOpen = await this.mayOpen(c.cs, req.kind, activated || armed);
-    if (!chain && !canOpen) return FALLBACK;
+    if (!chain && planned === null && !canOpen) return FALLBACK;
     const probes = this.recent(this.probes, cs.tabId);
     if (probes.length >= PASSKEY_PROBES_PER_MIN) return FALLBACK;
     probes.push(this.now());
@@ -335,7 +386,7 @@ export class Passkeys {
     // The page aborted, or its document went away, while the host listed: no window.
     if (e.aborted) return fail("AbortError");
     if (e.gone) return fail("NotAllowedError");
-    if (req.kind === "get") return this.get(c, reqId, req, listed, chain, canOpen);
+    if (req.kind === "get") return this.get(c, reqId, req, listed, chain, canOpen, planned);
     return this.create(c, reqId, req, listed, canOpen);
   }
 
@@ -346,9 +397,22 @@ export class Passkeys {
     listed: PasskeyAccount[],
     chain: { itemId: string; key: string } | null,
     canOpen: boolean,
+    planned: string | null = null,
   ): Promise<PasskeyResult> {
     const offered = req.allow.length === 0 ? listed : listed.filter((p) => req.allow.includes(p.credentialId));
     if (offered.length === 0) return FALLBACK;
+    // The gesture on the plan that chose this item is the consent (already spent: once).
+    const chosen = planned === null ? undefined : offered.find((p) => p.itemId === planned);
+    if (chosen) {
+      try {
+        // On the wire as "chain": the host takes "passkey" (the window chose) or "chain" (no
+        // window) for `passkey_get` and nothing else. No chain runs here; a context of its own
+        // for this path needs the host to accept one (onepass-bridge service.rs).
+        return await this.assert(c, req, chosen, "chain");
+      } catch {
+        return fail("NotAllowedError");
+      }
+    }
     // Spec 3.2: the click that started this tab's chain for this very item is the consent.
     // Checked again here, with no wait before it is noted: two requests listed side by side sign once.
     const own = chain && !this.chainSigned.has(chain.key) ? offered.find((p) => p.itemId === chain.itemId) : undefined;
@@ -458,7 +522,8 @@ export class Passkeys {
     } else {
       out.userName = p.req.userName;
       try {
-        const r = await this.deps.session.request({ op: "vaults" });
+        // Routed for the page: the vaults of its account first (the window's default).
+        const r = await (this.deps.host ?? new HostCompat(this.deps.session)).vaults(p.cs.origin);
         p.vaults = r.vaults.map((v) => ({ id: v.id, name: v.name }));
       } catch {
         p.vaults = [];

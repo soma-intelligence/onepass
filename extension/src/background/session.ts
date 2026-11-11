@@ -4,7 +4,9 @@
 // reuses it while the port lives. Concurrent callers share one opening
 // (BridgeClient refuses a second concurrent handshake with `busy`). A
 // transport failure is retried after 1, 2 then 4 s; past that the host is
-// reported missing. Errors leave this module as `BgError` with a stable code
+// reported missing, and for a short while the next openings try once. A
+// missing host is launched only for the requests of a trusted user gesture
+// (`withWake`). Errors leave this module as `BgError` with a stable code
 // (spec 10, plus `unpaired`, `host_missing`, `timeout`): a raw host message
 // is never surfaced.
 import { BridgeError, wipe } from "../bridge/bytes";
@@ -109,6 +111,11 @@ function retryable(e: unknown): boolean {
 }
 
 export const RECONNECT_DELAYS_MS = [1000, 2000, 4000] as const;
+/**
+ * After the host was found missing, an opening this soon after tries once: a page that waits for
+ * the app asks every second, and a gesture is not held 7 s per request.
+ */
+export const MISSING_QUIET_MS = 15_000;
 
 export interface SessionDeps {
   store: Pick<Store, "getPairing"> & Partial<Pick<Store, "clearPairing">>;
@@ -120,6 +127,7 @@ export interface SessionDeps {
    * this browser (it adopts its client on success). True when paired.
    */
   autoPair?: () => Promise<boolean>;
+  now?: () => number;
 }
 
 /** An opening overtaken by `adopt` or `close`: its waiters ask again. */
@@ -143,9 +151,30 @@ export class Session {
   /** `fill_salt` of `client`'s session. */
   private salt: { client: BridgeLike; value: string } | undefined;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly now: () => number;
+  /** When the host was last found missing (cleared by a connection). */
+  private missingAt: number | undefined;
+  /** Armed by `withWake` while the requests of a trusted gesture run. */
+  private readonly wakers = new Set<{ wake: () => unknown }>();
 
   constructor(private readonly deps: SessionDeps) {
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.now = deps.now ?? Date.now;
+  }
+
+  /**
+   * Runs `fn`, the requests of a trusted user gesture. If the host turns out missing meanwhile,
+   * `wake` (launch the app) runs at the first failed attempt of the opening, once per opening.
+   * Nothing else ever arms it: a page load, a poll or a timer never launches the app.
+   */
+  async withWake<T>(wake: () => unknown, fn: () => Promise<T>): Promise<T> {
+    const armed = { wake };
+    this.wakers.add(armed);
+    try {
+      return await fn();
+    } finally {
+      this.wakers.delete(armed);
+    }
   }
 
   /** The open client, opening (or reopening) the session if needed. */
@@ -248,6 +277,10 @@ export class Session {
         if (this.deps.autoPair && (await this.deps.autoPair())) throw SUPERSEDED;
         throw new BgError("unpaired");
       }
+      // Missing a moment ago: one try, no backoff.
+      const t = this.now();
+      const quick = this.missingAt !== undefined && t >= this.missingAt && t - this.missingAt <= MISSING_QUIET_MS;
+      let woken = false;
       for (let attempt = 0; ; attempt++) {
         if (generation !== this.generation) throw SUPERSEDED;
         let client: BridgeLike | undefined;
@@ -267,8 +300,19 @@ export class Session {
             throw err;
           }
           if (!retryable(e)) throw err;
-          const delay = RECONNECT_DELAYS_MS[attempt];
-          if (delay === undefined) throw new BgError("host_missing");
+          if (!woken) {
+            // A gesture is waiting on this opening: the app is launched, the retries find it.
+            for (const w of this.wakers) {
+              woken = true;
+              quiet(Promise.resolve().then(w.wake));
+              break;
+            }
+          }
+          const delay = quick ? undefined : RECONNECT_DELAYS_MS[attempt];
+          if (delay === undefined) {
+            this.missingAt = this.now();
+            throw new BgError("host_missing");
+          }
           await this.sleep(delay);
           continue;
         }
@@ -279,6 +323,7 @@ export class Session {
         }
         this.client?.close();
         this.client = client;
+        this.missingAt = undefined;
         return client;
       }
     } finally {

@@ -222,6 +222,8 @@ function form(v: unknown): FormInfo {
 function analysis(v: unknown): PageAnalysis {
   const o = obj(v);
   return {
+    ...(o.captchaWidget !== undefined ? { captchaWidget: bool(o.captchaWidget) } : {}),
+    ...(o.passkeySignIn !== undefined ? { passkeySignIn: bool(o.passkeySignIn) } : {}),
     // Page-influenced hint, never used for policy: the origin comes from sender.
     url: str(o.url, MAX_URL),
     forms: list(o.forms, MAX_FORMS, form),
@@ -356,6 +358,11 @@ export function parseCsToBg(m: unknown): CsToBg | null {
         const r: CsToBg = { type: "plan_context", context: planContext(o.context) };
         if (o.formRef !== undefined) r.formRef = ref(o.formRef);
         if (o.fieldRef !== undefined) r.fieldRef = ref(o.fieldRef);
+        // Only ever true, and only without a field.
+        if (o.bare !== undefined) {
+          if (o.bare !== true || r.fieldRef !== undefined) throw new Invalid();
+          r.bare = true;
+        }
         return r;
       }
       case "classify":
@@ -438,6 +445,7 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "menu_keys":
       case "overlay_init":
       case "overlay_state":
+      case "overlay_unlock":
       case "overlay_stop":
       case "overlay_close":
       case "save_init":

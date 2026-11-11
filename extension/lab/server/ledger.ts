@@ -20,7 +20,7 @@ export type LabEvent =
 // Public test card numbers (and short CVCs) repeat across sites: a secret can have several owners.
 interface Owned { kind: SecretKind; owners: string[] }
 interface CardItem {
-  type?: string; title?: string; urls?: { url: string }[];
+  type?: string; title?: string; urls?: { url: string; rule?: string }[];
   fields?: { number?: string; cvv?: string; password?: string; member_number?: string };
 }
 
@@ -31,6 +31,8 @@ function own(index: Map<string, Owned>, value: string, kind: SecretKind, owner: 
 }
 
 const digitsOf = (s: string) => s.replace(/\D/g, "");
+/** The registrable domain of a lab host: its last two labels (every generated host is `<name>.test` or a host under one). */
+const domainOf = (host: string) => host.split(".").slice(-2).join(".");
 /** A document number as typed: spaces, dots and dashes dropped, case ignored. */
 const docOf = (s: string) => s.replace(/[\s.\-]/g, "").toUpperCase();
 // A card number as typed or pasted: digits with optional spaces or dashes.
@@ -73,7 +75,13 @@ export class Ledger {
   private index(world: World, fixture: FixtureFile): void {
     for (const raw of fixture.items as CardItem[]) {
       if (raw.type === "login" && raw.fields?.password && raw.urls?.[0]) {
-        own(this.passwords, raw.fields.password, "password", new URL(raw.urls[0].url).hostname);
+        const host = new URL(raw.urls[0].url).hostname;
+        own(this.passwords, raw.fields.password, "password", host);
+        // A domain-wide login is as much the secret of the world's sites on the same registrable domain
+        // (account profile p3 saves it under `www.<site host>`); a lookalike is on another domain.
+        if (raw.urls[0].rule === "domain") {
+          for (const s of world.sites) if (s.host !== host && domainOf(s.host) === domainOf(host)) own(this.passwords, raw.fields.password, "password", s.host);
+        }
       }
       this.indexDocument(world, raw);
       if (raw.type !== "credit_card") continue;

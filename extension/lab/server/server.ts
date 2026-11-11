@@ -64,6 +64,8 @@ export interface LabState {
   siteHosts: Set<string>;
   /** Accounts created by signup, by site host. */
   created: Map<string, Account>;
+  /** Account profiles: the account the user means on a site (the only one its relying party takes), by site host. */
+  meant: Map<string, Account>;
   /** Last accepted WebAuthn counter, by site host. */
   counters: Map<string, number>;
   /** One-time provider codes. */
@@ -83,6 +85,10 @@ export interface LabServer {
   reset(): void;
   /** The vault of the simulated user playing the next scenario: the values the forms expect (until reset). Secrets are indexed for every vault at start. */
   useFixture(fixture: FixtureFile): void;
+  /** Account profiles: the account each of these sites checks against instead of its own (until reset). */
+  useAccounts(accounts: ReadonlyMap<string, Account>): void;
+  /** After a priming sign-in: sessions and events gone, the vault and the meant accounts kept. */
+  rewind(): void;
   close(): Promise<void>;
 }
 
@@ -119,7 +125,7 @@ export async function startLabServer(world: World, cert: TestCert, opts: LabServ
   const sessions = new Map<string, Session>();
   const st: LabState = {
     world, ledger, siteHosts: new Set(world.sites.map((s) => s.host)),
-    created: new Map(), counters: new Map(), codes: new Map(), labelMarks: opts.labelMarks === true,
+    created: new Map(), meant: new Map(), counters: new Map(), codes: new Map(), labelMarks: opts.labelMarks === true,
   };
   const sites = new Map<string, Site>(world.sites.map((s) => [s.host, s]));
   const traps = new Map<string, Site>();
@@ -237,6 +243,7 @@ export async function startLabServer(world: World, cert: TestCert, opts: LabServ
     reset() {
       sessions.clear();
       st.created.clear();
+      st.meant.clear();
       st.counters.clear();
       st.codes.clear();
       ledger.reset();
@@ -244,6 +251,15 @@ export async function startLabServer(world: World, cert: TestCert, opts: LabServ
     },
     useFixture(fixture) {
       st.world = { ...world, fixture };
+    },
+    useAccounts(accounts) {
+      st.meant.clear();
+      for (const [host, a] of accounts) st.meant.set(host, a);
+    },
+    rewind() {
+      sessions.clear();
+      st.codes.clear();
+      ledger.reset();
     },
     close: () =>
       new Promise<void>((resolve) => {

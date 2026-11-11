@@ -143,6 +143,34 @@ describe("overlay", () => {
     expect(r.querySelector(".ov-others")).toBeNull();
   });
 
+  it("exactly two logins: the other one hangs under the pill as its own row, one click signs in with it (no list to open)", async () => {
+    const two: OverlayAccount[] = [
+      { ...accounts[0]!, itemId: "it_last", title: "Atlas Cloud (2)", subtitle: "second@atlas.dev" },
+      accounts[0]!,
+    ];
+    const { r, handle, worker, clock } = setup(() => null, null, withInit(two));
+    await handle.ready;
+    // The pill is the account used last on this site (the worker lists it first).
+    expect(optSays(r.querySelector(".ov-pill")!)).toBe("Atlas Cloud (2) | second@atlas.dev");
+    const other = r.querySelector<HTMLButtonElement>("button.ov-other")!;
+    expect(optSays(other)).toBe("Atlas Cloud | alex@atlas.dev");
+    expect(text(r)).not.toContain("Autres identifiants");
+    expect(r.querySelector(".ov-picker")).toBeNull();
+    clock.advance(300);
+    other.click();
+    await flush();
+    expect(worker.sent.filter((m) => m.type === "overlay_start")).toEqual([{ type: "overlay_start", token: TOKEN, itemId: "it_01" }]);
+    expect(text(r)).toContain("Connexion…");
+  });
+
+  it("three logins or more keep the searchable list behind Other logins", async () => {
+    const three: OverlayAccount[] = [accounts[0]!, { ...accounts[0]!, itemId: "it_b", title: "B" }, { ...accounts[0]!, itemId: "it_c", title: "C" }];
+    const { r, handle } = setup(() => null, null, withInit(three));
+    await handle.ready;
+    expect(r.querySelector("button.ov-other")).toBeNull();
+    expect(r.querySelector(".ov-others")!.textContent).toBe("Autres identifiants");
+  });
+
   it("two Google ways with other accounts each: one Other logins, never a row per hidden way", async () => {
     // The linear.app report: "Other Google accounts" twice.
     const google = accounts[1]!;
@@ -249,6 +277,28 @@ describe("overlay", () => {
     const same = setup(() => null, null, withInit(mixed.map((a) => ({ ...a, vault: soma }))));
     await same.handle.ready;
     expect(same.r.querySelector(".vault-chip")).toBeNull();
+  });
+
+  it("names the account on the card when the host says several accounts answer, and marks an associated site", async () => {
+    const list: OverlayAccount[] = [
+      { ...accounts[0]!, account: "Soma Labs", associated: true },
+      { ...accounts[0]!, itemId: "it_09", title: "Atlas Team", account: "Perso" },
+    ];
+    const { r, handle } = setup(() => null, null, withInit(list));
+    await handle.ready;
+    const pill = r.querySelector(".ov-pill")!;
+    expect(pill.textContent).toContain("Soma Labs");
+    expect(pill.textContent).toContain("Site associé");
+    // The other login's row (and the list, with more of them) names its account too.
+    expect(r.querySelector(".ov-other")!.textContent).toContain("Perso");
+    const more = setup(() => null, null, withInit([...list, { ...accounts[0]!, itemId: "it_10", title: "Third", account: "Team" }]));
+    await more.handle.ready;
+    openPicker(more.r, more.clock);
+    expect(opts(more.r).map((o) => o.textContent).join(" | ")).toContain("Team");
+    // Malformed: refused.
+    const bad = setup(() => null, null, (m) => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts: [{ ...accounts[0]!, associated: false }], chain: null } } : null));
+    await bad.handle.ready;
+    expect(bad.r.querySelector(".ov-pill")).toBeNull();
   });
 
   it("polls update only the line that says what happens now; Annuler keeps its node and focus", async () => {
@@ -443,6 +493,214 @@ describe("overlay", () => {
     sizes[0]!();
     await frame();
     expect(worker.sent.filter((m) => m.type === "overlay_resize")).toEqual([{ type: "overlay_resize", token: TOKEN, height: 212 }]);
+  });
+
+  describe("locked at the click: the card waits for the unlock already asked, then goes on by itself", () => {
+    const lockedStop: ChainView = { ...running, status: "handoff", reason: "locked" };
+
+    it("Se connecter on a locked vault: waiting card, polled; unlocked, the progress, with no second click", async () => {
+      let state: { chain: ChainView | null; waiting?: string } = { chain: null, waiting: "locked" };
+      const { r, handle, worker, clock, timers } = setup(
+        () => null,
+        null,
+        (m) => (m.type === "overlay_start" ? { ok: { waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null),
+      );
+      await handle.ready;
+      button(r, "Se connecter").click();
+      await flush();
+      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      // The account that was clicked stays named, and the wait can be cancelled.
+      expect(text(r)).toContain("Atlas Cloud");
+      expect(button(r, "Annuler")).toBeTruthy();
+      expect(r.querySelector(".spinner")).not.toBeNull();
+      expect(timers.intervals.size).toBe(1);
+      // Polls while waiting change nothing (the buttons keep their place).
+      const card = r.querySelector(".ov-card");
+      await handle.poll();
+      expect(r.querySelector(".ov-card")).toBe(card);
+      // Touch ID in the app: the worker started the chain.
+      state = { chain: { ...running, itemId: "it_01", provider: undefined, title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] } as ChainView };
+      await handle.poll();
+      expect(text(r)).toContain("Connexion…");
+      expect(text(r)).not.toContain("Déverrouille OnePass pour continuer");
+      expect(worker.types().filter((t) => t === "overlay_start")).toHaveLength(1);
+      void clock;
+    });
+
+    it("the wait ends without an unlock: the offer again, its button is the retry", async () => {
+      let state: { chain: ChainView | null; waiting?: string } = { chain: null, waiting: "locked" };
+      const { r, handle, timers } = setup(
+        () => null,
+        null,
+        (m) => (m.type === "overlay_start" ? { ok: { waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null),
+      );
+      await handle.ready;
+      button(r, "Se connecter").click();
+      await flush();
+      state = { chain: null };
+      await handle.poll();
+      expect(text(r)).not.toContain("Déverrouille OnePass pour continuer");
+      expect(button(r, "Se connecter")).toBeTruthy();
+      expect(timers.intervals.size).toBe(0);
+    });
+
+    it("the app is launching: the card says so, then follows it to its unlock", async () => {
+      let state: { chain: ChainView | null; waiting?: string } = { chain: null, waiting: "host_missing" };
+      const { r, handle } = setup(
+        () => null,
+        null,
+        (m) => (m.type === "overlay_start" ? { ok: { waiting: "host_missing" } } : m.type === "overlay_state" ? { ok: state } : null),
+      );
+      await handle.ready;
+      button(r, "Se connecter").click();
+      await flush();
+      expect(text(r)).toContain("Ouverture de OnePass…");
+      state = { chain: null, waiting: "locked" };
+      await handle.poll();
+      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    });
+
+    it("Annuler while waiting stops the wait and closes the card", async () => {
+      const { r, handle, worker, clock } = setup(
+        () => null,
+        null,
+        (m) => (m.type === "overlay_start" ? { ok: { waiting: "locked" } } : m.type === "overlay_state" ? { ok: { chain: null, waiting: "locked" } } : null),
+      );
+      await handle.ready;
+      button(r, "Se connecter").click();
+      await flush();
+      clock.advance(300);
+      button(r, "Annuler").click();
+      await flush();
+      expect(worker.types().slice(-2)).toEqual(["overlay_stop", "overlay_close"]);
+    });
+
+    it("a chain locked mid-way waits the same way, then continues; past the wait, the stop with Réessayer", async () => {
+      let state: { chain: ChainView | null; waiting?: string } = { chain: lockedStop, waiting: "locked" };
+      const { r, handle, timers } = setup(() => null, running, (m) => (m.type === "overlay_state" ? { ok: state } : null));
+      await handle.ready;
+      await handle.poll();
+      // No dead end "unlock then retry": the unlock was asked, the card waits.
+      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).not.toContain("puis réessaie");
+      expect(text(r)).toContain("Atlas Perso");
+      expect(timers.intervals.size).toBe(1);
+      // Unlocked: the worker continued the chain.
+      state = { chain: running };
+      await handle.poll();
+      expect(text(r)).toContain("Ouverture de Google…");
+      // Locked again later, the wait over: the stop, with its retry.
+      state = { chain: lockedStop };
+      await handle.poll();
+      expect(text(r)).toContain("OnePass est verrouillé");
+      expect(button(r, "Réessayer")).toBeTruthy();
+      expect(timers.intervals.size).toBe(0);
+    });
+
+    it("a card that comes up on a page whose chain is locked waits from its first render", async () => {
+      const state: { chain: ChainView | null; waiting?: string } = { chain: running };
+      const { r, handle, timers } = setup(
+        () => null,
+        null,
+        (m) => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts: [], chain: lockedStop, waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null),
+      );
+      await handle.ready;
+      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).toContain("Atlas Perso");
+      expect(timers.intervals.size).toBe(1);
+      await handle.poll();
+      expect(text(r)).toContain("Ouverture de Google…");
+    });
+
+    it("a malformed waiting state is refused", async () => {
+      const { r, handle } = setup(() => null, null, (m) => (m.type === "overlay_state" ? { ok: { chain: null, waiting: "<b>x</b>" } } : null));
+      await handle.ready;
+      await handle.poll();
+      expect(text(r)).toContain("Erreur interne de OnePass.");
+    });
+  });
+
+  describe("generic card: a sign-in page reached with the vault locked", () => {
+    const genericInit = (m: UiToBg): Reply | null => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts: [], chain: null, generic: true } } : null);
+
+    it("names no account: the site's host, that OnePass is locked, one Sign in button and x", async () => {
+      const { r, handle } = setup(() => null, null, genericInit);
+      await handle.ready;
+      expect(text(r)).toContain("Se connecter avec OnePass");
+      expect(text(r)).toContain("OnePass est verrouillé");
+      expect(text(r)).not.toContain("Atlas Cloud");
+      expect(text(r)).not.toContain("alex");
+      expect(r.querySelector(".ov-others")).toBeNull();
+      expect(button(r, "Se connecter")).toBeTruthy();
+      expect(r.querySelector(".ov-close")).not.toBeNull();
+      // A letter tile: a card that shows only while locked asks the site's server for nothing.
+      expect(r.querySelector("img")).toBeNull();
+      expect(r.querySelector(".site-tile.letter")?.textContent).toBe("A");
+    });
+
+    it("its click asks the worker to unlock, waits like any card, then shows the chain the worker started; no second click", async () => {
+      let state: { chain: ChainView | null; waiting?: string } = { chain: null, waiting: "locked" };
+      const { r, handle, worker, timers } = setup(() => null, null, (m) => genericInit(m) ?? (m.type === "overlay_unlock" ? { ok: { waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null));
+      await handle.ready;
+      button(r, "Se connecter").click();
+      await flush();
+      expect(worker.types()).toContain("overlay_unlock");
+      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      expect(timers.intervals.size).toBe(1);
+      // Still waiting on the locked vault: still no request to the site.
+      expect(r.querySelector("img")).toBeNull();
+      state = { chain: { ...running, itemId: "it_01", provider: undefined, title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] } as ChainView };
+      await handle.poll();
+      expect(text(r)).toContain("Connexion…");
+      expect(worker.types().filter((t) => t === "overlay_unlock")).toHaveLength(1);
+      expect(worker.types()).not.toContain("overlay_start");
+    });
+
+    it("unlocked and no chain (the plan opened the menu, or filled): the card loads again; a site without a login closes it", async () => {
+      // The vault now lists the site's logins: the ordinary offer.
+      let unlocked = false;
+      let state: { chain: ChainView | null; waiting?: string } = { chain: null, waiting: "locked" };
+      const a = setup(() => null, null, (m) =>
+        m.type === "overlay_init" ? (unlocked ? { ok: { origin: SITE, accounts, chain: null } } : genericInit(m)) : m.type === "overlay_unlock" ? { ok: { waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null,
+      );
+      await a.handle.ready;
+      button(a.r, "Se connecter").click();
+      await flush();
+      unlocked = true;
+      state = { chain: null };
+      // The page's plan gets a few looks to start a chain; then the card loads again.
+      for (let i = 0; i < 8; i++) await a.handle.poll();
+      await flush();
+      expect(text(a.r)).toContain("Atlas Cloud");
+      expect(a.worker.types().filter((t) => t === "overlay_init")).toHaveLength(2);
+
+      // Nothing for this site: the card leaves.
+      let open = false;
+      const b = setup(() => null, null, (m) =>
+        m.type === "overlay_init" ? (open ? { ok: { origin: SITE, accounts: [], chain: null } } : genericInit(m)) : m.type === "overlay_unlock" ? { ok: {} } : null,
+      );
+      await b.handle.ready;
+      open = true;
+      button(b.r, "Se connecter").click();
+      await flush();
+      for (let i = 0; i < 8; i++) await b.handle.poll();
+      await flush();
+      expect(b.worker.types()).toContain("overlay_close");
+    });
+
+    it("the app cannot be opened: said on the card", async () => {
+      const { r, handle } = setup(() => null, null, (m) => genericInit(m) ?? (m.type === "overlay_unlock" ? { err: "locked" } : null));
+      await handle.ready;
+      button(r, "Se connecter").click();
+      await flush();
+      expect(text(r)).toContain("OnePass est verrouillé");
+    });
+
+    it("a generic card that lists an account is refused (nothing of the vault may ride on it)", async () => {
+      const { r, handle } = setup(() => null, null, (m) => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts, chain: null, generic: true } } : null));
+      await handle.ready;
+      expect(text(r)).not.toContain("Atlas Cloud");
+    });
   });
 
   it("locked and unpaired states", async () => {

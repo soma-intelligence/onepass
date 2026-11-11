@@ -242,8 +242,19 @@ describe("analyzeDocument: form kinds", () => {
 });
 
 describe("analyzeDocument: page signals", () => {
-  it("CAPTCHA iframe", () => {
-    expect(analyze("captcha.html").a.captcha).toBe(true);
+  it("CAPTCHA widget on the page (its checkbox, nothing asked yet): reported apart, no challenge", () => {
+    const { a } = analyze("captcha.html");
+    expect(a.captcha).toBe(false);
+    expect(a.captchaWidget).toBe(true);
+  });
+
+  it("a page whose one button reads as a passkey sign-in says so; a form's own passkey creation, several buttons or none do not", () => {
+    expect(analyzeHtml('<main><h1>Sign in</h1><button type="button">Use passkey</button></main>').a.passkeySignIn).toBe(true);
+    expect(analyzeHtml('<main><button type="button">Se connecter avec une clé d\'accès</button></main>').a.passkeySignIn).toBe(true);
+    expect(analyzeHtml('<main><button type="button">Create a passkey</button></main>').a.passkeySignIn).toBeUndefined();
+    expect(analyzeHtml('<main><button type="button">Use passkey</button><button type="button">Sign in with a passkey</button></main>').a.passkeySignIn).toBeUndefined();
+    expect(analyzeHtml('<main><button type="button" style="display:none">Use passkey</button></main>').a.passkeySignIn).toBeUndefined();
+    expect(analyzeHtml("<main><p>Passkeys are great</p></main>").a.passkeySignIn).toBeUndefined();
   });
 
   it("CAPTCHA text", () => {

@@ -292,6 +292,13 @@ describe("message validation", () => {
     });
   });
 
+  it("keeps the optional page flags when well formed (captchaWidget, passkeySignIn), refuses them otherwise", () => {
+    const a = { ...analysis, captchaWidget: true, passkeySignIn: true };
+    expect(parseCsToBg({ type: "page_analysis", analysis: a })).toEqual({ type: "page_analysis", analysis: a });
+    expect(parseCsToBg({ type: "page_analysis", analysis: { ...analysis, passkeySignIn: "yes" } })).toBeNull();
+    expect(parseCsToBg({ type: "page_analysis", analysis: { ...analysis, captchaWidget: 1 } })).toBeNull();
+  });
+
   it("accepts every forms role (Task 8), still rejects an unknown string", () => {
     for (const role of FORMS_ROLES) {
       const a = { ...analysis, forms: [{ ref: "f1", kind: "identity", fields: [{ ref: "e1", role }] }] };

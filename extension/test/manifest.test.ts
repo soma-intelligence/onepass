@@ -6,6 +6,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BROWSERS = ["chromium", "firefox", "safari"] as const;
+/** A match pattern has no port: each of these covers every port of its host. */
+const LOOPBACK = ["http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"];
+const PAGES = ["https://*/*", ...LOOPBACK];
 
 type Manifest = {
   manifest_version: number;
@@ -30,7 +33,7 @@ beforeAll(() => {
 }, 60_000);
 
 describe.each(BROWSERS)("manifest %s", (b) => {
-  it("has the exact permissions and no http entry", () => {
+  it("has the exact permissions, and http on the three loopback hosts only", () => {
     const m = load(b);
     expect(m.manifest_version).toBe(3);
     expect(m.name).toBe("OnePass");
@@ -38,21 +41,34 @@ describe.each(BROWSERS)("manifest %s", (b) => {
     expect([...m.permissions].sort()).toEqual(
       ["activeTab", "alarms", "nativeMessaging", "scripting", "storage", "webNavigation"].sort(),
     );
-    expect(m.host_permissions).toEqual(["https://*/*"]);
+    // HTTPS, and a local development server: the same three hosts as `parseOrigin().page` and the bridge.
+    expect(m.host_permissions).toEqual(PAGES);
     const all = [
       ...m.host_permissions,
       ...m.content_scripts.flatMap((c) => c.matches),
       ...m.web_accessible_resources.flatMap((w) => w.matches),
     ];
-    expect(all.every((u) => u.startsWith("https://"))).toBe(true);
-    expect(JSON.stringify(m)).not.toMatch(/http:\/\/|<all_urls>/);
+    expect(all.every((u) => PAGES.includes(u))).toBe(true);
+    expect(JSON.stringify(m)).not.toContain("<all_urls>");
+    // No other http entry anywhere in the manifest.
+    expect((JSON.stringify(m).match(/http:\/\/[^"]*/g) ?? []).sort()).toEqual([...LOOPBACK, ...LOOPBACK, ...LOOPBACK].sort());
   });
 
-  it("injects the content script in all HTTPS frames at idle", () => {
+  it("injects the content script in all HTTPS frames, and those of a loopback http page, at idle", () => {
     const [cs] = load(b).content_scripts;
-    expect(cs?.matches).toEqual(["https://*/*"]);
+    expect(cs?.matches).toEqual(PAGES);
     expect(cs?.all_frames).toBe(true);
     expect(cs?.run_at).toBe("document_idle");
+  });
+
+  it("passkeys stay HTTPS only: their two scripts never run on an http page", () => {
+    const [, shim, relay] = load(b).content_scripts;
+    expect(shim?.matches).toEqual(["https://*/*"]);
+    expect(relay?.matches).toEqual(["https://*/*"]);
+  });
+
+  it("the menu, the card and the save prompt can be framed by the same pages as the content script", () => {
+    expect(load(b).web_accessible_resources[0]?.matches).toEqual(PAGES);
   });
 
   it("exposes only the three pages and their scripts", () => {

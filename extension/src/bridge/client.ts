@@ -65,6 +65,10 @@ export interface Summary {
   has_totp: boolean;
   methods: { provider: ProviderId; account_email: string }[];
   match: "exact_host" | "domain" | null;
+  /** The match is an associated site (Apple's shared-credentials list), sent as `domain` in `match`; left out otherwise. */
+  associated?: true;
+  /** Label of the item's account, sent only when items of several accounts answer. */
+  account?: string;
 }
 
 /** `smart` profile: Strong (default), Readable (words) or Custom (`length` and `symbols`). */
@@ -195,9 +199,17 @@ export type AgentResult<T> = { ok: T } | { err: AgentErrorCode };
 
 interface Ops {
   status: { req: object; res: { locked: boolean; account: string; vaults: number } };
-  unlock: { req: object; res: { locked: boolean } };
+  /**
+   * `origin`: the top-frame origin of the tab whose trusted gesture asks (https, or http on a
+   * loopback host), for the app to show on its unlock. Absent when no page is concerned.
+   */
+  unlock: { req: { origin?: string }; res: { locked: boolean } };
   /** `account`: the OnePass account of the vault, when the host names one (several accounts). */
-  vaults: { req: object; res: { vaults: { id: string; name: string; color: string | null; account?: string }[] } };
+  /**
+   * `origin`: the page a new item is for. The vaults of the account that page routes to come
+   * first (the first is the default of a save there); a `save_*` with `vault_id: ""` goes to it.
+   */
+  vaults: { req: { origin?: string }; res: { vaults: { id: string; name: string; color: string | null; account?: string }[] } };
   list_for_origin: { req: { ctx: Ctx; origin: string }; res: { items: Summary[] } };
   search: { req: { ctx: Ctx; query: string }; res: { items: Summary[] } };
   list_fillable: { req: { ctx: Ctx; origin: string; kind: "card" | "identity" }; res: { items: Summary[] } };

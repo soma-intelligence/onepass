@@ -42,7 +42,8 @@ export const DONE_SETTLE_MS = 1_500;
 export const REPEAT_MS = 8_000;
 /**
  * After a step that sent the identifier alone, how long the next page may take to build its
- * password form (counted from its load) before the chain calls the sign-in done.
+ * password form (counted from its load) before the chain calls the sign-in done. The same wait
+ * for the code form after the password of a login that holds a one-time code.
  */
 export const PASSWORD_WAIT_MS = 10_000;
 
@@ -89,6 +90,8 @@ export interface ChainPage {
   doneAt?: number;
   /** This page was planned again (`replan`) after it went unknown: next time, `unknown`. */
   replanned?: boolean;
+  /** The latest analysis showed a CAPTCHA widget that asked nothing: a refused submit here is a CAPTCHA, not a wrong password. */
+  widget?: boolean;
 }
 
 export interface ChainState {
@@ -119,8 +122,32 @@ export interface ChainState {
   page: ChainPage;
   /** Started by a fill plan: its main form's roles and intent (for `note_fill`). */
   planned?: { roles: FieldRole[]; intent: FillIntent };
+  /** The user picked the item's row in the menu: the first fill of the chain is that pick (driver.ts). */
+  pick?: "menu";
   /** Not planned: the roles of the first form the chain filled, in page order, with the filter of `mainRoles` (for `note_fill`). */
   roles?: FieldRole[];
+  /**
+   * Exact hosts outside the site's registrable domain the chain may also run on: each one
+   * added by the driver after the bridge's plan on that very origin named the chain's own item
+   * as a normal match (`crossTo`). `MAX_CROSSINGS` at most.
+   */
+  allowed?: string[];
+  /** The tab of a popup window the chain's own click on the provider's button opened (driver.ts); followed while it lives. */
+  popupTabId?: number;
+}
+
+/** Hosts outside its site a chain may cross to, at most. */
+export const MAX_CROSSINGS = 2;
+/**
+ * Pages one chain writes its password into, at most. A sign-in asks for it once; a second page
+ * (a host it crossed to, a confirmation) is the margin. A page that keeps asking under a new
+ * path or host each time never is a "same step back": the count stops it, as `repeat`.
+ */
+export const MAX_PASSWORD_FILLS = 2;
+
+/** Steps of `s` that wrote a password (the site's or the provider's). */
+function passwordFills(s: ChainState): number {
+  return s.steps.filter((x) => x.kind === "fill" && (x.sig.split("|")[2] ?? "").split(",").includes("password")).length;
 }
 
 export type ChainAction =
@@ -152,6 +179,8 @@ export interface StartParams {
   autoSubmit?: boolean;
   /** Started by a fill plan. */
   planned?: { roles: FieldRole[]; intent: FillIntent };
+  /** The user clicked the item's row in the menu (`StartOptions.picked`). */
+  picked?: "menu";
   now: number;
 }
 
@@ -200,6 +229,7 @@ export function startChain(p: StartParams): ChainState {
     page: { nav: 0, idle: true, settledAt: p.now },
   };
   if (p.planned) s.planned = { roles: [...p.planned.roles], intent: p.planned.intent };
+  if (p.picked) s.pick = p.picked;
   if (p.provider) {
     s.provider = p.provider;
     // The chooser picks the account that will be filled: the chosen provider
@@ -344,6 +374,8 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   const d = decide(s, a, onProvider);
   const n = clone(s);
   n.page.seenAt = now;
+  if (a.captchaWidget) n.page.widget = true;
+  else delete n.page.widget;
   if (d === null) {
     n.page.sig = undefined;
     const last = n.steps.at(-1);
@@ -371,8 +403,9 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
   n.page.sig = sig;
   const prev = n.steps.find((x) => x.sig === sig);
   if (prev) {
-    // Same page again: a re-analysis (same document) or the step coming back.
-    if (prev.nav !== n.page.nav) return stopped(s, "repeat", now);
+    // Same page again: a re-analysis (same document) or the step coming back. Back beside a
+    // CAPTCHA widget, the site wants its check first: said so, and the password is not blamed.
+    if (prev.nav !== n.page.nav) return stopped(s, a.captchaWidget ? "captcha" : "repeat", now);
     // Spec B2: the page re-rendered the step's form before the submit reached
     // it. Not a repeat: submit the copy, once (no second fill).
     if (prev.missed && prev === n.steps.at(-1) && (d.kind === "fill" || d.kind === "otp") && n.autoSubmit) {
@@ -383,6 +416,8 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
     }
     return { state: n, actions: [] };
   }
+
+  if (d.kind === "fill" && d.fields.includes("password") && passwordFills(n) >= MAX_PASSWORD_FILLS) return stopped(s, "repeat", now);
 
   const pname = onProvider && n.provider ? providerName(n.provider) : null;
   const actions: ChainAction[] = [];
@@ -467,6 +502,7 @@ export function planStep(s: ChainState, p: PlannedStep, url: string, pageOrigin:
   n.page.sig = sig;
   const prev = n.steps.find((x) => x.sig === sig);
   if (prev) return prev.nav !== n.page.nav ? stopped(s, "repeat", now) : { state: n, actions: [] };
+  if (fields.includes("password") && passwordFills(n) >= MAX_PASSWORD_FILLS) return stopped(s, "repeat", now);
   const kind: StepKind = otp && fields.length === 1 ? "otp" : "fill";
   const st: ChainStep = { kind, sig, nav: n.page.nav, at: now, label: "", state: "done" };
   if (frameId !== 0) st.frameId = frameId;
@@ -499,11 +535,53 @@ export function noteShape(s: ChainState): { roles: FieldRole[]; intent: FillInte
   return { roles: [...(s.roles ?? [])], intent: "login" };
 }
 
-/** The allowed list (R-11): the site's registrable domain, the provider's exact hosts, HTTPS only. */
+/**
+ * The allowed list (R-11): the site's registrable domain, the provider's exact hosts, HTTPS only.
+ * A chain started on a loopback http page (a local development server) stays on that exact origin:
+ * another port, or https there, is another server; and an https chain never steps down to http.
+ */
 function where(s: ChainState, url: string): { ok: boolean; onProvider: boolean; host: string; origin: string } {
   const p = parseOrigin(url);
-  const onProvider = p !== null && providerHosts(s.provider).includes(p.host);
-  return { ok: p?.https === true && (onProvider || p.site === s.site), onProvider, host: p?.host ?? url.slice(0, 256), origin: p?.origin ?? "" };
+  const onProvider = p !== null && p.https && providerHosts(s.provider).includes(p.host);
+  const local = parseOrigin(s.siteOrigin)?.https === false;
+  const onSite = p !== null && (local ? p.page && p.origin === s.siteOrigin : p.https && (p.site === s.site || (s.allowed?.includes(p.host) ?? false)));
+  return { ok: onProvider || onSite, onProvider, host: p?.host ?? url.slice(0, 256), origin: p?.origin ?? "" };
+}
+
+/**
+ * `s` (still running: the state before a `domain` stop) continued on the document `url` its top
+ * frame committed, the host of `url` joining the chain's allow-list. Only the driver calls this,
+ * once the bridge's plan on that origin named the chain's own item as a normal match. Null when
+ * the chain may not cross: not https, past its deadline, a loopback chain, too many hosts.
+ */
+export function crossTo(s: ChainState, url: string, now: number): ChainState | null {
+  const p = parseOrigin(url);
+  if (s.status !== "running" || now >= s.deadline || !p?.https || parseOrigin(s.siteOrigin)?.https !== true) return null;
+  if ((s.allowed?.length ?? 0) >= MAX_CROSSINGS) return null;
+  const n = clone(s);
+  n.allowed = [...(s.allowed ?? []), p.host];
+  const moved = navigated(n, url, now);
+  return moved.status === "running" ? moved : null;
+}
+
+/** The chain follows the popup tab `tabId` its click on the provider's button opened. */
+export function followPopup(s: ChainState, tabId: number): ChainState {
+  if (s.status !== "running" || s.provider === undefined || s.popupTabId !== undefined) return s;
+  const n = clone(s);
+  n.popupTabId = tabId;
+  return n;
+}
+
+/**
+ * The followed popup went away: the chain is back on its own tab. A page that shows nothing the
+ * chain knows is not planned again there (a provider chain never fills the site's own form).
+ */
+export function popupClosed(s: ChainState, now: number): ChainState {
+  if (s.popupTabId === undefined) return s;
+  const n = clone(s);
+  delete n.popupTabId;
+  if (n.status === "running") n.page = { ...n.page, idle: true, settledAt: now, seenAt: now, replanned: true };
+  return n;
 }
 
 /**
@@ -552,10 +630,21 @@ function unknownDue(s: ChainState): number | null {
   return Math.max(s.page.settledAt, lastActionAt(s) ?? 0, s.page.seenAt ?? 0) + UNKNOWN_MS;
 }
 
+/**
+ * The site's password went, the login holds a one-time code and no code step ran yet: the next
+ * page is most likely the code's, and its form may be built late.
+ */
+function awaitsCode(s: ChainState): boolean {
+  const last = s.steps.at(-1);
+  if (!s.hasTotp || s.provider !== undefined || last?.kind !== "fill" || last.submittedAt === undefined) return false;
+  return (last.sig.split("|")[2] ?? "").split(",").includes("password") && !s.steps.some((x) => x.kind === "otp");
+}
+
 function doneDue(s: ChainState): number | null {
   if (s.page.doneAt === undefined) return null;
-  // The identifier went alone: the password form may be built late (delayed or client-rendered steps).
-  if (s.steps.at(-1)?.identifier) return (s.page.settledAt ?? s.page.doneAt) + PASSWORD_WAIT_MS;
+  // The identifier went alone, or the password of a login with a code: the next form (password,
+  // code) may be built late (delayed or client-rendered steps).
+  if (s.steps.at(-1)?.identifier || awaitsCode(s)) return (s.page.settledAt ?? s.page.doneAt) + PASSWORD_WAIT_MS;
   const loaded = s.page.settledAt === undefined ? 0 : s.page.settledAt + UNKNOWN_MS;
   return Math.max(s.page.doneAt + DONE_SETTLE_MS, loaded);
 }
@@ -589,7 +678,7 @@ export function tick(s: ChainState, now: number): StepResult {
     return { state: n, actions: [{ type: "replan" }] };
   }
   const r = repeatDue(s);
-  if (r !== null && now >= r) return stopped(s, "repeat", now);
+  if (r !== null && now >= r) return stopped(s, s.page.widget ? "captcha" : "repeat", now);
   return { state: s, actions: [] };
 }
 
@@ -746,6 +835,7 @@ export function parseChainState(raw: unknown): ChainState | null {
     const doneAt = optInt(pg.doneAt);
     if (doneAt !== undefined) page.doneAt = doneAt;
     if (pg.replanned !== undefined) page.replanned = bool(pg.replanned);
+    if (pg.widget === true) page.widget = true;
     if (!Array.isArray(o.steps) || o.steps.length > 64) return null;
     const s: ChainState = {
       v: 1,
@@ -778,6 +868,13 @@ export function parseChainState(raw: unknown): ChainState | null {
       s.planned = { roles: roles(pl.roles), intent: oneOf(pl.intent, INTENTS) };
     }
     if (o.roles !== undefined) s.roles = roles(o.roles);
+    if (o.pick !== undefined) s.pick = oneOf(o.pick, ["menu"] as const);
+    if (o.allowed !== undefined) {
+      if (!Array.isArray(o.allowed) || o.allowed.length > MAX_CROSSINGS) return null;
+      s.allowed = o.allowed.map((h) => str(h, 253));
+    }
+    const popup = optInt(o.popupTabId);
+    if (popup !== undefined) s.popupTabId = popup;
     return s;
   } catch {
     return null;

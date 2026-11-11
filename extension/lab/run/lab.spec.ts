@@ -12,6 +12,12 @@
 // scenario was recorded), or when every one of its scenarios is a
 // lab_error; the other verdicts are the report's business. In smoke mode a
 // last test compares the verdicts with lab/smoke-expected.json.
+// A batch also has one start state and one smart_fill trigger (LAB_STARTS,
+// LAB_TRIGGERS): a locked or cold start restarts the profile's native host,
+// and a site played twice in one profile would find the first play's site
+// memory. Every result stores its gestures (count, kinds, biometric
+// approvals) and whether the oracle saw the session; a scenario whose start
+// state the host cannot be put in is `skipped`.
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test as base } from "@playwright/test";
@@ -22,9 +28,10 @@ import { type Lab, launchLab, launchPlain, networkViolations, readState, readWor
 import { groupOf } from "../gen/generate.ts";
 import { type CaseOutcome, countryCase, lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv, smartFill } from "./drive.ts";
 import { extensionDriver } from "./driver.ts";
-import { fixtureFor, profileOf } from "../gen/population.ts";
+import { fixtureFor, meantAccount, otherUsername, profileOf } from "../gen/population.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
-import { afterReplay, fillCheck, judge, type Judgement, type Observation, oneClickOf, replayable, type Result, type Verdict } from "./oracle.ts";
+import { afterReplay, fillCheck, judge, type Judgement, type Observation, oneClickOf, replayable, type Result, resultGestures, type Verdict } from "./oracle.ts";
+import { type StartControl, startControl } from "./start-state.ts";
 
 const state: LabState = readState();
 const world: World = readWorld(state);
@@ -45,18 +52,32 @@ const test = base.extend<object, { server: LabServer }>({
 /** Batches of LAB_BATCH sites; one profile per batch (each simulated user has its own vault and so its own browser). */
 function batches(): Scenario[][] {
   const indices = world.sites.map((s) => s.index).filter((i) => config.only === undefined || i === config.only);
-  const groups = [...new Set(world.scenarios.map((s) => groupOf(s.driver)))];
+  // One profile per driver set, start state and smart_fill trigger (the historical start first: batch order as before).
+  const groups = [...new Set(world.scenarios.map(setOf))];
   const out: Scenario[][] = [];
   for (const g of groups) {
     for (const p of world.profiles ?? [{ id: profileOf({}) }]) {
       for (let k = 0; k < indices.length; k += config.batch) {
         const chunk = new Set(indices.slice(k, k + config.batch));
-        const batch = world.scenarios.filter((s) => chunk.has(s.site) && groupOf(s.driver) === g && profileOf(s) === p.id);
+        const batch = world.scenarios.filter((s) => chunk.has(s.site) && setOf(s) === g && profileOf(s) === p.id);
         if (batch.length > 0) out.push(batch);
       }
     }
   }
   return out;
+}
+
+/** What scenarios must share to share a browser profile: the driver set, the start state, the smart_fill trigger. */
+function setOf(s: Scenario): string {
+  return `${groupOf(s.driver)}|${s.start ?? "unlocked_warm"}|${s.shortcut ? "shortcut" : "icon"}`;
+}
+
+/** The start-state control of each lab profile (its host-visibility check is made once per profile). */
+const controls = new WeakMap<Lab, StartControl>();
+function controlOf(l: Lab): StartControl {
+  let c = controls.get(l);
+  if (!c) controls.set(l, (c = startControl(l.startHost)));
+  return c;
 }
 
 const labError = (driver: Scenario["driver"], e: unknown): Observation => {
@@ -104,7 +125,13 @@ function vaultOf(profile: string): FixtureFile {
 /** One attempt of a scenario; `lab` is the batch profile (unused by the passkey control). */
 async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Promise<Lab>, closeErrors: CloseErrors): Promise<Observation> {
   server.reset();
-  server.useFixture(vaultOf(profileOf(s)));
+  const vault = vaultOf(profileOf(s));
+  server.useFixture(vault);
+  // Account profiles: the site takes the account the user means, and the driver knows the other one by its identifier.
+  const profile = world.profiles?.find((p) => p.id === profileOf(s));
+  const meant = profile ? meantAccount(profile, site, vault) : undefined;
+  if (meant) server.useAccounts(new Map([[site.host, { username: meant.username, password: meant.password }]]));
+  const otherUser = profile ? otherUsername(profile, site, vault) : undefined;
   if (s.driver === "passkey_control") {
     let plain;
     try {
@@ -125,11 +152,13 @@ async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Pr
   } catch (e) {
     return labError(s.driver, e);
   }
-  const env: ScenarioEnv = { driver: extensionDriver(l), server, world, newPage: () => l.newPage() };
+  const env: ScenarioEnv = {
+    driver: extensionDriver(l), server, world, newPage: () => l.newPage(), start: controlOf(l), ...(otherUser !== undefined ? { otherUser } : {}),
+  };
   switch (s.driver) {
-    case "one_click": return oneClick(env, site);
-    case "smart_fill": return smartFill(env, site, s.expect);
-    case "menu_fill": return menuFill(env, site, s.behaviour);
+    case "one_click": return oneClick(env, site, s);
+    case "smart_fill": return smartFill(env, site, s.expect, s);
+    case "menu_fill": return menuFill(env, site, s.behaviour, s);
     case "lookalike": return lookalike(env, site);
   }
 }
@@ -139,13 +168,23 @@ async function safeAttempt(s: Scenario, site: Site, server: LabServer, lab: () =
   return attempt(s, site, server, lab, closeErrors).catch((e: unknown) => labError(s.driver, e));
 }
 
+/** The flags a repro needs beyond the seed and the site: the driver set, the profiles, the start state, the trigger. */
+function reproFlags(s: Scenario): string {
+  const profiles = config.accounts ? ` --accounts ${profileOf(s)}` : world.profiles ? ` --profiles ${world.profiles.length}` : "";
+  return `${s.driver === "smart_fill" ? " --drivers smart_fill" : ""}${profiles}${s.start ? ` --starts ${s.start}` : ""}${s.shortcut ? " --triggers shortcut" : ""}`;
+}
+
 function record(s: Scenario, site: Site, j: Judgement, retried: boolean, durationMs: number, seen: Observation): Result {
   const oneClick = oneClickOf(s, j.verdict, seen);
   const r: Result = {
     worldSeed: world.seed, site: site.index, siteSeed: site.seed, flow: site.flow, traits: site.traits, lang: site.lang,
     labelLang: site.labelLang, profile: profileOf(s), driver: s.driver, expect: s.expect, ...(s.reason ? { reason: s.reason } : {}), verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
-    retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}${s.driver === "smart_fill" ? " --drivers smart_fill" : ""}${world.profiles ? ` --profiles ${world.profiles.length}` : ""}`,
+    retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}${reproFlags(s)}`,
     ...(oneClick !== undefined ? { oneClick } : {}),
+    // The gestures of the attempt the verdict stands on (gestures.ts), kinds only.
+    ...resultGestures(s, site, j.verdict, seen),
+    ...(seen.unlock ? { unlock: seen.unlock } : {}),
+    ...(s.account ? { outcome: s.account.outcome } : {}),
   };
   appendFileSync(state.results, `${JSON.stringify(r)}\n`);
   return r;
@@ -199,7 +238,8 @@ batches().forEach((scenarios, k) => {
         }
         const r = record(s, site, j, retried, duration, seen);
         verdicts.push(r.verdict);
-        console.log(`${s.id} ${site.flow} [${site.traits.join(",")}] expect ${s.expect}: ${r.verdict}${r.cause ? ` (${r.cause})` : ""}`);
+        console.log(`${s.id} ${site.flow} [${site.traits.join(",")}] expect ${s.expect}: ${r.verdict}${r.cause ? ` (${r.cause})` : ""}`
+          + ` gestures ${r.gestures ?? 0}${r.biometric ? ` +${r.biometric} biometric` : ""}${r.oneGesture ? " (one gesture, signed in)" : ""}`);
       }
     } finally {
       // Always release the shared Chromium, its native host and its temporary profile.
@@ -222,8 +262,9 @@ interface CaseResult { id: string; name: string; verdict: CaseOutcome["verdict"]
 // The country and region fixture cases (lab/gen/cases.ts), in the default
 // profile and the current driver set; not for a single-site repro. A failed
 // case is replayed once in a fresh paired profile: a pass then is `flaky`.
-const playCases = config.only === undefined && (world.cases ?? []).length > 0
-  && world.scenarios.some((s) => groupOf(s.driver) === "current");
+// Nor for a run of account profiles or without the historical start: they measure something else.
+const playCases = config.only === undefined && (world.cases ?? []).length > 0 && config.accounts === undefined
+  && world.scenarios.some((s) => groupOf(s.driver) === "current" && s.start === undefined);
 if (playCases) {
   test("country cases", async ({ server }) => {
     const cases = world.cases ?? [];

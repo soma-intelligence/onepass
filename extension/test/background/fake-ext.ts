@@ -73,6 +73,14 @@ export class FakeExt implements BgExt {
   readonly parents = new Map<string, number>();
   readonly sentToTabs: SentToTab[] = [];
   readonly onRemoved = new Emitter<(tabId: number) => void>();
+  readonly onCreated = new Emitter<(tab: { id?: number; openerTabId?: number }) => void>();
+  /** `webNavigation.onCreatedNavigationTarget`, once `withNavigationTargets()` gave the browser that event. */
+  readonly onTarget = new Emitter<(d: { tabId: number; sourceTabId: number; sourceFrameId: number; url: string }) => void>();
+  /** A browser that tells which frame opened a tab (Chromium, Firefox). Call before `install()`. */
+  withNavigationTargets(): this {
+    this.webNavigation.onCreatedNavigationTarget = this.onTarget;
+    return this;
+  }
   readonly onCommitted = new Emitter<(d: { tabId: number; frameId: number; url: string }) => void>();
   readonly onCompleted = new Emitter<(d: { tabId: number; frameId: number; url: string }) => void>();
   readonly local = new FakeArea();
@@ -98,8 +106,13 @@ export class FakeExt implements BgExt {
       return this.tabReply?.(tabId, message, options);
     },
     onRemoved: this.onRemoved,
+    onCreated: this.onCreated,
     query: async () => (this.activeTab ? [{ ...this.activeTab }] : []),
+    get: async (tabId) => ({ ...(this.tabStates.get(tabId) ?? { active: true, windowId: 1 }) }),
   };
+
+  /** What `tabs.get` answers per tab (default: the active tab of window 1). */
+  readonly tabStates = new Map<number, { active: boolean; windowId: number }>();
 
   /** The content script's reply to `tabs.sendMessage` (undefined by default). */
   tabReply: ((tabId: number, message: unknown, options: { frameId?: number; documentId?: string }) => unknown) | undefined;

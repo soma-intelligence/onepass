@@ -149,6 +149,10 @@ describe("triggers", () => {
     await settle();
     expect(smartSent(s)).toEqual([]);
     input("u").focus();
+    // A resume names the origin its card waited on: another page in this frame by now gets nothing.
+    expect(s.ext.deliver({ type: "smart_fill", origin: "https://evil.test" })).toEqual({ ok: false });
+    await settle();
+    expect(smartSent(s)).toEqual([]);
     expect(s.ext.deliver({ type: "smart_fill" })).toEqual({ ok: true });
     await settle();
     const pc = s.ext.ofType("plan_context")[0]!;
@@ -156,6 +160,71 @@ describe("triggers", () => {
     expect(pc.fieldRef).toBeUndefined();
     // "menu" without a clicked field: under the focused one.
     expect(s.ext.ofType("open_menu")).toEqual([expect.objectContaining({ fieldRef: formById(s, "login").fields[0]!.ref })]);
+  });
+
+  it("a gesture without a field on a page with no field to open the menu under says so (bare); with one, it does not", async () => {
+    setPage('<main><button id="g" type="button">Continue with Google</button></main>');
+    s = start();
+    worker(s, { err: "locked" });
+    expect(s.ext.deliver({ type: "smart_fill" })).toEqual({ ok: true });
+    await settle();
+    expect(s.ext.ofType("plan_context")[0]).toMatchObject({ bare: true });
+    expect(s.ext.ofType("plan_context")[0]!.fieldRef).toBeUndefined();
+    expect(s.ext.ofType("open_menu")).toEqual([]);
+    s.cs.stop();
+
+    setPage(LOGIN);
+    s = start();
+    worker(s, { err: "locked" });
+    s.ext.deliver({ type: "smart_fill" });
+    await settle();
+    expect(s.ext.ofType("plan_context")[0]!.bare).toBeUndefined();
+    expect(s.ext.ofType("open_menu")).toHaveLength(1);
+  });
+
+  describe("the resume of a menu's field after an unlock, on a page that redrew its form meanwhile", () => {
+    const redraw = () => {
+      const form = document.getElementById("login")!;
+      const copy = form.cloneNode(true) as HTMLElement;
+      form.replaceWith(copy);
+    };
+
+    it("the field is gone with its form: the copy of that very form takes the fill (its first field)", async () => {
+      setPage(LOGIN);
+      s = start();
+      worker(s, { ok: { outcome: "filled" } });
+      const before = formById(s, "login");
+      redraw();
+      await settle();
+      expect(s.ext.deliver({ type: "smart_fill", fieldRef: before.fields[0]!.ref, formRef: before.ref, origin: ORIGIN })).toEqual({ ok: true });
+      await settle();
+      const after = formById(s, "login");
+      expect(after.ref).not.toBe(before.ref);
+      expect(s.ext.ofType("plan_context")).toEqual([expect.objectContaining({ formRef: after.ref, fieldRef: after.fields[0]!.ref })]);
+    });
+
+    it("no copy of that form, two of them, another origin, or no form named: nothing runs", async () => {
+      setPage(LOGIN);
+      s = start();
+      worker(s, { ok: { outcome: "filled" } });
+      const before = formById(s, "login");
+      const dead = before.fields[0]!.ref;
+      // Without the form's ref the dead field resumes nothing (as before).
+      redraw();
+      await settle();
+      expect(s.ext.deliver({ type: "smart_fill", fieldRef: dead, origin: ORIGIN })).toEqual({ ok: false });
+      expect(s.ext.deliver({ type: "smart_fill", fieldRef: dead, formRef: before.ref, origin: "https://evil.test" })).toEqual({ ok: false });
+      // Two forms with the same identity: which one is not ours to guess.
+      document.getElementById("login")!.insertAdjacentHTML("afterend", document.getElementById("login")!.outerHTML);
+      await settle();
+      expect(s.ext.deliver({ type: "smart_fill", fieldRef: dead, formRef: before.ref, origin: ORIGIN })).toEqual({ ok: false });
+      // The form went away altogether.
+      for (const f of [...document.querySelectorAll("#login")]) f.remove();
+      await settle();
+      expect(s.ext.deliver({ type: "smart_fill", fieldRef: dead, formRef: before.ref, origin: ORIGIN })).toEqual({ ok: false });
+      await settle();
+      expect(smartSent(s)).toEqual([]);
+    });
   });
 
   it("plan_request: the page context, no value and no hash", () => {
@@ -272,5 +341,54 @@ describe("the signup menu's passkey choice (click_passkey)", () => {
     document.getElementById("pk")!.textContent = "Delete my data";
     expect(s.ext.deliver({ type: "click_passkey", origin: ORIGIN, ref })).toEqual({ ok: false });
     expect(n).toBe(0);
+  });
+});
+
+describe("a passkey-only sign-in page: the worker asks to press its one passkey button (click_passkey_signin)", () => {
+  const page = (buttons: string) => `<main><h1>Sign in</h1>${buttons}</main>`;
+  const clicks = (id: string) => {
+    const seen = { n: 0 };
+    document.getElementById(id)!.addEventListener("click", () => void seen.n++);
+    return seen;
+  };
+
+  it("presses the one button that reads as a passkey sign-in", () => {
+    setPage(page('<button type="button" id="pk">Use passkey</button><a href="/help">Help</a>'));
+    s = start();
+    const seen = clicks("pk");
+    expect(s.ext.deliver({ type: "click_passkey_signin", origin: ORIGIN })).toEqual({ ok: true });
+    expect(seen.n).toBe(1);
+  });
+
+  it("presses nothing when no button, several, a hidden one, or one that makes a passkey; nor for another origin", () => {
+    setPage(page('<button type="button" id="a">Sign in</button>'));
+    s = start();
+    expect(s.ext.deliver({ type: "click_passkey_signin", origin: ORIGIN })).toEqual({ ok: false });
+    s.cs.stop();
+
+    setPage(page('<button type="button" id="a">Use passkey</button><button type="button" id="b">Sign in with a passkey</button>'));
+    s = start();
+    const a = clicks("a");
+    expect(s.ext.deliver({ type: "click_passkey_signin", origin: ORIGIN })).toEqual({ ok: false });
+    expect(a.n).toBe(0);
+    s.cs.stop();
+
+    setPage(page('<button type="button" id="a" style="display:none">Use passkey</button>'));
+    s = start();
+    expect(s.ext.deliver({ type: "click_passkey_signin", origin: ORIGIN })).toEqual({ ok: false });
+    s.cs.stop();
+
+    setPage(page('<button type="button" id="a">Create a passkey</button>'));
+    s = start();
+    const made = clicks("a");
+    expect(s.ext.deliver({ type: "click_passkey_signin", origin: ORIGIN })).toEqual({ ok: false });
+    expect(made.n).toBe(0);
+    s.cs.stop();
+
+    setPage(page('<button type="button" id="a">Use passkey</button>'));
+    s = start();
+    const other = clicks("a");
+    expect(s.ext.deliver({ type: "click_passkey_signin", origin: "https://evil.test" })).toEqual({ ok: false });
+    expect(other.n).toBe(0);
   });
 });

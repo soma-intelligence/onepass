@@ -6,7 +6,7 @@
 // met, and a missed goal carries its cause.
 import { describe, expect, it } from "vitest";
 import type { Scenario, Site } from "../../lab/gen/model.ts";
-import { judge, type Observation } from "../../lab/run/oracle.ts";
+import { foldTargets, judge, type Observation } from "../../lab/run/oracle.ts";
 import type { LabEvent } from "../../lab/server/ledger.ts";
 
 const login: Site = {
@@ -134,5 +134,29 @@ describe("judge", () => {
     const ok: LabEvent = { at: 1, host: card.host, kind: "submit", form: "checkout_card", ok: true, fields: [] };
     // The driver (as the user) sent the form before the site's answer.
     expect(judge(scenario(card, "pass", "menu_fill"), card, obs({ driver: "menu_fill", userSubmitAt: 0, events: [ok] }))).toEqual({ verdict: "pass" });
+  });
+});
+
+describe("foldTargets", () => {
+  // Personal data goes only into fields on screen (security review M4): the user scrolls to the rest and fills again.
+  // The set holds the fields with too little on screen to be filled.
+  const form: Site = {
+    ...login, index: 5, host: "sunny-atlas-79.test", flow: "company_b2b", account: undefined,
+    forms: { shippingSame: true },
+    fields: [
+      { role: "given_name", name: "first", id: "first", label: "First name", type: "text" },
+      { role: "city", name: "city", id: "city", label: "Town", type: "text", block: "billing" },
+      { role: "country", name: "land", id: "land", label: "Country", type: "text", block: "billing" },
+      { role: "city", name: "ship-city", id: "ship-city", label: "Town", type: "text", block: "shipping" },
+      { role: "given_name", name: "p2", id: "p2", label: "First name", type: "text", person: 1 },
+    ],
+  } as Site;
+  it("empty_owed_fields_off_screen_only", () => {
+    expect(foldTargets(form, { first: true, city: false, land: false }, new Set(["city", "land", "ship-city", "p2"])).map((f) => f.name))
+      .toEqual(["city", "land"]);
+  });
+  it("an_empty_field_on_screen_is_a_miss_not_a_fold", () => {
+    expect(foldTargets(form, { first: true, city: false, land: false }, new Set())).toEqual([]);
+    expect(foldTargets(form, { first: true, city: true, land: true }, new Set(["city", "land"]))).toEqual([]);
   });
 });

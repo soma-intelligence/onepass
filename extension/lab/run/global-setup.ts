@@ -4,6 +4,10 @@
 // stage the host with that vault outside the checkout, build the encrypted
 // fixture cache once, and issue a certificate for every host of the world.
 // Paths reach the workers through LAB_STATE (a JSON file).
+// LAB_STARTS (start states), LAB_TRIGGERS (icon, shortcut) and LAB_ACCOUNTS
+// (account profiles p0 to p3) widen the scenarios; their defaults leave the
+// world and the smoke as they were. The host is probed once for the controls
+// a locked start can use (host-control.ts).
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
@@ -11,9 +15,10 @@ import { fileURLToPath } from "node:url";
 import { generateCert } from "../../e2e/cert.ts";
 import { buildHost, prebuildFixtureCache, type StagedHost, stageHost } from "../../e2e/host.ts";
 import { buildLabExtension, LAB_DIST_ROOT } from "../build-marker.ts";
-import { generate, loadPatterns, parseDriverGroups, withDrivers } from "../gen/generate.ts";
-import type { DriverGroup } from "../gen/model.ts";
-import { DEFAULT_PROFILE_ID, fixtureFor } from "../gen/population.ts";
+import { generate, loadPatterns, parseDriverGroups, parseStarts, parseTriggers, type SmartTrigger, withDrivers, withStarts } from "../gen/generate.ts";
+import type { DriverGroup, StartState } from "../gen/model.ts";
+import { accountProfiles, DEFAULT_PROFILE_ID, fixtureFor } from "../gen/population.ts";
+import { hostSupports } from "./host-control.ts";
 
 export const EXT_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 // First seed (n >= 2, generator version 2) whose 12 sites hold iframe_cross_site, shadow_closed,
@@ -35,6 +40,12 @@ export interface LabRunConfig {
   drivers: DriverGroup[];
   /** Simulated users (population.ts): 1 is the historical single user. */
   profiles: number;
+  /** Start states played (LAB_STARTS, default "unlocked_warm"). */
+  starts: StartState[];
+  /** How smart_fill is started (LAB_TRIGGERS, default "icon"). */
+  triggers: SmartTrigger[];
+  /** Account profiles played instead of drawn ones (LAB_ACCOUNTS, "p0" to "p3"); never with LAB_PROFILES above 1. */
+  accounts?: string[];
 }
 
 /** The run configuration from the LAB_* environment variables (smoke defaults). */
@@ -51,14 +62,19 @@ export function runConfig(env: NodeJS.ProcessEnv = process.env): LabRunConfig {
     throw new Error(`lab: LAB_ONLY must be a site index below ${sites} (${env.LAB_ONLY})`);
   }
   const drivers = parseDriverGroups(env.LAB_DRIVERS || "current");
+  const starts = parseStarts(env.LAB_STARTS || "unlocked_warm");
+  const triggers = parseTriggers(env.LAB_TRIGGERS || "icon");
+  const accounts = env.LAB_ACCOUNTS ? accountProfiles(env.LAB_ACCOUNTS.split(",").map((x) => x.trim()).filter(Boolean)).map((p) => p.id) : undefined;
+  if (accounts && profiles > 1) throw new Error("lab: LAB_ACCOUNTS and LAB_PROFILES above 1 do not mix (same profile ids)");
   const rawOut = env.LAB_OUT || join("lab", "out", seed);
   const out = isAbsolute(rawOut) ? rawOut : join(EXT_ROOT, rawOut);
-  return { seed, sites, batch, out, drivers, profiles, ...(only !== undefined ? { only } : {}) };
+  return { seed, sites, batch, out, drivers, profiles, starts, triggers, ...(accounts ? { accounts } : {}), ...(only !== undefined ? { only } : {}) };
 }
 
 /** Whether this run is the smoke regression (fixed seed and size, every site). */
 export function isSmoke(c: LabRunConfig): boolean {
-  return c.seed === SMOKE_SEED && c.sites === SMOKE_SITES && c.only === undefined && c.drivers.join(",") === "current" && c.profiles === 1;
+  return c.seed === SMOKE_SEED && c.sites === SMOKE_SITES && c.only === undefined && c.drivers.join(",") === "current" && c.profiles === 1
+    && c.starts.join(",") === "unlocked_warm" && c.triggers.join(",") === "icon" && c.accounts === undefined;
 }
 
 export interface LabState {
@@ -77,6 +93,8 @@ export interface LabState {
   extDir: string;
   /** Staged host and encrypted vault cache of every simulated user (the default one is `host` and `cache`). */
   profiles: Record<string, { host: StagedHost; cache: string }>;
+  /** Controls the host binary has beyond its config of today (probed once; absent in a state from before the start states). */
+  caps?: { deferredUnlock: boolean };
 }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
@@ -87,7 +105,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     ONEPASS_CLASSIFIER: process.env.ONEPASS_CLASSIFIER, ONEPASS_MODEL_DIR: process.env.ONEPASS_MODEL_DIR,
   });
   buildHost();
-  const world = withDrivers(generate(config.seed, { sites: config.sites, patterns: loadPatterns(), profiles: config.profiles }), config.drivers);
+  const generated = generate(config.seed, {
+    sites: config.sites, patterns: loadPatterns(), profiles: config.profiles, ...(config.accounts ? { accounts: config.accounts } : {}),
+  });
+  const world = withStarts(withDrivers(generated, config.drivers), config.starts, config.triggers);
   mkdirSync(config.out, { recursive: true });
   const worldPath = join(config.out, "world.json");
   const fixture = join(config.out, "fixture.json");
@@ -112,11 +133,16 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const staged = stageHost(join(root, `host-${p.id}`), file);
     profiles[p.id] = { host: staged, cache: await prebuildFixtureCache(join(root, `prebuild-${p.id}`), staged) };
   }));
-  const state: LabState = { root, config, extDir: built.dir, world: worldPath, fixture, results, cases, certDir, cache, host, profiles };
+  // Only a locked start asks: can the host leave an unlock to the stand-in's approval file?
+  const caps = { deferredUnlock: config.starts.includes("locked") && hostSupports(host.bin, "unlock", "file") };
+  const state: LabState = { root, config, extDir: built.dir, world: worldPath, fixture, results, cases, certDir, cache, host, profiles, caps };
   const statePath = join(root, "state.json");
   writeFileSync(statePath, JSON.stringify(state));
   process.env.LAB_STATE = statePath;
-  console.log(`lab setup: seed ${config.seed}, ${config.sites} sites, drivers ${config.drivers.join(",")}, ${config.profiles} profile(s), ${((Date.now() - started) / 1000).toFixed(1)} s, out ${config.out}`);
+  const profilesLine = config.accounts ? `account profiles ${config.accounts.join(",")}` : `${config.profiles} profile(s)`;
+  console.log(`lab setup: seed ${config.seed}, ${config.sites} sites, drivers ${config.drivers.join(",")}, ${profilesLine}, starts ${config.starts.join(",")}, `
+    + `triggers ${config.triggers.join(",")}${config.starts.includes("locked") ? `, unlock ${caps.deferredUnlock ? "deferred (approval file)" : "instant (host lacks control deferred_unlock)"}` : ""}, `
+    + `${((Date.now() - started) / 1000).toFixed(1)} s, out ${config.out}`);
   return async () => {
     rmSync(root, { recursive: true, force: true });
   };

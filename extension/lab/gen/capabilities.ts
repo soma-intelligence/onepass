@@ -10,9 +10,6 @@ import type { Profile } from "./population.ts";
 
 export interface Expectation { expect: Expect; reason?: string }
 
-/** Label languages whose "Continue with <Provider>" the generator writes and the extension does not read. */
-const PROVIDER_LABEL_LANGS = new Set(["de", "es", "it", "pt", "nl"]);
-
 /** What a forms page asks of the extension (spec 11.4), in the order a reason names them. */
 export const CAPABILITIES = ["persons", "intent_contact", "roles_person", "roles_document", "roles_company", "document_source", "loyalty",
   "work_tel", "honorific_sex", "nationality", "issuing_country", "date_parts", "date_text", "radio_group"] as const;
@@ -72,10 +69,6 @@ export function expectationFor(site: Site, driver: DriverId, profile?: Profile, 
   if (site.traits.includes("iframe_cross_site")) return { expect: "nofill", reason: "R-10" };
   // An empty vault has nothing to offer. The password generator of a signup form needs no item.
   if (profile?.vaultSize === 0 && !(site.flow === "signup" && driver === "menu_fill")) return { expect: "nofill", reason: "empty vault" };
-  // The sso button is labelled in the label language; the extension reads provider buttons in French and English only.
-  if (site.flow === "sso" && driver === "one_click" && PROVIDER_LABEL_LANGS.has(site.labelLang)) {
-    return { expect: "xfail", reason: "provider button fr/en only (shared/providers.ts)" };
-  }
   const missing = needs(site).find((c) => pending.has(c));
   if (missing) return { expect: "xfail", reason: `forms: ${missing}` };
   return { expect: "pass" };

@@ -42,6 +42,8 @@ export function signature(a: PageAnalysis): string {
   return JSON.stringify([
     a.url,
     a.captcha,
+    a.captchaWidget ?? false,
+    a.passkeySignIn ?? false,
     a.push,
     a.forms.map((f) => [f.ref, f.kind, f.submitRef ?? null, f.fields.map((x) => [x.ref, x.role, x.parts ?? null])]),
     a.providerButtons.map((b) => [b.provider, b.ref]),

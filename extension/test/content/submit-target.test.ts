@@ -93,6 +93,24 @@ describe("submit target (M3)", () => {
     document.querySelector("base")?.remove();
   });
 
+  it("a loopback http page: only its exact origin (another port is another server)", () => {
+    const local = "http://localhost:3000/login";
+    expect(submitTargetAllowed(null, local, local)).toBe(true);
+    expect(submitTargetAllowed("/session", local, local)).toBe(true);
+    expect(submitTargetAllowed("http://localhost:3000/session", local, local)).toBe(true);
+    // Another port, another loopback name, https there, a public host.
+    expect(submitTargetAllowed("http://localhost:4000/steal", local, local)).toBe(false);
+    expect(submitTargetAllowed("//localhost:4000/steal", local, local)).toBe(false);
+    expect(submitTargetAllowed("http://127.0.0.1:3000/steal", local, local)).toBe(false);
+    expect(submitTargetAllowed("https://localhost:3000/session", local, local)).toBe(false);
+    expect(submitTargetAllowed("https://evil.test/steal", local, local)).toBe(false);
+    // A `<base href>` on another port moves relative targets there.
+    expect(submitTargetAllowed("session", "http://localhost:4000/", local)).toBe(false);
+    const ip = "http://127.0.0.1:8080/";
+    expect(submitTargetAllowed("http://127.0.0.1:8081/", ip, ip)).toBe(false);
+    expect(submitTargetAllowed("http://127.0.0.1:8080/x", ip, ip)).toBe(true);
+  });
+
   it("resolves targets: same site, subdomain, downgrade, schemes", () => {
     const page = "https://www.atlas-cloud.test/login";
     expect(submitTargetAllowed(null, page, page)).toBe(true);

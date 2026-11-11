@@ -17,6 +17,7 @@ import type { MenuInit, ProviderChoice, SignInChoice, Summary } from "../shared/
 import {
   ClickGuard,
   type FrameDeps,
+  accountNotes,
   autosize,
   call,
   errorText,
@@ -182,6 +183,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     sub?: string;
     pre?: string;
     post?: string;
+    /** After `post`: the account label, the associated-site hint (`accountNotes`). */
+    notes?: Node[];
     lead: Element;
     /** What the row does ("Remplir", "Continuer"), or a hint ("Utilisé pour …"). */
     act?: string;
@@ -212,6 +215,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
               o.pre ? h("span", { class: "meta" }, o.pre) : null,
               o.sub !== undefined ? h("span", { class: "t2" }, o.sub) : null,
               o.post ? h("span", { class: "meta" }, o.post) : null,
+              ...(o.notes ?? []),
             )
           : null,
       ),
@@ -221,42 +225,91 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     return b;
   };
 
+  /** What the worker says while an unlock asked for this menu is still pending. */
+  const WAITING: ReadonlySet<string> = new Set(["locked", "host_missing", "timeout"]);
+  /** Bumped by each wait and each render over it: a check of an older wait does nothing. */
+  let waitSeq = 0;
+
   /**
-   * The app came forward on its lock screen: say so, ask again every second
-   * and reload the menu once unlocked. After a minute, the button again.
+   * The app was asked to unlock for this menu (by the gesture that opened it, or by its button):
+   * it came forward on its lock screen, or is still starting. Say which, ask the worker every
+   * second, and let it resume the fill the moment the vault opens (it closes this menu). After
+   * the shared deadline (90 s), the button again.
    */
-  function waitForUnlock(origin: string | null): void {
-    mount(container, header(origin), messageBlock(t("ui.unlockToContinue")));
-    remeasure();
+  function waitForUnlock(origin: string | null, code: string): void {
+    const seq = ++waitSeq;
+    let shown = "";
+    const say = (c: string): void => {
+      const now = c === "locked" ? "locked" : "host_missing";
+      if (now === shown) return;
+      shown = now;
+      mount(container, header(origin), messageBlock(t(now === "locked" ? "ui.unlockToContinue" : "ui.openingOnepass")));
+      active = -1;
+      remeasure();
+    };
+    say(code);
     let left = UNLOCK_WAIT_TRIES;
     const check = (): void => {
-      if (!token) return;
-      void call(deps.send, { type: "menu_init", token }, parseMenuInit).then((r) => {
-        if (r.ok) {
-          // Unlocked with Touch ID in the app (MS-03): the fill asked for goes on by itself.
-          void resume(() => {
-            render(r.value);
-            void listenKeys();
-          });
-        } else if (r.code !== "locked") renderState(r.code, origin);
-        else if (--left > 0) timers.setTimeout(check, UNLOCK_POLL_MS);
-        else renderState("locked", origin);
+      if (!token || seq !== waitSeq) return;
+      void call(deps.send, { type: "menu_resume", token }, parseEmpty).then((r) => {
+        // Resumed: the worker closed this menu and runs its field's plan.
+        if (seq !== waitSeq || r.ok) return;
+        if (!WAITING.has(r.code)) {
+          // Refused (too late, the page changed): the menu as it now is.
+          void load();
+          return;
+        }
+        if (--left > 0) {
+          // Launched, then locked: the app's unlock shows now.
+          say(r.code);
+          timers.setTimeout(check, UNLOCK_POLL_MS);
+        } else renderState(r.code === "locked" ? "locked_plain" : "host_missing_plain", origin);
       });
     };
     timers.setTimeout(check, UNLOCK_POLL_MS);
   }
 
   /**
-   * Unlocked in the app after this menu asked (Touch ID on the Mac): the worker closes the menu
-   * and runs its field's plan in its frame (one click plus Touch ID). Refused (too late, the page
-   * changed): `fallback`, the menu again. The iOS sheet never calls this: the worker resumes
-   * within its unlock call, so one unlock fills once.
+   * A menu that finds the vault locked or the app missing asks the worker whether an unlock is
+   * already under way for it: the trusted gesture that opened it (the icon, the command) asked
+   * the app at once. Then it waits and resumes with no second click; if the vault opened
+   * meanwhile, the worker resumes right here. No such request: `plain`, the state with its button.
    */
-  async function resume(fallback: () => void): Promise<void> {
-    if (!token) return fallback();
+  async function resumeOrAsk(code: "locked" | "host_missing", origin: string | null): Promise<void> {
+    if (!token) return renderState(`${code}_plain`, origin);
+    const seq = ++waitSeq;
     const r = await call(deps.send, { type: "menu_resume", token }, parseEmpty);
-    if (!r.ok) fallback();
+    if (seq !== waitSeq || r.ok) return;
+    if (WAITING.has(r.code)) waitForUnlock(origin, r.code);
+    else renderState(`${code}_plain`, origin);
   }
+
+  /**
+   * The button of a locked or missing app, a click of its own: the worker brings the app forward
+   * (launching it if needed) and asks it to unlock. Open already: the fill resumes, or the menu
+   * loads. Else the menu waits. Not opened: the button stays, with what to do.
+   */
+  const askButton = (label: string, code: "locked" | "host_missing", origin: string | null): HTMLButtonElement =>
+    h(
+      "button",
+      {
+        class: "btn btn-primary",
+        attrs: { type: "button", "data-opt": "" },
+        on: {
+          click: guard.wrap(() => {
+            if (!token) return;
+            void call(deps.send, { type: "menu_unlock", token }, parseLocked).then(async (r) => {
+              if (r.ok && r.value.locked) waitForUnlock(origin, code);
+              else if (r.ok) {
+                const done = await call(deps.send, { type: "menu_resume", token }, parseEmpty);
+                if (!done.ok) void load();
+              } else renderState(r.code === "locked" || r.code === "host_missing" ? `${r.code}_plain` : r.code, origin);
+            });
+          }),
+        },
+      },
+      label,
+    );
 
   /** Face ID ran once by itself in this menu: never again without a tap (no loop). */
   let autoBiometricDone = false;
@@ -279,9 +332,10 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         return;
       }
       if (!r.value.locked) {
-        // A tap or the password: the worker already closed the menu and resumed the fill (the
-        // menu's token died, this load finds nothing). The automatic Face ID of a menu that may
-        // have opened by itself is no gesture: the menu loads and the user picks.
+        // A tap, the password, or the automatic Face ID of a menu a trusted gesture opened (the
+        // icon, the command): the worker already closed the menu and resumed the fill (the menu's
+        // token died, this load finds nothing). The automatic Face ID of any other menu is no
+        // gesture: the menu loads and the user picks.
         void load();
         return;
       }
@@ -371,35 +425,25 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   function renderState(code: string, origin: string | null): void {
     let body: HTMLElement;
     if (code === "locked" && token) {
-      // iOS has a native vault: the sheet. Elsewhere "unsupported" brings the app button.
+      // iOS has a native vault: the sheet. Elsewhere the app unlocks: asked already, or its button.
       const asked = token;
+      const seq = ++waitSeq;
       void callVault({ type: "menu_vault", token: asked }).then((r) => {
+        if (seq !== waitSeq) return;
         if (r.ok && r.value.locked) renderUnlock(r.value, origin);
         else if (r.ok) void load();
-        else renderState("locked_plain", origin);
+        else void resumeOrAsk("locked", origin);
       });
       return;
     }
+    if (code === "host_missing" && token) {
+      // The app is not running: launched already by the gesture that opened this menu, or its button.
+      void resumeOrAsk("host_missing", origin);
+      return;
+    }
+    waitSeq++;
     if (code === "locked" || code === "locked_plain") {
-      const btn = h(
-        "button",
-        {
-          class: "btn btn-primary",
-          attrs: { type: "button", "data-opt": "" },
-          on: {
-            click: guard.wrap(() => {
-              if (!token) return;
-              void call(deps.send, { type: "menu_unlock", token }, parseLocked).then((r) => {
-                if (r.ok && !r.value.locked) void load();
-                else if (r.ok) waitForUnlock(origin);
-                else renderState(r.code, origin);
-              });
-            }),
-          },
-        },
-        t("menu.unlockInOnepass"),
-      );
-      body = messageBlock(t("ui.onepassLocked"), undefined, btn);
+      body = messageBlock(t("ui.onepassLocked"), undefined, askButton(t("menu.unlockInOnepass"), "locked", origin));
     } else if (code === "unpaired") {
       // Pairing happens in the popup: the button opens it (its own window where the browser cannot).
       const btn = h(
@@ -419,11 +463,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         t("popup.pairWithOnepass"),
       );
       body = messageBlock(t("popup.onepassNotPaired"), undefined, btn);
-    } else if (code === "host_missing") {
-      body = messageBlock(
-        t("ui.onepassAppNotFound"),
-        t("menu.openOnepassAppOn"),
-      );
+    } else if (code === "host_missing" || code === "host_missing_plain") {
+      body = messageBlock(t("ui.onepassAppNotFound"), t("menu.openOnepassAppOn"), askButton(t("menu.openOnepass"), "host_missing", origin));
     } else {
       body = messageBlock(errorText(code));
     }
@@ -437,6 +478,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   const unfolded = new Set<string>();
 
   function render(init: MenuInit): void {
+    waitSeq++;
     const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
     // A plan opened this menu because the page refused every generated password.
     if (init.notice) errLine.textContent = errorText(init.notice);
@@ -496,6 +538,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             label: it.title,
             sub: it.subtitle,
             ...(post ? { post: ` · ${post}` } : {}),
+            notes: accountNotes(it),
             // Logins show the site's icon (the pill's source); cards and identities their art.
             lead: it.kind === "login" ? siteTile(init.origin, it.icon_letter, 32) : wayArt(it, undefined),
             act: isLinked ? t("menu.usedForSite", { site: linked.site }) : fill,
@@ -515,6 +558,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
             label: it.title,
             pre: t("menu.withName", { name }),
             sub: def?.email ?? m.account_email,
+            notes: accountNotes(it),
             lead: wayTile(init.origin, it.icon_letter, m.provider, 32),
             act: t("common.continue"),
             attrs: { "data-provider": m.provider },

@@ -241,9 +241,9 @@ const styleOf = (site: Site) => site.flow === "login_username_first" ? "username
 const nameOf = (site: Site, ...roles: LabRole[]) => site.fields.find((f) => roles.includes(f.role))?.name;
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** The account a login site checks against: the generated one, or the one created by signup. */
+/** The account a login site checks against: the one the user means (account profiles), the one created by signup, else the generated one. */
 function accountOf(site: Site, st: LabState) {
-  return st.created.get(site.host) ?? site.account;
+  return st.meant.get(site.host) ?? st.created.get(site.host) ?? site.account;
 }
 
 /**

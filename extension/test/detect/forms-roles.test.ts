@@ -228,6 +228,7 @@ describe("forms roles: short forms", () => {
     ["DL exp.", [["g", "First name"], ["ln", "DL #"], ["x", "DL exp."]], "license_expiry"],
     ["Paese nasc.", [["g", "Nome"], ["fa", "Cognome"], ["x", "Paese nasc."]], "birth_country"],
     ["Geb.-Name", [["g", "Vorname"], ["fa", "Nachname"], ["x", "Geb.-Name"]], "birth_name"],
+    ["Apell. nac.", [["g", "Nombre de pila"], ["fa", "Apellido"], ["x", "Apell. nac."]], "birth_name"],
     ["Geb.-Ort", [["g", "Vorname"], ["fa", "Nachname"], ["x", "Geb.-Ort"]], "birth_place"],
   ] as [string, Row[], FieldRole][])("%s", (_name, rs, role) => {
     expect(form(rs).roles.x).toBe(role);

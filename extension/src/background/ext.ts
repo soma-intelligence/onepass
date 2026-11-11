@@ -80,8 +80,12 @@ export interface BgExt {
       options: { frameId?: number; documentId?: string },
     ): Promise<unknown>;
     onRemoved: Event<(tabId: number) => void>;
+    /** A tab opened (a popup window's too); `openerTabId` is the tab whose page opened it. No `tabs` permission needed for these two. */
+    onCreated?: Event<(tab: { id?: number; openerTabId?: number }) => void>;
     /** The popup's active tab (url readable through activeTab / host permissions). */
     query(q: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string }[]>;
+    /** Is the tab the active one of its window, and which window (no permission needed for these two). */
+    get?(tabId: number): Promise<{ active?: boolean; windowId?: number } | undefined>;
   };
   webNavigation: {
     getFrame(details: { tabId: number; frameId: number }): Promise<FrameDetails | null>;
@@ -90,6 +94,8 @@ export interface BgExt {
     onCommitted: Event<(details: { tabId: number; frameId: number; url: string }) => void>;
     /** The document of a frame finished loading. */
     onCompleted: Event<(details: { tabId: number; frameId: number; url: string }) => void>;
+    /** A tab or window was created to host a navigation, and by which frame of which tab (absent in Safari). */
+    onCreatedNavigationTarget?: Event<(details: { tabId: number; sourceTabId: number; sourceFrameId: number; url: string }) => void>;
   };
   storage: {
     local: StorageArea;
@@ -98,6 +104,8 @@ export interface BgExt {
   /** The front window and its tabs (the agent channel's probe, agent.ts). */
   windows?: {
     getLastFocused(q: { populate: true; windowTypes?: ("normal" | "popup")[] }): Promise<{ id?: number; tabs?: WindowTab[] }>;
+    /** Does the window have the focus (absent where the browser has no windows API). */
+    get?(windowId: number): Promise<{ focused?: boolean } | undefined>;
     /** A small window for the popup page when the browser cannot open the toolbar popup (menu_pair). */
     create?(o: { url: string; type: "popup"; width: number; height: number; focused?: boolean }): Promise<unknown>;
   };

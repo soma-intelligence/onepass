@@ -195,6 +195,21 @@ export function createIcons(opts: IconsOptions): Icons {
     if (destroyed) return;
     for (const e of byField.values()) e.guard.reset();
   });
+  /**
+   * While an icon shows, the layer's place on the screen is watched (`Shell.shift`): a host slid
+   * away and back puts the icons under the pointer anew, so every click guard starts again.
+   */
+  let unwatchShift: (() => void) | null = null;
+  const watchShift = () => {
+    if (byField.size === 0) {
+      unwatchShift?.();
+      unwatchShift = null;
+    } else {
+      unwatchShift ??= shell.watchShift((_off, moved) => {
+        if (moved) for (const e of byField.values()) e.guard.reset();
+      });
+    }
+  };
   const RO = (doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null)?.ResizeObserver;
   const resize = RO ? new RO(() => opts.onLayout()) : null;
 
@@ -209,7 +224,13 @@ export function createIcons(opts: IconsOptions): Icons {
       box = null;
     }
     const near = box && box.width > 0 && box.height > 0 ? box : undefined;
-    if (topLayerOpen(doc, opts.scopes, near) || rootHidden(doc)) return false;
+    if (topLayerOpen(doc, opts.scopes, near) || rootHidden(doc, shell.parent())) return false;
+    // The page moved our host on the screen: the icon is not on its field, a click on it is not meant.
+    const at = shell.shift();
+    if (at.left !== 0 || at.top !== 0) {
+      entry.guard.reset();
+      return false;
+    }
     return hostOnTop(hit, (el) => shell.isHost(el), e.clientX, e.clientY);
   };
 
@@ -333,6 +354,7 @@ export function createIcons(opts: IconsOptions): Icons {
         resize?.observe(w.anchor);
         place(entry);
       }
+      watchShift();
     },
     reposition() {
       relayout();
@@ -357,6 +379,7 @@ export function createIcons(opts: IconsOptions): Icons {
         e.unobserve?.();
       }
       byField.clear();
+      watchShift();
     },
   };
 }

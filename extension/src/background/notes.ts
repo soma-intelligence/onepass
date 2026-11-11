@@ -31,6 +31,8 @@ export interface FilledNote {
   /** Roles of the planned form, in page order. */
   roles: FieldRole[];
   intent: FillIntent;
+  /** Where the fill came from, as its `fill_*` said it: the menu row the user picked (default), or a plan's own fill. */
+  ctx?: "menu" | "chain";
 }
 
 interface Pending extends FilledNote {
@@ -105,7 +107,7 @@ export class FillNotes {
     // The filled page again (reload, refused sign-in sent back): not a success, still waiting.
     if (pathOf(url) === p.path) return;
     p.noted = true;
-    for (const item of p.items) await this.note("menu", item, p.origin, p.roles, p.intent, ["fill"]);
+    for (const item of p.items) await this.note(p.ctx ?? "menu", item, p.origin, p.roles, p.intent, ["fill"]);
   }
 
   /** A save prompt of `tabId` saved or updated `itemId` for `origin`. */

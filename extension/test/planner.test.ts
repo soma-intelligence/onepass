@@ -3,9 +3,9 @@ import { createBackground } from "../src/background/app";
 import { type FillTarget, Filler } from "../src/background/fill";
 import { Frames } from "../src/background/frames";
 import { FormGenerator } from "../src/background/generate";
-import { Planner, framesFromSender, loginFieldsFor } from "../src/background/planner";
+import { PLAN_FILL_CTX, Planner, framesFromSender, loginFieldsFor } from "../src/background/planner";
 import { parseCsToBg } from "../src/background/router";
-import { Session } from "../src/background/session";
+import { BgError, Session } from "../src/background/session";
 import { MemoryPairingStore, Store } from "../src/background/store";
 import type { FieldRole, FormContext, PageContext, PlanOut } from "../src/shared/messages";
 import { type Answer, FakeClient, record } from "./background/fake-client";
@@ -161,10 +161,13 @@ describe("planner", () => {
     );
     expect(outcome).toBe("filled");
     expect(calls.filler.map((c) => c[0])).toEqual(["fillIdentity", "fillCard", "fillGenerated"]);
-    expect(calls.filler[0]).toEqual(["fillIdentity", { ...target(), formRef: "f1" }, IDENTITY, "menu", ["given_name", "email"], expect.any(Function)]);
+    // What a plan writes by itself never claims a row the user picked ("menu", "popup").
+    expect(calls.filler[0]).toEqual(["fillIdentity", { ...target(), formRef: "f1" }, IDENTITY, PLAN_FILL_CTX, ["given_name", "email"], expect.any(Function)]);
+    expect(calls.filler[1]?.[3]).toBe(PLAN_FILL_CTX);
+    expect(["menu", "popup"]).not.toContain(PLAN_FILL_CTX);
     // The pending Login gets the e-mail the identity wrote (spec 4).
     expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false, username: "jo@atlas.dev" }]]);
-    expect(calls.filler[1]).toEqual(["fillCard", { ...target(), formRef: "f1" }, CARD, "menu", ["cc_number"]]);
+    expect(calls.filler[1]).toEqual(["fillCard", { ...target(), formRef: "f1" }, CARD, PLAN_FILL_CTX, ["cc_number"]]);
     expect(calls.filler[2]).toEqual(["fillGenerated", { ...target(), formRef: "f1" }, "Gen-Secret-42!", ["new_password"]]);
   });
 
@@ -197,17 +200,78 @@ describe("planner", () => {
     }
   });
 
-  it("child_frame_open_chain_downgraded_to_fill", async () => {
+  it("a child frame of exactly the top frame's origin is decided like the top frame: the chain", async () => {
     const t = target({ frameId: 3, sameOriginAsTop: true });
     const { calls, outcome } = await planAndRun(
       plan({ action: "open_chain", groups: [loginGroup()] }),
       context([form("f1", ["username", "current_password"], [{ button_ref: "b1", class: "submit" }])]),
       t,
     );
-    expect(outcome).toBe("filled");
-    expect(calls.chain).toEqual([]);
-    expect(calls.filler).toEqual([["fillLogin", t, ITEM, ["username", "password"], "menu", ["username", "current_password"]]]);
+    expect(outcome).toBe("chain");
+    expect(calls.chain).toEqual([[7, ITEM, undefined, { planned: { roles: ["username", "current_password"], intent: "login" } }]]);
+    expect(calls.filler).toEqual([]);
     expect(calls.requests[0]?.context).toEqual(expect.objectContaining({ origin: SITE, top_origin: SITE, frame_kind: "same_origin_child" }));
+  });
+
+  it("any other child frame never submits nor opens the chain", async () => {
+    // A target not vouched as same-origin-as-top (run on a plan made elsewhere is refused before; this is the guard alone).
+    const f = fakes((r) => (r.op === "plan_fill" ? { plan: plan({ action: "open_chain", groups: [loginGroup()] }) } : {}));
+    const made = target({ frameId: 3, sameOriginAsTop: true });
+    const got = await f.planner.plan(made, context([form("f1", ["username", "current_password"])]));
+    const { sameOriginAsTop: _drop, ...bare } = made;
+    expect(f.planner.submits(bare, got)).toBe(false);
+    expect(f.planner.submits(made, got)).toBe(true);
+  });
+
+  it("one sign-in path: fill_and_submit on a sign-in page starts the same chain open_chain starts", async () => {
+    const { calls, outcome } = await planAndRun(
+      plan({ action: "fill_and_submit", groups: [loginGroup()], reasons: ["sole_exact_host"] }),
+      context([form("f1", ["username", "current_password"], [{ button_ref: "b1", class: "submit" }])]),
+    );
+    expect(outcome).toBe("chain");
+    expect(calls.chain).toEqual([[7, ITEM, undefined, { planned: { roles: ["username", "current_password"], intent: "login" } }]]);
+    expect(calls.filler).toEqual([]);
+  });
+
+  it("a login without a password (it signs in through a provider) is never written into the site's own form: the menu", async () => {
+    // Witness: lab seed pass3-0 site 5 (sso with a password form): its e-mail was filled, the user sent it, unknown user.
+    const planner = new Planner(
+      { request: async () => ({ plan: plan({ action: "open_chain", groups: [loginGroup()] }) }) } as never,
+      { fillLogin: async () => Promise.reject(new Error("must not fill")) } as never,
+      { start: async () => Promise.reject(new BgError("invalid")) } as never,
+      {} as never,
+      {} as never,
+    );
+    const got = await planner.plan(target(), context([form("f1", ["username", "current_password"])]));
+    expect(await planner.run(target(), got)).toBe("menu");
+  });
+
+  it("an item the chain cannot sign in with on this page (an http page, not listed) is filled, nothing is sent", async () => {
+    for (const code of ["insecure_origin", "not_found"] as const) {
+      const f = fakes((r) => (r.op === "plan_fill" ? { plan: plan({ action: "open_chain", groups: [loginGroup()] }) } : {}));
+      const planner = new Planner(
+        { request: async (r: Record<string, unknown>) => (f.calls.requests.push(r), { plan: plan({ action: "open_chain", groups: [loginGroup()] }) }) } as never,
+        { fillLogin: async (...a: unknown[]) => (f.calls.filler.push(["fillLogin", ...a]), 1) } as never,
+        { start: async () => Promise.reject(new BgError(code)) } as never,
+        {} as never,
+        {} as never,
+      );
+      const got = await planner.plan(target(), context([form("f1", ["username", "current_password"])]));
+      expect(await planner.run(target(), got)).toBe("filled");
+      expect(f.calls.filler.map((c) => c[0])).toEqual(["fillLogin"]);
+    }
+  });
+
+  it("associated_domain (Apple's shared credentials, first use): the menu, whatever action comes with it", async () => {
+    for (const action of ["open_chain", "fill_and_submit", "fill", "show_menu"] as const) {
+      const { calls, outcome } = await planAndRun(
+        plan({ action, groups: [loginGroup()], reasons: ["associated_domain"] }),
+        context([form("f1", ["username", "current_password"], [{ button_ref: "b1", class: "submit" }])]),
+      );
+      expect(outcome).toBe("menu");
+      expect(calls.chain).toEqual([]);
+      expect(calls.filler).toEqual([]);
+    }
   });
 
   it("pay_button_downgrades_submit", async () => {
@@ -219,13 +283,14 @@ describe("planner", () => {
       expect(outcome).toBe("filled");
       expect(calls.filler.map((c) => c[0])).toEqual(["fillLogin"]);
     }
-    // Without such a button the same plan submits.
-    const { calls } = await planAndRun(
+    // Without such a button the same plan is sent: by the chain (the one sign-in path), never by the planner.
+    const { calls, outcome } = await planAndRun(
       plan({ intent: "otp", action: "fill_and_submit", groups: [{ ...loginGroup(), fields: [{ field_ref: "f1e0", role: "otp" }] }] }),
       context([form("f1", ["otp"], [{ button_ref: "b1", class: "submit" }])]),
     );
-    expect(calls.filler.map((c) => c[0])).toEqual(["fillLogin", "submit"]);
-    expect(calls.filler[0]?.[3]).toEqual(["totp"]);
+    expect(outcome).toBe("chain");
+    expect(calls.chain).toEqual([[7, ITEM, undefined, { planned: { roles: ["otp"], intent: "otp" } }]]);
+    expect(calls.filler).toEqual([]);
   });
 
   it("passkey_button_keeps_the_chain", async () => {
@@ -257,7 +322,7 @@ describe("planner", () => {
     );
     expect(outcome).toBe("filled");
     // Made for the generated group's form, through the page's rules (generate.ts).
-    expect(calls.generated).toEqual([[target({ formRef: "f1" }), "menu"]]);
+    expect(calls.generated).toEqual([[target({ formRef: "f1" }), PLAN_FILL_CTX]]);
     expect(calls.remembered).toEqual([[7, SITE, "Gen-Secret-42!"]]);
     expect(calls.pending).toEqual([[7, SITE, "Gen-Secret-42!", { weak: false }]]);
   });
@@ -331,16 +396,18 @@ describe("planner fix round 1", () => {
   const otpPlan = () => plan({ intent: "otp", action: "fill_and_submit", groups: [{ ...loginGroup(), fields: [{ field_ref: "f1e0", role: "otp" }] }] });
   const otpCtx = () => context([form("f1", ["otp"], [{ button_ref: "b1", class: "submit" }])]);
 
-  it("an otp plan whose code got no value never submits", async () => {
+  it("an otp plan is the chain's to send: the planner itself writes and submits nothing", async () => {
     const ext = new FakeExt();
     ext.setFrame(7, 0, `${SITE}/otp`, "doc-1");
     const store = new Store(ext, new MemoryPairingStore());
     await store.setPairing(record());
     const client = new FakeClient((r) => (r.op === "plan_fill" ? { plan: otpPlan() } : r.op === "fill_login" ? {} : {}));
     const session = new Session({ store, newClient: () => client });
-    const planner = new Planner(session, new Filler(ext.tabs, new Frames(ext.webNavigation), session), { start: async () => undefined } as never, { rememberGenerated: () => undefined, savePending: async () => true } as never, new FormGenerator({ tabs: ext.tabs, session, area: ext.local }));
+    const started: unknown[][] = [];
+    const planner = new Planner(session, new Filler(ext.tabs, new Frames(ext.webNavigation), session), { start: async (...a: unknown[]) => void started.push(a) } as never, { rememberGenerated: () => undefined, savePending: async () => true } as never, new FormGenerator({ tabs: ext.tabs, session, area: ext.local }));
     const outcome = await planner.run(target(), await planner.plan(target(), otpCtx()));
-    expect(outcome).toBe("filled");
+    expect(outcome).toBe("chain");
+    expect(started).toHaveLength(1);
     expect(ext.sentToTabs).toEqual([]);
   });
 
@@ -504,7 +571,8 @@ describe("privacy", () => {
     );
     const ctx = context([form("f1", ["username", "current_password", "otp", "new_password", "cc_number"], [{ button_ref: "b1", class: "submit" }])]);
     const plans: PlanOut[] = [
-      plan({ action: "fill_and_submit", groups: [{ ...loginGroup(), fields: [...loginGroup().fields, { field_ref: "f1e2", role: "otp" }] }] }),
+      // The planner's own login fill (a submitting plan goes to the chain, which fills through the same path).
+      plan({ action: "fill", confidence: "medium", groups: [{ ...loginGroup(), fields: [...loginGroup().fields, { field_ref: "f1e2", role: "otp" }] }] }),
       plan({ intent: "signup", groups: [{ form_ref: "f1", kind: "generated_password", item_id: null, fields: [{ field_ref: "f1e3", role: "new_password" }] }] }),
       plan({ intent: "checkout", groups: [{ form_ref: "f1", kind: "card", item_id: CARD, fields: [{ field_ref: "f1e4", role: "cc_number" }] }] }),
     ];

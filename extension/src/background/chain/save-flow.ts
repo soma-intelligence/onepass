@@ -77,6 +77,7 @@ import {
   loginQuietKey,
   titleFromSite,
 } from "../save";
+import { HostCompat } from "../host-compat";
 import { BgError, type Session } from "../session";
 
 export const SUBMIT_TTL_MS = 2 * 60 * 1000;
@@ -231,6 +232,8 @@ export interface PendingOptions {
 
 export interface SaveFlowDeps {
   session: Pick<Session, "request">;
+  /** `vaults` with its origin, whatever the app's age (shared by the worker). */
+  host?: HostCompat;
   saves: Pick<SavePrompts, "open"> & Partial<Pick<SavePrompts, "recentlyDismissed">>;
   neverSave: Pick<NeverSave, "has">;
   /**
@@ -253,8 +256,10 @@ export class SaveFlow {
   private readonly filled = new Map<number, { site: string; kind: "card" | "identity"; itemId: string; at: number }[]>();
   private readonly now: () => number;
   private readonly timers: Timers;
+  private readonly host: HostCompat;
 
   constructor(private readonly deps: SaveFlowDeps) {
+    this.host = deps.host ?? new HostCompat(deps.session);
     this.now = deps.now ?? Date.now;
     this.timers = deps.timers ?? realTimers;
   }
@@ -298,7 +303,8 @@ export class SaveFlow {
     }
     const username = opts.username?.trim() ?? "";
     try {
-      const { vaults } = await this.deps.session.request({ op: "vaults" });
+      // Listed for the page: the first is the default vault of the account it routes to.
+      const { vaults } = await this.host.vaults(origin);
       const vault = vaults[0];
       if (!vault) return false;
       const saved = await this.deps.session.request({

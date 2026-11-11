@@ -171,6 +171,21 @@ export interface Shell {
    * position must subtract this.
    */
   origin(): { left: number; top: number };
+  /**
+   * How far the fixed layer sits from where the browser alone puts it: its origin, less what the
+   * visual viewport explains (iOS, above). Zero in every honest page. Anything else means the
+   * page moved our host on the screen (a transform on `<html>` with the inverse on `<body>`):
+   * the frames are placed in the layer's own coordinates, so they slid with it, unseen.
+   */
+  shift(): { left: number; top: number };
+  /**
+   * Watches `shift()` (every SHIFT_POLL_MS while anyone watches). `cb(off, moved)`: `moved` when
+   * it changed since the last look, `off` while it is not zero. Called on a change and on every
+   * look while off. Returns the function that stops this watch.
+   */
+  watchShift(cb: (off: boolean, moved: boolean) => void): () => void;
+  /** The parent of the host as it is now (the root element, unless the page moved it). */
+  parent(): Element | null;
   /** True for the host element (events retargeted out of the shadow root). */
   isHost(node: EventTarget | null): boolean;
   /**
@@ -182,6 +197,11 @@ export interface Shell {
   onReattach(cb: () => void): void;
   destroy(): void;
 }
+
+/** How often the layer's place on the screen is looked at while a frame or an icon is shown (a rendering frame). */
+export const SHIFT_POLL_MS = 16;
+/** Sub-pixel layout noise is no shift. */
+const SHIFT_TOLERANCE_PX = 1;
 
 export function createShell(doc: Document): Shell {
   const host = doc.createElement("onepass-root");
@@ -201,21 +221,78 @@ export function createShell(doc: Document): Shell {
     return true;
   };
   attach();
+  const origin = () => {
+    const r = layer.getBoundingClientRect();
+    return { left: Number.isFinite(r.left) ? r.left : 0, top: Number.isFinite(r.top) ? r.top : 0 };
+  };
+  const shift = () => {
+    const o = origin();
+    const vv = doc.defaultView?.visualViewport;
+    const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
+    // Either the layer is at the viewport's corner, or it follows the visual viewport (iOS).
+    const panned = { left: o.left + n(vv?.offsetLeft), top: o.top + n(vv?.offsetTop) };
+    const pick = Math.hypot(o.left, o.top) <= Math.hypot(panned.left, panned.top) ? o : panned;
+    const px = (x: number) => (Math.abs(x) <= SHIFT_TOLERANCE_PX ? 0 : Math.round(x));
+    return { left: px(pick.left), top: px(pick.top) };
+  };
+  const watchers = new Set<(off: boolean, moved: boolean) => void>();
+  let watch: ReturnType<typeof setInterval> | null = null;
+  let lastShift = "0,0";
+  const looked = () => {
+    const s = shift();
+    const key = `${s.left},${s.top}`;
+    const moved = key !== lastShift;
+    lastShift = key;
+    const off = key !== "0,0";
+    if (moved || off) for (const cb of [...watchers]) cb(off, moved);
+  };
+  // Dev builds only: what the watch costs (its looks and their total time in ms), read from the
+  // content script's world by a bench. Measured 2026-11-11 on the heaviest lab pages: 5 to 12
+  // microseconds a look, under 1 ms per second, 0.07 % of a frame at most.
+  const cost = __DEV__ ? { looks: 0, ms: 0 } : null;
+  if (cost) (globalThis as { __onepassShiftCost?: unknown }).__onepassShiftCost = cost;
+  const look = cost
+    ? () => {
+        const t0 = performance.now();
+        looked();
+        cost.looks++;
+        cost.ms += performance.now() - t0;
+      }
+    : looked;
+  const stopWatch = () => {
+    if (watch !== null) clearInterval(watch);
+    watch = null;
+  };
   return {
     root,
     layer,
     isHost: (node) => node === host,
-    origin: () => {
-      const r = layer.getBoundingClientRect();
-      return { left: Number.isFinite(r.left) ? r.left : 0, top: Number.isFinite(r.top) ? r.top : 0 };
+    origin,
+    shift,
+    watchShift: (cb) => {
+      watchers.add(cb);
+      if (watch === null) {
+        const s = shift();
+        lastShift = `${s.left},${s.top}`;
+        watch = setInterval(look, SHIFT_POLL_MS);
+      }
+      return () => {
+        watchers.delete(cb);
+        if (watchers.size === 0) stopWatch();
+      };
     },
+    parent: () => host.parentElement,
     ensureAttached: () => {
       const moved = attach();
       if (moved) for (const cb of reattached) cb();
       return moved;
     },
     onReattach: (cb) => void reattached.push(cb),
-    destroy: () => host.remove(),
+    destroy: () => {
+      watchers.clear();
+      stopWatch();
+      host.remove();
+    },
   };
 }
 
@@ -409,13 +486,28 @@ export function createFrames(opts: FramesOptions): Frames {
       }, MOVE_GUARD_MS),
     );
   };
+  /**
+   * The page moved our host on the screen (`Shell.shift`): every frame slid with it, on every
+   * browser. That is a move: no pointer for MOVE_GUARD_MS, again at every look while the layer is
+   * out of place, so a frame takes a click only once it has been back where it belongs for that long.
+   */
+  let unwatchShift: (() => void) | null = null;
+  const watchShift = () => {
+    unwatchShift ??= shell.watchShift(() => {
+      for (const f of frames.values()) guard(f.iframe);
+    });
+  };
   const drop = (iframe: HTMLIFrameElement) => {
     const t = guards.get(iframe);
     if (t !== undefined) clearTimeout(t);
     guards.delete(iframe);
     blocked.delete(iframe);
     iframe.remove();
-    if (frames.size <= 1) stopPoll();
+    if (frames.size <= 1) {
+      stopPoll();
+      unwatchShift?.();
+      unwatchShift = null;
+    }
   };
 
   // ---- covers (no IntersectionObserver v2: Firefox, Safari) ----
@@ -429,7 +521,7 @@ export function createFrames(opts: FramesOptions): Frames {
   const coveredNow = (iframe: HTMLIFrameElement): boolean => {
     const c = opts.covers;
     if (!c) return false;
-    if (topLayerOpen(doc, c.scopes) || rootHidden(doc)) return true;
+    if (topLayerOpen(doc, c.scopes) || rootHidden(doc, shell.parent())) return true;
     if (guards.has(iframe) || blocked.has(iframe)) return false;
     const r = iframe.getBoundingClientRect();
     if (!(r.width > 0 && r.height > 0)) return false;
@@ -682,6 +774,10 @@ export function createFrames(opts: FramesOptions): Frames {
       const f = { iframe, anchor, height, reveal: null as ReturnType<typeof setTimeout> | null };
       f.reveal = setTimeout(() => show(f), REVEAL_TIMEOUT_MS);
       frames.set(kind, f);
+      watchShift();
+      // Shown while the layer is out of place: no pointer from the start.
+      const at = shell.shift();
+      if (at.left !== 0 || at.top !== 0) guard(iframe);
       if (opts.covers) {
         // Shown over a cover already there: inert from the start.
         if (coveredNow(iframe)) block(iframe);

@@ -1,4 +1,8 @@
-// CAPTCHA and push-approval detection (spec 8.6): either stops the chain.
+// CAPTCHA and push-approval detection (spec 8.6). A CAPTCHA challenge shown to the user and a
+// push approval stop the chain. A widget that only sits on the page (a checkbox not asked yet, a
+// managed Turnstile, an invisible reCAPTCHA) does not: they are on most sign-in pages and most
+// of them never ask anything. The chain sends the form; if the site then refuses it, that stop
+// is named a CAPTCHA (machine.ts). Nothing here, or anywhere, solves or gets around one.
 
 import { pageText } from "./text";
 import { domGeometry, type Geometry, isRendered } from "./visibility";
@@ -24,39 +28,52 @@ const PUSH_TEXT =
 /** Most iframes inspected per page. */
 const MAX_IFRAMES = 200;
 
-function isCaptchaFrameUrl(src: string, base: string): boolean {
+/** What a CAPTCHA frame is: the challenge itself (pictures to pick), or the widget that may open one. */
+function captchaFrame(src: string, base: string): CaptchaState {
   let url: URL;
   try {
     url = new URL(src, base);
   } catch {
-    return false;
+    return null;
   }
-  if (url.searchParams.get("size") === "invisible") return false;
+  if (url.searchParams.get("size") === "invisible") return null;
   const host = url.hostname.toLowerCase();
-  if (CAPTCHA_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) return true;
-  return RECAPTCHA_PATH_HOSTS.has(host) && url.pathname.startsWith("/recaptcha/");
+  const recaptcha = (host === "recaptcha.net" || host.endsWith(".recaptcha.net") || RECAPTCHA_PATH_HOSTS.has(host)) && url.pathname.startsWith("/recaptcha/");
+  // reCAPTCHA keeps its challenge in a `bframe`, hCaptcha in a frame named so in its fragment.
+  if (recaptcha) return /\/bframe$/.test(url.pathname) ? "challenge" : "widget";
+  if (!CAPTCHA_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) return null;
+  const hcaptcha = host === "hcaptcha.com" || host.endsWith(".hcaptcha.com");
+  return hcaptcha && /(^|[#&])frame=challenge(&|$)/.test(url.hash) ? "challenge" : "widget";
 }
+
+/** `challenge`: shown to the user now. `widget`: on the page, asking nothing (yet). */
+export type CaptchaState = "challenge" | "widget" | null;
 
 /** Most widget containers inspected per page. */
 const MAX_WIDGETS = 50;
 
 /**
- * A visible reCAPTCHA, hCaptcha or Turnstile iframe or widget container, or
- * "I'm not a robot" text. Invisible widgets (`size=invisible`,
- * `data-size="invisible"`, hidden or zero-size) do not count.
+ * `challenge`: a rendered reCAPTCHA or hCaptcha challenge frame (hidden until the widget asks), or
+ * "I'm not a robot" wording in the page itself. `widget`: a rendered reCAPTCHA, hCaptcha or
+ * Turnstile frame or container that asks nothing yet. Invisible widgets (`size=invisible`,
+ * `data-size="invisible"`, hidden or zero-size) do not count at all.
  */
-export function detectCaptcha(doc: Document, geometry: Geometry = domGeometry): boolean {
+export function detectCaptcha(doc: Document, geometry: Geometry = domGeometry): CaptchaState {
   const frames = Array.from(doc.querySelectorAll("iframe[src]")).slice(0, MAX_IFRAMES);
-  const visibleFrame = frames.some(
-    (f) => isCaptchaFrameUrl(f.getAttribute("src") ?? "", doc.baseURI) && isRendered(f, geometry),
-  );
-  if (visibleFrame) return true;
+  let widget = false;
+  for (const f of frames) {
+    const kind = captchaFrame(f.getAttribute("src") ?? "", doc.baseURI);
+    if (kind === null || !isRendered(f, geometry)) continue;
+    if (kind === "challenge") return "challenge";
+    widget = true;
+  }
+  if (CAPTCHA_TEXT.test(pageText(doc))) return "challenge";
+  if (widget) return "widget";
   const widgets = Array.from(doc.querySelectorAll(CAPTCHA_SELECTOR)).slice(0, MAX_WIDGETS);
   const visibleWidget = widgets.some(
     (w) => (w.getAttribute("data-size") ?? "").toLowerCase() !== "invisible" && isRendered(w, geometry),
   );
-  if (visibleWidget) return true;
-  return CAPTCHA_TEXT.test(pageText(doc));
+  return visibleWidget ? "widget" : null;
 }
 
 /** Push approval wording in French or English ("approuvez", "check your phone"...). */

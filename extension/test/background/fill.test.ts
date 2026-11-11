@@ -356,6 +356,20 @@ describe("fill pipeline", () => {
     expect(ext.sentToTabs.at(-1)?.options).toEqual({ documentId: "doc-4" });
   });
 
+  it("loopback http is a page to fill, its exact origin only (the bridge's parse_page)", async () => {
+    const { ext, filler } = await setup();
+    const local = "http://localhost:3000";
+    ext.setFrame(7, 0, `${local}/login`, "doc-1");
+    await filler.fillLogin(target({ origin: local }), "it_01", ["password"]);
+    expect(ext.sentToTabs.at(-1)?.options).toEqual({ documentId: "doc-1" });
+    // A child frame on another port of the loopback host is another server.
+    ext.setFrame(7, 5, "http://localhost:8080/frame", "doc-5");
+    expect(await code(filler.fillGenerated(target({ frameId: 5, origin: "http://localhost:8080", documentId: "doc-5" }), "x"))).toBe("cross_site_frame");
+    // Any other http host stays refused.
+    ext.setFrame(7, 0, "http://app.localhost:3000/login", "doc-1");
+    expect(await code(filler.fillLogin(target({ origin: "http://app.localhost:3000" }), "it_01", ["password"]))).toBe("insecure_origin");
+  });
+
   it("fill_refused_http", async () => {
     const { ext, client, filler } = await setup();
     ext.setFrame(7, 0, "http://atlas-cloud.test/login", "doc-1");

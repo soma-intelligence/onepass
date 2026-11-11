@@ -484,7 +484,8 @@ describe("pending save of a generated password (spec 7)", () => {
     expect(outcome).toBe("filled");
     // Already in the vault when the run answers: nothing left to lose.
     expect(t.requests).toEqual([
-      { op: "vaults" },
+      // Listed for the page: the first vault is the default of the account it routes to.
+      { op: "vaults", origin: SITE },
       {
         op: "save_login",
         ctx: "save_prompt",

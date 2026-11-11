@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
+import { UNLOCK_WAIT_MS } from "../../src/shared/unlock";
+import { UNLOCK_POLL_MS, UNLOCK_WAIT_TRIES } from "../../src/ui/components";
 import { mountMenu } from "../../src/ui/menu";
 import { Clock, FakeVisibility, FakeWorker, HASH, ManualTimers, type Reply, TOKEN, button, flush, login, root, text } from "./helpers";
 
@@ -70,6 +72,32 @@ describe("inline menu", () => {
     // No icon: the tile keeps the login's initial.
     img!.dispatchEvent(new Event("error"));
     expect(opts[0]!.querySelector(".site-tile")!.textContent).toBe("A");
+  });
+
+  it("names the account of a row when the host says several accounts answer, and marks an associated site", async () => {
+    const { r, handle } = setup(() =>
+      ok({
+        origin: SITE,
+        formKind: "login",
+        items: [login("it_01", { account: "Soma Labs" }), login("it_03", { title: "Atlas ID", account: "Perso", associated: true }), login("it_04", { title: "Plain" })],
+      }),
+    );
+    await handle.ready;
+    const rows = [...r.querySelectorAll("button.row:not(.row-quiet)")].map(says);
+    expect(rows[0]).toContain("Soma Labs");
+    expect(rows[0]).not.toContain("Site associé");
+    expect(rows[1]).toContain("Perso");
+    expect(rows[1]).toContain("Site associé");
+    expect(rows[2]).not.toContain("Site associé");
+    expect(r.querySelectorAll(".row-account")).toHaveLength(2);
+  });
+
+  it("refuses a summary whose new optional fields are malformed", async () => {
+    for (const bad of [{ account: 7 }, { account: "x".repeat(300) }, { associated: false }, { associated: "yes" }]) {
+      const { r, handle } = setup(() => ok({ origin: SITE, formKind: "login", items: [login("it_01", bad)] }));
+      await handle.ready;
+      expect(r.querySelector("button.row")).toBeNull();
+    }
   });
 
   it("says the site refused the generated password, and on a refused Générer", async () => {
@@ -293,12 +321,14 @@ describe("inline menu", () => {
     expect(worker.sent.at(-1)).toEqual({ type: "menu_close", token: TOKEN });
   });
 
-  it("locked state offers to unlock, then reloads", async () => {
+  it("locked, no unlock asked yet: the button; unlocked at once, the fill resumes (or the menu loads)", async () => {
     let locked = true;
     const { r, handle, worker, clock } = setup((m) => {
       if (m.type === "menu_init") return locked ? { err: "locked" } : def();
       // No native vault (macOS, other browsers): the app button.
       if (m.type === "menu_vault") return { err: "invalid" };
+      // No gesture asked for this menu's unlock; later, the worker refuses the resume.
+      if (m.type === "menu_resume") return { err: "invalid" };
       if (m.type === "menu_unlock") {
         locked = false;
         return ok({ locked: false });
@@ -310,19 +340,50 @@ describe("inline menu", () => {
     expect(text(r)).toContain("OnePass est verrouillé");
     clock.advance(300);
     button(r, "Déverrouiller dans OnePass").click();
-    await new Promise((res) => setTimeout(res, 0));
-    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_unlock", "menu_init"]);
+    await flush();
+    await flush();
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_resume", "menu_unlock", "menu_resume", "menu_init"]);
     expect(text(r)).toContain("Atlas Cloud");
+  });
+
+  it("one gesture: the menu of a click that already asked the unlock opens waiting, no button, and resumes by itself", async () => {
+    let locked = true;
+    const { r, handle, worker, timers } = setup((m) => {
+      if (m.type === "menu_init") return locked ? { err: "locked" } : def();
+      if (m.type === "menu_vault") return { err: "invalid" };
+      // The worker asked the app when the icon was clicked: still locked, then it resumes.
+      if (m.type === "menu_resume") return locked ? { err: "locked" } : ok();
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    await flush();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(r.querySelector("button")).toBeNull();
+    timers.runTimeouts();
+    await flush();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    locked = false;
+    timers.runTimeouts();
+    await flush();
+    // The worker closed the menu and filled: nothing more is asked, no click was needed.
+    expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_resume", "menu_resume", "menu_resume"]);
+    expect(worker.types()).not.toContain("menu_unlock");
+    expect(timers.timeouts.size).toBe(0);
   });
 
   it("locked: the app comes forward, the menu waits for the unlock and reloads by itself", async () => {
     let locked = true;
+    let asked = false;
     const { r, handle, worker, clock, timers } = setup((m) => {
       if (m.type === "menu_init") return locked ? { err: "locked" } : def();
       if (m.type === "menu_vault") return { err: "invalid" };
-      if (m.type === "menu_unlock") return ok({ locked: true });
-      // A frame's menu, or too late: the worker refuses to resume, the menu reloads.
-      if (m.type === "menu_resume") return { err: "invalid" };
+      if (m.type === "menu_unlock") {
+        asked = true;
+        return ok({ locked: true });
+      }
+      // Waiting while locked; then a frame's menu, or too late: the worker refuses, the menu reloads.
+      if (m.type === "menu_resume") return asked && locked ? { err: "locked" } : { err: "invalid" };
       return ok();
     });
     await handle.ready;
@@ -337,15 +398,21 @@ describe("inline menu", () => {
     locked = false;
     timers.runTimeouts();
     await flush();
+    await flush();
     expect(text(r)).toContain("Atlas Cloud");
     expect(worker.types().filter((t) => t === "menu_unlock")).toHaveLength(1);
   });
 
-  it("locked: after a minute without unlock, the button comes back", async () => {
+  it("locked: after 90 s without unlock, the button comes back", async () => {
+    let asked = false;
     const { r, handle, worker, clock, timers } = setup((m) => {
       if (m.type === "menu_init") return { err: "locked" };
       if (m.type === "menu_vault") return { err: "invalid" };
-      if (m.type === "menu_unlock") return ok({ locked: true });
+      if (m.type === "menu_unlock") {
+        asked = true;
+        return ok({ locked: true });
+      }
+      if (m.type === "menu_resume") return asked ? { err: "locked" } : { err: "invalid" };
       return ok();
     });
     await handle.ready;
@@ -353,13 +420,84 @@ describe("inline menu", () => {
     clock.advance(300);
     button(r, "Déverrouiller dans OnePass").click();
     await flush();
-    for (let i = 0; i < 60; i++) {
+    expect(UNLOCK_WAIT_TRIES * UNLOCK_POLL_MS).toBe(UNLOCK_WAIT_MS);
+    for (let i = 0; i < UNLOCK_WAIT_TRIES - 1; i++) {
       timers.runTimeouts();
       await flush();
     }
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    timers.runTimeouts();
+    await flush();
     expect(text(r)).toContain("OnePass est verrouillé");
     expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
-    expect(worker.types().filter((t) => t === "menu_init").length).toBeLessThanOrEqual(62);
+    // The wait is over: nothing polls any more.
+    expect(timers.timeouts.size).toBe(0);
+    expect(worker.types().filter((t) => t === "menu_resume")).toHaveLength(UNLOCK_WAIT_TRIES + 1);
+  });
+
+  it("the app is not running, launched by the gesture: the menu says so, waits, follows it to its unlock, then resumes", async () => {
+    let state: "missing" | "locked" | "open" = "missing";
+    const { r, handle, worker, timers } = setup((m) => {
+      if (m.type === "menu_init") return { err: "host_missing" };
+      if (m.type === "menu_resume") return state === "missing" ? { err: "host_missing" } : state === "locked" ? { err: "locked" } : ok();
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    expect(text(r)).toContain("Ouverture de OnePass…");
+    expect(r.querySelector("button")).toBeNull();
+    state = "locked";
+    timers.runTimeouts();
+    await flush();
+    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    state = "open";
+    timers.runTimeouts();
+    await flush();
+    expect(worker.types()).toEqual(["menu_init", "menu_resume", "menu_resume", "menu_resume"]);
+    expect(timers.timeouts.size).toBe(0);
+  });
+
+  it("the app is not running and no gesture launched it: Open OnePass launches it, then waits; the button comes back after 90 s", async () => {
+    let asked = false;
+    const { r, handle, worker, clock, timers } = setup((m) => {
+      if (m.type === "menu_init") return { err: "host_missing" };
+      if (m.type === "menu_unlock") {
+        asked = true;
+        return ok({ locked: true });
+      }
+      if (m.type === "menu_resume") return asked ? { err: "host_missing" } : { err: "invalid" };
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    expect(text(r)).toContain("App OnePass introuvable");
+    clock.advance(300);
+    button(r, "Ouvrir OnePass").click();
+    await flush();
+    expect(worker.types()).toEqual(["menu_init", "menu_resume", "menu_unlock"]);
+    expect(text(r)).toContain("Ouverture de OnePass…");
+    for (let i = 0; i < UNLOCK_WAIT_TRIES; i++) {
+      timers.runTimeouts();
+      await flush();
+    }
+    expect(text(r)).toContain("App OnePass introuvable");
+    expect(button(r, "Ouvrir OnePass")).toBeTruthy();
+    expect(timers.timeouts.size).toBe(0);
+  });
+
+  it("the app cannot be opened: the button stays, with what to do", async () => {
+    const { r, handle, clock } = setup((m) => {
+      if (m.type === "menu_resume") return { err: "invalid" };
+      return { err: "host_missing" };
+    });
+    await handle.ready;
+    await flush();
+    clock.advance(300);
+    button(r, "Ouvrir OnePass").click();
+    await flush();
+    expect(text(r)).toContain("App OnePass introuvable");
+    expect(text(r)).toContain("Ouvre l'app OnePass sur cet ordinateur, puis réessaie.");
+    expect(button(r, "Ouvrir OnePass")).toBeTruthy();
   });
 
   it("iOS: the unlock sheet runs Face ID once by itself, then loads the menu", async () => {
@@ -422,10 +560,15 @@ describe("inline menu", () => {
 
   it("MS-03 (Mac): Touch ID in the app, then the menu resumes the fill by itself", async () => {
     let locked = true;
+    let asked = false;
     const { r, handle, worker, clock, timers } = setup((m) => {
       if (m.type === "menu_init") return locked ? { err: "locked" } : def();
       if (m.type === "menu_vault") return { err: "invalid" };
-      if (m.type === "menu_unlock") return ok({ locked: true });
+      if (m.type === "menu_unlock") {
+        asked = true;
+        return ok({ locked: true });
+      }
+      if (m.type === "menu_resume") return !asked ? { err: "invalid" } : locked ? { err: "locked" } : ok();
       return ok();
     });
     await handle.ready;
@@ -437,7 +580,8 @@ describe("inline menu", () => {
     timers.runTimeouts();
     await flush();
     await flush();
-    expect(worker.types().filter((t) => t === "menu_resume")).toHaveLength(1);
+    // The probe at load, then one check that resumed: the worker fills, the menu asks no more.
+    expect(worker.types().filter((t) => t === "menu_resume")).toHaveLength(2);
     expect(worker.types().at(-1)).toBe("menu_resume");
   });
 
@@ -498,8 +642,9 @@ describe("inline menu", () => {
     let s = setup(() => ({ err: "unpaired" }));
     await s.handle.ready;
     expect(text(s.r)).toContain("OnePass n'est pas appairé");
-    s = setup(() => ({ err: "host_missing" }));
+    s = setup((m) => (m.type === "menu_resume" ? { err: "invalid" } : { err: "host_missing" }));
     await s.handle.ready;
+    await flush();
     expect(text(s.r)).toContain("App OnePass introuvable");
     s = setup(() => ok({ origin: SITE, formKind: "login", items: [{ item_id: 3 }] }));
     await s.handle.ready;

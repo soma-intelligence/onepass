@@ -18,10 +18,38 @@ describe("parseOrigin", () => {
       host: "login.atlas-cloud.test",
       site: "atlas-cloud.test",
       https: true,
+      page: true,
     });
   });
   it("flags http", () => {
     expect(parseOrigin("http://atlas-cloud.test")?.https).toBe(false);
+  });
+  it("http is a page to list, plan or fill on the three loopback hosts only (the bridge's parse_page)", () => {
+    for (const [url, origin] of [
+      ["http://localhost:3000/login?x", "http://localhost:3000"],
+      ["http://LOCALHOST./", "http://localhost"],
+      ["http://127.0.0.1:8080", "http://127.0.0.1:8080"],
+      ["http://127.1", "http://127.0.0.1"],
+      ["http://[::1]:5173/app", "http://[::1]:5173"],
+      ["http://[0:0:0:0:0:0:0:1]", "http://[::1]"],
+    ] as const) {
+      expect(parseOrigin(url)).toMatchObject({ origin, https: false, page: true });
+    }
+    for (const url of [
+      "http://atlas-cloud.test",
+      "http://app.localhost:3000",
+      "http://localhost.evil.test",
+      "http://nas.local",
+      "http://127.0.0.2",
+      "http://192.168.1.10",
+      "http://10.0.0.1",
+      "http://[::2]",
+      "http://0.0.0.0",
+    ]) {
+      expect(parseOrigin(url)).toMatchObject({ https: false, page: false });
+    }
+    expect(parseOrigin("ws://localhost:3000")).toBeNull();
+    expect(parseOrigin("https://localhost:3000")).toMatchObject({ https: true, page: true });
   });
   it("rejects garbage and hostless schemes", () => {
     expect(parseOrigin("not a url")).toBeNull();

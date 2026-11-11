@@ -11,6 +11,7 @@ import {
 } from "../../shared/messages";
 import { providerForHost } from "../../shared/providers";
 import { detectCaptcha, detectPush } from "./captcha";
+import { findPasskeySignIn } from "./passkey-button";
 import { applySafetyRules, type ModelHook, type RoleScore } from "./classifier";
 import { extractFeatures, type FieldFeatures } from "./features";
 import { birthdayPart } from "../date";
@@ -906,10 +907,13 @@ export function analyzeDocument(doc: Document, refs: RefRegistry, opts: AnalyzeO
   const url = opts.url ?? doc.URL;
   const host = hostOf(url);
   const onProvider = host !== null && providerForHost(host) !== null;
+  const captcha = detectCaptcha(doc, geometry);
   return {
     url,
     forms: detectForms(doc, refs, geometry, url, opts.shadowRoots ?? collectShadowRoots(doc), opts.model),
-    captcha: detectCaptcha(doc, geometry),
+    captcha: captcha === "challenge",
+    ...(captcha === "widget" ? { captchaWidget: true } : {}),
+    ...(findPasskeySignIn(doc, geometry) ? { passkeySignIn: true } : {}),
     push: detectPush(doc),
     providerButtons: detectProviderButtons(doc, refs, geometry),
     accountChooser: onProvider ? detectAccountChooser(doc, refs, geometry) : [],

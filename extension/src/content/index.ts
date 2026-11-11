@@ -203,11 +203,11 @@ export function createContentScript(o: ContentOptions): ContentScript {
    */
   const opaque = o.opaqueOrigin ?? (() => (view as (Window & { origin?: string }) | null)?.origin === "null");
 
-  /** Normalized origin of the frame right now (null when not HTTPS, or when the document's origin is opaque). */
+  /** Normalized origin of the frame right now (null when not a page to fill: HTTPS or loopback http; or when the document's origin is opaque). */
   const currentOrigin = (): string | null => {
     if (opaque()) return null;
     const p = parseOrigin(o.href());
-    return p?.https ? p.origin : null;
+    return p?.page ? p.origin : null;
   };
 
   const send = (m: CsToBg): Promise<unknown> => ext.runtime.sendMessage(m).catch(() => null);
@@ -304,6 +304,9 @@ export function createContentScript(o: ContentOptions): ContentScript {
     if (t) {
       msg.formRef = t.form.ref;
       msg.fieldRef = t.fieldRef;
+    } else if (fallbackTarget() === null) {
+      // No field here to open the menu under: a locked vault gets a card of the page to wait in.
+      msg.bare = true;
     }
     const outcome = okField(await send(msg), "outcome");
     if (seq !== smartSeq || !parts || stopped) return;
@@ -377,12 +380,18 @@ export function createContentScript(o: ContentOptions): ContentScript {
         // The user's choice in the signup menu; only in the top frame it was made for.
         if (pinned(m.origin) && typeof m.ref === "string" && window === window.top) ok = parts.submit.clickPasskey(m.ref);
         break;
+      case "click_passkey_signin":
+        // A gesture of the user on a page with no form; the top frame only.
+        if (pinned(m.origin) && window === window.top) ok = parts.submit.clickPasskeySignIn();
+        break;
       case "submit":
         if (pinned(m.origin) && typeof m.ref === "string") ok = parts.submit.submitForm(m.ref, m.planned === true);
         break;
       case "smart_fill": {
         // Our worker, on a click in the popup or the command's key: a gesture of the user.
         if (m.fieldRef === undefined) {
+          // A resume after an unlock names the origin its card waited on: here still, or nothing.
+          if (m.origin !== undefined && !pinned(m.origin)) break;
           void smartFill(null);
           ok = true;
           break;
@@ -391,7 +400,14 @@ export function createContentScript(o: ContentOptions): ContentScript {
         // again, at the origin its menu opened on, or nothing.
         if (typeof m.fieldRef !== "string" || !pinned(m.origin)) break;
         const el = refs.get(m.fieldRef);
-        const t = el ? parts.icons.targetOf(el) : undefined;
+        let t = el ? parts.icons.targetOf(el) : undefined;
+        if ((!t || !t.el.isConnected) && typeof m.formRef === "string") {
+          // The page redrew the form while the unlock was pending (the field's ref died with it):
+          // the one copy of that very form takes the fill, from its first field.
+          const form = lineage.resolve(m.formRef, parts.observer.refresh());
+          const all = parts.icons;
+          t = form ? all.all().find((x) => x.form.ref === form.ref && x.el.isConnected) : undefined;
+        }
         if (!t || !t.el.isConnected) break;
         void smartFill(t);
         ok = true;

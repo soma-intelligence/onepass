@@ -1,12 +1,15 @@
 // The chain driver and the save / link proposals wired in the background
 // (createBackground with the real ChainRunner), against fake browser and host.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createBackground } from "../../../src/background/app";
+import { type BackgroundOptions, createBackground } from "../../../src/background/app";
 import type { ChainRunner } from "../../../src/background/chain/driver";
 import { UNKNOWN_MS } from "../../../src/background/chain/machine";
+import type { StartOptions } from "../../../src/background/chain/types";
 import { BgError } from "../../../src/background/session";
+import { BridgeAppError } from "../../../src/bridge/client";
 import { MemoryPairingStore, Store } from "../../../src/background/store";
 import type { FormInfo, PageAnalysis } from "../../../src/shared/messages";
+import { UNLOCK_WAIT_MS } from "../../../src/shared/unlock";
 import { type Answer, FakeClient, record } from "../fake-client";
 import { FakeExt, csSender, uiSender } from "../fake-ext";
 
@@ -90,11 +93,11 @@ function answerWith(over: Partial<Record<string, (r: Record<string, unknown>) =>
   };
 }
 
-async function setup(answer: Answer = answerWith(), ext = new FakeExt(), clock = { t: 1_000_000 }) {
+async function setup(answer: Answer = answerWith(), ext = new FakeExt(), clock = { t: 1_000_000 }, more: Partial<BackgroundOptions> = {}) {
   const pairings = new MemoryPairingStore();
   await new Store(ext, pairings).setPairing(record());
   const client = new FakeClient(answer);
-  const bg = createBackground(ext, { pairings, newClient: () => client, sleep: async () => undefined, now: () => clock.t });
+  const bg = createBackground(ext, { pairings, newClient: () => client, sleep: async () => undefined, now: () => clock.t, ...more });
   bg.install();
   const runner = bg.runner as ChainRunner;
   return { ext, client, bg, runner, clock };
@@ -192,6 +195,235 @@ describe("chain driver", () => {
     expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(1);
   });
 
+  it("a fill the host gave no value for is never sent: the chain stops there", async () => {
+    const t = await setup(answerWith({ fill_login: () => ({}) }));
+    await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+    await t.runner.start(7, "it_01");
+    expect(toTab(t, "fill")).toEqual([]);
+    expect(toTab(t, "submit")).toEqual([]);
+    expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "unknown" });
+  });
+
+  it("the bridge is told who fills: the first fill of a chain started on a row the user picked is that pick, every other fill is the chain's", async () => {
+    const idOnly: FormInfo = { ref: "f0", kind: "login", fields: [{ ref: "u0", role: "email" }], submitRef: "b0" };
+    const pwOnly: FormInfo = { ref: "f2", kind: "login", fields: [{ ref: "p1", role: "current_password" }], submitRef: "b2" };
+    const fills = (t: T) => t.client.requests.filter((r) => r.op === "fill_login").map((r) => r.ctx);
+    const twoSteps = async (opts: StartOptions) => {
+      const t = await setup();
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [idOnly]));
+      await t.runner.start(7, "it_01", undefined, opts);
+      t.ext.navigate(7, 0, `${SITE}/password`, "doc-2");
+      await analyze(t, `${SITE}/password`, page(`${SITE}/password`, [pwOnly]), "doc-2");
+      return t;
+    };
+    // A row clicked in the menu: the bridge serves an associated-domain login to that pick only.
+    expect(fills(await twoSteps({ picked: "menu" }))).toEqual(["menu", "chain"]);
+    // A plan, the card's button: nobody picked a row.
+    expect(fills(await twoSteps({}))).toEqual(["chain", "chain"]);
+    expect(fills(await twoSteps({ planned: { roles: ["email"], intent: "login" } }))).toEqual(["chain", "chain"]);
+  });
+
+  describe("a chain that leaves the site's domain (associated domains)", () => {
+    const OTHER = "https://atlas-id.test";
+    /** The plan the bridge gives on the other origin. */
+    const withPlan = (plan: Record<string, unknown>) =>
+      setup(
+        answerWith({
+          list_for_origin: (r) => (r.origin === SITE || r.origin === OTHER ? { items: [summary("it_01")] } : { items: [] }),
+          plan_fill: () => ({ plan: { intent: "login", action: "open_chain", confidence: "high", alternatives: [], reasons: ["single_candidate"], groups: [], ...plan } }),
+        }),
+      );
+    const group = (item: string) => ({ form_ref: "f1", kind: "login", item_id: item, fields: [{ field_ref: "u1", role: "email" }, { field_ref: "p1", role: "current_password" }] });
+    const context = { forms: [{ form_ref: "f1", intent_hints: { kind: "login", signup_words: false, reset_words: false, checkout_words: false, ignore: false }, step_index: null, fields: [], buttons: [] }], typed_username_hash: null };
+    const userOnly: FormInfo = { ref: "f0", kind: "login", fields: [{ ref: "u0", role: "email" }], submitRef: "b0" };
+
+    async function leave(t: T) {
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userOnly]));
+      await t.runner.start(7, "it_01");
+      t.ext.tabReply = (_tab, m) => ((m as { type: string }).type === "plan_request" ? { ok: true, context } : undefined);
+      t.ext.navigate(7, 0, `${OTHER}/password`, "doc-o");
+      // The stop stands until the bridge has spoken.
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "domain", host: "atlas-id.test" });
+      await analyze(t, `${OTHER}/password`, page(`${OTHER}/password`, [loginForm]), "doc-o");
+    }
+
+    it("goes on when the bridge's plan there names the chain's own item as a normal match", async () => {
+      const t = await withPlan({ groups: [group("it_01")] });
+      await leave(t);
+      expect(t.client.requests.find((r) => r.op === "plan_fill")).toMatchObject({ origin: OTHER });
+      expect(await t.runner.state(7)).toMatchObject({ status: "running" });
+      expect(t.client.requests.filter((r) => r.op === "fill_login").at(-1)).toMatchObject({ origin: OTHER, item_id: "it_01" });
+      expect(toTab(t, "submit").at(-1)).toMatchObject({ origin: OTHER, ref: "f1" });
+      // That host only: a third one stops as before, and is not asked about twice.
+      t.ext.navigate(7, 0, "https://evil.test/x", "doc-e");
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "domain", host: "evil.test" });
+    });
+
+    it("stays stopped on a first use through Apple's shared credentials (associated_domain): the page's own offer shows", async () => {
+      const t = await withPlan({ groups: [group("it_01")], action: "show_menu", confidence: "low", reasons: ["associated_domain"] });
+      await leave(t);
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "domain" });
+      expect(t.client.requests.filter((r) => r.op === "fill_login")).toHaveLength(1);
+      expect(toTab(t, "submit").filter((m) => m.origin === OTHER)).toEqual([]);
+    });
+
+    it("stays stopped when the plan there names the item but would not send it (a fill the user sends, a menu)", async () => {
+      for (const over of [{ action: "fill", confidence: "medium" }, { action: "show_menu", confidence: "low", reasons: ["tie"] }]) {
+        const t = await withPlan({ groups: [group("it_01")], ...over });
+        await leave(t);
+        expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "domain" });
+        expect(t.client.requests.filter((r) => r.op === "fill_login")).toHaveLength(1);
+        expect(toTab(t, "submit").filter((m) => m.origin === OTHER)).toEqual([]);
+      }
+    });
+
+    it("stays stopped when the plan there names another item, or none", async () => {
+      for (const groups of [[group("it_77")], []]) {
+        const t = await withPlan({ groups });
+        await leave(t);
+        expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "domain" });
+        expect(t.client.requests.filter((r) => r.op === "fill_login")).toHaveLength(1);
+      }
+    });
+
+    it("never to an http page, and never past the chain's deadline", async () => {
+      const t = await withPlan({ groups: [group("it_01")] });
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userOnly]));
+      await t.runner.start(7, "it_01");
+      t.ext.navigate(7, 0, "http://atlas-id.test/password", "doc-o");
+      await analyze(t, "http://atlas-id.test/password", page("http://atlas-id.test/password", [loginForm]), "doc-o");
+      expect(t.client.requests.filter((r) => r.op === "plan_fill")).toEqual([]);
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "domain" });
+    });
+  });
+
+  describe("a popup window the chain's own click on a provider button opened", () => {
+    const sso = () => page(`${SITE}/login`, [], { providerButtons: [{ provider: "google", ref: "g1" }] });
+    const pwd = page(`${GOOGLE}/pwd`, [{ ref: "gp", kind: "login", fields: [{ ref: "p", role: "current_password" }] }]);
+
+    async function clicked() {
+      const t = await setup();
+      await analyze(t, `${SITE}/login`, sso());
+      await t.runner.start(7, "it_02", "google");
+      expect(toTab(t, "click")).toHaveLength(1);
+      return t;
+    }
+
+    it("is followed: the provider's pages are filled there, the site signs in behind", async () => {
+      const t = await clicked();
+      t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+      t.ext.navigate(9, 0, `${GOOGLE}/pwd`, "doc-g");
+      t.ext.setFrame(9, 0, `${GOOGLE}/pwd`, "doc-g");
+      await t.ext.send({ type: "page_analysis", analysis: pwd }, csSender(`${GOOGLE}/pwd`, 9, 0, { documentId: "doc-g" }));
+      await t.runner.state(7);
+      expect(t.client.requests.find((r) => r.op === "fill_provider")).toMatchObject({ provider: "google", provider_origin: GOOGLE, site_origin: SITE });
+      const fill = t.ext.sentToTabs.find((m) => (m.message as { type: string }).type === "fill");
+      expect(fill).toMatchObject({ tabId: 9, options: { documentId: "doc-g" } });
+      expect(t.ext.sentToTabs.filter((m) => (m.message as { type: string }).type === "submit").at(-1)).toMatchObject({ tabId: 9 });
+      // No sign-in card is offered inside the popup.
+      expect(t.ext.sentToTabs.filter((m) => m.tabId === 9 && (m.message as { type: string }).type === "show_frame")).toEqual([]);
+      // The popup closes, the site page no longer asks to sign in: done.
+      t.ext.onRemoved.emit(9);
+      await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-1");
+      t.clock.t += UNKNOWN_MS + 1;
+      await vi.advanceTimersByTimeAsync(UNKNOWN_MS + 1);
+      expect(await t.runner.state(7)).toMatchObject({ status: "done" });
+    });
+
+    describe("a browser that tells which frame opened the tab (webNavigation.onCreatedNavigationTarget)", () => {
+      const follows = async (t: T) => {
+        t.ext.navigate(9, 0, `${GOOGLE}/pwd`, "doc-g");
+        t.ext.setFrame(9, 0, `${GOOGLE}/pwd`, "doc-g");
+        await t.ext.send({ type: "page_analysis", analysis: pwd }, csSender(`${GOOGLE}/pwd`, 9, 0, { documentId: "doc-g" }));
+        await t.runner.state(7);
+        return ops(t).includes("fill_provider");
+      };
+      async function clickedIn() {
+        const t = await setup(answerWith(), new FakeExt().withNavigationTargets());
+        await analyze(t, `${SITE}/login`, sso());
+        await t.runner.start(7, "it_02", "google");
+        expect(toTab(t, "click")).toHaveLength(1);
+        return t;
+      }
+
+      it("follows the tab the frame of the chain's click opened", async () => {
+        const t = await clickedIn();
+        t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+        t.ext.onTarget.emit({ tabId: 9, sourceTabId: 7, sourceFrameId: 0, url: "about:blank" });
+        expect(await follows(t)).toBe(true);
+      });
+
+      it("never a tab another frame of the chain's tab opened right then (an embedded frame racing the click)", async () => {
+        const t = await clickedIn();
+        t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+        t.ext.onTarget.emit({ tabId: 9, sourceTabId: 7, sourceFrameId: 4, url: `${GOOGLE}/pwd` });
+        expect(await follows(t)).toBe(false);
+      });
+
+      it("never on the opener alone: no frame named, no adoption", async () => {
+        const t = await clickedIn();
+        t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+        expect(await follows(t)).toBe(false);
+      });
+    });
+
+    it("stops on anything but the provider's exact hosts", async () => {
+      const t = await clicked();
+      t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+      t.ext.navigate(9, 0, "https://accounts.google.com.evil.test/pwd", "doc-e");
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "domain", host: "accounts.google.com.evil.test" });
+      t.ext.setFrame(9, 0, "https://accounts.google.com.evil.test/pwd", "doc-e");
+      await t.ext.send({ type: "page_analysis", analysis: { ...pwd, url: "https://accounts.google.com.evil.test/pwd" } }, csSender("https://accounts.google.com.evil.test/pwd", 9, 0, { documentId: "doc-e" }));
+      await t.runner.state(7);
+      expect(ops(t)).not.toContain("fill_provider");
+    });
+
+    it("only a tab the chain's tab opened, right after the chain's own click", async () => {
+      // Opened by another tab.
+      let t = await clicked();
+      t.ext.onCreated.emit({ id: 9, openerTabId: 8 });
+      t.ext.navigate(9, 0, `${GOOGLE}/pwd`, "doc-g");
+      await t.ext.send({ type: "page_analysis", analysis: pwd }, csSender(`${GOOGLE}/pwd`, 9, 0, { documentId: "doc-g" }));
+      await t.runner.state(7);
+      expect(ops(t)).not.toContain("fill_provider");
+      // Opened long after the click.
+      t = await clicked();
+      t.clock.t += 30_000;
+      t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+      t.ext.navigate(9, 0, `${GOOGLE}/pwd`, "doc-g");
+      await t.ext.send({ type: "page_analysis", analysis: pwd }, csSender(`${GOOGLE}/pwd`, 9, 0, { documentId: "doc-g" }));
+      await t.runner.state(7);
+      expect(ops(t)).not.toContain("fill_provider");
+      // A password chain (no provider click of its own) follows nothing.
+      t = await setup();
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+      await t.runner.start(7, "it_01");
+      t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+      t.ext.navigate(9, 0, `${GOOGLE}/pwd`, "doc-g");
+      await t.ext.send({ type: "page_analysis", analysis: pwd }, csSender(`${GOOGLE}/pwd`, 9, 0, { documentId: "doc-g" }));
+      await t.runner.state(7);
+      expect(ops(t)).not.toContain("fill_provider");
+    });
+
+    it("keeps the chain's 60 s: the deadline stops it while the popup is open", async () => {
+      const t = await clicked();
+      t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+      t.ext.navigate(9, 0, `${GOOGLE}/pwd`, "doc-g");
+      t.clock.t += 61_000;
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "timeout" });
+    });
+
+    it("closed with the site still asking to sign in: stopped, the button is not clicked again, the site is not blamed", async () => {
+      const t = await clicked();
+      t.ext.onCreated.emit({ id: 9, openerTabId: 7 });
+      t.ext.navigate(9, 0, `${GOOGLE}/pwd`, "doc-g");
+      t.ext.onRemoved.emit(9);
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "unknown" });
+      expect(toTab(t, "click")).toHaveLength(1);
+    });
+  });
+
   it("stop: Arrêter from the overlay", async () => {
     const t = await setup();
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
@@ -206,6 +438,204 @@ describe("chain driver", () => {
     await t.runner.start(7, "it_01");
     expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "locked" });
     expect(toTab(t, "submit")).toEqual([]);
+  });
+
+  describe("locked mid-chain: the app is asked, and the chain goes on after the unlock without another click", () => {
+    /** A vault that locks before the fill; the card of the tab polls `overlay_state`. */
+    async function lockedChain(more: Partial<BackgroundOptions> = {}) {
+      const vault: { locked: boolean; fillLocked?: boolean } = { locked: true };
+      const opened = { n: 0 };
+      const t = await setup(
+        answerWith({
+          fill_login: () => ((vault.fillLocked ?? vault.locked) ? new BgError("locked") : { username: "alex@atlas.dev", password: "Atlas-Pass-1" }),
+          status: () => ({ locked: vault.locked, account: "Camille", vaults: 1 }),
+          unlock: () => ({ locked: vault.locked }),
+        }),
+        new FakeExt(),
+        { t: 1_000_000 },
+        {
+          openApp: async () => {
+            opened.n++;
+            return true;
+          },
+          ...more,
+        },
+      );
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+      await t.runner.start(7, "it_01");
+      const live = await t.bg.overlays.tokens.forTab(7);
+      const token = live?.token ?? "";
+      const poll = () => t.ext.send({ type: "overlay_state", token }, uiSender(`overlay.html#${token}`, 7)) as Promise<{ ok: { chain: { status: string; reason?: string } | null; waiting?: string } }>;
+      return { ...t, vault, opened, poll };
+    }
+
+    it("stops locked, asks the app once, waits, then fills and submits from the step it could not run", async () => {
+      const t = await lockedChain();
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "locked" });
+      expect(t.opened.n).toBe(1);
+      expect(ops(t).filter((o) => o === "unlock")).toHaveLength(1);
+      expect(toTab(t, "submit")).toEqual([]);
+      // The card waits: still locked.
+      expect((await t.poll()).ok).toMatchObject({ chain: { status: "handoff", reason: "locked" }, waiting: "locked" });
+      // What is kept for the resume holds no secret.
+      const kept = JSON.stringify([...t.ext.session.data.entries()]);
+      expect(kept).toContain("unlock-chain:7");
+      expect(kept).not.toContain("Atlas-Pass-1");
+      // Touch ID in the app.
+      t.vault.locked = false;
+      t.clock.t += 5_000;
+      const r = await t.poll();
+      expect(r.ok.chain?.status).toBe("running");
+      expect(r.ok.waiting).toBeUndefined();
+      expect(toTab(t, "fill")).toHaveLength(1);
+      expect(toTab(t, "submit")).toEqual([{ type: "submit", origin: SITE, ref: "f1", opts: { documentId: "doc-1" } }]);
+      // Once: later polls start nothing more, and nothing is kept.
+      t.clock.t += 2_000;
+      await t.poll();
+      expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(2);
+      expect(toTab(t, "submit")).toHaveLength(1);
+      expect([...t.ext.session.data.keys()].some((k) => k.startsWith("unlock-chain:"))).toBe(false);
+      expect(await t.runner.resumeLocked(7)).toBe(false);
+      expect(t.opened.n).toBe(1);
+    });
+
+    it("the resumed chain gets a fresh deadline and ends done", async () => {
+      const t = await lockedChain();
+      t.vault.locked = false;
+      // Touch ID took most of the chain's own 60 s.
+      t.clock.t += 55_000;
+      expect((await t.poll()).ok.chain?.status).toBe("running");
+      t.clock.t += 10_000;
+      t.ext.navigate(7, 0, `${SITE}/home`, "doc-2");
+      t.ext.complete(7, 0);
+      await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-2");
+      t.clock.t += UNKNOWN_MS;
+      expect((await t.runner.state(7))?.status).toBe("done");
+    });
+
+    it("locked again at the resumed step: stopped for good, the app is not asked twice", async () => {
+      const t = await lockedChain();
+      t.clock.t += 5_000;
+      // The status says open, the fill still finds the vault locked (it locked again at once).
+      t.vault.fillLocked = true;
+      t.vault.locked = false;
+      expect((await t.poll()).ok).toEqual({ chain: expect.objectContaining({ status: "handoff", reason: "locked" }) });
+      expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(2);
+      expect(t.opened.n).toBe(1);
+      expect(ops(t).filter((o) => o === "unlock")).toHaveLength(1);
+      expect(await t.runner.resumeLocked(7)).toBe(false);
+      t.clock.t += 2_000;
+      expect((await t.poll()).ok.waiting).toBeUndefined();
+      expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(2);
+    });
+
+    it("refused past the deadline, in another document, on another origin, and after Annuler or a new chain", async () => {
+      // 90 s without the unlock: the card stops waiting, the stop stays with its retry.
+      let t = await lockedChain();
+      t.vault.locked = false;
+      t.clock.t += UNLOCK_WAIT_MS + 1;
+      expect((await t.poll()).ok).toEqual({ chain: expect.objectContaining({ status: "handoff", reason: "locked" }) });
+      expect(await t.runner.resumeLocked(7)).toBe(false);
+      expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(1);
+
+      // The top frame holds another document of the site (no commit seen: the binding itself refuses).
+      t = await lockedChain();
+      t.vault.locked = false;
+      t.ext.setFrame(7, 0, `${SITE}/login`, "doc-2");
+      await t.poll();
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "locked" });
+      expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(1);
+
+      // Another origin in the tab.
+      t = await lockedChain();
+      t.vault.locked = false;
+      t.ext.setFrame(7, 0, "https://evil.test/login", "doc-1");
+      expect(await t.runner.resumeLocked(7)).toBe(false);
+      expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(1);
+
+      // A navigation of the top frame drops what was kept.
+      t = await lockedChain();
+      t.vault.locked = false;
+      t.ext.navigate(7, 0, `${SITE}/other`, "doc-9");
+      await t.runner.state(7);
+      expect([...t.ext.session.data.keys()].some((k) => k.startsWith("unlock-chain:"))).toBe(false);
+
+      // "Annuler" on the waiting card.
+      t = await lockedChain();
+      const live = await t.bg.overlays.tokens.forTab(7);
+      await t.ext.send({ type: "overlay_stop", token: live?.token }, uiSender(`overlay.html#${live?.token}`, 7));
+      t.vault.locked = false;
+      t.clock.t += 2_000;
+      expect((await t.poll()).ok.waiting).toBeUndefined();
+      expect(await t.runner.resumeLocked(7)).toBe(false);
+      expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(1);
+    });
+
+    it("a restarted worker still resumes: the request and the chain's step live in storage.session", async () => {
+      const t = await lockedChain();
+      t.vault.locked = false;
+      t.ext.onMessage.listeners.length = 0;
+      const t2 = await setup(answerWith({ status: () => ({ locked: false, account: "Camille", vaults: 1 }) }), t.ext, t.clock);
+      const live = await t2.bg.overlays.tokens.forTab(7);
+      t.clock.t += 5_000;
+      const r = (await t2.ext.send({ type: "overlay_state", token: live?.token }, uiSender(`overlay.html#${live?.token}`, 7))) as { ok: { chain: { status: string } } };
+      expect(r.ok.chain.status).toBe("running");
+      expect(ops(t2).filter((o) => o === "fill_login")).toHaveLength(1);
+      expect(toTab(t2, "submit")).toHaveLength(1);
+    });
+
+    it("locked on a later page of the chain: its card comes up waiting there, and the chain goes on after the unlock", async () => {
+      const vault = { locked: false };
+      const idForm: FormInfo = { ref: "f1", kind: "login", fields: [{ ref: "u1", role: "email" }], submitRef: "b1" };
+      const pwForm: FormInfo = { ref: "f2", kind: "login", fields: [{ ref: "p1", role: "current_password" }], submitRef: "b2" };
+      const guard = (r: Record<string, unknown>, ok: unknown) => (vault.locked ? new BgError("locked") : ok);
+      const t = await setup(
+        answerWith({
+          list_for_origin: (r) => guard(r, { items: [summary("it_01")] }),
+          fill_login: (r) => guard(r, { username: "alex@atlas.dev", password: "Atlas-Pass-1" }),
+          status: () => ({ locked: vault.locked, account: "Camille", vaults: 1 }),
+          unlock: () => ({ locked: vault.locked }),
+        }),
+        new FakeExt(),
+        { t: 1_000_000 },
+        { openApp: async () => true },
+      );
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [idForm]));
+      await t.runner.start(7, "it_01");
+      expect(toTab(t, "submit")).toHaveLength(1);
+      // The vault locks while the site loads its password page.
+      vault.locked = true;
+      t.ext.navigate(7, 0, `${SITE}/login/password`, "doc-2");
+      t.ext.complete(7, 0);
+      await analyze(t, `${SITE}/login/password`, page(`${SITE}/login/password`, [pwForm]), "doc-2");
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "locked" });
+      // The card of the new page: it cannot list the logins (locked), it waits.
+      const live = await t.bg.overlays.tokens.forTab(7);
+      expect(live?.rec.documentId).toBe("doc-2");
+      const ui = uiSender(`overlay.html#${live?.token}`, 7);
+      expect(await t.ext.send({ type: "overlay_init", token: live?.token }, ui)).toEqual({
+        ok: { origin: SITE, accounts: [], chain: expect.objectContaining({ status: "handoff", reason: "locked" }), waiting: "locked" },
+      });
+      vault.locked = false;
+      t.clock.t += 3_000;
+      const r = (await t.ext.send({ type: "overlay_state", token: live?.token }, ui)) as { ok: { chain: { status: string }; waiting?: string } };
+      expect(r.ok.chain.status).toBe("running");
+      expect(toTab(t, "fill").at(-1)).toMatchObject({ formRef: "f2", opts: { documentId: "doc-2" } });
+      expect(toTab(t, "submit").at(-1)).toEqual({ type: "submit", origin: SITE, ref: "f2", opts: { documentId: "doc-2" } });
+      expect(toTab(t, "submit")).toHaveLength(2);
+    });
+
+    it("iOS: the worker never prompts by itself; the app that cannot be opened: the plain stop, retry by a click", async () => {
+      let t = await lockedChain({ nativeVault: async () => ({ locked: true, account: "Camille", biometry: "faceID" }) });
+      expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "locked" });
+      expect(t.opened.n).toBe(0);
+      expect((await t.poll()).ok.waiting).toBeUndefined();
+      expect([...t.ext.session.data.keys()].some((k) => k.startsWith("unlock-chain:"))).toBe(false);
+
+      t = await lockedChain({ openApp: async () => false });
+      expect((await t.poll()).ok.waiting).toBeUndefined();
+      expect([...t.ext.session.data.keys()].some((k) => k.startsWith("unlock-chain:"))).toBe(false);
+    });
   });
 
   it("auto-submit off for the item: fills, no submit", async () => {
@@ -385,6 +815,11 @@ describe("chain driver", () => {
     await expect(t.runner.start(7, "it_02")).rejects.toMatchObject({ code: "invalid" });
     t.ext.setFrame(7, 0, "http://atlas-cloud.test/login");
     await expect(t.runner.start(7, "it_01")).rejects.toMatchObject({ code: "insecure_origin" });
+    // http on a loopback host is a page: the bridge is asked (it lists nothing of this site there).
+    t.ext.setFrame(7, 0, "http://localhost:3000/login", "doc-1");
+    await expect(t.runner.start(7, "it_01")).rejects.toMatchObject({ code: "not_found" });
+    t.ext.setFrame(7, 0, "http://app.localhost:3000/login", "doc-1");
+    await expect(t.runner.start(7, "it_01")).rejects.toMatchObject({ code: "insecure_origin" });
   });
 
   it("overlay_start from the overlay runs the real chain", async () => {
@@ -433,6 +868,70 @@ describe("overlay offer", () => {
     expect(toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay")).toHaveLength(2);
   });
 
+  describe("a sign-in page reached with the vault locked: a generic card", () => {
+    const lockedLists = () => answerWith({ list_for_origin: () => new BridgeAppError("locked", "vault locked") });
+    const shown = (t: T) => toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay");
+    const tokenOf = (t: T) => {
+      const url = (shown(t).at(-1) as { url: string }).url;
+      return url.slice(url.indexOf("#") + 1);
+    };
+
+    it("is offered once per sign-in form of the document, and holds nothing of the vault", async () => {
+      const t = await setup(lockedLists());
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+      expect(shown(t)).toHaveLength(1);
+      const token = tokenOf(t);
+      expect(await t.ext.send({ type: "overlay_init", token }, uiSender(`overlay.html#${token}`, 7))).toEqual({ ok: { origin: SITE, accounts: [], chain: null, generic: true } });
+      expect(t.ext.session.data.get(`overlay:${token}`)).toMatchObject({ generic: true });
+      expect(JSON.stringify(t.ext.session.data.get(`overlay:${token}`))).not.toMatch(/it_0|alex/);
+    });
+
+    it("on a page with only provider buttons too; never on a page that is no sign-in", async () => {
+      const t = await setup(lockedLists());
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [], { providerButtons: [{ provider: "google", ref: "g1" }] }));
+      expect(shown(t)).toHaveLength(1);
+      const u = await setup(lockedLists());
+      await analyze(u, `${SITE}/pricing`, page(`${SITE}/pricing`, [{ ref: "s", kind: "signup", fields: [{ ref: "e", role: "email" }, { ref: "n", role: "new_password" }] }]));
+      await analyze(u, `${SITE}/pricing`, page(`${SITE}/pricing`));
+      expect(shown(u)).toEqual([]);
+    });
+
+    it("on a passkey-only sign-in page too (no form, one passkey button); an open vault offers no card there", async () => {
+      const passkeyPage = () => page(`${SITE}/login`, [], { passkeySignIn: true });
+      const t = await setup(lockedLists());
+      await analyze(t, `${SITE}/login`, passkeyPage());
+      expect(shown(t)).toHaveLength(1);
+      expect(await t.runner.signInPage(7, "doc-1")).toBe(true);
+      const u = await setup();
+      await analyze(u, `${SITE}/login`, passkeyPage());
+      expect(shown(u)).toEqual([]);
+      // A page that is none of these is no sign-in page.
+      await analyze(u, `${SITE}/about`, page(`${SITE}/about`), "doc-2");
+      expect(await u.runner.signInPage(7, "doc-2")).toBe(false);
+    });
+
+    it("never on a site set to 'never offer here', nor again in a document where the user closed it, nor when the app is missing or unpaired", async () => {
+      const t = await setup(lockedLists());
+      await t.bg.neverSave.add("atlas-cloud.test");
+      await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+      expect(shown(t)).toEqual([]);
+
+      const u = await setup(lockedLists());
+      await analyze(u, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+      const token = tokenOf(u);
+      await u.ext.send({ type: "overlay_close", token }, uiSender(`overlay.html#${token}`, 7));
+      await analyze(u, `${SITE}/login`, page(`${SITE}/login`, [{ ...loginForm, fields: [{ ref: "u1", role: "email" }] }]));
+      expect(shown(u)).toHaveLength(1);
+
+      for (const code of ["host_missing", "unpaired"] as const) {
+        const v = await setup(answerWith({ list_for_origin: () => new BridgeAppError(code, code) }));
+        await analyze(v, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
+        expect(shown(v)).toEqual([]);
+      }
+    });
+  });
+
   const overlays = (t: T) => toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay");
   const closeOverlay = async (t: T) => {
     const url = (overlays(t).at(-1) as { url: string }).url;
@@ -446,12 +945,12 @@ describe("overlay offer", () => {
     const t = await setup(
       answerWith({
         list_for_origin: (r) => {
-          if (locked) throw new BgError("locked");
+          if (locked) throw new BgError("host_missing");
           return answerWith()(r);
         },
       }),
     );
-    // The page loads without a form, then builds one while OnePass is locked.
+    // The page loads without a form, then builds one while the app is not there (locked: a generic card, below).
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`));
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [userForm]));
     expect(overlays(t)).toHaveLength(0);

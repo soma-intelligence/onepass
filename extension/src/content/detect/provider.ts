@@ -19,7 +19,8 @@ const BUTTON_SELECTOR =
 const ABSOLUTE_LINK_SELECTOR = 'a[href*="//"]';
 
 /** Wording that makes a link to an official host a sign-in link. */
-const SIGN_IN_WORDS = /\b(sign in|sign up|log in|login|connect|connexion|se connecter|continue|continuer|inscription)\b/;
+const SIGN_IN_WORDS =
+  /\b(sign in|sign up|log in|login|connect|connexion|se connecter|continue|continuer|inscription|iniciar sesion|acceder|entrar|continuar|accedi|continua|anmelden|einloggen|weiter|iniciar sessao|inloggen|aanmelden|doorgaan)\b/;
 
 const EMAIL = /[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}/gi;
 const EMAIL_EXACT = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i;

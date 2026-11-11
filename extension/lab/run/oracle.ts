@@ -14,11 +14,17 @@
 // part of the login family, spec 8.1). A third, `other_person_filled` (spec
 // 11.4), fails a forms page whose passenger 2 or later the extension filled.
 // Results carry field names, hosts and verdicts, never a value.
-import type { DriverId, Expect, FixtureFile, FlowId, Lang, Scenario, Site, TraitId, World } from "../gen/model.ts";
+// Gestures (gestures.ts): every result also says how many human-equivalent
+// gestures the attempt took, their kinds, and whether the oracle saw the
+// scenario's session; "one gesture, signed in" is both at once. A scenario
+// whose start state the host cannot be put in is `skipped` (out of every
+// rate), with the missing control as its cause.
+import type { DriverId, Expect, FixtureFile, FlowId, Lang, Scenario, Site, StartState, TraitId, Trigger, World } from "../gen/model.ts";
 import type { LabEvent } from "../server/ledger.ts";
 import { wrongFields } from "../server/rp.ts";
+import { flowFamily, type Gesture, type GestureFields, gestureFields, type GestureKind, triggerOf } from "./gestures.ts";
 
-export type Verdict = "pass" | "fail" | "leak" | "xfail" | "xpass" | "flaky" | "lab_error";
+export type Verdict = "pass" | "fail" | "leak" | "xfail" | "xpass" | "flaky" | "lab_error" | "skipped";
 
 export interface Observation {
   driver: DriverId;
@@ -40,6 +46,18 @@ export interface Observation {
   userSubmitAt?: number;
   /** Fields that held a value of another vault item than the scenario's (names only, from items.ts). */
   foreign?: string[];
+  /** Every human-equivalent gesture of the attempt, in order (gestures.ts); absent on a bench error before any driver ran. */
+  gestures?: Gesture[];
+  /** How the driver started OnePass (the toolbar Fill where the page has no field with an icon). */
+  trigger?: Trigger;
+  /** Account profiles: the identifier field held the site's other account, not the one the user means. */
+  otherAccount?: boolean;
+  /** Locked start: OnePass said it is locked and offered the user's item nowhere. */
+  lockedShown?: boolean;
+  /** The start state could not be set up: the missing control ("host lacks control ..."). Nothing was played. */
+  skipped?: string;
+  /** How the unlock of a locked start was approved: at once by the host, or by the stand-in's approval file. */
+  unlock?: "instant" | "deferred";
   error?: string;
   durationMs: number;
 }
@@ -56,6 +74,22 @@ export interface Result {
   verdict: Verdict; cause?: string; retried: boolean; durationMs: number; repro: string;
   /** Goal met with one gesture toward OnePass (undefined where the scenario has no goal to reach). */
   oneClick?: boolean;
+  /** Deliberate gestures of the attempt the verdict stands on, the user's own submit included (absent in runs before the gesture accounting). */
+  gestures?: number;
+  /** Their kinds in order, biometric approvals included. */
+  gestureList?: GestureKind[];
+  /** Unlock approvals by the Touch ID stand-in ("+1 biometric"). */
+  biometric?: number;
+  /** The oracle saw the scenario's session (flows whose goal is a session, scenarios with a goal). */
+  signedIn?: boolean;
+  /** The headline metric: signedIn with exactly one deliberate gesture. */
+  oneGesture?: boolean;
+  /** Absent in older runs: unlocked_warm. */
+  startState?: StartState;
+  trigger?: Trigger;
+  unlock?: "instant" | "deferred";
+  /** Account profiles: the outcome the scenario states. */
+  outcome?: string;
 }
 
 /** Flows whose goal is a form the relying party accepts (the forms flows of spec 11 included). */
@@ -70,21 +104,22 @@ export const LOGIN_FAMILY = new Set<FlowId>(["login_single", "login_username_fir
 /** Drivers whose one-click success the report compares. */
 export const ONE_CLICK_DRIVERS = new Set<DriverId>(["one_click", "menu_fill", "smart_fill"]);
 
-/** The account a successful sign-in on `site` must be for (undefined when the flow has none). */
-function expectedUser(site: Site): string | undefined {
+/** The account a successful sign-in on `site` must be for: the scenario's own (account profiles), else the site's (undefined when the flow has none). */
+function expectedUser(site: Site, s?: Scenario): string | undefined {
+  if (s?.account) return s.account.username;
   return site.flow === "sso" ? site.sso?.email : site.account?.username;
 }
 
 /** Whether the scenario reached its goal: the right sign-in, or the form accepted. */
-function goalMet(site: Site, events: LabEvent[]): boolean {
+function goalMet(site: Site, events: LabEvent[], s?: Scenario): boolean {
   if (FORM_FLOWS.has(site.flow)) {
     return events.some((e) => e.kind === "submit" && e.host === site.host && e.form === site.flow && e.ok);
   }
-  return events.some((e) => e.kind === "signin" && e.host === site.host && rightSignin(site, e));
+  return events.some((e) => e.kind === "signin" && e.host === site.host && rightSignin(site, e, s));
 }
 
-function rightSignin(site: Site, e: Extract<LabEvent, { kind: "signin" }>): boolean {
-  const want = expectedUser(site);
+function rightSignin(site: Site, e: Extract<LabEvent, { kind: "signin" }>, s?: Scenario): boolean {
+  const want = expectedUser(site, s);
   if (want !== undefined && e.user.trim().toLowerCase() !== want.trim().toLowerCase()) return false;
   if (site.flow === "sso") return e.via === site.sso?.provider;
   return e.via === undefined;
@@ -115,12 +150,26 @@ export function fillCheck(world: World, site: Site, vault: FixtureFile): FillChe
   }).map((f) => f.name);
 }
 
+/** `all` without the fields the vault must leave empty: a shipping block hidden behind "same as billing", the birth country, a loyalty program it lacks. */
+function owed(site: Site, all: readonly Site["fields"][number][]): Site["fields"] {
+  return all.filter((f) => !(f.block === "shipping" && site.forms?.shippingSame) && f.role !== "birth_country"
+    && !(f.role === "loyalty_number" && site.forms?.loyaltyTitle === undefined));
+}
+
+/**
+ * The fields a first fill left empty because they were off screen (`offScreen`, by name: too little of them in the
+ * viewport): personal data goes only into fields the user can see (security review M4), so the user scrolls to
+ * them and fills again. An empty field that was on screen is a miss, never a target; passengers 2 and later are
+ * the user's own.
+ */
+export function foldTargets(site: Site, filled: Readonly<Record<string, boolean>>, offScreen: ReadonlySet<string>): Site["fields"] {
+  return owed(site, site.fields).filter((f) => (f.person ?? 0) === 0 && filled[f.name] !== true && offScreen.has(f.name));
+}
+
 /** Whether every field the scenario's page(s) asked for held a value after the fill (abandons_step: step 1 only). */
 function fillMet(s: Scenario, site: Site, o: Observation): boolean {
   const all = s.behaviour === "abandons_step" && site.steps ? site.steps[0]! : site.fields;
-  // Fields the vault must leave empty: a shipping block hidden behind "same as billing", the birth country, a loyalty program it lacks.
-  const fields = all.filter((f) => !(f.block === "shipping" && site.forms?.shippingSame) && f.role !== "birth_country"
-    && !(f.role === "loyalty_number" && site.forms?.loyaltyTitle === undefined));
+  const fields = owed(site, all);
   const typed = new Set(o.typed ?? []);
   return fields.length > 0 && fields.every((f) => o.filled[f.name] === true || typed.has(f.name));
 }
@@ -136,6 +185,10 @@ function refusalCause(site: Site, o: Observation): string | undefined {
 }
 
 function failCause(site: Site, o: Observation): string {
+  // Account profiles: the site's other account went in (the relying party takes the meant one only).
+  if (o.otherAccount) return "wrong_account";
+  // A locked start that ended on "OnePass is locked": nothing the user could pick.
+  if (o.lockedShown && !o.itemOffered) return "locked";
   // menu_fill has no overlay: its in-field menu never opened.
   if (!o.overlayShown) return o.driver === "menu_fill" ? "no_menu" : "no_overlay";
   if (!o.itemOffered) return "no_menu_item";
@@ -156,8 +209,8 @@ function shortError(msg: string): string {
 }
 
 /** A sign-in of the site as another account than the scenario's. */
-function wrongAccount(site: Site, events: LabEvent[]): boolean {
-  const want = expectedUser(site);
+function wrongAccount(site: Site, events: LabEvent[], s?: Scenario): boolean {
+  const want = expectedUser(site, s);
   if (want === undefined) return false;
   const hosts = new Set([site.host, site.frameHost].filter((h): h is string => h !== undefined));
   return events.some((e) => e.kind === "signin" && hosts.has(e.host) && e.user.trim().toLowerCase() !== want.trim().toLowerCase());
@@ -182,8 +235,9 @@ function autoSubmitOutsideLogin(site: Site, o: Observation): boolean {
 export function judge(s: Scenario, site: Site, o: Observation, check?: FillCheck): Judgement {
   const leak = o.events.find((e): e is Extract<LabEvent, { kind: "leak" }> => e.kind === "leak");
   if (leak) return { verdict: "leak", cause: `leak:${leak.secret}:${leak.field}@${leak.host}` };
+  if (o.skipped !== undefined) return { verdict: "skipped", cause: o.skipped };
   if (autoSubmitOutsideLogin(site, o)) return { verdict: "fail", cause: "auto_submit_outside_login" };
-  if ((o.foreign?.length ?? 0) > 0 || wrongAccount(site, o.events)) return { verdict: "fail", cause: "wrong_item" };
+  if ((o.foreign?.length ?? 0) > 0 || wrongAccount(site, o.events, s)) return { verdict: "fail", cause: "wrong_item" };
   if (otherPersonFilled(site, o)) return { verdict: "fail", cause: "other_person_filled" };
   if (o.error !== undefined && (o.error.startsWith("lab:") || o.error.includes("rate_limited"))) {
     return { verdict: "lab_error", cause: o.error };
@@ -202,7 +256,7 @@ export function judge(s: Scenario, site: Site, o: Observation, check?: FillCheck
   // The values count too: a second account or a wrong country format filled in is a wrong fill, as a refused post is without a behaviour.
   const behaving = s.behaviour !== undefined;
   const wrong = behaving ? (check?.(o.values ?? {}) ?? []) : [];
-  const met = behaving ? fillMet(s, site, o) && wrong.length === 0 : goalMet(site, o.events);
+  const met = behaving ? fillMet(s, site, o) && wrong.length === 0 : goalMet(site, o.events, s);
   const cause = (): string => (behaving && wrong.length > 0 && fillMet(s, site, o) ? "wrong_fill" : failCause(site, o));
   if (s.expect === "xfail") return met ? { verdict: "xpass" } : { verdict: "xfail", cause: cause() };
   return met ? { verdict: "pass" } : { verdict: "fail", cause: cause() };
@@ -216,9 +270,28 @@ export function judge(s: Scenario, site: Site, o: Observation, check?: FillCheck
  * scenarios without a goal (nofill, lookalike, bench control).
  */
 export function oneClickOf(s: Scenario, verdict: Verdict, o: Observation): boolean | undefined {
-  if (!ONE_CLICK_DRIVERS.has(s.driver) || s.expect === "nofill" || verdict === "lab_error") return undefined;
+  if (!ONE_CLICK_DRIVERS.has(s.driver) || s.expect === "nofill" || verdict === "lab_error" || verdict === "skipped") return undefined;
   const met = verdict === "pass" || verdict === "flaky" || verdict === "xpass";
   return met && o.clicks === 1;
+}
+
+/**
+ * Whether the oracle saw the scenario's session: the right account signed in
+ * on the site, on a verdict that met the goal (a leak or a safety failure with
+ * a session is no success). Undefined where there is none to see: the form
+ * flows, the scenarios without a goal, a bench error, a skipped start state.
+ */
+export function signedInOf(s: Scenario, site: Site, verdict: Verdict, o: Observation): boolean | undefined {
+  if (!ONE_CLICK_DRIVERS.has(s.driver) || s.expect === "nofill" || verdict === "lab_error" || verdict === "skipped") return undefined;
+  if (flowFamily(site.flow) === undefined) return undefined;
+  const met = verdict === "pass" || verdict === "flaky" || verdict === "xpass";
+  return met && o.events.some((e) => e.kind === "signin" && e.host === site.host && rightSignin(site, e, s));
+}
+
+/** The gesture fields of a result (gestures.ts), from the attempt the verdict stands on. */
+export function resultGestures(s: Scenario, site: Site, verdict: Verdict, o: Observation): GestureFields {
+  const trigger = o.trigger ?? triggerOf(s.driver, { shortcut: s.shortcut === true, hasField: site.fields.length > 0 });
+  return gestureFields(o.gestures ?? [], signedInOf(s, site, verdict, o), s.start ?? "unlocked_warm", trigger);
 }
 
 /** Causes that are safety failures: never replayed, never hidden by a replay. */

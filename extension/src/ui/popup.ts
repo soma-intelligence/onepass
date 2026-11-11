@@ -22,6 +22,7 @@ import {
   parseGeneratorProfile,
 } from "../shared/ui";
 import {
+  accountNotes,
   type Send,
   type Timers,
   call,
@@ -383,7 +384,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
   /**
    * The app came forward on its lock screen: say so, ask again every second
-   * and load once unlocked. After a minute, the locked screen again.
+   * and load once unlocked. After the shared deadline (90 s), the locked screen again.
    */
   function waitForUnlock(): void {
     center(mark("l"), h("h1", null, t("ui.unlockToContinue")), h("p", null, t("popup.unlockAppToSee")));
@@ -703,7 +704,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
             on: { click: () => void track(openItem(it.item_id)) },
           },
           results || !domain ? itemArt(it, "m") : siteIcon(`https://${domain}`, itemArt(it, "m")),
-          h("span", { class: "stack" }, h("span", { class: "t1" }, it.title), h("span", { class: "t2" }, it.subtitle)),
+          h("span", { class: "stack" }, h("span", { class: "t1" }, it.title), h("span", { class: "t2" }, it.subtitle, ...accountNotes(it))),
         ),
       );
     }

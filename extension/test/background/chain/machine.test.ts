@@ -7,6 +7,8 @@ import {
   type ChainState,
   DEADLINE_MS,
   DONE_SETTLE_MS,
+  MAX_PASSWORD_FILLS,
+  planStep,
   PASSWORD_WAIT_MS,
   REPEAT_MS,
   UNKNOWN_MS,
@@ -101,6 +103,39 @@ describe("single page", () => {
     const r = step(s, page([otpForm()], {}, `${SITE}/next`), SITE, T0 + 600);
     expect(types(r.actions)).toEqual(["stop"]);
     expect(r.state.reason).toBe("otp");
+  });
+});
+
+// Witness: lab seed pass3-0 site 3 (login_totp, delayed_fields 3965 ms): the code field came up 4 s after its
+// page loaded, some 100 ms after the done verdict, in every start state and from every trigger.
+describe("a login that holds a one-time code and has sent its password", () => {
+  const withTotp = () => startChain({ tabId: 7, item: summary("it_01", { has_totp: true }), siteOrigin: SITE, now: T0 });
+
+  it("waits PASSWORD_WAIT_MS for the code form of the next page before it is done", () => {
+    const r = step(withTotp(), page([loginForm()]), SITE, T0 + 100);
+    let s = navigated(r.state, `${SITE}/otp`, T0 + 400);
+    s = settled(s, T0 + 500);
+    s = step(s, page([], {}, `${SITE}/otp`), SITE, T0 + 600).state;
+    // Past the 4 s of an unknown page: the code form may still be built.
+    expect(tick(s, T0 + 500 + UNKNOWN_MS + DONE_SETTLE_MS + 100).state.status).toBe("running");
+    const late = step(s, page([otpForm()], {}, `${SITE}/otp`), SITE, T0 + 500 + 4_200);
+    expect(late.actions).toEqual([{ type: "fill", formRef: "f3", fields: ["totp"] }, { type: "submit", formRef: "f3" }]);
+    // The site asked no code this time: done once the wait is over.
+    expect(nextDue(s)).toBe(T0 + 500 + PASSWORD_WAIT_MS);
+    expect(tick(s, T0 + 500 + PASSWORD_WAIT_MS).state.status).toBe("done");
+  });
+
+  it("a login without a code, and a chain whose code already went, are done as before", () => {
+    // No code in the item.
+    let s = navigated(step(start(), page([loginForm()]), SITE, T0 + 100).state, `${SITE}/home`, T0 + 400);
+    s = step(settled(s, T0 + 500), page([], {}, `${SITE}/home`), SITE, T0 + 600).state;
+    expect(tick(s, T0 + 500 + UNKNOWN_MS).state.status).toBe("done");
+    // The code went: nothing more to wait for.
+    let c = navigated(step(withTotp(), page([loginForm()]), SITE, T0 + 100).state, `${SITE}/otp`, T0 + 400);
+    c = step(settled(c, T0 + 500), page([otpForm()], {}, `${SITE}/otp`), SITE, T0 + 600).state;
+    c = navigated(c, `${SITE}/home`, T0 + 900);
+    c = step(settled(c, T0 + 1_000), page([], {}, `${SITE}/home`), SITE, T0 + 1_100).state;
+    expect(tick(c, T0 + 1_000 + UNKNOWN_MS).state.status).toBe("done");
   });
 });
 
@@ -326,9 +361,63 @@ describe("stop reasons", () => {
     expect(r.state.reason).toBe("domain");
   });
 
+  it("a chain started on a loopback http page stays on that exact origin", () => {
+    const local = "http://localhost:3000";
+    const s0 = startChain({ tabId: 7, item: summary("it_01"), siteOrigin: local, now: T0 });
+    expect(types(step(s0, page([loginForm()], {}, `${local}/login`), local, T0 + 100).actions)).toEqual(["fill", "submit"]);
+    // Another port, or https on the same host, is another server.
+    expect(step(s0, page([loginForm()]), "http://localhost:8080", T0 + 100).state.reason).toBe("domain");
+    expect(step(s0, page([loginForm()]), "https://localhost:3000", T0 + 100).state.reason).toBe("domain");
+    expect(navigated(s0, "http://127.0.0.1:3000/next", T0 + 1).reason).toBe("domain");
+    // An https chain never steps down to a loopback http page of its own name.
+    const s1 = startChain({ tabId: 7, item: summary("it_01"), siteOrigin: "https://localhost:3443", now: T0 });
+    expect(step(s1, page([loginForm()]), "http://localhost:3443", T0 + 100).state.reason).toBe("domain");
+  });
+
   it("a subdomain of the site is allowed", () => {
     const r = step(start(), page([loginForm()]), "https://auth.atlas-cloud.test", T0 + 100);
     expect(types(r.actions)).toEqual(["fill", "submit"]);
+  });
+
+  it("a passive captcha widget never stops the chain: it fills and submits", () => {
+    const r = step(start(), page([loginForm()], { captchaWidget: true }), SITE, T0 + 100);
+    expect(types(r.actions)).toEqual(["fill", "submit"]);
+    expect(r.state.status).toBe("running");
+  });
+
+  it("the password goes into at most MAX_PASSWORD_FILLS pages of one chain: the next page asking for it stops as repeat, unfilled", () => {
+    expect(MAX_PASSWORD_FILLS).toBe(2);
+    // Each page is new to the chain (another path): the per-page repeat rule never fires.
+    let s = start();
+    for (let i = 0; i < MAX_PASSWORD_FILLS; i++) {
+      const r = step(navigated(s, `${SITE}/login${i}`, T0 + 1000 * i), page([loginForm()], {}, `${SITE}/login${i}`), SITE, T0 + 1000 * i + 100);
+      expect(types(r.actions)).toEqual(["fill", "submit"]);
+      s = r.state;
+    }
+    const third = step(navigated(s, `${SITE}/login9`, T0 + 5000), page([loginForm()], {}, `${SITE}/login9`), SITE, T0 + 5100);
+    expect(third.state).toMatchObject({ status: "handoff", reason: "repeat" });
+    expect(types(third.actions)).toEqual(["stop"]);
+    // The same through a planned step (a page the chain did not recognize).
+    const planned = planStep(navigated(s, `${SITE}/login9`, T0 + 5000), { formRef: "f7", roles: ["current_password"], submit: true }, `${SITE}/login9`, SITE, T0 + 5100);
+    expect(planned.state).toMatchObject({ status: "handoff", reason: "repeat" });
+    expect(types(planned.actions)).toEqual(["stop"]);
+    // A page that asks for the identifier alone, or the code, is not counted.
+    const user = step(navigated(s, `${SITE}/who`, T0 + 5000), page([userOnly()], {}, `${SITE}/who`), SITE, T0 + 5100);
+    expect(types(user.actions)).toEqual(["fill", "submit"]);
+  });
+
+  it("a submit refused on a page with a captcha widget stops as captcha, not as a repeated step", () => {
+    const sent = step(start(), page([loginForm()], { captchaWidget: true }), SITE, T0 + 100).state;
+    // The same form still there after REPEAT_MS.
+    const late = tick(sent, T0 + 100 + REPEAT_MS);
+    expect(late.state).toMatchObject({ status: "handoff", reason: "captcha" });
+    // Or the same step back on a new document.
+    const back = step(navigated(sent, `${SITE}/login`, T0 + 500), page([loginForm()], { captchaWidget: true }), SITE, T0 + 900);
+    expect(back.state).toMatchObject({ status: "handoff", reason: "captcha" });
+    // Without a widget both are a repeat (the password was refused).
+    const plain = step(start(), page([loginForm()]), SITE, T0 + 100).state;
+    expect(tick(plain, T0 + 100 + REPEAT_MS).state.reason).toBe("repeat");
+    expect(step(navigated(plain, `${SITE}/login`, T0 + 500), page([loginForm()]), SITE, T0 + 900).state.reason).toBe("repeat");
   });
 
   it("captcha", () => {
