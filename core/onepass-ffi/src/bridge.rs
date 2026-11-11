@@ -484,6 +484,7 @@ impl<'a> AppVault<'a> {
             color: Some(v.meta.color.clone()),
             account: account.cloned(),
             personal: v.zone() == onepass_core::store::Zone::Private,
+            shared: v.zone().is_shared(),
         }
     }
 
@@ -738,6 +739,20 @@ impl VaultAccess for AppVault<'_> {
             .with(|repo| {
                 let vault = find_vault(repo, vault_id)?;
                 repo.save_item(&vault, item.clone())?;
+                Ok(())
+            })
+            .map_err(bridge_error)?;
+        self.changed(&owner, Some(vault_id));
+        Ok(())
+    }
+
+    fn delete(&mut self, vault_id: Id, item_id: Id) -> onepass_bridge::Result<()> {
+        let (owner, _) = self.owner(vault_id)?;
+        owner
+            .session
+            .with(|repo| {
+                let vault = find_vault(repo, vault_id)?;
+                repo.delete_item(&vault, item_id)?;
                 Ok(())
             })
             .map_err(bridge_error)?;

@@ -3973,3 +3973,102 @@ mod host_signals {
         );
     }
 }
+
+// ---- undo_save (spec 2026-11-11 4.1) ----
+
+fn save_fresh(h: &mut H, now: u64) -> String {
+    let perso = h.ids.perso;
+    let v = h.call_at(
+        json!({"op":"save_login","ctx":"save_prompt","origin":"https://newsite.atlas-cloud.test",
+            "title":"","username":"fresh@atlas.dev","password":"Fresh-Pass-0042",
+            "vault_id":id(perso),"rule":"domain","tags":[]}),
+        now,
+    );
+    ok(&v)["item_id"].as_str().unwrap().to_owned()
+}
+
+fn undo(item: &str, origin: &str) -> Value {
+    json!({"op":"undo_save","ctx":"save_prompt","item_id":item,"origin":origin})
+}
+
+const NEWSITE: &str = "https://newsite.atlas-cloud.test";
+
+#[test]
+fn undo_save_deletes_a_fresh_save() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    let v = h.call_at(undo(&item, NEWSITE), NOW + 60);
+    assert_eq!(ok(&v), &json!({}));
+    assert!(h.vault().items.iter().all(|i| i.id.to_string() != item));
+    let v = h.call(list(NEWSITE));
+    assert!(titles(&v).iter().all(|t| !t.contains("newsite")), "{v}");
+    // Used once: a second undo finds nothing.
+    assert_eq!(err(&h.call_at(undo(&item, NEWSITE), NOW + 61)), "not_found");
+}
+
+#[test]
+fn undo_save_refuses_after_60_s() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    assert_eq!(err(&h.call_at(undo(&item, NEWSITE), NOW + 61)), "not_found");
+    assert!(h.vault().items.iter().any(|i| i.id.to_string() == item));
+}
+
+#[test]
+fn undo_save_refuses_other_site() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    assert_eq!(
+        err(&h.call_at(undo(&item, "https://evil.test"), NOW + 5)),
+        "not_found"
+    );
+    assert!(h.vault().items.iter().any(|i| i.id.to_string() == item));
+    // Another subdomain of the same registrable domain is the same site.
+    let v = h.call_at(undo(&item, "https://login.atlas-cloud.test"), NOW + 5);
+    assert_eq!(ok(&v), &json!({}));
+}
+
+#[test]
+fn undo_refuses_an_edited_item() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    let v = h.call_at(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":item,"origin":NEWSITE,
+               "password":"Changed-Pass-7788"}),
+        NOW + 10,
+    );
+    assert!(v.get("error").is_none(), "{v}");
+    assert_eq!(err(&h.call_at(undo(&item, NEWSITE), NOW + 20)), "not_found");
+    assert!(h.vault().items.iter().any(|i| i.id.to_string() == item));
+}
+
+#[test]
+fn undo_save_refuses_an_item_it_did_not_save() {
+    let mut h = H::new();
+    let other = h.svc.vault_mut().add_login(
+        "Direct",
+        "d@atlas.dev",
+        "https://direct.atlas-cloud.test",
+        MatchRule::Domain,
+    );
+    let v = h.call(undo(&id(other), "https://direct.atlas-cloud.test"));
+    assert_eq!(err(&v), "not_found");
+    assert!(h.vault().items.iter().any(|i| i.id == other));
+}
+
+#[test]
+fn vaults_marks_shared() {
+    let mut h = H::new();
+    let pro = h.ids.pro;
+    for v in &mut h.svc.vault_mut().vaults {
+        v.shared = v.id == pro;
+    }
+    let v = h.call(json!({"op":"vaults"}));
+    for e in ok(&v)["vaults"].as_array().unwrap() {
+        if e["id"] == id(pro) {
+            assert_eq!(e["shared"], json!(true), "{e}");
+        } else {
+            assert!(e.get("shared").is_none(), "{e}");
+        }
+    }
+}

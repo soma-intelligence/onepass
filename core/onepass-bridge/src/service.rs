@@ -119,6 +119,9 @@ pub struct VaultInfo {
     /// shared vault, and for a host that cannot tell (no `sole_exact`
     /// trust for its items, `fill_plan::score`).
     pub personal: bool,
+    /// A shared vault (`Vault::zone().is_shared()`): other people can read
+    /// and write it. False when the host cannot tell.
+    pub shared: bool,
 }
 
 impl VaultInfo {
@@ -174,6 +177,9 @@ pub trait VaultAccess {
     }
     /// Create or replace an item.
     fn save(&mut self, vault_id: Id, item: Item) -> Result<()>;
+    /// Remove an item for good (`Repository::delete_item`), not to the
+    /// trash. `not_found` when the vault or the item is unknown.
+    fn delete(&mut self, vault_id: Id, item_id: Id) -> Result<()>;
     /// Ask the user to confirm access to an item marked `reprompt`.
     /// `origin_host`: the host of the page the request is for, none for a
     /// request without a page (the extension's window).
@@ -419,6 +425,29 @@ pub struct Service<V: VaultAccess> {
     /// sign-in, its `note_fill`) is let through. Nothing else acts on an
     /// associated match.
     picked: HashSet<(Id, String)>,
+    /// Logins this session just saved through `save_login`, newest last,
+    /// for `undo_save` (at most `RECENT_SAVES`).
+    recent_saves: Vec<RecentSave>,
+}
+
+/// How long a fresh save can be undone, in seconds.
+const UNDO_WINDOW_SECS: u64 = 60;
+/// Saves remembered for `undo_save`; the oldest is dropped.
+const RECENT_SAVES: usize = 16;
+
+/// A login saved by this session, as `save_login` left it.
+struct RecentSave {
+    item_id: Id,
+    /// Registrable domain of the page it was saved on.
+    site: String,
+    saved_at: u64,
+    /// The item's `updated_at` after the save: any later edit changes it.
+    version: u64,
+}
+
+fn item_version(item: &Item) -> u64 {
+    // Nanoseconds since the epoch: a u64 holds them until the year 2554.
+    item.updated_at.unix_timestamp_nanos() as u64
 }
 
 impl<V: VaultAccess> Service<V> {
@@ -433,6 +462,7 @@ impl<V: VaultAccess> Service<V> {
             agent: None,
             owners: HashMap::new(),
             picked: HashSet::new(),
+            recent_saves: Vec::new(),
         }
     }
 
@@ -912,6 +942,12 @@ impl<V: VaultAccess> Service<V> {
                 username,
                 ..
             } => self.confirm_pending(*ctx, item_id, o, username, now),
+            Request::UndoSave {
+                ctx,
+                item_id,
+                origin: o,
+                ..
+            } => self.undo_save(*ctx, item_id, o, now),
             Request::Generate {
                 recipe, origin: o, ..
             } => {
@@ -1080,6 +1116,7 @@ impl<V: VaultAccess> Service<V> {
                 name: v.name,
                 color: v.color,
                 account: v.account.map(|a| a.label),
+                shared: v.shared,
             })
             .collect();
         Ok(Response::Vaults { vaults })
@@ -1426,7 +1463,17 @@ impl<V: VaultAccess> Service<V> {
             .collect();
         validate(&item).map_err(|_| AppErrorCode::Invalid)?;
         let id = item.id;
+        let version = item_version(&item);
         self.save(vault_id, item)?;
+        self.recent_saves.push(RecentSave {
+            item_id: id,
+            site: page.site(),
+            saved_at: now,
+            version,
+        });
+        if self.recent_saves.len() > RECENT_SAVES {
+            self.recent_saves.remove(0);
+        }
         self.record("save_login", id, Some(o), ctx, now);
         Ok(Response::ItemId {
             item_id: id.to_string(),
@@ -1714,6 +1761,34 @@ impl<V: VaultAccess> Service<V> {
         let (id, vault_id) = (item.id, item.vault_id);
         self.save(vault_id, item)?;
         self.record("confirm_pending", id, Some(o), ctx, now);
+        Ok(Response::Empty {})
+    }
+
+    /// Delete a login `save_login` made in the last 60 s for the same
+    /// site, untouched since. Everything else is `not_found`.
+    fn undo_save(&mut self, ctx: Ctx, item_id: &str, o: &str, now: u64) -> OpResult<Response> {
+        let page = origin(o)?;
+        let id = parse_id(item_id)?;
+        let pos = self
+            .recent_saves
+            .iter()
+            .position(|r| r.item_id == id)
+            .ok_or(AppErrorCode::NotFound)?;
+        let (saved_at, site, version) = {
+            let r = &self.recent_saves[pos];
+            (r.saved_at, r.site.clone(), r.version)
+        };
+        if now.saturating_sub(saved_at) > UNDO_WINDOW_SECS || page.site() != site {
+            return Err(AppErrorCode::NotFound);
+        }
+        let (vault, item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Login || item_version(&item) != version {
+            return Err(AppErrorCode::NotFound);
+        }
+        self.vault.delete(vault.id, id).map_err(app_code)?;
+        self.recent_saves.remove(pos);
+        self.owners.remove(&id);
+        self.record("undo_save", id, Some(o), ctx, now);
         Ok(Response::Empty {})
     }
 

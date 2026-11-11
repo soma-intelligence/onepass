@@ -209,7 +209,7 @@ interface Ops {
    * `origin`: the page a new item is for. The vaults of the account that page routes to come
    * first (the first is the default of a save there); a `save_*` with `vault_id: ""` goes to it.
    */
-  vaults: { req: { origin?: string }; res: { vaults: { id: string; name: string; color: string | null; account?: string }[] } };
+  vaults: { req: { origin?: string }; res: { vaults: { id: string; name: string; color: string | null; account?: string; shared?: boolean }[] } };
   list_for_origin: { req: { ctx: Ctx; origin: string }; res: { items: Summary[] } };
   search: { req: { ctx: Ctx; query: string }; res: { items: Summary[] } };
   list_fillable: { req: { ctx: Ctx; origin: string; kind: "card" | "identity" }; res: { items: Summary[] } };
@@ -292,6 +292,15 @@ interface Ops {
    */
   confirm_pending: {
     req: { ctx: Ctx; item_id: string; origin: string; username: string };
+    res: Record<string, never>;
+  };
+  /**
+   * Delete for good a Login the bridge saved itself through `save_login` in the last 60 s, for
+   * the same registrable domain and not edited since (the save toast's Undo). `not_found` for
+   * anything else.
+   */
+  undo_save: {
+    req: { ctx: "save_prompt"; item_id: string; origin: string };
     res: Record<string, never>;
   };
   generate: {

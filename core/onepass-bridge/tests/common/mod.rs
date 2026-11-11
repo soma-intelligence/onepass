@@ -118,6 +118,7 @@ impl FakeVault {
             color: Some("#5856D6".into()),
             account: None,
             personal: true,
+            shared: false,
         };
         let pro = VaultInfo {
             id: Id::new(),
@@ -125,6 +126,7 @@ impl FakeVault {
             color: None,
             account: None,
             personal: true,
+            shared: false,
         };
         let p = perso.id;
 
@@ -507,6 +509,15 @@ impl VaultAccess for FakeVault {
         match self.items.iter_mut().find(|i| i.id == item.id) {
             Some(slot) => *slot = item,
             None => self.items.push(item),
+        }
+        Ok(())
+    }
+
+    fn delete(&mut self, _vault_id: Id, item_id: Id) -> Result<()> {
+        let before = self.items.len();
+        self.items.retain(|i| i.id != item_id);
+        if self.items.len() == before {
+            return Err(BridgeError::App(AppErrorCode::NotFound));
         }
         Ok(())
     }

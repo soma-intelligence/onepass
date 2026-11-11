@@ -593,6 +593,9 @@ mod tests {
         fn save(&mut self, _: Id, _: Item) -> crate::Result<()> {
             Ok(())
         }
+        fn delete(&mut self, _: Id, _: Id) -> crate::Result<()> {
+            Ok(())
+        }
         fn approve_reprompt(&mut self, _: Id, _: Option<&str>) -> bool {
             false
         }

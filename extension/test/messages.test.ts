@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BgToCs, CsToBg, FieldRole, FormKind, PageAnalysis, ProviderId, UiToBg } from "../src/shared/messages";
+import type { RequestFor, ResponseFor } from "../src/bridge/client";
 import { type Extra, FORMS_ROLES, type IdentityFill, isCsToBg } from "../src/shared/messages";
 
 describe("messages types", () => {
@@ -40,6 +41,18 @@ describe("messages types", () => {
     expect(r.loyalty?.number).toBe("123456789");
     expect(FORMS_ROLES).toHaveLength(21);
     expect(new Set(FORMS_ROLES).size).toBe(21);
+  });
+
+  it("types the bridge's undo_save request and the shared flag of vaults", () => {
+    const req: RequestFor<"undo_save"> = { op: "undo_save", ctx: "save_prompt", item_id: "i", origin: "https://atlas-cloud.test" };
+    expect(JSON.parse(JSON.stringify(req))).toEqual({ op: "undo_save", ctx: "save_prompt", item_id: "i", origin: "https://atlas-cloud.test" });
+    const reply: ResponseFor<"vaults"> = {
+      vaults: [
+        { id: "v1", name: "Personal", color: null },
+        { id: "v2", name: "Family", color: "#5856D6", shared: true },
+      ],
+    };
+    expect(reply.vaults.map((v) => v.shared === true)).toEqual([false, true]);
   });
 
   it("isCsToBg validates the discriminant", () => {

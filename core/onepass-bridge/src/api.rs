@@ -402,6 +402,15 @@ pub enum Request {
         origin: String,
         username: String,
     },
+    /// Delete for good a Login this session saved through `save_login`
+    /// in the last 60 s, for the same site and not edited since (the
+    /// toast's Undo). Anything else is `not_found`.
+    UndoSave {
+        id: u64,
+        ctx: Ctx,
+        item_id: String,
+        origin: String,
+    },
     Generate {
         id: u64,
         ctx: Ctx,
@@ -574,6 +583,7 @@ impl Request {
             | Self::SaveIdentity { id, .. }
             | Self::UpdatePassword { id, .. }
             | Self::ConfirmPending { id, .. }
+            | Self::UndoSave { id, .. }
             | Self::Generate { id, .. }
             | Self::ProviderAccounts { id, .. }
             | Self::FillProvider { id, .. }
@@ -615,6 +625,7 @@ impl Request {
             Self::SaveIdentity { .. } => "save_identity",
             Self::UpdatePassword { .. } => "update_password",
             Self::ConfirmPending { .. } => "confirm_pending",
+            Self::UndoSave { .. } => "undo_save",
             Self::Generate { .. } => "generate",
             Self::ProviderAccounts { .. } => "provider_accounts",
             Self::FillProvider { .. } => "fill_provider",
@@ -653,6 +664,7 @@ impl Request {
             | Self::SaveIdentity { ctx, .. }
             | Self::UpdatePassword { ctx, .. }
             | Self::ConfirmPending { ctx, .. }
+            | Self::UndoSave { ctx, .. }
             | Self::Generate { ctx, .. }
             | Self::ProviderAccounts { ctx, .. }
             | Self::FillProvider { ctx, .. }
@@ -876,6 +888,10 @@ pub struct VaultEntry {
     /// As `Summary::account`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+    /// A shared vault, left out when false: the extension never saves
+    /// into it without a card.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub shared: bool,
 }
 
 /// What `fill_identity` may add to the identity's own values, on request
@@ -1503,6 +1519,15 @@ mod tests {
             r#"{"id":16,"op":"confirm_pending","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","username":"alex@atlas.dev"}"#,
             16,
             "confirm_pending",
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_undo_save() {
+        round_trip(
+            r#"{"id":31,"op":"undo_save","ctx":"save_prompt","item_id":"i","origin":"https://atlas-cloud.test"}"#,
+            31,
+            "undo_save",
         );
     }
 

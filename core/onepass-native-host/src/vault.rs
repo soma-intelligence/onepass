@@ -307,6 +307,7 @@ impl<S: RecordStore> RepoVault<S> {
             ),
             account: None,
             personal: v.zone() == onepass_core::store::Zone::Private,
+            shared: v.zone().is_shared(),
         }
     }
 }
@@ -387,6 +388,28 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
             Ok(true)
         });
         match written {
+            Ok(true) => {}
+            Ok(false) => return Err(BridgeError::App(AppErrorCode::NotFound)),
+            Err(e) => return Err(self.core_fail("vault write", e)),
+        }
+        self.persist_after_save()
+    }
+
+    fn delete(&mut self, vault_id: Id, item_id: Id) -> onepass_bridge::Result<()> {
+        if self.is_locked() {
+            return Err(LOCKED);
+        }
+        let _g = self.guard()?;
+        self.refresh_repo()?;
+        let repo = self.repo.as_mut().ok_or(LOCKED)?;
+        let removed = repo.vaults().and_then(|vaults| {
+            let Some(vault) = vaults.iter().find(|v| v.id == vault_id) else {
+                return Ok(false);
+            };
+            repo.delete_item(vault, item_id)?;
+            Ok(true)
+        });
+        match removed {
             Ok(true) => {}
             Ok(false) => return Err(BridgeError::App(AppErrorCode::NotFound)),
             Err(e) => return Err(self.core_fail("vault write", e)),
