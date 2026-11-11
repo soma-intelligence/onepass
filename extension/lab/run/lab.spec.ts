@@ -28,6 +28,7 @@ import { type Lab, launchLab, launchPlain, networkViolations, readState, readWor
 import { groupOf } from "../gen/generate.ts";
 import { type CaseOutcome, countryCase, lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv, smartFill } from "./drive.ts";
 import { extensionDriver } from "./driver.ts";
+import { pendingDriver12b } from "./pending.ts";
 import { fixtureFor, meantAccount, otherUsername, profileOf } from "../gen/population.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
 import { afterReplay, fillCheck, judge, type Judgement, type Observation, oneClickOf, replayable, type Result, resultGestures, type Verdict } from "./oracle.ts";
@@ -160,6 +161,8 @@ async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Pr
     case "smart_fill": return smartFill(env, site, s.expect, s);
     case "menu_fill": return menuFill(env, site, s.behaviour, s);
     case "lookalike": return lookalike(env, site);
+    // Task 12b replaces these with the drivers ghost() and saveTyped(); until then the scenario is skipped.
+    case "ghost": case "save_typed": return pendingDriver12b(s.driver);
   }
 }
 
@@ -171,14 +174,14 @@ async function safeAttempt(s: Scenario, site: Site, server: LabServer, lab: () =
 /** The flags a repro needs beyond the seed and the site: the driver set, the profiles, the start state, the trigger. */
 function reproFlags(s: Scenario): string {
   const profiles = config.accounts ? ` --accounts ${profileOf(s)}` : world.profiles ? ` --profiles ${world.profiles.length}` : "";
-  return `${s.driver === "smart_fill" ? " --drivers smart_fill" : ""}${profiles}${s.start ? ` --starts ${s.start}` : ""}${s.shortcut ? " --triggers shortcut" : ""}`;
+  return `${s.driver === "smart_fill" ? " --drivers smart_fill" : groupOf(s.driver) === "save_ghost" ? " --drivers save_ghost" : ""}${profiles}${s.start ? ` --starts ${s.start}` : ""}${s.shortcut ? " --triggers shortcut" : ""}`;
 }
 
 function record(s: Scenario, site: Site, j: Judgement, retried: boolean, durationMs: number, seen: Observation): Result {
   const oneClick = oneClickOf(s, j.verdict, seen);
   const r: Result = {
     worldSeed: world.seed, site: site.index, siteSeed: site.seed, flow: site.flow, traits: site.traits, lang: site.lang,
-    labelLang: site.labelLang, profile: profileOf(s), driver: s.driver, expect: s.expect, ...(s.reason ? { reason: s.reason } : {}), verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
+    labelLang: site.labelLang, profile: profileOf(s), driver: s.driver, ...(s.variant ? { variant: s.variant } : {}), expect: s.expect, ...(s.reason ? { reason: s.reason } : {}), verdict: j.verdict, ...(j.cause ? { cause: j.cause } : {}),
     retried, durationMs, repro: `npm run lab:repro -- --seed ${world.seed} --site ${site.index}${reproFlags(s)}`,
     ...(oneClick !== undefined ? { oneClick } : {}),
     // The gestures of the attempt the verdict stands on (gestures.ts), kinds only.
@@ -327,7 +330,7 @@ if (isSmoke(config)) {
     const lines = readFileSync(state.results, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Result);
     const caseLines = readFileSync(state.cases, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as CaseResult);
     const actual = Object.fromEntries([
-      ...lines.map((r) => [`${r.site}:${r.driver}`, r.verdict === "flaky" ? "pass" : r.verdict]),
+      ...lines.map((r) => [`${r.site}:${r.driver}${r.variant ? `:${r.variant}` : ""}`, r.verdict === "flaky" ? "pass" : r.verdict]),
       ...caseLines.map((r) => [r.id, r.verdict === "flaky" ? "pass" : r.verdict]),
     ]);
     expect(existsSync(SMOKE_EXPECTED), `missing ${SMOKE_EXPECTED}; verdicts of this run:\n${JSON.stringify(actual, null, 2)}`).toBe(true);

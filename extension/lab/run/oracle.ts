@@ -12,7 +12,9 @@
 // `auto_submit_outside_login` (a post of the site that the user did not send,
 // on a flow whose true intent is not a sign-in; the code step of a sign-in is
 // part of the login family, spec 8.1). A third, `other_person_filled` (spec
-// 11.4), fails a forms page whose passenger 2 or later the extension filled.
+// 11.4), fails a forms page whose passenger 2 or later the extension filled. A fourth, `auto_saved_on_failure`
+// (save spec 4), fails a login saved by itself after a refused sign-in; `ghost_in_page_dom` fails a password
+// found in the page's DOM before the user accepted it.
 // Results carry field names, hosts and verdicts, never a value.
 // Gestures (gestures.ts): every result also says how many human-equivalent
 // gestures the attempt took, their kinds, and whether the oracle saw the
@@ -58,6 +60,27 @@ export interface Observation {
   skipped?: string;
   /** How the unlock of a locked start was approved: at once by the host, or by the stand-in's approval file. */
   unlock?: "instant" | "deferred";
+  /**
+   * Save and ghost drivers (task 12b fills these; never a value, only counts and flags, the lab rule):
+   * - ghostShown: the ghost suggestion frame (extension, shadow of the field) appeared on the new-password field.
+   * - ghostInPageDom: the generated password text, read from the ghost frame, was found in `page.content()` or
+   *   in any input value of any frame before the accepting gesture (the leak probe; true is a failure).
+   * - ghostAccepted: after the scenario's gesture the password field held a value the extension put there.
+   * - menuOpened: the in-field menu opened (menu_arrow, and the fallbacks when the ghost cannot be placed).
+   * - savedLogins: logins the vault gained for the site's origin (vaultLogins after minus before, pending
+   *   ones not counted).
+   * - autoSaved: a login was saved with no gesture on a card (the toast "saved" appeared by itself).
+   * - cardShown: the save card (or its folded pill) appeared.
+   * - failedSignIn: the site refused the sign-in the driver typed (failed_login, or a refusal seen by the ledger).
+   */
+  ghostShown?: boolean;
+  ghostInPageDom?: boolean;
+  ghostAccepted?: boolean;
+  menuOpened?: boolean;
+  savedLogins?: number;
+  autoSaved?: boolean;
+  cardShown?: boolean;
+  failedSignIn?: boolean;
   error?: string;
   durationMs: number;
 }
@@ -67,6 +90,8 @@ export interface Judgement { verdict: Verdict; cause?: string }
 export interface Result {
   worldSeed: string; site: number; siteSeed: string; flow: FlowId; traits: TraitId[]; lang: Lang; labelLang: Lang;
   driver: DriverId; expect: Expect;
+  /** ghost and save_typed: the variant of the scenario. */
+  variant?: string;
   /** Simulated user (population.ts); "p0" is the default one. */
   profile?: string;
   /** The documented reason of the expectation (capabilities.ts: "R-16 passkeys", "R-10", "lookalike host"...). */
@@ -232,10 +257,45 @@ function autoSubmitOutsideLogin(site: Site, o: Observation): boolean {
   return o.events.some((e) => (e.kind === "submit" || e.kind === "signin") && hosts.has(e.host) && e.at < userAt);
 }
 
+/** Variants that expect the save card, never an automatic save (spec 4.3, 5.1, 5.3). */
+const CARD_VARIANTS = new Set(["update_card", "no_username", "spa_stays", "private_window"]);
+
+/**
+ * Cause a save_typed scenario missed its goal for, undefined when met. A locked vault turns the automatic
+ * variants into the card (spec 4.3). A card variant that saved anything saved without a gesture.
+ */
+function saveCause(s: Scenario, o: Observation): string | undefined {
+  const saved = (o.savedLogins ?? 0) > 0;
+  const v = s.variant;
+  if (v === "failed_login") return saved ? "save_unexpected" : undefined;
+  if (CARD_VARIANTS.has(v ?? "") || s.start === "locked") {
+    if (saved || o.autoSaved === true) return "save_unexpected";
+    return o.cardShown === true ? undefined : "card_expected";
+  }
+  return saved && o.autoSaved === true ? undefined : "save_missing";
+}
+
+/** Cause a ghost scenario missed its goal for, undefined when met. */
+function ghostCause(s: Scenario, o: Observation): string | undefined {
+  switch (s.variant) {
+    case "accept_tab": case "accept_click":
+      if (o.ghostShown !== true) return "no_ghost";
+      return o.ghostAccepted === true ? undefined : "ghost_not_accepted";
+    case "ignore_typing":
+      if (o.ghostShown !== true) return "no_ghost";
+      return o.ghostAccepted === true ? "ghost_accepted_unasked" : undefined;
+    default: // menu_arrow and the fallbacks: the menu opened.
+      return o.menuOpened === true ? undefined : "no_menu";
+  }
+}
+
 export function judge(s: Scenario, site: Site, o: Observation, check?: FillCheck): Judgement {
   const leak = o.events.find((e): e is Extract<LabEvent, { kind: "leak" }> => e.kind === "leak");
   if (leak) return { verdict: "leak", cause: `leak:${leak.secret}:${leak.field}@${leak.host}` };
   if (o.skipped !== undefined) return { verdict: "skipped", cause: o.skipped };
+  // A save on a failed sign-in, and a password in the page's DOM, fail whatever the expectation says.
+  if (o.failedSignIn === true && o.autoSaved === true) return { verdict: "fail", cause: "auto_saved_on_failure" };
+  if (o.ghostInPageDom === true) return { verdict: "fail", cause: "ghost_in_page_dom" };
   if (autoSubmitOutsideLogin(site, o)) return { verdict: "fail", cause: "auto_submit_outside_login" };
   if ((o.foreign?.length ?? 0) > 0 || wrongAccount(site, o.events, s)) return { verdict: "fail", cause: "wrong_item" };
   if (otherPersonFilled(site, o)) return { verdict: "fail", cause: "other_person_filled" };
@@ -243,6 +303,11 @@ export function judge(s: Scenario, site: Site, o: Observation, check?: FillCheck
     return { verdict: "lab_error", cause: o.error };
   }
   if (o.error !== undefined) return { verdict: "fail", cause: `driver_error:${shortError(o.error)}` };
+  if (s.driver === "ghost" || s.driver === "save_typed") {
+    const cause = s.driver === "ghost" ? ghostCause(s, o) : saveCause(s, o);
+    if (s.expect === "xfail") return cause === undefined ? { verdict: "xpass" } : { verdict: "xfail", cause };
+    return cause === undefined ? { verdict: "pass" } : { verdict: "fail", cause };
+  }
   if (s.expect === "nofill") {
     const typed = new Set(o.typed ?? []);
     const filled = Object.entries(o.filled).some(([name, v]) => v && !typed.has(name)) || o.events.some((e) => e.kind === "signin");
@@ -295,7 +360,7 @@ export function resultGestures(s: Scenario, site: Site, verdict: Verdict, o: Obs
 }
 
 /** Causes that are safety failures: never replayed, never hidden by a replay. */
-export const SAFETY_CAUSES = new Set(["wrong_item", "auto_submit_outside_login", "other_person_filled"]);
+export const SAFETY_CAUSES = new Set(["wrong_item", "auto_submit_outside_login", "other_person_filled", "auto_saved_on_failure"]);
 
 /**
  * Whether a first attempt gets one replay in a fresh profile: a plain

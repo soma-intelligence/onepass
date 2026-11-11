@@ -17,7 +17,7 @@ import { LAYOUTS } from "./layouts.ts";
 import { drawPolicy, POLICY_RATE } from "./policy.ts";
 import { ACCOUNT_FLOWS, ACCOUNT_OUTCOME, accountProfiles, DEFAULT_PROFILE_ID, drawProfiles, fixtureFor, meantAccount, type Profile } from "./population.ts";
 import type {
-  Account, DriverGroup, DriverId, FieldSpec, FixtureFile, FlowId, FrameworkId, HoneypotStyle, IdpAccount, LabRole, Lang, LayoutId, LoginStyle, LookalikeKind, ProviderId, Role, Scenario, Site, StartState, TraitId, World,
+  Account, DriverGroup, DriverId, FieldSpec, FixtureFile, FlowId, FrameworkId, GhostVariant, HoneypotStyle, IdpAccount, LabRole, Lang, LayoutId, LoginStyle, LookalikeKind, ProviderId, Role, SaveVariant, Scenario, Site, StartState, TraitId, World,
 } from "./model.ts";
 import { Rng } from "./rng.ts";
 import { pickSteps } from "./steps.ts";
@@ -189,10 +189,48 @@ function accountScenarios(p: Profile, sites: Site[], base: FixtureFile, driver: 
   return out;
 }
 
-export const DRIVER_GROUPS: readonly DriverGroup[] = ["current", "smart_fill"];
+export const DRIVER_GROUPS: readonly DriverGroup[] = ["current", "smart_fill", "save_ghost"];
 
-/** The driver set a scenario belongs to: smart_fill alone, every other driver is "current". */
-export const groupOf = (d: DriverId): DriverGroup => (d === "smart_fill" ? "smart_fill" : "current");
+/** The driver set a scenario belongs to: smart_fill alone, ghost and save_typed together, every other driver is "current". */
+export const groupOf = (d: DriverId): DriverGroup => (d === "smart_fill" ? "smart_fill" : d === "ghost" || d === "save_typed" ? "save_ghost" : "current");
+
+export const SAVE_VARIANTS: readonly SaveVariant[] = ["new_auto", "second_account", "update_card", "no_username", "spa_stays", "failed_login", "private_window"];
+export const GHOST_VARIANTS: readonly GhostVariant[] = ["accept_tab", "accept_click", "ignore_typing", "menu_arrow", "fallback_narrow", "fallback_transform"];
+/** Sites each variant is played on (spread over the eligible sites, stable for a seed). */
+const SAVE_GHOST_PER_VARIANT = 2;
+const SAVE_FLOWS = new Set<FlowId>(["login_single", "login_username_first", "login_email_then_password"]);
+
+/**
+ * The save and ghost scenarios (spec 7.2): every save variant on plain password login sites (the typed sign-in
+ * the save follows), every ghost variant on signup sites (where a new password is asked). Not part of the
+ * historical world: added by withDrivers for the "save_ghost" set, so a seed's base digest never moves. All
+ * expect "pass": the menu fallbacks count as a pass when the menu opened (oracle.ts).
+ */
+export function saveGhostScenarios(sites: readonly Site[], perVariant: number = SAVE_GHOST_PER_VARIANT): Scenario[] {
+  const plain = (s: Site): boolean => !s.traits.some((t) => t === "iframe_cross_site" || t === "iframe_same_origin" || t === "shadow_closed");
+  const saveSites = sites.filter((s) => SAVE_FLOWS.has(s.flow) && s.account !== undefined && plain(s));
+  const ghostSites = sites.filter((s) => s.flow === "signup" && plain(s));
+  const pick = (pool: readonly Site[], k: number, prefer?: (s: Site) => boolean): Site[] => {
+    if (pool.length === 0) return [];
+    const ordered = prefer ? [...pool.filter(prefer), ...pool.filter((s) => !prefer(s))] : pool;
+    const out = new Set<Site>();
+    for (let j = 0; j < perVariant && out.size < ordered.length; j++) {
+      let i = (prefer && j === 0 ? 0 : k * perVariant + j) % ordered.length;
+      while (out.has(ordered[i]!)) i = (i + 1) % ordered.length;
+      out.add(ordered[i]!);
+    }
+    return [...out];
+  };
+  const out: Scenario[] = [];
+  SAVE_VARIANTS.forEach((v, k) => {
+    const prefer = v === "spa_stays" ? (s: Site) => s.traits.includes("spa_rerender") : undefined;
+    for (const s of pick(saveSites, k, prefer)) out.push({ id: `save:${v}:${s.index}`, site: s.index, driver: "save_typed", variant: v, expect: "pass" });
+  });
+  GHOST_VARIANTS.forEach((v, k) => {
+    for (const s of pick(ghostSites, k)) out.push({ id: `ghost:${v}:${s.index}`, site: s.index, driver: "ghost", variant: v, expect: "pass" });
+  });
+  return out;
+}
 
 /**
  * The world with the scenarios of `groups` only: "current" keeps the
@@ -211,6 +249,7 @@ export function withDrivers(world: World, groups: readonly DriverGroup[]): World
     }
     for (const p of world.profiles ?? []) scenarios.push(...accountScenarios(p, world.sites, world.fixture, "smart_fill"));
   }
+  if (groups.includes("save_ghost")) scenarios.push(...saveGhostScenarios(world.sites));
   return { ...world, scenarios };
 }
 
@@ -219,7 +258,7 @@ export type SmartTrigger = "icon" | "shortcut";
 export const SMART_TRIGGERS: readonly SmartTrigger[] = ["icon", "shortcut"];
 
 /** Drivers whose scenarios have a gesture that can meet a locked vault or a stopped host. */
-const STARTABLE = new Set<DriverId>(["one_click", "menu_fill", "smart_fill"]);
+const STARTABLE = new Set<DriverId>(["one_click", "menu_fill", "smart_fill", "ghost", "save_typed"]);
 
 /**
  * The world with its scenarios played from each of `starts` and, for smart_fill, started by each of

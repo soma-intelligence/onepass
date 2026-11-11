@@ -114,9 +114,16 @@ export interface Site {
   itemTitle?: string;             // overlay title of the login item ("<brand>" or "<brand> via <Provider>")
   forms?: SiteForms;              // forms flows only (generator version 4)
 }
-export type DriverId = "one_click" | "menu_fill" | "lookalike" | "passkey_control" | "smart_fill";
-/** Driver sets a run plays: "current" (overlay, menu, lookalike, passkey control) and "smart_fill" (field icon, plan). */
-export type DriverGroup = "current" | "smart_fill";
+export type DriverId = "one_click" | "menu_fill" | "lookalike" | "passkey_control" | "smart_fill" | "ghost" | "save_typed";
+/**
+ * Driver sets a run plays: "current" (overlay, menu, lookalike, passkey control), "smart_fill" (field icon, plan)
+ * and "save_ghost" (the password suggestion on signup forms, the save after a typed sign-in).
+ */
+export type DriverGroup = "current" | "smart_fill" | "save_ghost";
+/** Saves after a sign-in the user typed herself (spec 4 and 5); scenario ids `save:<variant>:<site>`. */
+export type SaveVariant = "new_auto" | "second_account" | "update_card" | "no_username" | "spa_stays" | "failed_login" | "private_window";
+/** Ways to meet the ghost password suggestion (spec 3); scenario ids `ghost:<variant>:<site>`. */
+export type GhostVariant = "accept_tab" | "accept_click" | "ignore_typing" | "menu_arrow" | "fallback_narrow" | "fallback_transform";
 export type Expect = "pass" | "xfail" | "nofill";
 /**
  * What the vault and the host are when the user's gesture happens: unlocked with the host running (the historical
@@ -133,6 +140,8 @@ export interface Scenario {
    */
   id: string; site: number; driver: DriverId;
   expect: Expect; reason?: string;
+  /** ghost and save_typed scenarios: which variant of their family (ids read "ghost:<variant>:<site>", "save:<variant>:<site>"). */
+  variant?: SaveVariant | GhostVariant;
   profile?: string;               // multi-profile worlds only (absent: the default profile)
   behaviour?: Behaviour;          // menu_fill under a non-default behaviour: judged on the fill, not on the user's later action
   start?: StartState;             // absent: unlocked_warm

@@ -1,5 +1,5 @@
 // Command line of the autofill lab (spec 9), run by `node --experimental-strip-types`:
-//   lab    --seed <s> --sites <n> [--drivers current,smart_fill] [--profiles <n> | --accounts p0,p1,p2,p3] [--starts unlocked_warm,locked,cold] [--triggers icon,shortcut] [--out <dir>] [--workers 4] [--report <md>] [--classifier heuristic|gbm|encoder [--model-dir <dir>]]
+//   lab    --seed <s> --sites <n> [--drivers current,smart_fill,save_ghost] [--profiles <n> | --accounts p0,p1,p2,p3] [--starts unlocked_warm,locked,cold] [--triggers icon,shortcut] [--out <dir>] [--workers 4] [--report <md>] [--classifier heuristic|gbm|encoder [--model-dir <dir>]]
 //   repro  --seed <s> --site <i> [--sites <n>] [--drivers ...] [--profiles <n> | --accounts ...] [--starts ...] [--triggers ...] [--out <dir>] [--classifier <k> [--model-dir <dir>]]
 //   compare --out <dir> <dir> <dir> --md <file> [--real-rows <rows.jsonl>]   (classifier comparison, decision rule of the spec)
 //   report --out <dir> [--md <file>]
@@ -224,7 +224,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "report") {
     return writeReport(absolute(need(a, "out")), a.md) ? 1 : 0;
   }
-  console.error("usage: lab --seed <s> --sites <n> [--drivers current,smart_fill] [--profiles <n> | --accounts p0,p1,p2,p3] [--starts unlocked_warm,locked,cold] [--triggers icon,shortcut] [--out <dir>] [--workers 4] [--report <md>] [--classifier <k> [--model-dir <dir>]] | compare --out <dir> <dir> <dir> --md <file> [--real-rows <jsonl>] | repro --seed <s> --site <i> [--sites <n>] [--profiles <n> | --accounts ...] [--starts ...] [--triggers ...] [--out <dir>] | report --out <dir> [--md <file>] | dataset --seed <s> --forms <n> [--workers <k>]");
+  console.error("usage: lab --seed <s> --sites <n> [--drivers current,smart_fill,save_ghost] [--profiles <n> | --accounts p0,p1,p2,p3] [--starts unlocked_warm,locked,cold] [--triggers icon,shortcut] [--out <dir>] [--workers 4] [--report <md>] [--classifier <k> [--model-dir <dir>]] | compare --out <dir> <dir> <dir> --md <file> [--real-rows <jsonl>] | repro --seed <s> --site <i> [--sites <n>] [--profiles <n> | --accounts ...] [--starts ...] [--triggers ...] [--out <dir>] | report --out <dir> [--md <file>] | dataset --seed <s> --forms <n> [--workers <k>]");
   return 2;
 }
 

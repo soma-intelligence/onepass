@@ -38,7 +38,18 @@ export interface OneGestureCell {
 /** What an account profile's scenarios did from one start state with one trigger (measured ones only). */
 export interface AccountRow { profile: string; start: StartState; trigger: Trigger; total: number; signedIn: number; oneGesture: number; wrongAccount: number }
 
+/** One row of the "Save" and "Suggestion" tables: a variant from one start state. `ok` is pass, flaky or xpass. */
+export interface VariantRow { variant: string; start: StartState; total: number; ok: number; fail: number; xfail: number; skipped: number }
+
 export interface Summary {
+  /** save_typed rows (every start state played, skipped scenarios counted in their own column). */
+  save: VariantRow[];
+  /** ghost rows. */
+  ghost: VariantRow[];
+  /** auto_saved_on_failure failures (a login saved by itself after a refused sign-in). */
+  autoSavedOnFailure: Result[];
+  /** ghost_in_page_dom failures (the suggested password found in the page's DOM before acceptance). */
+  ghostInPageDom: Result[];
   /** "One gesture, signed in" cells, account profiles apart in `accounts` (empty for a run from before the gesture accounting). */
   oneGesture: OneGestureCell[];
   /** Whether any result stores its gestures. */
@@ -113,7 +124,24 @@ function group(results: Result[], keys: (r: Result) => string[]): Record<string,
 
 /** Results in (site, driver) order: batches finish in any order, the report must not. */
 function bySiteDriver(results: Result[]): Result[] {
-  return [...results].sort((a, b) => a.site - b.site || a.driver.localeCompare(b.driver));
+  return [...results].sort((a, b) => a.site - b.site || a.driver.localeCompare(b.driver) || (a.variant ?? "").localeCompare(b.variant ?? ""));
+}
+
+/** Rows of one driver's variants by start state, skipped scenarios included (they are in no rate). */
+function variantRows(every: Result[], driver: string): VariantRow[] {
+  const rows = new Map<string, VariantRow>();
+  for (const r of every.filter((x) => x.driver === driver)) {
+    const start = r.startState ?? "unlocked_warm";
+    const key = `${r.variant ?? "?"}|${start}`;
+    const row = rows.get(key) ?? { variant: r.variant ?? "?", start, total: 0, ok: 0, fail: 0, xfail: 0, skipped: 0 };
+    row.total++;
+    if (r.verdict === "pass" || r.verdict === "flaky" || r.verdict === "xpass") row.ok++;
+    else if (r.verdict === "skipped") row.skipped++;
+    else if (r.verdict === "xfail") row.xfail++;
+    else row.fail++;
+    rows.set(key, row);
+  }
+  return [...rows.values()].sort((a, b) => a.variant.localeCompare(b.variant) || START_STATES.indexOf(a.start) - START_STATES.indexOf(b.start));
 }
 
 /** The bench self-check driver: proves the lab's relying party, measures nothing of the extension. */
@@ -147,7 +175,7 @@ function pairRates(results: Result[], hit: (r: Result) => boolean): { byFlow: Re
  */
 export function isRed(s: Summary): boolean {
   const benchFailed = s.overall.total > 0 && s.overall.labError === s.overall.total;
-  return s.leaks.length > 0 || s.wrongItem.length > 0 || s.autoSubmitOutsideLogin.length > 0 || s.otherPersonFilled.length > 0 || benchFailed;
+  return s.leaks.length > 0 || s.autoSavedOnFailure.length > 0 || s.ghostInPageDom.length > 0 || s.wrongItem.length > 0 || s.autoSubmitOutsideLogin.length > 0 || s.otherPersonFilled.length > 0 || benchFailed;
 }
 
 /** The "one gesture, signed in" cells of the results that store their gestures and have a session to see. */
@@ -202,6 +230,10 @@ export function summarize(every: Result[]): Summary {
   const oneClick = pairRates(results, (r) => r.oneClick === true);
   const goalMet = pairRates(results, (r) => MET.has(r.verdict));
   return {
+    save: variantRows(every, "save_typed"),
+    ghost: variantRows(every, "ghost"),
+    autoSavedOnFailure: bySiteDriver(all.filter((r) => r.cause === "auto_saved_on_failure")),
+    ghostInPageDom: bySiteDriver(all.filter((r) => r.cause === "ghost_in_page_dom")),
     // A site with several accounts is another question: those results have their own table.
     oneGesture: oneGestureCells(results.filter((r) => r.outcome === undefined)),
     hasGestures: results.some((r) => r.gestures !== undefined),
@@ -352,7 +384,8 @@ function profileLines(profiles: Profile[] | undefined): string[] {
 
 function scenarioLine(r: Result): string {
   const traits = r.traits.length > 0 ? r.traits.join(", ") : "aucun";
-  return `- site ${r.site} (${r.flow}, ${r.driver}, traits : ${traits}, langue ${r.lang}) : ${r.cause ?? "sans cause"}. Rejeu : \`${r.repro}\``;
+  const family = r.variant !== undefined ? `${r.driver}:${r.variant}` : r.driver;
+  return `- site ${r.site} (${r.flow}, ${family}, traits : ${traits}, langue ${r.lang}) : ${r.cause ?? "sans cause"}. Rejeu : \`${r.repro}\``;
 }
 
 function countBy<T>(items: T[], key: (t: T) => string): [string, T[]][] {
@@ -362,6 +395,12 @@ function countBy<T>(items: T[], key: (t: T) => string): [string, T[]][] {
     m.set(k, [...(m.get(k) ?? []), it]);
   }
   return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+}
+
+function variantTable(rows: VariantRow[]): string[] {
+  const out = ["| Variante | Départ | Scénarios | Réussis | Échecs | Attendus | Sautés |", "| --- | --- | --- | --- | --- | --- | --- |"];
+  for (const r of rows) out.push(`| ${r.variant} | ${START_FR[r.start]} | ${r.total} | ${r.ok} | ${r.fail} | ${r.xfail} | ${r.skipped} |`);
+  return [...out, ""];
 }
 
 export function renderReport(world: { seed: string; sites: number; profiles?: Profile[] }, s: Summary, meta: { date?: string; commit?: string; durationMin?: number }): string {
@@ -380,9 +419,18 @@ export function renderReport(world: { seed: string; sites: number; profiles?: Pr
   const auto = s.autoSubmitOutsideLogin.length;
   l.push(`- Envois automatiques hors connexion (\`auto_submit_outside_login\`) : ${auto}${auto > 0 ? " (le passage est rouge)" : ""}`);
   const other = s.otherPersonFilled.length;
-  l.push(`- Autre personne remplie (\`other_person_filled\`) : ${other}${other > 0 ? " (le passage est rouge)" : ""}`, "");
+  l.push(`- Autre personne remplie (\`other_person_filled\`) : ${other}${other > 0 ? " (le passage est rouge)" : ""}`);
+  if (s.save.length + s.ghost.length > 0) {
+    const saved = s.autoSavedOnFailure.length;
+    l.push(`- Enregistrements automatiques sur connexion refusée (\`auto_saved_on_failure\`) : ${saved}${saved > 0 ? " (le passage est rouge)" : ""}`);
+    const dom = s.ghostInPageDom.length;
+    l.push(`- Mot de passe suggéré dans le DOM de la page (\`ghost_in_page_dom\`) : ${dom}${dom > 0 ? " (le passage est rouge)" : ""}`);
+  }
+  l.push("");
   l.push("## Réussite en un clic", "", ...oneClickTable(s));
   l.push("## Un geste, connecté", "", ...oneGestureTable(s));
+  if (s.save.length > 0) l.push("## Enregistrement", "", ...variantTable(s.save));
+  if (s.ghost.length > 0) l.push("## Suggestion", "", ...variantTable(s.ghost));
   l.push("## Taux de réussite", "");
   l.push(...table("Par flux", s.byFlow), ...table("Par trait", s.byTrait), ...table("Par langue", s.byLang), ...table("Par pilote", s.byDriver), ...table("Par profil", s.byProfile), ...profileLines(world.profiles));
 
@@ -439,6 +487,9 @@ export function renderReport(world: { seed: string; sites: number; profiles?: Pr
   l.push("## Autre personne remplie", "");
   if (s.otherPersonFilled.length === 0) l.push("Aucune.", "");
   else l.push(...s.otherPersonFilled.map(scenarioLine), "");
+
+  if (s.autoSavedOnFailure.length > 0) l.push("## Enregistrements automatiques sur connexion refusée", "", ...s.autoSavedOnFailure.map(scenarioLine), "");
+  if (s.ghostInPageDom.length > 0) l.push("## Mot de passe suggéré dans le DOM de la page", "", ...s.ghostInPageDom.map(scenarioLine), "");
 
   l.push("## Instables", "");
   if (s.flaky.length === 0) l.push("Aucun.", "");
