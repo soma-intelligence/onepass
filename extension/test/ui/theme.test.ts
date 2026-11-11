@@ -45,6 +45,14 @@ describe("theme tokens mirroring DesignKit", () => {
     expect(root).toContain("--r-l: var(--r-control);");
   });
 
+  it("declares the type scale and glyph tokens", () => {
+    const type: Record<string, string> = { caption: "11px", footnote: "12px", body: "13px", headline: "15px", title: "17px" };
+    for (const [name, px] of Object.entries(type)) expect(root).toContain(`--type-${name}: ${px};`);
+    for (const v of ["--glyph-rest:", "--glyph-focus:", "--glyph-focus-bg:", "--frame-shadow:"]) expect(root).toContain(v);
+    expect(light).toContain("--glyph-rest:");
+    expect(light).toContain("--glyph-focus:");
+  });
+
   it("flattens every wash under increased contrast and reduced transparency", () => {
     const declared = [...root.matchAll(/(--wash-[a-z-]+):/g)].map((m) => m[1]);
     expect(declared.sort()).toEqual(["--wash-accent", "--wash-alert-danger", "--wash-identity", "--wash-scale"]);

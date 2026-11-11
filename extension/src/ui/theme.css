@@ -57,6 +57,17 @@
   --r-s: var(--r-chip);
   --r-m: var(--r-control);
   --r-l: var(--r-control);
+  /* Type scale, the same steps as the native DesignKit. */
+  --type-caption: 11px;
+  --type-footnote: 12px;
+  --type-body: 13px;
+  --type-headline: 15px;
+  --type-title: 17px;
+  /* Field glyph (content script) and the shadow of a page frame. */
+  --glyph-rest: #8D8D98;
+  --glyph-focus: #ABA9F4;
+  --glyph-focus-bg: rgba(171, 169, 244, .14);
+  --frame-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 16px 40px rgba(0,0,0,.28);
   /* Washes, one per meaning, as in DesignKit: accent = the primary action,
      alert = a state asking for action, scale = a quality score, identity =
      whose item it is (--identity is set inline per item). */
@@ -81,6 +92,9 @@
 @media (prefers-color-scheme: light) {
   :root {
     --accent-label: #4E4CC9;
+    --glyph-rest: #8A8A94;
+    --glyph-focus: #5856D6;
+    --glyph-focus-bg: rgba(88, 86, 214, .12);
     --accent-soft: rgba(88, 86, 214, .15);
     --accent-ring: rgba(88, 86, 214, .45);
     --ground: #EEEEF3;

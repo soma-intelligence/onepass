@@ -18,6 +18,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { generate as generateDesignTokens } from "./scripts/gen-design-tokens.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const BROWSERS = ["chromium", "firefox", "safari"];
@@ -148,6 +149,10 @@ async function buildBrowser(browser, dev, e2e = false, devHost = false, dist = j
 }
 
 export async function buildAll(browsers = BROWSERS, dev = false, e2e = false, devHost = false, dist = join(root, "dist")) {
+  // The content script reads its colours from a generated mirror of src/ui/theme.css.
+  const tokens = join(root, "src/shared/design-tokens.ts");
+  const next = generateDesignTokens();
+  if (!existsSync(tokens) || readFileSync(tokens, "utf8") !== next) writeFileSync(tokens, next);
   for (const b of browsers) await buildBrowser(b, dev, e2e, devHost, dist);
 }
 
