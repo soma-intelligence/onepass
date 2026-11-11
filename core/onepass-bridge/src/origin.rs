@@ -1,35 +1,58 @@
 //! Page origins and item URL matching (spec 7.3).
 //!
+//! The rules live in `onepass_core::fill_plan::origin`, shared with the
+//! system AutoFill and the MCP; this module reads pages and item URLs with
+//! the `url` crate (WHATWG parsing, punycode hosts) and hands them over.
 //! Hosts are compared in their ASCII (punycode) form, so an IDN lookalike
 //! never equals the original. The registrable domain (eTLD+1) comes from
 //! the Public Suffix List through the `psl` crate.
 
-use onepass_core::model::MatchRule;
+use onepass_core::fill_plan::origin as rules;
+use onepass_core::fill_plan::origin::{Scheme, UrlMatch, UrlParts};
+use onepass_core::model::{Item, MatchRule};
 use url::{Host, Url};
 
 use crate::{AppErrorCode, BridgeError, Result};
 
-/// How well an item URL matches a page.
+/// How well an item URL matches a page, best first.
+///
+/// On the wire (`Summary::match`) an associated match is sent as `domain`:
+/// the extension's parsers refuse an unknown value and would drop the whole
+/// list. The plan says it with the reason `associated_domain`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchQuality {
     ExactHost,
     Domain,
+    /// A domain known to share its credentials with the page's, where the
+    /// item was never used: offered in the menu, never filled unasked.
+    #[serde(rename(serialize = "domain"), skip_deserializing)]
+    Associated,
 }
 
-/// A page origin given by the browser: `https` only.
+impl From<UrlMatch> for MatchQuality {
+    fn from(m: UrlMatch) -> Self {
+        match m {
+            UrlMatch::ExactHost => MatchQuality::ExactHost,
+            UrlMatch::Domain => MatchQuality::Domain,
+            UrlMatch::Associated => MatchQuality::Associated,
+        }
+    }
+}
+
+/// A page origin given by the browser: `https`, or `http` on a loopback
+/// host for `parse_page`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Origin {
-    host: String,
-    port: Option<u16>,
-    path: String,
-    ip: bool,
+    parts: UrlParts,
 }
-
-const HTTPS_PORT: u16 = 443;
 
 fn invalid() -> BridgeError {
     BridgeError::App(AppErrorCode::Invalid)
+}
+
+fn insecure() -> BridgeError {
+    BridgeError::App(AppErrorCode::InsecureOrigin)
 }
 
 /// Host of a parsed URL in lowercase ASCII, and whether it is an address.
@@ -44,93 +67,12 @@ fn host_of(url: &Url) -> Option<(String, bool)> {
     }
 }
 
-impl Origin {
-    /// Parse a page origin or URL. Anything but `https` is
-    /// `insecure_origin`; an unparsable value or one without a host is
-    /// `invalid`. Query and fragment are dropped.
-    pub fn parse(s: &str) -> Result<Origin> {
-        let url = Url::parse(s.trim()).map_err(|_| invalid())?;
-        if url.scheme() != "https" {
-            return Err(BridgeError::App(AppErrorCode::InsecureOrigin));
-        }
-        let (host, ip) = host_of(&url).ok_or_else(invalid)?;
-        Ok(Origin {
-            host,
-            port: url.port(),
-            path: url.path().to_owned(),
-            ip,
-        })
-    }
-
-    /// Lowercase ASCII host, without port.
-    pub fn host(&self) -> &str {
-        &self.host
-    }
-
-    /// Whether the host is an IP address.
-    pub fn is_ip(&self) -> bool {
-        self.ip
-    }
-
-    /// Explicit non default port, if any.
-    pub fn port(&self) -> Option<u16> {
-        self.port
-    }
-
-    /// Path, `/` at least.
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-
-    /// Registrable domain (eTLD+1), or the whole host when the PSL gives
-    /// none (an address, a bare public suffix).
-    pub fn site(&self) -> String {
-        site_of(&self.host, self.ip)
-    }
-
-    /// `https://host[:port]`.
-    pub fn origin_string(&self) -> String {
-        match self.port {
-            Some(p) => format!("https://{}:{p}", self.host),
-            None => format!("https://{}", self.host),
-        }
-    }
-
-    /// `https://host[:port]/path`, without query or fragment.
-    pub fn url_string(&self) -> String {
-        format!("{}{}", self.origin_string(), self.path)
-    }
-}
-
-fn site_of(host: &str, ip: bool) -> String {
-    if ip {
-        return host.to_owned();
-    }
-    psl::domain_str(host).unwrap_or(host).to_owned()
-}
-
-/// An item URL. Items may store a bare host: it is read as `https`.
-struct ItemUrl {
-    scheme: String,
-    host: String,
-    port: Option<u16>,
-    path: String,
-    ip: bool,
-}
-
-fn parse_item_url(s: &str) -> Option<ItemUrl> {
-    let s = s.trim();
-    let url = if s.contains("://") {
-        Url::parse(s).ok()?
-    } else {
-        Url::parse(&format!("https://{s}")).ok()?
-    };
-    if url.scheme() != "https" && url.scheme() != "http" {
-        return None;
-    }
-    let (host, ip) = host_of(&url)?;
-    Some(ItemUrl {
-        scheme: url.scheme().to_owned(),
+/// The parts of a parsed `https` or `http` URL with a host.
+fn parts_of(url: &Url) -> Option<UrlParts> {
+    let scheme = Scheme::parse(url.scheme())?;
+    let (host, ip) = host_of(url)?;
+    Some(UrlParts {
+        scheme,
         host,
         port: url.port(),
         path: url.path().to_owned(),
@@ -138,50 +80,120 @@ fn parse_item_url(s: &str) -> Option<ItemUrl> {
     })
 }
 
-/// Match of an item URL under its rule against a page (spec 7.3).
+/// Reads an item URL, or what the system names a site by: a URL, or a bare
+/// host read as `https`. Only `https` and `http` give parts.
+pub fn parse_parts(s: &str) -> Option<UrlParts> {
+    let s = s.trim();
+    let url = if rules::split_scheme(s).is_some() {
+        Url::parse(s).ok()?
+    } else {
+        Url::parse(&format!("https://{s}")).ok()?
+    };
+    parts_of(&url)
+}
+
+impl Origin {
+    /// Parse a page origin or URL. Anything but `https` is
+    /// `insecure_origin`; an unparsable value or one without a host is
+    /// `invalid`. Query and fragment are dropped.
+    pub fn parse(s: &str) -> Result<Origin> {
+        let page = Origin::parse_page(s)?;
+        if page.parts.scheme != Scheme::Https {
+            return Err(insecure());
+        }
+        Ok(page)
+    }
+
+    /// `parse` for a page to list, plan or fill (spec 6.1): also `http` on
+    /// a loopback host (`localhost`, `127.0.0.1`, `[::1]`). Every other
+    /// `http` origin stays `insecure_origin`.
+    pub fn parse_page(s: &str) -> Result<Origin> {
+        let url = Url::parse(s.trim()).map_err(|_| invalid())?;
+        let Some(scheme) = Scheme::parse(url.scheme()) else {
+            return Err(insecure());
+        };
+        let parts = match parts_of(&url) {
+            Some(p) => p,
+            None if scheme == Scheme::Https => return Err(invalid()),
+            None => return Err(insecure()),
+        };
+        if !parts.fillable_page() {
+            return Err(insecure());
+        }
+        Ok(Origin { parts })
+    }
+
+    /// What the shared matcher compares.
+    pub fn parts(&self) -> &UrlParts {
+        &self.parts
+    }
+
+    /// Lowercase ASCII host, without port.
+    pub fn host(&self) -> &str {
+        &self.parts.host
+    }
+
+    /// Whether the host is an IP address.
+    pub fn is_ip(&self) -> bool {
+        self.parts.ip
+    }
+
+    /// Explicit non default port, if any.
+    pub fn port(&self) -> Option<u16> {
+        self.parts.port
+    }
+
+    /// Path, `/` at least.
+    pub fn path(&self) -> &str {
+        &self.parts.path
+    }
+
+    /// Registrable domain (eTLD+1), or the whole host when the PSL gives
+    /// none (an address, a bare public suffix).
+    pub fn site(&self) -> String {
+        self.parts.site()
+    }
+
+    /// `scheme://host[:port]`.
+    pub fn origin_string(&self) -> String {
+        self.parts.origin()
+    }
+
+    /// `scheme://host[:port]/path`, without query or fragment.
+    pub fn url_string(&self) -> String {
+        format!("{}{}", self.origin_string(), self.parts.path)
+    }
+}
+
+/// Match of an item URL under its rule against a page (spec 7.3), by the
+/// shared `fill_plan::origin::matches`.
 ///
 /// - `Domain`: same registrable domain (`ExactHost` quality when the hosts
-///   are equal).
+///   are equal), else an associated domain (`Associated`).
 /// - `ExactHost`: same host.
-/// - `ExactUrl`: same origin (an `http` item never matches) and same path;
-///   query and fragment are ignored.
+/// - `ExactUrl`: same origin (an `http` item never matches an `https`
+///   page) and same path; query and fragment are ignored.
 /// - `Never`: never.
 ///
-/// A port written in the item URL must equal the page port.
+/// A port written in the item URL must equal the page port; on a loopback
+/// page the ports are always compared (the scheme's own when none is
+/// written). An item URL may be a bare host: it is read as `https`.
 pub fn matches(item_url: &str, rule: MatchRule, page: &Origin) -> Option<MatchQuality> {
-    if rule == MatchRule::Never {
-        return None;
-    }
-    let item = parse_item_url(item_url)?;
-    if let Some(p) = item.port
-        && p != page.port.unwrap_or(HTTPS_PORT)
-    {
-        return None;
-    }
-    let same_host = item.host == page.host;
-    match rule {
-        MatchRule::Never => None,
-        MatchRule::ExactHost => same_host.then_some(MatchQuality::ExactHost),
-        MatchRule::ExactUrl => (item.scheme == "https"
-            && same_host
-            && item.port == page.port
-            && item.path == page.path)
-            .then_some(MatchQuality::ExactHost),
-        MatchRule::Domain => {
-            if same_host {
-                Some(MatchQuality::ExactHost)
-            } else if site_of(&item.host, item.ip) == page.site() {
-                Some(MatchQuality::Domain)
-            } else {
-                None
-            }
-        }
-    }
+    let item = parse_parts(item_url)?;
+    rules::matches(&item, rule, &page.parts).map(MatchQuality::from)
+}
+
+/// Best match of any of the item URLs against the page
+/// (`fill_plan::origin::item_match`): an item with a URL on the page's own
+/// site is never an associated match there, and an associated match is a
+/// `Domain` match only on a host where the user picked the item.
+pub fn item_match(item: &Item, page: &Origin) -> Option<MatchQuality> {
+    rules::item_match(item, &page.parts, parse_parts).map(|(q, _)| q.into())
 }
 
 /// Host of an item URL in lowercase ASCII, if it parses.
 pub fn item_host(item_url: &str) -> Option<String> {
-    parse_item_url(item_url).map(|u| u.host)
+    parse_parts(item_url).map(|u| u.host)
 }
 
 #[cfg(test)]
@@ -355,5 +367,140 @@ mod tests {
             matches("atlas-cloud.test", MatchRule::Domain, &p),
             Some(MatchQuality::ExactHost)
         );
+    }
+
+    #[test]
+    fn loopback_http_is_a_page_and_nothing_else_is() {
+        for (s, origin) in [
+            ("http://localhost:3000/login?x", "http://localhost:3000"),
+            ("http://LOCALHOST./", "http://localhost"),
+            ("http://127.0.0.1:8080", "http://127.0.0.1:8080"),
+            ("http://127.1", "http://127.0.0.1"),
+            ("http://[::1]:5173/app", "http://[::1]:5173"),
+            ("http://[0:0:0:0:0:0:0:1]", "http://[::1]"),
+            ("http://localhost:80", "http://localhost"),
+        ] {
+            let p = Origin::parse_page(s).unwrap_or_else(|e| panic!("{s}: {e:?}"));
+            assert_eq!(p.origin_string(), origin, "{s}");
+            // Passkeys, password rules and the rest stay https only.
+            assert_eq!(
+                Origin::parse(s),
+                Err(BridgeError::App(AppErrorCode::InsecureOrigin)),
+                "{s}"
+            );
+        }
+        for s in [
+            "http://atlas-cloud.test",
+            "http://app.localhost:3000",
+            "http://localhost.evil.test",
+            "http://nas.local",
+            "http://127.0.0.2",
+            "http://192.168.1.10",
+            "http://10.0.0.1",
+            "http://[::2]",
+            "http://0.0.0.0",
+            "ws://localhost:3000",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+        ] {
+            assert_eq!(
+                Origin::parse_page(s),
+                Err(BridgeError::App(AppErrorCode::InsecureOrigin)),
+                "{s}"
+            );
+        }
+        for s in ["not a url", "http://", "https://"] {
+            assert_eq!(
+                Origin::parse_page(s),
+                Err(BridgeError::App(AppErrorCode::Invalid)),
+                "{s}"
+            );
+        }
+        assert_eq!(
+            Origin::parse_page("https://atlas-cloud.test/x").map(|p| p.url_string()),
+            Ok("https://atlas-cloud.test/x".to_owned())
+        );
+    }
+
+    #[test]
+    fn loopback_item_matches_its_port_only() {
+        let p = Origin::parse_page("http://localhost:3000/login").unwrap();
+        for item in ["http://localhost:3000", "localhost:3000"] {
+            assert_eq!(
+                matches(item, MatchRule::Domain, &p),
+                Some(MatchQuality::ExactHost),
+                "{item}"
+            );
+        }
+        // No port written is the scheme's own, never every loopback port.
+        for item in ["localhost", "http://localhost", "https://localhost"] {
+            assert_eq!(matches(item, MatchRule::Domain, &p), None, "{item}");
+        }
+        assert_eq!(
+            matches("http://localhost:8080", MatchRule::Domain, &p),
+            None
+        );
+        assert_eq!(
+            matches("http://localhost:3000/login", MatchRule::ExactUrl, &p),
+            Some(MatchQuality::ExactHost)
+        );
+        // `ExactUrl` is an origin: the https item is not this http page.
+        assert_eq!(
+            matches("https://localhost:3000/login", MatchRule::ExactUrl, &p),
+            None
+        );
+        assert_eq!(
+            matches("http://127.0.0.1:3000", MatchRule::Domain, &p),
+            None
+        );
+    }
+
+    #[test]
+    fn scheme_in_a_query_is_not_the_item_scheme() {
+        let p = page("https://atlas-cloud.test/");
+        assert_eq!(
+            matches(
+                "atlas-cloud.test/login?next=https://evil.test",
+                MatchRule::Domain,
+                &p
+            ),
+            Some(MatchQuality::ExactHost)
+        );
+        assert_eq!(
+            item_host("atlas-cloud.test/p?next=https://evil.test").as_deref(),
+            Some("atlas-cloud.test")
+        );
+    }
+
+    #[test]
+    fn associated_domain_is_its_own_tier() {
+        // From Apple's list: a2hosting.com became hosting.com, one way.
+        let p = page("https://my.hosting.com/login");
+        assert_eq!(
+            matches("https://www.a2hosting.com", MatchRule::Domain, &p),
+            Some(MatchQuality::Associated)
+        );
+        assert_eq!(
+            matches("https://www.a2hosting.com", MatchRule::ExactHost, &p),
+            None
+        );
+        assert_eq!(
+            matches(
+                "https://hosting.com",
+                MatchRule::Domain,
+                &page("https://a2hosting.com")
+            ),
+            None
+        );
+        // Older extensions refuse an unknown `match`: sent as `domain`.
+        assert_eq!(
+            serde_json::to_string(&MatchQuality::Associated).unwrap(),
+            "\"domain\""
+        );
+        assert_eq!(
+            serde_json::from_str::<MatchQuality>("\"domain\"").unwrap(),
+            MatchQuality::Domain
+        );
+        assert!(serde_json::from_str::<MatchQuality>("\"associated\"").is_err());
     }
 }

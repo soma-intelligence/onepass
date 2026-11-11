@@ -298,5 +298,10 @@ fn sure_batch_merges_only_the_groups_still_sure() {
     assert!(gone.archived);
     assert!(gone.notes.ends_with("Fusionné dans Gmail"));
     // An id that is no longer a group does nothing.
-    assert!(a.repo().merge_sure_duplicates(&ids, &[], |t| t.into()).unwrap().is_empty());
+    assert!(
+        a.repo()
+            .merge_sure_duplicates(&ids, &[], |t| t.into())
+            .unwrap()
+            .is_empty()
+    );
 }

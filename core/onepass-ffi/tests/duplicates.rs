@@ -165,7 +165,11 @@ fn review_lines_choices_and_sure_batch() {
     let other = &g.copies[1];
     let other_item = if other.summary.id == a.id { &a } else { &b };
     let primary_item = if primary.summary.id == a.id { &a } else { &b };
-    let wanted = if other.summary.id == a.id { "Pw-one-11" } else { "Pw-two-22" };
+    let wanted = if other.summary.id == a.id {
+        "Pw-one-11"
+    } else {
+        "Pw-two-22"
+    };
     let answers = vec![FfiDuplicateChoice {
         subject: "password".into(),
         from_item_id: Some(other_item.id.clone()),
@@ -175,7 +179,12 @@ fn review_lines_choices_and_sure_batch() {
         .unwrap();
     assert_eq!(preview.history_added, 1);
     let merged = s
-        .merge_duplicates_with(key(primary_item), vec![key(other_item)], answers, "Fusionné".into())
+        .merge_duplicates_with(
+            key(primary_item),
+            vec![key(other_item)],
+            answers,
+            "Fusionné".into(),
+        )
         .unwrap();
     let got = merged
         .sections
@@ -183,6 +192,11 @@ fn review_lines_choices_and_sure_batch() {
         .flat_map(|s| s.fields.iter())
         .find(|f| f.id == "password")
         .map(|f| f.value.clone());
-    assert_eq!(got, Some(FfiFieldValue::Password { value: wanted.into() }));
+    assert_eq!(
+        got,
+        Some(FfiFieldValue::Password {
+            value: wanted.into()
+        })
+    );
     assert!(s.duplicate_groups(vec![]).unwrap().is_empty());
 }

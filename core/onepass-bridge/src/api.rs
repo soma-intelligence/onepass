@@ -217,11 +217,20 @@ pub enum Request {
     Status {
         id: u64,
     },
+    /// `origin`: the page the user's gesture was on (https, or http on a
+    /// loopback host), for the app to bind its unlock to it. Optional: an
+    /// older extension sends none.
     Unlock {
         id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<String>,
     },
+    /// `origin`: the page a new item would be saved for; the vaults of the
+    /// account it routes to come first. Optional.
     Vaults {
         id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<String>,
     },
     ListForOrigin {
         id: u64,
@@ -547,8 +556,8 @@ impl Request {
     pub fn id(&self) -> u64 {
         match self {
             Self::Status { id }
-            | Self::Unlock { id }
-            | Self::Vaults { id }
+            | Self::Unlock { id, .. }
+            | Self::Vaults { id, .. }
             | Self::ListForOrigin { id, .. }
             | Self::Search { id, .. }
             | Self::ListFillable { id, .. }
@@ -848,6 +857,15 @@ pub struct Summary {
     pub methods: Vec<Method>,
     #[serde(rename = "match")]
     pub match_quality: Option<MatchQuality>,
+    /// The match is an associated domain (sent as `domain` in `match`, the
+    /// only values an extension accepts there): a UI may say so. Left out
+    /// when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub associated: bool,
+    /// Label of the item's account when the host offers items of several
+    /// accounts; left out otherwise. An older extension ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -855,6 +873,9 @@ pub struct VaultEntry {
     pub id: String,
     pub name: String,
     pub color: Option<String>,
+    /// As `Summary::account`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 /// What `fill_identity` may add to the identity's own values, on request
@@ -2012,11 +2033,27 @@ mod tests {
                 account_email: "alex.perso@example.com".into(),
             }],
             match_quality: None,
+            associated: false,
+            account: None,
         };
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["match"], Value::Null);
         assert_eq!(v["kind"], "login");
         assert_eq!(v["methods"][0]["provider"], "google");
+        // The optional fields are left out: the shape an extension from
+        // before them reads.
         assert_eq!(v.as_object().unwrap().len(), 12);
+
+        let tagged = Summary {
+            match_quality: Some(MatchQuality::Associated),
+            associated: true,
+            account: Some("Soma Labs".into()),
+            ..s
+        };
+        let v = serde_json::to_value(&tagged).unwrap();
+        assert_eq!(v["match"], "domain");
+        assert_eq!(v["associated"], true);
+        assert_eq!(v["account"], "Soma Labs");
+        assert_eq!(v.as_object().unwrap().len(), 14);
     }
 }

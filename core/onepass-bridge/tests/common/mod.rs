@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use onepass_bridge::service::{VaultAccess, VaultInfo, VaultStatus};
+use onepass_bridge::service::{AccountTag, VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError, Result};
 use onepass_core::Id;
 use onepass_core::autofill_history::{AutofillEvent, ClientContext};
@@ -68,7 +68,22 @@ pub struct FakeVault {
     pub items: Vec<Item>,
     /// The autofill history, as `Repository::record_autofill_event` keeps it.
     pub history: Vec<AutofillEvent>,
+    /// Key of the account every host routes to (`items_for`), once the
+    /// vaults are tagged with `two_accounts`.
+    pub routed: String,
+    /// What the host was told: the origin host of each `unlock`, of each
+    /// reprompt (with its item), each secret served, the client's pairing.
+    pub unlocks: Vec<Option<String>>,
+    pub reprompts: Vec<(Id, Option<String>)>,
+    pub served: Vec<(&'static str, Id, Option<String>)>,
+    pub client: Option<[u8; 16]>,
 }
+
+/// Account key and label of the fixture's second account (`two_accounts`).
+pub const WORK_KEY: &str = "0123456789abcdef0123456789abcdef";
+pub const WORK_LABEL: &str = "Soma Labs";
+pub const PRIMARY_KEY: &str = "primary";
+pub const PRIMARY_LABEL: &str = "Personal";
 
 fn set(item: &mut Item, field: &str, value: FieldValue) {
     item.field_mut(field).expect(field).value = value;
@@ -101,11 +116,15 @@ impl FakeVault {
             id: Id::new(),
             name: "Personnel".into(),
             color: Some("#5856D6".into()),
+            account: None,
+            personal: true,
         };
         let pro = VaultInfo {
             id: Id::new(),
             name: "Atlas".into(),
             color: None,
+            account: None,
+            personal: true,
         };
         let p = perso.id;
 
@@ -296,6 +315,11 @@ impl FakeVault {
             locked: false,
             approve_reprompt: false,
             history: Vec::new(),
+            routed: PRIMARY_KEY.to_owned(),
+            unlocks: Vec::new(),
+            reprompts: Vec::new(),
+            served: Vec::new(),
+            client: None,
             vaults: vec![perso, pro],
             items: vec![
                 atlas,
@@ -313,6 +337,20 @@ impl FakeVault {
             ],
         };
         (vault, ids)
+    }
+
+    /// The host serves two accounts: the personal vault is the primary
+    /// account's, the `pro` vault the added account's.
+    pub fn two_accounts(&mut self) {
+        let tag = |key: &str, label: &str| {
+            Some(AccountTag {
+                key: key.to_owned(),
+                label: label.to_owned(),
+                behind: false,
+            })
+        };
+        self.vaults[0].account = tag(PRIMARY_KEY, PRIMARY_LABEL);
+        self.vaults[1].account = tag(WORK_KEY, WORK_LABEL);
     }
 
     /// Add a login with one URL to the personal vault.
@@ -407,9 +445,31 @@ impl VaultAccess for FakeVault {
         }
     }
 
-    fn unlock(&mut self) -> Result<bool> {
+    fn unlock(&mut self, origin_host: Option<&str>) -> Result<bool> {
+        self.unlocks.push(origin_host.map(str::to_owned));
         self.locked = false;
         Ok(true)
+    }
+
+    fn vaults_for(&self, _host: &str) -> Result<Vec<VaultInfo>> {
+        // As the app: the routed account's vaults first, the others behind.
+        let mut all = self.vaults()?;
+        for v in &mut all {
+            if let Some(a) = &mut v.account {
+                a.behind = a.key != self.routed;
+            }
+        }
+        all.sort_by_key(|v| v.account.as_ref().is_some_and(|a| a.behind));
+        Ok(all)
+    }
+
+    fn bind_client(&mut self, pairing_id: &[u8; 16]) {
+        self.client = Some(*pairing_id);
+    }
+
+    fn secret_served(&mut self, kind: &'static str, item_id: Id, account: Option<&str>) {
+        self.served
+            .push((kind, item_id, account.map(str::to_owned)));
     }
 
     fn vaults(&self) -> Result<Vec<VaultInfo>> {
@@ -430,6 +490,18 @@ impl VaultAccess for FakeVault {
             .collect())
     }
 
+    fn items_for(&mut self, _host: &str) -> Result<Vec<(VaultInfo, Item)>> {
+        // As the app: the routed account's items first, the others behind.
+        let mut all = self.items()?;
+        for (v, _) in &mut all {
+            if let Some(a) = &mut v.account {
+                a.behind = a.key != self.routed;
+            }
+        }
+        all.sort_by_key(|(v, _)| v.account.as_ref().is_some_and(|a| a.behind));
+        Ok(all)
+    }
+
     fn save(&mut self, vault_id: Id, mut item: Item) -> Result<()> {
         item.vault_id = vault_id;
         match self.items.iter_mut().find(|i| i.id == item.id) {
@@ -439,7 +511,9 @@ impl VaultAccess for FakeVault {
         Ok(())
     }
 
-    fn approve_reprompt(&mut self, _item_id: Id) -> bool {
+    fn approve_reprompt(&mut self, item_id: Id, origin_host: Option<&str>) -> bool {
+        self.reprompts
+            .push((item_id, origin_host.map(str::to_owned)));
         self.approve_reprompt
     }
 

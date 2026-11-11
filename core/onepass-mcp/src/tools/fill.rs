@@ -8,6 +8,7 @@ use crate::browser::{BrowserError, BrowserTarget, FillKind, PageProbe};
 use crate::policy::Scope;
 use crate::port::{VaultInfo, VaultPort};
 use crate::protocol::ClientInfo;
+use onepass_core::fill_plan::origin::{self as rules, Scheme, UrlMatch, UrlParts};
 use onepass_core::model::checks::{CardBrand, card_brand};
 use onepass_core::model::{FieldValue, Item, ItemType, MatchRule};
 use onepass_guard::Target;
@@ -40,96 +41,16 @@ fn browser_refusal(e: BrowserError) -> Refusal {
     named(e.code(), e.text())
 }
 
-/// A URL's host (lowercase ASCII) and its port when not the default one.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Host {
-    scheme: String,
-    host: String,
-    port: Option<u16>,
-    ip: bool,
-}
+/// A URL as the shared matcher (`fill_plan::origin`) reads it: lowercase
+/// ASCII host, the port when not the default one, the path.
+type Host = UrlParts;
 
-impl Host {
-    /// Registrable domain (eTLD+1), or the whole host for an address or a
-    /// bare public suffix.
-    fn site(&self) -> String {
-        if self.ip {
-            return self.host.clone();
-        }
-        psl::domain_str(&self.host).unwrap_or(&self.host).to_owned()
-    }
-
-    /// `scheme://host[:port]`: what the audit log keeps of a page.
-    fn origin(&self) -> String {
-        match self.port {
-            Some(p) => format!("{}://{}:{p}", self.scheme, self.host),
-            None => format!("{}://{}", self.scheme, self.host),
-        }
-    }
-}
-
-/// Parses `scheme://host[:port][/...]`. Without `://`, `bare_is_https`
-/// reads it as `https` (items may store a bare host), else it is refused.
-/// User info, non ASCII hosts (give the punycode form) and malformed ports
-/// are refused.
+/// Parses `scheme://host[:port][/...]` with the core's strict parser.
+/// Without `://`, `bare_is_https` reads it as `https` (items may store a
+/// bare host), else it is refused. User info, non ASCII hosts (give the
+/// punycode form) and malformed ports are refused.
 fn parse_url(s: &str, bare_is_https: bool) -> Option<Host> {
-    let s = s.trim();
-    let (scheme, rest) = match s.split_once("://") {
-        Some((scheme, rest)) => (scheme.to_ascii_lowercase(), rest),
-        None if bare_is_https => ("https".to_owned(), s),
-        None => return None,
-    };
-    if scheme != "https" && scheme != "http" {
-        return None;
-    }
-    let end = rest.find(['/', '?', '#', '\\']).unwrap_or(rest.len());
-    let authority = &rest[..end];
-    if authority.contains('@') {
-        return None;
-    }
-    let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
-        let (addr, after) = v6.split_once(']')?;
-        if addr.is_empty()
-            || !addr
-                .chars()
-                .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
-        {
-            return None;
-        }
-        (format!("[{}]", addr.to_ascii_lowercase()), after)
-    } else {
-        let i = authority.find(':').unwrap_or(authority.len());
-        (authority[..i].to_owned(), &authority[i..])
-    };
-    let port = match port.strip_prefix(':') {
-        None if port.is_empty() => None,
-        None => return None,
-        Some("") => None,
-        Some(p) => Some(p.parse::<u16>().ok()?),
-    };
-    let default = if scheme == "https" { 443 } else { 80 };
-    let port = port.filter(|&p| p != default);
-    let ip = host.starts_with('[');
-    let host = if ip {
-        host
-    } else {
-        let h = host.trim_end_matches('.').to_ascii_lowercase();
-        if h.is_empty()
-            || !h
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b'_')
-        {
-            return None;
-        }
-        h
-    };
-    let ip = ip || host.bytes().all(|b| b.is_ascii_digit() || b == b'.');
-    Some(Host {
-        scheme,
-        host,
-        port,
-        ip,
-    })
+    rules::parse_ascii(s, bare_is_https)
 }
 
 /// An `https` URL, or `not_https`; one without a usable host is invalid.
@@ -152,36 +73,48 @@ fn is_ws(addr: &str) -> bool {
         .is_some_and(|h| h.eq_ignore_ascii_case("ws://"))
 }
 
-/// What one of the item's URLs matched on `page`, under its own rule:
-/// `Domain` the registrable domain (`site:<etld1>`), `ExactHost` the exact
-/// host (`host:<host>`), `ExactUrl` the exact origin (`origin:<origin>`;
-/// the path cannot be checked against an origin), `Never` nothing. A port
-/// written in the item URL must equal the page's. When several URLs match,
-/// the narrowest wins, so a grant keyed on it never widens the item's rule.
+/// What one of the item's URLs matched on `page`, under its own rule, by
+/// the matcher shared with the bridge and the system AutoFill: `Domain` the
+/// registrable domain (`site:<etld1>`) or a domain sharing its credentials
+/// with it (`assoc:<etld1>`), `ExactHost` the exact host (`host:<host>`),
+/// `ExactUrl` the exact origin and path (`url:<origin><path>`), `Never`
+/// nothing. A port written in the item URL must equal the page's. When
+/// several URLs match, the narrowest wins, so a grant keyed on it never
+/// widens the item's rule.
+///
+/// A login holding a URL on the page's own site is never an associated
+/// match there: that URL rules alone (`rules::has_url_on_site`).
 fn item_match(item: &Item, page: &Host) -> Option<String> {
+    let own_site = rules::has_url_on_site(item, page, |u| parse_url(u, true));
     item.urls
         .iter()
         .filter_map(|u| {
             let h = parse_url(&u.url, true)?;
-            if h.port.is_some() && h.port != page.port {
-                return None;
-            }
-            match u.rule {
-                MatchRule::Never => None,
-                MatchRule::Domain => {
-                    (h.site() == page.site()).then(|| (1, format!("site:{}", page.site())))
-                }
-                MatchRule::ExactHost => {
-                    (h.host == page.host).then(|| (2, format!("host:{}", page.host)))
-                }
-                MatchRule::ExactUrl => {
-                    (h.scheme == "https" && h.host == page.host && h.port == page.port)
-                        .then(|| (3, format!("origin:{}", page.origin())))
-                }
-            }
+            let q = rules::matches(&h, u.rule, page)?;
+            Some(match (u.rule, q) {
+                (MatchRule::Never, _) => return None,
+                (_, UrlMatch::Associated) if own_site => return None,
+                (_, UrlMatch::Associated) => (0, format!("{ASSOCIATED}{}", page.site())),
+                (MatchRule::Domain, _) => (1, format!("site:{}", page.site())),
+                (MatchRule::ExactHost, _) => (2, format!("host:{}", page.host)),
+                (MatchRule::ExactUrl, _) => (3, format!("url:{}{}", page.origin(), page.path)),
+            })
         })
         .max_by_key(|(rank, _)| *rank)
         .map(|(_, m)| m)
+}
+
+/// Prefix of an associated domain match in `item_match`.
+const ASSOCIATED: &str = "assoc:";
+
+/// The item is saved for a domain that only shares its credentials with
+/// the page's, and the user never picked it on the page's host: the user is
+/// asked every time and nothing is submitted. Once picked there (in the
+/// extension's menu or the system's list, `Item::picked_as_associated_on`),
+/// it is a login of that host like any other. An agent's own fill is no
+/// such pick, and a memory of the site through another URL proves none.
+fn first_use_elsewhere(item: &Item, matched: &str, host: &str) -> bool {
+    matched.starts_with(ASSOCIATED) && !item.picked_as_associated_on(host)
 }
 
 /// Whether an item may be filled at all: not archived, not hidden from
@@ -346,7 +279,6 @@ impl<P: VaultPort> McpTools<P> {
         let url = str_arg(args, "url").unwrap_or_default();
         let page = https_page(url)?;
         call.destination = Some(page.origin());
-        let site = page.site();
         let submit = args.get("submit").and_then(Value::as_bool).unwrap_or(false);
         if kind == FillKind::Card && submit {
             return Err(named("submit_not_allowed", "a card is never submitted").into());
@@ -383,8 +315,16 @@ impl<P: VaultPort> McpTools<P> {
         if self.require(&vault, Scope::Fill).is_err() {
             return Err(named("scope_denied", "scope 'fill' not granted for this vault").into());
         }
-        if kind == FillKind::Login && item_match(&item, &page).is_none() {
-            return Err(named("origin_mismatch", "the item is not for this site").into());
+        if kind == FillKind::Login {
+            let matched = item_match(&item, &page)
+                .ok_or_else(|| named("origin_mismatch", "the item is not for this site"))?;
+            if submit && first_use_elsewhere(&item, &matched, &page.host) {
+                return Err(named(
+                    "submit_not_allowed",
+                    "a login saved for an associated site is not submitted on its first use here",
+                )
+                .into());
+            }
         }
 
         let client_id = self.client.client_id.clone();
@@ -402,7 +342,9 @@ impl<P: VaultPort> McpTools<P> {
             .probe(&client_id, &target, url)
             .map_err(browser_refusal)?;
         let cdp = matches!(target, BrowserTarget::Cdp(_));
-        if let Err(r) = self.fill_gate(client, kind, cdp, &site, &vault, &item, &probe, call) {
+        if let Err(r) = self.fill_gate(
+            client, kind, cdp, submit, &page, &vault, &item, &probe, call,
+        ) {
             if let Some(b) = self.browser.as_ref() {
                 b.cancel(&probe);
             }
@@ -446,15 +388,26 @@ impl<P: VaultPort> McpTools<P> {
         client: &ClientInfo,
         kind: FillKind,
         cdp: bool,
-        site: &str,
+        submit: bool,
+        page: &Host,
         vault: &VaultInfo,
         item: &Item,
         probe: &PageProbe,
         call: &mut Call<'_>,
     ) -> Result<(), Refusal> {
-        let tab = parse_url(&probe.origin, false)
-            .filter(|h| h.scheme == "https" && h.site() == site)
+        let site = page.site();
+        let site = site.as_str();
+        let mut tab = parse_url(&probe.origin, false)
+            .filter(|h| h.scheme == Scheme::Https && h.site() == site)
             .ok_or_else(|| browser_refusal(BrowserError::TabMismatch))?;
+        // The browser reports an origin: the path is the one the agent
+        // named, and only for that very origin (else none, which no
+        // `ExactUrl` item matches).
+        tab.path = if tab.same_origin(page) {
+            page.path.clone()
+        } else {
+            String::new()
+        };
         // A login's tab must satisfy the item's own rule too; the grant is
         // keyed on what it matched, never wider than that rule.
         let matched = match kind {
@@ -483,7 +436,18 @@ impl<P: VaultPort> McpTools<P> {
             item: item.title.clone(),
             field: None,
         }];
-        let remember = kind == FillKind::Login && !item.reprompt;
+        // An associated site's login is the user's choice each time until
+        // it was used on this site once: no remembered window before that.
+        let first_use = matched
+            .as_deref()
+            .is_some_and(|m| first_use_elsewhere(item, m, &tab.host));
+        if first_use && submit {
+            return Err(named(
+                "submit_not_allowed",
+                "a login saved for an associated site is not submitted on its first use here",
+            ));
+        }
+        let remember = kind == FillKind::Login && !item.reprompt && !first_use;
         // The grant also names the browser: a window opened for the
         // extension never covers a page driven over CDP, nor the reverse.
         let browser = if cdp { "cdp" } else { "chrome" };
@@ -1267,6 +1231,142 @@ mod tests {
             code(f.call(exact_args(&pinned, "https://app.example.com/login"))),
             "origin_mismatch"
         );
+    }
+
+    /// `ExactUrl` is the origin and the path: the page the agent names
+    /// must be the item's, on the tab's very origin.
+    #[test]
+    fn exact_url_item_is_held_to_its_path() {
+        let mut f = fx(vec![Decision::AllowFor(Duration::from_secs(300)); 4]);
+        let mut pinned = login(f.agents.id, "Pinned", "https://app.example.com/login");
+        pinned.urls[0].rule = MatchRule::ExactUrl;
+        f.tools
+            .port
+            .items
+            .get_mut(&f.agents.id)
+            .unwrap()
+            .push(pinned.clone());
+        f.set_browser("https://app.example.com", None);
+        // Another page of the same origin: refused before any probe.
+        assert_eq!(
+            code(f.call(exact_args(&pinned, "https://app.example.com/account"))),
+            "origin_mismatch"
+        );
+        assert_eq!(
+            code(f.call(exact_args(&pinned, "https://app.example.com"))),
+            "origin_mismatch"
+        );
+        assert!(f.log.lock().unwrap().probes.is_empty());
+        // Its own page, query aside.
+        ok(f.call(exact_args(&pinned, "https://app.example.com/login?next=/")));
+        // The tab is on another origin of the site than the page named:
+        // its path is unknown, nothing matches.
+        let mut wide = login(f.agents.id, "Wide", "https://example.com/login");
+        wide.urls[0].rule = MatchRule::ExactUrl;
+        wide.urls.push(ItemUrl {
+            label: String::new(),
+            url: "https://app.example.com".into(),
+            rule: MatchRule::ExactHost,
+            primary: false,
+        });
+        f.tools
+            .port
+            .items
+            .get_mut(&f.agents.id)
+            .unwrap()
+            .push(wide.clone());
+        f.set_browser("https://example.com", None);
+        assert_eq!(
+            code(f.call(exact_args(&wide, "https://app.example.com/login"))),
+            "tab_mismatch"
+        );
+    }
+
+    /// Apple's list: a2hosting.com became hosting.com (one way), ad.nl and
+    /// dpgmedia.nl share their accounts.
+    #[test]
+    fn associated_site_fills_on_approval_never_submits_first() {
+        let mut f = fx(vec![Decision::AllowFor(Duration::from_secs(300)); 6]);
+        let old = login(f.agents.id, "Old host", "https://www.a2hosting.com");
+        let mut pinned = login(f.agents.id, "Pinned", "https://www.a2hosting.com");
+        pinned.urls[0].rule = MatchRule::ExactHost;
+        let new = login(f.agents.id, "New host", "https://hosting.com");
+        let ad = login(f.agents.id, "AD", "https://www.ad.nl");
+        f.tools.port.items.get_mut(&f.agents.id).unwrap().extend([
+            old.clone(),
+            pinned.clone(),
+            new.clone(),
+            ad.clone(),
+        ]);
+        let page = "https://my.hosting.com/login";
+        f.set_browser("https://my.hosting.com", None);
+        // Never submitted on its first use on the associated site.
+        let mut args = exact_args(&old, page);
+        args["submit"] = json!(true);
+        assert_eq!(code(f.call(args)), "submit_not_allowed");
+        assert!(f.approver.calls().is_empty());
+        assert!(f.log.lock().unwrap().probes.is_empty());
+        // Filled on the user's approval, asked again each time: the window
+        // the user chose is not kept before a first use.
+        ok(f.call(exact_args(&old, page)));
+        ok(f.call(exact_args(&old, page)));
+        assert_eq!(f.approver.calls().len(), 2);
+        // An exact host rule is never widened, and `from` never comes back.
+        assert_eq!(code(f.call(exact_args(&pinned, page))), "origin_mismatch");
+        f.set_browser("https://www.a2hosting.com", None);
+        assert_eq!(
+            code(f.call(exact_args(&new, "https://www.a2hosting.com/login"))),
+            "origin_mismatch"
+        );
+        // A shared group works both ways.
+        f.set_browser("https://login.dpgmedia.nl", None);
+        ok(f.call(exact_args(&ad, "https://login.dpgmedia.nl/")));
+        assert_eq!(f.approver.calls().len(), 3);
+
+        // A memory of the site alone proves no pick (the item may have
+        // earned it through another URL): still a first use.
+        let remember = |f: &mut Fx, key: &str| {
+            let items = f.tools.port.items.get_mut(&f.agents.id).unwrap();
+            let stored = items.iter_mut().find(|i| i.id == old.id).unwrap();
+            let at = stored.created_at;
+            stored.usage.push(onepass_core::model::usage::SiteUsage {
+                site: key.into(),
+                form_shape_hash: [0; 16],
+                intent: onepass_core::fill_plan::intent::Intent::Login,
+                step_seq: vec![],
+                count: 1,
+                last_at: at,
+            });
+        };
+        remember(&mut f, "hosting.com");
+        f.set_browser("https://my.hosting.com", None);
+        let mut args = exact_args(&old, page);
+        args["submit"] = json!(true);
+        assert_eq!(code(f.call(args.clone())), "submit_not_allowed");
+        // Picked by the user on this very host (the extension's menu, the
+        // system's list): a login of that site like any other, there.
+        remember(
+            &mut f,
+            &onepass_core::model::usage::associated_pick_key("my.hosting.com"),
+        );
+        ok(f.call(args.clone()));
+        ok(f.call(args));
+        assert_eq!(f.approver.calls().len(), 4, "the second one is remembered");
+        // A login with a URL of its own on the page's site is ruled by it
+        // alone: the other site's URL opens nothing more.
+        let mut both = login(f.agents.id, "Both", "https://login.hosting.com");
+        both.urls[0].rule = MatchRule::ExactHost;
+        let mut second = both.urls[0].clone();
+        second.url = "https://www.a2hosting.com".into();
+        second.rule = MatchRule::Domain;
+        both.urls.push(second);
+        f.tools
+            .port
+            .items
+            .get_mut(&f.agents.id)
+            .unwrap()
+            .push(both.clone());
+        assert_eq!(code(f.call(exact_args(&both, page))), "origin_mismatch");
     }
 
     #[test]

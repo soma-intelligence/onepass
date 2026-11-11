@@ -249,6 +249,8 @@ fn session_vectors(record: &onepass_bridge::pairing::PairingRecord) -> Value {
                         account_email: "alex.perso@example.com".into(),
                     }],
                     match_quality: Some(MatchQuality::ExactHost),
+                    associated: false,
+                    account: None,
                 }],
             }),
         },

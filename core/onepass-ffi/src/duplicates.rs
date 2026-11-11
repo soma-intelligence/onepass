@@ -187,7 +187,11 @@ fn row_to_ffi(r: &Row) -> FfiDuplicateRow {
             RowKind::Kept => FfiDuplicateRowKind::Kept,
             RowKind::Conflict => FfiDuplicateRowKind::Conflict,
         },
-        values: r.values.iter().map(|v| v.as_ref().map(value_to_ffi)).collect(),
+        values: r
+            .values
+            .iter()
+            .map(|v| v.as_ref().map(value_to_ffi))
+            .collect(),
         concealed: r.concealed,
         winner: r.winner.map(count),
     }

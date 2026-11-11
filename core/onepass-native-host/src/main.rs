@@ -16,17 +16,26 @@ mod vault;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, sync_channel};
 use std::thread;
 
-use onepass_bridge::host::{Conn, Limits, spawn_reader};
+use onepass_bridge::framing::write_frame;
+use onepass_bridge::host::{Conn, Frame, Limits, spawn_reader};
 use onepass_bridge::service::VaultAccess;
 
-use crate::config::{Approval, Config, HostError, Reprompt, Source, extension_id};
+use crate::config::{Approval, Config, HostError, Reprompt, Source, Unlock, extension_id};
 use crate::host::{APPROVED_FILE, DevApprover};
 use crate::log::{FileAudit, Log, ensure_dir, now};
 use crate::pairings::{Pairings, write_atomic};
 
 const FIXTURE_CACHE: &str = "fixture-cache.bin";
+/// "Bring the app forward": the one plain message of the extension, on a
+/// connection of its own, and the reply. The same bytes as
+/// `onepass_relay::open_app` (the tests compare them): the relay opens the
+/// app, this host has none and only says it did, so that the extension goes
+/// on as with the app (its bridge `unlock` follows).
+const OPEN_APP_REQUEST: &[u8] = br#"{"onepass":1,"op":"open_app"}"#;
+const OPEN_APP_REPLY: &[u8] = br#"{"ok":true}"#;
 
 struct Args {
     config: Option<PathBuf>,
@@ -97,6 +106,24 @@ fn prepare(cfg: &Config) -> Result<(), HostError> {
     }
 }
 
+/// The frames of a connection whose first one was already read: `first`,
+/// then the rest of `frames`, as `spawn_reader` would have given them.
+fn replay(first: Frame, frames: Receiver<Frame>) -> Receiver<Frame> {
+    let (tx, rx) = sync_channel(1);
+    thread::spawn(move || {
+        let more = matches!(first, Ok(Some(_)));
+        if tx.send(first).is_err() || !more {
+            return;
+        }
+        for f in frames {
+            if tx.send(f).is_err() {
+                return;
+            }
+        }
+    });
+    rx
+}
+
 /// Serve the connection, the vault loading on its own thread meanwhile.
 fn serve<V, F>(conn: &mut Conn<'_, std::io::Stdout>, load: F)
 where
@@ -138,6 +165,24 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
     let extension_id = extension_id(positional);
     let allowed = extension_id.as_deref().is_some_and(|id| cfg.is_allowed(id));
     let clock = now;
+    let limits = Limits::default();
+    // The first frame decides: the plain `open_app` message, or a bridge
+    // connection (the frame then goes to the loop below, unchanged).
+    let frames = spawn_reader(std::io::stdin());
+    let first: Frame = match frames.recv_timeout(limits.step) {
+        Ok(f) => f,
+        Err(RecvTimeoutError::Disconnected) => Ok(None),
+        Err(RecvTimeoutError::Timeout) => {
+            log.line("handshake step timed out");
+            log.line("connection closed");
+            return Ok(());
+        }
+    };
+    if allowed && matches!(&first, Ok(Some(f)) if f == OPEN_APP_REQUEST) {
+        log.line("open_app: no app to bring forward, answered as done");
+        return write_frame(&mut std::io::stdout().lock(), OPEN_APP_REPLY)
+            .map_err(|_| HostError::new("cannot answer open_app"));
+    }
     let mut conn = Conn {
         allowed,
         // The development host proves nothing about its caller: never a
@@ -146,17 +191,19 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
         extension_id: extension_id.unwrap_or_default(),
         journal: &log,
         clock: &clock,
-        limits: Limits::default(),
+        limits,
         pairings: &mut pairings,
         approver: &mut approver,
         audit: Some(Box::new(FileAudit::new(&cfg.data_dir))),
         // No agent fills through the development host.
         agent: None,
-        rx: spawn_reader(std::io::stdin()),
+        rx: replay(first, frames),
         out: std::io::stdout(),
     };
     let unlocked = cfg.unlocked;
     let allow_reprompt = cfg.reprompt == Reprompt::Allow;
+    // Lab hook: `unlock` waits for an approval file in the data directory.
+    let deferred = (cfg.unlock == Unlock::File).then(|| cfg.data_dir.clone());
     match (&cfg.source, allowed) {
         // A caller that is refused never gets the vault loaded.
         (_, false) => conn.serve(|| Err::<fixture::FixtureVault, _>("refused".to_owned())),
@@ -167,6 +214,9 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
                 let mut v = fixture::load_fixture_cached(&path, &cache)?;
                 v.set_locked(!unlocked);
                 v.set_allow_reprompt(allow_reprompt);
+                if let Some(dir) = &deferred {
+                    v.set_deferred_unlock(dir);
+                }
                 Ok(v)
             });
         }
@@ -176,6 +226,9 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
             serve(&mut conn, move || {
                 let mut v = vault::load_dev(dir, unlocked, &vlog);
                 v.set_allow_reprompt(allow_reprompt);
+                if let Some(dir) = &deferred {
+                    v.set_deferred_unlock(dir);
+                }
                 Ok(v)
             });
         }

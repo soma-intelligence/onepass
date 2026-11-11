@@ -512,3 +512,19 @@ fn audit_holds_no_document_number() {
     );
     assert!(ok(&v).get("loyalty").is_none());
 }
+
+#[test]
+fn a_document_of_another_account_is_never_attached() {
+    // Two accounts on the host: the identity is the primary account's, the
+    // only passport of its person is the other account's.
+    let mut h = H::with(|v, _| {
+        v.two_accounts();
+        let mut p = passport(v, "Alex", "Martin", "19XX00042", 2031, 10);
+        p.vault_id = v.vaults[1].id;
+        v.items.push(p);
+    });
+    let v = h.fill(&["passport"], ATLAS);
+    assert!(ok(&v).get("passport").is_none(), "{v}");
+    let ops: Vec<&str> = h.ops().iter().map(|o| o.0).collect();
+    assert_eq!(ops, ["fill_identity"]);
+}

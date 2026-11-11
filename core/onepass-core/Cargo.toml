@@ -83,6 +83,11 @@ name = "profile_sync"
 required-features = ["dev-fast-kdf"]
 
 [dev-dependencies]
+# The integration tests make fast-KDF accounts (tests/common): the crate's own
+# dev floor is on for every test build, so a plain `cargo test -p onepass-core`
+# runs them all, the `required-features` targets below included. Debug builds
+# only, never a dependency of a normal build (as onepass-ffi does).
+onepass-core = { path = ".", features = ["dev-fast-kdf"] }
 time = { version = "0.3", features = ["macros"] }
 proptest = "1.12"
 serde_json = "1"

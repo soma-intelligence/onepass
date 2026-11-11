@@ -34,11 +34,19 @@ impl BridgeDelegate for AutoApprove {
         eprintln!("probe: pairing stored for {}", p.extension_id);
     }
     fn pairing_used(&self, _: String, _: u64) {}
-    fn unlock_requested(&self) {}
-    fn confirm_reprompt(&self, _: String, _: String) -> bool {
+    fn unlock_requested(&self, _: String, _: Option<String>) {}
+    fn confirm_reprompt(
+        &self,
+        _: String,
+        _: String,
+        _: String,
+        _: String,
+        _: Option<String>,
+    ) -> bool {
         false
     }
-    fn vault_changed(&self) {
+    fn fill_served(&self, _: String, _: String, _: String) {}
+    fn vault_changed(&self, _: String, _: Option<String>) {
         eprintln!("probe: vault changed");
     }
     fn note(&self, message: String) {

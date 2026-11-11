@@ -45,6 +45,9 @@ pub struct AuditEvent {
     pub at: u64,
     /// `plan_fill` only.
     pub plan: Option<PlanAudit>,
+    /// Key of the item's account (`AccountTag::key`) on a host serving
+    /// several accounts; none otherwise, and for an event without an item.
+    pub account: Option<String>,
 }
 
 /// Where the service writes its journal.
@@ -97,6 +100,7 @@ mod tests {
             ctx: Ctx::Menu,
             at: 7,
             plan: None,
+            account: None,
         });
         assert_eq!(handle.events().len(), 1);
         assert_eq!(handle.events()[0].op, "fill_login");

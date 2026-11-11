@@ -325,11 +325,14 @@ fn candidates_rank_and_reject_lookalikes() {
         .unwrap();
     let mut got = titles(&c);
     got.sort_by(|a, b| a.0.cmp(&b.0));
+    // "plain" was saved with an http URL: offered on the https site, as the
+    // bridge does (one matcher).
     assert_eq!(
         got,
         [
             ("apex".to_owned(), FfiMatchQuality::Domain),
-            ("login".to_owned(), FfiMatchQuality::Domain)
+            ("login".to_owned(), FfiMatchQuality::Domain),
+            ("plain".to_owned(), FfiMatchQuality::Domain)
         ]
     );
 
@@ -341,11 +344,14 @@ fn candidates_rank_and_reject_lookalikes() {
             Vec::new(),
         )
         .unwrap();
+    let mut got = titles(&c);
+    got[1..].sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(
-        titles(&c),
+        got,
         [
             ("login".to_owned(), FfiMatchQuality::ExactHost),
-            ("apex".to_owned(), FfiMatchQuality::Domain)
+            ("apex".to_owned(), FfiMatchQuality::Domain),
+            ("plain".to_owned(), FfiMatchQuality::Domain)
         ]
     );
     assert_eq!(c[0].url.as_deref(), Some("https://login.example.com"));
@@ -376,8 +382,8 @@ fn candidates_rank_and_reject_lookalikes() {
         .autofill_candidates("www.example.com".into(), true, Vec::new())
         .unwrap();
     assert_eq!(c.len(), 7, "every Login, never the wallet");
-    assert!(c[..2].iter().all(|c| c.quality == FfiMatchQuality::Domain));
-    assert!(c[2..].iter().all(|c| c.quality == FfiMatchQuality::Other));
+    assert!(c[..3].iter().all(|c| c.quality == FfiMatchQuality::Domain));
+    assert!(c[3..].iter().all(|c| c.quality == FfiMatchQuality::Other));
 
     let c = fx
         .session
@@ -513,11 +519,29 @@ fn hidden_record_ids_cover_every_item_type() {
 fn candidates_allow_http_on_local_hosts() {
     let fx = fixture();
     login(&fx, "dev", &["http://localhost:8080/login"]);
-    let c = fx
-        .session
-        .autofill_candidates("localhost".into(), false, Vec::new())
-        .unwrap();
-    assert_eq!(titles(&c), [("dev".to_owned(), FfiMatchQuality::ExactHost)]);
+    for service in [
+        "http://localhost:8080",
+        "http://localhost:8080/login?next=/",
+    ] {
+        let c = fx
+            .session
+            .autofill_candidates(service.into(), false, Vec::new())
+            .unwrap();
+        assert_eq!(
+            titles(&c),
+            [("dev".to_owned(), FfiMatchQuality::ExactHost)],
+            "{service}"
+        );
+    }
+    // The port written in the Login is the program it belongs to: a bare
+    // "localhost" (the default port) and another port get nothing.
+    for service in ["localhost", "http://localhost:3000", "http://localhost"] {
+        let c = fx
+            .session
+            .autofill_candidates(service.into(), false, Vec::new())
+            .unwrap();
+        assert!(c.is_empty(), "{service}: {c:?}");
+    }
 }
 
 #[test]
@@ -593,9 +617,26 @@ fn candidates_respect_match_rule() {
         .unwrap();
     assert!(c.is_empty(), "{c:?}");
 
+    // `ExactUrl` is the URL, not the host: only its own page gets it.
     let c = fx
         .session
         .autofill_candidates("example.com".into(), false, Vec::new())
+        .unwrap();
+    assert_eq!(
+        titles(&c),
+        [("exact".to_owned(), FfiMatchQuality::ExactHost)]
+    );
+    let c = fx
+        .session
+        .autofill_candidates("https://example.com/account".into(), false, Vec::new())
+        .unwrap();
+    assert_eq!(
+        titles(&c),
+        [("exact".to_owned(), FfiMatchQuality::ExactHost)]
+    );
+    let c = fx
+        .session
+        .autofill_candidates("https://example.com/login?next=/".into(), false, Vec::new())
         .unwrap();
     let mut got = titles(&c);
     got.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1286,4 +1327,168 @@ fn identity_of_a_sign_in_with_login() {
         .unwrap();
     assert_eq!(p.sign_in_with, "");
     assert_eq!(p.user, "camille@exemple.fr");
+}
+
+#[test]
+fn identities_follow_the_match_rule_of_each_url() {
+    // The system store knows a host only: an identity is published where
+    // the shared matcher would offer the Login on the bare `https://host`.
+    let fx = fixture();
+    let mut item = login(&fx, "Regles", &[]);
+    item.urls = vec![
+        url("https://ok.example.com", FfiMatchRule::Domain),
+        url("https://host.example.org", FfiMatchRule::ExactHost),
+        url("https://never.example.net", FfiMatchRule::Never),
+        // Another page of the host is not this URL.
+        url("https://path.example.net/app/login", FfiMatchRule::ExactUrl),
+        // The root page is what the bare host is.
+        url("https://root.example.net/", FfiMatchRule::ExactUrl),
+        // Another port is another site for the matcher.
+        url("https://port.example.net:8443", FfiMatchRule::Domain),
+        url(
+            "https://port-exact.example.net:8443/",
+            FfiMatchRule::ExactUrl,
+        ),
+    ];
+    let item = fx.session.save_item(item).unwrap();
+    let mut hosts: Vec<String> = fx
+        .session
+        .autofill_identities(Vec::new())
+        .unwrap()
+        .into_iter()
+        .filter(|i| i.kind == FfiAutofillKind::Password)
+        .map(|i| i.service)
+        .collect();
+    hosts.sort();
+    assert_eq!(
+        hosts,
+        ["host.example.org", "ok.example.com", "root.example.net"]
+    );
+    // What is not published is still offered on its own page.
+    let on = |service: &str| {
+        fx.session
+            .autofill_candidates(service.into(), false, Vec::new())
+            .unwrap()
+            .len()
+    };
+    assert_eq!(on("https://path.example.net/app/login"), 1);
+    assert_eq!(on("https://port.example.net:8443/"), 1);
+    assert_eq!(on("https://never.example.net"), 0);
+    assert_eq!(on("path.example.net"), 0);
+
+    // A host two URLs name is published once one of them offers it.
+    let mut item = fx.session.item(item.vault_id, item.id).unwrap();
+    item.urls = vec![
+        url("https://twice.example.net", FfiMatchRule::Never),
+        url("https://twice.example.net/login", FfiMatchRule::Domain),
+    ];
+    fx.session.save_item(item).unwrap();
+    let ids = fx.session.autofill_identities(Vec::new()).unwrap();
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    assert_eq!(ids[0].service, "twice.example.net");
+}
+
+#[test]
+fn sole_exact_host_is_not_trusted_from_a_shared_vault() {
+    let fx = fixture();
+    fx.session.set_autofill_history_enabled(false).unwrap();
+    let team = second_vault(&fx);
+    fx.session.share_vault(team.clone(), 1_800_000_000).unwrap();
+    // A member of the shared vault saved the exact host of the site; the
+    // user's own login is domain-wide.
+    let planted = login_in(
+        &fx,
+        &team,
+        "Plante",
+        &["https://login.banque.example"],
+        "autre@exemple.fr",
+        false,
+    );
+    login(&fx, "Banque", &["https://banque.example"]);
+    let p = plan(
+        &fx,
+        "https://login.banque.example",
+        FfiAutofillRequest::Password,
+    );
+    assert_eq!(p.item_ids[0], planted.id);
+    assert_ne!(p.confidence, FfiConfidence::High);
+
+    // The user's own exact host beside a shared domain match is trusted.
+    let own = login(&fx, "Mien", &["https://app.mien.example"]);
+    login_in(
+        &fx,
+        &team,
+        "Equipe",
+        &["https://mien.example"],
+        "equipe@exemple.fr",
+        false,
+    );
+    let p = plan(
+        &fx,
+        "https://app.mien.example",
+        FfiAutofillRequest::Password,
+    );
+    assert_eq!(p.item_ids[0], own.id);
+    assert_eq!(p.confidence, FfiConfidence::High);
+}
+
+#[test]
+fn a_pick_through_an_associated_domain_is_kept_for_its_host() {
+    // Apple's list offers a login of a2hosting.com on hosting.com.
+    let fx = fixture();
+    fx.session.set_autofill_history_enabled(false).unwrap();
+    let item = login(&fx, "Ancien", &["https://www.a2hosting.com"]);
+    let on = |service: &str| plan(&fx, service, FfiAutofillRequest::Password);
+    // Offered, never trusted, before the user picks it.
+    let first = on("https://my.hosting.com");
+    assert_eq!(first.item_ids, std::slice::from_ref(&item.id));
+    assert_eq!(first.confidence, FfiConfidence::Low);
+    // The pick in the system's list, on this host.
+    note(&fx, &item, "https://my.hosting.com").unwrap();
+    assert_eq!(on("https://my.hosting.com").confidence, FfiConfidence::High);
+    // Another host of the site was never picked: still the menu there.
+    assert_eq!(
+        on("https://other.hosting.com").confidence,
+        FfiConfidence::Low
+    );
+    // The pick is no site of its own in "forget a site", and goes with it.
+    assert_eq!(
+        fx.session.known_usage_sites(Vec::new()).unwrap(),
+        ["hosting.com"]
+    );
+    fx.session
+        .forget_site_usage("hosting.com".into(), Vec::new())
+        .unwrap();
+    assert!(fx.session.known_usage_sites(Vec::new()).unwrap().is_empty());
+    assert_eq!(on("https://my.hosting.com").confidence, FfiConfidence::Low);
+}
+
+#[test]
+fn registrable_domain_is_the_matchers() {
+    let d = |h: &str| registrable_domain(h.into());
+    assert_eq!(d("login.example.com").as_deref(), Some("example.com"));
+    assert_eq!(d("Example.COM.").as_deref(), Some("example.com"));
+    assert_eq!(d("a.b.example.co.uk").as_deref(), Some("example.co.uk"));
+    // A private suffix of the list is a suffix: each tenant is its own site.
+    assert_eq!(d("alice.github.io").as_deref(), Some("alice.github.io"));
+    assert_eq!(d("www.bücher.de").as_deref(), Some("xn--bcher-kva.de"));
+    assert_eq!(d("xn--bcher-kva.de").as_deref(), Some("xn--bcher-kva.de"));
+    // No registrable domain: an address, a bare suffix, an unknown suffix,
+    // a single label, something that is no host.
+    for none in [
+        "192.168.1.10",
+        "[::1]",
+        "co.uk",
+        "com",
+        "localhost",
+        "nas.local",
+        "intranet.corp-unknown-suffix",
+        "site.example",
+        "atlas-cloud.test",
+        "",
+        "not a host",
+        "https://example.com/path",
+    ] {
+        assert_eq!(d(none), None, "{none}");
+    }
 }

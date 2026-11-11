@@ -85,6 +85,7 @@ fn cand(n: u8, kind: CandidateKind, quality: MatchQuality) -> Candidate {
         usage: None,
         has_totp: false,
         affinity: 0,
+        private_vault: true,
     }
 }
 
@@ -196,19 +197,170 @@ fn login_tie_shows_menu() {
 
 #[test]
 fn login_medium_fills_without_submit() {
-    // Exact beats Domain by 40 points but without memory: Medium.
-    let p = plan(
-        &page(vec![login_form()]),
-        logins(vec![
-            cand(2, CandidateKind::Login, MatchQuality::Domain),
-            login(1),
-        ]),
-    )
-    .unwrap();
+    // Exact leads by 40 points, but the domain match was used here before
+    // (not last): the site has a memory that does not point at the first.
+    let mut d = cand(2, CandidateKind::Login, MatchQuality::Domain);
+    d.usage = Some(UsageSignal {
+        last_on_site: false,
+        same_shape: false,
+        count: 0,
+        last_at: 0,
+    });
+    let p = plan(&page(vec![login_form()]), logins(vec![d, login(1)])).unwrap();
     assert_eq!(p.confidence, Confidence::Medium);
     assert_eq!(p.action, Action::Fill);
     assert_eq!(p.groups[0].item, GroupItem::Item(id(1)));
     assert_eq!(p.alternatives, vec![id(2)]);
+    assert!(!p.reasons.contains(&ReasonCode::SoleExactHost));
+}
+
+// Owner ruling 2026-11-10 (A): the sole exact host.
+
+#[test]
+fn login_sole_exact_host_opens_chain_without_memory() {
+    let p = plan(
+        &page(vec![login_form()]),
+        logins(vec![
+            cand(2, CandidateKind::Login, MatchQuality::Domain),
+            cand(3, CandidateKind::Login, MatchQuality::Domain),
+            login(1),
+        ]),
+    )
+    .unwrap();
+    assert_eq!(p.confidence, Confidence::High);
+    assert_eq!(p.action, Action::OpenChain);
+    assert_eq!(p.groups[0].item, GroupItem::Item(id(1)));
+    assert_eq!(p.alternatives, vec![id(2), id(3)]);
+    assert!(p.reasons.contains(&ReasonCode::SoleExactHost));
+    assert!(!p.reasons.contains(&ReasonCode::SingleCandidate));
+}
+
+#[test]
+fn login_two_exact_hosts_without_memory_stay_a_menu() {
+    let p = plan(
+        &page(vec![login_form()]),
+        logins(vec![
+            login(1),
+            login(2),
+            cand(3, CandidateKind::Login, MatchQuality::Domain),
+        ]),
+    )
+    .unwrap();
+    assert_eq!(p.action, Action::ShowMenu);
+    assert!(!p.reasons.contains(&ReasonCode::SoleExactHost));
+}
+
+#[test]
+fn typed_username_beats_the_sole_exact_host() {
+    let hash = [9u8; 32];
+    let mut ctx = page(vec![login_form()]);
+    ctx.typed_username_hash = Some(hash);
+    let mut d = cand(2, CandidateKind::Login, MatchQuality::Domain);
+    d.username_hash = Some(hash);
+    let p = plan(&ctx, logins(vec![login(1), d])).unwrap();
+    assert_eq!(p.groups[0].item, GroupItem::Item(id(2)));
+    assert_eq!(p.confidence, Confidence::High);
+    assert!(p.reasons.contains(&ReasonCode::TypedUsername));
+    assert!(!p.reasons.contains(&ReasonCode::SoleExactHost));
+}
+
+#[test]
+fn sole_exact_host_keeps_every_submit_guard() {
+    let pool = || {
+        logins(vec![
+            login(1),
+            cand(2, CandidateKind::Login, MatchQuality::Domain),
+        ])
+    };
+    let weak = |mut f: FormContext| {
+        f.fields[0].confidence = 0.3;
+        f
+    };
+    let p = plan(&page(vec![weak(login_form())]), pool()).unwrap();
+    assert_eq!(p.action, Action::Fill);
+    let mut pay = login_form();
+    pay.buttons.push(button("pay", ButtonClass::Pay));
+    let p = plan(&page(vec![pay]), pool()).unwrap();
+    assert_eq!(p.action, Action::Fill);
+    let mut ctx = page(vec![login_form()]);
+    ctx.frame_kind = FrameKind::SameOriginChild;
+    ctx.top_origin = "https://other.test".into();
+    let p = plan(&ctx, pool()).unwrap();
+    assert_eq!(p.action, Action::Fill);
+    assert!(p.reasons.contains(&ReasonCode::ChildFrame));
+}
+
+/// The names the extension reads (`PlanReason` in `shared/messages.ts`).
+#[test]
+fn new_reason_codes_have_their_wire_names() {
+    let json = serde_json::to_string(&[
+        ReasonCode::SoleExactHost,
+        ReasonCode::AssociatedDomain,
+        ReasonCode::ChildFrame,
+    ])
+    .unwrap();
+    assert_eq!(
+        json,
+        r#"["sole_exact_host","associated_domain","child_frame"]"#
+    );
+}
+
+// Owner ruling 2026-11-10 (B): associated domains.
+
+fn associated(n: u8) -> Candidate {
+    cand(n, CandidateKind::Login, MatchQuality::Associated)
+}
+
+#[test]
+fn associated_login_alone_is_menu_only() {
+    let p = plan(&page(vec![login_form()]), logins(vec![associated(1)])).unwrap();
+    assert_eq!(p.action, Action::ShowMenu);
+    assert_eq!(p.confidence, Confidence::Low);
+    assert!(p.reasons.contains(&ReasonCode::AssociatedDomain));
+    // Typing that account's username does not lift the rule.
+    let hash = [9u8; 32];
+    let mut ctx = page(vec![login_form()]);
+    ctx.typed_username_hash = Some(hash);
+    let mut a = associated(1);
+    a.username_hash = Some(hash);
+    let p = plan(&ctx, logins(vec![a])).unwrap();
+    assert_eq!(p.action, Action::ShowMenu);
+    assert!(p.reasons.contains(&ReasonCode::AssociatedDomain));
+}
+
+#[test]
+fn associated_login_is_listed_after_the_direct_match() {
+    let p = plan(
+        &page(vec![login_form()]),
+        logins(vec![
+            associated(3),
+            cand(2, CandidateKind::Login, MatchQuality::Domain),
+        ]),
+    )
+    .unwrap();
+    // The one direct match is as good as alone.
+    assert_eq!(p.groups[0].item, GroupItem::Item(id(2)));
+    assert_eq!(p.confidence, Confidence::High);
+    assert_eq!(p.action, Action::OpenChain);
+    assert_eq!(p.alternatives, vec![id(3)]);
+    assert!(!p.reasons.contains(&ReasonCode::AssociatedDomain));
+}
+
+#[test]
+fn associated_code_is_never_sent() {
+    let mut a = associated(1);
+    a.has_totp = true;
+    let p = plan(
+        &page(vec![form(
+            "code",
+            vec![field("otp", FieldRole::Otp)],
+            vec![],
+        )]),
+        logins(vec![a]),
+    )
+    .unwrap();
+    assert_eq!(p.action, Action::ShowMenu);
+    assert!(p.reasons.contains(&ReasonCode::AssociatedDomain));
 }
 
 #[test]
@@ -239,12 +391,45 @@ fn login_typed_username_picks_its_account() {
 
 #[test]
 fn login_in_child_frame_never_submits() {
+    // A child frame under another top document, or one whose top is not
+    // an origin at all, is held.
+    for top in [
+        "https://other.test",
+        "https://sub.example.com",
+        "https://example.com:8443",
+        "http://example.com",
+        "null",
+        "",
+    ] {
+        let mut ctx = page(vec![login_form()]);
+        ctx.frame_kind = FrameKind::SameOriginChild;
+        ctx.top_origin = top.into();
+        let p = plan(&ctx, logins(vec![login(1)])).unwrap();
+        assert_eq!(p.confidence, Confidence::High, "{top}");
+        assert_eq!(p.action, Action::Fill, "{top}");
+        assert!(p.reasons.contains(&ReasonCode::ChildFrame), "{top}");
+    }
+}
+
+#[test]
+fn login_in_child_frame_at_the_top_origin_is_like_the_top() {
     let mut ctx = page(vec![login_form()]);
     ctx.frame_kind = FrameKind::SameOriginChild;
     let p = plan(&ctx, logins(vec![login(1)])).unwrap();
-    assert_eq!(p.confidence, Confidence::High);
+    assert_eq!(p.action, Action::OpenChain);
+    assert!(!p.reasons.contains(&ReasonCode::ChildFrame));
+    // The default port written out is the same origin.
+    ctx.top_origin = "https://example.com:443".into();
+    let p = plan(&ctx, logins(vec![login(1)])).unwrap();
+    assert_eq!(p.action, Action::OpenChain);
+    // The other guards hold in the frame as in the top.
+    let mut pay = login_form();
+    pay.buttons.push(button("pay", ButtonClass::Pay));
+    let mut ctx = page(vec![pay]);
+    ctx.frame_kind = FrameKind::SameOriginChild;
+    let p = plan(&ctx, logins(vec![login(1)])).unwrap();
     assert_eq!(p.action, Action::Fill);
-    assert!(p.reasons.contains(&ReasonCode::ChildFrame));
+    assert!(p.reasons.contains(&ReasonCode::PayButton));
 }
 
 #[test]
@@ -350,9 +535,17 @@ fn otp_in_child_frame_fills_without_submit() {
         vec![],
     )]);
     ctx.frame_kind = FrameKind::SameOriginChild;
-    let p = plan(&ctx, logins(vec![coded(1)])).unwrap();
+    ctx.top_origin = "https://other.test".into();
+    let mut remembered = coded(1);
+    remembered.usage = last_here();
+    let p = plan(&ctx, logins(vec![remembered.clone()])).unwrap();
     assert_eq!(p.action, Action::Fill);
     assert!(p.reasons.contains(&ReasonCode::ChildFrame));
+    // At the top document's origin the remembered code is sent as in the top.
+    ctx.top_origin = ctx.origin.clone();
+    let p = plan(&ctx, logins(vec![remembered])).unwrap();
+    assert_eq!(p.action, Action::FillAndSubmit);
+    assert!(!p.reasons.contains(&ReasonCode::ChildFrame));
 }
 
 // Spec 8.1, Signup.

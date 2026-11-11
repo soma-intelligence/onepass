@@ -3160,3 +3160,816 @@ mod agent {
         assert!(filler.join().unwrap().is_ok());
     }
 }
+
+// One gesture, one engine (2026-11-10): loopback http, child frames at the
+// top origin, the sole exact host and the associated domains.
+
+mod one_engine {
+    use super::*;
+
+    const LOCAL: &str = "http://localhost:3000";
+    /// Apple's list: a2hosting.com became hosting.com (one way).
+    const OLD_HOST: &str = "https://www.a2hosting.com";
+    const NEW_HOST: &str = "https://my.hosting.com";
+    /// Apple's list: ad.nl and dpgmedia.nl share their accounts.
+    const AD: &str = "https://www.ad.nl";
+    const DPG: &str = "https://login.dpgmedia.nl";
+
+    fn reasons(plan: &Value) -> Vec<String> {
+        plan["reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    fn plan_of(h: &mut H, origin: &str) -> Value {
+        ok(&h.call(plan_req(origin, page(origin, None))))["plan"].clone()
+    }
+
+    #[test]
+    fn loopback_http_lists_plans_and_fills() {
+        let mut h = H::new();
+        let dev = h
+            .svc
+            .vault_mut()
+            .add_login("Dev", "dev@local.test", LOCAL, MatchRule::Domain);
+        // Another program on another port never gets it.
+        h.svc.vault_mut().add_login(
+            "Other port",
+            "dev@local.test",
+            "http://localhost:8080",
+            MatchRule::Domain,
+        );
+        assert_eq!(titles(&h.call(list(LOCAL))), ["Dev"]);
+        let plan = plan_of(&mut h, LOCAL);
+        assert_eq!(plan["action"], "open_chain", "{plan}");
+        assert_eq!(plan["groups"][0]["item_id"], id(dev), "{plan}");
+        let v = h.call(fill(dev, LOCAL));
+        assert_eq!(ok(&v)["username"], "dev@local.test", "{v}");
+        ok(&h.call(note(dev, LOCAL)));
+        assert_eq!(h.vault().item(dev).usage[0].site, "localhost");
+        for (o, title) in [
+            ("http://127.0.0.1:3000", "IPv4"),
+            ("http://[::1]:3000", "IPv6"),
+        ] {
+            h.svc
+                .vault_mut()
+                .add_login(title, "dev@local.test", o, MatchRule::Domain);
+            assert_eq!(titles(&h.call(list(o))), [title], "{o}");
+        }
+    }
+
+    #[test]
+    fn every_other_http_origin_stays_refused() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        for o in [
+            "http://atlas-cloud.test",
+            "http://app.localhost:3000",
+            "http://nas.local",
+            "http://192.168.1.10",
+            "http://127.0.0.2",
+            "http://localhost.atlas-cloud.test",
+        ] {
+            assert_eq!(err(&h.call(list(o))), "insecure_origin", "{o}");
+            assert_eq!(err(&h.call(fill(atlas, o))), "insecure_origin", "{o}");
+            assert_eq!(
+                err(&h.call(plan_req(o, page(o, None)))),
+                "insecure_origin",
+                "{o}"
+            );
+        }
+        // Passkeys stay https only, loopback included.
+        let v =
+            h.call(json!({"op":"passkey_list","ctx":"passkey","origin":LOCAL,"rp_id":"localhost"}));
+        assert_eq!(err(&v), "insecure_origin");
+    }
+
+    #[test]
+    fn child_frame_at_the_top_origin_plans_like_the_top() {
+        let mut h = H::new();
+        let mut ctx = page(ATLAS, None);
+        ctx["frame_kind"] = json!("same_origin_child");
+        let plan = ok(&h.call(plan_req(ATLAS, ctx.clone())))["plan"].clone();
+        assert_eq!(plan["action"], "open_chain", "{plan}");
+        assert!(
+            !reasons(&plan).contains(&"child_frame".to_owned()),
+            "{plan}"
+        );
+        // Under any other top document the frame is held as before.
+        for top in [
+            "https://evil.test",
+            "https://app.atlas-cloud.test",
+            "https://atlas-cloud.test:8443",
+        ] {
+            ctx["top_origin"] = json!(top);
+            let plan = ok(&h.call(plan_req(ATLAS, ctx.clone())))["plan"].clone();
+            assert_eq!(plan["action"], "fill", "{top}: {plan}");
+            assert!(reasons(&plan).contains(&"child_frame".to_owned()), "{plan}");
+        }
+    }
+
+    #[test]
+    fn sole_exact_host_opens_the_chain_without_memory() {
+        let mut h = H::new();
+        let v = h.svc.vault_mut();
+        let exact = v.add_login(
+            "Exact",
+            "a@twin.test",
+            "https://app.twin.test",
+            MatchRule::Domain,
+        );
+        let wide = v.add_login("Wide", "b@twin.test", TWIN, MatchRule::Domain);
+        let plan = plan_of(&mut h, "https://app.twin.test");
+        assert_eq!(plan["action"], "open_chain", "{plan}");
+        assert_eq!(plan["confidence"], "high", "{plan}");
+        assert_eq!(plan["groups"][0]["item_id"], id(exact), "{plan}");
+        assert_eq!(plan["alternatives"], json!([id(wide)]), "{plan}");
+        assert!(
+            reasons(&plan).contains(&"sole_exact_host".to_owned()),
+            "{plan}"
+        );
+        // Two exact hosts and no memory: the menu.
+        h.svc.vault_mut().add_login(
+            "Exact 2",
+            "c@twin.test",
+            "https://app.twin.test",
+            MatchRule::Domain,
+        );
+        let plan = plan_of(&mut h, "https://app.twin.test");
+        assert_eq!(plan["action"], "show_menu", "{plan}");
+        assert!(
+            !reasons(&plan).contains(&"sole_exact_host".to_owned()),
+            "{plan}"
+        );
+    }
+
+    #[test]
+    fn the_tier_is_the_host_of_the_url_not_the_rule_of_the_item() {
+        // The lab's account profile p3 as its fixture builds it today: two
+        // logins saved on the very same URL, the page's, one with the rule
+        // `exact_host` and one with `domain`. On that host a `domain` rule
+        // is an exact host match too: two exact hosts, the menu.
+        const APEX: &str = "https://amber-falcon-3.test";
+        let mut h = H::new();
+        let v = h.svc.vault_mut();
+        let own = v.add_login("Amber", "a@amber.test", APEX, MatchRule::ExactHost);
+        let second = v.add_login("Amber (domaine)", "b@amber.test", APEX, MatchRule::Domain);
+        let listed = h.call(list(APEX));
+        assert_eq!(ok(&listed)["items"][0]["match"], "exact_host", "{listed}");
+        assert_eq!(ok(&listed)["items"][1]["match"], "exact_host", "{listed}");
+        let plan = plan_of(&mut h, APEX);
+        assert_eq!(plan["action"], "show_menu", "{plan}");
+        assert!(
+            !reasons(&plan).contains(&"sole_exact_host".to_owned()),
+            "{plan}"
+        );
+        // The domain-wide login saved on another host of the domain: the
+        // page's own login is the sole exact host, filled without asking.
+        h.svc
+            .vault_mut()
+            .items
+            .iter_mut()
+            .find(|i| i.id == second)
+            .unwrap()
+            .urls[0]
+            .url = "https://www.amber-falcon-3.test".into();
+        let listed = h.call(list(APEX));
+        assert_eq!(ok(&listed)["items"][0]["match"], "exact_host", "{listed}");
+        assert_eq!(ok(&listed)["items"][1]["match"], "domain", "{listed}");
+        let plan = plan_of(&mut h, APEX);
+        assert_eq!(plan["action"], "open_chain", "{plan}");
+        assert_eq!(plan["confidence"], "high", "{plan}");
+        assert_eq!(plan["groups"][0]["item_id"], id(own), "{plan}");
+        assert_eq!(plan["alternatives"], json!([id(second)]), "{plan}");
+        assert!(
+            reasons(&plan).contains(&"sole_exact_host".to_owned()),
+            "{plan}"
+        );
+    }
+
+    #[test]
+    fn associated_domain_first_use_is_menu_only_then_normal() {
+        let mut h = H::new();
+        let old =
+            h.svc
+                .vault_mut()
+                .add_login("Old host", "a@host.test", OLD_HOST, MatchRule::Domain);
+        // Listed, as a domain match on the wire (older extensions refuse
+        // an unknown `match`).
+        let v = h.call(list(NEW_HOST));
+        assert_eq!(titles(&v), ["Old host"]);
+        assert_eq!(ok(&v)["items"][0]["match"], "domain", "{v}");
+        // Next to it, for a UI that says so; a direct match has no such key.
+        assert_eq!(ok(&v)["items"][0]["associated"], true, "{v}");
+        let direct = h.call(list(OLD_HOST));
+        assert_eq!(ok(&direct)["items"][0]["match"], "exact_host", "{direct}");
+        assert!(ok(&direct)["items"][0].get("associated").is_none());
+        // First use: the menu, never a fill, never a submit.
+        let plan = plan_of(&mut h, NEW_HOST);
+        assert_eq!(plan["action"], "show_menu", "{plan}");
+        assert_eq!(plan["confidence"], "low", "{plan}");
+        assert_eq!(plan["groups"][0]["item_id"], id(old), "{plan}");
+        assert!(
+            reasons(&plan).contains(&"associated_domain".to_owned()),
+            "{plan}"
+        );
+        // The user picks it in the menu: the fill is served, and noted.
+        let v = h.call(fill(old, NEW_HOST));
+        assert_eq!(ok(&v)["username"], "a@host.test", "{v}");
+        ok(&h.call(note(old, NEW_HOST)));
+        // The site's memory, and the pick on this very host.
+        let mut keys: Vec<&str> = h
+            .vault()
+            .item(old)
+            .usage
+            .iter()
+            .map(|u| u.site.as_str())
+            .collect();
+        keys.sort();
+        assert_eq!(keys, ["assoc:my.hosting.com", "hosting.com"]);
+        // Second use: a normal match.
+        let plan = plan_of(&mut h, NEW_HOST);
+        assert_eq!(plan["action"], "open_chain", "{plan}");
+        assert_eq!(plan["confidence"], "high", "{plan}");
+        assert!(
+            !reasons(&plan).contains(&"associated_domain".to_owned()),
+            "{plan}"
+        );
+        // Forgetting the site brings the menu back.
+        ok(&h.call(json!({"op":"forget_site","ctx":"popup","site":"hosting.com"})));
+        assert_eq!(plan_of(&mut h, NEW_HOST)["action"], "show_menu");
+    }
+
+    #[test]
+    fn the_bridge_itself_keeps_an_associated_login_behind_the_users_pick() {
+        // An extension from before the associated tier reads such a row as
+        // a plain domain match: nothing it does on its own gets the secret,
+        // changes the item or promotes the match.
+        let mut h = H::new();
+        let old =
+            h.svc
+                .vault_mut()
+                .add_login("Old host", "a@host.test", OLD_HOST, MatchRule::Domain);
+        let with_ctx = |ctx: &str| {
+            json!({"op":"fill_login","ctx":ctx,"item_id":id(old),"origin":NEW_HOST,
+                   "fields":["username","password"]})
+        };
+        for ctx in ["chain", "overlay", "save_prompt"] {
+            assert_eq!(err(&h.call(with_ctx(ctx))), "not_allowed", "{ctx}");
+        }
+        let totp = json!({"op":"totp","ctx":"chain","item_id":id(old),"origin":NEW_HOST});
+        assert_eq!(err(&h.call(totp)), "not_allowed");
+        let update = json!({"op":"update_password","ctx":"save_prompt","item_id":id(old),
+                            "origin":NEW_HOST,"password":"Planted-Pass-0101"});
+        assert_eq!(err(&h.call(update.clone())), "not_allowed");
+        // A note without a served fill writes nothing and promotes nothing.
+        assert_eq!(err(&h.call(note(old, NEW_HOST))), "not_allowed");
+        assert!(h.vault().item(old).usage.is_empty());
+        assert_eq!(plan_of(&mut h, NEW_HOST)["action"], "show_menu");
+        assert!(h.audit.events().iter().all(|e| e.op == "plan_fill"));
+
+        // The user's pick in the menu: served, and what follows it in this
+        // session goes through (the next step of the chain, the save).
+        ok(&h.call(with_ctx("menu")));
+        ok(&h.call(with_ctx("chain")));
+        ok(&h.call(update));
+        // On another host of the same site the pick does not count.
+        let elsewhere = json!({"op":"fill_login","ctx":"chain","item_id":id(old),
+                               "origin":"https://other.hosting.com","fields":["password"]});
+        assert_eq!(err(&h.call(elsewhere)), "not_allowed");
+        assert_eq!(
+            err(&h.call(note(old, "https://other.hosting.com"))),
+            "not_allowed"
+        );
+        // Noted: promoted on the host of the pick only.
+        ok(&h.call(note(old, NEW_HOST)));
+        let v = h.call(list(NEW_HOST));
+        assert!(ok(&v)["items"][0].get("associated").is_none(), "{v}");
+        let v = h.call(list("https://other.hosting.com"));
+        assert_eq!(ok(&v)["items"][0]["associated"], true, "{v}");
+        assert_eq!(
+            plan_of(&mut h, "https://other.hosting.com")["action"],
+            "show_menu"
+        );
+    }
+
+    #[test]
+    fn a_site_memory_from_another_url_promotes_nothing() {
+        // The review's case, through the bridge: an exact host URL on
+        // hosting.com used there, and a domain URL on a2hosting.com.
+        let mut h = H::new();
+        let item = h.svc.vault_mut().add_login(
+            "Two homes",
+            "a@host.test",
+            "https://login.hosting.com",
+            MatchRule::ExactHost,
+        );
+        let stored = h
+            .svc
+            .vault_mut()
+            .items
+            .iter_mut()
+            .find(|i| i.id == item)
+            .unwrap();
+        let mut second = stored.urls[0].clone();
+        second.url = OLD_HOST.into();
+        second.rule = MatchRule::Domain;
+        second.primary = false;
+        stored.urls.push(second);
+        ok(&h.call(fill(item, "https://login.hosting.com")));
+        ok(&h.call(note(item, "https://login.hosting.com")));
+        // Elsewhere on hosting.com: not offered at all, nothing to chain.
+        assert!(titles(&h.call(list("https://x.hosting.com"))).is_empty());
+        assert_eq!(
+            err(&h.call(fill(item, "https://x.hosting.com"))),
+            "origin_mismatch"
+        );
+        let plan = plan_of(&mut h, "https://x.hosting.com");
+        assert_eq!(plan["action"], "show_menu", "{plan}");
+        assert_eq!(plan["groups"], json!([]), "{plan}");
+    }
+
+    #[test]
+    fn the_sole_exact_host_of_a_shared_vault_is_not_trusted() {
+        let mut h = H::new();
+        // The second fixture vault is shared with other people.
+        h.svc.vault_mut().vaults[1].personal = false;
+        let shared = h.ids.pro;
+        let v = h.svc.vault_mut();
+        let planted = v.add_login_in(
+            shared,
+            "Planted",
+            "attacker@bank.test",
+            "https://login.bank.test",
+            MatchRule::Domain,
+        );
+        let mine = v.add_login(
+            "Bank",
+            "me@bank.test",
+            "https://bank.test",
+            MatchRule::Domain,
+        );
+        let plan = plan_of(&mut h, "https://login.bank.test");
+        // As before the sole exact host rule: the better match is put in
+        // the form, nothing is sent, no sign-in starts without the user.
+        assert_eq!(plan["action"], "fill", "{plan}");
+        assert_eq!(plan["confidence"], "medium", "{plan}");
+        assert!(
+            !reasons(&plan).contains(&"sole_exact_host".to_owned()),
+            "{plan}"
+        );
+        assert_eq!(plan["groups"][0]["item_id"], id(planted), "{plan}");
+        assert_eq!(plan["alternatives"], json!([id(mine)]), "{plan}");
+        // The other way round (the user's own exact host, a shared domain
+        // match) keeps the rule.
+        let v = h.svc.vault_mut();
+        let own = v.add_login(
+            "Own",
+            "me@own.test",
+            "https://app.own.test",
+            MatchRule::Domain,
+        );
+        v.add_login_in(
+            shared,
+            "Team",
+            "team@own.test",
+            "https://own.test",
+            MatchRule::Domain,
+        );
+        let plan = plan_of(&mut h, "https://app.own.test");
+        assert_eq!(plan["action"], "open_chain", "{plan}");
+        assert_eq!(plan["groups"][0]["item_id"], id(own), "{plan}");
+        assert!(
+            reasons(&plan).contains(&"sole_exact_host".to_owned()),
+            "{plan}"
+        );
+    }
+
+    #[test]
+    fn associated_domains_keep_their_direction_and_the_item_rule() {
+        let mut h = H::new();
+        let v = h.svc.vault_mut();
+        let new = v.add_login("New host", "a@host.test", NEW_HOST, MatchRule::Domain);
+        let pinned = v.add_login("Pinned", "b@host.test", OLD_HOST, MatchRule::ExactHost);
+        let ad = v.add_login("AD", "a@ad.test", AD, MatchRule::Domain);
+        let dpg = v.add_login("DPG", "a@dpg.test", DPG, MatchRule::Domain);
+        // `from` to `to` only: the new host's login never goes back.
+        assert!(
+            titles(&h.call(list(OLD_HOST)))
+                .iter()
+                .all(|t| t != "New host")
+        );
+        assert_eq!(err(&h.call(fill(new, OLD_HOST))), "origin_mismatch");
+        // An exact host rule is never widened.
+        assert_eq!(titles(&h.call(list(NEW_HOST))), ["New host"]);
+        assert_eq!(err(&h.call(fill(pinned, NEW_HOST))), "origin_mismatch");
+        assert_eq!(err(&h.call(note(pinned, NEW_HOST))), "origin_mismatch");
+        // A shared group works both ways, after the direct match.
+        assert_eq!(titles(&h.call(list(AD))), ["AD", "DPG"]);
+        assert_eq!(titles(&h.call(list(DPG))), ["DPG", "AD"]);
+        ok(&h.call(fill(ad, DPG)));
+        ok(&h.call(fill(dpg, AD)));
+        // The direct match stays as good as alone, the other is an
+        // alternative of the menu.
+        let plan = plan_of(&mut h, AD);
+        assert_eq!(plan["action"], "open_chain", "{plan}");
+        assert_eq!(plan["groups"][0]["item_id"], id(ad), "{plan}");
+        assert_eq!(plan["alternatives"], json!([id(dpg)]), "{plan}");
+        // Never over http, never to an unrelated site.
+        assert_eq!(
+            err(&h.call(fill(ad, "https://dpgmedia.nl.evil.test"))),
+            "origin_mismatch"
+        );
+    }
+
+    #[test]
+    fn associated_login_is_no_owner_for_a_provider_link() {
+        let mut h = H::new();
+        let old =
+            h.svc
+                .vault_mut()
+                .add_login("Old host", "a@host.test", OLD_HOST, MatchRule::Domain);
+        let google = h.ids.google_perso;
+        let v = h.call(
+            json!({"op":"link_provider","ctx":"save_prompt","site_origin":NEW_HOST,
+            "provider":"google","account_item_id":id(google)}),
+        );
+        // A new login of the page's site is made: the old host's is untouched.
+        assert_ne!(ok(&v)["item_id"], id(old), "{v}");
+        assert!(h.vault().item(old).login_methods.is_empty());
+    }
+}
+
+// Several accounts on one host (the Mac app with added accounts): the
+// personal vault is the primary account's, the `pro` vault another one's.
+mod accounts {
+    use super::*;
+
+    const ADMIN: &str = "https://admin.atlas-cloud.test";
+
+    fn two() -> H {
+        let mut h = H::new();
+        h.svc.vault_mut().two_accounts();
+        h
+    }
+
+    fn accounts_of(v: &Value) -> Vec<String> {
+        ok(v)["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["account"].as_str().unwrap_or("-").to_owned())
+            .collect()
+    }
+
+    fn plan_of(h: &mut H, origin: &str) -> Value {
+        ok(&h.call(plan_req(origin, page(origin, None))))["plan"].clone()
+    }
+
+    fn save(vault: Id, origin: &str) -> Value {
+        json!({"op":"save_login","ctx":"save_prompt","origin":origin,"title":"",
+               "username":"new@atlas.dev","password":"New-Pass-0099",
+               "vault_id":id(vault),"rule":"domain","tags":[]})
+    }
+
+    #[test]
+    fn one_account_adds_nothing_to_the_wire() {
+        let mut h = H::new();
+        let v = h.call(list(ADMIN));
+        for s in ok(&v)["items"].as_array().unwrap() {
+            let o = s.as_object().unwrap();
+            assert_eq!(o.len(), 12, "{s}");
+            assert!(!o.contains_key("account") && !o.contains_key("associated"));
+        }
+        let v = h.call(json!({"op":"vaults"}));
+        for e in ok(&v)["vaults"].as_array().unwrap() {
+            assert_eq!(e.as_object().unwrap().len(), 3, "{e}");
+        }
+        let admin = h.ids.admin;
+        ok(&h.call(fill(admin, ADMIN)));
+        assert_eq!(h.audit.events().last().unwrap().account, None);
+    }
+
+    #[test]
+    fn candidates_of_two_accounts_carry_their_account() {
+        let mut h = two();
+        // Every host routes to the primary account here: its items come
+        // first, even behind a better match of the other account.
+        let v = h.call(list(ADMIN));
+        assert_eq!(titles(&v), ["Atlas Cloud", "Atlas admin"]);
+        assert_eq!(accounts_of(&v), [PRIMARY_LABEL, WORK_LABEL]);
+        assert_eq!(ok(&v)["items"][1]["match"], "exact_host");
+        let v = h.call(json!({"op":"vaults"}));
+        let labels: Vec<&str> = ok(&v)["vaults"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["account"].as_str().unwrap())
+            .collect();
+        assert_eq!(labels, [PRIMARY_LABEL, WORK_LABEL]);
+        // A search has no page: no routing, both accounts labelled.
+        let v = h.call(json!({"op":"search","ctx":"popup","query":"atlas admin"}));
+        assert_eq!(accounts_of(&v), [WORK_LABEL]);
+    }
+
+    #[test]
+    fn the_account_the_host_routes_to_ranks_first() {
+        let mut h = two();
+        h.svc.vault_mut().routed = WORK_KEY.to_owned();
+        let v = h.call(list(ADMIN));
+        assert_eq!(titles(&v), ["Atlas admin", "Atlas Cloud"]);
+        assert_eq!(accounts_of(&v), [WORK_LABEL, PRIMARY_LABEL]);
+        // Cards live in the primary account only: still offered.
+        let v = h.call(json!({"op":"list_fillable","ctx":"menu","origin":ADMIN,"kind":"card"}));
+        assert_eq!(accounts_of(&v), [PRIMARY_LABEL]);
+    }
+
+    #[test]
+    fn a_plan_is_made_from_the_account_the_host_routes_to() {
+        let mut h = two();
+        let (atlas, admin) = (h.ids.atlas, h.ids.admin);
+        // Primary: its domain match alone, as if the other account's exact
+        // host login were not there (no leak from one account's choice to
+        // the other's).
+        let plan = plan_of(&mut h, ADMIN);
+        assert_eq!(plan["groups"][0]["item_id"], id(atlas), "{plan}");
+        assert_eq!(plan["alternatives"], json!([]), "{plan}");
+        h.svc.vault_mut().routed = WORK_KEY.to_owned();
+        let plan = plan_of(&mut h, ADMIN);
+        assert_eq!(plan["groups"][0]["item_id"], id(admin), "{plan}");
+        assert_eq!(plan["alternatives"], json!([]), "{plan}");
+        // The routed account has nothing for the page: the other one's
+        // login is planned rather than nothing.
+        h.svc.vault_mut().routed = PRIMARY_KEY.to_owned();
+        let pro = h.ids.pro;
+        let only = h.svc.vault_mut().add_login_in(
+            pro,
+            "Work only",
+            "alex@work.test",
+            "https://work-only.test",
+            MatchRule::Domain,
+        );
+        let plan = plan_of(&mut h, "https://work-only.test");
+        assert_eq!(plan["groups"][0]["item_id"], id(only), "{plan}");
+    }
+
+    #[test]
+    fn the_journal_names_the_account_of_the_item() {
+        let mut h = two();
+        let (atlas, admin, perso, pro) = (h.ids.atlas, h.ids.admin, h.ids.perso, h.ids.pro);
+        let last = |h: &H| {
+            let e = h.audit.events().last().unwrap().clone();
+            (e.op, e.account)
+        };
+        ok(&h.call(fill(admin, ADMIN)));
+        assert_eq!(last(&h), ("fill_login", Some(WORK_KEY.to_owned())));
+        ok(&h.call(fill(atlas, ATLAS)));
+        assert_eq!(last(&h), ("fill_login", Some(PRIMARY_KEY.to_owned())));
+        // A new login is journaled under the account of its vault.
+        ok(&h.call(save(pro, "https://new-work.test")));
+        assert_eq!(last(&h), ("save_login", Some(WORK_KEY.to_owned())));
+        ok(&h.call(save(perso, "https://new-home.test")));
+        assert_eq!(last(&h), ("save_login", Some(PRIMARY_KEY.to_owned())));
+        // A plan spans the accounts: no account.
+        plan_of(&mut h, ATLAS);
+        assert_eq!(last(&h), ("plan_fill", None));
+        // A passkey made in a vault that holds nothing yet: its account.
+        let empty = Id::new();
+        let mut info = h.vault().vaults[1].clone();
+        info.id = empty;
+        h.svc.vault_mut().vaults.push(info);
+        let v = h.call(
+            json!({"op":"passkey_create","ctx":"passkey","origin":"https://pk.test",
+            "top_origin":"https://pk.test","rp_id":"pk.test","user_name":"alex",
+            "user_handle":"dXNlcg","challenge":"Y2hhbGxlbmdl","exclude":[],
+            "vault_id":id(empty)}),
+        );
+        ok(&v);
+        assert_eq!(last(&h), ("passkey_create", Some(WORK_KEY.to_owned())));
+        // One account again (the other locked): the journal names none.
+        for v in &mut h.svc.vault_mut().vaults {
+            v.account = None;
+        }
+        ok(&h.call(fill(atlas, ATLAS)));
+        assert_eq!(last(&h), ("fill_login", None));
+    }
+
+    #[test]
+    fn a_provider_link_stays_in_the_account_of_the_provider_login() {
+        let mut h = two();
+        let (atlas, google_pro, pro) = (h.ids.atlas, h.ids.google_pro, h.ids.pro);
+        // The site's login is the primary account's, the Google login the
+        // other one's: the first is left alone, a login is made beside the
+        // second.
+        let v = h.call(
+            json!({"op":"link_provider","ctx":"save_prompt","site_origin":ATLAS,
+                              "provider":"google","account_item_id":id(google_pro)}),
+        );
+        let made: Id = ok(&v)["item_id"].as_str().unwrap().parse().unwrap();
+        assert_ne!(made, atlas);
+        assert!(h.vault().item(atlas).login_methods.is_empty());
+        assert_eq!(h.vault().item(made).vault_id, pro);
+        assert_eq!(
+            h.audit.events().last().unwrap().account.as_deref(),
+            Some(WORK_KEY)
+        );
+    }
+
+    #[test]
+    fn a_new_item_defaults_to_the_account_the_page_routes_to() {
+        let mut h = two();
+        let (perso, pro) = (h.ids.perso, h.ids.pro);
+        let vault_of = |h: &H, v: &Value| {
+            let made: Id = ok(v)["item_id"].as_str().unwrap().parse().unwrap();
+            h.vault().item(made).vault_id
+        };
+        let unnamed = |origin: &str| {
+            json!({"op":"save_login","ctx":"save_prompt","origin":origin,"title":"",
+                   "username":"new@atlas.dev","password":"New-Pass-0099",
+                   "vault_id":"","rule":"domain","tags":[]})
+        };
+        let passkey = |origin: &str, rp: &str| {
+            json!({"op":"passkey_create","ctx":"passkey","origin":origin,"top_origin":origin,
+                   "rp_id":rp,"user_name":"alex","user_handle":"dXNlcg",
+                   "challenge":"Y2hhbGxlbmdl","exclude":[]})
+        };
+        let first_vault = |h: &mut H, origin: Option<&str>| {
+            let mut req = json!({"op":"vaults"});
+            if let Some(o) = origin {
+                req["origin"] = json!(o);
+            }
+            ok(&h.call(req))["vaults"][0]["id"].clone()
+        };
+        // The primary account claims every host here.
+        let v = h.call(unnamed("https://home-a.test"));
+        assert_eq!(vault_of(&h, &v), perso);
+        let v = h.call(passkey("https://home-b.test", "home-b.test"));
+        assert_eq!(vault_of(&h, &v), perso);
+        assert_eq!(first_vault(&mut h, Some("https://home-a.test")), id(perso));
+        // The added account claims the host: new logins and passkeys land
+        // there, and the vault list of that page starts with its vault.
+        h.svc.vault_mut().routed = WORK_KEY.to_owned();
+        let v = h.call(unnamed("https://work-a.test"));
+        assert_eq!(vault_of(&h, &v), pro);
+        assert_eq!(
+            h.audit.events().last().unwrap().account.as_deref(),
+            Some(WORK_KEY)
+        );
+        let v = h.call(passkey("https://work-b.test", "work-b.test"));
+        assert_eq!(vault_of(&h, &v), pro);
+        assert_eq!(first_vault(&mut h, Some("https://work-a.test")), id(pro));
+        // Without a page the list is the plain one, and a vault the user
+        // names is the user's choice.
+        assert_eq!(first_vault(&mut h, None), id(perso));
+        let v = h.call(save(perso, "https://work-c.test"));
+        assert_eq!(vault_of(&h, &v), perso);
+        assert_eq!(
+            err(&h.call(json!({"op":"vaults","origin":"http://x.test"}))),
+            "insecure_origin"
+        );
+    }
+
+    #[test]
+    fn an_update_stays_in_the_account_of_its_item() {
+        let mut h = two();
+        let (admin, pro) = (h.ids.admin, h.ids.pro);
+        let v = h.call(
+            json!({"op":"update_password","ctx":"save_prompt","item_id":id(admin),
+                              "origin":ADMIN,"password":"Rotated-Pass-0100"}),
+        );
+        ok(&v);
+        assert_eq!(h.vault().item(admin).vault_id, pro);
+        assert_eq!(
+            h.audit.events().last().unwrap().account.as_deref(),
+            Some(WORK_KEY)
+        );
+    }
+}
+
+// What the host is told beside the journal: who asks to unlock and for
+// which page, which page a confirmation is for, and each secret served.
+mod host_signals {
+    use super::*;
+
+    #[test]
+    fn unlock_carries_the_checked_origin_host() {
+        let mut h = H::new();
+        h.svc.vault_mut().locked = true;
+        // An older extension: no origin.
+        ok(&h.call(json!({"op":"unlock"})));
+        h.svc.vault_mut().locked = true;
+        ok(&h.call(json!({"op":"unlock","origin":"https://App.Atlas-Cloud.test/login?x=1"})));
+        h.svc.vault_mut().locked = true;
+        ok(&h.call(json!({"op":"unlock","origin":"http://localhost:3000"})));
+        assert_eq!(
+            h.vault().unlocks,
+            [
+                None,
+                Some("app.atlas-cloud.test".to_owned()),
+                Some("localhost".to_owned())
+            ]
+        );
+        // An origin that is no page of ours asks nothing of the user.
+        for bad in [
+            "http://atlas-cloud.test",
+            "javascript:alert(1)",
+            "atlas-cloud.test",
+            "",
+        ] {
+            let v = h.call(json!({"op":"unlock","origin":bad}));
+            assert!(v.get("err").is_some(), "{bad}: {v}");
+        }
+        assert_eq!(h.vault().unlocks.len(), 3);
+    }
+
+    #[test]
+    fn a_confirmation_names_the_page_of_the_request() {
+        let mut h = H::new();
+        let r = h.ids.reprompt;
+        let origin = "https://vault.atlas-cloud.test";
+        assert_eq!(err(&h.call(fill(r, origin))), "reprompt_required");
+        let v = h.call(json!({"op":"reveal","ctx":"popup","item_id":id(r),"field":"password"}));
+        assert_eq!(err(&v), "reprompt_required");
+        let v = h.call(json!({"op":"totp","ctx":"popup","item_id":id(r)}));
+        assert_eq!(err(&v), "reprompt_required");
+        assert_eq!(
+            h.vault().reprompts,
+            [
+                (r, Some("vault.atlas-cloud.test".to_owned())),
+                (r, None),
+                (r, None)
+            ]
+        );
+    }
+
+    #[test]
+    fn each_served_secret_is_told_once_and_nothing_else_is() {
+        let mut h = H::new();
+        let (atlas, card, identity) = (h.ids.atlas, h.ids.card, h.ids.identity);
+        let r = h.ids.reprompt;
+        // Nothing here serves a secret: lists, plans, notes, saves, a
+        // refused fill, a status.
+        ok(&h.call(list(ATLAS)));
+        ok(&h.call(plan_req(ATLAS, page(ATLAS, None))));
+        ok(&h.call(json!({"op":"status"})));
+        assert_eq!(
+            err(&h.call(fill(atlas, "https://evil.test"))),
+            "origin_mismatch"
+        );
+        assert_eq!(
+            err(&h.call(fill(r, "https://vault.atlas-cloud.test"))),
+            "reprompt_required"
+        );
+        let perso = h.ids.perso;
+        ok(&h.call(
+            json!({"op":"save_login","ctx":"save_prompt","origin":"https://new.test",
+            "title":"","username":"a@new.test","password":"New-Pass-0102",
+            "vault_id":id(perso),"rule":"domain","tags":[]}),
+        ));
+        assert!(h.vault().served.is_empty(), "{:?}", h.vault().served);
+
+        ok(&h.call(fill(atlas, ATLAS)));
+        ok(&h.call(note(atlas, ATLAS)));
+        ok(&h.call(json!({"op":"totp","ctx":"popup","item_id":id(atlas)})));
+        ok(&h.call(json!({"op":"reveal","ctx":"popup","item_id":id(atlas),"field":"password"})));
+        ok(&h.call(json!({"op":"fill_card","ctx":"menu","item_id":id(card),"origin":ATLAS})));
+        ok(&h.call(
+            json!({"op":"fill_identity","ctx":"menu","item_id":id(identity),
+                          "origin":ATLAS}),
+        ));
+        assert_eq!(
+            h.vault().served,
+            [
+                ("fill_login", atlas, None),
+                ("totp", atlas, None),
+                ("reveal", atlas, None),
+                ("fill_card", card, None),
+                ("fill_identity", identity, None)
+            ]
+        );
+        // As many as the journal's lines for a served secret.
+        let journal: Vec<&str> = h
+            .audit
+            .events()
+            .iter()
+            .map(|e| e.op)
+            .filter(|op| op.starts_with("fill_") || matches!(*op, "totp" | "reveal"))
+            .collect();
+        assert_eq!(journal.len(), h.vault().served.len());
+    }
+
+    #[test]
+    fn a_served_secret_names_the_account_of_its_item() {
+        let mut h = H::new();
+        h.svc.vault_mut().two_accounts();
+        let admin = h.ids.admin;
+        ok(&h.call(fill(admin, "https://admin.atlas-cloud.test")));
+        assert_eq!(
+            h.vault().served,
+            [("fill_login", admin, Some(WORK_KEY.to_owned()))]
+        );
+    }
+}

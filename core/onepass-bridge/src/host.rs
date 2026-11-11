@@ -428,13 +428,16 @@ impl<W: Write> Conn<'_, W> {
                 .line(&format!("cannot record the pairing use: {e}"));
         }
         self.journal.line("session open");
-        let vault = match vault() {
+        let mut vault = match vault() {
             Ok(v) => v,
             Err(e) => {
                 self.journal.line(&format!("vault unavailable: {e}"));
                 return Err(Close);
             }
         };
+        // The pairing this session proved: what the host may bind an
+        // unlock or a confirmation to.
+        vault.bind_client(&pairing_id);
         let Some(audit) = self.audit.take() else {
             self.journal.line("no audit journal");
             return Err(Close);
@@ -578,7 +581,7 @@ mod tests {
                 vaults: 0,
             }
         }
-        fn unlock(&mut self) -> crate::Result<bool> {
+        fn unlock(&mut self, _: Option<&str>) -> crate::Result<bool> {
             Ok(true)
         }
         fn vaults(&self) -> crate::Result<Vec<VaultInfo>> {
@@ -590,7 +593,7 @@ mod tests {
         fn save(&mut self, _: Id, _: Item) -> crate::Result<()> {
             Ok(())
         }
-        fn approve_reprompt(&mut self, _: Id) -> bool {
+        fn approve_reprompt(&mut self, _: Id, _: Option<&str>) -> bool {
             false
         }
         fn record_usage(

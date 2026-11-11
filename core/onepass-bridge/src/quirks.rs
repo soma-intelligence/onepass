@@ -4,9 +4,21 @@
 //! `apple/password-manager-resources` (MIT), embedded at a pinned commit by
 //! `scripts/update-password-quirks.sh`. It maps a domain to a rule string in
 //! the Password Rules language. No network call happens at run time.
+//!
+//! The associated domains (spec 6.2, "domaine associe") come from the same
+//! project: `quirks/shared-credentials.json`, vendored as
+//! `data/shared-credentials.json` at commit
+//! `316412ba01dba1d84dc52d51267f503964638e20` with its licence in
+//! `data/SHARED_CREDENTIALS_LICENSE` (MIT, the same text); the same script
+//! refreshes it and records its commit in `data/SHARED_CREDENTIALS_COMMIT`.
+//! That table is embedded and read by `onepass_core::fill_plan::origin`,
+//! because the MCP matches through the core and does not depend on this
+//! crate; `associated` below is the bridge's view of it.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
+
+use onepass_core::fill_plan::origin::associations;
 
 use crate::origin::Origin;
 
@@ -60,9 +72,65 @@ pub fn quirk_rules(origin: &Origin) -> Option<&'static str> {
     }
 }
 
+/// May a login saved for the site `saved_on` be offered on `page`, by the
+/// vendored list? Both are compared as registrable domains: a `shared`
+/// group works both ways, a `from` domain goes to its `to` domains only.
+pub fn associated(saved_on: &Origin, page: &Origin) -> bool {
+    !saved_on.is_ip() && !page.is_ip() && associations().allows(&saved_on.site(), &page.site())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use onepass_core::fill_plan::origin::Associations;
+
+    #[test]
+    fn vendored_shared_credentials_is_the_table_in_use() {
+        let here = Associations::parse(include_str!("../data/shared-credentials.json"));
+        assert!(here.len() > 100, "{}", here.len());
+        assert_eq!(here.len(), associations().len());
+        let json: serde_json::Value =
+            serde_json::from_str(include_str!("../data/shared-credentials.json")).unwrap();
+        assert!(json.as_array().is_some_and(|a| a.len() > 100));
+    }
+
+    #[test]
+    fn the_commit_of_the_vendored_list_is_recorded() {
+        let sha = include_str!("../data/SHARED_CREDENTIALS_COMMIT").trim();
+        assert_eq!(sha.len(), 40, "{sha}");
+        assert!(sha.bytes().all(|b| b.is_ascii_hexdigit()), "{sha}");
+    }
+
+    #[test]
+    fn associated_follows_the_list_direction() {
+        // `from` a2hosting.com `to` hosting.com.
+        assert!(associated(
+            &origin("https://www.a2hosting.com"),
+            &origin("https://my.hosting.com/login")
+        ));
+        assert!(!associated(
+            &origin("https://hosting.com"),
+            &origin("https://a2hosting.com")
+        ));
+        // `shared`.
+        assert!(associated(
+            &origin("https://ad.nl"),
+            &origin("https://dpgmedia.nl")
+        ));
+        assert!(associated(
+            &origin("https://dpgmedia.nl"),
+            &origin("https://ad.nl")
+        ));
+        // The same site is a direct match, not an associated one.
+        assert!(!associated(
+            &origin("https://ad.nl"),
+            &origin("https://www.ad.nl")
+        ));
+        assert!(!associated(
+            &origin("https://ad.nl"),
+            &origin("https://no-such-site.example")
+        ));
+    }
 
     fn origin(s: &str) -> Origin {
         Origin::parse(s).unwrap()

@@ -55,6 +55,25 @@ pub struct SiteUsage {
     pub last_at: OffsetDateTime,
 }
 
+/// Prefix of the usage key that remembers a pick through the associated
+/// tier (`fill_plan::origin`). A colon never appears in a registrable
+/// domain, so such a key never meets a site (as `app:` keys of the system
+/// AutoFill).
+const ASSOCIATED_PICK: &str = "assoc:";
+
+/// The usage key under which an item remembers that the user picked it on
+/// `host` (lowercase, as `UrlParts::host`) while it was offered there only
+/// as the login of an associated domain. The exact host, not its site: a
+/// domain of the list may host third parties under its subdomains.
+pub fn associated_pick_key(host: &str) -> String {
+    format!("{ASSOCIATED_PICK}{host}")
+}
+
+/// The host of an `associated_pick_key`, none for any other key.
+pub fn associated_pick_host(key: &str) -> Option<&str> {
+    key.strip_prefix(ASSOCIATED_PICK)
+}
+
 /// A site forgotten on purpose, and when: an entry for it no newer than
 /// this is dropped wherever it comes from, so a forget survives the union
 /// of a sync merge.
@@ -264,6 +283,12 @@ impl Item {
         })
     }
 
+    /// The user picked this item on `host` through the associated tier
+    /// (`associated_pick_key`).
+    pub fn picked_as_associated_on(&self, host: &str) -> bool {
+        self.usage_on(&associated_pick_key(host)).is_some()
+    }
+
     /// When this item last filled `site`, if it remembers it.
     pub fn site_last_at(&self, site: &str) -> Option<OffsetDateTime> {
         self.usage
@@ -276,20 +301,28 @@ impl Item {
     /// `now` (or the entry's own `last_at` if a clock ran ahead), so
     /// another device's copy of the entry does not come back with the next
     /// sync. `true` if it had any (the item must be saved).
+    ///
+    /// The picks made through the associated tier on the hosts of `site`
+    /// (`associated_pick_key`) go with it, each with its own tombstone.
     pub fn forget_site_usage(&mut self, site: &str, now: OffsetDateTime) -> bool {
-        let Some(at) = self
+        let of_site = |key: &str| {
+            key == site
+                || associated_pick_host(key)
+                    .is_some_and(|h| crate::fill_plan::origin::site_of(h, false) == site)
+        };
+        let gone: Vec<Forgotten> = self
             .usage
             .iter()
-            .filter(|e| e.site == site)
-            .map(|e| e.last_at.max(now))
-            .max()
-        else {
+            .filter(|e| of_site(&e.site))
+            .map(|e| (e.site.clone(), e.last_at.max(now)))
+            .collect();
+        if gone.is_empty() {
             return false;
-        };
-        self.usage.retain(|e| e.site != site);
+        }
+        self.usage.retain(|e| !of_site(&e.site));
         let cutoff = now - Duration::days(USAGE_TTL_DAYS);
         self.usage_forgotten.retain(|(_, t)| *t >= cutoff);
-        self.usage_forgotten.push((site.to_owned(), at));
+        self.usage_forgotten.extend(gone);
         settle_forgotten(&mut self.usage_forgotten);
         true
     }

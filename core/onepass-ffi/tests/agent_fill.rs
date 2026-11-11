@@ -47,11 +47,19 @@ impl BridgeDelegate for Quiet {
     fn pairing_ended(&self, _request_id: u64) {}
     fn pairing_stored(&self, _pairing: FfiBridgePairing) {}
     fn pairing_used(&self, _pairing_id: String, _at: u64) {}
-    fn unlock_requested(&self) {}
-    fn confirm_reprompt(&self, _vault_id: String, _item_id: String) -> bool {
+    fn unlock_requested(&self, _pairing_id: String, _origin_host: Option<String>) {}
+    fn confirm_reprompt(
+        &self,
+        _slot: String,
+        _vault_id: String,
+        _item_id: String,
+        _pairing_id: String,
+        _origin_host: Option<String>,
+    ) -> bool {
         false
     }
-    fn vault_changed(&self) {}
+    fn fill_served(&self, _slot: String, _pairing_id: String, _kind: String) {}
+    fn vault_changed(&self, _slot: String, _vault_id: Option<String>) {}
     fn note(&self, _message: String) {}
 }
 

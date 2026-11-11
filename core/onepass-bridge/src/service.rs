@@ -20,7 +20,7 @@ use onepass_core::fill_plan::score::{Candidate, MatchQuality as PlanQuality, Tie
 use onepass_core::fill_plan::{Pool, page_intent, plan};
 use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist};
 use onepass_core::model::checks::luhn_valid;
-use onepass_core::model::usage::{SiteUsage, form_shape_hash};
+use onepass_core::model::usage::{SiteUsage, associated_pick_key, form_shape_hash};
 use onepass_core::model::{
     Address, EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PENDING_TAG,
     PasswordHistoryEntry, WEAK_BY_SITE_TAG, new_item, validate,
@@ -40,10 +40,11 @@ use crate::api::{
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
-    add_passkey, associated_document, card_values, eligible, identity_values, is_provider_account,
-    item_match, license_values, login_identifier, login_secrets, loyalty_values, otp_field,
-    passkeys, passport_values, plan_candidates, plan_quality, provider_url_matches, reveal_value,
-    site_loyalty, stored_password, summarize, summary_kind, to_candidate, totp_now,
+    add_passkey, associated_document, card_values, direct_match, eligible, identity_values,
+    is_provider_account, item_match, license_values, login_identifier, login_secrets,
+    loyalty_values, otp_field, passkeys, passport_values, plan_candidates, plan_quality,
+    provider_url_matches, reveal_value, site_loyalty, stored_password, summarize, summary_kind,
+    to_candidate, totp_now,
 };
 use crate::provider::{ProviderId, from_host};
 use crate::quirks::quirk_rules;
@@ -65,6 +66,18 @@ const SAVED_URL_LABEL: &str = "site web";
 const MAX_STEPS: usize = 16;
 /// Longest site `forget_site` takes (a DNS name).
 const MAX_SITE_LEN: usize = 253;
+/// The journal operations that record a secret served to the client.
+const SERVED: [&str; 9] = [
+    "fill_login",
+    "fill_card",
+    "fill_identity",
+    "fill_document",
+    "fill_loyalty",
+    "fill_provider",
+    "totp",
+    "reveal",
+    "passkey_get",
+];
 /// Initial capacity of a reply buffer. Replies with a secret are far
 /// smaller, so the buffer never reallocates (which would leave an
 /// unwiped copy behind).
@@ -80,12 +93,42 @@ pub struct VaultStatus {
     pub vaults: usize,
 }
 
+/// The account of a vault, on a host that serves several at once (the Mac
+/// app with added accounts).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountTag {
+    /// Stable name of the account on this device (the directory's slot):
+    /// what the journal keeps, never shown.
+    pub key: String,
+    /// The account's label, shown on a candidate.
+    pub label: String,
+    /// `items_for` routes the page's host to another account: this one's
+    /// items rank behind, and join a plan only when that account has none.
+    pub behind: bool,
+}
+
 /// A vault's metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VaultInfo {
     pub id: Id,
     pub name: String,
     pub color: Option<String>,
+    /// None on a host with one account (or one unlocked account).
+    pub account: Option<AccountTag>,
+    /// A personal vault: nobody but the user can write to it. False for a
+    /// shared vault, and for a host that cannot tell (no `sole_exact`
+    /// trust for its items, `fill_plan::score`).
+    pub personal: bool,
+}
+
+impl VaultInfo {
+    fn account_key(&self) -> Option<&str> {
+        self.account.as_ref().map(|a| a.key.as_str())
+    }
+
+    fn behind(&self) -> bool {
+        self.account.as_ref().is_some_and(|a| a.behind)
+    }
 }
 
 /// What the service needs from the vault. The macOS app and the
@@ -93,15 +136,48 @@ pub struct VaultInfo {
 pub trait VaultAccess {
     fn status(&self) -> VaultStatus;
     /// Ask the user to unlock. `true` when the vault is unlocked after the
-    /// call.
-    fn unlock(&mut self) -> Result<bool>;
+    /// call. `origin_host`: the host of the page the user's gesture was on,
+    /// when the extension said (an older one does not).
+    fn unlock(&mut self, origin_host: Option<&str>) -> Result<bool>;
     fn vaults(&self) -> Result<Vec<VaultInfo>>;
+    /// `vaults` for a page on `host`, routed as `items_for`: the vaults of
+    /// the account `host` routes to first (a new item defaults to the
+    /// first), the others tagged `behind`. One account: `vaults`.
+    fn vaults_for(&self, host: &str) -> Result<Vec<VaultInfo>> {
+        let _ = host;
+        self.vaults()
+    }
+    /// The pairing of the client this vault serves, told once by the
+    /// connection loop before any request. A host with one client ignores
+    /// it.
+    fn bind_client(&mut self, pairing_id: &[u8; 16]) {
+        let _ = pairing_id;
+    }
+    /// A secret was served to the client, after every check: `kind` is the
+    /// journal's operation (`fill_login`, `fill_card`, `fill_identity`,
+    /// `fill_document`, `fill_loyalty`, `fill_provider`, `totp`, `reveal`,
+    /// `passkey_get`), `account` the item's account key when the host
+    /// serves several. Never for a plan, a note, a save, a refusal or an
+    /// agent fill.
+    fn secret_served(&mut self, kind: &'static str, item_id: Id, account: Option<&str>) {
+        let _ = (kind, item_id, account);
+    }
     /// Every item with its vault.
     fn items(&mut self) -> Result<Vec<(VaultInfo, Item)>>;
+    /// `items` for a page on `host`. A host with several accounts routes
+    /// `host` as the system AutoFill does (the account claiming the domain,
+    /// else the primary one): that account's items come first, the others
+    /// are tagged `behind`. One account: `items`.
+    fn items_for(&mut self, host: &str) -> Result<Vec<(VaultInfo, Item)>> {
+        let _ = host;
+        self.items()
+    }
     /// Create or replace an item.
     fn save(&mut self, vault_id: Id, item: Item) -> Result<()>;
     /// Ask the user to confirm access to an item marked `reprompt`.
-    fn approve_reprompt(&mut self, item_id: Id) -> bool;
+    /// `origin_host`: the host of the page the request is for, none for a
+    /// request without a page (the extension's window).
+    fn approve_reprompt(&mut self, item_id: Id, origin_host: Option<&str>) -> bool;
     /// Remember a fill of `u.site` by an item (`Repository::record_usage`):
     /// `true` when the item was rewritten. `force`: another item, in any
     /// vault, used the site after this one, so the entry is rewritten even
@@ -171,8 +247,10 @@ fn parse_id(s: &str) -> OpResult<Id> {
     Id::from_str(s.trim()).map_err(|_| AppErrorCode::Invalid)
 }
 
+/// The page of a request: `https`, or `http` on a loopback host (spec 6.1).
+/// Passkeys keep `passkey_origin`, `https` only.
 fn origin(s: &str) -> OpResult<Origin> {
-    Origin::parse(s).map_err(app_code)
+    Origin::parse_page(s).map_err(app_code)
 }
 
 fn unix(now: u64) -> OffsetDateTime {
@@ -186,7 +264,8 @@ fn rank(q: Option<MatchQuality>) -> u8 {
     match q {
         Some(MatchQuality::ExactHost) => 0,
         Some(MatchQuality::Domain) => 1,
-        None => 2,
+        Some(MatchQuality::Associated) => 2,
+        None => 3,
     }
 }
 
@@ -331,6 +410,15 @@ pub struct Service<V: VaultAccess> {
     /// session (spec 2026-11-07-agent-browser-fill 5): the jobs, answers
     /// and tickets it sees are its own. None: no agent fill here.
     agent: Option<AgentListener>,
+    /// Account key of each vault and item last read, for the journal.
+    /// Empty on a host with one account.
+    owners: HashMap<Id, String>,
+    /// Logins the user picked in the menu or the popup on a host where
+    /// they are an associated match only, and were served (item, host):
+    /// what follows that pick in this session (the next steps of its
+    /// sign-in, its `note_fill`) is let through. Nothing else acts on an
+    /// associated match.
+    picked: HashSet<(Id, String)>,
 }
 
 impl<V: VaultAccess> Service<V> {
@@ -343,6 +431,8 @@ impl<V: VaultAccess> Service<V> {
             salt: None,
             client: ClientContext::unknown(),
             agent: None,
+            owners: HashMap::new(),
+            picked: HashSet::new(),
         }
     }
 
@@ -408,7 +498,14 @@ impl<V: VaultAccess> Service<V> {
             ctx,
             at,
             plan: None,
+            account: self.owners.get(&item_id).cloned(),
         });
+        // The same point tells the host a secret left, for what it keeps
+        // of the user's activity. An agent fill is not the user at work.
+        if SERVED.contains(&op) && ctx != Ctx::Agent {
+            let account = self.owners.get(&item_id).cloned();
+            self.vault.secret_served(op, item_id, account.as_deref());
+        }
     }
 
     /// The session's username salt, drawn on first use.
@@ -435,15 +532,106 @@ impl<V: VaultAccess> Service<V> {
         Ok(())
     }
 
-    fn reprompt(&mut self, item: &Item) -> OpResult<()> {
-        if item.reprompt && !self.vault.approve_reprompt(item.id) {
+    fn reprompt(&mut self, item: &Item, page: Option<&Origin>) -> OpResult<()> {
+        if item.reprompt && !self.vault.approve_reprompt(item.id, page.map(Origin::host)) {
             return Err(AppErrorCode::RepromptRequired);
         }
         Ok(())
     }
 
+    /// The match of a login a request may act on, or `origin_mismatch`.
+    ///
+    /// An associated match (a domain sharing its credentials with the
+    /// page's, where the user never picked this login) is the user's to
+    /// start: from the menu or the popup (`ctx`), or for an agent fill the
+    /// holder approved (its ticket is checked by the caller). Anything else
+    /// (a chain, the overlay, a save) gets it only after such a pick was
+    /// served in this session: `not_allowed` otherwise, whatever the
+    /// extension knows of the tier.
+    fn login_match(&self, item: &Item, page: &Origin, ctx: Ctx) -> OpResult<MatchQuality> {
+        if matches!(ctx, Ctx::Menu | Ctx::Popup | Ctx::Agent) {
+            return item_match(item, page).ok_or(AppErrorCode::OriginMismatch);
+        }
+        self.followed_match(item, page)
+    }
+
+    /// `login_match` for what only follows a pick (a write, a note, a step
+    /// of a chain): an associated match needs the pick served before, in
+    /// this session.
+    fn followed_match(&self, item: &Item, page: &Origin) -> OpResult<MatchQuality> {
+        let q = item_match(item, page).ok_or(AppErrorCode::OriginMismatch)?;
+        if q == MatchQuality::Associated
+            && !self.picked.contains(&(item.id, page.host().to_owned()))
+        {
+            return Err(AppErrorCode::NotAllowed);
+        }
+        Ok(q)
+    }
+
+    /// A login was served on the user's pick while it was an associated
+    /// match: remembered for the rest of the session (`picked`).
+    fn note_pick(&mut self, item: &Item, page: &Origin, q: MatchQuality, ctx: Ctx) {
+        if q == MatchQuality::Associated && matches!(ctx, Ctx::Menu | Ctx::Popup) {
+            self.picked.insert((item.id, page.host().to_owned()));
+        }
+    }
+
     fn items(&mut self) -> OpResult<Vec<(VaultInfo, Item)>> {
-        self.vault.items().map_err(app_code)
+        let all = self.vault.items().map_err(app_code)?;
+        self.note_owners(&all);
+        Ok(all)
+    }
+
+    /// `items` for a page: routed by its host (`VaultAccess::items_for`).
+    fn items_on(&mut self, page: &Origin) -> OpResult<Vec<(VaultInfo, Item)>> {
+        let all = self.vault.items_for(page.host()).map_err(app_code)?;
+        self.note_owners(&all);
+        Ok(all)
+    }
+
+    /// The vaults, their accounts remembered for the journal. With a page,
+    /// routed by its host (`VaultAccess::vaults_for`).
+    fn vault_list(&mut self, page: Option<&Origin>) -> OpResult<Vec<VaultInfo>> {
+        let vaults = match page {
+            Some(p) => self.vault.vaults_for(p.host()),
+            None => self.vault.vaults(),
+        }
+        .map_err(app_code)?;
+        if !vaults.is_empty() && vaults.iter().all(|v| v.account.is_none()) {
+            self.owners.clear();
+        }
+        for v in &vaults {
+            if let Some(key) = v.account_key() {
+                self.owners.insert(v.id, key.to_owned());
+            }
+        }
+        Ok(vaults)
+    }
+
+    /// Remember the account of what was just read. A read that names no
+    /// account (one account answers) forgets them all: its journal lines
+    /// name none.
+    fn note_owners(&mut self, all: &[(VaultInfo, Item)]) {
+        if !all.is_empty() && all.iter().all(|(v, _)| v.account.is_none()) {
+            self.owners.clear();
+        }
+        for (v, i) in all {
+            if let Some(key) = v.account_key() {
+                self.owners.insert(v.id, key.to_owned());
+                self.owners.insert(i.id, key.to_owned());
+            }
+        }
+    }
+
+    /// Create or replace `item` in its vault; the journal then names the
+    /// account of that vault for it.
+    fn save(&mut self, vault_id: Id, item: Item) -> OpResult<()> {
+        let id = item.id;
+        self.vault.save(vault_id, item).map_err(app_code)?;
+        if let Some(key) = self.owners.get(&vault_id).cloned() {
+            self.owners.insert(id, key);
+        }
+        Ok(())
     }
 
     /// An eligible item by id, or `not_found` (an archived or hidden item
@@ -489,8 +677,13 @@ impl<V: VaultAccess> Service<V> {
                     vaults: s.vaults,
                 });
             }
-            Request::Unlock { .. } => {
-                let unlocked = self.vault.unlock().map_err(app_code)?;
+            Request::Unlock { origin: o, .. } => {
+                // Checked like every origin; an older extension sends none.
+                let page = o.as_deref().map(origin).transpose()?;
+                let unlocked = self
+                    .vault
+                    .unlock(page.as_ref().map(Origin::host))
+                    .map_err(app_code)?;
                 return Ok(Response::Unlock { locked: !unlocked });
             }
             // Not a vault value: served locked too.
@@ -562,7 +755,7 @@ impl<V: VaultAccess> Service<V> {
             | Request::AgentWait { .. }
             | Request::AgentProbeResult { .. }
             | Request::AgentFillResult { .. } => Err(AppErrorCode::Internal),
-            Request::Vaults { .. } => self.vaults(),
+            Request::Vaults { origin: o, .. } => self.vaults(o.as_deref()),
             Request::ListForOrigin { origin: o, .. } => self.list_for_origin(o),
             Request::Search { ctx, query, .. } => self.search(*ctx, query),
             Request::ListFillable {
@@ -875,16 +1068,18 @@ impl<V: VaultAccess> Service<V> {
         }
     }
 
-    fn vaults(&mut self) -> OpResult<Response> {
+    /// The vaults; with the page's origin, those of the account it routes
+    /// to first (the extension saves a new item in the first by default).
+    fn vaults(&mut self, o: Option<&str>) -> OpResult<Response> {
+        let page = o.map(origin).transpose()?;
         let vaults = self
-            .vault
-            .vaults()
-            .map_err(app_code)?
+            .vault_list(page.as_ref())?
             .into_iter()
             .map(|v| VaultEntry {
                 id: v.id.to_string(),
                 name: v.name,
                 color: v.color,
+                account: v.account.map(|a| a.label),
             })
             .collect();
         Ok(Response::Vaults { vaults })
@@ -909,12 +1104,23 @@ impl<V: VaultAccess> Service<V> {
                 pick(i).map(|q| (summarize(v, i, q, &email), to_candidate(i, plan_quality(q))))
             })
             .collect();
-        sort(pairs)
+        let mut out = sort(pairs);
+        // The account the page routes to first (`items_for`). Stable, and
+        // nothing moves on a host with one account.
+        let behind: HashSet<String> = all
+            .iter()
+            .filter(|(v, _)| v.behind())
+            .map(|(_, i)| i.id.to_string())
+            .collect();
+        if !behind.is_empty() {
+            out.sort_by_key(|s| behind.contains(&s.item_id));
+        }
+        out
     }
 
     fn list_for_origin(&mut self, o: &str) -> OpResult<Response> {
         let page = origin(o)?;
-        let all = self.items()?;
+        let all = self.items_on(&page)?;
         let items = Self::summaries(&all, |i| {
             if i.item_type != ItemType::Login {
                 return None;
@@ -942,12 +1148,12 @@ impl<V: VaultAccess> Service<V> {
     }
 
     fn list_fillable(&mut self, o: &str, kind: FillKind) -> OpResult<Response> {
-        origin(o)?;
+        let page = origin(o)?;
         let want = match kind {
             FillKind::Card => SummaryKind::Card,
             FillKind::Identity => SummaryKind::Identity,
         };
-        let all = self.items()?;
+        let all = self.items_on(&page)?;
         let items = Self::summaries(&all, |i| {
             (summary_kind(i.item_type) == Some(want)).then_some(None)
         });
@@ -998,11 +1204,9 @@ impl<V: VaultAccess> Service<V> {
         if item.item_type != ItemType::Login {
             return Err(AppErrorCode::NotFound);
         }
-        if item_match(&item, &page).is_none() {
-            return Err(AppErrorCode::OriginMismatch);
-        }
+        let q = self.login_match(&item, &page, ctx)?;
         let with_totp = self.agent_ticket(ctx, agent_request, item_id, o, AgentKind::Login)?;
-        self.reprompt(&item)?;
+        self.reprompt(&item, Some(&page))?;
         // An agent without the right to the code fills login and password
         // only, whatever fields the page asked for.
         let fields: Vec<FillField> = fields
@@ -1011,6 +1215,7 @@ impl<V: VaultAccess> Service<V> {
             .filter(|f| with_totp || *f != FillField::Totp)
             .collect();
         let out = login_secrets(&item, &fields, now);
+        self.note_pick(&item, &page, q, ctx);
         self.record("fill_login", item.id, Some(o), ctx, now);
         Ok(out)
     }
@@ -1024,13 +1229,13 @@ impl<V: VaultAccess> Service<V> {
         kind: ItemType,
         now: u64,
     ) -> OpResult<Response> {
-        origin(o)?;
+        let page = origin(o)?;
         let (_, item) = self.eligible_item(item_id)?;
         if item.item_type != kind {
             return Err(AppErrorCode::NotFound);
         }
         self.agent_ticket(ctx, agent_request, item_id, o, AgentKind::Card)?;
-        self.reprompt(&item)?;
+        self.reprompt(&item, Some(&page))?;
         self.record("fill_card", item.id, Some(o), ctx, now);
         Ok(card_values(&item))
     }
@@ -1048,15 +1253,21 @@ impl<V: VaultAccess> Service<V> {
         now: u64,
     ) -> OpResult<Response> {
         let page = origin(o)?;
-        let (_, item) = self.eligible_item(item_id)?;
+        let (home, item) = self.eligible_item(item_id)?;
         if item.item_type != ItemType::Identity {
             return Err(AppErrorCode::NotFound);
         }
-        self.reprompt(&item)?;
+        self.reprompt(&item, Some(&page))?;
         let mut out = identity_values(&item);
         let mut given: Vec<(&'static str, Id)> = Vec::new();
         if !extras.is_empty() {
-            let all: Vec<Item> = self.items()?.into_iter().map(|(_, i)| i).collect();
+            // The documents of the identity's own account only.
+            let all: Vec<Item> = self
+                .items()?
+                .into_iter()
+                .filter(|(v, _)| v.account_key() == home.account_key())
+                .map(|(_, i)| i)
+                .collect();
             let today = OffsetDateTime::from_unix_timestamp(i64::try_from(now).unwrap_or(i64::MAX))
                 .map_err(|_| AppErrorCode::Internal)?
                 .date();
@@ -1072,14 +1283,14 @@ impl<V: VaultAccess> Service<V> {
             if extras.contains(&Extra::Passport)
                 && let Some(doc) = associated_document(&item, &all, ItemType::Passport, today)
             {
-                self.reprompt(doc)?;
+                self.reprompt(doc, Some(&page))?;
                 *passport = Some(passport_values(doc));
                 given.push(("fill_document", doc.id));
             }
             if extras.contains(&Extra::DriverLicense)
                 && let Some(doc) = associated_document(&item, &all, ItemType::DriverLicense, today)
             {
-                self.reprompt(doc)?;
+                self.reprompt(doc, Some(&page))?;
                 *driver_license = Some(license_values(doc));
                 given.push(("fill_document", doc.id));
             }
@@ -1087,7 +1298,7 @@ impl<V: VaultAccess> Service<V> {
                 && let Some(program) = site_loyalty(&all, &page)
                 && let Some(values) = loyalty_values(program)
             {
-                self.reprompt(program)?;
+                self.reprompt(program, Some(&page))?;
                 *loyalty = Some(values);
                 given.push(("fill_loyalty", program.id));
             }
@@ -1106,13 +1317,15 @@ impl<V: VaultAccess> Service<V> {
             (_, None) => return Err(AppErrorCode::NotAllowed),
         };
         let item = self.displayable_item(item_id)?;
-        if let Some(page) = &page
-            && item_match(&item, page).is_none()
-        {
-            return Err(AppErrorCode::OriginMismatch);
-        }
-        self.reprompt(&item)?;
+        let q = match &page {
+            Some(page) => Some(self.login_match(&item, page, ctx)?),
+            None => None,
+        };
+        self.reprompt(&item, page.as_ref())?;
         let (code, remaining) = totp_now(&item, now)?.ok_or(AppErrorCode::NotFound)?;
+        if let (Some(page), Some(q)) = (&page, q) {
+            self.note_pick(&item, page, q, ctx);
+        }
         self.record("totp", item.id, o, ctx, now);
         Ok(Response::Totp { code, remaining })
     }
@@ -1122,7 +1335,7 @@ impl<V: VaultAccess> Service<V> {
             return Err(AppErrorCode::NotAllowed);
         }
         let item = self.displayable_item(item_id)?;
-        self.reprompt(&item)?;
+        self.reprompt(&item, None)?;
         let value = reveal_value(&item, field)?;
         self.record("reveal", item.id, None, ctx, now);
         Ok(Response::Reveal { value })
@@ -1136,7 +1349,9 @@ impl<V: VaultAccess> Service<V> {
     ) -> OpResult<Response> {
         let page = origin(o)?;
         let user = username.trim();
-        let all = self.items()?;
+        // The routed account's logins first: among equal matches, the
+        // verdict names one of them.
+        let all = self.items_on(&page)?;
         let mut site: Vec<(Option<MatchQuality>, &Item)> = all
             .iter()
             .map(|(_, i)| i)
@@ -1177,16 +1392,7 @@ impl<V: VaultAccess> Service<V> {
         if new.password.0.is_empty() {
             return Err(AppErrorCode::Invalid);
         }
-        let vault_id = parse_id(new.vault_id)?;
-        if !self
-            .vault
-            .vaults()
-            .map_err(app_code)?
-            .iter()
-            .any(|v| v.id == vault_id)
-        {
-            return Err(AppErrorCode::NotFound);
-        }
+        let vault_id = self.known_vault(new.vault_id, &page)?;
         let title = match new.title.trim() {
             "" => page.site(),
             t => t.to_owned(),
@@ -1220,23 +1426,25 @@ impl<V: VaultAccess> Service<V> {
             .collect();
         validate(&item).map_err(|_| AppErrorCode::Invalid)?;
         let id = item.id;
-        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.save(vault_id, item)?;
         self.record("save_login", id, Some(o), ctx, now);
         Ok(Response::ItemId {
             item_id: id.to_string(),
         })
     }
 
-    /// Is `vault_id` a vault of the account? `not_found` otherwise.
-    fn known_vault(&mut self, vault_id: &str) -> OpResult<Id> {
+    /// The vault of a new item made on `page`: `vault_id` when it names a
+    /// vault of the host (`not_found` otherwise), and when it is empty the
+    /// first vault of the account the page routes to (`vaults_for`), so a
+    /// site an added account claims is saved there, not in the primary
+    /// account.
+    fn known_vault(&mut self, vault_id: &str, page: &Origin) -> OpResult<Id> {
+        let vaults = self.vault_list(Some(page))?;
+        if vault_id.trim().is_empty() {
+            return vaults.first().map(|v| v.id).ok_or(AppErrorCode::NotFound);
+        }
         let vault_id = parse_id(vault_id)?;
-        if !self
-            .vault
-            .vaults()
-            .map_err(app_code)?
-            .iter()
-            .any(|v| v.id == vault_id)
-        {
+        if !vaults.iter().any(|v| v.id == vault_id) {
             return Err(AppErrorCode::NotFound);
         }
         Ok(vault_id)
@@ -1278,7 +1486,7 @@ impl<V: VaultAccess> Service<V> {
 
     fn save_card(&mut self, ctx: Ctx, o: &str, card: NewCard<'_>, now: u64) -> OpResult<Response> {
         save_ctx(ctx)?;
-        origin(o)?;
+        let page = origin(o)?;
         let digits = card_digits(card.number)?;
         let expiry = parse_expiry(card.exp_month, card.exp_year)?;
         let cardholder = card.cardholder.trim();
@@ -1293,7 +1501,7 @@ impl<V: VaultAccess> Service<V> {
                 if !stored_card_digits(&item).is_some_and(|d| same_secret(&d, &digits)) {
                     return Err(AppErrorCode::Invalid);
                 }
-                self.reprompt(&item)?;
+                self.reprompt(&item, Some(&page))?;
                 if let Some((year, month)) = expiry {
                     set_value(&mut item, "expiry", FieldValue::MonthYear { year, month })?;
                 }
@@ -1308,7 +1516,7 @@ impl<V: VaultAccess> Service<V> {
                 item
             }
             None => {
-                let vault_id = self.known_vault(card.vault_id)?;
+                let vault_id = self.known_vault(card.vault_id, &page)?;
                 let title = match card.title.trim() {
                     "" => format!("Carte \u{2022}\u{2022}\u{2022}\u{2022} {}", last4(&digits)),
                     t => t.to_owned(),
@@ -1330,7 +1538,7 @@ impl<V: VaultAccess> Service<V> {
         };
         validate_typed(&item, &["cardholder", "expiry"])?;
         let (id, vault_id) = (item.id, item.vault_id);
-        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.save(vault_id, item)?;
         self.record("save_card", id, Some(o), ctx, now);
         Ok(Response::ItemId {
             item_id: id.to_string(),
@@ -1376,7 +1584,7 @@ impl<V: VaultAccess> Service<V> {
         if typed.is_empty() {
             return Err(AppErrorCode::Invalid);
         }
-        let vault_id = self.known_vault(vault_id)?;
+        let vault_id = self.known_vault(vault_id, &page)?;
         let (given, family, email) = (
             typed.given_name.trim(),
             typed.family_name.trim(),
@@ -1422,7 +1630,7 @@ impl<V: VaultAccess> Service<V> {
         }
         validate_typed(&item, &["first_name"])?;
         let id = item.id;
-        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.save(vault_id, item)?;
         self.record("save_identity", id, Some(o), ctx, now);
         Ok(Response::ItemId {
             item_id: id.to_string(),
@@ -1443,10 +1651,8 @@ impl<V: VaultAccess> Service<V> {
         if item.item_type != ItemType::Login {
             return Err(AppErrorCode::NotFound);
         }
-        if item_match(&item, &page).is_none() {
-            return Err(AppErrorCode::OriginMismatch);
-        }
-        self.reprompt(&item)?;
+        self.followed_match(&item, &page)?;
+        self.reprompt(&item, Some(&page))?;
         let at = unix(now);
         if let Some(old) = stored_password(&item).filter(|p| !p.is_empty()).cloned() {
             item.password_history.push(PasswordHistoryEntry {
@@ -1470,7 +1676,7 @@ impl<V: VaultAccess> Service<V> {
         }
         item.updated_at = at;
         let (id, vault_id) = (item.id, item.vault_id);
-        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.save(vault_id, item)?;
         self.record("update_password", id, Some(o), ctx, now);
         Ok(Response::Empty {})
     }
@@ -1492,13 +1698,11 @@ impl<V: VaultAccess> Service<V> {
         if item.item_type != ItemType::Login {
             return Err(AppErrorCode::NotFound);
         }
-        if item_match(&item, &page).is_none() {
-            return Err(AppErrorCode::OriginMismatch);
-        }
+        self.followed_match(&item, &page)?;
         if !item.is_pending() {
             return Err(AppErrorCode::Invalid);
         }
-        self.reprompt(&item)?;
+        self.reprompt(&item, Some(&page))?;
         let username = username.trim();
         if !username.is_empty() {
             set_value(&mut item, "username", FieldValue::Text(username.to_owned()))?;
@@ -1508,7 +1712,7 @@ impl<V: VaultAccess> Service<V> {
         validate(&item).map_err(|_| AppErrorCode::Invalid)?;
         item.updated_at = unix(now);
         let (id, vault_id) = (item.id, item.vault_id);
-        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.save(vault_id, item)?;
         self.record("confirm_pending", id, Some(o), ctx, now);
         Ok(Response::Empty {})
     }
@@ -1522,7 +1726,7 @@ impl<V: VaultAccess> Service<V> {
             .iter()
             .map(|(_, i)| i)
             .filter(|i| eligible(i) && i.item_type == ItemType::Login)
-            .filter(|i| item_match(i, &site).is_some())
+            .filter(|i| direct_match(i, &site).is_some())
             .flat_map(|i| i.login_methods.iter())
             .find_map(|m| match m {
                 LoginMethod::Provider {
@@ -1541,12 +1745,16 @@ impl<V: VaultAccess> Service<V> {
 
     /// An eligible login of provider `p`: `not_found` if missing or not a
     /// login of `p`.
-    fn provider_account(&mut self, account_item_id: &str, p: ProviderId) -> OpResult<Item> {
-        let (_, item) = self.eligible_item(account_item_id)?;
+    fn provider_account(
+        &mut self,
+        account_item_id: &str,
+        p: ProviderId,
+    ) -> OpResult<(VaultInfo, Item)> {
+        let (vault, item) = self.eligible_item(account_item_id)?;
         if !is_provider_account(&item, p) {
             return Err(AppErrorCode::NotFound);
         }
-        Ok(item)
+        Ok((vault, item))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1565,11 +1773,11 @@ impl<V: VaultAccess> Service<V> {
         if from_host(prov.host()) != Some(p) {
             return Err(AppErrorCode::OriginMismatch);
         }
-        let item = self.provider_account(account_item_id, p)?;
+        let (_, item) = self.provider_account(account_item_id, p)?;
         if !provider_url_matches(&item, p, &prov) {
             return Err(AppErrorCode::OriginMismatch);
         }
-        self.reprompt(&item)?;
+        self.reprompt(&item, Some(&prov))?;
         let out = login_secrets(&item, fields, now);
         self.record("fill_provider", item.id, Some(provider_origin), ctx, now);
         Ok(out)
@@ -1584,23 +1792,26 @@ impl<V: VaultAccess> Service<V> {
         now: u64,
     ) -> OpResult<Response> {
         let site = origin(site_origin)?;
-        let account = self.provider_account(account_item_id, p)?;
+        let (home, account) = self.provider_account(account_item_id, p)?;
         let method = LoginMethod::Provider {
             provider: p.to_core(),
             account: account.id,
             relay_email: None,
         };
+        // A login of the provider login's own account only: no item of one
+        // account ever points into another.
         let mut logins: Vec<(MatchQuality, Item)> = self
             .items()?
             .into_iter()
+            .filter(|(v, _)| v.account_key() == home.account_key())
             .map(|(_, i)| i)
             .filter(|i| eligible(i) && i.item_type == ItemType::Login && i.id != account.id)
-            .filter_map(|i| item_match(&i, &site).map(|q| (q, i)))
+            .filter_map(|i| direct_match(&i, &site).map(|q| (q, i)))
             .collect();
         logins.sort_by_key(|(q, _)| rank(Some(*q)));
         let item = match logins.into_iter().next() {
             Some((_, mut item)) => {
-                self.reprompt(&item)?;
+                self.reprompt(&item, Some(&site))?;
                 if !item.login_methods.contains(&method) {
                     item.login_methods.push(method);
                     item.updated_at = unix(now);
@@ -1620,7 +1831,7 @@ impl<V: VaultAccess> Service<V> {
             }
         };
         let (id, vault_id) = (item.id, item.vault_id);
-        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.save(vault_id, item)?;
         self.record("link_provider", id, Some(site_origin), ctx, now);
         Ok(Response::ItemId {
             item_id: id.to_string(),
@@ -1644,7 +1855,7 @@ impl<V: VaultAccess> Service<V> {
         context.validate().map_err(|_| AppErrorCode::Invalid)?;
         // A top frame is its own top: anything else is a forged context.
         if context.frame_kind == FrameKind::Top
-            && Origin::parse(&context.top_origin)
+            && Origin::parse_page(&context.top_origin)
                 .ok()
                 .map(|t| t.origin_string())
                 != Some(page.origin_string())
@@ -1653,8 +1864,26 @@ impl<V: VaultAccess> Service<V> {
         }
         let site = page.site();
         let shape = main_roles(context).map(|roles| form_shape_hash(&roles));
-        let all = self.items()?;
+        let all = self.items_on(&page)?;
         let usable = || all.iter().map(|(_, i)| i).filter(|i| eligible(i));
+        // Several accounts: a plan is made from the account the page routes
+        // to, as the system AutoFill answers from one account; another
+        // account's items join a kind only when that account has none (the
+        // menu still lists them all).
+        let behind: HashSet<Id> = all
+            .iter()
+            .filter(|(v, _)| v.behind())
+            .map(|(_, i)| i.id)
+            .collect();
+        fn routed<'a>(
+            mut v: Vec<(&'a Item, PlanQuality)>,
+            behind: &HashSet<Id>,
+        ) -> Vec<(&'a Item, PlanQuality)> {
+            if v.iter().any(|(i, _)| !behind.contains(&i.id)) {
+                v.retain(|(i, _)| !behind.contains(&i.id));
+            }
+            v
+        }
         // A code page is filled from a Login holding a code only, and the
         // one used here last is found among those (as the system AutoFill
         // does for a one-time code).
@@ -1664,11 +1893,15 @@ impl<V: VaultAccess> Service<V> {
             .filter(|i| !otp || otp_field(i).is_some())
             .filter_map(|i| item_match(i, &page).map(|q| (i, plan_quality(Some(q)))))
             .collect();
+        let logins = routed(logins, &behind);
         let of_kind = |k: SummaryKind| -> Vec<(&Item, PlanQuality)> {
-            usable()
-                .filter(|i| summary_kind(i.item_type) == Some(k))
-                .map(|i| (i, plan_quality(None)))
-                .collect()
+            routed(
+                usable()
+                    .filter(|i| summary_kind(i.item_type) == Some(k))
+                    .map(|i| (i, plan_quality(None)))
+                    .collect(),
+                &behind,
+            )
         };
         let (cards, identities) = (of_kind(SummaryKind::Card), of_kind(SummaryKind::Identity));
         let identity_country = identities
@@ -1682,9 +1915,17 @@ impl<V: VaultAccess> Service<V> {
             .autofill_affinity(&site, &self.client, unix(now))
             .unwrap_or_default();
         let salt = self.salt()?.bytes();
+        // The items of the user's own vaults: the only ones the sole exact
+        // host rule trusts.
+        let personal: HashSet<Id> = all
+            .iter()
+            .filter(|(v, _)| v.personal)
+            .map(|(_, i)| i.id)
+            .collect();
         let with_learned = |mut v: Vec<Candidate>| {
             for c in &mut v {
                 c.affinity = learned.get(&c.item_id).copied().unwrap_or(0);
+                c.private_vault = personal.contains(&c.item_id);
             }
             v
         };
@@ -1704,6 +1945,7 @@ impl<V: VaultAccess> Service<V> {
             ctx,
             at: now,
             plan: Some(PlanAudit::from(&fill)),
+            account: None,
         });
         Ok(Response::Plan { plan: fill.into() })
     }
@@ -1729,13 +1971,12 @@ impl<V: VaultAccess> Service<V> {
             .iter()
             .find(|(_, i)| i.id == id && eligible(i))
             .ok_or(AppErrorCode::NotFound)?;
-        let kind = match summary_kind(item.item_type) {
-            Some(SummaryKind::Login) if item_match(item, &page).is_none() => {
-                return Err(AppErrorCode::OriginMismatch);
-            }
-            Some(k) => k,
-            None => return Err(AppErrorCode::NotFound),
-        };
+        let kind = summary_kind(item.item_type).ok_or(AppErrorCode::NotFound)?;
+        // A login offered here as an associated match only: its fill is
+        // noted, and the match promoted, only when that fill was served on
+        // the user's pick in this session.
+        let promoted = kind == SummaryKind::Login
+            && self.followed_match(item, &page)? == MatchQuality::Associated;
         let site = page.site();
         // Another eligible item of this kind, in any vault, used the site
         // after this one: rewrite, or it stays `last_on_site` (spec 6.2).
@@ -1755,6 +1996,18 @@ impl<V: VaultAccess> Service<V> {
             count: 1,
             last_at: at,
         };
+        if promoted {
+            // The pick, kept for this very host (`fill_plan::origin`): from
+            // now on the login is a domain match there.
+            let pick = SiteUsage {
+                site: associated_pick_key(page.host()),
+                ..usage.clone()
+            };
+            self.vault
+                .record_usage(vault_id, item_id, pick, at, true)
+                .map_err(app_code)?;
+            self.picked.remove(&(item_id, page.host().to_owned()));
+        }
         self.vault
             .record_usage(vault_id, item_id, usage, at, force)
             .map_err(app_code)?;
@@ -1858,6 +2111,7 @@ impl<V: VaultAccess> Service<V> {
             ctx,
             at: now,
             plan: None,
+            account: item_id.and_then(|i| self.owners.get(&i).cloned()),
         });
         Ok(Response::Empty {})
     }
@@ -1878,6 +2132,8 @@ impl<V: VaultAccess> Service<V> {
             return Err(AppErrorCode::Invalid);
         }
         let items = self.vault.forget_site_usage(&site).map_err(app_code)?;
+        // A forgotten site is asked again from the menu.
+        self.picked.clear();
         self.audit.record(AuditEvent {
             op: "forget_site",
             item_id: None,
@@ -1885,6 +2141,7 @@ impl<V: VaultAccess> Service<V> {
             ctx,
             at: now,
             plan: None,
+            account: None,
         });
         Ok(Response::Forgotten { items })
     }
@@ -1969,7 +2226,7 @@ impl<V: VaultAccess> Service<V> {
         else {
             return Err(AppErrorCode::NotFound);
         };
-        self.reprompt(&item)?;
+        self.reprompt(&item, Some(&page))?;
         // Signed over the checked rp id, in lower case, as the relying
         // party hashes it.
         let signer = onepass_core::model::PasskeyCredential { rp_id: rp, ..cred };
@@ -2011,7 +2268,9 @@ impl<V: VaultAccess> Service<V> {
             .iter()
             .map(|c| from_b64url(c, MAX_CREDENTIAL_ID))
             .collect::<OpResult<Vec<_>>>()?;
-        let vaults = self.vault.vaults().map_err(app_code)?;
+        // Routed by the page: a new login goes to the account that claims
+        // the domain, a login to complete is looked for there first.
+        let vaults = self.vault_list(Some(&page))?;
         let asked_vault = match new.vault_id {
             Some(v) => {
                 let id = parse_id(v)?;
@@ -2022,7 +2281,7 @@ impl<V: VaultAccess> Service<V> {
             }
             None => None,
         };
-        let all = self.items()?;
+        let all = self.items_on(&page)?;
         // Any item not in the trash counts, eligible or not: the relying
         // party asked not to register twice on this authenticator.
         let excluded = all
@@ -2040,13 +2299,13 @@ impl<V: VaultAccess> Service<V> {
             .filter(|i| {
                 login_identifier(i).is_some_and(|u| u.trim().eq_ignore_ascii_case(user_name))
             })
-            .filter_map(|i| item_match(&i, &page).map(|q| (q, i)))
+            .filter_map(|i| direct_match(&i, &page).map(|q| (q, i)))
             .collect();
         owners.sort_by_key(|(q, _)| rank(Some(*q)));
         let at = unix(now);
         let (mut item, created) = match owners.into_iter().next() {
             Some((_, item)) => {
-                self.reprompt(&item)?;
+                self.reprompt(&item, Some(&page))?;
                 (item, false)
             }
             None => {
@@ -2073,7 +2332,7 @@ impl<V: VaultAccess> Service<V> {
         item.updated_at = at;
         validate(&item).map_err(|_| AppErrorCode::Invalid)?;
         let (id, vault_id) = (item.id, item.vault_id);
-        self.vault.save(vault_id, item).map_err(app_code)?;
+        self.save(vault_id, item)?;
         self.record("passkey_create", id, Some(o), ctx, now);
         Ok(Response::PasskeyRegistration {
             item_id: id.to_string(),

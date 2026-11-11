@@ -13,6 +13,7 @@
 //! manifest the CLI or another host process accepted meanwhile is never
 //! regressed, as with the CLI.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::os::unix::fs::OpenOptionsExt;
@@ -40,6 +41,11 @@ use crate::pairings::write_atomic;
 const DEVICE_FILE: &str = "device.bin";
 const STORE_FILE: &str = "vault.sqlite";
 const LOCK_FILE: &str = "lock";
+/// Deferred unlock (config `"unlock": "file"`): written on an `unlock`
+/// request, removed with the approval.
+pub const UNLOCK_PENDING_FILE: &str = "unlock-pending";
+/// Whoever plays the user writes it; the vault opens at the next request.
+pub const UNLOCK_APPROVED_FILE: &str = "unlock-approved";
 
 /// Opens the repository on `unlock` when it is not open yet.
 pub type Opener<S> = Box<dyn FnMut() -> Option<Repository<S>> + Send>;
@@ -68,7 +74,11 @@ pub type Refresh<S> = Box<dyn FnMut(&DeviceState) -> Result<Repository<S>, HostE
 /// A `VaultAccess` over a repository, with a simulated lock state.
 pub struct RepoVault<S: RecordStore> {
     repo: Option<Repository<S>>,
-    locked: bool,
+    /// A cell: an approved deferred unlock lifts it from `status`.
+    locked: Cell<bool>,
+    /// The data directory of a deferred unlock; none: `unlock` opens at
+    /// once.
+    deferred: Option<PathBuf>,
     account: String,
     allow_reprompt: bool,
     /// Vault count shown while locked (the fixture knows it).
@@ -103,7 +113,8 @@ impl<S: RecordStore> RepoVault<S> {
     pub fn new(repo: Option<Repository<S>>, account: &str) -> Self {
         Self {
             repo,
-            locked: false,
+            locked: Cell::new(false),
+            deferred: None,
             account: account.to_owned(),
             allow_reprompt: false,
             known_vaults: 0,
@@ -123,7 +134,49 @@ impl<S: RecordStore> RepoVault<S> {
     }
 
     pub fn set_locked(&mut self, locked: bool) {
-        self.locked = locked;
+        self.locked.set(locked);
+    }
+
+    /// Lab hook: `unlock` leaves `unlock-pending` in `data_dir` and the
+    /// vault stays locked until `unlock-approved` is there.
+    pub fn set_deferred_unlock(&mut self, data_dir: &Path) {
+        self.deferred = Some(data_dir.to_path_buf());
+    }
+
+    /// Lift the lock when a pending deferred unlock was approved, and
+    /// remove both files. An approval without a request opens nothing.
+    fn take_approval(&self) {
+        let Some(dir) = &self.deferred else {
+            return;
+        };
+        let (pending, approved) = (
+            dir.join(UNLOCK_PENDING_FILE),
+            dir.join(UNLOCK_APPROVED_FILE),
+        );
+        if self.locked.get() && pending.exists() && approved.exists() {
+            let _ = fs::remove_file(&pending);
+            let _ = fs::remove_file(&approved);
+            self.locked.set(false);
+        }
+    }
+
+    /// `unlock` of a deferred host: file the request and stay locked.
+    fn ask_unlock(&mut self, dir: &Path) -> Result<bool, BridgeError> {
+        if !self.is_locked() {
+            return Ok(true);
+        }
+        // What the approval will show is opened now; the lock stays.
+        if self.repo.is_none()
+            && let Some(open) = self.opener.as_mut()
+        {
+            self.repo = open();
+        }
+        self.locked.set(true);
+        // An approval older than this request approves nothing.
+        let _ = fs::remove_file(dir.join(UNLOCK_APPROVED_FILE));
+        write_atomic(&dir.join(UNLOCK_PENDING_FILE), b"")
+            .map_err(|e| self.fail("unlock request", &e.kind(), INTERNAL))?;
+        Ok(false)
     }
 
     /// Answer of `approve_reprompt` (the user's confirmation, simulated).
@@ -229,7 +282,8 @@ impl<S: RecordStore> RepoVault<S> {
     }
 
     fn is_locked(&self) -> bool {
-        self.locked || self.repo.is_none()
+        self.take_approval();
+        self.locked.get() || self.repo.is_none()
     }
 
     /// Exclusive lock of the CLI data directory, released on drop.
@@ -251,6 +305,8 @@ impl<S: RecordStore> RepoVault<S> {
                     .cloned()
                     .unwrap_or_else(|| v.meta.color.clone()),
             ),
+            account: None,
+            personal: v.zone() == onepass_core::store::Zone::Private,
         }
     }
 }
@@ -271,20 +327,23 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
         }
     }
 
-    fn unlock(&mut self) -> onepass_bridge::Result<bool> {
+    fn unlock(&mut self, _origin_host: Option<&str>) -> onepass_bridge::Result<bool> {
+        if let Some(dir) = self.deferred.clone() {
+            return self.ask_unlock(&dir);
+        }
         if self.repo.is_none()
             && let Some(open) = self.opener.as_mut()
         {
             self.repo = open();
         }
         if self.repo.is_some() {
-            self.locked = false;
+            self.locked.set(false);
         }
         Ok(!self.is_locked())
     }
 
     fn vaults(&self) -> onepass_bridge::Result<Vec<VaultInfo>> {
-        let repo = match (&self.repo, self.locked) {
+        let repo = match (&self.repo, self.is_locked()) {
             (Some(r), false) => r,
             _ => return Err(LOCKED),
         };
@@ -335,7 +394,7 @@ impl<S: RecordStore> VaultAccess for RepoVault<S> {
         self.persist_after_save()
     }
 
-    fn approve_reprompt(&mut self, _item_id: Id) -> bool {
+    fn approve_reprompt(&mut self, _item_id: Id, _origin_host: Option<&str>) -> bool {
         self.allow_reprompt
     }
 

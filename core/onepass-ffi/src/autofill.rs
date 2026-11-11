@@ -4,22 +4,24 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
+use onepass_bridge::origin::parse_parts;
 use onepass_core::Id;
 use onepass_core::autofill_history::{AutofillAction, AutofillEvent, ClientContext, EventSource};
 use onepass_core::fill_plan::intent::Intent;
+use onepass_core::fill_plan::origin::{self as rules, UrlMatch, UrlParts};
 use onepass_core::fill_plan::score::{
     Candidate, CandidateKind, Confidence, MatchQuality as PlanQuality, Tiebreak, confidence, order,
     score,
 };
-use onepass_core::model::usage::{SiteUsage, StepKind, form_shape_hash, last_used_on};
+use onepass_core::model::usage::{
+    SiteUsage, StepKind, associated_pick_host, associated_pick_key, form_shape_hash, last_used_on,
+};
 use onepass_core::model::{
     self, Field, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule,
     PasskeyCredential,
 };
-use onepass_core::watchtower::host::is_local_host;
 use onepass_core::webauthn;
 use time::OffsetDateTime;
-use url::{Host, Url};
 
 use crate::convert::{id_hex, parse_id};
 use crate::error::{OnePassError, invalid};
@@ -38,90 +40,68 @@ const RANK_LEARNED_MAX: u32 = 200;
 /// Most items in an `FfiAutofillPlan`.
 const PLAN_MAX: usize = 6;
 
-/// Host of a site as compared for AutoFill: lower-case ASCII (punycode), an
-/// IP address marked as such.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Site {
-    host: String,
-    ip: bool,
-}
+/// A site as compared for AutoFill: the parts the shared matcher
+/// (`fill_plan::origin`) reads, parsed as the bridge parses them.
+type Site = UrlParts;
 
 /// The site of a URL or a bare domain (`https://` assumed when no scheme is
-/// given). Only `https`, and `http` on a local host, give a site: a plain
-/// `http` page of a public domain is never filled.
+/// given, so the default port and the path `/`). Only `https`, and `http`
+/// on a loopback host, give a site: a plain `http` page of any other host
+/// is never filled.
 fn site(raw: &str) -> Option<Site> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    let has_scheme = raw
-        .find("://")
-        .is_some_and(|i| !raw[..i].contains(['/', '?', '#']));
-    let parsed = if has_scheme {
-        Url::parse(raw)
-    } else {
-        Url::parse(&format!("https://{raw}"))
-    }
-    .ok()?;
-    let secure = match parsed.scheme() {
-        "https" => true,
-        "http" => false,
-        _ => return None,
-    };
-    let (host, ip) = match parsed.host()? {
-        Host::Domain(d) => (d.trim_end_matches('.').to_owned(), false),
-        Host::Ipv4(a) => (a.to_string(), true),
-        Host::Ipv6(a) => (format!("[{a}]"), true),
-    };
-    if host.is_empty() || (!secure && !is_local_host(&host)) {
-        return None;
-    }
-    Some(Site { host, ip })
+    parse_parts(raw).filter(UrlParts::fillable_page)
 }
 
 /// The key of a site in the usage memory, as the bridge writes it: the
 /// registrable domain (eTLD+1), the address itself for an IP.
 fn usage_site(s: &Site) -> String {
-    if s.ip {
-        return s.host.clone();
-    }
-    psl::domain_str(&s.host).unwrap_or(&s.host).to_owned()
+    s.site()
 }
 
-/// How the URL of a Login matches the requested site under its rule.
-/// `ExactUrl` compares hosts, like `ExactHost`.
-fn url_quality(service: &Site, url: &ItemUrl) -> Option<FfiMatchQuality> {
-    if url.rule == MatchRule::Never {
-        return None;
+/// The plan quality of a match of the shared matcher.
+fn tier(m: UrlMatch) -> PlanQuality {
+    match m {
+        UrlMatch::ExactHost => PlanQuality::Exact,
+        UrlMatch::Domain => PlanQuality::Domain,
+        UrlMatch::Associated => PlanQuality::Associated,
     }
-    let s = site(&url.url)?;
-    if s.host == service.host {
-        return Some(FfiMatchQuality::ExactHost);
-    }
-    if url.rule != MatchRule::Domain || s.ip || service.ip {
-        return None;
-    }
-    let ours = psl::domain_str(&s.host)?;
-    let theirs = psl::domain_str(&service.host)?;
-    (ours == theirs).then_some(FfiMatchQuality::Domain)
 }
 
-/// Best match of a Login and the URL that gave it. A passkey whose relying
-/// party is the requested host makes the Login an `ExactHost` match even
+/// What the apps are told of a quality. `FfiMatchQuality` has no associated
+/// tier (its shape is frozen): such a Login is reported as a `Domain`
+/// match, listed after every direct one.
+fn ffi_quality(q: PlanQuality) -> FfiMatchQuality {
+    match q {
+        PlanQuality::Exact => FfiMatchQuality::ExactHost,
+        PlanQuality::Domain | PlanQuality::Associated => FfiMatchQuality::Domain,
+        PlanQuality::Other => FfiMatchQuality::Other,
+    }
+}
+
+/// How the URL of a Login matches the requested site under its rule: the
+/// bridge's rules, through the one matcher (a written port must be the
+/// site's, `ExactUrl` is the origin and the path).
+#[cfg(test)]
+fn url_quality(service: &Site, url: &ItemUrl) -> Option<PlanQuality> {
+    rules::matches(&parse_parts(&url.url)?, url.rule, service).map(tier)
+}
+
+/// Best match of a Login and the URL that gave it, by the bridge's rules
+/// (`fill_plan::origin`): a written port and an `ExactUrl` path count, and
+/// the Login of an associated domain is its own tier, after the direct
+/// matches, until it is used on the site. A passkey whose relying
+/// party is the requested host makes the Login an `Exact` match even
 /// without such a URL: the system has already verified the rp id (the URL
 /// returned is then the best matching one, else the first).
-fn item_quality<'a>(service: &Site, item: &'a Item) -> Option<(FfiMatchQuality, Option<&'a str>)> {
-    let by_url = item
-        .urls
-        .iter()
-        .filter_map(|u| url_quality(service, u).map(|q| (q, u.url.as_str())))
-        .min_by_key(|(q, _)| *q);
+fn item_quality<'a>(service: &Site, item: &'a Item) -> Option<(PlanQuality, Option<&'a str>)> {
+    let by_url =
+        rules::item_match(item, service, parse_parts).map(|(q, u)| (tier(q), u.url.as_str()));
     let by_rp = passkeys(item).any(|p| site(&p.rp_id).is_some_and(|s| s.host == service.host));
     match by_url {
-        Some((q, url)) if !by_rp || q <= FfiMatchQuality::ExactHost => Some((q, Some(url))),
-        Some((_, url)) => Some((FfiMatchQuality::ExactHost, Some(url))),
+        Some((q, url)) if !by_rp || q <= PlanQuality::Exact => Some((q, Some(url))),
+        Some((_, url)) => Some((PlanQuality::Exact, Some(url))),
         None if by_rp => Some((
-            FfiMatchQuality::ExactHost,
+            PlanQuality::Exact,
             item.urls.first().map(|u| u.url.as_str()),
         )),
         None => None,
@@ -180,9 +160,9 @@ fn usage_key(t: &Target) -> String {
     }
 }
 
-/// An app matches a Login only through its `apps`, exactly (`ExactHost`).
+/// An app matches a Login only through its `apps`, exactly (`Exact`).
 /// The URL returned is the Login's first (its icon), never a match.
-fn target_quality<'a>(t: &Target, item: &'a Item) -> Option<(FfiMatchQuality, Option<&'a str>)> {
+fn target_quality<'a>(t: &Target, item: &'a Item) -> Option<(PlanQuality, Option<&'a str>)> {
     match t {
         Target::Site(s) => item_quality(s, item),
         Target::App(a) => item
@@ -191,7 +171,7 @@ fn target_quality<'a>(t: &Target, item: &'a Item) -> Option<(FfiMatchQuality, Op
             .any(|x| app_key(x).as_deref() == Some(a.as_str()))
             .then(|| {
                 (
-                    FfiMatchQuality::ExactHost,
+                    PlanQuality::Exact,
                     item.urls.first().map(|u| u.url.as_str()),
                 )
             }),
@@ -374,6 +354,17 @@ fn sign_in_provider(item: &Item) -> String {
         .unwrap_or_default()
 }
 
+/// Would the shared matcher (`fill_plan::origin`) offer the Login on the
+/// page `https://host/`? The system store knows a host only, no port and no
+/// path: a host is published when a URL of the Login matches that bare page
+/// under its own rule. Not for `Never`, not for another port, not for an
+/// `ExactUrl` of another path; an associated domain is no host of the Login.
+fn offered_on_host(item: &Item, host: &str) -> bool {
+    site(host)
+        .and_then(|page| rules::item_match(item, &page, parse_parts))
+        .is_some_and(|(q, _)| q != UrlMatch::Associated)
+}
+
 /// The identities of one Login. `last_used`: the Login used last on each
 /// usage site, which gets `RANK_LAST_USED` on that site's identities of
 /// its kind; `learned`: the system AutoFill's learned preference, added on
@@ -427,13 +418,15 @@ fn identities_of(
             service_is_app: is_app,
         }
     };
-    // The URL hosts, then the apps (as stored: the system gave that App ID).
+    // The URL hosts the matcher offers the Login on, then the apps (as
+    // stored: the system gave that App ID).
     let mut services: Vec<(String, bool)> = item
         .urls
         .iter()
-        .filter(|u| u.rule != MatchRule::Never)
         .filter_map(|u| site(&u.url))
-        .map(|s| (s.host, false))
+        .map(|s| s.host)
+        .filter(|h| offered_on_host(item, h))
+        .map(|h| (h, false))
         .collect();
     services.extend(
         item.apps
@@ -482,14 +475,14 @@ fn identities_of(
     }
 }
 
-fn candidate(item: &Item, quality: FfiMatchQuality, url: Option<&str>) -> FfiAutofillCandidate {
+fn candidate(item: &Item, quality: PlanQuality, url: Option<&str>) -> FfiAutofillCandidate {
     FfiAutofillCandidate {
         vault_id: id_hex(item.vault_id),
         item_id: id_hex(item.id),
         title: item.title.clone(),
         user: item.subtitle(),
         url: url.map(str::to_owned),
-        quality,
+        quality: ffi_quality(quality),
         has_password: filled(item, "password"),
         has_totp: filled(item, "totp"),
         passkeys: passkeys(item)
@@ -504,15 +497,11 @@ fn candidate(item: &Item, quality: FfiMatchQuality, url: Option<&str>) -> FfiAut
 
 /// The ranking envelope of a Login for `fill_plan::score::order`. No usage and
 /// no typed username yet: the score is the match quality alone.
-pub(crate) fn to_candidate(item: &Item, q: FfiMatchQuality) -> Candidate {
+pub(crate) fn to_candidate(item: &Item, q: PlanQuality) -> Candidate {
     Candidate {
         item_id: item.id,
         kind: CandidateKind::Login,
-        quality: match q {
-            FfiMatchQuality::ExactHost => PlanQuality::Exact,
-            FfiMatchQuality::Domain => PlanQuality::Domain,
-            FfiMatchQuality::Other => PlanQuality::Other,
-        },
+        quality: q,
         favorite: item.favorite,
         // Nanoseconds, so two saves in one second keep their order.
         updated_at: i64::try_from(item.updated_at.unix_timestamp_nanos()).unwrap_or(i64::MAX),
@@ -521,6 +510,8 @@ pub(crate) fn to_candidate(item: &Item, q: FfiMatchQuality) -> Candidate {
         usage: None,
         has_totp: filled(item, "totp"),
         affinity: 0,
+        // The plan says when it knows the vault (`autofill_service_plan`).
+        private_vault: false,
     }
 }
 
@@ -613,12 +604,36 @@ fn has_excluded(repo: &mut Repo, rp_id: &str, excluded: &[Vec<u8>]) -> Result<bo
     Ok(false)
 }
 
+/// The registrable domain (eTLD+1) of `host`, by the Public Suffix List the
+/// matcher uses (`fill_plan::origin`): `example.com` for
+/// `login.example.com`, lower case, IDN as punycode. None for an address,
+/// a bare or unknown suffix (`localhost`, `nas.local`), and anything that is
+/// not a host (a URL, a path). For scoping by site instead of exact host.
+#[uniffi::export]
+pub fn registrable_domain(host: String) -> Option<String> {
+    let host = host.trim();
+    if host.is_empty() || host.contains(['/', ':', '@', '?', '#', '\\', ' ']) {
+        return None;
+    }
+    let parts = parse_parts(host).filter(|p| !p.ip)?;
+    let domain = psl::domain(parts.host.as_bytes())?;
+    if !domain.suffix().is_known() {
+        return None;
+    }
+    std::str::from_utf8(domain.as_bytes())
+        .ok()
+        .map(str::to_owned)
+}
+
 #[uniffi::export]
 impl Session {
     /// The identities to publish in the system store: for each live Login
     /// not hidden from AutoFill, a password identity per URL host, a one-time
     /// code identity per URL host when the TOTP is filled, and a passkey
     /// identity per passkey. Items of `excluded_vault_ids` are skipped.
+    /// A URL host is published only where the shared matcher would offer the
+    /// Login on the bare `https://host` (`offered_on_host`): never for the
+    /// rule `Never`, another port or an `ExactUrl` of another path.
     /// `rank`: the Login used last on the identity's site (of those
     /// published) first, then favorites.
     pub fn autofill_identities(
@@ -714,7 +729,7 @@ impl Session {
                 let (q, url) = match best {
                     Some((q, url)) => (q, url),
                     None if include_all => (
-                        FfiMatchQuality::Other,
+                        PlanQuality::Other,
                         item.urls.first().map(|u| u.url.as_str()),
                     ),
                     None => continue,
@@ -724,7 +739,7 @@ impl Session {
                     .or_default()
                     .push_back(candidate(&item, q, url));
                 let mut c = to_candidate(&item, q);
-                if q == FfiMatchQuality::Other {
+                if q == PlanQuality::Other {
                     // A manual choice: the Login used last anywhere first.
                     c.updated_at = c.updated_at.max(last_use_nanos(&item));
                 }
@@ -778,7 +793,16 @@ impl Session {
         let key = usage_key(&target);
         self.with(|repo| {
             let items = visible_items(repo, &excluded)?;
-            let matched: Vec<(&Item, FfiMatchQuality)> = items
+            // The user's own vaults: only their items get the sole exact
+            // host trust (`fill_plan::score::sole_exact`), never one a
+            // member of a shared vault could have saved.
+            let personal: HashSet<Id> = repo
+                .vaults()?
+                .iter()
+                .filter(|v| v.zone() == onepass_core::store::Zone::Private)
+                .map(|v| v.id)
+                .collect();
+            let matched: Vec<(&Item, PlanQuality)> = items
                 .iter()
                 .filter(|i| offerable(i))
                 .filter(|i| request == FfiAutofillRequest::Password || filled(i, "totp"))
@@ -800,6 +824,7 @@ impl Session {
                     let mut c = to_candidate(i, *q);
                     c.usage = i.usage_signal(&key, last, None);
                     c.affinity = learned.get(&i.id).copied().unwrap_or(0);
+                    c.private_vault = personal.contains(&i.vault_id);
                     c
                 })
                 .collect();
@@ -885,7 +910,25 @@ impl Session {
                 },
             };
             let vault = find_vault(repo, vault_id)?;
-            let written = repo.record_usage(&vault, item_id, usage, now, force)?;
+            // Picked in the system's list while offered only as the login
+            // of an associated domain: the pick is kept for this very host
+            // (`fill_plan::origin::item_match`), where it is a domain match
+            // from now on.
+            let picked_as_associated = match &target {
+                Target::Site(s) => rules::item_match(item, s, parse_parts)
+                    .is_some_and(|(q, _)| q == UrlMatch::Associated)
+                    .then(|| associated_pick_key(&s.host)),
+                Target::App(_) => None,
+            };
+            let mut written = false;
+            if let Some(pick) = picked_as_associated {
+                let pick = SiteUsage {
+                    site: pick,
+                    ..usage.clone()
+                };
+                written = repo.record_usage(&vault, item_id, pick, now, true)?;
+            }
+            written |= repo.record_usage(&vault, item_id, usage, now, force)?;
             // The pick, for the device's autofill history (best effort:
             // off, Travel Mode or a failing write never fails the fill).
             let _ = repo.record_autofill_event(AutofillEvent {
@@ -935,6 +978,9 @@ impl Session {
             let sites: BTreeSet<String> = visible_items(repo, &excluded)?
                 .into_iter()
                 .flat_map(|i| i.usage.into_iter().map(|u| u.site))
+                // A pick through an associated domain belongs to its site's
+                // entry and is forgotten with it: no line of its own.
+                .filter(|s| associated_pick_host(s).is_none())
                 .collect();
             Ok(sites.into_iter().collect())
         })
@@ -1337,14 +1383,192 @@ mod tests {
         let q = |svc: &str, url: &str| url_quality(&s(svc), &u(url, MatchRule::Domain));
         assert_eq!(
             q("a.example.com", "https://b.example.com"),
-            Some(FfiMatchQuality::Domain)
+            Some(PlanQuality::Domain)
         );
         assert_eq!(
             q("example.co.uk", "https://example.co.uk"),
-            Some(FfiMatchQuality::ExactHost)
+            Some(PlanQuality::Exact)
         );
         assert_eq!(q("a.example.co.uk", "https://co.uk"), None);
         assert_eq!(q("alice.github.io", "https://bob.github.io"), None);
         assert_eq!(q("10.0.0.1", "https://10.0.0.2"), None);
+    }
+
+    /// The bridge's rules, no longer a looser copy: a port written in the
+    /// Login's URL must be the site's.
+    #[test]
+    fn a_written_port_must_be_the_sites() {
+        for rule in [MatchRule::Domain, MatchRule::ExactHost] {
+            let q = |svc: &str| url_quality(&s(svc), &u("https://example.com:8443", rule));
+            assert_eq!(
+                q("https://example.com:8443/login"),
+                Some(PlanQuality::Exact)
+            );
+            assert_eq!(q("example.com:8443"), Some(PlanQuality::Exact));
+            // A bare domain is the default port.
+            assert_eq!(q("example.com"), None);
+            assert_eq!(q("https://example.com/login"), None);
+            assert_eq!(q("https://example.com:9443"), None);
+        }
+        // No port written: any port of the host.
+        let any = u("https://example.com", MatchRule::ExactHost);
+        assert_eq!(
+            url_quality(&s("https://example.com:8443"), &any),
+            Some(PlanQuality::Exact)
+        );
+    }
+
+    /// `ExactUrl` is the origin and the path, not the host.
+    #[test]
+    fn exact_url_is_exact() {
+        let url = u("https://example.com/login", MatchRule::ExactUrl);
+        let q = |svc: &str| url_quality(&s(svc), &url);
+        assert_eq!(q("https://example.com/login"), Some(PlanQuality::Exact));
+        assert_eq!(
+            q("https://EXAMPLE.com/login?next=/home#top"),
+            Some(PlanQuality::Exact)
+        );
+        assert_eq!(q("https://example.com/account"), None);
+        assert_eq!(q("https://example.com:8443/login"), None);
+        assert_eq!(q("https://www.example.com/login"), None);
+        // A bare domain names the root page only.
+        assert_eq!(q("example.com"), None);
+        let root = u("https://example.com", MatchRule::ExactUrl);
+        assert_eq!(
+            url_quality(&s("example.com"), &root),
+            Some(PlanQuality::Exact)
+        );
+    }
+
+    /// As in the bridge: a Login saved with an `http` URL is offered on the
+    /// `https` page of its host; plain `http` pages only on loopback.
+    #[test]
+    fn http_items_and_http_pages() {
+        let old = u("http://example.com/login", MatchRule::Domain);
+        assert_eq!(
+            url_quality(&s("example.com"), &old),
+            Some(PlanQuality::Exact)
+        );
+        assert_eq!(
+            url_quality(&s("www.example.com"), &old),
+            Some(PlanQuality::Domain)
+        );
+        assert!(site("http://example.com").is_none());
+        assert!(site("http://nas.local").is_none());
+        assert!(site("http://app.localhost:3000").is_none());
+        assert!(site("http://192.168.1.10").is_none());
+        for local in [
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "http://[::1]:8080",
+        ] {
+            let page = s(local);
+            let dev = u(&format!("{}/login", page.origin()), MatchRule::Domain);
+            assert_eq!(
+                url_quality(&page, &dev),
+                Some(PlanQuality::Exact),
+                "{local}"
+            );
+            let other = u(&format!("http://{}:9090", page.host), MatchRule::Domain);
+            assert_eq!(url_quality(&page, &other), None, "{local}");
+        }
+    }
+
+    /// An associated domain (Apple's list): its own tier under `Domain`,
+    /// one way for `from`/`to`, never for a narrower rule.
+    #[test]
+    fn associated_domains_are_a_tier_of_their_own() {
+        let q = |svc: &str, url: &str, rule| url_quality(&s(svc), &u(url, rule));
+        assert_eq!(
+            q(
+                "my.hosting.com",
+                "https://www.a2hosting.com",
+                MatchRule::Domain
+            ),
+            Some(PlanQuality::Associated)
+        );
+        assert_eq!(
+            q("a2hosting.com", "https://hosting.com", MatchRule::Domain),
+            None
+        );
+        assert_eq!(
+            q(
+                "my.hosting.com",
+                "https://www.a2hosting.com",
+                MatchRule::ExactHost
+            ),
+            None
+        );
+        assert_eq!(
+            q("www.ad.nl", "https://dpgmedia.nl", MatchRule::Domain),
+            Some(PlanQuality::Associated)
+        );
+        assert_eq!(
+            q("dpgmedia.nl", "https://www.ad.nl", MatchRule::Domain),
+            Some(PlanQuality::Associated)
+        );
+        assert_eq!(
+            ffi_quality(PlanQuality::Associated),
+            FfiMatchQuality::Domain
+        );
+    }
+
+    /// Associated Logins come after the direct matches, never lead a plan
+    /// before a first use on the site, and are normal matches after it.
+    #[test]
+    fn associated_logins_are_listed_last_until_used_here() {
+        let (_dir, session, vault, a, b) = two_logins();
+        set_login(&session, vault, a, &[], Some("https://www.a2hosting.com"));
+        set_login(&session, vault, b, &[], Some("https://hosting.com"));
+        let site = || FfiAutofillService::Site {
+            value: "https://my.hosting.com/login".into(),
+        };
+        let listed = |all: bool| -> Vec<(String, FfiMatchQuality)> {
+            session
+                .autofill_service_candidates(site(), all, vec![])
+                .unwrap()
+                .into_iter()
+                .map(|c| (c.item_id, c.quality))
+                .collect()
+        };
+        assert_eq!(
+            listed(false),
+            vec![
+                (id_hex(b), FfiMatchQuality::Domain),
+                (id_hex(a), FfiMatchQuality::Domain)
+            ]
+        );
+        // The one direct match leads the plan, as good as alone.
+        let plan = session
+            .autofill_service_plan(site(), FfiAutofillRequest::Password, vec![])
+            .unwrap();
+        assert_eq!(plan.item_ids, vec![id_hex(b), id_hex(a)]);
+        assert_eq!(plan.confidence, FfiConfidence::High);
+        // `from` to `to` only.
+        let back = session
+            .autofill_candidates("a2hosting.com".into(), false, vec![])
+            .unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].item_id, id_hex(a));
+
+        // Alone, the associated Login is a choice of the list, never trusted.
+        set_login(&session, vault, b, &[], Some("https://other.example"));
+        let plan = session
+            .autofill_service_plan(site(), FfiAutofillRequest::Password, vec![])
+            .unwrap();
+        assert_eq!(plan.item_ids, vec![id_hex(a)]);
+        assert_eq!(plan.confidence, FfiConfidence::Low);
+        // Once the user filled it here, it is a normal match of the site.
+        let record = format!("{}:{}", id_hex(vault), id_hex(a));
+        assert!(
+            session
+                .note_autofill_service_use(record, site(), vec![])
+                .unwrap()
+        );
+        let plan = session
+            .autofill_service_plan(site(), FfiAutofillRequest::Password, vec![])
+            .unwrap();
+        assert_eq!(plan.item_ids, vec![id_hex(a)]);
+        assert_eq!(plan.confidence, FfiConfidence::High);
     }
 }

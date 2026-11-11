@@ -155,7 +155,12 @@ fn value_row(
     vals: &[Option<&FieldValue>],
 ) -> Option<Row> {
     let d = distinct(subject, vals);
-    let holders = || vals.iter().enumerate().filter(|(_, v)| v.is_some()).map(|(i, _)| i);
+    let holders = || {
+        vals.iter()
+            .enumerate()
+            .filter(|(_, v)| v.is_some())
+            .map(|(i, _)| i)
+    };
     let (kind, winner) = match d.len() {
         0 => return None,
         1 if vals.iter().all(Option::is_some) => return None,
@@ -182,7 +187,9 @@ fn password_row(copies: &[&Item]) -> Option<Row> {
             c.sections
                 .iter()
                 .flat_map(|s| s.fields.iter())
-                .find(|f| f.id == PASSWORD && matches!(&f.value, FieldValue::Password(p) if !p.is_empty()))
+                .find(|f| {
+                    f.id == PASSWORD && matches!(&f.value, FieldValue::Password(p) if !p.is_empty())
+                })
                 .map(|f| &f.value)
         })
         .collect();
@@ -262,23 +269,28 @@ fn field_rows(copies: &[&Item], rows: &mut Vec<Row>) {
             // A repeatable field (backup codes): the merge keeps every value.
             let sets: Vec<Vec<&FieldValue>> = per.iter().map(|fs| value_set(fs)).collect();
             let all: Vec<&FieldValue> = sets.iter().flatten().copied().collect();
-            let same = sets
-                .iter()
-                .all(|s| s.len() == sets.first().map_or(0, Vec::len) && all.iter().all(|v| s.iter().any(|x| same_value(x, v))));
+            let same = sets.iter().all(|s| {
+                s.len() == sets.first().map_or(0, Vec::len)
+                    && all.iter().all(|v| s.iter().any(|x| same_value(x, v)))
+            });
             if !same {
                 rows.push(Row {
                     aspect: field_aspect(first),
                     subject: String::new(),
                     label: first.label.clone(),
                     kind: RowKind::Added,
-                    values: sets.iter().map(|s| s.first().map(|v| (*v).clone())).collect(),
+                    values: sets
+                        .iter()
+                        .map(|s| s.first().map(|v| (*v).clone()))
+                        .collect(),
                     concealed: concealed(&first.value),
                     winner: None,
                 });
             }
             continue;
         }
-        let vals: Vec<Option<&FieldValue>> = per.iter().map(|fs| fs.first().map(|f| &f.value)).collect();
+        let vals: Vec<Option<&FieldValue>> =
+            per.iter().map(|fs| fs.first().map(|f| &f.value)).collect();
         if let Some(row) = value_row(copies, field_aspect(first), id, &first.label, &vals) {
             rows.push(row);
         }
@@ -287,7 +299,11 @@ fn field_rows(copies: &[&Item], rows: &mut Vec<Row>) {
 
 /// A list line (websites, passkeys, files, tags): the union is kept, so a
 /// difference is only ever an addition.
-fn list_row(copies: &[&Item], aspect: Aspect, of: impl Fn(&Item) -> BTreeSet<String>) -> Option<Row> {
+fn list_row(
+    copies: &[&Item],
+    aspect: Aspect,
+    of: impl Fn(&Item) -> BTreeSet<String>,
+) -> Option<Row> {
     let sets: Vec<BTreeSet<String>> = copies.iter().map(|c| of(c)).collect();
     let first = sets.first()?;
     if sets.iter().all(|s| s == first) {
@@ -301,7 +317,8 @@ fn list_row(copies: &[&Item], aspect: Aspect, of: impl Fn(&Item) -> BTreeSet<Str
         values: sets
             .iter()
             .map(|s| {
-                (!s.is_empty()).then(|| FieldValue::Text(s.iter().cloned().collect::<Vec<_>>().join("\n")))
+                (!s.is_empty())
+                    .then(|| FieldValue::Text(s.iter().cloned().collect::<Vec<_>>().join("\n")))
             })
             .collect(),
         concealed: false,
@@ -430,7 +447,11 @@ mod tests {
         let mut i = new_item(ItemType::Login, Id([1; 16]), title);
         i.id = Id::new();
         set(&mut i, "username", FieldValue::Text(user.into()));
-        set(&mut i, PASSWORD, FieldValue::Password(Zeroizing::new(pw.into())));
+        set(
+            &mut i,
+            PASSWORD,
+            FieldValue::Password(Zeroizing::new(pw.into())),
+        );
         if !site.is_empty() {
             i.urls.push(ItemUrl {
                 label: String::new(),
@@ -471,7 +492,12 @@ mod tests {
 
     #[test]
     fn a_website_and_a_title_are_sure() {
-        let a = login("Compte Google", "c@gmail.com", "pw", "https://accounts.google.com");
+        let a = login(
+            "Compte Google",
+            "c@gmail.com",
+            "pw",
+            "https://accounts.google.com",
+        );
         let b = login("Gmail", "c@gmail.com", "pw", "https://mail.google.com");
         let r = review(&[&a, &b]);
         assert_eq!(r.confidence, Confidence::Sure);
@@ -479,13 +505,21 @@ mod tests {
         assert_eq!(row(&r, Aspect::Title).winner, Some(0));
         let w = row(&r, Aspect::Websites);
         assert_eq!(w.kind, RowKind::Added);
-        assert_eq!(w.values[1], Some(FieldValue::Text("mail.google.com".into())));
+        assert_eq!(
+            w.values[1],
+            Some(FieldValue::Text("mail.google.com".into()))
+        );
     }
 
     #[test]
     fn username_case_is_not_a_conflict() {
         let a = login("A", "Camille.Durand@exemple.fr", "pw", "https://github.com");
-        let b = login("A", " camille.durand@exemple.fr", "pw", "https://github.com");
+        let b = login(
+            "A",
+            " camille.durand@exemple.fr",
+            "pw",
+            "https://github.com",
+        );
         let r = review(&[&a, &b]);
         assert!(r.rows.is_empty(), "{:?}", r.rows);
     }
@@ -552,9 +586,20 @@ mod tests {
         let r = review(&[&a, &b]);
         assert_eq!(r.confidence, Confidence::Sure);
         assert_eq!(row(&r, Aspect::Password).winner, Some(1));
-        let m = merge_with(&a, &[&b], &r.choices(&[&a, &b]), "", datetime!(2026-07-01 0:00 UTC));
+        let m = merge_with(
+            &a,
+            &[&b],
+            &r.choices(&[&a, &b]),
+            "",
+            datetime!(2026-07-01 0:00 UTC),
+        );
         assert_eq!(pw(&m.merged), "Newer");
-        assert!(m.merged.password_history.iter().any(|h| h.value.as_str() == "Old"));
+        assert!(
+            m.merged
+                .password_history
+                .iter()
+                .any(|h| h.value.as_str() == "Old")
+        );
     }
 
     #[test]
@@ -569,7 +614,11 @@ mod tests {
 
         let mut c = a.clone();
         c.id = Id::new();
-        set(&mut c, "totp", otp("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP"));
+        set(
+            &mut c,
+            "totp",
+            otp("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP"),
+        );
         // The same secret spelled as a URI is not a difference.
         assert!(review(&[&b, &c]).rows.is_empty());
         set(&mut c, "totp", otp("GEZDGNBVGY3TQOJQ"));
@@ -605,7 +654,12 @@ mod tests {
         };
         let m = merge_with(&a, &[&b], &[choice], "", datetime!(2026-07-01 0:00 UTC));
         assert_eq!(pw(&m.merged), "Theirs");
-        let hist: Vec<&str> = m.merged.password_history.iter().map(|h| h.value.as_str()).collect();
+        let hist: Vec<&str> = m
+            .merged
+            .password_history
+            .iter()
+            .map(|h| h.value.as_str())
+            .collect();
         assert_eq!(hist, vec!["Mine"]);
     }
 
@@ -618,8 +672,16 @@ mod tests {
             from: Some(b.id),
         };
         let m = merge_with(&a, &[&b], &[choice], "", datetime!(2026-07-01 0:00 UTC));
-        assert_eq!(m.merged.field("username").unwrap().value, FieldValue::Text("bob".into()));
-        let extra = m.merged.sections.iter().find(|s| s.id == MERGED_SECTION_ID).unwrap();
+        assert_eq!(
+            m.merged.field("username").unwrap().value,
+            FieldValue::Text("bob".into())
+        );
+        let extra = m
+            .merged
+            .sections
+            .iter()
+            .find(|s| s.id == MERGED_SECTION_ID)
+            .unwrap();
         assert_eq!(extra.fields.len(), 1);
         assert_eq!(extra.fields[0].value, FieldValue::Text("alice".into()));
         assert!(extra.fields[0].label.ends_with("(Primary)"));
@@ -644,7 +706,10 @@ mod tests {
             subject: NOTES.into(),
             from: Some(a.id),
         };
-        assert_eq!(merge_with(&a, &[&b], &[keep_a], "", now).merged.notes, "Mine");
+        assert_eq!(
+            merge_with(&a, &[&b], &[keep_a], "", now).merged.notes,
+            "Mine"
+        );
         let both = Choice {
             subject: NOTES.into(),
             from: None,
@@ -655,7 +720,12 @@ mod tests {
 
     #[test]
     fn a_sure_merge_with_default_choices_loses_nothing() {
-        let mut a = login("Compte Google", "c@gmail.com", "pw", "https://accounts.google.com");
+        let mut a = login(
+            "Compte Google",
+            "c@gmail.com",
+            "pw",
+            "https://accounts.google.com",
+        );
         let mut b = login("Gmail", "c@gmail.com", "pw", "https://mail.google.com");
         set(&mut b, "totp", otp("JBSWY3DPEHPK3PXP"));
         b.tags.push("Famille".into());
@@ -664,10 +734,19 @@ mod tests {
         let copies = [&a, &b];
         let r = review(&copies);
         assert_eq!(r.confidence, Confidence::Sure);
-        let m = merge_with(&a, &[&b], &r.choices(&copies), "", datetime!(2026-07-01 0:00 UTC));
+        let m = merge_with(
+            &a,
+            &[&b],
+            &r.choices(&copies),
+            "",
+            datetime!(2026-07-01 0:00 UTC),
+        );
         assert_eq!(m.merged.title, "Compte Google");
         assert_eq!(m.merged.urls.len(), 2);
-        assert!(matches!(m.merged.field("totp").unwrap().value, FieldValue::Otp(_)));
+        assert!(matches!(
+            m.merged.field("totp").unwrap().value,
+            FieldValue::Otp(_)
+        ));
         assert!(m.merged.tags.contains(&"Famille".to_owned()));
         assert_eq!(m.merged.notes, "Note");
         // Nothing went to an extra field: no conflict was folded.

@@ -546,6 +546,7 @@ pub fn load_fixture_cached(path: &Path, cache: &Path) -> Result<FixtureVault, Ho
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vault::{UNLOCK_APPROVED_FILE, UNLOCK_PENDING_FILE};
     use onepass_bridge::service::VaultAccess;
     use std::path::PathBuf;
 
@@ -631,12 +632,38 @@ mod tests {
     }
 
     #[test]
+    fn deferred_unlock_opens_on_the_approval_file_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let (pending, approved) = (
+            dir.path().join(UNLOCK_PENDING_FILE),
+            dir.path().join(UNLOCK_APPROVED_FILE),
+        );
+        let mut v = load_fixture(&e2e()).unwrap();
+        v.set_locked(true);
+        v.set_deferred_unlock(dir.path());
+        // An approval nobody asked for opens nothing.
+        std::fs::write(&approved, "").unwrap();
+        assert!(v.status().locked);
+        assert!(!v.unlock(None).unwrap());
+        assert!(pending.exists() && !approved.exists());
+        assert!(v.status().locked);
+        assert!(v.items().is_err());
+        std::fs::write(&approved, "").unwrap();
+        assert!(!v.status().locked);
+        assert!(!pending.exists() && !approved.exists());
+        assert!(v.items().is_ok());
+        // Open: `unlock` asks nothing more.
+        assert!(v.unlock(None).unwrap());
+        assert!(!pending.exists());
+    }
+
+    #[test]
     fn locked_fixture_unlocks() {
         let mut v = load_fixture(&e2e()).unwrap();
         v.set_locked(true);
         assert!(v.status().locked);
         assert!(v.items().is_err());
-        assert!(v.unlock().unwrap());
+        assert!(v.unlock(None).unwrap());
         assert!(!v.status().locked);
     }
 

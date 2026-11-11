@@ -56,6 +56,18 @@ pub enum Reprompt {
     Allow,
 }
 
+/// How an `unlock` request is answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Unlock {
+    /// Open at once (the vault of a development host has no Touch ID).
+    #[default]
+    Instant,
+    /// Lab hook, as the app answers while Touch ID is up: write
+    /// `unlock-pending`, stay locked, open when `unlock-approved` exists.
+    File,
+}
+
 fn yes() -> bool {
     true
 }
@@ -72,6 +84,8 @@ pub struct Config {
     pub unlocked: bool,
     #[serde(default)]
     pub reprompt: Reprompt,
+    #[serde(default)]
+    pub unlock: Unlock,
 }
 
 fn home() -> Option<PathBuf> {
@@ -190,6 +204,21 @@ mod tests {
         .unwrap();
         assert_eq!(d.source, Source::Dev { path: None });
         assert_eq!(d.reprompt, Reprompt::Allow);
+        // `unlock`: at once unless the lab asks for the approval file.
+        assert_eq!((c.unlock, d.unlock), (Unlock::Instant, Unlock::Instant));
+        let f = Config::parse(
+            br#"{"data_dir":"/tmp/x","allowed_extensions":[],"source":{"kind":"dev"},
+                "approval":"file","unlock":"file"}"#,
+        )
+        .unwrap();
+        assert_eq!(f.unlock, Unlock::File);
+        assert!(
+            Config::parse(
+                br#"{"data_dir":"/tmp/x","allowed_extensions":[],"source":{"kind":"dev"},
+                    "approval":"file","unlock":"later"}"#
+            )
+            .is_err()
+        );
         assert!(Config::parse(br#"{"data_dir":"/x"}"#).is_err());
     }
 }

@@ -50,6 +50,7 @@ use zeroize::Zeroizing;
 
 pub use accounts::*;
 pub use archive::*;
+pub use autofill::registrable_domain;
 pub use bridge::*;
 pub use companion::*;
 pub use contacts::*;

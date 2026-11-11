@@ -7,8 +7,8 @@
 //! added as it is: zero without history, so the order above is unchanged.
 
 use super::weights::{
-    DOMAIN, EXACT, FAVORITE, FREQUENCY_MAX, LAST_ON_SITE, MARGIN, RECENCY_MAX, SAME_SHAPE,
-    TYPED_USERNAME,
+    ASSOCIATED, DOMAIN, EXACT, FAVORITE, FREQUENCY_MAX, LAST_ON_SITE, MARGIN, RECENCY_MAX,
+    SAME_SHAPE, TYPED_USERNAME,
 };
 use serde::Serialize;
 
@@ -20,6 +20,11 @@ const DAY: i64 = 86_400;
 pub enum MatchQuality {
     Exact,
     Domain,
+    /// A domain known to share its credentials with the page's, never used
+    /// there yet (`origin::item_match` makes it `Domain` once the item
+    /// remembers the site). Offered in the menu, never chosen: a first
+    /// candidate of this tier is `Low` confidence.
+    Associated,
     Other,
 }
 
@@ -54,6 +59,11 @@ pub struct Candidate {
     /// Learned bonus of the autofill history (`fill_plan::learned::affinity`)
     /// for the browser profile the plan is made in; 0 without history.
     pub affinity: i64,
+    /// The item lives in a vault nobody else can write to (a personal
+    /// vault). False for a shared vault, and whenever the caller does not
+    /// know: only an item of the user's own gets the `sole_exact` trust,
+    /// never one a member of a shared vault could have planted.
+    pub private_vault: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +105,7 @@ pub fn score(c: &Candidate, typed: Option<&[u8; 32]>, now: i64) -> i64 {
     let mut s = match c.quality {
         MatchQuality::Exact => EXACT,
         MatchQuality::Domain => DOMAIN,
+        MatchQuality::Associated => ASSOCIATED,
         MatchQuality::Other => 0,
     };
     let typed_hit = typed_match(c, typed);
@@ -135,17 +146,55 @@ pub fn order(cands: &mut [Candidate], typed: Option<&[u8; 32]>, now: i64, tiebre
     });
 }
 
+/// The best candidate is the only one matching the page's exact host, every
+/// other one matches its registrable domain (or an associated one) only,
+/// and nothing remembers this site: no other candidate was used here or
+/// learned, and the first one was not passed over. `confidence` trusts it
+/// like a single candidate.
+///
+/// Only for an item of the user's own (`Candidate::private_vault`): in a
+/// shared vault another member can save a login on the exact host of a
+/// site, and the user would be signed in to that member's account without
+/// a click.
+pub fn sole_exact(ranked: &[Candidate]) -> bool {
+    let Some((first, rest)) = ranked.split_first() else {
+        return false;
+    };
+    first.quality == MatchQuality::Exact
+        && first.private_vault
+        && first.affinity >= 0
+        && !rest.is_empty()
+        && rest.iter().all(|c| {
+            matches!(c.quality, MatchQuality::Domain | MatchQuality::Associated)
+                && c.usage.is_none()
+                && c.affinity <= 0
+        })
+}
+
 /// `ranked` is ordered and `scores[i]` is the score of `ranked[i]`. A typed
 /// username shows as a first score of at least `TYPED_USERNAME`.
+///
+/// An `Associated` candidate is a menu entry only: first, it makes the
+/// plan `Low` (even with a typed username); behind, it is not a rival and
+/// never lowers the confidence in the direct matches.
 pub fn confidence(ranked: &[Candidate], scores: &[i64], role_min_ok: bool) -> Confidence {
     let Some(first) = ranked.first() else {
         return Confidence::Low;
     };
+    if first.quality == MatchQuality::Associated {
+        return Confidence::Low;
+    }
     let top = scores.first().copied().unwrap_or(0);
     let remembered = first.usage.is_some_and(|u| u.last_on_site)
         || first.affinity >= super::learned::TRUST
         || top >= TYPED_USERNAME;
-    let Some(&second) = scores.get(1).filter(|_| ranked.len() > 1) else {
+    let rival = ranked
+        .iter()
+        .zip(scores)
+        .skip(1)
+        .find(|(c, _)| c.quality != MatchQuality::Associated)
+        .map(|(_, s)| *s);
+    let Some(second) = rival else {
         return if role_min_ok {
             Confidence::High
         } else {
@@ -156,6 +205,9 @@ pub fn confidence(ranked: &[Candidate], scores: &[i64], role_min_ok: bool) -> Co
         return Confidence::Low;
     }
     if top - second >= MARGIN && remembered && role_min_ok {
+        return Confidence::High;
+    }
+    if role_min_ok && sole_exact(ranked) {
         return Confidence::High;
     }
     Confidence::Medium
@@ -180,6 +232,7 @@ mod tests {
             usage: None,
             has_totp: false,
             affinity: 0,
+            private_vault: true,
         }
     }
 
@@ -358,6 +411,148 @@ mod tests {
     }
 
     #[test]
+    fn sole_exact_among_domain_matches_is_high() {
+        let v = vec![
+            cand(1, MatchQuality::Exact),
+            cand(2, MatchQuality::Domain),
+            cand(3, MatchQuality::Domain),
+        ];
+        assert!(sole_exact(&v));
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::High);
+        // Weak roles still cap it.
+        assert_eq!(confidence(&v, &scores(&v), false), Confidence::Medium);
+    }
+
+    #[test]
+    fn sole_exact_is_for_an_item_of_a_private_vault_only() {
+        // A member of a shared vault saved the exact host: no such trust.
+        // As before the rule, the better match is never `High` (nothing is
+        // submitted for the user).
+        let planted = Candidate {
+            private_vault: false,
+            ..cand(1, MatchQuality::Exact)
+        };
+        let v = vec![planted.clone(), cand(2, MatchQuality::Domain)];
+        assert!(!sole_exact(&v));
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::Medium);
+        // The user's own exact host beside a shared domain match: trusted.
+        let shared_domain = Candidate {
+            private_vault: false,
+            ..cand(2, MatchQuality::Domain)
+        };
+        let v = vec![cand(1, MatchQuality::Exact), shared_domain];
+        assert!(sole_exact(&v));
+        // Alone, the shared item is a single candidate as before.
+        let v = vec![planted];
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::High);
+    }
+
+    #[test]
+    fn two_exact_without_memory_stay_a_menu() {
+        let v = vec![
+            cand(1, MatchQuality::Exact),
+            cand(2, MatchQuality::Exact),
+            cand(3, MatchQuality::Domain),
+        ];
+        assert!(!sole_exact(&v));
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::Low);
+    }
+
+    #[test]
+    fn sole_exact_needs_no_memory_elsewhere() {
+        // A domain match used here before (not last): the site has memory.
+        let mut d = cand(2, MatchQuality::Domain);
+        d.usage = usage(false, false, 1, 0);
+        let v = vec![cand(1, MatchQuality::Exact), d];
+        assert!(!sole_exact(&v));
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::Medium);
+        // A domain match the history prefers.
+        let mut d = cand(2, MatchQuality::Domain);
+        d.affinity = 10;
+        let v = vec![cand(1, MatchQuality::Exact), d];
+        assert!(!sole_exact(&v));
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::Medium);
+        // The exact one was offered first and passed over.
+        let mut e = cand(1, MatchQuality::Exact);
+        e.affinity = -5;
+        let v = vec![e, cand(2, MatchQuality::Domain)];
+        assert!(!sole_exact(&v));
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::Medium);
+        // An unmatched candidate (a manual choice) is no domain match.
+        let v = vec![cand(1, MatchQuality::Exact), cand(2, MatchQuality::Other)];
+        assert!(!sole_exact(&v));
+        // One candidate is not "several".
+        assert!(!sole_exact(&[cand(1, MatchQuality::Exact)]));
+    }
+
+    #[test]
+    fn typed_username_still_wins_over_the_sole_exact() {
+        let hash = [7u8; 32];
+        let mut d = cand(2, MatchQuality::Domain);
+        d.username_hash = Some(hash);
+        let mut v = vec![cand(1, MatchQuality::Exact), d];
+        order(&mut v, Some(&hash), NOW, Tiebreak::Title);
+        assert_eq!(v[0].item_id, Id([2; 16]));
+        let s: Vec<i64> = v.iter().map(|c| score(c, Some(&hash), NOW)).collect();
+        assert!(!sole_exact(&v));
+        assert_eq!(confidence(&v, &s, true), Confidence::High);
+    }
+
+    #[test]
+    fn associated_ranks_below_domain_and_above_other() {
+        let a = sc(&cand(1, MatchQuality::Associated));
+        assert!(sc(&cand(2, MatchQuality::Domain)) > a);
+        assert!(a > sc(&cand(3, MatchQuality::Other)));
+        let mut v = vec![
+            cand(1, MatchQuality::Other),
+            cand(2, MatchQuality::Associated),
+            cand(3, MatchQuality::Domain),
+            cand(4, MatchQuality::Exact),
+        ];
+        order(&mut v, None, NOW, Tiebreak::Title);
+        let ids: Vec<u8> = v.iter().map(|c| c.item_id.0[0]).collect();
+        assert_eq!(ids, [4, 3, 2, 1]);
+    }
+
+    #[test]
+    fn associated_first_is_always_low() {
+        let v = vec![cand(1, MatchQuality::Associated)];
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::Low);
+        // Even with the typed username of that account.
+        let hash = [7u8; 32];
+        let mut a = cand(1, MatchQuality::Associated);
+        a.username_hash = Some(hash);
+        let mut v = vec![cand(2, MatchQuality::Domain), a];
+        order(&mut v, Some(&hash), NOW, Tiebreak::Title);
+        assert_eq!(v[0].item_id, Id([1; 16]));
+        let s: Vec<i64> = v.iter().map(|c| score(c, Some(&hash), NOW)).collect();
+        assert_eq!(confidence(&v, &s, true), Confidence::Low);
+    }
+
+    #[test]
+    fn associated_behind_is_no_rival() {
+        // One direct match stays a single candidate.
+        let v = vec![
+            cand(1, MatchQuality::Domain),
+            cand(2, MatchQuality::Associated),
+        ];
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::High);
+        // Two tied direct matches stay a menu.
+        let v = vec![
+            cand(1, MatchQuality::Domain),
+            cand(2, MatchQuality::Domain),
+            cand(3, MatchQuality::Associated),
+        ];
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::Low);
+        // One exact, the rest associated: the sole exact host.
+        let v = vec![
+            cand(1, MatchQuality::Exact),
+            cand(2, MatchQuality::Associated),
+        ];
+        assert_eq!(confidence(&v, &scores(&v), true), Confidence::High);
+    }
+
+    #[test]
     fn no_candidate_is_low() {
         assert_eq!(confidence(&[], &[], true), Confidence::Low);
     }
@@ -381,6 +576,7 @@ mod tests {
         prop_oneof![
             Just(MatchQuality::Exact),
             Just(MatchQuality::Domain),
+            Just(MatchQuality::Associated),
             Just(MatchQuality::Other)
         ]
     }

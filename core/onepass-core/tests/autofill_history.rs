@@ -48,6 +48,7 @@ fn cand(item: Id, usage: Option<UsageSignal>, affinity: i64) -> Candidate {
         usage,
         has_totp: false,
         affinity,
+        private_vault: true,
     }
 }
 

@@ -49,17 +49,20 @@ pub fn summary_kind(t: ItemType) -> Option<SummaryKind> {
     }
 }
 
-/// Best match of any of the item URLs against the page.
+/// Best match of any of the item URLs against the page, by the matcher
+/// shared with the system AutoFill and the MCP. `Associated`: the item is
+/// saved for a domain sharing its credentials with the page's, holds no URL
+/// on the page's own site, and the user never picked it on this host (once
+/// picked there, the match is `Domain` on that host).
 pub fn item_match(item: &Item, page: &Origin) -> Option<MatchQuality> {
-    let mut best = None;
-    for u in &item.urls {
-        match matches(&u.url, u.rule, page) {
-            Some(MatchQuality::ExactHost) => return Some(MatchQuality::ExactHost),
-            Some(MatchQuality::Domain) => best = Some(MatchQuality::Domain),
-            None => {}
-        }
-    }
-    best
+    crate::origin::item_match(item, page)
+}
+
+/// `item_match` without the associated tier: the item is for this very
+/// site (or was already used on it). What linking a provider or attaching
+/// a passkey needs.
+pub fn direct_match(item: &Item, page: &Origin) -> Option<MatchQuality> {
+    item_match(item, page).filter(|q| *q != MatchQuality::Associated)
 }
 
 /// The ranking envelope of an item for `fill_plan::score::order`. No usage
@@ -81,6 +84,8 @@ pub fn to_candidate(item: &Item, q: PlanQuality) -> Candidate {
         usage: None,
         has_totp: item.item_type == ItemType::Login && otp_field(item).is_some(),
         affinity: 0,
+        // The caller says when it knows the vault (`plan_fill`).
+        private_vault: false,
     }
 }
 
@@ -125,6 +130,7 @@ pub fn plan_quality(q: Option<MatchQuality>) -> PlanQuality {
     match q {
         Some(MatchQuality::ExactHost) => PlanQuality::Exact,
         Some(MatchQuality::Domain) => PlanQuality::Domain,
+        Some(MatchQuality::Associated) => PlanQuality::Associated,
         None => PlanQuality::Other,
     }
 }
@@ -144,7 +150,7 @@ pub fn is_provider_account(item: &Item, p: ProviderId) -> bool {
 pub fn provider_url_matches(item: &Item, p: ProviderId, page: &Origin) -> bool {
     item.urls.iter().any(|u| {
         item_host(&u.url).is_some_and(|h| official_hosts(p).contains(&h.as_str()))
-            && matches(&u.url, u.rule, page).is_some()
+            && matches(&u.url, u.rule, page).is_some_and(|q| q != MatchQuality::Associated)
     })
 }
 
@@ -373,6 +379,8 @@ pub fn summarize(
         has_totp: otp_field(item).is_some(),
         methods,
         match_quality: quality,
+        associated: quality == Some(MatchQuality::Associated),
+        account: vault.account.as_ref().map(|a| a.label.clone()),
     }
 }
 
@@ -605,7 +613,7 @@ pub fn site_loyalty<'a>(items: &'a [Item], page: &Origin) -> Option<&'a Item> {
     let mut found = items.iter().filter(|i| {
         matches!(i.item_type, ItemType::RewardProgram | ItemType::Membership)
             && eligible(i)
-            && item_match(i, page).is_some()
+            && direct_match(i, page).is_some()
     });
     let one = found.next()?;
     found.next().is_none().then_some(one)

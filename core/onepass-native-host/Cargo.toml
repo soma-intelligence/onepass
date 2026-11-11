@@ -28,3 +28,8 @@ tempfile = "3"
 # Verifies the passkey signatures of the host tests (already a workspace
 # dependency, through onepass-core and onepass-bridge).
 aws-lc-rs.workspace = true
+
+# The production relay's `open_app` message, compared with this host's copy
+# (the relay is a Mac binary; this host builds everywhere).
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+onepass-relay = { path = "../onepass-relay" }

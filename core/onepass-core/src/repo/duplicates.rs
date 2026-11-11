@@ -242,8 +242,11 @@ impl<S: RecordStore> Repository<S> {
         let scan = self.duplicate_scan(excluded)?;
         let mut done = Vec::new();
         for g in scan.groups.iter().filter(|g| group_ids.contains(&g.id)) {
-            let members: Vec<&ScannedItem> =
-                g.members.iter().filter_map(|&i| scan.items.get(i)).collect();
+            let members: Vec<&ScannedItem> = g
+                .members
+                .iter()
+                .filter_map(|&i| scan.items.get(i))
+                .collect();
             let copies: Vec<&Item> = members.iter().map(|m| &m.item).collect();
             let review = duplicates::review(&copies);
             let Some(primary) = members.first() else {

@@ -8,7 +8,10 @@ use super::context::{
     ButtonClass, ContextError, FieldRole, FormContext, FrameKind, PageContext, Prefilled,
 };
 use super::intent::{Intent, intent_of};
-use super::score::{Candidate, Confidence, Tiebreak, confidence, order, score};
+use super::origin::same_origin;
+use super::score::{
+    Candidate, Confidence, MatchQuality, Tiebreak, confidence, order, score, sole_exact,
+};
 use super::weights::{ROLE_MIN, TYPED_USERNAME};
 use crate::id::Id;
 
@@ -75,6 +78,12 @@ pub enum ReasonCode {
     ChildFrame,
     MultipleForms,
     PasskeyOffered,
+    /// Several logins and no memory of the site, but only one matches the
+    /// page's exact host: trusted like a single candidate.
+    SoleExactHost,
+    /// The best login is saved for an associated domain and was never used
+    /// on this site: the menu, never a fill.
+    AssociatedDomain,
 }
 
 /// A signup form's own passkey button: the user may create a passkey
@@ -275,9 +284,10 @@ fn ignored() -> FillPlan {
 /// The plan for the whole page. Carries ids, refs and roles, never a value.
 ///
 /// Auto-submit is decided here and only here: `OpenChain` (Login) or
-/// `FillAndSubmit` (Otp) need High confidence, the top frame, exactly one
-/// planned form, and no `Pay` or `Create` button in it; Otp also needs the
-/// item used on this site last time.
+/// `FillAndSubmit` (Otp) need High confidence, the top frame or a child
+/// frame at exactly the top document's origin (scheme, host, port), exactly
+/// one planned form, and no `Pay` or `Create` button in it; Otp also needs
+/// the item used on this site last time. Any other child frame is held.
 pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
     ctx.validate()?;
     let intents: Vec<Intent> = ctx.forms.iter().map(intent_of).collect();
@@ -421,6 +431,17 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
             if primary.scores.get(1) == Some(&primary.scores[0]) {
                 push(&mut reasons, ReasonCode::Tie);
             }
+            if primary.kind == GroupKind::Login {
+                if first.quality == MatchQuality::Associated {
+                    push(&mut reasons, ReasonCode::AssociatedDomain);
+                } else if confidence == Confidence::High
+                    && primary.scores[0] < TYPED_USERNAME
+                    && !first.usage.is_some_and(|u| u.last_on_site)
+                    && sole_exact(&primary.ranked)
+                {
+                    push(&mut reasons, ReasonCode::SoleExactHost);
+                }
+            }
         }
         alternatives = primary
             .ranked
@@ -435,7 +456,13 @@ pub fn plan(ctx: &PageContext, pool: Pool) -> Result<FillPlan, ContextError> {
         Action::ShowMenu
     } else if confidence == Confidence::High && matches!(intent, Intent::Login | Intent::Otp) {
         let mut held = false;
-        if ctx.frame_kind != FrameKind::Top {
+        // A child frame at the top document's very origin is that site's
+        // own page: decided like the top frame. Any other child is held.
+        let own_frame = match ctx.frame_kind {
+            FrameKind::Top => true,
+            FrameKind::SameOriginChild => same_origin(&ctx.origin, &ctx.top_origin),
+        };
+        if !own_frame {
             push(&mut reasons, ReasonCode::ChildFrame);
             held = true;
         }

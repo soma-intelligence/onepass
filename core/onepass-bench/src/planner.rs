@@ -32,6 +32,7 @@ pub fn fake_pool(kind: Kind) -> Pool {
             }),
             has_totp: false,
             affinity: 0,
+            private_vault: true,
         }],
         Kind::Signup => Vec::new(),
     };

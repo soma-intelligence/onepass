@@ -430,6 +430,50 @@ fn disallowed_extension_rejected() {
     host.expect_closed();
 }
 
+/// One native messaging frame: the length, then the bytes.
+fn framed(body: &[u8]) -> Vec<u8> {
+    let mut data = (body.len() as u32).to_le_bytes().to_vec();
+    data.extend_from_slice(body);
+    data
+}
+
+#[test]
+fn open_app_is_answered_as_the_relay_answers_it() {
+    // The extension's one plain message ("bring the app forward"): the
+    // production relay opens the app and says so. This host has no app: it
+    // says the same, so the extension goes on to its bridge `unlock`.
+    let request: &[u8] = br#"{"onepass":1,"op":"open_app"}"#;
+    let reply: &[u8] = br#"{"ok":true}"#;
+    #[cfg(target_os = "macos")]
+    {
+        assert_eq!(request, onepass_relay::open_app::REQUEST);
+        assert_eq!(reply, onepass_relay::open_app::REPLY);
+    }
+    let env = setup("auto", json!({"unlocked": false}));
+    let mut host = Host::chrome(&env);
+    host.send_raw(&framed(request));
+    assert_eq!(host.recv_raw().as_deref(), Some(reply));
+    host.expect_closed();
+    // Nothing was paired, opened or asked.
+    assert!(!env.data.join("pairings.json").exists());
+    assert!(!env.data.join("unlock-pending").exists());
+
+    // Anything but the exact message is a bridge frame, as before.
+    let mut host = Host::chrome(&env);
+    host.send_raw(&framed(br#"{"onepass":1,"op":"open_app","x":1}"#));
+    assert_eq!(error_code(host.recv()), "version");
+    host.expect_closed();
+
+    // A caller the host does not serve gets no such answer.
+    let mut host = Host::spawn(
+        &env,
+        &["chrome-extension://zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz/"],
+    );
+    host.send_raw(&framed(request));
+    assert_eq!(error_code(host.recv()), "not_allowed");
+    host.expect_closed();
+}
+
 #[test]
 fn oversized_frame_closes() {
     let env = setup("auto", json!({}));
@@ -560,6 +604,57 @@ fn locked_fixture_unlocks_and_reprompt_follows_config() {
                "origin": "https://vault.atlas-cloud.test", "fields": ["password"]}),
     );
     assert_eq!(fill["ok"]["password"], "Repr-Pass-0007", "{fill}");
+    assert!(host.wait().success());
+}
+
+#[test]
+fn deferred_unlock_waits_for_the_approval_file() {
+    // The lab's stand-in for Touch ID: `unlock` only asks, the vault opens
+    // when `unlock-approved` appears.
+    let env = setup("auto", json!({"unlocked": false, "unlock": "file"}));
+    let rec = pair(&env);
+    let (pending, approved) = (
+        env.data.join("unlock-pending"),
+        env.data.join("unlock-approved"),
+    );
+    // An approval from before any request opens nothing.
+    fs::write(&approved, "").unwrap();
+    let (mut host, mut ch) = open_session(&env, &rec);
+    let status = request(&mut host, &mut ch, json!({"id": 1, "op": "status"}));
+    assert_eq!(status["ok"]["locked"], true, "{status}");
+    assert!(!pending.exists());
+
+    let unlock = request(&mut host, &mut ch, json!({"id": 2, "op": "unlock"}));
+    assert_eq!(unlock["ok"]["locked"], true, "{unlock}");
+    assert!(pending.exists(), "the request is on file");
+    assert!(!approved.exists(), "a stale approval is gone");
+    // Still locked until approved, whatever is asked.
+    let status = request(&mut host, &mut ch, json!({"id": 3, "op": "status"}));
+    assert_eq!(status["ok"]["locked"], true, "{status}");
+    let list = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 4, "op": "list_for_origin", "ctx": "menu", "origin": ATLAS}),
+    );
+    assert_eq!(list["err"]["code"], "locked", "{list}");
+
+    fs::write(&approved, "").unwrap();
+    let list = request(
+        &mut host,
+        &mut ch,
+        json!({"id": 5, "op": "list_for_origin", "ctx": "menu", "origin": ATLAS}),
+    );
+    assert!(list["ok"]["items"].is_array(), "{list}");
+    assert!(
+        !pending.exists() && !approved.exists(),
+        "both files removed"
+    );
+    let status = request(&mut host, &mut ch, json!({"id": 6, "op": "status"}));
+    assert_eq!(status["ok"]["locked"], false, "{status}");
+    // Open already: another `unlock` asks nothing.
+    let unlock = request(&mut host, &mut ch, json!({"id": 7, "op": "unlock"}));
+    assert_eq!(unlock["ok"]["locked"], false, "{unlock}");
+    assert!(!pending.exists());
     assert!(host.wait().success());
 }
 

@@ -2,6 +2,8 @@
 
 pub const EXACT: i64 = 100;
 pub const DOMAIN: i64 = 60;
+/// An associated domain (`origin::UrlMatch::Associated`): below `DOMAIN`.
+pub const ASSOCIATED: i64 = 30;
 pub const LAST_ON_SITE: i64 = 80;
 pub const SAME_SHAPE: i64 = 20;
 pub const TYPED_USERNAME: i64 = 1000;

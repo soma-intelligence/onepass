@@ -27,6 +27,7 @@ fn candidate(n: u8, kind: CandidateKind, quality: MatchQuality) -> Candidate {
         usage: None,
         has_totp: n == 1,
         affinity: 0,
+        private_vault: n % 2 == 1,
     }
 }
 
