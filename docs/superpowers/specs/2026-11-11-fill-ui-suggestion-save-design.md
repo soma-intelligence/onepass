@@ -64,13 +64,13 @@ Taken one by one on mockups in the brainstorm companion.
 - Glyph and frame colours leave `content/frames.ts` for tokens with a light and a dark value
   (`--glyph-rest`, `--glyph-focus`, `--glyph-focus-bg`, `--frame-shadow`). The content script
   cannot read the extension stylesheet, so `frames.ts` imports the same values from one
-  generated module (`shared/tokens.ts`, written from `theme.css` at build time) rather than
+  generated module (`shared/design-tokens.ts`, written from `theme.css` by `scripts/gen-design-tokens.mjs`; `shared/tokens.ts` already exists for random tokens) rather than
   repeating hex.
 - `passkey.html` drops its inline `<style>` for `theme.css`.
 - Dead keys `save.saveLogin`, `save.newItem`, `save.update1` are deleted from every locale.
 - Guard test: no `px` literal outside the token scale and no hex colour in `ui/*.ts`,
-  `ui/*.html` and `content/frames.ts`; `theme.css` and `shared/tokens.ts` are the only files
-  allowed to hold them.
+  `ui/*.html` and `content/frames.ts`; `theme.css` and `shared/design-tokens.ts` are the only
+  files allowed to hold them.
 
 ## 2. Field glyph
 
@@ -118,6 +118,10 @@ Taken one by one on mockups in the brainstorm companion.
   redesigned as the preview of mockup B: the password in `--mono` with digits in `--digit` and
   symbols in `--symbol`, a four-segment strength bar, "Strong, 16 characters, site rules
   respected", a "Use" button, then "Other suggestion" and "Length and characters".
+- "Length and characters" opens a panel inside the menu: a length stepper within
+  `CUSTOM_MIN_LENGTH` and `CUSTOM_MAX_LENGTH` (`shared/ui.ts`) and a "Symbols" switch. A change
+  writes the custom generator profile the popup edits (`GENERATOR_PROFILE_KEY` in
+  `storage.local`, `{ kind: "custom", length, symbols }`) and redraws the preview at once.
 - Tab acceptance only while the ghost is shown; without a ghost Tab moves focus as usual.
 
 ### 3.4 Fallback to the menu
@@ -153,9 +157,11 @@ The menu with its preview row opens instead of the ghost when any of these holds
 - Same for a second account on a known site.
 - A toast in the top frame, 8 s: "Login for github.com saved", with Undo and Edit. It stays
   while hovered or focused.
-- Undo deletes the new item for good (not to the trash: it existed for seconds) and marks that
-  site, identifier and password as refused for the session, so the same submission gets nothing
-  again.
+- Undo deletes the new item for good (not to the trash: it existed for seconds) through a new
+  bridge op `undo_save { item_id, origin }`. The bridge accepts it only for an item it saved
+  itself through `save_login` in the last 60 s, for the same registrable domain, and not edited
+  since; anything else is `not_found`. The extension then marks that site, identifier and
+  password as refused for the session, so the same submission gets nothing again.
 - Edit opens the save card in edit mode: name, identifier, vault, "Never on this site".
 
 ### 4.2 Changed password: card
@@ -179,8 +185,11 @@ automatic save when:
 - the target vault for the site is a shared vault;
 - the submission had no identifier (section 5.1).
 
-Nothing at all (no save, no card) in a public-computer delegated session, or on a site in
-"Never on this site".
+Nothing at all (no save, no card) on a site in "Never on this site". (A public-computer
+delegated session is a separate client that never runs the extension's save flow.)
+
+To tell a shared vault, the bridge's `vaults` answer gains `shared: true` on shared vaults
+(`VaultEntry`, omitted when false).
 
 ### 4.4 Unchanged
 
@@ -210,6 +219,9 @@ A single-page app that keeps a password form after sign-in counts as an uncertai
 within 1.5 s of the submission: the URL changed (path or hash), the password field was emptied
 or removed from the form, and no `role="alert"` or `aria-invalid="true"` appeared in the form.
 Uncertain success gives the card (4.3), never an automatic save.
+
+Also uncertain: a success by navigation (the next page of the site has no password form) where
+that page shows a `role="alert"` element within 1.5 s of its load (an error or captcha page).
 
 ## 6. Out of scope
 
@@ -252,12 +264,11 @@ menu, toast, update card, pill, each in light and dark, on a light and a dark te
 ## 8. Files
 
 - New: `extension/src/ui/ghost.html`, `extension/src/ui/ghost.ts`,
-  `extension/src/shared/tokens.ts` (generated), `extension/src/ui/toast` part of `save.ts` or a
+  `extension/src/shared/design-tokens.ts` (generated), `extension/scripts/gen-design-tokens.mjs`, `extension/src/ui/toast` part of `save.ts` or a
   new `toast.ts` page if `save.ts` would pass 900 lines.
 - Changed: `ui/theme.css`, `ui/menu.ts`, `ui/save.ts`, `ui/overlay.ts`, `ui/passkey.html`,
   `content/frames.ts`, `content/icon.ts`, `content/index.ts`, `shared/messages.ts`,
   `background/chain/save-flow.ts`, `background/save.ts`, `background/generate.ts`,
   `shared/l10n/*.json`, `e2e/save-shots.spec.ts`, lab scenario files.
-- Core: no change expected; `check_credentials` and `update_password` already exist. If the
-  automatic save needs a "created by auto-save" marker for Undo, it is held in the worker's
-  memory with the item id, not in the vault.
+- Core (`core/onepass-bridge`): new op `undo_save`, `VaultEntry.shared`. Nothing else;
+  `check_credentials`, `save_login` and `update_password` already exist.
