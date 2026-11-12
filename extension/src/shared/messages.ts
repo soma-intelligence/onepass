@@ -614,6 +614,10 @@ export type UiToBg =
   | { type: "save_generate"; token: string }
   | { type: "save_decide"; token: string; decision: SaveDecision; edits?: SaveEdits; itemId?: string }
   | { type: "save_close"; token: string }
+  /** The toast's Undo: the login saved moments ago is deleted (the bridge's `undo_save`). */
+  | { type: "save_undo"; token: string }
+  /** The toast's Edit: its edit view opens; its Save then replaces the saved login. */
+  | { type: "save_edit"; token: string }
   | { type: "save_resize"; token: string; height: number }
   | { type: "popup_status" }
   /** Sign-ins whose save card went away unanswered. */
