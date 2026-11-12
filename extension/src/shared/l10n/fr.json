@@ -294,6 +294,7 @@
   "icon.tooltip": "OnePass",
   "save.saveLoginFor": "Enregistrer le login pour {site} ?",
   "save.updatePasswordFor": "Mettre à jour le mot de passe pour {site} ?",
+  "save.whichLogin": "Quel login ?",
   "save.neverForSite": "Ne jamais proposer pour ce site",
   "save.editBeforeSaving": "Modifier avant d'enregistrer",
   "save.saveAsNew": "Enregistrer comme nouveau login",
