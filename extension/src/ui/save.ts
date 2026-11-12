@@ -21,6 +21,11 @@
 // when the tab leaves the site. The cards of a card or an address typed by hand
 // still go away by themselves ("later": nothing is kept).
 //
+// Save gaps (spec 5.1, 5.2): a sign-in sent without an identifier gets an
+// empty identifier field in the card, Save enabled once it is not blank; a
+// generated password sent in a change-password form of a site with several
+// logins gets the update card with a choice of those logins (`choices`).
+//
 // The toast (`view: "toast"`, spec 4.1, 4.4): a login OnePass saved by
 // itself. "Login for <site> saved", the username, Undo and Edit (only when
 // `undo`: a generated password confirmed at the submission gets neither). Left alone TOAST_MS (same hover and focus rule) it closes. Undo
@@ -90,6 +95,8 @@ interface Draft {
   revealed: boolean;
   /** New login from the menu: the password typed here ("" when generated). */
   typed: string;
+  /** Spec 5.2: the login picked among `choices`. */
+  choice?: string;
 }
 
 export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
@@ -202,6 +209,9 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     if (decision === "save" && (init.kind === "card" || init.kind === "identity")) {
       // Only the vault: the worker holds what was typed in the page.
       msg.edits = { title: "", username: "", password: "", vaultId: draft.vaultId, rule: "domain", tags: [] };
+    } else if (decision === "update" && init.kind === "login" && init.choices && draft.choice !== undefined) {
+      // Spec 5.2: only which login; the worker holds the generated password.
+      msg.edits = { title: "", username: "", password: "", vaultId: "", rule: "domain", tags: [], itemId: draft.choice };
     } else if (decision === "save" && init.kind === "login") {
       msg.edits = {
         title: draft.title,
@@ -532,15 +542,43 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     setFit(true);
     const d = draft;
     const err = errLine();
-    const updating = mode === "update" && i.update !== undefined;
+    // Spec 5.2: which of the site's logins gets the new password.
+    const choosing = i.status === "update" && (i.choices?.length ?? 0) > 0 && mode !== "new";
+    const updating = (mode === "update" && i.update !== undefined) || choosing;
+    // Spec 5.1: sent without an identifier, the card asks for one.
+    const asking = !updating && i.username.trim() === "";
     const title = updating ? t("save.updatePasswordFor", { site: i.site }) : t("save.saveLoginFor", { site: i.site });
-    const sub = updating && i.update && i.update.title !== "" ? `${i.update.title} · ${d.username}` : d.username;
+    const sub = choosing || asking ? "" : updating && i.update && i.update.title !== "" ? `${i.update.title} · ${d.username}` : d.username;
     const primary = updating
       ? btn(t("save.updateAction"), "btn-text sc-primary", () => void decide("update", err, (o) => renderOutcome(o.outcome === "done" ? { outcome: "updated" } : o, d)))
       : btn(t("common.save"), "btn-text sc-primary", () =>
           void decide("save", err, (o) => renderOutcome(o.outcome === "done" ? { outcome: "saved", vault: vaultName() } : o, d)),
         );
-    if (!updating && !i.locked && i.vaults.length === 0) primary.disabled = true;
+    const noVault = !updating && !i.locked && i.vaults.length === 0;
+    const blocked = () => noVault || (asking && d.username.trim() === "");
+    primary.disabled = blocked();
+    let ask: HTMLElement | null = null;
+    if (asking) {
+      const field = h("input", {
+        class: "input sc-identifier",
+        attrs: { type: "text", "aria-label": t("save.username"), placeholder: t("save.username"), maxlength: "1024", autocomplete: "off", spellcheck: "false" },
+      });
+      field.value = d.username;
+      field.addEventListener("input", () => {
+        d.username = field.value;
+        primary.disabled = blocked();
+      });
+      ask = h("div", { class: "sc-ask" }, field);
+    } else if (choosing) {
+      const sel = h("select", { class: "select sc-choice", attrs: { "aria-label": t("save.whichLogin") } });
+      for (const c of i.choices ?? []) {
+        const o = h("option", { attrs: { value: c.itemId } }, c.username !== "" ? `${c.title} · ${c.username}` : c.title);
+        if (c.itemId === d.choice) o.selected = true;
+        sel.append(o);
+      }
+      sel.addEventListener("change", () => (d.choice = sel.value));
+      ask = h("div", { class: "sc-ask" }, sel);
+    }
     show(
       h(
         "div",
@@ -566,6 +604,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
             icon("more", 12),
           ),
         ),
+        ask,
         more ? moreMenu(i) : null,
         picking && !updating ? picker(d) : null,
         h(
@@ -620,7 +659,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     if (!init) return;
     const i = init;
     setFit(true);
-    const updating = mode === "update" && i.update !== undefined;
+    const updating = mode === "update" && (i.update !== undefined || (i.choices?.length ?? 0) > 0);
     const label = t(updating ? "save.updatePill" : "save.savePill");
     const wrap = h(
         "div",
@@ -887,6 +926,10 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       revealed: false,
       typed: "",
     };
+    if (init.choices?.[0]) {
+      draft.choice = init.choices[0].itemId;
+      mode = "update";
+    }
     if (init.view === "edit") renderEdit();
     else if (init.view === "saved") renderSaved(t("save.titleSaved", { title: init.title }), init.username);
     else if (init.view === "toast") renderToast(init, draft);

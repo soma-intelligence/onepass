@@ -32,6 +32,15 @@
 // every watched root, so a gesture is read from its real target (a `submit`
 // never leaves its root); a button's own shadow root is crossed to its host.
 //
+// A sign-in that keeps its form on screen (spec 5.3): UNCERTAIN_MS after a
+// reported sign-in whose form is still in the document, `submit_outcome` says
+// whether the URL changed (path or hash), the password field was emptied or
+// removed, and a `role="alert"` or `aria-invalid="true"` is in the form; once
+// per submission, never a value. The top document also reports `page_alert`
+// once when a `role="alert"` with text shows within UNCERTAIN_MS of the
+// script's start (an error or captcha page after a sign-in): the worker only
+// ever makes a pending sign-in more cautious with either.
+//
 // Where a submission goes (security review M3): OnePass never submits a form
 // itself (`submitForm`, the chain's and the plan's submit) when the browser
 // would send it to another site than the page's: the form's `action`, the
@@ -65,6 +74,9 @@ export const SPA_WINDOW_MS = 10_000;
 const SPA_POLL_MS = 250;
 /** A `submit` event counts only after a trusted gesture in that form this recent. */
 export const GESTURE_MS = 5000;
+/** Spec 5.3, the same value as the worker's (background/chain/save-flow.ts). */
+export const UNCERTAIN_MS = 1500;
+const ALERT_SELECTOR = '[role="alert" i]';
 
 const CREDENTIAL_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "change_password"]);
 /** Forms whose values may be offered for saving, and as what. */
@@ -101,6 +113,10 @@ export interface SubmitOptions {
   onForm?: (c: Extract<CsToBg, { type: "submitted_form" }>) => void;
   /** A lone identifier step was sent. */
   onIdentifier?: (c: Extract<CsToBg, { type: "submitted_identifier" }>) => void;
+  /** Spec 5.3: what became of a reported sign-in whose form stayed in the document. */
+  onOutcome?: (c: Extract<CsToBg, { type: "submit_outcome" }>) => void;
+  /** Spec 5.3: the top document showed a `role="alert"` right after its load. */
+  onPageAlert?: () => void;
   /** A trusted submission of any form (or, without a form, of the page): the container. Tooling only. */
   onStep?: (container: Element) => void;
   /**
@@ -328,7 +344,42 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     opts.onForm(m);
   };
 
-  const report = (c: Credentials | null) => {
+  /** Path and hash of the page now (spec 5.3: the URL changed). */
+  const where = (): string => {
+    try {
+      const u = new URL(doc.URL);
+      return `${u.pathname}${u.hash}`;
+    } catch {
+      return doc.URL;
+    }
+  };
+  /** A rendered `role="alert"` with text in `root`. */
+  const alertIn = (root: ParentNode): boolean =>
+    Array.from(root.querySelectorAll(ALERT_SELECTOR)).some((el) => (el.textContent ?? "").trim() !== "" && isRendered(el, geometry));
+  let outcomeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Spec 5.3: UNCERTAIN_MS after the report of `f`, the form still there: what changed. */
+  const watchOutcome = (f: FormInfo) => {
+    if (!opts.onOutcome) return;
+    if (outcomeTimer !== null) {
+      clearTimeout(outcomeTimer);
+      timers.delete(outcomeTimer);
+    }
+    const from = where();
+    const container = refs.get(f.ref);
+    const pw = passwordField(f);
+    const t = setTimeout(() => {
+      timers.delete(t);
+      if (outcomeTimer === t) outcomeTimer = null;
+      if (!container?.isConnected) return;
+      const passwordCleared = !pw || !pw.isConnected || !composedContains(container, pw) || nativeValue(pw) === "";
+      const alert = container.querySelector('[aria-invalid="true" i]') !== null || alertIn(container);
+      opts.onOutcome?.({ type: "submit_outcome", formRef: f.ref, urlChanged: where() !== from, passwordCleared, alert });
+    }, UNCERTAIN_MS);
+    outcomeTimer = t;
+    timers.add(t);
+  };
+
+  const report = (c: Credentials | null, f?: FormInfo) => {
     if (!c) return;
     const key = `${c.formRef}\u0000${c.username}\u0000${c.password.length}`;
     if (last === key) return;
@@ -347,6 +398,33 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     lastTimer = t;
     timers.add(t);
     opts.onCredentials({ type: "submitted_credentials", ...c });
+    if (f) watchOutcome(f);
+  };
+
+  /** Spec 5.3: the top document reports a `role="alert"` shown within UNCERTAIN_MS of the start. */
+  let alertWatch: MutationObserver | null = null;
+  const watchPageAlert = () => {
+    if (!opts.onPageAlert || !view || view.top !== view) return;
+    let sent = false;
+    const look = () => {
+      if (sent || !alertIn(doc)) return;
+      sent = true;
+      stopAlertWatch();
+      opts.onPageAlert?.();
+    };
+    look();
+    if (sent || typeof MutationObserver === "undefined") return;
+    alertWatch = new MutationObserver(look);
+    alertWatch.observe(doc, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["role", "style", "class", "hidden"] });
+    const t = setTimeout(() => {
+      timers.delete(t);
+      stopAlertWatch();
+    }, UNCERTAIN_MS);
+    timers.add(t);
+  };
+  const stopAlertWatch = () => {
+    alertWatch?.disconnect();
+    alertWatch = null;
   };
 
   /** SPA: `then` once `el` goes away within the window. */
@@ -399,7 +477,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       return;
     }
     if (!activated(f)) return;
-    report(read(f));
+    report(read(f), f);
     reportIdentifier(f);
   };
 
@@ -423,8 +501,8 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       else watchDisappearance(identifierField(f), () => reportIdentifier(f));
       return;
     }
-    if (sends) report(snapshot);
-    else watchDisappearance(passwordField(f), () => report(snapshot));
+    if (sends) report(snapshot, f);
+    else watchDisappearance(passwordField(f), () => report(snapshot, f));
   };
 
   const onKey = (e: Event) => {
@@ -438,7 +516,7 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       reportForm(formOf(e.target, SAVED_FORM_KINDS));
       return;
     }
-    report(read(f));
+    report(read(f), f);
     reportIdentifier(f);
   };
 
@@ -459,9 +537,12 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
         listen(target, "click", onClick, { capture: true }),
         listen(target, "keydown", onKey, { capture: true }),
       );
+      watchPageAlert();
     },
     stop() {
       for (const r of removals.splice(0)) r();
+      stopAlertWatch();
+      outcomeTimer = null;
       for (const t of timers) clearTimeout(t);
       timers.clear();
       last = null;

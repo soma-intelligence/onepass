@@ -1,8 +1,8 @@
 // Security review M3: OnePass never submits a form the browser would send to another site.
-import { afterEach, describe, expect, it } from "vitest";
-import { submitTargetAllowed } from "../../src/content/submit";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { UNCERTAIN_MS, submitTargetAllowed } from "../../src/content/submit";
 import type { FormInfo, PageAnalysis } from "../../src/shared/messages";
-import { setPage, start, type Started } from "./harness";
+import { flush, input, setPage, start, type Started, userClick, useTimers } from "./harness";
 
 // The origin the harness pins (relative actions resolve against the jsdom document URL).
 const ORIGIN = "https://atlas-cloud.test";
@@ -11,6 +11,8 @@ let s: Started | null = null;
 afterEach(() => {
   s?.cs.stop();
   s = null;
+  vi.useRealTimers();
+  history.replaceState(null, "", "/");
 });
 
 function loginForm(st: Started): FormInfo {
@@ -127,5 +129,109 @@ describe("submit target (M3)", () => {
     expect(submitTargetAllowed("data:text/html,x", page, page)).toBe(false);
     // A page base elsewhere (<base href>): the browser posts there, so it is judged there.
     expect(submitTargetAllowed("/c", "https://evil.test/", page)).toBe(false);
+  });
+});
+
+describe("sign-in that keeps its form (spec 5.3)", () => {
+  const FORM = `<form id="login"><input id="u" autocomplete="username"><input id="p" type="password" autocomplete="current-password"><button id="go" type="submit">Sign in</button></form>`;
+
+  /** A trusted click on Sign in; the page then does what `after` says (single-page app, no reload). */
+  function signIn(html = FORM): Started {
+    useTimers();
+    setPage(html);
+    s = start();
+    document.getElementById("login")!.addEventListener("submit", (e) => e.preventDefault());
+    input("u").value = "alex@atlas.dev";
+    input("p").value = "s3cret";
+    userClick(document.getElementById("go")!);
+    expect(s.ext.ofType("submitted_credentials")).toHaveLength(1);
+    return s;
+  }
+
+  it("submit_outcome is sent once, 1500 ms after the submission", async () => {
+    const st = signIn();
+    history.pushState(null, "", "/home");
+    input("p").value = "";
+    vi.advanceTimersByTime(UNCERTAIN_MS - 1);
+    expect(st.ext.ofType("submit_outcome")).toEqual([]);
+    vi.advanceTimersByTime(1);
+    const formRef = st.ext.ofType("submitted_credentials")[0]!.formRef;
+    expect(st.ext.ofType("submit_outcome")).toEqual([{ type: "submit_outcome", formRef, urlChanged: true, passwordCleared: true, alert: false }]);
+    vi.advanceTimersByTime(UNCERTAIN_MS * 4);
+    expect(st.ext.ofType("submit_outcome")).toHaveLength(1);
+    // The outcome carries no identifier and no password.
+    expect(JSON.stringify(st.ext.ofType("submit_outcome"))).not.toContain("s3cret");
+  });
+
+  it("the form stays with aria-invalid or a role=alert in it: alert", async () => {
+    const st = signIn();
+    history.pushState(null, "", "/#error");
+    input("p").value = "";
+    input("p").setAttribute("aria-invalid", "true");
+    vi.advanceTimersByTime(UNCERTAIN_MS);
+    expect(st.ext.ofType("submit_outcome")).toEqual([expect.objectContaining({ urlChanged: true, passwordCleared: true, alert: true })]);
+    st.cs.stop();
+
+    const st2 = signIn();
+    const msg = document.createElement("p");
+    msg.setAttribute("role", "alert");
+    msg.textContent = "Wrong password";
+    document.getElementById("login")!.append(msg);
+    vi.advanceTimersByTime(UNCERTAIN_MS);
+    expect(st2.ext.ofType("submit_outcome")).toEqual([expect.objectContaining({ urlChanged: false, passwordCleared: false, alert: true })]);
+  });
+
+  it("the form gone from the document: no outcome (the usual success rule decides)", async () => {
+    const st = signIn();
+    document.getElementById("login")!.remove();
+    vi.advanceTimersByTime(UNCERTAIN_MS * 2);
+    expect(st.ext.ofType("submit_outcome")).toEqual([]);
+  });
+
+  it("an untrusted submission sends no outcome", async () => {
+    useTimers();
+    setPage(FORM);
+    s = start();
+    const form = document.getElementById("login") as HTMLFormElement;
+    form.addEventListener("submit", (e) => e.preventDefault());
+    input("u").value = "alex@atlas.dev";
+    input("p").value = "s3cret";
+    document.getElementById("go")!.click();
+    vi.advanceTimersByTime(UNCERTAIN_MS * 2);
+    expect(s.ext.ofType("submit_outcome")).toEqual([]);
+  });
+
+  it("a top document showing a role=alert within 1500 ms of its load sends page_alert once", async () => {
+    useTimers();
+    setPage(`<main><p role="alert">Too many attempts</p><p role="alert">Try later</p></main>`);
+    s = start();
+    await flush();
+    expect(s.ext.ofType("page_alert")).toEqual([{ type: "page_alert" }]);
+    s.cs.stop();
+
+    setPage(`<main id="m"></main>`);
+    s = start();
+    await flush();
+    expect(s.ext.ofType("page_alert")).toEqual([]);
+    vi.advanceTimersByTime(UNCERTAIN_MS - 100);
+    const late = document.createElement("div");
+    late.setAttribute("role", "alert");
+    late.textContent = "Captcha required";
+    document.getElementById("m")!.append(late);
+    await flush();
+    expect(s.ext.ofType("page_alert")).toEqual([{ type: "page_alert" }]);
+    s.cs.stop();
+
+    // After the window, and an empty alert region: nothing.
+    setPage(`<main id="m"><div role="alert"></div></main>`);
+    s = start();
+    await flush();
+    vi.advanceTimersByTime(UNCERTAIN_MS + 1);
+    const after = document.createElement("div");
+    after.setAttribute("role", "alert");
+    after.textContent = "Saved";
+    document.getElementById("m")!.append(after);
+    await flush();
+    expect(s.ext.ofType("page_alert")).toEqual([]);
   });
 });

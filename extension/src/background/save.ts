@@ -108,6 +108,18 @@ export interface SavePending {
   topOrigin?: string;
   /** The vault was locked when the host was asked: Save unlocks first. */
   locked?: boolean;
+  /**
+   * Spec 5.2: a generated password sent in a change-password form of a site with several logins,
+   * none filled in the tab: the update card asks which one (Update names it in `edits.itemId`).
+   */
+  choices?: LoginChoice[];
+}
+
+/** A login of the site the change-password card offers (no password). */
+export interface LoginChoice {
+  itemId: string;
+  title: string;
+  username: string;
 }
 
 export type SaveKind = "login" | "provider_link" | "card" | "identity";
@@ -292,6 +304,7 @@ export class SavePrompts {
     if (p.savedItemId !== undefined) rec.savedItemId = p.savedItemId;
     if (p.undo) rec.undo = true;
     if (p.locked) rec.locked = true;
+    if (p.choices) rec.choices = p.choices.map((c) => ({ ...c }));
     const token = await this.tokens.register(rec);
     const msg: BgToCs = { type: "show_frame", kind: "save", url: `${this.deps.ext.runtime.getURL("save.html")}#${token}` };
     if (p.documentId === undefined && p.topOrigin !== undefined) msg.origin = p.topOrigin;
@@ -383,6 +396,7 @@ export class SavePrompts {
       vaults,
     };
     if (rec.update) out.update = { ...rec.update };
+    if (rec.choices) out.choices = rec.choices.map((c) => ({ ...c }));
     if (rec.provider) {
       out.provider = { id: rec.provider.id, email: rec.provider.email };
       if (rec.provider.title !== undefined) out.provider.title = rec.provider.title;
@@ -502,6 +516,8 @@ export class SavePrompts {
           });
         } else {
           if (!edits) throw new BgError("invalid");
+          // Spec 5.1: a sign-in sent without an identifier is saved with the one typed in the card.
+          if (rec.view === undefined && rec.username.trim() === "" && edits.username.trim() === "") throw new BgError("invalid");
           if (rec.view === "toast") {
             // Edit's Save: the saved login changes in place (or moves to another vault) in the
             // bridge; a refusal (too late, edited since) is said in the card, nothing written.
@@ -516,6 +532,12 @@ export class SavePrompts {
         if (rec.kind === "card" && rec.update) {
           out = await this.commitForm(rec, edits ?? { title: "", username: "", password: "", vaultId: "", rule: "domain", tags: [] });
           break;
+        }
+        if (rec.kind === "login" && rec.choices) {
+          // Spec 5.2: one of the logins the card offered, never another item.
+          const pick = rec.choices.find((c) => c.itemId === edits?.itemId);
+          if (!pick) throw new BgError("invalid");
+          rec.update = { itemId: pick.itemId, title: pick.title };
         }
         if (rec.kind !== "login" || !rec.update) throw new BgError("invalid");
         out = (await this.commit(rec, "update", edits)).out;

@@ -250,6 +250,11 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
       const u = obj(o.update);
       s.update = { itemId: str(u.itemId, 128), title: str(u.title, 256) };
     }
+    if (o.choices !== undefined)
+      s.choices = list(o.choices, (x) => {
+        const c = obj(x);
+        return { itemId: str(c.itemId, 128), title: str(c.title, 256), username: str(c.username, 1024) };
+      }, 64);
     if (o.provider !== undefined) {
       const p = obj(o.provider);
       s.provider = { id: oneOf<ProviderId>(p.id, PROVIDERS), email: str(p.email, 320) };

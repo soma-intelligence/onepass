@@ -122,6 +122,71 @@ describe("save prompt", () => {
     expect(text(r)).toContain("Mot de passe mis à jour");
   });
 
+  it("submission without identifier opens the card with an empty identifier field", async () => {
+    const { r, handle } = setup({ ...base, username: "" });
+    await handle.ready;
+    expect(text(r)).toContain("Enregistrer le login pour atlas-cloud.test ?");
+    const field = r.querySelector<HTMLInputElement>("input.sc-identifier")!;
+    expect(field).not.toBeNull();
+    expect(field.value).toBe("");
+    expect(field.getAttribute("aria-label")).toBe("nom d'utilisateur");
+    // A card that has its identifier shows no field.
+    const s2 = setup(base);
+    await s2.handle.ready;
+    expect(s2.r.querySelector("input.sc-identifier")).toBeNull();
+  });
+
+  it("Save stays disabled until an identifier is typed", async () => {
+    const { r, handle, worker, click } = setup({ ...base, username: "", defaultVault: "v1" });
+    await handle.ready;
+    const save = button(r, "Enregistrer");
+    expect(save.disabled).toBe(true);
+    const field = r.querySelector<HTMLInputElement>("input.sc-identifier")!;
+    field.value = "   ";
+    field.dispatchEvent(new Event("input"));
+    expect(save.disabled).toBe(true);
+    field.value = "alex@atlas.dev";
+    field.dispatchEvent(new Event("input"));
+    expect(save.disabled).toBe(false);
+    await click("Enregistrer");
+    expect(worker.sent.filter((m) => m.type === "save_decide").at(-1)).toEqual({
+      type: "save_decide",
+      token: TOKEN,
+      decision: "save",
+      edits: { title: "Atlas Cloud", username: "alex@atlas.dev", password: "", vaultId: "v1", rule: "domain", tags: [] },
+    });
+  });
+
+  it("change-password with several logins asks which one", async () => {
+    const { r, handle, worker, click } = setup({
+      ...base,
+      status: "update",
+      username: "",
+      choices: [
+        { itemId: "it_01", title: "Atlas Cloud", username: "alex@atlas.dev" },
+        { itemId: "it_02", title: "Atlas Cloud (work)", username: "alex@work.dev" },
+      ],
+    });
+    await handle.ready;
+    expect(text(r)).toContain("Mettre à jour le mot de passe pour atlas-cloud.test ?");
+    const sel = r.querySelector<HTMLSelectElement>("select.sc-choice")!;
+    expect(sel.getAttribute("aria-label")).toBe("Quel login ?");
+    expect([...sel.options].map((o) => [o.value, o.textContent])).toEqual([
+      ["it_01", "Atlas Cloud · alex@atlas.dev"],
+      ["it_02", "Atlas Cloud (work) · alex@work.dev"],
+    ]);
+    sel.value = "it_02";
+    sel.dispatchEvent(new Event("change"));
+    await click("Mettre à jour");
+    expect(worker.sent.filter((m) => m.type === "save_decide").at(-1)).toEqual({
+      type: "save_decide",
+      token: TOKEN,
+      decision: "update",
+      edits: { title: "", username: "", password: "", vaultId: "", rule: "domain", tags: [], itemId: "it_02" },
+    });
+    expect(text(r)).toContain("Mot de passe mis à jour");
+  });
+
   it("update: the menu saves it as a new login instead", async () => {
     const { r, handle, worker, click, clock } = setup({ ...base, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } });
     await handle.ready;

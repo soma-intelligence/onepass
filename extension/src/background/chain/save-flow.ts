@@ -16,9 +16,24 @@
 // A submission without an identifier takes the one of the lone identifier
 // step just sent in this tab on the same site (`submitted_identifier`, kept
 // IDENTIFIER_TTL_MS in memory): identifier first, password on the next page.
-// Without one it is not proposed (it would always look `new`), except when
-// its password is one OnePass just generated and filled in this tab (spec
-// 8.8): a signup or change-password form often has no identifier field.
+// Without one (spec 5.1) the card opens with an empty identifier field to
+// fill, never an automatic save; unless OnePass filled a login in this tab
+// and site moments ago (the password is most likely its own).
+//
+// Change-password with a generated password (spec 5.2): `savePendingUpdate`
+// writes it at once to the login being changed. Several logins on the site
+// and none filled in this tab: the logins (ids, titles, usernames, never a
+// password) are kept for the tab, and the submission of that very password
+// opens the update card that asks which one (`choices`).
+//
+// A sign-in that keeps its form on screen (spec 5.3): the content script
+// reports `submit_outcome` UNCERTAIN_MS after a trusted submission whose form
+// is still there. URL changed, password field cleared and no alert in the
+// form: a success marked `uncertain` (the card, never automatic); anything
+// else changes nothing. A success by navigation waits UNCERTAIN_MS on the new
+// page: a `page_alert` from that new top document of the same site (an error
+// or captcha page) marks it `uncertain` too. A page can only make the outcome
+// more cautious, never turn a sign-in into an automatic save.
 //
 // Pending save (spec 7): right after a generated password went into a signup
 // form, `savePending` writes it to the vault as a Login tagged
@@ -43,7 +58,7 @@
 // another password (`update`). A `new` login is saved at once (spec 4.1,
 // `SavePrompts.autoSave`), a toast says so with Undo and Edit; the card
 // stays for an update, and for a new login when the vault is locked, the
-// window is private, the success is uncertain (`uncertain`, set by Task 11),
+// window is private, the success is uncertain (`uncertain`, spec 5.3),
 // the submission has no identifier, or the target vault is shared (spec 4.3). "Pas maintenant" puts away that very card
 // only (save.ts `recentlyDismissed`: the same site, identifier and password
 // within a few minutes); "Ne jamais proposer pour <site>" silences the site.
@@ -72,6 +87,7 @@ import type { CsContext } from "../frames";
 import type { NeverSave } from "../never-save";
 import {
   type CardDraft,
+  type LoginChoice,
   PENDING_TAG,
   type SavePending,
   type SavePrompts,
@@ -91,6 +107,13 @@ export const SETTLE_MS = 1000;
 export const NAV_SETTLE_MS = 2000;
 /** The identifier of a lone identifier step feeds the next password step this long. */
 export const IDENTIFIER_TTL_MS = 10 * 60 * 1000;
+/**
+ * Spec 5.3: a form kept on screen is judged this long after its submission (`submit_outcome`),
+ * and a new page waits this long for a `page_alert` before its success counts.
+ */
+export const UNCERTAIN_MS = 1500;
+/** A `submit_outcome` this late after its submission is not the one the content script sent on time. */
+const OUTCOME_LATE_MS = 2 * UNCERTAIN_MS;
 
 const CREDENTIAL_FORMS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "change_password"]);
 
@@ -205,10 +228,15 @@ interface Pending {
   check: unknown;
   /** Already saved and confirmed (a generated password): the card only shows it saved. */
   confirmed?: boolean;
-  /** The success is not sure (spec 5.3, set by Task 11): a new login gets the card, never an automatic save. */
+  /** The success is not sure (spec 5.3): a new login gets the card, never an automatic save. */
   uncertain?: boolean;
+  /** The submitted form (a sign-in), for its `submit_outcome`. */
+  formRef?: string;
+  /** Spec 5.2: the logins the card asks to pick from (a generated password, several logins). */
+  choices?: LoginChoice[];
   expire: unknown;
 }
+
 
 interface Identifier {
   site: string;
@@ -263,6 +291,8 @@ export class SaveFlow {
   private readonly generated = new Map<number, Generated>();
   private readonly saved = new Map<number, Saved>();
   private readonly identifiers = new Map<number, Identifier>();
+  /** Spec 5.2: the logins of a site with several, for the change-password card of a tab. */
+  private readonly choices = new Map<number, { site: string; logins: LoginChoice[] }>();
   /** Login, card and identity items OnePass filled per tab, with their site and when. */
   private readonly filled = new Map<number, { site: string; kind: FilledKind; itemId: string; at: number }[]>();
   private readonly now: () => number;
@@ -354,7 +384,13 @@ export class SaveFlow {
       const logins = items.filter((x) => x.kind === "login");
       const here = this.lastFilled(tabId, origin, "login");
       const itemId = here !== null && logins.some((x) => x.item_id === here) ? here : logins.length === 1 ? logins[0]?.item_id : undefined;
-      if (itemId === undefined) return false;
+      if (itemId === undefined) {
+        // Several logins, none filled here: the card asks which one once the form is sent.
+        if (logins.length > 1)
+          this.choices.set(tabId, { site: page.site, logins: logins.map((x) => ({ itemId: x.item_id, title: x.title, username: x.subtitle })) });
+        return false;
+      }
+      this.choices.delete(tabId);
       await this.deps.session.request({
         op: "update_password",
         ctx: "save_prompt",
@@ -437,14 +473,19 @@ export class SaveFlow {
   }
 
   async onSubmitted(m: Extract<CsToBg, { type: "submitted_credentials" }>, cs: CsContext): Promise<void> {
-    if (parseOrigin(cs.origin)?.https !== true) return;
+    const page = parseOrigin(cs.origin);
+    if (page?.https !== true) return;
     const username = m.username.trim() !== "" ? m.username : this.identifierFor(cs.tabId, cs.origin);
     const generated = this.takeGenerated(cs.tabId, cs.origin, m.password);
     // The password OnePass generated and already saved: confirmed, nothing to ask; the card
     // says it is saved once the sign-up worked.
     const confirmed = generated && (await this.confirm(cs.tabId, cs.origin, username));
+    const pick = this.choices.get(cs.tabId);
+    if (pick) this.choices.delete(cs.tabId);
     if (!confirmed) {
-      if (username.trim() === "" && !generated) return;
+      // No identifier (spec 5.1): the card asks for one, except right after OnePass filled a
+      // login here (a re-authentication with its own password).
+      if (username.trim() === "" && !generated && this.filledHere(cs.tabId, cs.origin, "login")) return;
       if (await this.deps.chainRunning?.(cs.tabId)) return;
     }
     this.drop(cs.tabId);
@@ -457,8 +498,11 @@ export class SaveFlow {
       navigated: false,
       check: null,
       expire: null,
+      formRef: m.formRef,
     };
     if (confirmed) p.confirmed = true;
+    // Spec 5.2: the generated password of a change form, several logins, none known here.
+    if (!confirmed && generated && username.trim() === "" && pick && pick.site === page.site) p.choices = pick.logins;
     if (cs.documentId !== undefined) p.documentId = cs.documentId;
     // Spec 8.5: kept at most 2 minutes.
     p.expire = this.timers.setTimeout(() => this.drop(cs.tabId), SUBMIT_TTL_MS);
@@ -517,6 +561,8 @@ export class SaveFlow {
     if (s && url !== undefined && site !== s.site) this.saved.delete(tabId);
     const id = this.identifiers.get(tabId);
     if (id && url !== undefined && site !== id.site) this.identifiers.delete(tabId);
+    const pick = this.choices.get(tabId);
+    if (pick && url !== undefined && site !== pick.site) this.choices.delete(tabId);
     const p = this.pending.get(tabId);
     if (!p) return;
     p.navigated = true;
@@ -546,10 +592,44 @@ export class SaveFlow {
       return;
     }
     if (newDoc) {
-      void this.check(cs.tabId);
+      // A sign-in's new page may still show an error or a captcha (`page_alert`, spec 5.3): it
+      // counts after UNCERTAIN_MS. A card or an address: at once, as before.
+      if (p.kind === undefined) p.check = this.timers.setTimeout(() => void this.check(cs.tabId), UNCERTAIN_MS);
+      else void this.check(cs.tabId);
       return;
     }
     p.check = this.timers.setTimeout(() => void this.check(cs.tabId), SETTLE_MS);
+  }
+
+  /**
+   * Spec 5.3: the submitting document kept its form UNCERTAIN_MS after the submission. URL
+   * changed, password field cleared, no alert in the form: an uncertain success (the card).
+   * Anything else changes nothing (the usual rule still decides, or the record expires). Only
+   * for a sign-in of this very frame, document and form, sent moments ago.
+   */
+  onOutcome(m: Extract<CsToBg, { type: "submit_outcome" }>, cs: CsContext): void {
+    const p = this.pending.get(cs.tabId);
+    if (!p || p.kind !== undefined || p.confirmed || p.navigated) return;
+    if (cs.frameId !== p.frameId || cs.documentId !== p.documentId || m.formRef !== p.formRef) return;
+    if (this.now() - p.at > OUTCOME_LATE_MS) return;
+    if (!m.urlChanged || !m.passwordCleared || m.alert) return;
+    this.timers.clearTimeout(p.check);
+    p.check = null;
+    p.uncertain = true;
+    void this.check(cs.tabId);
+  }
+
+  /**
+   * Spec 5.3: the new top document after a submission shows a `role="alert"` (an error or a
+   * captcha page) within UNCERTAIN_MS of its load: its success is uncertain. Only from a new
+   * top document of the site, while the success is not decided yet. Never a success by itself.
+   */
+  onPageAlert(cs: CsContext): void {
+    const p = this.pending.get(cs.tabId);
+    if (!p || !p.navigated || cs.frameId !== 0) return;
+    if (cs.documentId !== undefined && cs.documentId === p.documentId) return;
+    if (parseOrigin(cs.origin)?.https !== true || !sameSite(cs.origin, p.origin)) return;
+    p.uncertain = true;
   }
 
   /** The new top document finished loading: counts after NAV_SETTLE_MS unless an analysis decides first. */
@@ -564,6 +644,7 @@ export class SaveFlow {
     this.generated.delete(tabId);
     this.saved.delete(tabId);
     this.identifiers.delete(tabId);
+    this.choices.delete(tabId);
     this.filled.delete(tabId);
   }
 
@@ -583,7 +664,7 @@ export class SaveFlow {
   async check(tabId: number): Promise<void> {
     const p = this.pending.get(tabId);
     if (!p) return;
-    const { origin, username, password, at, confirmed, kind, card, identity, uncertain } = p;
+    const { origin, username, password, at, confirmed, kind, card, identity, uncertain, choices } = p;
     // Copied before the drop (which blanks the held number).
     const cardCopy = card ? { ...card } : undefined;
     this.drop(tabId);
@@ -600,6 +681,10 @@ export class SaveFlow {
     }
     // "Pas maintenant" on this very credential moments ago: not asked again.
     if (await this.quiet(origin, loginQuietKey(username, password))) return;
+    if (choices) {
+      await this.askWhich(tabId, origin, password, choices);
+      return;
+    }
     // The prompt goes to the top frame: it must show this site (checked
     // again below, after the host answered).
     if (!(await this.verifiedTop(tabId, origin))) return;
@@ -694,6 +779,19 @@ export class SaveFlow {
     if (card) pending.card = { ...card };
     if (identity) pending.identity = identity;
     if (pending.status === "update" && r.item_id !== undefined) pending.update = { itemId: r.item_id, title: r.title ?? "" };
+    if (top.documentId !== undefined) pending.documentId = top.documentId;
+    try {
+      await this.deps.saves.open(pending);
+    } catch {
+      // Content script gone: nothing to show.
+    }
+  }
+
+  /** Spec 5.2: the update card that asks which of the site's logins gets the generated password. */
+  private async askWhich(tabId: number, origin: string, password: string, choices: LoginChoice[]): Promise<void> {
+    const top = await this.verifiedTop(tabId, origin);
+    if (!top) return;
+    const pending: SavePending = { tabId, origin, kind: "login", status: "update", username: "", password, topOrigin: top.origin, choices };
     if (top.documentId !== undefined) pending.documentId = top.documentId;
     try {
       await this.deps.saves.open(pending);

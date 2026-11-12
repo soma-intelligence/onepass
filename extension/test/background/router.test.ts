@@ -389,6 +389,28 @@ describe("message validation", () => {
     expect(parseUiToBg({ type: "popup_search", query: "q".repeat(300) })).toBeNull();
   });
 
+  it("validates the save gap messages (spec 5.2, 5.3)", () => {
+    const token = "A".repeat(22);
+    expect(parseCsToBg({ type: "submit_outcome", formRef: "f1", urlChanged: true, passwordCleared: false, alert: false, password: "x" })).toEqual({
+      type: "submit_outcome",
+      formRef: "f1",
+      urlChanged: true,
+      passwordCleared: false,
+      alert: false,
+    });
+    expect(parseCsToBg({ type: "submit_outcome", formRef: "f1", urlChanged: "yes", passwordCleared: true, alert: false })).toBeNull();
+    expect(parseCsToBg({ type: "submit_outcome", urlChanged: true, passwordCleared: true, alert: false })).toBeNull();
+    expect(parseCsToBg({ type: "page_alert", success: true })).toEqual({ type: "page_alert" });
+    const edits = { title: "", username: "", password: "", vaultId: "", rule: "domain", tags: [] };
+    expect(parseUiToBg({ type: "save_decide", token, decision: "update", edits: { ...edits, itemId: "it_02" } })).toEqual({
+      type: "save_decide",
+      token,
+      decision: "update",
+      edits: { ...edits, itemId: "it_02" },
+    });
+    expect(parseUiToBg({ type: "save_decide", token, decision: "update", edits: { ...edits, itemId: "" } })).toBeNull();
+  });
+
   it("validates the popup messages", () => {
     expect(parseUiToBg({ type: "popup_generate", kind: "random", length: 24, symbols: true, x: 1 })).toEqual({
       type: "popup_generate",
