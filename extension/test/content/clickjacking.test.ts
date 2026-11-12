@@ -156,6 +156,10 @@ describe("frame covers without IntersectionObserver v2 (M1)", () => {
     setPage(`${LOGIN}<div id="cover"></div>`);
     s = start(undefined, { watchCovers: true });
     const frame = showMenu(s);
+    // Shown at its page's size, out of its move guard: it takes the pointer.
+    s.ext.deliver({ type: "resize_frame", kind: "menu", height: 200 });
+    vi.advanceTimersByTime(MOVE_GUARD_MS + 1);
+    expect(frame.style.getPropertyValue("pointer-events")).toBe("");
     expect(frame.hasAttribute("inert")).toBe(false);
     fullscreen(document.getElementById("cover"));
     document.dispatchEvent(new Event("toggle"));

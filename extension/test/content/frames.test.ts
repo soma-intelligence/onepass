@@ -480,7 +480,8 @@ describe("shell placement", () => {
     const field = document.getElementById("f")!;
     frames.showFrame("menu", `${CHROME}menu.html#${TOKEN}`, field);
     const iframe = shell.root.querySelector("iframe")!;
-    expect(iframe.style.pointerEvents).toBe("");
+    // Invisible at its largest size: no pointer yet.
+    expect(iframe.style.pointerEvents).toBe("none");
     // Shown once its page reported its height: appearing counts as a move.
     frames.resize("menu", 140);
     expect(iframe.style.pointerEvents).toBe("none");
@@ -507,6 +508,38 @@ describe("shell placement", () => {
 
     frames.destroy();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a frame takes no pointer until it is shown at its page's size (no invisible dead zone over the page)", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    setPage(`<input id="f" data-test-rect="10,10,200,30">`);
+    for (const kind of ["menu", "save", "overlay"] as const) {
+      shell = createShell(document);
+      const frames = createFrames({ shell, doc: document, geometry: testGeometry });
+      const field = document.getElementById("f")!;
+      frames.showFrame(kind, `${CHROME}${kind}.html#${TOKEN}`, kind === "menu" ? field : null);
+      const iframe = shell.root.querySelector("iframe")!;
+      // Created at its largest size, invisible: the pointer goes through to the page.
+      expect(iframe.classList.contains("shown")).toBe(false);
+      expect(iframe.style.pointerEvents).toBe("none");
+      // The host coming back meanwhile does not hand it the pointer either.
+      document.documentElement.appendChild(document.createElement("div"));
+      shell.ensureAttached();
+      vi.advanceTimersByTime(MOVE_GUARD_MS);
+      expect(iframe.style.pointerEvents).toBe("none");
+      // Revealed by the fallback delay, still at its largest size: still no pointer.
+      vi.advanceTimersByTime(REVEAL_TIMEOUT_MS + MOVE_GUARD_MS);
+      expect(iframe.classList.contains("shown")).toBe(true);
+      expect(iframe.style.pointerEvents).toBe("none");
+      // Its page reported its size: it takes the pointer once the move guard is over.
+      frames.resize(kind, 140);
+      expect(iframe.style.pointerEvents).toBe("none");
+      vi.advanceTimersByTime(MOVE_GUARD_MS);
+      expect(iframe.style.pointerEvents).toBe("");
+      frames.destroy();
+      shell.destroy();
+    }
+    shell = null;
   });
 
   it("sizes a frame to its page's content, between bounds; shows it then, or after a delay", () => {
