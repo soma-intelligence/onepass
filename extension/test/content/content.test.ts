@@ -227,6 +227,37 @@ describe("shell and icon", () => {
 });
 
 describe("show_frame / remove_frame", () => {
+  it("the sign-in card that appeared by itself: the page's first trusted input folds it (page_typed), once; never focus taken", async () => {
+    setPage(LOGIN);
+    s = start();
+    input("u").focus();
+    s.ext.deliver({ type: "show_frame", kind: "overlay", url: `${EXT_BASE}overlay.html#${TOKEN}`, auto: true });
+    expect(s.cs.internals.root.querySelector("iframe")).not.toBeNull();
+    // Showing it leaves the focus where the user had it.
+    expect(document.activeElement).toBe(input("u"));
+    input("u").dispatchEvent(new InputEvent("input", { bubbles: true })); // page script
+    expect(s.ext.ofType("page_typed")).toHaveLength(0);
+    asUser(input("u"), new InputEvent("input", { bubbles: true, composed: true }));
+    asUser(input("u"), new InputEvent("input", { bubbles: true, composed: true }));
+    await flush();
+    expect(s.ext.ofType("page_typed")).toEqual([{ type: "page_typed" }]);
+  });
+
+  it("a card opened by a gesture is not folded by typing (no page_typed)", async () => {
+    setPage(LOGIN);
+    s = start();
+    s.ext.deliver({ type: "show_frame", kind: "overlay", url: `${EXT_BASE}overlay.html#${TOKEN}` });
+    asUser(input("u"), new InputEvent("input", { bubbles: true, composed: true }));
+    await flush();
+    expect(s.ext.ofType("page_typed")).toHaveLength(0);
+    // Nor once the auto card went away.
+    s.ext.deliver({ type: "show_frame", kind: "overlay", url: `${EXT_BASE}overlay.html#${TOKEN}`, auto: true });
+    s.ext.deliver({ type: "remove_frame", kind: "overlay" });
+    asUser(input("u"), new InputEvent("input", { bubbles: true, composed: true }));
+    await flush();
+    expect(s.ext.ofType("page_typed")).toHaveLength(0);
+  });
+
   it("shows an extension frame and refuses foreign URLs or senders", () => {
     setPage(LOGIN);
     s = start();

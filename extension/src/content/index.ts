@@ -351,6 +351,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
     return fields.length > 0 ? { container, fields } : null;
   };
 
+  /**
+   * The sign-in card shown here appeared by itself (`show_frame` with `auto`): the page's first
+   * trusted input tells the worker, which folds it (`page_typed`). Nothing typed goes with it.
+   */
+  let autoCard = false;
+
   const onMessage = (message: unknown, sender: Sender, sendResponse: (r: unknown) => void): true | undefined => {
     if (!parts || stopped || sender?.id !== ext.runtime.id) return undefined;
     if (typeof message !== "object" || message === null) return undefined;
@@ -475,11 +481,13 @@ export function createContentScript(o: ContentOptions): ContentScript {
         // The menu and the ghost belong to a field: no field, no frame.
         if ((kind === "menu" || kind === "ghost") && !anchor) break;
         parts.frames.showFrame(kind, url, anchor);
+        if (kind === "overlay") autoCard = m.auto === true;
         ok = true;
         break;
       }
       case "remove_frame":
         if (typeof m.kind === "string" && FRAME_KINDS.has(m.kind)) {
+          if (m.kind === "overlay") autoCard = false;
           parts.frames.removeFrame(m.kind as FrameKind);
           ok = true;
         }
@@ -948,6 +956,11 @@ export function createContentScript(o: ContentOptions): ContentScript {
         (e) => {
           // Typing in the field: the user does it by hand, the menu steps aside.
           if (isTrusted(e) && parts?.frames.anchorOf("menu") === e.target) closeMenu(true);
+          // Typing anywhere in the page: a sign-in card that appeared by itself folds away.
+          if (isTrusted(e) && autoCard && !sh.isHost(e.target)) {
+            autoCard = false;
+            void send({ type: "page_typed" });
+          }
           // Text that came without a key the ghost read (a paste, an input method): dismissed.
           const g = ghostField() ?? ghostPending;
           if (isTrusted(e) && g !== null && g === e.target) dismissGhost(g);
