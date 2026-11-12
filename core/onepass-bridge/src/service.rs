@@ -933,8 +933,9 @@ impl<V: VaultAccess> Service<V> {
                 origin: o,
                 password,
                 weak_by_site,
+                pending,
                 ..
-            } => self.update_password(*ctx, item_id, o, password, *weak_by_site, now),
+            } => self.update_password(*ctx, item_id, o, password, *weak_by_site, *pending, now),
             Request::ConfirmPending {
                 ctx,
                 item_id,
@@ -1684,6 +1685,7 @@ impl<V: VaultAccess> Service<V> {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn update_password(
         &mut self,
         ctx: Ctx,
@@ -1691,6 +1693,7 @@ impl<V: VaultAccess> Service<V> {
         o: &str,
         password: &SecretString,
         weak_by_site: Option<bool>,
+        pending: bool,
         now: u64,
     ) -> OpResult<Response> {
         let page = origin(o)?;
@@ -1712,6 +1715,11 @@ impl<V: VaultAccess> Service<V> {
             "password",
             FieldValue::Password(password.0.clone()),
         )?;
+        // Spec 5.2: a change-password form's generated password waits for
+        // its submission (`confirm_pending`), the old one in the history.
+        if pending && !item.is_pending() {
+            item.tags.push(PENDING_TAG.to_owned());
+        }
         // A regenerated pending password: its weak flag follows the new draw.
         if let Some(weak) = weak_by_site
             && item.is_pending()

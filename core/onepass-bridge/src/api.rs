@@ -392,6 +392,12 @@ pub enum Request {
         /// `onepass:weak-by-site` tag. Ignored on any other item.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         weak_by_site: Option<bool>,
+        /// A generated password written to an existing Login from a
+        /// change-password form (spec 5.2): the item gets `onepass:pending`
+        /// in the same write, and the form's submission confirms it
+        /// (`confirm_pending`).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pending: bool,
     },
     /// A pending Login (tag `onepass:pending`) whose form was sent: the tag
     /// drops, `username` (when not blank) replaces the stored one.
@@ -1502,6 +1508,12 @@ mod tests {
         );
         round_trip(
             r#"{"id":15,"op":"update_password","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","password":"pw-z","weak_by_site":true}"#,
+            15,
+            "update_password",
+        );
+        // Spec 5.2: the change-password form's update, tagged pending.
+        round_trip(
+            r#"{"id":15,"op":"update_password","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","password":"pw-z","pending":true}"#,
             15,
             "update_password",
         );

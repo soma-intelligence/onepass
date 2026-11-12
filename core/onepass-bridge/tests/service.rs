@@ -2185,6 +2185,84 @@ fn update_password_sets_and_clears_weak_tag_on_pending() {
 }
 
 #[test]
+fn update_password_pending_tags_the_item() {
+    let mut h = H::new();
+    let atlas = h.ids.atlas;
+    let before = h.vault().item(atlas).tags.clone();
+    assert!(before.iter().all(|t| t != "onepass:pending"));
+    let v = h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(atlas),
+        "origin":ATLAS,"password":"Gen-Pass-0050","pending":true}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    let item = h.vault().item(atlas);
+    assert_eq!(item.tags.iter().filter(|t| *t == "onepass:pending").count(), 1);
+    match &item.field("password").unwrap().value {
+        FieldValue::Password(p) => assert_eq!(p.as_str(), "Gen-Pass-0050"),
+        _ => panic!("password field"),
+    }
+    // The old password went to the history in the same write.
+    assert_eq!(item.password_history.len(), 1);
+    assert_eq!(item.password_history[0].value.as_str(), ATLAS_PASSWORD);
+    // Again: one tag, never two.
+    let v = h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(atlas),
+        "origin":ATLAS,"password":"Gen-Pass-0051","pending":true}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    assert_eq!(
+        h.vault()
+            .item(atlas)
+            .tags
+            .iter()
+            .filter(|t| *t == "onepass:pending")
+            .count(),
+        1
+    );
+    // Without the flag: no tag (as before).
+    let mut h2 = H::new();
+    let bare = h2.ids.atlas;
+    let v = h2.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(bare),
+        "origin":ATLAS,"password":"Gen-Pass-0052"}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    assert!(h2.vault().item(bare).tags.iter().all(|t| t != "onepass:pending"));
+}
+
+#[test]
+fn confirm_pending_clears_an_updated_item() {
+    let mut h = H::new();
+    let atlas = h.ids.atlas;
+    let username = h.vault().item(atlas).field("username").unwrap().value.clone();
+    let v = h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(atlas),
+        "origin":ATLAS,"password":"Gen-Pass-0053","pending":true}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    // The change form's submission: the host names the item pending, whatever the username.
+    let v = h.call(
+        json!({"op":"check_credentials","ctx":"save_prompt","origin":ATLAS,
+        "username":"","password":"Gen-Pass-0053"}),
+    );
+    assert_eq!(ok(&v)["status"], json!("pending"));
+    assert_eq!(ok(&v)["item_id"], json!(id(atlas)));
+    // Confirmed with a blank username: the item already has one, it stays.
+    let v = h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(atlas),
+        "origin":ATLAS,"username":""}),
+    );
+    assert_eq!(ok(&v), &json!({}));
+    let item = h.vault().item(atlas);
+    assert!(item.tags.iter().all(|t| t != "onepass:pending"));
+    assert_eq!(item.field("username").unwrap().value, username);
+    match &item.field("password").unwrap().value {
+        FieldValue::Password(p) => assert_eq!(p.as_str(), "Gen-Pass-0053"),
+        _ => panic!("password field"),
+    }
+}
+
+#[test]
 fn update_password_weak_flag_ignored_off_pending() {
     let mut h = H::new();
     let item = save_pending(&mut h, ATLAS, "known@atlas.dev");
