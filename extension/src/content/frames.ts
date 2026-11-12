@@ -4,6 +4,7 @@
 // the shadow root (`host.shadowRoot` is null) and the frames are of another
 // origin, so it can read neither the menu nor the overlay (S1). References to
 // the root and to the frames live in closures only, never on window/document.
+import { DESIGN_TOKENS } from "../shared/design-tokens";
 import { POINTER_QUERIES, touchDevice } from "../shared/layout";
 import type { FrameKind } from "../shared/messages";
 import { type Geometry, type Rect } from "./detect/visibility";
@@ -45,7 +46,15 @@ const GAP = 4;
 const EDGE = 12;
 /** Between our save card and another manager's prompt. */
 const CARD_GAP = 8;
-const ACCENT = "#5856D6";
+/** Side of the in-field glyph's box, and on a touch screen (icon.ts places it by these). */
+export const ICON_SIZE = 20;
+export const TOUCH_ICON_SIZE = 28;
+/**
+ * The design tokens of theme.css, as concrete values: the shadow root cannot read the extension
+ * stylesheet, and the `var()` aliases of theme.css mean nothing in it.
+ */
+const DARK = DESIGN_TOKENS.dark;
+const LIGHT = DESIGN_TOKENS.light;
 
 const PAGE_OF: Readonly<Record<FrameKind, string>> = { menu: "menu.html", overlay: "overlay.html", save: "save.html" };
 const EXTENSION_SCHEMES: ReadonlySet<string> = new Set(["chrome-extension:", "moz-extension:", "safari-web-extension:"]);
@@ -77,39 +86,38 @@ const STYLE = `
   all: initial;
   position: fixed;
   box-sizing: border-box;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: ${ACCENT};
-  color: #FFFFFF;
+  width: ${ICON_SIZE}px;
+  height: ${ICON_SIZE}px;
+  border-radius: ${DARK["r-chip"]};
+  background: ${DARK["accent"]};
+  color: ${DARK["accent-text"]};
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   pointer-events: auto;
-  box-shadow: 0 1px 2px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.22);
   transition: transform .12s ease, background-color .12s ease;
 }
-.icon:hover { background: #6765E2; transform: scale(1.08); }
+.icon:hover { background: ${DARK["accent-hover"]}; transform: scale(1.08); }
 /* Pressed: a darker tile, not a smaller one (a downscale makes IntersectionObserver v2, the icon's
    click guard on Chromium, report the icon as not visible). */
-.icon:active { background: #4A48C4; }
+.icon:active { filter: brightness(.88); }
 .icon[hidden] { display: none; }
 /* Touch screens: a finger-sized icon, and the label above the focused field's icon. */
-.icon.touch { width: 28px; height: 28px; border-radius: 8px; }
+.icon.touch { width: ${TOUCH_ICON_SIZE}px; height: ${TOUCH_ICON_SIZE}px; border-radius: ${DARK["r-chip"]}; }
 .icon.touch svg { width: 15px; height: 15px; }
 .tip {
   all: initial;
   position: fixed;
   transform: translateX(-50%);
-  padding: 4px 9px;
-  border-radius: 8px;
-  background: rgba(28,28,30,.92);
-  color: #FFFFFF;
+  padding: ${DARK["space-xs"]} ${DARK["space-s"]};
+  border-radius: ${DARK["r-chip"]};
+  background: ${DARK["frame-tip"]};
+  color: ${DARK["frame-tip-ink"]};
   font: 600 12px/1.3 -apple-system, system-ui, sans-serif;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  box-shadow: ${DARK["frame-shadow-quiet"]};
 }
 .tip[hidden] { display: none; }
 .icon svg { display: block; width: 12px; height: 12px; }
@@ -117,8 +125,8 @@ const STYLE = `
   all: initial;
   position: fixed;
   box-sizing: border-box;
-  border-radius: 8px;
-  box-shadow: 0 0 0 3px ${ACCENT}88;
+  border-radius: ${DARK["r-chip"]};
+  box-shadow: 0 0 0 ${DARK["space-xs"]} ${DARK["accent-ring"]};
   pointer-events: none;
 }
 .ring[hidden] { display: none; }
@@ -127,7 +135,7 @@ iframe {
   position: fixed;
   box-sizing: border-box;
   border: 0;
-  border-radius: 16px;
+  border-radius: ${DARK["r-card"]};
   background: transparent;
   /* The frames follow the system appearance. "normal" would take the page's
      declared scheme: a page that declares only "light" turned the menu light
@@ -135,23 +143,30 @@ iframe {
      paint an opaque white backdrop under it (a white line along its edge). */
   color-scheme: light dark;
   pointer-events: auto;
-  box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 16px 40px rgba(0,0,0,.28);
+  box-shadow: ${DARK["frame-shadow"]};
   opacity: 0;
-  transform: translateY(-4px) scale(.98);
+  transform: translateY(-${DARK["space-xs"]}) scale(.98);
   transform-origin: top left;
   transition: opacity 160ms cubic-bezier(.23, 1, .32, 1), transform 200ms cubic-bezier(.23, 1, .32, 1);
 }
 iframe.corner { transform-origin: top right; }
 /* The save card: quiet, a light shadow, no movement beyond a fade. */
-iframe.quiet { border-radius: 14px; box-shadow: 0 0 0 .5px rgba(0,0,0,.16), 0 6px 20px rgba(0,0,0,.16); transform: none; transition: opacity 140ms ease; }
+iframe.quiet { border-radius: ${DARK["r-control"]}; box-shadow: ${DARK["frame-shadow-quiet"]}; transform: none; transition: opacity 140ms ease; }
 /* The one-click card draws its own shape and shadow inside a transparent frame. */
 iframe.bare { border-radius: 0; box-shadow: none; }
-iframe.top-center { transform-origin: top center; transform: translateY(-14px) scale(.96); transition: opacity 180ms cubic-bezier(.23, 1, .32, 1), transform 380ms cubic-bezier(.34, 1.56, .64, 1), border-radius 200ms ease; }
+iframe.top-center { transform-origin: top center; transform: translateY(-${DARK["space-m"]}) scale(.96); transition: opacity 180ms cubic-bezier(.23, 1, .32, 1), transform 380ms cubic-bezier(.34, 1.56, .64, 1), border-radius 200ms ease; }
 iframe.top-center.shown { transform: none; }
 iframe.shown { opacity: 1; transform: none; }
 /* Narrow touch screens: the menu rises from the bottom edge as a sheet. */
-iframe.sheet { border-radius: 16px 16px 0 0; transform-origin: bottom center; transform: translateY(24px); box-shadow: 0 -8px 32px rgba(0,0,0,.28); }
+iframe.sheet { border-radius: ${DARK["r-card"]} ${DARK["r-card"]} 0 0; transform-origin: bottom center; transform: translateY(${DARK["space-xl"]}); box-shadow: ${DARK["frame-shadow-sheet"]}; }
 iframe.sheet.shown { transform: none; }
+@media (prefers-color-scheme: light) {
+  .ring { box-shadow: 0 0 0 ${LIGHT["space-xs"]} ${LIGHT["accent-ring"]}; }
+  iframe { box-shadow: ${LIGHT["frame-shadow"]}; }
+  iframe.quiet { box-shadow: ${LIGHT["frame-shadow-quiet"]}; }
+  iframe.sheet { box-shadow: ${LIGHT["frame-shadow-sheet"]}; }
+  iframe.bare { box-shadow: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   iframe { transform: none; transition: opacity 120ms ease; }
 }
