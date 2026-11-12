@@ -116,7 +116,11 @@ for (const scheme of ["light", "dark"] as const) {
 
       // The update card needs the login's current password: it changes each round.
       let opsPassword: string = FX.ops.password;
+      // Every document the page loads (also after a form post) gets the tone.
+      let current: keyof typeof TONES = "light";
+      page.on("domcontentloaded", () => void tone(page, current).catch(() => undefined));
       for (const ground of ["light", "dark"] as const) {
+        current = ground;
         // Glyph at rest and with focus, on a login the vault knows.
         await page.goto(`${ATLAS}/logout`);
         await page.goto(`${ATLAS}/login`);
@@ -185,5 +189,5 @@ async function signInTone(ext: Ext, page: Page, ground: keyof typeof TONES, emai
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText(/Connecté/);
   const save = await ext.extFrame(page, "save");
-  await expect(save.locator(".toast")).toBeVisible({ timeout: 15_000 });
+  await expect(save.locator(".save-toast")).toBeVisible({ timeout: 15_000 });
 }
