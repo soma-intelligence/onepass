@@ -1174,7 +1174,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const rec = await menuRecord(m.token, from);
         const p = suggestions.preview(await menuSuggestion(m.token, rec), from);
         if (!p) throw new BgError("invalid");
-        return p;
+        return { ...p, profile: await suggestions.storedProfile() };
       },
       menu_regenerate: async (m, from) => {
         const rec = await menuRecord(m.token, from);
@@ -1182,7 +1182,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (!(await suggestions.regenerate(st))) throw new BgError("site_refused");
         const p = suggestions.preview(st, from);
         if (!p) throw new BgError("invalid");
-        return p;
+        return { ...p, profile: await suggestions.storedProfile() };
       },
       menu_profile: async (m, from) => {
         const rec = await menuRecord(m.token, from);
@@ -1190,7 +1190,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (!(await suggestions.setProfile(st, m.length, m.symbols))) throw new BgError("site_refused");
         const p = suggestions.preview(st, from);
         if (!p) throw new BgError("invalid");
-        return p;
+        return { ...p, profile: await suggestions.storedProfile() };
       },
       ghost_init: async (m, from) => {
         const p = suggestions.preview(m.token, from);

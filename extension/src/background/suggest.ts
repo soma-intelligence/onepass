@@ -13,7 +13,7 @@
 import type { GenerationReport } from "../bridge/client";
 import type { FormKind, FrameKind, GhostMetrics, SuggestionPreview } from "../shared/messages";
 import { newToken } from "../shared/tokens";
-import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH, GENERATOR_PROFILE_KEY, type GeneratorProfile } from "../shared/ui";
+import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH, GENERATOR_PROFILE_KEY, type GeneratorProfile, parseGeneratorProfile } from "../shared/ui";
 import type { SaveFlow } from "./chain/save-flow";
 import type { StorageArea } from "./ext";
 import type { FillTarget, Filler } from "./fill";
@@ -34,7 +34,7 @@ export interface SuggestionDeps {
   filler: Pick<Filler, "fillGenerated">;
   saveFlow: Pick<SaveFlow, "rememberGenerated" | "savePending" | "savePendingUpdate">;
   /** `storage.local`: the generator profile the popup edits. */
-  area: Pick<StorageArea, "set">;
+  area: Pick<StorageArea, "get" | "set">;
   now?: () => number;
 }
 
@@ -119,6 +119,15 @@ export class Suggestions {
     const p = this.peek(token, from);
     if (!p) return null;
     return { password: p.password, strength: strengthOf(p.report, p.password), length: [...p.password].length };
+  }
+
+  /**
+   * The custom profile the menu's length panel starts from: the stored one, else the popup's
+   * defaults (20 characters, symbols on).
+   */
+  async storedProfile(): Promise<{ length: number; symbols: boolean }> {
+    const p = parseGeneratorProfile((await this.deps.area.get(GENERATOR_PROFILE_KEY))[GENERATOR_PROFILE_KEY]);
+    return typeof p === "object" ? { length: p.length, symbols: p.symbols } : { length: 20, symbols: true };
   }
 
   /** The field metrics the ghost of `token` was opened with. */
