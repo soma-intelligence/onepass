@@ -49,6 +49,7 @@ import { createFiller, SETTLE_MS } from "./filler";
 import { collectPasswordContext, patternMatches } from "./password-context";
 import { usernameFits } from "./username-fit";
 import { checkFrameUrl, createFrames, createShell, type Layout, type Shell, watchLayout } from "./frames";
+import { fitGhost } from "./ghost-fit";
 import { createIcons, type IconTarget } from "./icon";
 import { createObserver, OBSERVER_DELAY_MS } from "./observer";
 import { domHitTest, type HitTest } from "./occlusion";
@@ -167,6 +168,12 @@ export const REPLY_MAX_MS = SETTLE_MS + 500;
  */
 export const LATE_ROOT_CHECKS_MS: readonly number[] = [500, 1_500, 3_000, 6_000, 10_000];
 
+/** A focus opens the ghost only this soon after a trusted gesture of the user (spec 3.5). */
+export const GHOST_GESTURE_MS = 1000;
+
+/** The form kinds whose new-password field gets the ghost (spec 3.1). */
+const GHOST_FORMS: ReadonlySet<string> = new Set(["signup", "change_password"]);
+
 export function createContentScript(o: ContentOptions): ContentScript {
   const { doc, ext } = o;
   const geometry = o.geometry ?? domGeometry;
@@ -236,6 +243,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
     submit: ReturnType<typeof createSubmitWatcher>;
   } | null = null;
 
+  /** Set in start(): drops an open ghost when the layout turned to touch (resize, rotation). */
+  let ghostLayoutCheck = (): void => undefined;
   let layoutQueued = false;
   const queueLayout = () => {
     if (layoutQueued || stopped) return;
@@ -243,6 +252,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
     raf(() => {
       layoutQueued = false;
       if (!parts || stopped) return;
+      ghostLayoutCheck();
       parts.icons.reposition();
       parts.frames.reposition();
     });
@@ -621,6 +631,166 @@ export function createContentScript(o: ContentOptions): ContentScript {
       });
       parts = { shell: sh, frames, icons, observer, filler, submit };
 
+      // ---- the ghost (spec 3.1, 3.3 to 3.5) ----
+      // The suggested password lives in the worker and the ghost page only: this script asks for
+      // the ghost (`ghost_open`, metrics only) and reads the user's keys while it shows; it never
+      // sees the password.
+      /** Last trusted gesture of the user (pointer, key, click), `Date.now()`. */
+      let lastGesture = Number.NEGATIVE_INFINITY;
+      /** Fields whose ghost the user dismissed (typing, Escape); a new URL clears them. */
+      let dismissed = new WeakSet<Element>();
+      let dismissedHref = o.href();
+      const isDismissed = (el: Element): boolean => {
+        const href = o.href();
+        if (href !== dismissedHref) {
+          dismissed = new WeakSet();
+          dismissedHref = href;
+        }
+        return dismissed.has(el);
+      };
+      /** The field offered something (ghost or menu) during its current focus: once per visit. */
+      let offered: Element | null = null;
+      /** The field a `ghost_open` is on its way for. */
+      let ghostPending: Element | null = null;
+      let ghostSeq = 0;
+      const ghostField = (): Element | null => (frames.has("ghost") ? frames.anchorOf("ghost") : null);
+      const ghostFocused = (): boolean => {
+        const a = sh.root.activeElement;
+        return a instanceof HTMLIFrameElement && a.classList.contains("ghost");
+      };
+      const focusedField = () => deepActiveElement(doc, shadowRootOf, isOwnHost);
+      /** The ghost goes (not dismissed: the field gets it again on the next focus). */
+      const dropGhost = () => {
+        ghostSeq++;
+        ghostPending = null;
+        frames.removeFrame("ghost");
+      };
+      ghostLayoutCheck = () => {
+        if (currentLayout().touch && (frames.has("ghost") || ghostPending)) dropGhost();
+      };
+      /** A new-password field of a signup or change-password form, empty, not dismissed. */
+      const ghostEligible = (t: IconTarget): t is IconTarget & { el: HTMLInputElement } =>
+        t.el instanceof HTMLInputElement &&
+        t.el.value === "" &&
+        !t.el.disabled &&
+        !t.el.readOnly &&
+        GHOST_FORMS.has(t.form.kind) &&
+        t.form.fields.some((f) => f.ref === t.fieldRef && f.role === "new_password") &&
+        !isDismissed(t.el);
+      /** Partly covered (spec 3.4): the hit test at its center and inset corners finds something else. */
+      const fieldCovered = (el: Element): boolean => {
+        const r = el.getBoundingClientRect();
+        const inset = 2;
+        const points: [number, number][] = [
+          [r.left + r.width / 2, r.top + r.height / 2],
+          [r.left + inset, r.top + inset],
+          [r.right - inset, r.top + inset],
+          [r.left + inset, r.bottom - inset],
+          [r.right - inset, r.bottom - inset],
+        ];
+        for (const [x, y] of points) {
+          const hit = hitTest(x, y);
+          if (hit === null || hit === undefined) continue;
+          if (hit === el || composedContains(el, hit) || sh.isHost(hit)) continue;
+          return true;
+        }
+        return false;
+      };
+      /**
+       * A trusted focus (or a tap on touch) into `t`: the ghost when it fits, else the menu on its
+       * suggestion row (spec 3.4; touch layouts always, ruling of Task 6). Once per focus visit.
+       */
+      const offerGhost = async (t: IconTarget) => {
+        if (stopped || !parts || !ghostEligible(t)) return;
+        if (Date.now() - lastGesture > GHOST_GESTURE_MS) return;
+        if (offered === t.el || ghostField() === t.el || ghostPending === t.el) return;
+        if (frames.has("menu") && frames.anchorOf("menu") === t.el) return;
+        offered = t.el;
+        if (currentLayout().touch || !view) {
+          void openMenu(t, true);
+          return;
+        }
+        const fit = fitGhost(t.el, view, fieldCovered);
+        if (!fit.ok) {
+          void openMenu(t, true);
+          return;
+        }
+        if (frames.has("ghost")) dropGhost();
+        const seq = ++ghostSeq;
+        ghostPending = t.el;
+        const reply = await send({ type: "ghost_open", fieldRef: t.fieldRef, formRef: t.form.ref, formKind: t.form.kind, metrics: fit.metrics });
+        if (seq !== ghostSeq) return;
+        ghostPending = null;
+        if (!parts || stopped || !t.el.isConnected || !ghostEligible(t) || focusedField() !== t.el) return;
+        const raw = replyUrl(reply);
+        // The very URL the worker returned for this request: vouched.
+        const url = raw === null ? null : checkFrameUrl(raw, "ghost", ext.runtime.getURL(""), true);
+        // No ghost from the worker (a cross-origin frame, a page refusing every draw): the menu.
+        if (url === null) {
+          void openMenu(t, true);
+          return;
+        }
+        frames.showFrame("ghost", url, t.el);
+      };
+      /** Tab, Enter: the worker fills its held password; the ghost has nothing left to show. */
+      const acceptGhost = () => {
+        dropGhost();
+        void send({ type: "ghost_accept" });
+      };
+      /** A printable key, Escape, typing: the ghost goes and stays away from this field. */
+      const dismissGhost = (el: Element) => {
+        isDismissed(el);
+        dismissed.add(el);
+        dropGhost();
+        void send({ type: "ghost_dismiss" });
+      };
+      /** Arrow Down: the ghost goes, the menu opens at its field on the same suggestion. */
+      const ghostToMenu = async (el: Element) => {
+        dropGhost();
+        const seq = ++menuSeq;
+        menuArmed = false;
+        const reply = await send({ type: "ghost_menu" });
+        if (seq !== menuSeq || !parts || stopped || !el.isConnected) return;
+        const raw = replyUrl(reply);
+        const url = raw === null ? null : checkFrameUrl(raw, "menu", ext.runtime.getURL(""), true);
+        if (url !== null) frames.showFrame("menu", url, el);
+      };
+      /** The keys of the field under the ghost (trusted, read here only while it shows). True: handled. */
+      const ghostKey = (e: KeyboardEvent, field: Element): boolean => {
+        if (currentLayout().touch) {
+          dropGhost();
+          return false;
+        }
+        if (e.ctrlKey || e.metaKey || e.altKey) return false;
+        if ((e.key === "Tab" || e.key === "Enter") && !e.shiftKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          acceptGhost();
+          return true;
+        }
+        if (e.key === "Escape") {
+          dismissGhost(field);
+          return true;
+        }
+        if (e.key === "ArrowDown" && !e.shiftKey) {
+          e.preventDefault();
+          void ghostToMenu(field);
+          return true;
+        }
+        // A printable key (one character): it reaches the field as typed.
+        if ([...e.key].length === 1) {
+          dismissGhost(field);
+          return true;
+        }
+        return false;
+      };
+      const gesture = (e: Event) => {
+        if (isTrusted(e)) lastGesture = Date.now();
+      };
+      for (const type of ["pointerdown", "mousedown", "touchstart", "keydown", "click"]) {
+        listen(doc, type, gesture, { capture: true, passive: true });
+      }
+
       ext.runtime.onMessage.addListener(onMessage);
       const target: EventTarget = view ?? doc;
       // Unfiltered: a scroll of a host itself is not seen inside its root.
@@ -637,6 +807,9 @@ export function createContentScript(o: ContentOptions): ContentScript {
         "keydown",
         (e) => {
           if (!isTrusted(e) || !(e instanceof KeyboardEvent)) return;
+          // The ghost shows over this very field: its keys first (spec 3.3).
+          const g = ghostField();
+          if (g !== null && e.target === g && ghostKey(e, g)) return;
           if (e.key === "Escape") {
             closeMenu(true);
             return;
@@ -714,6 +887,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
           if (!isTrusted(e) || parts?.frames.has("menu") || currentLayout().touch) return;
           const t = icons.targetOf(e.target);
           if (!t || !(t.el instanceof HTMLInputElement) || t.el.value !== "") return;
+          // A new-password field of a signup or change-password form: the ghost instead (spec
+          // 3.1), or the menu its fallback opens; once per focus visit, from the focus or here.
+          if (ghostEligible(t)) {
+            void offerGhost(t);
+            return;
+          }
           void openMenu(t, true);
         },
         { capture: false },
@@ -724,6 +903,9 @@ export function createContentScript(o: ContentOptions): ContentScript {
         (e) => {
           // Typing in the field: the user does it by hand, the menu steps aside.
           if (isTrusted(e) && parts?.frames.anchorOf("menu") === e.target) closeMenu(true);
+          // Text that came without a key the ghost read (a paste, an input method): dismissed.
+          const g = ghostField() ?? ghostPending;
+          if (isTrusted(e) && g !== null && g === e.target) dismissGhost(g);
         },
         { capture: true },
       );
@@ -733,6 +915,11 @@ export function createContentScript(o: ContentOptions): ContentScript {
         (e) => {
           // A click anywhere on the page but our host (or the menu's own field) closes the menu.
           if (isTrusted(e) && !sh.isHost(e.target) && parts?.frames.anchorOf("menu") !== e.target) closeMenu(true);
+          // Touch (ruling of Task 6): a tap into the field, focused already or not, opens the menu
+          // on its suggestion row; never a ghost a finger could not reach past.
+          if (!isTrusted(e) || !currentLayout().touch) return;
+          const t = icons.targetOf(e.target);
+          if (t && ghostEligible(t)) void offerGhost(t);
         },
         { capture: true },
       );
@@ -740,14 +927,39 @@ export function createContentScript(o: ContentOptions): ContentScript {
         doc,
         "focusin",
         (e) => {
+          if (!isTrusted(e)) return;
+          // The focus went somewhere else on the page (the ghost frame had it): the ghost goes.
+          const g = ghostField() ?? ghostPending;
+          if (g !== null && e.target !== g && !sh.isHost(e.target)) dropGhost();
+          // A trusted focus into a field the user just pointed at or tabbed to: the ghost.
+          const t = icons.targetOf(e.target);
+          if (t && ghostEligible(t)) void offerGhost(t);
           // attachShadow makes no mutation record: a trusted focus into a
           // root no analysis has seen analyses now, at most once per
           // observer delay.
-          if (!isTrusted(e) || !unseenRoot(e.target)) return;
+          if (!unseenRoot(e.target)) return;
           const now = Date.now();
           if (now - lastRootAnalysis < OBSERVER_DELAY_MS) return;
           lastRootAnalysis = now;
           observer.refresh();
+        },
+        { capture: true },
+      );
+      listen(
+        doc,
+        "focusout",
+        (e) => {
+          // The field loses the focus: once it has settled (the active element is the body while
+          // the blur runs), the ghost goes unless the focus went into the ghost's own frame (a
+          // click on its pill). Not dismissed: the next focus brings it back. From any blur, page
+          // script's included: removing the ghost gives nothing away.
+          const el = e.target;
+          if (!(el instanceof Element) || (el !== offered && el !== ghostField() && el !== ghostPending)) return;
+          setTimeout(() => {
+            if (stopped || !parts || focusedField() === el || ghostFocused()) return;
+            if (offered === el) offered = null;
+            if (ghostField() === el || ghostPending === el) dropGhost();
+          }, 0);
         },
         { capture: true },
       );
