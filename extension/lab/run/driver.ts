@@ -101,6 +101,7 @@ export interface Driver {
   ghostUse(ghost: Frame): Promise<void>;
   /** What the autofill shows after a sign-in it may save: its toast (saved by itself), its card, the card folded into a pill. */
   saveView(page: Page): Promise<"toast" | "card" | "pill" | undefined>;
+  saveUnfold(page: Page): Promise<boolean>;
   /** The text the save frame shows now (driver memory only: the identifier a card names), undefined when none. */
   saveText(page: Page): Promise<string | undefined>;
   /** LAB_DEBUG: the autofill's own state behind a scenario that did not go on (no secret). */
@@ -228,6 +229,7 @@ export function extensionDriver(lab: Lab): Driver {
     },
     ghostUse: (ghost) => lab.ghostUse(ghost),
     saveView: (page) => lab.saveView(page),
+    saveUnfold: (page) => lab.saveUnfold(page),
     async saveText(page) {
       const f = lab.findExtFrame(page, "save");
       if (!f) return undefined;

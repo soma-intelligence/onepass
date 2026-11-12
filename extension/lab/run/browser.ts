@@ -129,6 +129,8 @@ export interface Lab {
   ghostUse(ghost: Frame): Promise<void>;
   /** What the save frame of `page` shows now: the toast of a login saved by itself, the card, its folded pill; undefined: none. */
   saveView(page: Page): Promise<"toast" | "card" | "pill" | undefined>;
+  /** Unfolds the folded save pill into its card (a trusted click on the pill); false when no pill was there. */
+  saveUnfold(page: Page): Promise<boolean>;
   /** What the start states ask of this profile's native host (start-state.ts). */
   startHost: StartHost;
   close(): Promise<void>;
@@ -609,6 +611,14 @@ export async function launchLab(state: LabState, world: World, server: LabServer
         if (await seen(".save-pill")) return "pill";
         if (await seen(".save-card")) return "card";
         return undefined;
+      },
+      async saveUnfold(p) {
+        const f = findExtFrame(p, "save");
+        const pill = f?.locator(".save-pill-main").first();
+        if (!pill || !(await pill.isVisible().catch(() => false))) return false;
+        await sleep(GUARD_WAIT_MS);
+        await userClick(pill);
+        return true;
       },
       startHost,
       close,

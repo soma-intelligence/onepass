@@ -41,6 +41,7 @@ import { focusField, type PlainBrowser, shadowField, sleep } from "./browser.ts"
 import type { Driver, MenuOutcome } from "./driver.ts";
 import { Gestures, insertApprovals, triggerOf } from "./gestures.ts";
 import { lacks, type VaultHost, type VaultLogin, vaultLogins } from "./host-control.ts";
+import { cardNamesOther, savePremise, unreadCard } from "./save-checks.ts";
 import { foreignFields } from "./items.ts";
 import type { StartControl } from "./start-state.ts";
 import { smartTarget } from "./target.ts";
@@ -1412,10 +1413,9 @@ export async function saveTyped(env: ScenarioEnv, site: Site, v: SaveVariant, s?
     const kept = (list: VaultLogin[]) => list.filter((l) => !l.pending);
     const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
     const first = kept(await vaultLogins(env, origin));
-    // The premise of the variant, read through the dev host: a first login ever on the site (spec 4.1), or the
-    // login whose password changes.
-    if (v === "new_auto" && first.length > 0) throw new Error(`lab: new_auto needs a vault without any login for ${site.host} (${first.length} there)`);
-    if (v === "update_card" && !first.some((l) => same(l.username, creds.username))) throw new Error("lab: update_card needs the vault's login of the typed identifier");
+    // The premise of the variant, read through the dev host (save-checks.ts savePremise).
+    const premise = savePremise(v, site.host, first, site.account.username, creds.username);
+    if (premise !== undefined) throw new Error(premise);
     const before = first.length;
     if (!(await arrive(env, s, o))) return finish(env, undefined, o, started, s);
     page = await env.newPage();
@@ -1458,21 +1458,35 @@ export async function saveTyped(env: ScenarioEnv, site: Site, v: SaveVariant, s?
     o.signedInAsTyped = signins.length > 0 && signins.every((e) => same(e.user, creds.username));
     const end = Date.now() + SAVE_WATCH_MS;
     let seenAt: number | undefined;
+    let textRead = false;
+    let unfolded = false;
     while (Date.now() < end && !page.isClosed()) {
       const view = await env.driver.saveView(page).catch(() => undefined);
       if (view === "toast") o.autoSaved = true;
       if (view === "card" || view === "pill") o.cardShown = true;
-      // The update card names the login it updates: the one of the typed identifier (read while it is unfolded).
-      if (v === "update_card" && view === "card" && o.wrongLogin === undefined) {
+      // The update card's text must name the typed login. That proves which login the card names, not which
+      // one its confirm would update. A folded pill only says "1 login to update": the user unfolds it once.
+      if (v === "update_card" && view === "pill" && !textRead && !unfolded) {
+        unfolded = await env.driver.saveUnfold(page).catch(() => false);
+        if (unfolded) g.add("save_unfold");
+      }
+      if (v === "update_card" && view === "card" && !textRead) {
         const text = await env.driver.saveText(page).catch(() => undefined);
-        if (text !== undefined && text !== "") o.wrongLogin = !text.toLowerCase().includes(creds.username.trim().toLowerCase());
-        if (process.env.LAB_DEBUG) console.log(`[lab debug] update card text ${text === undefined ? "unreadable" : `read, names the typed login: ${o.wrongLogin === false}`}`);
+        const other = cardNamesOther(text, creds.username);
+        if (other !== undefined) {
+          textRead = true;
+          o.wrongLogin = other;
+        }
+        if (process.env.LAB_DEBUG) console.log(`[lab debug] update card text ${other === undefined ? "unreadable" : `read, names the typed login: ${!other}`}`);
       }
       if (view !== undefined) seenAt ??= Date.now();
-      if (seenAt !== undefined && Date.now() - seenAt >= SAVE_SETTLE_MS) break;
+      const reading = v === "update_card" && o.cardShown === true && !textRead;
+      if (seenAt !== undefined && Date.now() - seenAt >= SAVE_SETTLE_MS && !reading) break;
       await sleep(200);
     }
     o.overlayShown = o.autoSaved === true || o.cardShown === true;
+    const unread = unreadCard(v, o.cardShown === true, textRead);
+    if (unread !== undefined) throw new Error(unread);
     const after = kept(await vaultLogins(env, origin));
     o.savedLogins = Math.max(0, after.length - before);
     // A login saved by itself must be the typed one: its identifier in the vault, not pending.

@@ -4,6 +4,8 @@
 // observations, the report has its "Save" and "Suggestion" tables. No browser.
 // Task 12b: the oracle's start-state rules, failed_login on a real refusal,
 // ghost_in_page_dom as a safety cause, the fallbacks without a ghost.
+// Fix round 2: an update card never read is a lab error; second_account and
+// failed_login assert their premise in the vault.
 import { describe, expect, it } from "vitest";
 import {
   firstLoginHosts, firstLoginKey, GHOST_VARIANTS, generate, groupOf, loadPatterns, parseDriverGroups, SAVE_VARIANTS, saveGhostScenarios, withDrivers, withoutSiteLogins, withStarts,
@@ -11,6 +13,7 @@ import {
 import type { Scenario, Site } from "../../lab/gen/model.ts";
 import { isRed, renderReport, summarize } from "../../lab/report.ts";
 import { judge, type Observation, replayable, type Result, SAFETY_CAUSES } from "../../lab/run/oracle.ts";
+import { cardNamesOther, savePremise, unreadCard } from "../../lab/run/save-checks.ts";
 
 const world = generate("pass6-test", { sites: 120, patterns: loadPatterns() });
 const full = withDrivers(world, ["current", "save_ghost"]);
@@ -229,6 +232,34 @@ describe("oracle 12b fixes", () => {
     expect(SAFETY_CAUSES.has("wrong_login")).toBe(true);
     const j = judge(sc("save_typed", "new_auto"), site, obs("save_typed", { savedLogins: 1, autoSaved: true, wrongLogin: true }));
     expect(replayable(sc("save_typed", "new_auto"), j)).toBe(false);
+  });
+  it("update_card_shown_but_never_read_is_a_lab_error", () => {
+    // Fix round 2: a card shown whose text was never read (pill left folded, unreadable frame) is never a pass.
+    expect(unreadCard("update_card", true, false)).toMatch(/^lab: /);
+    expect(unreadCard("update_card", true, true)).toBeUndefined();
+    expect(unreadCard("update_card", false, false)).toBeUndefined();
+    expect(unreadCard("second_account", true, false)).toBeUndefined();
+    const o = obs("save_typed", { cardShown: true, error: unreadCard("update_card", true, false) });
+    expect(judge(sc("save_typed", "update_card"), site, o).verdict).toBe("lab_error");
+    expect(cardNamesOther(undefined, "a@x.test")).toBeUndefined();
+    expect(cardNamesOther("  ", "a@x.test")).toBeUndefined();
+    expect(cardNamesOther("Update the password of A@x.test?", " a@x.test")).toBe(false);
+    expect(cardNamesOther("Update the password of b@x.test?", "a@x.test")).toBe(true);
+  });
+  it("save_premises_are_loud_when_the_vault_does_not_hold_them", () => {
+    const own = { username: "own@x.test", pending: false };
+    const other = { username: "other@x.test", pending: false };
+    for (const v of ["second_account", "failed_login"] as const) {
+      expect(savePremise(v, "h.test", [], "own@x.test", "t@x.test"), v).toMatch(/^lab: /);
+      expect(savePremise(v, "h.test", [other], "own@x.test", "t@x.test"), v).toMatch(/^lab: /);
+      expect(savePremise(v, "h.test", [own], " OWN@x.test", "t@x.test"), v).toBeUndefined();
+      const o = obs("save_typed", { error: savePremise(v, "h.test", [], "own@x.test", "t@x.test") });
+      expect(judge(sc("save_typed", v), site, o).verdict, v).toBe("lab_error");
+    }
+    expect(savePremise("new_auto", "h.test", [own], "own@x.test", "n@x.test")).toMatch(/^lab: /);
+    expect(savePremise("new_auto", "h.test", [], "own@x.test", "n@x.test")).toBeUndefined();
+    expect(savePremise("update_card", "h.test", [other], "own@x.test", "own@x.test")).toMatch(/^lab: /);
+    expect(savePremise("update_card", "h.test", [own], "own@x.test", "own@x.test")).toBeUndefined();
   });
   it("lab_error_when_the_ghost_text_is_unreadable", () => {
     expect(judge(sc("ghost", "accept_tab"), site, obs("ghost", { ghostShown: true, ghostAccepted: true, error: "lab: ghost text unreadable" })).verdict)
