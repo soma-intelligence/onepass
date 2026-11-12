@@ -308,5 +308,8 @@
   "save.cardUpdated": "Tarjeta actualizada",
   "save.identitySaved": "Identidad guardada",
   "save.cardEnding": "Tarjeta •••• {last4}",
-  "save.cardExpires": "cad. {exp}"
+  "save.cardExpires": "cad. {exp}",
+  "ghost.use": "Usar",
+  "ghost.tab": "Tab",
+  "ghost.more": "Más opciones"
 }
