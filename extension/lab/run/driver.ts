@@ -93,6 +93,14 @@ export interface Driver {
   passkey(press: () => Promise<void>, user: string, timeoutMs: number): Promise<PasskeyOutcome>;
   /** Whether the autofill told the user it refused for rate limiting. */
   rateLimited(page: Page): Promise<boolean>;
+  /** The ghost suggestion frame laid over a new-password field, once it shows (within `timeoutMs`). */
+  ghostFrame(page: Page, timeoutMs: number): Promise<Frame | undefined>;
+  /** The password the ghost shows, read from its own frame (driver memory only, never in a result); undefined when unreadable. */
+  ghostText(ghost: Frame): Promise<string | undefined>;
+  /** A click on the ghost's "Use" pill (one gesture). */
+  ghostUse(ghost: Frame): Promise<void>;
+  /** What the autofill shows after a sign-in it may save: its toast (saved by itself), its card, the card folded into a pill. */
+  saveView(page: Page): Promise<"toast" | "card" | "pill" | undefined>;
   /** LAB_DEBUG: the autofill's own state behind a scenario that did not go on (no secret). */
   debugState?(): Promise<string>;
 }
@@ -208,6 +216,16 @@ export function extensionDriver(lab: Lab): Driver {
       const picked = await row.first().click({ timeout: 5_000 }).then(() => true, () => false);
       return { asked: true, offered: true, picked };
     },
+    ghostFrame: (page, timeoutMs) => lab.waitExtFrame(page, "ghost", timeoutMs),
+    async ghostText(ghost) {
+      const text = ghost.locator(".ghost-text").first();
+      const shown = await text.waitFor({ state: "visible", timeout: 3_000 }).then(() => true, () => false);
+      if (!shown) return undefined;
+      const value = (await text.textContent({ timeout: 1_000 }).catch(() => null)) ?? "";
+      return value === "" ? undefined : value;
+    },
+    ghostUse: (ghost) => lab.ghostUse(ghost),
+    saveView: (page) => lab.saveView(page),
     debugState: () => lab.debugState(),
     async rateLimited(page) {
       for (const f of page.frames()) {

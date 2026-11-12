@@ -34,13 +34,15 @@ export type GestureKind =
   /** Another button of the site (its passkey button). */
   | "site_button"
   /** A field the user typed or edited herself. */
-  | "site_type";
+  | "site_type"
+  /** Tab or Enter in a field under the ghost suggestion, or a click on its "Use" pill. */
+  | "ghost_accept";
 
 /** One gesture: what, on what (a field name, a row kind: never a value), when (ms). */
 export interface Gesture { kind: GestureKind; target?: string; at: number }
 
 export const GESTURE_KINDS: readonly GestureKind[] = ["field_icon", "toolbar", "shortcut", "overlay_row", "menu_key", "menu_row",
-  "picker_open", "picker", "unlock_button", "unlock_approval", "site_submit", "site_button", "site_type"];
+  "picker_open", "picker", "unlock_button", "unlock_approval", "site_submit", "site_button", "site_type", "ghost_accept"];
 
 /** Gestures that are a biometric approval, not a deliberate click or key. */
 const BIOMETRIC = new Set<GestureKind>(["unlock_approval"]);

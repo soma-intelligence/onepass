@@ -32,7 +32,7 @@
 import type { Frame, Page } from "@playwright/test";
 import { CASE_PATH, caseMismatches, type CountryCase } from "../gen/cases.ts";
 import { passkeyPkcs8 } from "../gen/data.ts";
-import type { Expect, FieldSpec, Scenario, Site, StartState, World } from "../gen/model.ts";
+import type { Expect, FieldSpec, GhostVariant, SaveVariant, Scenario, Site, StartState, World } from "../gen/model.ts";
 import type { Behaviour } from "../gen/population.ts";
 import { PAGE_PATH, stepPath } from "../gen/render.ts";
 import type { LabEvent } from "../server/ledger.ts";
@@ -40,7 +40,7 @@ import type { LabServer } from "../server/server.ts";
 import { focusField, type PlainBrowser, shadowField, sleep } from "./browser.ts";
 import type { Driver, MenuOutcome } from "./driver.ts";
 import { Gestures, insertApprovals, triggerOf } from "./gestures.ts";
-import { lacks } from "./host-control.ts";
+import { lacks, type VaultHost, vaultLogins } from "./host-control.ts";
 import { foreignFields } from "./items.ts";
 import type { StartControl } from "./start-state.ts";
 import { smartTarget } from "./target.ts";
@@ -56,6 +56,8 @@ export interface ScenarioEnv {
   start?: StartControl;
   /** Account profiles: the identifier of the site's other account, the one the user does not mean. */
   otherUser?: string;
+  /** The profile's development host, for the vault read of the save scenarios (host-control.ts vaultLogins). */
+  vaultHost?: VaultHost;
 }
 
 const OVERLAY_WAIT_MS = 15_000;
@@ -1118,6 +1120,342 @@ export async function passkeyControl(server: LabServer, plain: PlainBrowser, sit
   await sleep(LATE_GRACE_MS);
   o.events = server.events();
   return o;
+}
+
+// ---- Save and ghost (spec 3, 4, 5; task 12b) ----
+
+/** How long the ghost (or the menu its fallback opens) gets to show after the trusted click into the field. */
+const GHOST_WAIT_MS = 5_000;
+/** How long the menu gets to open after Arrow Down under the ghost. */
+const GHOST_MENU_WAIT_MS = 5_000;
+/** How long the field gets to receive the accepted password. */
+const ACCEPT_WAIT_MS = 3_000;
+/** After the user typed over the ghost: time for a wrongful fill to show. */
+const IGNORE_SETTLE_MS = 1_500;
+/** What the user types over the ghost (ignore_typing): never a password of the vault. */
+const OVER_GHOST_TEXT = "ownchoice";
+/** Before the user's click: the content script classifies the form 150 ms after a mutation burst. */
+const FORM_SETTLE_MS = 900;
+
+/** Where the user's eyes go first: the ghost, or the menu its fallback opens instead. */
+async function ghostOrMenu(env: ScenarioEnv, page: Page, ms: number): Promise<{ ghost?: Frame; menu: boolean }> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const ghost = await env.driver.ghostFrame(page, 0);
+    if (ghost) return { ghost, menu: await env.driver.menuShown(page) };
+    if (await env.driver.menuShown(page)) return { menu: true };
+    if (Date.now() >= end || page.isClosed()) return { menu: false };
+    await sleep(150);
+  }
+}
+
+/**
+ * The leak probe of a ghost scenario (spec 3.5, 7.2): whether `secret` (the ghost's text, read from
+ * its own frame) is anywhere the page can read before the user accepted it: the serialized
+ * document of every page frame (`content()`, the top one included), its open shadow roots, and the
+ * value of every input, text area and select of every frame. Extension frames are not the page.
+ */
+async function secretInPage(page: Page, secret: string): Promise<boolean> {
+  if ((await page.content().catch(() => "")).includes(secret)) return true;
+  for (const f of page.frames()) {
+    if (f.url().startsWith("chrome-extension://")) continue;
+    if ((await f.content().catch(() => "")).includes(secret)) return true;
+    const hit = await f.evaluate((x) => {
+      const roots: (Document | ShadowRoot)[] = [document];
+      for (let k = 0; k < roots.length; k++) {
+        for (const el of roots[k]!.querySelectorAll("*")) if (el.shadowRoot) roots.push(el.shadowRoot);
+      }
+      for (const r of roots) {
+        for (const el of r.querySelectorAll("input, textarea, select")) {
+          if ((el as HTMLInputElement).value.includes(x)) return true;
+        }
+        if (r !== document && (r as ShadowRoot).innerHTML.includes(x)) return true;
+      }
+      return false;
+    }, secret).catch(() => false);
+    if (hit) return true;
+  }
+  return false;
+}
+
+/**
+ * The CSS that makes a field unfit for the ghost (spec 3.4), set on the field itself (inline,
+ * important: it wins over the site's sheets and reaches into an open shadow root): narrower than
+ * 120 px, or turned (a transform that is not a translation).
+ */
+async function unfitField(scope: Frame, id: string, v: "fallback_narrow" | "fallback_transform"): Promise<boolean> {
+  return scope.evaluate(({ id, v }) => {
+    const roots: (Document | ShadowRoot)[] = [document];
+    for (let k = 0; k < roots.length; k++) {
+      for (const el of roots[k]!.querySelectorAll("*")) if (el.shadowRoot) roots.push(el.shadowRoot);
+    }
+    const sel = `[id="${id.replace(/["\\]/g, "\\$&")}"]`;
+    const el = roots.map((r) => r.querySelector(sel)).find((x) => x !== null) as HTMLElement | undefined;
+    if (!el) return false;
+    if (v === "fallback_narrow") {
+      for (const [k, val] of [["box-sizing", "border-box"], ["width", "100px"], ["min-width", "0"], ["max-width", "100px"]]) {
+        el.style.setProperty(k!, val!, "important");
+      }
+    } else {
+      el.style.setProperty("transform", "rotate(2deg)", "important");
+    }
+    return true;
+  }, { id, v }).catch(() => false);
+}
+
+/** LAB_DEBUG: what the page shows at the field's center and inset corners (the occlusion points of spec 3.4), its width and transform. */
+async function fitClues(scope: Frame, id: string): Promise<string> {
+  return scope.evaluate((id) => {
+    const el = document.getElementById(id);
+    if (!el) return "field not in the document";
+    const r = el.getBoundingClientRect();
+    const pts: [number, number][] = [[r.left + r.width / 2, r.top + r.height / 2], [r.left + 2, r.top + 2], [r.right - 2, r.top + 2],
+      [r.left + 2, r.bottom - 2], [r.right - 2, r.bottom - 2]];
+    const hits = pts.map(([x, y]) => {
+      const h = document.elementFromPoint(x, y);
+      if (h === el) return "field";
+      if (!h) return "none";
+      const b = h.getBoundingClientRect();
+      return `${h.tagName.toLowerCase()}${h.id ? `#${h.id}` : ""}@${x.toFixed(1)},${y.toFixed(1)}[${b.left.toFixed(1)},${b.top.toFixed(1)},${b.right.toFixed(1)},${b.bottom.toFixed(1)}]`;
+    });
+    return `box [${r.left.toFixed(1)},${r.top.toFixed(1)},${r.right.toFixed(1)},${r.bottom.toFixed(1)}] width ${Math.round(r.width)} transform ${getComputedStyle(el).transform} hits ${hits.join(" ")}`;
+  }, id).catch((e: unknown) => `unreadable: ${message(e)}`);
+}
+
+/** The value of the field `id` of `scope` (driver memory only); "" when unreadable. */
+async function fieldValue(scope: Frame, id: string): Promise<string> {
+  return scope.locator(byId(id)).first().inputValue({ timeout: 1_000 }).catch(() => "");
+}
+
+/**
+ * ghost (spec 3): on a signup page the user types her email, then clicks into the new-password
+ * field (a trusted gesture). The ghost lays the suggested password over it, or (fallbacks, locked
+ * vault) the menu opens instead. Before her next gesture the leak probe looks for the ghost's text
+ * in the page. Then, by variant: Tab, or a click on the "Use" pill (accept); typing her own
+ * (ignore_typing); Arrow Down (menu_arrow). The fallbacks get driver CSS on the field first
+ * (narrower than 120 px, or turned). Nothing is submitted.
+ */
+export async function ghost(env: ScenarioEnv, site: Site, v: GhostVariant, s?: Scenario): Promise<Observation> {
+  const started = Date.now();
+  const o: Observation = { ...blank("ghost"), ghostShown: false, ghostInPageDom: false, ghostAccepted: false, menuOpened: false };
+  const g = recorder(o);
+  o.trigger = "menu_key";
+  let page: Page | undefined;
+  try {
+    const field = site.fields.find((f) => f.role === "new_password");
+    if (!field) throw new Error("lab: the signup site has no new-password field");
+    if (!(await arrive(env, s, o))) return finish(env, undefined, o, started, s);
+    page = await env.newPage();
+    await goto(page, `https://${site.host}/`);
+    const scope = await formScope(page, site);
+    const email = site.fields.find((f) => f.role === "email" || f.role === "username");
+    if (email && site.account) {
+      o.typed = [email.name];
+      g.add("site_type", email.name);
+      await typeField(page, scope, email.id, site.account.username, fieldWait(site)).catch(() => undefined);
+    }
+    if (!(await fieldShown(page, scope, field.id, fieldWait(site)))) throw new Error(`no field ${field.id}`);
+    if ((v === "fallback_narrow" || v === "fallback_transform") && !(await unfitField(scope, field.id, v))) {
+      throw new Error(`lab: could not restyle field ${field.id}`);
+    }
+    await sleep(FORM_SETTLE_MS);
+    if (!(await beforeGesture(env, s, o))) return finish(env, page, o, started, s);
+    // A user's click lands in the tab in front, in the middle of the field (clear of its icon).
+    await page.bringToFront();
+    const clues = process.env.LAB_DEBUG ? await fitClues(scope, field.id) : "";
+    await scope.locator(byId(field.id)).first().click({ timeout: 5_000 });
+    const first = await ghostOrMenu(env, page, GHOST_WAIT_MS);
+    o.menuOpened = first.menu;
+    if (process.env.LAB_DEBUG && !first.ghost) console.log(`[lab debug] no ghost on ${field.id}: before the click ${clues}; after ${await fitClues(scope, field.id)}`);
+    if (first.ghost) {
+      o.ghostShown = true;
+      const secret = await env.driver.ghostText(first.ghost);
+      // Right before the user's next gesture: nothing of the suggestion in the page.
+      if (secret !== undefined) o.ghostInPageDom = await secretInPage(page, secret);
+      if (process.env.LAB_DEBUG) console.log(`[lab debug] ghost shown, text ${secret === undefined ? "unreadable" : "read"}, in page: ${o.ghostInPageDom}`);
+      if (v === "accept_tab") {
+        g.add("ghost_accept", field.name);
+        await page.keyboard.press("Tab");
+      } else if (v === "accept_click") {
+        await env.driver.ghostUse(first.ghost);
+        g.add("ghost_accept", field.name);
+      } else if (v === "ignore_typing") {
+        g.add("site_type", field.name);
+        o.typed = [...(o.typed ?? []), field.name];
+        await page.keyboard.type(OVER_GHOST_TEXT);
+      } else if (v === "menu_arrow") {
+        g.add("menu_key", field.name);
+        await page.keyboard.press("ArrowDown");
+      }
+    }
+    if (v === "menu_arrow" || v === "fallback_narrow" || v === "fallback_transform" || !first.ghost) {
+      const end = Date.now() + GHOST_MENU_WAIT_MS;
+      while (!o.menuOpened && Date.now() < end) {
+        o.menuOpened = await env.driver.menuShown(page);
+        if (!o.menuOpened) await sleep(150);
+      }
+    }
+    if (o.ghostShown && (v === "accept_tab" || v === "accept_click" || v === "ignore_typing")) {
+      const typed = v === "ignore_typing" ? OVER_GHOST_TEXT : "";
+      const end = Date.now() + (v === "ignore_typing" ? IGNORE_SETTLE_MS : ACCEPT_WAIT_MS);
+      let value = await fieldValue(scope, field.id);
+      while (Date.now() < end && (v === "ignore_typing" || value === "")) {
+        await sleep(150);
+        value = await fieldValue(scope, field.id);
+      }
+      o.ghostAccepted = value !== "" && value !== typed;
+    }
+    await snapshotFilled(page, site, o.filled);
+    if (o.menuOpened) await page.keyboard.press("Escape").catch(() => undefined);
+  } catch (e) {
+    o.error = message(e);
+  }
+  return finish(env, page, o, started, s);
+}
+
+/** How long the save frame gets to show something after the sign-in: success settle, uncertain window, worker grace. */
+const SAVE_WATCH_MS = 10_000;
+/** Once something showed: time for a second view (a toast replaced by a card, or the reverse). */
+const SAVE_SETTLE_MS = 1_000;
+
+/**
+ * Spec 5.3 played by the page: a sign-in form that stays. Run as an init script on every document
+ * of the scenario's tab. A submission holding a typed password (the light-DOM form's submit event,
+ * or the relay's `submit()` of a shadow form) is sent by `fetch` instead of navigating; then the URL
+ * hash changes and every password field is emptied, the form staying on screen with no alert.
+ * Other submissions (an identifier step, a reveal) go as before.
+ */
+const SPA_STAYS_SCRIPT = `(() => {
+  if (location.protocol !== "https:") return;
+  const roots = () => {
+    const out = [document];
+    for (let k = 0; k < out.length; k++) for (const el of out[k].querySelectorAll("*")) if (el.shadowRoot) out.push(el.shadowRoot);
+    return out;
+  };
+  const passwords = () => roots().flatMap((r) => Array.from(r.querySelectorAll('input[type="password"]')));
+  const typed = () => passwords().some((el) => el.value !== "");
+  const send = (form) => {
+    const body = new URLSearchParams();
+    for (const el of Array.from(form.elements)) {
+      if (!el.name || ((el.type === "radio" || el.type === "checkbox") && !el.checked)) continue;
+      body.append(el.name, el.value);
+    }
+    fetch(form.action || location.href, { method: "POST", body, credentials: "same-origin", redirect: "manual" }).then(() => {
+      history.pushState(null, "", location.pathname + location.search + "#signed-in");
+      for (const el of passwords()) el.value = "";
+    }, () => undefined);
+  };
+  const native = HTMLFormElement.prototype.submit;
+  HTMLFormElement.prototype.submit = function () {
+    if (typed()) send(this);
+    else native.call(this);
+  };
+  document.addEventListener("submit", (e) => {
+    const form = e.target;
+    if (e.defaultPrevented || !(form instanceof HTMLFormElement) || !typed()) return;
+    e.preventDefault();
+    send(form);
+  });
+})();`;
+
+/** The credentials the user types for a save variant: never the vault's own pair, but for the identifier of update_card and failed_login. */
+function typedCredentials(site: Site, v: SaveVariant): { username: string; password: string } {
+  const account = site.account!;
+  const tag = `${site.seed.slice(0, 6)}${site.index}`;
+  switch (v) {
+    case "update_card": return { username: account.username, password: `Changed-${tag}-pw!7` };
+    case "failed_login": return { username: account.username, password: `Wrong-${tag}-pw!3` };
+    case "second_account": return { username: `second.${site.index}@lab-user.test`, password: `Second-${tag}-pw!5` };
+    default: return { username: `typed.${v}.${site.index}@lab-user.test`, password: `Typed-${tag}-${v.length}pw!9` };
+  }
+}
+
+/**
+ * save_typed (spec 4, 5): the user signs in by hand, OnePass decides what to save. The site takes
+ * the typed pair (a new account for new_auto, second_account, no_username, spa_stays; the vault's
+ * identifier with a new password for update_card; a wrong password for failed_login, which the
+ * site refuses). no_username sends the identifier step in one tab and the password in a new one
+ * (no identifier sent there, spec 5.1); spa_stays keeps the form on screen (spec 5.3, page script
+ * above). The driver then watches the save frame (toast: saved by itself; card or pill) and reads
+ * the vault through the development host before and after (logins gained, pending ones apart).
+ * private_window is skipped: the lab cannot drive an incognito window with the extension in it.
+ */
+export async function saveTyped(env: ScenarioEnv, site: Site, v: SaveVariant, s?: Scenario): Promise<Observation> {
+  const started = Date.now();
+  const o: Observation = { ...blank("save_typed"), savedLogins: 0, autoSaved: false, cardShown: false, failedSignIn: false };
+  const g = recorder(o);
+  let page: Page | undefined;
+  try {
+    if (v === "private_window") {
+      o.skipped = lacks("private_window", "Playwright drives no incognito window of a persistent profile with the extension allowed in it");
+      return finish(env, undefined, o, started, s);
+    }
+    const id = site.fields.find((f) => f.role === "username" || f.role === "email");
+    const pw = site.fields.find((f) => f.role === "password");
+    if (!id || !pw || !site.account) throw new Error("lab: the save scenario's site has no password sign-in");
+    if (v === "no_username" && site.flow !== "login_username_first") {
+      o.skipped = "site lacks an identifier step of its own (no_username needs login_username_first)";
+      return finish(env, undefined, o, started, s);
+    }
+    const origin = `https://${site.host}`;
+    const creds = typedCredentials(site, v);
+    // The site takes the pair the user means (a refused one stays refused: the site's own account).
+    if (v !== "failed_login") env.server.useAccounts(new Map([[site.host, creds]]));
+    const kept = (list: { pending: boolean }[]) => list.filter((l) => !l.pending).length;
+    const before = kept(await vaultLogins(env, origin));
+    if (!(await arrive(env, s, o))) return finish(env, undefined, o, started, s);
+    page = await env.newPage();
+    if (v === "spa_stays") await page.addInitScript(SPA_STAYS_SCRIPT);
+    await goto(page, `${origin}/`);
+    let scope = await formScope(page, site);
+    g.add("site_type", id.name);
+    await typeField(page, scope, id.id, creds.username, fieldWait(site));
+    if (site.loginStyle === "username_first" || site.flow === "login_username_first") {
+      g.add("site_submit", "identifier");
+      await submitForm(scope);
+      if (!(await waitPath(scope, PAGE_PATH.password, 10_000))) {
+        if (!refused(env.server, site)) throw new Error(`lab: no password step after the identifier (at ${scope.url()})`);
+      } else if (v === "no_username") {
+        // The password step in a new tab: the session goes on, no identifier was sent there.
+        const next = await env.newPage();
+        await page.close().catch(() => undefined);
+        page = next;
+        await goto(page, `${origin}${PAGE_PATH.password}`);
+        scope = page.mainFrame();
+      }
+    } else if (site.loginStyle === "email_then_password" || site.flow === "login_email_then_password") {
+      const next = scope.locator(byId("lab-next")).first();
+      if (await next.isVisible().catch(() => false)) {
+        g.add("site_button", "next");
+        await next.click({ timeout: 5_000 });
+      }
+    }
+    if (!refused(env.server, site)) {
+      g.add("site_type", pw.name);
+      await typeField(page, scope, pw.id, creds.password, fieldWait(site));
+      if (!(await beforeGesture(env, s, o))) return finish(env, page, o, started, s);
+      o.userSubmitAt = Date.now();
+      g.add("site_submit");
+      await submitForm(scope);
+      await waitEvents(env.server, (es) => signedIn(site)(es) || refused(env.server, site), 10_000);
+    }
+    o.failedSignIn = !signedIn(site)(env.server.events()) && refused(env.server, site);
+    const end = Date.now() + SAVE_WATCH_MS;
+    let seenAt: number | undefined;
+    while (Date.now() < end && !page.isClosed()) {
+      const view = await env.driver.saveView(page).catch(() => undefined);
+      if (view === "toast") o.autoSaved = true;
+      if (view === "card" || view === "pill") o.cardShown = true;
+      if (view !== undefined) seenAt ??= Date.now();
+      if (seenAt !== undefined && Date.now() - seenAt >= SAVE_SETTLE_MS) break;
+      await sleep(200);
+    }
+    o.overlayShown = o.autoSaved === true || o.cardShown === true;
+    o.savedLogins = Math.max(0, kept(await vaultLogins(env, origin)) - before);
+  } catch (e) {
+    o.error = message(e);
+  }
+  return finish(env, page, o, started, s);
 }
 
 /** A country case's verdict: pass, fail (with its cause) or lab_error (the bench, not OnePass). */

@@ -210,6 +210,7 @@ export function saveGhostScenarios(sites: readonly Site[], perVariant: number = 
   const plain = (s: Site): boolean => !s.traits.some((t) => t === "iframe_cross_site" || t === "iframe_same_origin" || t === "shadow_closed");
   const saveSites = sites.filter((s) => SAVE_FLOWS.has(s.flow) && s.account !== undefined && plain(s));
   const ghostSites = sites.filter((s) => s.flow === "signup" && plain(s));
+  const idFirst = saveSites.filter((s) => s.flow === "login_username_first");
   const pick = (pool: readonly Site[], k: number, prefer?: (s: Site) => boolean): Site[] => {
     if (pool.length === 0) return [];
     const ordered = prefer ? [...pool.filter(prefer), ...pool.filter((s) => !prefer(s))] : pool;
@@ -224,7 +225,10 @@ export function saveGhostScenarios(sites: readonly Site[], perVariant: number = 
   const out: Scenario[] = [];
   SAVE_VARIANTS.forEach((v, k) => {
     const prefer = v === "spa_stays" ? (s: Site) => s.traits.includes("spa_rerender") : undefined;
-    for (const s of pick(saveSites, k, prefer)) out.push({ id: `save:${v}:${s.index}`, site: s.index, driver: "save_typed", variant: v, expect: "pass" });
+    // no_username needs an identifier step of its own: the password page then opens in a new tab,
+    // where no identifier was sent (spec 5.1). Any login site when the world has none.
+    const pool = v === "no_username" && idFirst.length > 0 ? idFirst : saveSites;
+    for (const s of pick(pool, k, prefer)) out.push({ id: `save:${v}:${s.index}`, site: s.index, driver: "save_typed", variant: v, expect: "pass" });
   });
   GHOST_VARIANTS.forEach((v, k) => {
     for (const s of pick(ghostSites, k)) out.push({ id: `ghost:${v}:${s.index}`, site: s.index, driver: "ghost", variant: v, expect: "pass" });

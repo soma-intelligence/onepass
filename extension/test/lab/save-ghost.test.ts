@@ -2,6 +2,8 @@
 // Task 12a: save and ghost scenario family, pure half: the generator emits every
 // variant on stable ids, the oracle judges the new causes from crafted
 // observations, the report has its "Save" and "Suggestion" tables. No browser.
+// Task 12b: the oracle's start-state rules, failed_login on a real refusal,
+// ghost_in_page_dom as a safety cause, the fallbacks without a ghost.
 import { describe, expect, it } from "vitest";
 import {
   GHOST_VARIANTS, generate, groupOf, loadPatterns, parseDriverGroups, SAVE_VARIANTS, saveGhostScenarios, withDrivers, withStarts,
@@ -9,7 +11,6 @@ import {
 import type { Scenario, Site } from "../../lab/gen/model.ts";
 import { isRed, renderReport, summarize } from "../../lab/report.ts";
 import { judge, type Observation, replayable, type Result, SAFETY_CAUSES } from "../../lab/run/oracle.ts";
-import { pendingDriver12b } from "../../lab/run/pending.ts";
 
 const world = generate("pass6-test", { sites: 120, patterns: loadPatterns() });
 const full = withDrivers(world, ["current", "save_ghost"]);
@@ -132,11 +133,68 @@ describe("oracle ghost", () => {
   });
 });
 
-describe("pending driver stub", () => {
-  it("marks_the_scenario_skipped", () => {
-    const o = pendingDriver12b("ghost");
-    expect(o.skipped).toBe("driver_pending_12b");
-    expect(judge(sc("ghost", "accept_tab"), site, o)).toEqual({ verdict: "skipped", cause: "driver_pending_12b" });
+describe("oracle 12b fixes", () => {
+  it("ghost_in_page_dom_is_a_safety_cause_never_replayed", () => {
+    expect(SAFETY_CAUSES.has("ghost_in_page_dom")).toBe(true);
+    const j = judge(sc("ghost", "ignore_typing"), site, obs("ghost", { ghostShown: true, ghostInPageDom: true }));
+    expect(j).toEqual({ verdict: "fail", cause: "ghost_in_page_dom" });
+    expect(replayable(sc("ghost", "ignore_typing"), j)).toBe(false);
+  });
+  it("failed_login_needs_a_real_refusal", () => {
+    const s = sc("save_typed", "failed_login");
+    expect(judge(s, site, obs("save_typed", { savedLogins: 0 }))).toEqual({ verdict: "fail", cause: "sign_in_not_refused" });
+    expect(judge(s, site, obs("save_typed", { failedSignIn: false, cardShown: true }))).toEqual({ verdict: "fail", cause: "sign_in_not_refused" });
+    expect(judge(s, site, obs("save_typed", { failedSignIn: true }))).toEqual({ verdict: "pass" });
+    // A card on a refused sign-in saves nothing: not a failure of this variant.
+    expect(judge(s, site, obs("save_typed", { failedSignIn: true, cardShown: true }))).toEqual({ verdict: "pass" });
+  });
+  it("locked_start_wants_the_card_for_every_save_variant", () => {
+    for (const v of ["new_auto", "second_account", "update_card", "no_username", "spa_stays"]) {
+      const s = sc("save_typed", v, { start: "locked" });
+      expect(judge(s, site, obs("save_typed", { cardShown: true })), v).toEqual({ verdict: "pass" });
+      expect(judge(s, site, obs("save_typed", {})), v).toEqual({ verdict: "fail", cause: "card_expected" });
+      expect(judge(s, site, obs("save_typed", { savedLogins: 1 })), v).toEqual({ verdict: "fail", cause: "save_unexpected" });
+      expect(judge(s, site, obs("save_typed", { autoSaved: true, cardShown: true })), v).toEqual({ verdict: "fail", cause: "save_unexpected" });
+    }
+  });
+  it("cold_start_takes_the_automatic_save_or_the_card", () => {
+    for (const v of ["new_auto", "second_account"]) {
+      const s = sc("save_typed", v, { start: "cold" });
+      expect(judge(s, site, obs("save_typed", { savedLogins: 1, autoSaved: true })), v).toEqual({ verdict: "pass" });
+      expect(judge(s, site, obs("save_typed", { cardShown: true })), v).toEqual({ verdict: "pass" });
+      expect(judge(s, site, obs("save_typed", {})), v).toEqual({ verdict: "fail", cause: "save_missing" });
+      // Saved without telling the user: no toast is no pass.
+      expect(judge(s, site, obs("save_typed", { savedLogins: 1 })), v).toEqual({ verdict: "fail", cause: "save_missing" });
+    }
+    // Unlocked: the card is no substitute for the automatic save.
+    expect(judge(sc("save_typed", "new_auto"), site, obs("save_typed", { cardShown: true }))).toEqual({ verdict: "fail", cause: "save_missing" });
+    // The card variants stay card variants in a cold start.
+    expect(judge(sc("save_typed", "update_card", { start: "cold" }), site, obs("save_typed", { savedLogins: 1, autoSaved: true })))
+      .toEqual({ verdict: "fail", cause: "save_unexpected" });
+  });
+  it("locked_ghost_passes_on_the_menu_that_asks_to_unlock", () => {
+    for (const v of ["accept_tab", "accept_click", "ignore_typing", "menu_arrow", "fallback_narrow", "fallback_transform"]) {
+      const s = sc("ghost", v, { start: "locked" });
+      expect(judge(s, site, obs("ghost", { menuOpened: true })), v).toEqual({ verdict: "pass" });
+      expect(judge(s, site, obs("ghost", {})), v).toEqual({ verdict: "fail", cause: "no_menu" });
+    }
+    // A ghost after an approved unlock is judged as from an open vault.
+    expect(judge(sc("ghost", "accept_tab", { start: "locked" }), site, obs("ghost", { ghostShown: true }))).toEqual({ verdict: "fail", cause: "ghost_not_accepted" });
+    // Cold: the host starts on the gesture, the ghost is owed.
+    expect(judge(sc("ghost", "accept_tab", { start: "cold" }), site, obs("ghost", { menuOpened: true }))).toEqual({ verdict: "fail", cause: "no_ghost" });
+  });
+  it("a_typed_sign_in_as_another_account_is_no_wrong_item", () => {
+    const signin = { at: 1, host: site.host, kind: "signin", user: "typed@lab-user.test" } as const;
+    expect(judge(sc("save_typed", "new_auto"), site, obs("save_typed", { events: [signin], savedLogins: 1, autoSaved: true }))).toEqual({ verdict: "pass" });
+    // Another driver signing that account in is still one.
+    expect(judge(sc("ghost", "accept_tab"), site, obs("ghost", { events: [signin], ghostShown: true, ghostAccepted: true }))).toEqual({ verdict: "fail", cause: "wrong_item" });
+  });
+  it("fallbacks_want_the_menu_and_no_ghost", () => {
+    for (const v of ["fallback_narrow", "fallback_transform"]) {
+      expect(judge(sc("ghost", v), site, obs("ghost", { ghostShown: true, menuOpened: true })), v).toEqual({ verdict: "fail", cause: "ghost_not_fallen_back" });
+    }
+    // menu_arrow opens the menu from a ghost that did show.
+    expect(judge(sc("ghost", "menu_arrow"), site, obs("ghost", { ghostShown: true, menuOpened: true }))).toEqual({ verdict: "pass" });
   });
 });
 

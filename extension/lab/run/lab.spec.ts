@@ -22,13 +22,12 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test as base } from "@playwright/test";
 import { loadCert } from "../../e2e/cert.ts";
-import type { FixtureFile, Scenario, Site, World } from "../gen/model.ts";
+import type { FixtureFile, GhostVariant, SaveVariant, Scenario, Site, World } from "../gen/model.ts";
 import { type LabServer, startLabServer } from "../server/server.ts";
 import { type Lab, launchLab, launchPlain, networkViolations, readState, readWorld } from "./browser.ts";
 import { groupOf } from "../gen/generate.ts";
-import { type CaseOutcome, countryCase, lookalike, menuFill, oneClick, passkeyControl, type ScenarioEnv, smartFill } from "./drive.ts";
+import { type CaseOutcome, countryCase, ghost, lookalike, menuFill, oneClick, passkeyControl, saveTyped, type ScenarioEnv, smartFill } from "./drive.ts";
 import { extensionDriver } from "./driver.ts";
-import { pendingDriver12b } from "./pending.ts";
 import { fixtureFor, meantAccount, otherUsername, profileOf } from "../gen/population.ts";
 import { EXT_ROOT, isSmoke, type LabState } from "./global-setup.ts";
 import { afterReplay, fillCheck, judge, type Judgement, type Observation, oneClickOf, replayable, type Result, resultGestures, type Verdict } from "./oracle.ts";
@@ -155,14 +154,15 @@ async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Pr
   }
   const env: ScenarioEnv = {
     driver: extensionDriver(l), server, world, newPage: () => l.newPage(), start: controlOf(l), ...(otherUser !== undefined ? { otherUser } : {}),
+    vaultHost: { bin: state.profiles[profileOf(s)]!.host.bin, config: l.host.config },
   };
   switch (s.driver) {
     case "one_click": return oneClick(env, site, s);
     case "smart_fill": return smartFill(env, site, s.expect, s);
     case "menu_fill": return menuFill(env, site, s.behaviour, s);
     case "lookalike": return lookalike(env, site);
-    // Task 12b replaces these with the drivers ghost() and saveTyped(); until then the scenario is skipped.
-    case "ghost": case "save_typed": return pendingDriver12b(s.driver);
+    case "ghost": return ghost(env, site, s.variant as GhostVariant, s);
+    case "save_typed": return saveTyped(env, site, s.variant as SaveVariant, s);
   }
 }
 

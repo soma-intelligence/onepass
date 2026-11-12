@@ -14,16 +14,21 @@
 // `hostSupports` probes the host binary for that key (an older binary lacks
 // it); the stand-in below approves through those files ("deferred"), after a
 // human delay, and keeps the approval for every host process of the profile.
+//
+// The vault read of the save scenarios (`vaultLogins`) also goes through the
+// development host, never through the extension: a second host process on a
+// throwaway copy of the profile's vault, paired as its own client.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ScenarioEnv } from "./drive.ts";
 
 export const UNLOCK_PENDING = "unlock-pending";
 export const UNLOCK_APPROVED = "unlock-approved";
 
 /** Controls a start state needs and the host or the platform may lack. */
-export type HostControlName = "stop" | "deferred_unlock" | "fill_smart_command";
+export type HostControlName = "stop" | "deferred_unlock" | "fill_smart_command" | "private_window";
 
 /** The skip cause of a scenario whose start state needs a missing control. */
 export const lacks = (control: HostControlName, why: string): string => `host lacks control ${control} (${why})`;
@@ -203,5 +208,64 @@ export class UnlockStandIn {
     this.timer = undefined;
     this.approved = false;
     return this.count;
+  }
+}
+
+/** The development host of a lab profile, as the vault read needs it: its binary and its config file. */
+export interface VaultHost { bin: string; config: string }
+
+/** One login of the vault for a site: its identifier and whether it waits for its form (`onepass:pending`). Never a password. */
+export interface VaultLogin { username: string; pending: boolean }
+
+/** The fixture vault cache a host keeps in its data directory (e2e/host.ts FIXTURE_CACHE). */
+const VAULT_CACHE = "fixture-cache.bin";
+/** The extension id the probe pairs as (its own, never the browser's). */
+const PROBE_ID = "lab-vault-probe";
+
+/**
+ * The logins the vault holds for `origin`, read through the development host: a second host
+ * process on a copy of the profile's vault cache (the browser's host rewrites it after every
+ * save), paired as its own client with automatic approval, asked `list_for_origin`. The list
+ * does not say which logins are pending: on that throwaway copy `confirm_pending` answers it
+ * (`invalid` for a login without the tag). The browser's host, its pairing and its vault are
+ * never touched; no password is read or returned.
+ */
+export async function vaultLogins(env: ScenarioEnv, origin: string): Promise<VaultLogin[]> {
+  const host = env.vaultHost;
+  if (!host) throw new Error("lab: this run has no vault host to read the vault through");
+  const live = JSON.parse(readFileSync(host.config, "utf8")) as { data_dir: string; source: unknown };
+  const dir = mkdtempSync(join(tmpdir(), "onepass-lab-vault-"));
+  try {
+    const data = join(dir, "data");
+    mkdirSync(data, { recursive: true, mode: 0o700 });
+    copyFileSync(join(live.data_dir, VAULT_CACHE), join(data, VAULT_CACHE));
+    const config = join(dir, "probe.json");
+    writeFileSync(config, JSON.stringify({
+      data_dir: data, allowed_extensions: [PROBE_ID], source: live.source, approval: "auto", unlocked: true, reprompt: "deny",
+    }), { mode: 0o600 });
+    const { BridgeClient } = await import("../../src/bridge/client.ts");
+    const { NodeTransport } = await import("../../test/bridge/node-transport.ts");
+    const t = new NodeTransport(host.bin, [`chrome-extension://${PROBE_ID}/`], { ...process.env, ONEPASS_NATIVE_HOST_CONFIG: config });
+    try {
+      const client = new BridgeClient(t, { requestTimeoutMs: 60_000, stepTimeoutMs: 60_000 });
+      const record = await client.pair("OnePass", "Chromium", async () => true);
+      await client.open(record);
+      const { items } = await client.request({ op: "list_for_origin", ctx: "popup", origin });
+      const out: VaultLogin[] = [];
+      for (const item of items.filter((i) => i.kind === "login")) {
+        const pending = await client.request({ op: "confirm_pending", ctx: "save_prompt", item_id: item.item_id, origin, username: item.subtitle || "lab-probe" })
+          .then(() => true, () => false);
+        out.push({ username: item.subtitle, pending });
+      }
+      client.close();
+      return out;
+    } finally {
+      t.close();
+      await t.exited;
+    }
+  } catch (e) {
+    throw new Error(`lab: vault read failed: ${((e as Error)?.message ?? String(e)).split("\n")[0]}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }

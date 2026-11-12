@@ -29,7 +29,7 @@ import type { StartHost } from "./start-state.ts";
 /** Past the click guard of a freshly shown extension frame (see e2e/fixtures.ts). */
 export const GUARD_WAIT_MS = Math.max(CLICK_GUARD_MS, MOVE_GUARD_MS) + 150;
 const LOOPBACK = new Set(["127.0.0.1", "::1"]);
-export type ExtFrameKind = "menu" | "overlay" | "save";
+export type ExtFrameKind = "menu" | "overlay" | "save" | "ghost";
 
 export function readState(): LabState {
   const p = process.env.LAB_STATE;
@@ -125,6 +125,10 @@ export interface Lab {
   overlayPickOther(overlay: Frame, title: string): Promise<void>;
   /** Whether an extension frame of `page` says OnePass is locked. */
   lockedShown(page: Page): Promise<boolean>;
+  /** Clicks the "Use" pill of the ghost suggestion once the click guard allows it. */
+  ghostUse(ghost: Frame): Promise<void>;
+  /** What the save frame of `page` shows now: the toast of a login saved by itself, the card, its folded pill; undefined: none. */
+  saveView(page: Page): Promise<"toast" | "card" | "pill" | undefined>;
   /** What the start states ask of this profile's native host (start-state.ts). */
   startHost: StartHost;
   close(): Promise<void>;
@@ -592,6 +596,19 @@ export async function launchLab(state: LabState, world: World, server: LabServer
           if (text.includes(LOCKED_TEXT)) return true;
         }
         return false;
+      },
+      async ghostUse(ghost) {
+        await sleep(GUARD_WAIT_MS);
+        await userClick(ghost.locator("button.ghost-use").first());
+      },
+      async saveView(p) {
+        const f = findExtFrame(p, "save");
+        if (!f) return undefined;
+        const seen = (sel: string) => f.locator(sel).first().isVisible().catch(() => false);
+        if (await seen(".toast")) return "toast";
+        if (await seen(".save-pill")) return "pill";
+        if (await seen(".save-card")) return "card";
+        return undefined;
       },
       startHost,
       close,
