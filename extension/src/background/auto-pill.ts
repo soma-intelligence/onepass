@@ -136,6 +136,8 @@ export class AutoPill {
     // the same origin, and the same document where the browser names it.
     const now = await this.deps.topFrame(tabId);
     if (!now || parseOrigin(now.url)?.origin !== o.origin || now.documentId !== f.documentId) return;
+    // The user may have typed in the form meanwhile: its values are looked at again.
+    if (await this.deps.prefilled(cs, kind === "login" ? p.login : p.signup)) return;
     this.shown.add(key);
     try {
       await this.deps.open(cs, face);

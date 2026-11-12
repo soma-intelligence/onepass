@@ -68,8 +68,8 @@ describe("auto sign-in pill: appearance", () => {
     const t = setup();
     await t.pill.onReady(7);
     expect(t.opened).toEqual([{ cs: { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-1" }, face: "signin" }]);
-    // Only the recognised form is asked about (a value in it keeps the pill away).
-    expect(t.asked).toEqual(["prefilled:f1"]);
+    // Only the recognised form is asked about (a value in it keeps the pill away), again right before it shows.
+    expect(t.asked).toEqual(["prefilled:f1", "prefilled:f1"]);
   });
 
   it("case 2: a login form and a locked vault: the generic card", async () => {
@@ -82,7 +82,7 @@ describe("auto sign-in pill: appearance", () => {
     const t = setup({ login: [], signup: ["f2"] });
     await t.pill.onReady(7);
     expect(t.opened.map((x) => x.face)).toEqual(["signup"]);
-    expect(t.asked).toEqual(["prefilled:f2"]);
+    expect(t.asked).toEqual(["prefilled:f2", "prefilled:f2"]);
   });
 
   it("a login form with nothing saved for the site: nothing", async () => {
@@ -145,6 +145,16 @@ describe("auto sign-in pill: never shown when", () => {
     };
     await t.pill.onReady(7);
     expect(t.opened).toEqual([]);
+  });
+
+  it("the user typed in the form while the vault answered (the value is looked at again right before it shows)", async () => {
+    const t = setup();
+    t.page.onVault = () => {
+      t.page.prefilled = true;
+    };
+    await t.pill.onReady(7);
+    expect(t.opened).toEqual([]);
+    expect(t.asked).toEqual(["prefilled:f1", "prefilled:f1"]);
   });
 
   it("the top document changed while the vault answered", async () => {

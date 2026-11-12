@@ -243,6 +243,21 @@ describe("show_frame / remove_frame", () => {
     expect(s.ext.ofType("page_typed")).toEqual([{ type: "page_typed" }]);
   });
 
+  it("an auto card that arrives after the user already typed in the page folds at once (page_typed on arrival)", async () => {
+    setPage(LOGIN);
+    s = start();
+    asUser(input("u"), new InputEvent("input", { bubbles: true, composed: true }));
+    await flush();
+    expect(s.ext.ofType("page_typed")).toHaveLength(0);
+    s.ext.deliver({ type: "show_frame", kind: "overlay", url: `${EXT_BASE}overlay.html#${TOKEN}`, auto: true });
+    await flush();
+    expect(s.ext.ofType("page_typed")).toEqual([{ type: "page_typed" }]);
+    // A card opened by a gesture after typing is left alone.
+    s.ext.deliver({ type: "show_frame", kind: "overlay", url: `${EXT_BASE}overlay.html#${TOKEN}` });
+    await flush();
+    expect(s.ext.ofType("page_typed")).toHaveLength(1);
+  });
+
   it("a card opened by a gesture is not folded by typing (no page_typed)", async () => {
     setPage(LOGIN);
     s = start();
@@ -251,6 +266,9 @@ describe("show_frame / remove_frame", () => {
     await flush();
     expect(s.ext.ofType("page_typed")).toHaveLength(0);
     // Nor once the auto card went away.
+    s.cs.stop();
+    setPage(LOGIN);
+    s = start();
     s.ext.deliver({ type: "show_frame", kind: "overlay", url: `${EXT_BASE}overlay.html#${TOKEN}`, auto: true });
     s.ext.deliver({ type: "remove_frame", kind: "overlay" });
     asUser(input("u"), new InputEvent("input", { bubbles: true, composed: true }));

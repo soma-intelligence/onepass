@@ -356,6 +356,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
    * trusted input tells the worker, which folds it (`page_typed`). Nothing typed goes with it.
    */
   let autoCard = false;
+  /** The user typed in this page since it loaded: an auto card that arrives after that folds at once. */
+  let typedHere = false;
 
   const onMessage = (message: unknown, sender: Sender, sendResponse: (r: unknown) => void): true | undefined => {
     if (!parts || stopped || sender?.id !== ext.runtime.id) return undefined;
@@ -481,7 +483,14 @@ export function createContentScript(o: ContentOptions): ContentScript {
         // The menu and the ghost belong to a field: no field, no frame.
         if ((kind === "menu" || kind === "ghost") && !anchor) break;
         parts.frames.showFrame(kind, url, anchor);
-        if (kind === "overlay") autoCard = m.auto === true;
+        if (kind === "overlay") {
+          autoCard = m.auto === true;
+          // Typed before the card arrived (the worker's look took a while): it folds now.
+          if (autoCard && typedHere) {
+            autoCard = false;
+            void send({ type: "page_typed" });
+          }
+        }
         ok = true;
         break;
       }
@@ -957,6 +966,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
           // Typing in the field: the user does it by hand, the menu steps aside.
           if (isTrusted(e) && parts?.frames.anchorOf("menu") === e.target) closeMenu(true);
           // Typing anywhere in the page: a sign-in card that appeared by itself folds away.
+          if (isTrusted(e) && !sh.isHost(e.target)) typedHere = true;
           if (isTrusted(e) && autoCard && !sh.isHost(e.target)) {
             autoCard = false;
             void send({ type: "page_typed" });
