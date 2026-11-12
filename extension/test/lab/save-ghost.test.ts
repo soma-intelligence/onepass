@@ -6,7 +6,7 @@
 // ghost_in_page_dom as a safety cause, the fallbacks without a ghost.
 import { describe, expect, it } from "vitest";
 import {
-  GHOST_VARIANTS, generate, groupOf, loadPatterns, parseDriverGroups, SAVE_VARIANTS, saveGhostScenarios, withDrivers, withStarts,
+  firstLoginHosts, firstLoginKey, GHOST_VARIANTS, generate, groupOf, loadPatterns, parseDriverGroups, SAVE_VARIANTS, saveGhostScenarios, withDrivers, withoutSiteLogins, withStarts,
 } from "../../lab/gen/generate.ts";
 import type { Scenario, Site } from "../../lab/gen/model.ts";
 import { isRed, renderReport, summarize } from "../../lab/report.ts";
@@ -44,6 +44,21 @@ describe("generator", () => {
     expect(played.length).toBe(sg.length * 3);
     expect(played.some((s) => s.id.endsWith("@locked") && s.start === "locked")).toBe(true);
     expect(played.some((s) => s.id.endsWith("@cold") && s.start === "cold")).toBe(true);
+  });
+  it("first_login_vault_drops_the_new_auto_sites_logins_only", () => {
+    const hosts = firstLoginHosts(full);
+    const newAuto = sg.filter((s) => s.variant === "new_auto").map((s) => world.sites[s.site]!.host);
+    expect(hosts.sort()).toEqual([...new Set(newAuto)].sort());
+    const on = (f: typeof world.fixture, h: string) => (f.items as { type: string; urls?: { url: string }[] }[])
+      .filter((i) => i.type === "login" && (i.urls ?? []).some((u) => new URL(u.url).hostname === h)).length;
+    const stripped = withoutSiteLogins(world.fixture, hosts);
+    for (const h of hosts) {
+      expect(on(world.fixture, h), h).toBeGreaterThan(0);
+      expect(on(stripped, h), h).toBe(0);
+    }
+    const other = world.sites.find((x) => x.account && !hosts.includes(x.host) && on(world.fixture, x.host) > 0)!;
+    expect(on(stripped, other.host)).toBe(on(world.fixture, other.host));
+    expect(firstLoginKey("p0")).toBe("p0/first-login");
   });
   it("driver_group_parsed_and_mapped", () => {
     expect(parseDriverGroups("current,save_ghost")).toEqual(["current", "save_ghost"]);
@@ -85,7 +100,8 @@ describe("oracle save", () => {
   it("failed_login_saves_nothing", () => {
     const s = sc("save_typed", "failed_login");
     expect(judge(s, site, obs("save_typed", { failedSignIn: true, savedLogins: 0 }))).toEqual({ verdict: "pass" });
-    expect(judge(s, site, obs("save_typed", { failedSignIn: true, savedLogins: 1 }))).toEqual({ verdict: "fail", cause: "save_unexpected" });
+    // A silent save after the refusal is the safety cause (fix round 1 of task 12b), not a plain save_unexpected.
+    expect(judge(s, site, obs("save_typed", { failedSignIn: true, savedLogins: 1 }))).toEqual({ verdict: "fail", cause: "auto_saved_on_failure" });
   });
   it("auto_saved_on_failure_beats_pass_and_is_a_safety_cause", () => {
     const o = obs("save_typed", { failedSignIn: true, autoSaved: true, savedLogins: 1, cardShown: true });
@@ -185,9 +201,34 @@ describe("oracle 12b fixes", () => {
   });
   it("a_typed_sign_in_as_another_account_is_no_wrong_item", () => {
     const signin = { at: 1, host: site.host, kind: "signin", user: "typed@lab-user.test" } as const;
-    expect(judge(sc("save_typed", "new_auto"), site, obs("save_typed", { events: [signin], savedLogins: 1, autoSaved: true }))).toEqual({ verdict: "pass" });
+    expect(judge(sc("save_typed", "new_auto"), site, obs("save_typed", { events: [signin], signedInAsTyped: true, savedLogins: 1, autoSaved: true })))
+      .toEqual({ verdict: "pass" });
+    // Not the identifier she typed (or unknown): a wrong item, as for any driver.
+    expect(judge(sc("save_typed", "new_auto"), site, obs("save_typed", { events: [signin], signedInAsTyped: false, savedLogins: 1, autoSaved: true })))
+      .toEqual({ verdict: "fail", cause: "wrong_item" });
+    expect(judge(sc("save_typed", "new_auto"), site, obs("save_typed", { events: [signin], savedLogins: 1, autoSaved: true })))
+      .toEqual({ verdict: "fail", cause: "wrong_item" });
     // Another driver signing that account in is still one.
     expect(judge(sc("ghost", "accept_tab"), site, obs("ghost", { events: [signin], ghostShown: true, ghostAccepted: true }))).toEqual({ verdict: "fail", cause: "wrong_item" });
+  });
+  it("silent_save_after_a_refused_sign_in_is_auto_saved_on_failure", () => {
+    for (const v of ["failed_login", "new_auto", "update_card"]) {
+      const j = judge(sc("save_typed", v), site, obs("save_typed", { failedSignIn: true, savedLogins: 1 }));
+      expect(j, v).toEqual({ verdict: "fail", cause: "auto_saved_on_failure" });
+      expect(replayable(sc("save_typed", v), j)).toBe(false);
+    }
+    expect(judge(sc("save_typed", "failed_login"), site, obs("save_typed", { failedSignIn: true, savedLogins: 0 }))).toEqual({ verdict: "pass" });
+  });
+  it("a_save_or_card_for_another_login_is_wrong_login", () => {
+    expect(judge(sc("save_typed", "new_auto"), site, obs("save_typed", { savedLogins: 1, autoSaved: true, wrongLogin: true })))
+      .toEqual({ verdict: "fail", cause: "wrong_login" });
+    expect(judge(sc("save_typed", "update_card"), site, obs("save_typed", { cardShown: true, wrongLogin: true })))
+      .toEqual({ verdict: "fail", cause: "wrong_login" });
+    expect(judge(sc("save_typed", "update_card"), site, obs("save_typed", { cardShown: true, wrongLogin: false }))).toEqual({ verdict: "pass" });
+  });
+  it("lab_error_when_the_ghost_text_is_unreadable", () => {
+    expect(judge(sc("ghost", "accept_tab"), site, obs("ghost", { ghostShown: true, ghostAccepted: true, error: "lab: ghost text unreadable" })).verdict)
+      .toBe("lab_error");
   });
   it("fallbacks_want_the_menu_and_no_ghost", () => {
     for (const v of ["fallback_narrow", "fallback_transform"]) {

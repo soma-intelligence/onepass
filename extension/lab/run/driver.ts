@@ -101,6 +101,8 @@ export interface Driver {
   ghostUse(ghost: Frame): Promise<void>;
   /** What the autofill shows after a sign-in it may save: its toast (saved by itself), its card, the card folded into a pill. */
   saveView(page: Page): Promise<"toast" | "card" | "pill" | undefined>;
+  /** The text the save frame shows now (driver memory only: the identifier a card names), undefined when none. */
+  saveText(page: Page): Promise<string | undefined>;
   /** LAB_DEBUG: the autofill's own state behind a scenario that did not go on (no secret). */
   debugState?(): Promise<string>;
 }
@@ -226,6 +228,15 @@ export function extensionDriver(lab: Lab): Driver {
     },
     ghostUse: (ghost) => lab.ghostUse(ghost),
     saveView: (page) => lab.saveView(page),
+    async saveText(page) {
+      const f = lab.findExtFrame(page, "save");
+      if (!f) return undefined;
+      const text = await f.evaluate(() => document.body?.innerText ?? "").catch((e: unknown) => {
+        if (process.env.LAB_DEBUG) console.log(`[lab debug] save frame text unreadable: ${(e as Error)?.message?.split("\n")[0]}`);
+        return undefined;
+      });
+      return text === "" ? undefined : text;
+    },
     debugState: () => lab.debugState(),
     async rateLimited(page) {
       for (const f of page.frames()) {

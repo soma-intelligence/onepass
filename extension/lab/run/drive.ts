@@ -40,7 +40,7 @@ import type { LabServer } from "../server/server.ts";
 import { focusField, type PlainBrowser, shadowField, sleep } from "./browser.ts";
 import type { Driver, MenuOutcome } from "./driver.ts";
 import { Gestures, insertApprovals, triggerOf } from "./gestures.ts";
-import { lacks, type VaultHost, vaultLogins } from "./host-control.ts";
+import { lacks, type VaultHost, type VaultLogin, vaultLogins } from "./host-control.ts";
 import { foreignFields } from "./items.ts";
 import type { StartControl } from "./start-state.ts";
 import { smartTarget } from "./target.ts";
@@ -1183,7 +1183,7 @@ async function secretInPage(page: Page, secret: string): Promise<boolean> {
  * important: it wins over the site's sheets and reaches into an open shadow root): narrower than
  * 120 px, or turned (a transform that is not a translation).
  */
-async function unfitField(scope: Frame, id: string, v: "fallback_narrow" | "fallback_transform"): Promise<boolean> {
+async function unfitField(scope: Frame, id: string, v: "fallback_narrow" | "fallback_transform"): Promise<string | undefined> {
   return scope.evaluate(({ id, v }) => {
     const roots: (Document | ShadowRoot)[] = [document];
     for (let k = 0; k < roots.length; k++) {
@@ -1191,16 +1191,21 @@ async function unfitField(scope: Frame, id: string, v: "fallback_narrow" | "fall
     }
     const sel = `[id="${id.replace(/["\\]/g, "\\$&")}"]`;
     const el = roots.map((r) => r.querySelector(sel)).find((x) => x !== null) as HTMLElement | undefined;
-    if (!el) return false;
+    if (!el) return "field not found";
     if (v === "fallback_narrow") {
       for (const [k, val] of [["box-sizing", "border-box"], ["width", "100px"], ["min-width", "0"], ["max-width", "100px"]]) {
         el.style.setProperty(k!, val!, "important");
       }
-    } else {
-      el.style.setProperty("transform", "rotate(2deg)", "important");
+      // Read back: the field must now be narrower than the ghost's 120 px.
+      const w = el.getBoundingClientRect().width;
+      return w > 0 && w < 120 ? undefined : `width still ${w.toFixed(1)} px`;
     }
-    return true;
-  }, { id, v }).catch(() => false);
+    el.style.setProperty("transform", "rotate(2deg)", "important");
+    // Read back: a computed matrix that is not a mere translation.
+    const m = /^matrix\(([^)]*)\)$/.exec(getComputedStyle(el).transform);
+    const n = m ? m[1]!.split(",").map((x) => parseFloat(x)) : [];
+    return n.length === 6 && !(n[0] === 1 && n[1] === 0 && n[2] === 0 && n[3] === 1) ? undefined : `transform not applied (${getComputedStyle(el).transform})`;
+  }, { id, v }).catch((e: unknown) => `unreadable: ${message(e)}`);
 }
 
 /** LAB_DEBUG: what the page shows at the field's center and inset corners (the occlusion points of spec 3.4), its width and transform. */
@@ -1255,8 +1260,9 @@ export async function ghost(env: ScenarioEnv, site: Site, v: GhostVariant, s?: S
       await typeField(page, scope, email.id, site.account.username, fieldWait(site)).catch(() => undefined);
     }
     if (!(await fieldShown(page, scope, field.id, fieldWait(site)))) throw new Error(`no field ${field.id}`);
-    if ((v === "fallback_narrow" || v === "fallback_transform") && !(await unfitField(scope, field.id, v))) {
-      throw new Error(`lab: could not restyle field ${field.id}`);
+    if (v === "fallback_narrow" || v === "fallback_transform") {
+      const why = await unfitField(scope, field.id, v);
+      if (why !== undefined) throw new Error(`lab: could not restyle field ${field.id} for ${v}: ${why}`);
     }
     await sleep(FORM_SETTLE_MS);
     if (!(await beforeGesture(env, s, o))) return finish(env, page, o, started, s);
@@ -1270,8 +1276,10 @@ export async function ghost(env: ScenarioEnv, site: Site, v: GhostVariant, s?: S
     if (first.ghost) {
       o.ghostShown = true;
       const secret = await env.driver.ghostText(first.ghost);
+      // Without its text the leak probe cannot run: a bench error, never a pass.
+      if (secret === undefined) throw new Error("lab: ghost text unreadable");
       // Right before the user's next gesture: nothing of the suggestion in the page.
-      if (secret !== undefined) o.ghostInPageDom = await secretInPage(page, secret);
+      o.ghostInPageDom = await secretInPage(page, secret);
       if (process.env.LAB_DEBUG) console.log(`[lab debug] ghost shown, text ${secret === undefined ? "unreadable" : "read"}, in page: ${o.ghostInPageDom}`);
       if (v === "accept_tab") {
         g.add("ghost_accept", field.name);
@@ -1401,8 +1409,14 @@ export async function saveTyped(env: ScenarioEnv, site: Site, v: SaveVariant, s?
     const creds = typedCredentials(site, v);
     // The site takes the pair the user means (a refused one stays refused: the site's own account).
     if (v !== "failed_login") env.server.useAccounts(new Map([[site.host, creds]]));
-    const kept = (list: { pending: boolean }[]) => list.filter((l) => !l.pending).length;
-    const before = kept(await vaultLogins(env, origin));
+    const kept = (list: VaultLogin[]) => list.filter((l) => !l.pending);
+    const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+    const first = kept(await vaultLogins(env, origin));
+    // The premise of the variant, read through the dev host: a first login ever on the site (spec 4.1), or the
+    // login whose password changes.
+    if (v === "new_auto" && first.length > 0) throw new Error(`lab: new_auto needs a vault without any login for ${site.host} (${first.length} there)`);
+    if (v === "update_card" && !first.some((l) => same(l.username, creds.username))) throw new Error("lab: update_card needs the vault's login of the typed identifier");
+    const before = first.length;
     if (!(await arrive(env, s, o))) return finish(env, undefined, o, started, s);
     page = await env.newPage();
     if (v === "spa_stays") await page.addInitScript(SPA_STAYS_SCRIPT);
@@ -1440,18 +1454,31 @@ export async function saveTyped(env: ScenarioEnv, site: Site, v: SaveVariant, s?
       await waitEvents(env.server, (es) => signedIn(site)(es) || refused(env.server, site), 10_000);
     }
     o.failedSignIn = !signedIn(site)(env.server.events()) && refused(env.server, site);
+    const signins = env.server.events().filter((e): e is Extract<LabEvent, { kind: "signin" }> => e.kind === "signin" && e.host === site.host);
+    o.signedInAsTyped = signins.length > 0 && signins.every((e) => same(e.user, creds.username));
     const end = Date.now() + SAVE_WATCH_MS;
     let seenAt: number | undefined;
     while (Date.now() < end && !page.isClosed()) {
       const view = await env.driver.saveView(page).catch(() => undefined);
       if (view === "toast") o.autoSaved = true;
       if (view === "card" || view === "pill") o.cardShown = true;
+      // The update card names the login it updates: the one of the typed identifier (read while it is unfolded).
+      if (v === "update_card" && view === "card" && o.wrongLogin === undefined) {
+        const text = await env.driver.saveText(page).catch(() => undefined);
+        if (text !== undefined && text !== "") o.wrongLogin = !text.toLowerCase().includes(creds.username.trim().toLowerCase());
+        if (process.env.LAB_DEBUG) console.log(`[lab debug] update card text ${text === undefined ? "unreadable" : `read, names the typed login: ${o.wrongLogin === false}`}`);
+      }
       if (view !== undefined) seenAt ??= Date.now();
       if (seenAt !== undefined && Date.now() - seenAt >= SAVE_SETTLE_MS) break;
       await sleep(200);
     }
     o.overlayShown = o.autoSaved === true || o.cardShown === true;
-    o.savedLogins = Math.max(0, kept(await vaultLogins(env, origin)) - before);
+    const after = kept(await vaultLogins(env, origin));
+    o.savedLogins = Math.max(0, after.length - before);
+    // A login saved by itself must be the typed one: its identifier in the vault, not pending.
+    if (o.savedLogins > 0 && (v === "new_auto" || v === "second_account" || v === "no_username" || v === "spa_stays")) {
+      o.wrongLogin = !after.some((l) => same(l.username, creds.username));
+    }
   } catch (e) {
     o.error = message(e);
   }

@@ -236,6 +236,34 @@ export function saveGhostScenarios(sites: readonly Site[], perVariant: number = 
   return out;
 }
 
+/** Suffix of the staged vault of the save and ghost scenarios, for a profile id (`p0` gives `p0/first-login`). */
+export const FIRST_LOGIN_VAULT = "first-login";
+export const firstLoginKey = (profile: string): string => `${profile}/${FIRST_LOGIN_VAULT}`;
+
+/** The hosts new_auto plays on: the save_ghost vault holds no login for them, so their save is the first ever (spec 4.1). */
+export function firstLoginHosts(world: Pick<World, "sites" | "scenarios">): string[] {
+  const out = new Set<string>();
+  for (const s of world.scenarios) if (s.driver === "save_typed" && s.variant === "new_auto") out.add(world.sites[s.site]!.host);
+  return [...out].sort();
+}
+
+/** `fixture` without any login whose URL is on one of `hosts` (or a subdomain of one): what a vault that never saw those sites holds. */
+export function withoutSiteLogins(fixture: FixtureFile, hosts: readonly string[]): FixtureFile {
+  const gone = new Set(hosts);
+  const onSite = (url: string): boolean => {
+    let h: string;
+    try {
+      h = new URL(url).hostname;
+    } catch {
+      return false;
+    }
+    return [...gone].some((g) => h === g || h.endsWith(`.${g}`));
+  };
+  const items = (fixture.items as { type?: string; urls?: { url: string }[] }[])
+    .filter((i) => !(i.type === "login" && (i.urls ?? []).some((u) => onSite(u.url))));
+  return { ...fixture, items };
+}
+
 /**
  * The world with the scenarios of `groups` only: "current" keeps the
  * generated ones, "smart_fill" adds one smart_fill scenario per site (same

@@ -25,7 +25,7 @@ import { loadCert } from "../../e2e/cert.ts";
 import type { FixtureFile, GhostVariant, SaveVariant, Scenario, Site, World } from "../gen/model.ts";
 import { type LabServer, startLabServer } from "../server/server.ts";
 import { type Lab, launchLab, launchPlain, networkViolations, readState, readWorld } from "./browser.ts";
-import { groupOf } from "../gen/generate.ts";
+import { FIRST_LOGIN_VAULT, firstLoginHosts, firstLoginKey, groupOf, withoutSiteLogins } from "../gen/generate.ts";
 import { type CaseOutcome, countryCase, ghost, lookalike, menuFill, oneClick, passkeyControl, saveTyped, type ScenarioEnv, smartFill } from "./drive.ts";
 import { extensionDriver } from "./driver.ts";
 import { fixtureFor, meantAccount, otherUsername, profileOf } from "../gen/population.ts";
@@ -110,14 +110,25 @@ async function closeInto(errors: CloseErrors, what: string, close: () => Promise
   });
 }
 
-/** The vault of each simulated user, built once (the server's checks must expect what the extension is given). */
+/**
+ * The staged vault a scenario plays with: its profile's, or for the save and ghost scenarios the same without
+ * any login of the sites new_auto plays on (`<profile>/first-login`, global-setup.ts), when the run staged it.
+ */
+function vaultKey(s: Pick<Scenario, "driver" | "profile">): string {
+  const id = profileOf(s);
+  return groupOf(s.driver) === "save_ghost" && state.profiles[firstLoginKey(id)] ? firstLoginKey(id) : id;
+}
+
+/** The vault of each staged key, built once (the server's checks must expect what the extension is given). */
 const vaults = new Map<string, FixtureFile>();
-function vaultOf(profile: string): FixtureFile {
-  let v = vaults.get(profile);
+function vaultOf(key: string): FixtureFile {
+  let v = vaults.get(key);
   if (!v) {
-    const p = world.profiles?.find((x) => x.id === profile);
+    const id = key.endsWith(`/${FIRST_LOGIN_VAULT}`) ? key.slice(0, -FIRST_LOGIN_VAULT.length - 1) : key;
+    const p = world.profiles?.find((x) => x.id === id);
     v = p ? fixtureFor(p, world.sites, world.fixture) : world.fixture;
-    vaults.set(profile, v);
+    if (id !== key) v = withoutSiteLogins(v, firstLoginHosts(world));
+    vaults.set(key, v);
   }
   return v;
 }
@@ -125,7 +136,7 @@ function vaultOf(profile: string): FixtureFile {
 /** One attempt of a scenario; `lab` is the batch profile (unused by the passkey control). */
 async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Promise<Lab>, closeErrors: CloseErrors): Promise<Observation> {
   server.reset();
-  const vault = vaultOf(profileOf(s));
+  const vault = vaultOf(vaultKey(s));
   server.useFixture(vault);
   // Account profiles: the site takes the account the user means, and the driver knows the other one by its identifier.
   const profile = world.profiles?.find((p) => p.id === profileOf(s));
@@ -154,7 +165,7 @@ async function attempt(s: Scenario, site: Site, server: LabServer, lab: () => Pr
   }
   const env: ScenarioEnv = {
     driver: extensionDriver(l), server, world, newPage: () => l.newPage(), start: controlOf(l), ...(otherUser !== undefined ? { otherUser } : {}),
-    vaultHost: { bin: state.profiles[profileOf(s)]!.host.bin, config: l.host.config },
+    vaultHost: { bin: state.profiles[vaultKey(s)]!.host.bin, config: l.host.config },
   };
   switch (s.driver) {
     case "one_click": return oneClick(env, site, s);
@@ -201,7 +212,8 @@ batches().forEach((scenarios, k) => {
     test.setTimeout(scenarios.length * 180_000 + 120_000);
     const seenViolations = networkViolations().length;
     let shared: Lab | undefined;
-    const profile = profileOf(scenarios[0] ?? {});
+    // The staged vault of the batch (one driver set per batch): the profile's, or its first-login copy.
+    const profile = scenarios[0] ? vaultKey(scenarios[0]) : profileOf({});
     const batchLab = async () => (shared ??= await pairedLab(server, profile));
     const verdicts: Verdict[] = [];
     const closeErrors: CloseErrors = [];
@@ -210,7 +222,7 @@ batches().forEach((scenarios, k) => {
         const site = world.sites[s.site]!;
         const first = await safeAttempt(s, site, server, batchLab, closeErrors);
         if (process.env.LAB_DEBUG) console.log(`[lab debug] ${s.id} ${JSON.stringify({ ...first, durationMs: undefined })}`);
-        let j = judge(s, site, first, fillCheck(world, site, vaultOf(profileOf(s))));
+        let j = judge(s, site, first, fillCheck(world, site, vaultOf(vaultKey(s))));
         // The attempt the verdict stands on (the replay for a flaky pass).
         let seen = first;
         let duration = first.durationMs;
@@ -235,7 +247,7 @@ batches().forEach((scenarios, k) => {
           }
           duration += second.durationMs;
           // A violation seen on the replay is kept, never dropped for the first failure.
-          const settled = afterReplay(j, judge(s, site, second, fillCheck(world, site, vaultOf(profileOf(s)))));
+          const settled = afterReplay(j, judge(s, site, second, fillCheck(world, site, vaultOf(vaultKey(s)))));
           j = settled.judgement;
           if (settled.replay) seen = second;
         }

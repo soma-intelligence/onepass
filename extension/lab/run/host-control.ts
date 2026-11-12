@@ -19,7 +19,7 @@
 // development host, never through the extension: a second host process on a
 // throwaway copy of the profile's vault, paired as its own client.
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ScenarioEnv } from "./drive.ts";
@@ -222,6 +222,26 @@ const VAULT_CACHE = "fixture-cache.bin";
 /** The extension id the probe pairs as (its own, never the browser's). */
 const PROBE_ID = "lab-vault-probe";
 
+/** Waits (up to 3 s) until `path` keeps one size and modification time over 150 ms: no write of the browser's host in flight. */
+async function stableFile(path: string): Promise<void> {
+  const look = () => {
+    try {
+      const st = statSync(path);
+      return `${st.size}:${st.mtimeMs}`;
+    } catch {
+      return "missing";
+    }
+  };
+  const end = Date.now() + 3_000;
+  let last = look();
+  while (Date.now() < end) {
+    await sleep(150);
+    const now = look();
+    if (now === last && now !== "missing") return;
+    last = now;
+  }
+}
+
 /**
  * The logins the vault holds for `origin`, read through the development host: a second host
  * process on a copy of the profile's vault cache (the browser's host rewrites it after every
@@ -238,6 +258,7 @@ export async function vaultLogins(env: ScenarioEnv, origin: string): Promise<Vau
   try {
     const data = join(dir, "data");
     mkdirSync(data, { recursive: true, mode: 0o700 });
+    await stableFile(join(live.data_dir, VAULT_CACHE));
     copyFileSync(join(live.data_dir, VAULT_CACHE), join(data, VAULT_CACHE));
     const config = join(dir, "probe.json");
     writeFileSync(config, JSON.stringify({

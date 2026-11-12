@@ -81,6 +81,16 @@ export interface Observation {
   autoSaved?: boolean;
   cardShown?: boolean;
   failedSignIn?: boolean;
+  /**
+   * save_typed: every sign-in the site saw was for the identifier the user typed herself (a flag, never the
+   * identifier): only then is a sign-in as another account than the site's her own doing, not a wrong item.
+   */
+  signedInAsTyped?: boolean;
+  /**
+   * save_typed: what OnePass saved or proposed is for another login than the typed one: a login saved under
+   * another identifier (or none), or an update card naming another login.
+   */
+  wrongLogin?: boolean;
   error?: string;
   durationMs: number;
 }
@@ -276,6 +286,8 @@ function saveCause(s: Scenario, o: Observation): string | undefined {
   const saved = (o.savedLogins ?? 0) > 0;
   const v = s.variant;
   const start = s.start ?? "unlocked_warm";
+  // Saved, or offered, for another login than the one she typed.
+  if (o.wrongLogin === true) return "wrong_login";
   if (v === "failed_login") {
     if (o.failedSignIn !== true) return "sign_in_not_refused";
     return saved || o.autoSaved === true ? "save_unexpected" : undefined;
@@ -315,11 +327,13 @@ export function judge(s: Scenario, site: Site, o: Observation, check?: FillCheck
   if (leak) return { verdict: "leak", cause: `leak:${leak.secret}:${leak.field}@${leak.host}` };
   if (o.skipped !== undefined) return { verdict: "skipped", cause: o.skipped };
   // A save on a failed sign-in, and a password in the page's DOM, fail whatever the expectation says.
-  if (o.failedSignIn === true && o.autoSaved === true) return { verdict: "fail", cause: "auto_saved_on_failure" };
+  // Silently too: a login the vault gained after a refused sign-in, toast or not.
+  if (o.failedSignIn === true && (o.autoSaved === true || (o.savedLogins ?? 0) > 0)) return { verdict: "fail", cause: "auto_saved_on_failure" };
   if (o.ghostInPageDom === true) return { verdict: "fail", cause: "ghost_in_page_dom" };
   if (autoSubmitOutsideLogin(site, o)) return { verdict: "fail", cause: "auto_submit_outside_login" };
-  // save_typed: the user signs in by hand with the account she means; only an extension fill can be a wrong item.
-  if ((o.foreign?.length ?? 0) > 0 || (s.driver !== "save_typed" && wrongAccount(site, o.events, s))) return { verdict: "fail", cause: "wrong_item" };
+  // save_typed: a sign-in as the identifier the user typed herself is hers, not a wrong item; any other is.
+  const ownSignIn = s.driver === "save_typed" && o.signedInAsTyped === true;
+  if ((o.foreign?.length ?? 0) > 0 || (!ownSignIn && wrongAccount(site, o.events, s))) return { verdict: "fail", cause: "wrong_item" };
   if (otherPersonFilled(site, o)) return { verdict: "fail", cause: "other_person_filled" };
   if (o.error !== undefined && (o.error.startsWith("lab:") || o.error.includes("rate_limited"))) {
     return { verdict: "lab_error", cause: o.error };

@@ -15,7 +15,9 @@ import { fileURLToPath } from "node:url";
 import { generateCert } from "../../e2e/cert.ts";
 import { buildHost, prebuildFixtureCache, type StagedHost, stageHost } from "../../e2e/host.ts";
 import { buildLabExtension, LAB_DIST_ROOT } from "../build-marker.ts";
-import { generate, loadPatterns, parseDriverGroups, parseStarts, parseTriggers, type SmartTrigger, withDrivers, withStarts } from "../gen/generate.ts";
+import {
+  FIRST_LOGIN_VAULT, firstLoginHosts, firstLoginKey, generate, loadPatterns, parseDriverGroups, parseStarts, parseTriggers, type SmartTrigger, withDrivers, withoutSiteLogins, withStarts,
+} from "../gen/generate.ts";
 import type { DriverGroup, StartState } from "../gen/model.ts";
 import { accountProfiles, DEFAULT_PROFILE_ID, fixtureFor } from "../gen/population.ts";
 import { hostSupports } from "./host-control.ts";
@@ -133,6 +135,20 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const staged = stageHost(join(root, `host-${p.id}`), file);
     profiles[p.id] = { host: staged, cache: await prebuildFixtureCache(join(root, `prebuild-${p.id}`), staged) };
   }));
+  // The save and ghost scenarios: each profile's vault again, without any login of the sites new_auto plays on
+  // (spec 4.1, a first login ever on the site), staged under `<profile>/first-login`.
+  const firstHosts = config.drivers.includes("save_ghost") ? firstLoginHosts(world) : [];
+  if (firstHosts.length > 0) {
+    const vaults = [{ id: DEFAULT_PROFILE_ID, vault: world.fixture },
+      ...(world.profiles ?? []).filter((p) => p.id !== DEFAULT_PROFILE_ID).map((p) => ({ id: p.id, vault: fixtureFor(p, world.sites, world.fixture) }))];
+    await Promise.all(vaults.map(async ({ id, vault }) => {
+      const tag = `${id}-${FIRST_LOGIN_VAULT}`;
+      const file = join(config.out, `fixture-${tag}.json`);
+      writeFileSync(file, JSON.stringify(withoutSiteLogins(vault, firstHosts), null, 2));
+      const staged = stageHost(join(root, `host-${tag}`), file);
+      profiles[firstLoginKey(id)] = { host: staged, cache: await prebuildFixtureCache(join(root, `prebuild-${tag}`), staged) };
+    }));
+  }
   // Only a locked start asks: can the host leave an unlock to the stand-in's approval file?
   const caps = { deferredUnlock: config.starts.includes("locked") && hostSupports(host.bin, "unlock", "file") };
   const state: LabState = { root, config, extDir: built.dir, world: worldPath, fixture, results, cases, certDir, cache, host, profiles, caps };
