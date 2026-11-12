@@ -33,6 +33,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   s?.cs.stop();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -122,6 +123,10 @@ describe("ghost triggers (spec 3.1)", () => {
   });
 
   it("ghost needs a trusted focus", async () => {
+    // Pinned clock: Date only is faked (settle() keeps real timers), so the age of a gesture is
+    // exactly what the test sets and never depends on how many real milliseconds a step took.
+    const T0 = 1_700_000_000_000;
+    vi.useFakeTimers({ toFake: ["Date"], now: T0 });
     setPage(SIGNUP);
     wide(input("n"));
     s = start();
@@ -138,9 +143,8 @@ describe("ghost triggers (spec 3.1)", () => {
     await settle();
     expect(s.ext.ofType("ghost_open")).toHaveLength(0);
     // A gesture older than a second does not vouch for a later focus.
-    const t0 = Date.now();
     asUser(input("e"), new MouseEvent("pointerdown", { bubbles: true, composed: true }));
-    vi.spyOn(Date, "now").mockReturnValue(t0 + 1001);
+    vi.setSystemTime(T0 + 1001);
     input("n").focus();
     await settle();
     expect(s.ext.ofType("ghost_open")).toHaveLength(0);
