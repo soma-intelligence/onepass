@@ -102,6 +102,14 @@ describe("ghost page", () => {
     expect(document.documentElement.outerHTML).not.toContain(TOKEN);
   });
 
+  it("a reply whose length is not the password's whole character count shows nothing", async () => {
+    for (const length of [2.5, 0, -1, 99_999, PASSWORD.length + 1]) {
+      const { r, handle } = setup(metrics, { ok: { password: PASSWORD, strength: 4, length, metrics } });
+      await handle.ready;
+      expect(r.querySelector(".ghost-text"), String(length)).toBeNull();
+    }
+  });
+
   it("an expired suggestion shows nothing", async () => {
     const { r, handle } = setup(metrics, { err: "invalid" });
     await handle.ready;

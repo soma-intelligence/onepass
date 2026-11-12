@@ -8,7 +8,7 @@ import { readLayout } from "./frames";
 /** Narrower than this, a field gets the menu (spec 3.4). */
 export const MIN_GHOST_WIDTH = 120;
 
-export type GhostFallback = "narrow" | "transform" | "indent" | "covered" | "cross_origin" | "sheet";
+export type GhostFallback = "narrow" | "touch" | "transform" | "indent" | "covered" | "cross_origin" | "sheet";
 
 export type GhostFit = { ok: true; metrics: GhostMetrics } | { ok: false; reason: GhostFallback };
 
@@ -44,9 +44,19 @@ function style(view: Window, el: Element): CSSStyleDeclaration | null {
   }
 }
 
-/** The field or one of its ancestors is turned, scaled or skewed (the individual `rotate` and `scale` too). */
+/** The parent element, or across a shadow boundary the shadow root's host; null at the document. */
+function parentOf(el: Element): Element | null {
+  if (el.parentElement) return el.parentElement;
+  const root = el.getRootNode();
+  return root instanceof ShadowRoot ? root.host : null;
+}
+
+/**
+ * The field or one of its ancestors is turned, scaled or skewed (the individual `rotate` and `scale`
+ * too). The walk crosses shadow roots: a scaled host moves its shadow tree's field as well.
+ */
 function transformed(field: Element, view: Window): boolean {
-  for (let el: Element | null = field; el; el = el.parentElement) {
+  for (let el: Element | null = field; el; el = parentOf(el)) {
     const cs = style(view, el);
     if (!cs) continue;
     if (!translationOnly(cs.getPropertyValue("transform") || cs.transform || "none")) return true;
@@ -121,13 +131,21 @@ function familyOf(cs: CSSStyleDeclaration, doc: Document): string | null {
 }
 
 /**
- * Spec 3.4, in order: under MIN_GHOST_WIDTH wide; a transform other than a translation on the
- * field or an ancestor; a non-zero `text-indent`; partly covered (`occluded`, the occlusion check
- * of occlusion.ts); in a cross-origin child frame; the narrow touch layout (the bottom sheet).
+ * Spec 3.4, in order: under MIN_GHOST_WIDTH wide; a touch layout (fix round 1 ruling: the frame
+ * opens its pill to the pointer on `pointermove`, which a finger never sends, so a tap would land on
+ * the field: touch screens get the menu); a transform other than a translation on the field or an
+ * ancestor, across shadow roots; a non-zero `text-indent`; partly covered (`occluded`, the occlusion
+ * check of occlusion.ts); in a cross-origin child frame; the narrow touch layout (the bottom sheet:
+ * a touch layout too, so "touch" takes it first; kept last for the spec's list).
+ *
+ * `paddingLeft` and `paddingRight` include the field's borders: the ghost covers the border box,
+ * so the grey text starts where the caret does.
  */
 export function fitGhost(field: HTMLInputElement, view: Window, occluded: (el: Element) => boolean): GhostFit {
   const r = field.getBoundingClientRect();
   if (!(r.width >= MIN_GHOST_WIDTH)) return { ok: false, reason: "narrow" };
+  const layout = readLayout(view);
+  if (layout.touch) return { ok: false, reason: "touch" };
   if (transformed(field, view)) return { ok: false, reason: "transform" };
   const cs = style(view, field);
   if (!cs) return { ok: false, reason: "transform" };
@@ -135,7 +153,7 @@ export function fitGhost(field: HTMLInputElement, view: Window, occluded: (el: E
   if (Number.isFinite(indent) && indent !== 0) return { ok: false, reason: "indent" };
   if (occluded(field)) return { ok: false, reason: "covered" };
   if (crossOrigin(view)) return { ok: false, reason: "cross_origin" };
-  if (readLayout(view).sheet) return { ok: false, reason: "sheet" };
+  if (layout.sheet) return { ok: false, reason: "sheet" };
   const fontSize = px(cs.fontSize, 13);
   const lh = parseFloat(cs.lineHeight);
   return {
@@ -144,8 +162,8 @@ export function fitGhost(field: HTMLInputElement, view: Window, occluded: (el: E
       fontSize,
       // "normal": the usual 1.2 of the font size.
       lineHeight: Number.isFinite(lh) && lh > 0 ? lh : Math.round(fontSize * 1.2 * 100) / 100,
-      paddingLeft: px(cs.paddingLeft),
-      paddingRight: px(cs.paddingRight),
+      paddingLeft: px(cs.paddingLeft) + px(cs.borderLeftWidth),
+      paddingRight: px(cs.paddingRight) + px(cs.borderRightWidth),
       textAlign: alignOf(cs),
       fontFamily: familyOf(cs, field.ownerDocument),
       box: { x: r.left, y: r.top, width: r.width, height: r.height },

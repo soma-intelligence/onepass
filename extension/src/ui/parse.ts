@@ -418,6 +418,8 @@ export const parseHistory = (v: unknown): { entries: GeneratorEntry[] } | null =
   }));
 
 const TEXT_ALIGNS = ["left", "right", "center"];
+/** Longest password the router takes (router.ts MAX_PASSWORD). */
+const MAX_PASSWORD = 4096;
 /** Largest metric the worker accepts for a field (router.ts MAX_METRIC). */
 const MAX_METRIC = 100_000;
 const metric = (v: unknown, min = 0) => {
@@ -434,10 +436,14 @@ export const parseGhostInit = (v: unknown): (SuggestionPreview & { metrics: Ghos
     const b = obj(m.box);
     const strength = num(o.strength);
     if (!Number.isInteger(strength) || strength < 0 || strength > 4) throw new Bad();
+    // The router's password bounds (1 to MAX_PASSWORD), and the length is its character count.
+    const password = str(o.password, MAX_PASSWORD);
+    const length = num(o.length);
+    if (!Number.isInteger(length) || length < 1 || length > MAX_PASSWORD || length !== [...password].length) throw new Bad();
     return {
-      password: str(o.password, 1024),
+      password,
       strength: strength as SuggestionPreview["strength"],
-      length: num(o.length),
+      length,
       metrics: {
         fontSize: metric(m.fontSize),
         lineHeight: metric(m.lineHeight),

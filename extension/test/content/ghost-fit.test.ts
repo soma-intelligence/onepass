@@ -34,7 +34,7 @@ afterEach(() => {
 describe("fitGhost", () => {
   it("fits a plain field", () => {
     const f = field(
-      `<input id="f" type="password" style="font-size: 15px; line-height: 20px; padding-left: 10px; padding-right: 6px; text-align: left; font-family: Georgia, serif">`,
+      `<input id="f" type="password" style="font-size: 15px; line-height: 20px; padding-left: 10px; padding-right: 6px; border: 0; text-align: left; font-family: Georgia, serif">`,
     );
     expect(fitGhost(f, view(), never)).toEqual({
       ok: true,
@@ -107,19 +107,51 @@ describe("fitGhost", () => {
     expect(fitGhost(f, view({ top: { location: window.location } }), never).ok).toBe(true);
   });
 
-  it("a 599 px touch layout gives sheet", () => {
+  it("a coarse pointer gives touch (the pill cannot be tapped through the pass-through)", () => {
     const f = field(`<input id="f" type="password">`);
-    expect(fitGhost(f, view({ width: 599, coarse: true }), never)).toEqual({ ok: false, reason: "sheet" });
-    expect(fitGhost(f, view({ width: 600, coarse: true }), never).ok).toBe(true);
+    expect(fitGhost(f, view({ width: 1024, coarse: true }), never)).toEqual({ ok: false, reason: "touch" });
+    // A 599 px touch layout (the sheet) is a touch layout first.
+    expect(fitGhost(f, view({ width: 599, coarse: true }), never)).toEqual({ ok: false, reason: "touch" });
+    expect(fitGhost(f, view({ width: 599 }), never).ok).toBe(true);
   });
 
-  it("checks the reasons in the spec's order", () => {
-    const f = field(`<div style="transform: rotate(2deg)"><input id="f" type="password" style="text-indent: 4px"></div>`, {
-      x: 0,
-      y: 0,
-      width: 80,
-      height: 30,
-    });
-    expect(fitGhost(f, view({ width: 599, coarse: true }), () => true)).toEqual({ ok: false, reason: "narrow" });
+  it("a scaled shadow host above the field gives transform", () => {
+    document.body.innerHTML = `<div id="host" style="transform: scale(1.1)"></div>`;
+    const host = document.getElementById("host")!;
+    const sr = host.attachShadow({ mode: "open" });
+    sr.innerHTML = `<span><input id="f" type="password"></span>`;
+    const f = sr.getElementById("f") as HTMLInputElement;
+    f.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, width: 240, height: 36, right: 240, bottom: 36, toJSON: () => ({}) }) as DOMRect;
+    expect(fitGhost(f, view(), never)).toEqual({ ok: false, reason: "transform" });
+    host.style.transform = "translateY(2px)";
+    expect(fitGhost(f, view(), never).ok).toBe(true);
+  });
+
+  it("the borders count in the text's start and end (the grey text starts at the caret)", () => {
+    const f = field(`<input id="f" type="password" style="padding-left: 10px; border-left: 3px solid; padding-right: 6px; border-right: 2px solid">`);
+    const r = fitGhost(f, view(), never);
+    expect(r.ok && [r.metrics.paddingLeft, r.metrics.paddingRight]).toEqual([13, 8]);
+  });
+
+  it("checks the reasons in order: narrow, touch, transform, indent, covered, cross_origin, sheet", () => {
+    const foreign = {
+      get location(): never {
+        throw new DOMException("Blocked a frame", "SecurityError");
+      },
+    };
+    const html = `<div style="transform: rotate(2deg)"><input id="f" type="password" style="text-indent: 4px"></div>`;
+    const narrow = { x: 0, y: 0, width: 80, height: 30 };
+    const wide = { x: 0, y: 0, width: 240, height: 30 };
+    // Every rule true: the first wins; then each rule dropped in turn hands over to the next.
+    expect(fitGhost(field(html, narrow), view({ width: 599, coarse: true, top: foreign }), () => true)).toEqual({ ok: false, reason: "narrow" });
+    expect(fitGhost(field(html, wide), view({ width: 599, coarse: true, top: foreign }), () => true)).toEqual({ ok: false, reason: "touch" });
+    expect(fitGhost(field(html, wide), view({ top: foreign }), () => true)).toEqual({ ok: false, reason: "transform" });
+    const flat = `<div><input id="f" type="password" style="text-indent: 4px"></div>`;
+    expect(fitGhost(field(flat, wide), view({ top: foreign }), () => true)).toEqual({ ok: false, reason: "indent" });
+    const plain = `<div><input id="f" type="password"></div>`;
+    expect(fitGhost(field(plain, wide), view({ top: foreign }), () => true)).toEqual({ ok: false, reason: "covered" });
+    expect(fitGhost(field(plain, wide), view({ top: foreign }), never)).toEqual({ ok: false, reason: "cross_origin" });
+    // "sheet" is a touch layout, already caught by "touch": it stays last, for a layout that says sheet without touch.
+    expect(fitGhost(field(plain, wide), view(), never).ok).toBe(true);
   });
 });

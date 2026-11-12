@@ -700,7 +700,14 @@ describe("ghost frame (spec 3.2)", () => {
   const ghostUrl = `${CHROME}ghost.html#${TOKEN}`;
   /** The pill at the field's right edge, frame-local. */
   const PILL = { x: 180, y: 6, width: 52, height: 24 };
-  const move = (x: number, y: number) => document.dispatchEvent(new MouseEvent("pointermove", { clientX: x, clientY: y, bubbles: true }));
+  /** Moves the user makes (jsdom cannot mint `isTrusted`: the frames take this set's word for it). */
+  const userEvents = new WeakSet<Event>();
+  const isTrusted = (e: Event) => userEvents.has(e);
+  const move = (x: number, y: number, user = true) => {
+    const e = new MouseEvent("pointermove", { clientX: x, clientY: y, bubbles: true });
+    if (user) userEvents.add(e);
+    document.dispatchEvent(e);
+  };
 
   it("checkFrameUrl accepts ghost.html only for kind ghost", () => {
     expect(checkFrameUrl(ghostUrl, "ghost", CHROME, false)).toBe(ghostUrl);
@@ -712,7 +719,7 @@ describe("ghost frame (spec 3.2)", () => {
   it("lies over its field, clamped to 600 x 120, without shadow or radius", () => {
     setPage(`<input id="f" data-test-rect="10,20,240,36"><input id="w" data-test-rect="0,300,900,150">`);
     shell = createShell(document);
-    const frames = createFrames({ shell, doc: document, geometry: testGeometry });
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry, isTrusted });
     frames.showFrame("ghost", ghostUrl, document.getElementById("f"));
     const iframe = shell.root.querySelector("iframe")!;
     expect([iframe.style.left, iframe.style.top, iframe.style.width, iframe.style.height]).toEqual(["10px", "20px", "240px", "36px"]);
@@ -737,7 +744,7 @@ describe("ghost frame (spec 3.2)", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     setPage(`<input id="f" data-test-rect="10,20,240,36">`);
     shell = createShell(document);
-    const frames = createFrames({ shell, doc: document, geometry: testGeometry });
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry, isTrusted });
     frames.showFrame("ghost", ghostUrl, document.getElementById("f"));
     const iframe = shell.root.querySelector("iframe")!;
     expect(iframe.style.pointerEvents).toBe("none");
@@ -749,6 +756,9 @@ describe("ghost frame (spec 3.2)", () => {
     expect(iframe.style.pointerEvents).toBe("none");
     vi.advanceTimersByTime(MOVE_GUARD_MS);
     // Over the pill: the frame takes the pointer; anywhere else in the field it goes through.
+    expect(iframe.style.pointerEvents).toBe("auto");
+    // A synthetic move from the page changes nothing.
+    move(10 + 40, 20 + 18, false);
     expect(iframe.style.pointerEvents).toBe("auto");
     move(10 + 40, 20 + 18);
     expect(iframe.style.pointerEvents).toBe("none");
@@ -782,7 +792,7 @@ describe("ghost frame (spec 3.2)", () => {
     shell = createShell(document);
     const field = document.getElementById("f")!;
     let hit: Element | null = field;
-    const frames = createFrames({ shell, doc: document, geometry: testGeometry, covers: { hitTest: () => hit } });
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry, isTrusted, covers: { hitTest: () => hit } });
     frames.showFrame("ghost", ghostUrl, field);
     const iframe = shell.root.querySelector("iframe")!;
     frames.ghostPill(PILL, false);
@@ -795,6 +805,16 @@ describe("ghost frame (spec 3.2)", () => {
     expect(iframe.style.pointerEvents).toBe("auto");
     hit = document.body;
     expect(frames.covered("ghost")).toBe(true);
+    frames.destroy();
+  });
+
+  it("a touch layout gets no ghost frame (fitGhost sends it to the menu; the frames refuse it too)", () => {
+    setPage(`<input id="f" data-test-rect="10,20,240,36">`);
+    shell = createShell(document);
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry, layout: () => IPAD });
+    frames.showFrame("ghost", ghostUrl, document.getElementById("f"));
+    expect(frames.has("ghost")).toBe(false);
+    expect(shell.root.querySelector("iframe")).toBeNull();
     frames.destroy();
   });
 
