@@ -450,6 +450,13 @@ export interface MenuPreview extends SuggestionPreview {
   profile: { length: number; symbols: boolean };
 }
 
+/**
+ * Spec 5.3: a form kept on screen is judged this long after its submission (`submit_outcome`),
+ * and a new top document reports a `role="alert"` shown this long after its load (`page_alert`).
+ * Shared by the content script and the worker.
+ */
+export const UNCERTAIN_MS = 1500;
+
 /** Content script to background (untrusted sender: origin comes from `sender`). */
 export type CsToBg =
   | { type: "page_analysis"; analysis: PageAnalysis }
