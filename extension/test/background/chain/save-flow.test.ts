@@ -1219,6 +1219,22 @@ describe("save gaps (spec 5)", () => {
     expect(t.requests.find((r) => r.op === "save_login")).toMatchObject({ username: "alex@atlas.dev", password: PASS });
   });
 
+  it("no identifier, the card names an existing login with another password: that login is updated, no second copy", async () => {
+    const t = gaps({
+      check: (r) => (r.username === USER ? { status: "update", item_id: "it_01", title: "Atlas Cloud" } : { status: "new" }),
+    });
+    await t.submit("", PASS);
+    t.flow.onAnalysis(page(false), DOC1);
+    await t.settle(SETTLE_MS);
+    expect(t.opened).toHaveLength(1);
+    const ui = { page: "save.html", tabId: 7 } as never;
+    const edits = { title: "", username: USER, password: "", vaultId: "v1", rule: "domain" as const, tags: [] };
+    const out = await t.prompts.decide(t.tokens[0] as string, ui, "save", edits);
+    expect(out).toMatchObject({ outcome: "updated" });
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.requests.find((r) => r.op === "update_password")).toMatchObject({ item_id: "it_01", password: PASS });
+  });
+
   const LOGINS = [
     { item_id: "it_01", kind: "login", title: "Atlas Cloud", subtitle: "alex@atlas.dev" },
     { item_id: "it_02", kind: "login", title: "Atlas Cloud (work)", subtitle: "alex@work.dev" },

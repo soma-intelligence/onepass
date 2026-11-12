@@ -580,6 +580,12 @@ export class SavePrompts {
         .request({ op: "check_credentials", ctx: "save_prompt", origin: h.origin, username: edits && edits.username.trim() !== "" ? edits.username : h.username, password: h.password })
         .catch(() => null);
       if (r && (r.status === "same" || r.status === "pending")) return { out: { outcome: "already" } };
+      // Spec 5.1: the identifier typed in the card is a login of the site with another password:
+      // that login is updated, never a second copy.
+      if (r && r.status === "update" && r.item_id !== undefined) {
+        status = "update";
+        update = { itemId: r.item_id, title: r.title ?? "" };
+      }
     }
     if (h.locked) {
       const native = this.deps.nativeUnlock ? await this.deps.nativeUnlock().catch(() => false) : null;
