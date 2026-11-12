@@ -20,6 +20,8 @@ interface Page {
   incognito: boolean;
   /** The analysis is of another document than the top frame's. */
   staleDoc?: string;
+  /** Runs while the vault answers (the tab may move meanwhile). */
+  onVault?: () => void;
 }
 
 function setup(over: Partial<Page> = {}) {
@@ -38,7 +40,10 @@ function setup(over: Partial<Page> = {}) {
       asked.push(`prefilled:${refs.join(",")}`);
       return page.prefilled;
     },
-    vault: async () => page.vault,
+    vault: async () => {
+      page.onVault?.();
+      return page.vault;
+    },
     logins: async () => page.logins,
     open: async (cs, face) => {
       if (failOpen) throw new Error("gone");
@@ -133,6 +138,24 @@ describe("auto sign-in pill: appearance", () => {
 });
 
 describe("auto sign-in pill: never shown when", () => {
+  it("the tab moved to another site while the vault answered (no document id: Firefox, Safari)", async () => {
+    const t = setup({ doc: undefined as unknown as string });
+    t.page.onVault = () => {
+      t.page.url = "https://foreign.test/";
+    };
+    await t.pill.onReady(7);
+    expect(t.opened).toEqual([]);
+  });
+
+  it("the top document changed while the vault answered", async () => {
+    const t = setup();
+    t.page.onVault = () => {
+      t.page.doc = "doc-2";
+    };
+    await t.pill.onReady(7);
+    expect(t.opened).toEqual([]);
+  });
+
   it("a chain runs in the tab, or another of our surfaces is there", async () => {
     const t = setup({ busy: true });
     await t.pill.onReady(7);

@@ -285,6 +285,8 @@ export class Overlays {
     const msg: BgToCs = { type: "show_frame", kind: "overlay", url: `${this.deps.ext.runtime.getURL("overlay.html")}#${token}` };
     if (anchorRef !== undefined) msg.ref = anchorRef;
     if (auto) msg.auto = true;
+    // No document id (Firefox, Safari): shown only by a top frame still at this origin.
+    if (cs.documentId === undefined) msg.origin = cs.origin;
     const opts = cs.documentId !== undefined ? { documentId: cs.documentId } : { frameId: 0 };
     try {
       await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);

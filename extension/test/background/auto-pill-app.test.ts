@@ -193,6 +193,12 @@ describe("auto sign-in pill: appears by itself", () => {
     expect(t.cards()).toEqual([]);
   });
 
+  it("a top frame the browser gives no document id: the card is pinned to the origin it was decided for", async () => {
+    const t = await setup();
+    await t.b.overlays.openAuto({ tabId: 7, frameId: 0, origin: SITE }, "signin");
+    expect(t.cards()[0]).toMatchObject({ options: { frameId: 0 }, message: { auto: true, origin: SITE } });
+  });
+
   it("a card opened by a gesture is not an auto card (no auto in its init)", async () => {
     const t = await setup();
     const token = await t.b.overlays.open({ tabId: 7, frameId: 0, origin: SITE, documentId: "doc-1" });

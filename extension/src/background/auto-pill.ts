@@ -132,6 +132,10 @@ export class AutoPill {
     if (!face) return;
     // The trigger may have gone stale while the vault answered: the same document, still idle.
     if (!this.ready.has(tabId) || this.shown.has(key) || (await this.deps.busy(tabId))) return;
+    // The tab may have moved meanwhile (another site, another document): the top frame again,
+    // the same origin, and the same document where the browser names it.
+    const now = await this.deps.topFrame(tabId);
+    if (!now || parseOrigin(now.url)?.origin !== o.origin || now.documentId !== f.documentId) return;
     this.shown.add(key);
     try {
       await this.deps.open(cs, face);
