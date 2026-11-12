@@ -184,11 +184,16 @@ describe("Suggestions", () => {
 
   it("storedProfile: the stored custom profile, else the popup defaults", async () => {
     const { s, ext } = setup();
+    // Nothing stored is Strong: its real length, symbols on.
+    expect(await s.storedProfile()).toEqual({ length: 24, symbols: true });
+    ext.local.data.set(GENERATOR_PROFILE_KEY, "strong");
+    expect(await s.storedProfile()).toEqual({ length: 24, symbols: true });
+    ext.local.data.set(GENERATOR_PROFILE_KEY, "readable");
     expect(await s.storedProfile()).toEqual({ length: 20, symbols: true });
     ext.local.data.set(GENERATOR_PROFILE_KEY, { kind: "custom", length: 12, symbols: false });
     expect(await s.storedProfile()).toEqual({ length: 12, symbols: false });
     ext.local.data.set(GENERATOR_PROFILE_KEY, { kind: "custom", length: 3, symbols: false });
-    expect(await s.storedProfile()).toEqual({ length: 20, symbols: true });
+    expect(await s.storedProfile()).toEqual({ length: 24, symbols: true });
   });
 
   it("the password never reaches a storage area", async () => {

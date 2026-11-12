@@ -988,6 +988,9 @@ body.passkey-page { overflow: hidden; }
 .save-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .save-pill .btn-icon { flex-shrink: 0; color: var(--text3); }
 .sc-note:empty { display: none; }
+/* Spec 5.1, 5.2: the identifier to type, or the login to update, under the card's title. */
+.sc-ask { display: flex; min-width: 0; }
+.sc-ask .input, .sc-ask .select { flex-grow: 1; width: 100%; }
 .sc-chip {
   display: inline-flex; align-items: center; gap: var(--space-s); flex-shrink: 1; min-width: 0; max-width: var(--chip-max); height: 24px; padding: 0 var(--space-s);
   white-space: nowrap;
@@ -1133,3 +1136,6 @@ body.island:has(.ghost) { overflow: hidden; }
 .len-symbols::after { content: ""; position: absolute; top: var(--space-xxs); left: var(--space-xxs); width: var(--space-m); height: var(--space-m); border-radius: 50%; background: var(--text); transition: transform 120ms ease; }
 .len-symbols[aria-checked="true"] { background: var(--accent); }
 .len-symbols[aria-checked="true"]::after { transform: translateX(var(--space-m)); }
+.length-toggle { display: flex; align-items: center; gap: var(--space-m); width: 100%; min-height: var(--control-m); padding: var(--space-s) var(--space-m); font-size: var(--type-body); font-weight: 500; color: var(--accent-ink); text-align: left; }
+.length-toggle:focus-visible { outline: 2px solid var(--accent); }
+.length-toggle .glyph-wrap { width: var(--space-xl); height: var(--space-xl); border-radius: var(--r-chip); background: var(--fill-2); display: inline-flex; align-items: center; justify-content: center; }

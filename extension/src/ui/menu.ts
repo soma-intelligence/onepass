@@ -597,6 +597,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     // (they stay reachable below); the passkey choice, when offered, already leads the list.
     const lead: HTMLElement[] = [];
     let panel: HTMLElement | null = null;
+    let toggle: HTMLElement | null = null;
     if (NEW_PASSWORD_FORMS.has(init.formKind)) {
       const first = init.formKind === "signup" && !init.signup?.passkey;
       const generate = async () => {
@@ -614,19 +615,24 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
           attrs: { "data-action": "other" },
           run: () => redraw({ type: "menu_regenerate", token: token ?? "" }),
         });
-        const more = option({
-          label: t("menu.lengthAndCharacters"),
-          lead: glyphTile("more", 14),
-          cls: "row-quiet",
-          attrs: { "data-action": "length", "aria-pressed": String(lengthOpen) },
-          run: () => {
-            lengthOpen = !lengthOpen;
-            const at = active;
-            render(init);
-            if (at >= 0) highlight(at);
+        toggle = h(
+          "button",
+          {
+            class: "length-toggle",
+            attrs: { type: "button", "aria-expanded": String(lengthOpen), "aria-controls": "length-panel" },
+            on: {
+              click: guard.wrap(() => {
+                lengthOpen = !lengthOpen;
+                render(init);
+                // The row was rebuilt: the keyboard stays on the toggle.
+                container.querySelector<HTMLElement>(".length-toggle")?.focus();
+              }),
+            },
           },
-        });
-        (first ? lead : extras).push(row, other, more);
+          glyphTile("more", 14),
+          t("menu.lengthAndCharacters"),
+        );
+        (first ? lead : extras).push(row, other);
         if (lengthOpen) panel = lengthPanel();
       } else {
         (first ? lead : extras).push(
@@ -665,7 +671,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": t("menu.onepassSuggestions") } }, ...groups)
         : null;
     const logins = init.items.filter((x) => x.kind === "login").length;
-    mount(container, header(init.origin, logins), empty, listbox, panel, errLine);
+    mount(container, header(init.origin, logins), empty, listbox, toggle, panel, errLine);
     active = -1;
     guard.reset();
     remeasure();
@@ -770,7 +776,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     );
     return h(
       "div",
-      { class: "length-panel" },
+      { class: "length-panel", attrs: { id: "length-panel", role: "group", "aria-label": t("menu.lengthAndCharacters") } },
       h("div", { class: "len-row" }, h("span", { class: "len-label" }, t("menu.length")), h("span", { class: "len-stepper" }, step(-1, "len-minus", "\u2212"), lenEl, step(1, "len-plus", "+"))),
       h("div", { class: "len-row" }, h("span", { class: "len-label" }, t("menu.symbols")), sw),
     );

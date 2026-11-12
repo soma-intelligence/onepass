@@ -585,7 +585,7 @@ describe("ghost and preview messages (task 5)", () => {
     expect(shown[0]!.ref).toBe("e1");
     const mt = shown[0]!.url.slice(shown[0]!.url.indexOf("#") + 1);
     expect(await ext.send({ type: "menu_preview", token: mt }, uiSender(`menu.html#${mt}`, 7))).toEqual({
-      ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16, profile: { length: 20, symbols: true } },
+      ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16, profile: { length: 24, symbols: true } },
     });
     // The pill of a new ghost: filled, and the ghost frame removed.
     const again = await ghostOpen(ext);
@@ -609,8 +609,8 @@ describe("ghost and preview messages (task 5)", () => {
     expect(r.ok.url.startsWith(`chrome-extension://${EXT_ID}/menu.html#`)).toBe(true);
     const mt = r.ok.url.slice(r.ok.url.indexOf("#") + 1);
     const ui = uiSender(`menu.html#${mt}`, 7);
-    expect(await ext.send({ type: "menu_preview", token: mt }, ui)).toEqual({ ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16, profile: { length: 20, symbols: true } } });
-    expect(await ext.send({ type: "menu_regenerate", token: mt }, ui)).toEqual({ ok: { password: "Draw-2-Pass-xyz!", strength: 4, length: 16, profile: { length: 20, symbols: true } } });
+    expect(await ext.send({ type: "menu_preview", token: mt }, ui)).toEqual({ ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16, profile: { length: 24, symbols: true } } });
+    expect(await ext.send({ type: "menu_regenerate", token: mt }, ui)).toEqual({ ok: { password: "Draw-2-Pass-xyz!", strength: 4, length: 16, profile: { length: 24, symbols: true } } });
     const p = (await ext.send({ type: "menu_profile", token: mt, length: 20, symbols: false }, ui)) as { ok: { password: string; length: number } };
     expect(p.ok.length).toBe(20);
     expect(ext.local.data.get("generator_profile")).toEqual({ kind: "custom", length: 20, symbols: false });
@@ -622,7 +622,7 @@ describe("ghost and preview messages (task 5)", () => {
     const { ext } = await setup(drawing());
     const token = await openMenu(ext, { formKind: "signup" });
     const ui = uiSender(`menu.html#${token}`, 7);
-    expect(await ext.send({ type: "menu_preview", token }, ui)).toEqual({ ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16, profile: { length: 20, symbols: true } } });
+    expect(await ext.send({ type: "menu_preview", token }, ui)).toEqual({ ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16, profile: { length: 24, symbols: true } } });
     expect(await ext.send({ type: "menu_generate", token }, ui)).toEqual({ ok: {} });
     expect(filled(ext)).toEqual([{ new_password: "Draw-1-Pass-xyz!", confirm_password: "Draw-1-Pass-xyz!" }]);
   });

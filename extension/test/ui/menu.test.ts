@@ -896,6 +896,60 @@ describe("inline menu", () => {
       expect(worker.types()).not.toContain("menu_profile");
     });
 
+    it("the length toggle is a real button outside the listbox, with aria-expanded and aria-controls", async () => {
+      const { r, handle, clock } = suggest();
+      await handle.ready;
+      const toggle = () => r.querySelector<HTMLButtonElement>(".length-toggle")!;
+      expect(toggle().closest("[role=listbox]")).toBeNull();
+      expect(toggle().getAttribute("role")).toBeNull();
+      expect(toggle().getAttribute("aria-expanded")).toBe("false");
+      expect(toggle().getAttribute("aria-pressed")).toBeNull();
+      clock.advance(300);
+      toggle().click();
+      await flushAll();
+      expect(toggle().getAttribute("aria-expanded")).toBe("true");
+      const panel = r.querySelector(".length-panel")!;
+      expect(panel.id).toBe(toggle().getAttribute("aria-controls"));
+      expect(document.activeElement === toggle() || r.contains(toggle())).toBe(true);
+      // No option carries a state the role forbids.
+      expect(r.querySelectorAll("[role=option][aria-expanded], [role=option][aria-pressed]")).toHaveLength(0);
+    });
+
+    it("the length value and the strength line are polite live regions, and a re-render drops stale refs", async () => {
+      const { r, handle, clock } = suggest();
+      await handle.ready;
+      clock.advance(300);
+      button(r, "Longueur et caractères").click();
+      await flushAll();
+      expect(r.querySelector(".len-value")!.getAttribute("aria-live")).toBe("polite");
+      expect(r.querySelector(".suggest-line")!.getAttribute("aria-live")).toBe("polite");
+      // Close the panel: the old value element is detached and a redraw does not touch it.
+      const oldLen = r.querySelector(".len-value")!;
+      clock.advance(300);
+      button(r, "Longueur et caractères").click();
+      await flushAll();
+      expect(r.querySelector(".len-value")).toBeNull();
+      clock.advance(300);
+      button(r, "Autre suggestion").click();
+      await flushAll();
+      expect(oldLen.textContent).toBe("18");
+    });
+
+    it("a stored Strong profile seeds 24 with symbols on and plus redraws at 25", async () => {
+      const { r, handle, worker, clock } = suggest("signup", { stored: { length: 24, symbols: true } });
+      await handle.ready;
+      clock.advance(300);
+      button(r, "Longueur et caractères").click();
+      await flushAll();
+      clock.advance(300);
+      expect(r.querySelector(".len-value")!.textContent).toBe("24");
+      expect(r.querySelector(".len-symbols")!.getAttribute("aria-checked")).toBe("true");
+      r.querySelector<HTMLButtonElement>(".len-plus")!.click();
+      await flushAll();
+      expect(worker.sent.at(-1)).toEqual({ type: "menu_profile", token: TOKEN, length: 25, symbols: true });
+      expect([...pwText(r)!]).toHaveLength(25);
+    });
+
     it("a refused redraw shows the error line", async () => {
       const { r, handle, clock } = suggest("signup", { refuse: "site_refused" });
       await handle.ready;

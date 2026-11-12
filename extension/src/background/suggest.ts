@@ -13,7 +13,7 @@
 import type { GenerationReport } from "../bridge/client";
 import type { FormKind, FrameKind, GhostMetrics, SuggestionPreview } from "../shared/messages";
 import { newToken } from "../shared/tokens";
-import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH, GENERATOR_PROFILE_KEY, type GeneratorProfile, parseGeneratorProfile } from "../shared/ui";
+import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH, GENERATOR_PROFILE_KEY, type GeneratorProfile, parseGeneratorProfile, STRONG_PROFILE_LENGTH } from "../shared/ui";
 import type { SaveFlow } from "./chain/save-flow";
 import type { StorageArea } from "./ext";
 import type { FillTarget, Filler } from "./fill";
@@ -122,12 +122,13 @@ export class Suggestions {
   }
 
   /**
-   * The custom profile the menu's length panel starts from: the stored one, else the popup's
-   * defaults (20 characters, symbols on).
+   * What the menu's length panel starts from: the stored custom profile; Strong (also when nothing
+   * is stored) as its real length with symbols on; Readable as the popup's custom default.
    */
   async storedProfile(): Promise<{ length: number; symbols: boolean }> {
     const p = parseGeneratorProfile((await this.deps.area.get(GENERATOR_PROFILE_KEY))[GENERATOR_PROFILE_KEY]);
-    return typeof p === "object" ? { length: p.length, symbols: p.symbols } : { length: 20, symbols: true };
+    if (typeof p === "object") return { length: p.length, symbols: p.symbols };
+    return { length: p === "strong" ? STRONG_PROFILE_LENGTH : 20, symbols: true };
   }
 
   /** The field metrics the ghost of `token` was opened with. */

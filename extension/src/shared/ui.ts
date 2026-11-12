@@ -161,6 +161,8 @@ export interface SaveInit {
   identity?: { name?: string; email?: string; place?: string };
   /** The login (or card) to update (status `update`). */
   update?: { itemId: string; title: string };
+  /** Spec 5.2: the site's logins, the update card asks which one gets the new password. */
+  choices?: { itemId: string; title: string; username: string }[];
   /** `account`: the OnePass account the vault belongs to, when the host names one. */
   vaults: { id: string; name: string; account?: string }[];
   /** The vault picked first: the last one used for this site, else the last one used, else the first. */
@@ -243,6 +245,9 @@ export const GENERATOR_PROFILE_KEY = "generator_profile";
 /** Custom profile bounds (the host's `length` range for `smart`). */
 export const CUSTOM_MIN_LENGTH = 8;
 export const CUSTOM_MAX_LENGTH = 64;
+
+/** The length the Strong profile generates when the site sets no limit (core site_password STRONG_DEFAULT). */
+export const STRONG_PROFILE_LENGTH = 24;
 
 /** The profile set in the popup: Strong (default), Readable, or a custom length and symbols choice. */
 export type GeneratorProfile = "strong" | "readable" | { kind: "custom"; length: number; symbols: boolean };
