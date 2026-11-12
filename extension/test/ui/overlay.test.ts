@@ -5,6 +5,7 @@ import type { ChainView, OverlayAccount, StopReason } from "../../src/shared/ui"
 import type { Timers } from "../../src/ui/components";
 import { setLang } from "../../src/shared/i18n";
 import { DONE_CLOSE_MS, STEPS_PREF, mountOverlay, stopHint, stopText } from "../../src/ui/overlay";
+import { AUTO_PILL_MS } from "../../src/shared/auto-pill";
 import { Clock, FakeWorker, HASH, type Reply, TOKEN, button, flush, root, text } from "./helpers";
 
 const SITE = "https://atlas-cloud.test";
@@ -720,5 +721,110 @@ describe("overlay", () => {
     await handle.ready;
     await handle.poll();
     expect(text(r)).toContain("Erreur interne de OnePass.");
+  });
+});
+
+describe("the card that appeared by itself (auto sign-in pill)", () => {
+  const autoInit =
+    (over: Record<string, unknown>, more?: (m: UiToBg) => Reply | null) =>
+    (m: UiToBg): Reply | null =>
+      m.type === "overlay_init" ? { ok: { origin: SITE, accounts: [accounts[0]!], chain: null, auto: "signin", ...over } } : (more?.(m) ?? null);
+  const closes = (worker: FakeWorker) => worker.sent.filter((m) => m.type === "overlay_close");
+
+  it("case 1: the one-login pill, its button named for the login; nothing sent but the init until a click", async () => {
+    const { r, handle, worker } = setup(() => null, null, autoInit({}));
+    await handle.ready;
+    const signIn = r.querySelector<HTMLButtonElement>(".ov-signin")!;
+    expect(signIn.textContent).toBe("Se connecter");
+    expect(signIn.getAttribute("aria-label")).toBe("Se connecter avec alex@atlas.dev");
+    expect(worker.types()).toEqual(["overlay_init"]);
+    signIn.click();
+    await flush();
+    expect(worker.sent.filter((m) => m.type === "overlay_start")).toEqual([{ type: "overlay_start", token: TOKEN, itemId: "it_01" }]);
+  });
+
+  it(`folds away after ${AUTO_PILL_MS} ms untouched`, async () => {
+    const { handle, worker, timers } = setup(() => null, null, autoInit({}));
+    await handle.ready;
+    expect(closes(worker)).toEqual([]);
+    timers.fire(AUTO_PILL_MS);
+    await flush();
+    expect(closes(worker)).toEqual([{ type: "overlay_close", token: TOKEN }]);
+  });
+
+  it("a click on its button stops the fold: the sign-in it started keeps the card", async () => {
+    const { r, handle, worker, timers } = setup(() => null, null, autoInit({}));
+    await handle.ready;
+    r.querySelector<HTMLButtonElement>(".ov-signin")!.click();
+    await flush();
+    timers.fire(AUTO_PILL_MS);
+    await flush();
+    expect(closes(worker)).toEqual([]);
+  });
+
+  it("x closes it at once", async () => {
+    const { r, handle, worker } = setup(() => null, null, autoInit({}));
+    await handle.ready;
+    r.querySelector<HTMLButtonElement>(".ov-close")!.click();
+    await flush();
+    expect(closes(worker)).toEqual([{ type: "overlay_close", token: TOKEN }]);
+  });
+
+  it("\"Never on this site\" asks the worker to keep the site away", async () => {
+    const { r, handle, worker } = setup(() => null, null, autoInit({}));
+    await handle.ready;
+    button(r, "Jamais sur ce site").click();
+    await flush();
+    expect(worker.sent.filter((m) => m.type === "overlay_never")).toEqual([{ type: "overlay_never", token: TOKEN }]);
+  });
+
+  it("a card opened by a gesture has no fold and no \"Never on this site\"", async () => {
+    const { r, handle, timers } = setup(() => null);
+    await handle.ready;
+    expect(text(r)).not.toContain("Jamais sur ce site");
+    expect([...timers.timeouts.values()].some((x) => x.ms === AUTO_PILL_MS)).toBe(false);
+  });
+
+  it("case 2: the generic card of a locked vault folds too, and its click (the unlock) stops the fold", async () => {
+    const { r, handle, worker, timers } = setup(() => null, null, autoInit({ accounts: [], generic: true }, (m) => (m.type === "overlay_unlock" ? { ok: { waiting: "locked" } } : null)));
+    await handle.ready;
+    expect(text(r)).toContain("Se connecter avec OnePass");
+    expect(text(r)).toContain("Jamais sur ce site");
+    button(r, "Se connecter").click();
+    await flush();
+    expect(worker.sent.filter((m) => m.type === "overlay_unlock")).toHaveLength(1);
+    timers.fire(AUTO_PILL_MS);
+    await flush();
+    expect(closes(worker)).toEqual([]);
+  });
+
+  it("case 3: \"Create with OnePass\" on a signup page; its click asks the fill, nothing else", async () => {
+    const { r, handle, worker, timers } = setup(() => null, null, autoInit({ accounts: [], auto: "signup" }));
+    await handle.ready;
+    expect(text(r)).toContain("Créer avec OnePass");
+    expect(text(r)).toContain("Un mot de passe fort pour ce site");
+    expect(text(r)).toContain("Jamais sur ce site");
+    expect(r.querySelector(".ov-others:not(.ov-never)")).toBeNull();
+    expect(worker.types()).toEqual(["overlay_init"]);
+    button(r, "Créer").click();
+    await flush();
+    expect(worker.sent.filter((m) => m.type === "overlay_create")).toEqual([{ type: "overlay_create", token: TOKEN }]);
+    timers.fire(AUTO_PILL_MS);
+    await flush();
+    expect(closes(worker)).toEqual([]);
+  });
+
+  it("case 3: a fill the site refuses says so on the card", async () => {
+    const { r, handle } = setup(() => null, null, autoInit({ accounts: [], auto: "signup" }, (m) => (m.type === "overlay_create" ? { err: "site_refused" } : null)));
+    await handle.ready;
+    button(r, "Créer").click();
+    await flush();
+    expect(r.querySelector(".ov-signin")).toBeNull();
+  });
+
+  it("an auto signup card that lists an account is refused", async () => {
+    const { r, handle } = setup(() => null, null, autoInit({ auto: "signup" }));
+    await handle.ready;
+    expect(text(r)).not.toContain("Atlas Cloud");
   });
 });

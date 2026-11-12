@@ -322,5 +322,13 @@
   "save.cardExpires": "scad. {exp}",
   "ghost.use": "Usa",
   "ghost.tab": "Tab",
-  "ghost.more": "Altre opzioni"
+  "ghost.more": "Altre opzioni",
+  "overlay.createWithOnepass": "Crea con OnePass",
+  "overlay.strongPasswordForSite": "Una password sicura per questo sito",
+  "overlay.create": "Crea",
+  "overlay.neverOnSite": "Mai su questo sito",
+  "popup.signInPill": "Pillola di accesso",
+  "popup.signInPillHelp": "Compare da sola su una pagina di accesso o di registrazione. Non si compila nulla finché non fai clic.",
+  "popup.pillNeverSites": "Mai su questi siti",
+  "popup.removeSite": "Rimuovi {site}"
 }

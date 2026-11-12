@@ -322,5 +322,13 @@
   "save.cardExpires": "cad. {exp}",
   "ghost.use": "Usar",
   "ghost.tab": "Tab",
-  "ghost.more": "Más opciones"
+  "ghost.more": "Más opciones",
+  "overlay.createWithOnepass": "Crear con OnePass",
+  "overlay.strongPasswordForSite": "Una contraseña segura para este sitio",
+  "overlay.create": "Crear",
+  "overlay.neverOnSite": "Nunca en este sitio",
+  "popup.signInPill": "Píldora de inicio de sesión",
+  "popup.signInPillHelp": "Aparece sola en una página de inicio de sesión o de registro. No se rellena nada hasta que hagas clic.",
+  "popup.pillNeverSites": "Nunca en estos sitios",
+  "popup.removeSite": "Quitar {site}"
 }

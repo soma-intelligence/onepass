@@ -322,5 +322,13 @@
   "save.cardExpires": "exp. {exp}",
   "ghost.use": "Utiliser",
   "ghost.tab": "Tab",
-  "ghost.more": "Plus d'options"
+  "ghost.more": "Plus d'options",
+  "overlay.createWithOnepass": "Créer avec OnePass",
+  "overlay.strongPasswordForSite": "Un mot de passe fort pour ce site",
+  "overlay.create": "Créer",
+  "overlay.neverOnSite": "Jamais sur ce site",
+  "popup.signInPill": "Pastille de connexion",
+  "popup.signInPillHelp": "Elle apparaît d'elle-même sur une page de connexion ou d'inscription. Rien n'est rempli sans ton clic.",
+  "popup.pillNeverSites": "Jamais sur ces sites",
+  "popup.removeSite": "Retirer {site}"
 }

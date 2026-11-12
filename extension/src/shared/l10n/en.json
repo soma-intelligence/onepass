@@ -322,5 +322,13 @@
   "save.cardExpires": "exp. {exp}",
   "ghost.use": "Use",
   "ghost.tab": "Tab",
-  "ghost.more": "More options"
+  "ghost.more": "More options",
+  "overlay.createWithOnepass": "Create with OnePass",
+  "overlay.strongPasswordForSite": "A strong password for this site",
+  "overlay.create": "Create",
+  "overlay.neverOnSite": "Never on this site",
+  "popup.signInPill": "Sign-in pill",
+  "popup.signInPillHelp": "It shows up by itself on a sign-in or signup page. Nothing is filled until you click.",
+  "popup.pillNeverSites": "Never on these sites",
+  "popup.removeSite": "Remove {site}"
 }

@@ -35,6 +35,11 @@
 // computes no progress of its own, it only lists the steps a password login
 // still has ahead. While it runs the card shows one line (what happens now);
 // "Détails" unfolds the steps, and the choice is kept for this browser.
+//
+// A card that appeared by itself on a recognised page (`auto`, no gesture) is the same pill, the
+// generic card, or "Créer avec OnePass" on a signup page; it adds "Jamais sur ce site" and folds
+// away AUTO_PILL_MS after it showed unless the user acted on it (its button, its list).
+import { AUTO_PILL_MS } from "../shared/auto-pill";
 import { ext } from "../shared/browser";
 import { t, tn } from "../shared/i18n";
 import type { ProviderId, UiToBg } from "../shared/messages";
@@ -215,6 +220,9 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   let init: OverlayInit | null = null;
   let timer: unknown = null;
   let closer: unknown = null;
+  /** A card that appeared by itself: the timer that folds it, and whether the user acted on it (no fold then). */
+  let folder: unknown = null;
+  let acted = false;
   let chainUi: {
     mode: "running" | "ended";
     status: HTMLElement;
@@ -250,9 +258,19 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     if (closer !== null) timers.clearTimeout(closer);
     closer = null;
   };
+  const stopFold = () => {
+    acted = true;
+    if (folder !== null) timers.clearTimeout(folder);
+    folder = null;
+  };
+  /** Once, on the first face shown of a card that appeared by itself and that nobody touched. */
+  const armFold = () => {
+    if (init?.auto && !acted && folder === null) folder = timers.setTimeout(closeOverlay, AUTO_PILL_MS);
+  };
   const closeOverlay = () => {
     stopPolling();
     cancelClose();
+    stopFold();
     if (token) void call(deps.send, { type: "overlay_close", token }, parseEmpty);
   };
 
@@ -307,6 +325,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
 
   const start = (a: OverlayAccount, accountId?: string, email?: string) => async () => {
     if (!token) return;
+    stopFold();
     const msg: UiToBg = { type: "overlay_start", token, itemId: a.itemId };
     if (a.provider) msg.provider = a.provider;
     if (a.provider && accountId !== undefined) msg.accountId = accountId;
@@ -391,7 +410,16 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       heading,
       brandTile(init!.origin, e.way.iconLetter, e.way.provider, 36, true),
       h("span", { class: "stack" }, h("span", { class: "t1" }, e.way.title), accountLine(e, showVaults(list))),
-      h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => startEntry(e)) } }, t("popup.signIn")),
+      h(
+        "button",
+        {
+          class: "ov-signin",
+          // The card that appeared by itself says whom it signs in ("Se connecter avec <login>").
+          attrs: { type: "button", ...(init!.auto ? { "aria-label": t("overlay.signInAsOther", { account: e.email ?? e.way.subtitle }) } : {}) },
+          on: { click: guard.wrap(() => startEntry(e)) },
+        },
+        t("popup.signIn"),
+      ),
       closeButton(),
     );
     const second = list.length === 2 ? list[1] : undefined;
@@ -415,6 +443,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
               attrs: { type: "button", "aria-haspopup": "listbox", "aria-expanded": "false" },
               on: {
                 click: guard.wrap(() => {
+                  stopFold();
                   pickerOpen = true;
                   query = "";
                   renderIdle();
@@ -425,9 +454,58 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
             icon("chevron", 10),
           )
         : null;
-    const wrap = h("div", { class: "ov-pill-wrap" }, pill, others);
+    const wrap = h("div", { class: "ov-pill-wrap" }, pill, others, neverRow());
     show(wrap);
     fitLines(wrap);
+  };
+
+  /** "Jamais sur ce site", under a card that appeared by itself: the worker keeps the site away and the card goes. */
+  function neverRow(): HTMLElement | null {
+    if (!init?.auto) return null;
+    return h(
+      "button",
+      {
+        class: "ov-others ov-never",
+        attrs: { type: "button" },
+        on: {
+          click: guard.wrap(() => {
+            stopFold();
+            if (!token) return;
+            void call(deps.send, { type: "overlay_never", token }, parseEmpty).then((r) => {
+              if (!r.ok) renderMessage(r.code);
+            });
+          }),
+        },
+      },
+      t("overlay.neverOnSite"),
+    );
+  }
+
+  /**
+   * "Créer avec OnePass" (a card that appeared by itself on a signup page): its click asks the
+   * worker to fill the page's signup form with a strong password made with the site's rules.
+   * Nothing is sent: the site's own button stays the user's. The worker then removes the card.
+   */
+  const renderCreate = (): void => {
+    const host = hostOf(init!.origin);
+    let asked = false;
+    const create = async (): Promise<void> => {
+      if (!token || asked) return;
+      asked = true;
+      stopFold();
+      const r = await call(deps.send, { type: "overlay_create", token }, parseEmpty);
+      if (!r.ok) renderMessage(r.code);
+    };
+    const pill = h(
+      "div",
+      { class: "ov-pill", attrs: { "data-create": "" } },
+      h("h1", { class: "sr-only" }, t("overlay.createWithOnepass")),
+      siteTile(init!.origin, host.charAt(0).toUpperCase(), 36, true),
+      h("span", { class: "stack" }, h("span", { class: "t1" }, t("overlay.createWithOnepass")), h("span", { class: "ov-line2" }, h("span", { class: "ov-email" }, t("overlay.strongPasswordForSite")))),
+      h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => void create()) } }, t("overlay.create")),
+      closeButton(),
+    );
+    show(h("div", { class: "ov-pill-wrap" }, pill, neverRow()));
   };
 
   /** "Other logins": a search field and every login, the selection moved by the keyboard or the pointer. */
@@ -513,6 +591,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       // One request per card: a second click while it is answered asks nothing more.
       if (!token || asked) return;
       asked = true;
+      stopFold();
       const r = await call(deps.send, { type: "overlay_unlock", token }, parseOverlayStart);
       if (!r.ok) {
         renderMessage(r.code);
@@ -534,7 +613,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => void unlock()) } }, t("popup.signIn")),
       closeButton(),
     );
-    show(h("div", { class: "ov-pill-wrap" }, pill));
+    show(h("div", { class: "ov-pill-wrap" }, pill, neverRow()));
   };
 
   function renderIdle(): void {
@@ -553,6 +632,12 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     }
     if (init.generic) {
       renderGeneric();
+      armFold();
+      return;
+    }
+    if (init.auto === "signup") {
+      renderCreate();
+      armFold();
       return;
     }
     const list = entries();
@@ -563,6 +648,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     }
     if (pickerOpen && list.length > 1) renderPicker(list);
     else renderPill(list);
+    armFold();
   }
 
   /** The way the chain runs with, as in the offer's row. */

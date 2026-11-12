@@ -208,6 +208,11 @@ export const parseOverlayInit = (v: unknown): (OverlayInit & { waiting?: Overlay
       if (o.generic !== true || init.accounts.length > 0) throw new Bad();
       init.generic = true;
     }
+    if (o.auto !== undefined) {
+      // A card that appeared by itself; the create pill never lists an account.
+      init.auto = oneOf<"signin" | "signup">(o.auto, ["signin", "signup"]);
+      if (init.auto === "signup" && (init.accounts.length > 0 || init.generic)) throw new Bad();
+    }
     return init;
   });
 
