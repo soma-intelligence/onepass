@@ -18,7 +18,13 @@ val hostLibDir: Provider<Directory> = run {
         .map { it.dir("debug") }
 }
 val hostLib: Provider<RegularFile> = run {
-    val name = if (System.getProperty("os.name").startsWith("Mac")) "libonepass_ffi.dylib" else "libonepass_ffi.so"
+    val os = System.getProperty("os.name")
+    val name = when {
+        os.startsWith("Mac") -> "libonepass_ffi.dylib"
+        // cargo names a cdylib without the lib prefix on Windows.
+        os.startsWith("Windows") -> "onepass_ffi.dll"
+        else -> "libonepass_ffi.so"
+    }
     hostLibDir.map { it.file(name) }
 }
 
@@ -55,11 +61,26 @@ val generateUniffiBindings = tasks.register<GenerateUniffiBindings>("generateUni
 // for 16 KiB pages. Debug by default; `-Ponepass.coreProfile=release` for a
 // release build of the core.
 val coreProfile: String = providers.gradleProperty("onepass.coreProfile").getOrElse("debug")
+// On Windows a bare `bash` can resolve to WSL's System32\bash.exe, which has
+// neither the Windows NDK nor cargo: use Git Bash, or ONEPASS_BASH.
+val bash: String = run {
+    val explicit = providers.environmentVariable("ONEPASS_BASH").orNull
+    when {
+        explicit != null -> explicit
+        System.getProperty("os.name").startsWith("Windows") ->
+            listOf("ProgramFiles", "ProgramW6432")
+                .mapNotNull { System.getenv(it) }
+                .map { File(it, "Git/bin/bash.exe") }
+                .firstOrNull { it.isFile }?.absolutePath
+                ?: error("Git Bash not found: install Git for Windows or set ONEPASS_BASH")
+        else -> "bash"
+    }
+}
 val buildCore = tasks.register<Exec>("buildCore") {
     group = "onepass"
     description = "Builds libonepass_ffi.so for the Android ABIs (android/scripts/build-core.sh)."
     workingDir = androidRoot.asFile
-    commandLine("bash", "scripts/build-core.sh", coreProfile)
+    commandLine(bash, "scripts/build-core.sh", coreProfile)
 }
 
 tasks.named("preBuild") {

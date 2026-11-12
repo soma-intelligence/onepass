@@ -13,6 +13,10 @@ if [ -z "${ANDROID_HOME:-}" ]; then
     ANDROID_HOME="$HOME/Library/Android/sdk"
   elif [ -d "$HOME/Android/Sdk" ]; then
     ANDROID_HOME="$HOME/Android/Sdk"
+  elif [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1 &&
+    [ -d "$(cygpath -u "$LOCALAPPDATA")/Android/Sdk" ]; then
+    # Windows (Git Bash): where Android Studio and sdkmanager put the SDK.
+    ANDROID_HOME="$(cygpath -u "$LOCALAPPDATA")/Android/Sdk"
   else
     echo "ANDROID_HOME is not set and no Android SDK was found" >&2
     exit 1
@@ -44,7 +48,8 @@ fi
 
 ndk_bin() {
   local host
-  for host in darwin-x86_64 linux-x86_64; do
+  # windows-x86_64: Git Bash on a Windows host (the NDK ships no other).
+  for host in darwin-x86_64 linux-x86_64 windows-x86_64; do
     if [ -d "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$host/bin" ]; then
       printf '%s' "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$host/bin"
       return
