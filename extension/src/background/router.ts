@@ -378,6 +378,16 @@ export function parseCsToBg(m: unknown): CsToBg | null {
         };
       case "submitted_identifier":
         return { type: "submitted_identifier", formRef: ref(o.formRef), username: str(o.username, MAX_USERNAME, 1) };
+      case "submit_outcome":
+        return {
+          type: "submit_outcome",
+          formRef: ref(o.formRef),
+          urlChanged: bool(o.urlChanged),
+          passwordCleared: bool(o.passwordCleared),
+          alert: bool(o.alert),
+        };
+      case "page_alert":
+        return { type: "page_alert" };
       case "submitted_form": {
         const kind = member<SavedFormKind>(o.kind, SAVED_FORM_KINDS);
         return { type: "submitted_form", formRef: ref(o.formRef), kind, values: submittedValues(o.values, kind) };
@@ -425,7 +435,7 @@ export function parseCsToBg(m: unknown): CsToBg | null {
 
 function edits(v: unknown): SaveEdits {
   const o = obj(v);
-  return {
+  const e: SaveEdits = {
     title: str(o.title, MAX_TITLE),
     username: str(o.username, MAX_USERNAME),
     password: str(o.password, MAX_PASSWORD),
@@ -434,6 +444,9 @@ function edits(v: unknown): SaveEdits {
     rule: member<SaveEdits["rule"]>(o.rule, new Set(["domain", "exact_host", "exact_url", "never"])),
     tags: list(o.tags, MAX_TAGS, (t) => str(t, MAX_TAG, 1)),
   };
+  // Spec 5.2: the login picked in the card; the worker checks it is one the card offered.
+  if (o.itemId !== undefined) e.itemId = str(o.itemId, MAX_ITEM_ID, 1);
+  return e;
 }
 
 const itemId = (v: unknown) => str(v, MAX_ITEM_ID, 1);
