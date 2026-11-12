@@ -182,6 +182,15 @@ describe("Suggestions", () => {
     expect(client.requests.filter((r) => r.op === "generate").at(-1)?.recipe).toMatchObject({ profile: "custom", length: 20, symbols: false });
   });
 
+  it("storedProfile: the stored custom profile, else the popup defaults", async () => {
+    const { s, ext } = setup();
+    expect(await s.storedProfile()).toEqual({ length: 20, symbols: true });
+    ext.local.data.set(GENERATOR_PROFILE_KEY, { kind: "custom", length: 12, symbols: false });
+    expect(await s.storedProfile()).toEqual({ length: 12, symbols: false });
+    ext.local.data.set(GENERATOR_PROFILE_KEY, { kind: "custom", length: 3, symbols: false });
+    expect(await s.storedProfile()).toEqual({ length: 20, symbols: true });
+  });
+
   it("the password never reaches a storage area", async () => {
     const { s, ext } = setup();
     const { token } = (await s.open(target(), rec()))!;

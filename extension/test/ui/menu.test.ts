@@ -743,24 +743,28 @@ describe("inline menu", () => {
 
   describe("suggestion row", () => {
     const POOL = ["Tr0ub4dor&3xKq9!Zv", "Lm7#pQ2vXe9Rt5@Hb", "Aa1!Bb2@Cc3#Dd4$Ee"];
-    const strongOf = (pw: string) => ({ password: pw, strength: 4, length: [...pw].length });
+    const strongOf = (pw: string) => ({ password: pw, strength: 4, length: [...pw].length, profile: { length: 18, symbols: true } });
 
     /** A worker holding one suggestion: regenerate cycles the pool, a profile draws `length` characters. */
-    function suggest(formKind = "signup", opts: { items?: unknown[] } = {}) {
+    function suggest(formKind = "signup", opts: { items?: unknown[]; stored?: { length: number; symbols: boolean }; refuse?: string } = {}) {
       let n = 0;
       let current = strongOf(POOL[0]!);
+      const stored = opts.stored ?? { length: 18, symbols: true };
       const answer = (m: UiToBg): Reply => {
         if (m.type === "menu_init") return ok({ origin: SITE, formKind, items: opts.items ?? [] });
-        if (m.type === "menu_preview") return ok(current);
+        if (m.type === "menu_preview") return ok({ ...current, profile: stored });
+        if (m.type === "menu_regenerate" && opts.refuse) return { err: opts.refuse };
         if (m.type === "menu_regenerate") {
           n += 1;
           current = strongOf(POOL[n % POOL.length]!);
-          return ok(current);
+          return ok({ ...current, profile: stored });
         }
         if (m.type === "menu_profile") {
           const pool = m.symbols ? "Ab3$Cd4%Ef5^" : "Ab3Cd4Ef5Gh6";
           current = strongOf(Array.from({ length: m.length }, (_, i) => pool[i % pool.length]).join(""));
-          return ok(current);
+          stored.length = m.length;
+          stored.symbols = m.symbols;
+          return ok({ ...current, profile: stored });
         }
         return ok();
       };
@@ -874,6 +878,42 @@ describe("inline menu", () => {
       expect(Math.max(...lens)).toBe(CUSTOM_MAX_LENGTH);
       // No send once at a bound.
       expect(lens.filter((n) => n === CUSTOM_MIN_LENGTH)).toHaveLength(1);
+    });
+
+    it("the panel starts from the stored profile, not the password, and opening or closing writes nothing", async () => {
+      // A site that bans symbols drew a symbol-free password; the stored profile still says symbols on.
+      const { r, handle, worker, clock } = suggest("signup", { stored: { length: 24, symbols: true } });
+      await handle.ready;
+      clock.advance(300);
+      button(r, "Longueur et caractères").click();
+      await flushAll();
+      expect(r.querySelector(".len-value")!.textContent).toBe("24");
+      expect(r.querySelector(".len-symbols")!.getAttribute("aria-checked")).toBe("true");
+      clock.advance(300);
+      button(r, "Longueur et caractères").click();
+      await flushAll();
+      expect(r.querySelector(".length-panel")).toBeNull();
+      expect(worker.types()).not.toContain("menu_profile");
+    });
+
+    it("a refused redraw shows the error line", async () => {
+      const { r, handle, clock } = suggest("signup", { refuse: "site_refused" });
+      await handle.ready;
+      clock.advance(300);
+      button(r, "Autre suggestion").click();
+      await flushAll();
+      expect(r.querySelector(".error-line")!.textContent).toBe("Ce site refuse le mot de passe généré");
+    });
+
+    it("a reply without a valid stored profile leaves the plain row", async () => {
+      for (const profile of [undefined, { length: 7, symbols: true }, { length: 65, symbols: true }, { length: 20.5, symbols: true }, { length: 20, symbols: "yes" }]) {
+        const { r, handle } = setup(
+          (m) => (m.type === "menu_init" ? ok({ origin: SITE, formKind: "signup", items: [] }) : m.type === "menu_preview" ? ok({ ...strongOf(POOL[0]!), profile }) : ok()),
+          "signup",
+        );
+        await handle.ready;
+        expect(r.querySelector(".suggest-pw")).toBeNull();
+      }
     });
 
     it("a preview the worker refuses leaves the plain Generate row", async () => {

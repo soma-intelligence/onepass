@@ -1,8 +1,10 @@
 // Validation of service worker replies before rendering. A malformed reply
 // renders as an internal error, never partially.
-import type { FormKind, GhostMetrics, ProviderId, SaveOutcome, SuggestionPreview } from "../shared/messages";
+import type { FormKind, GhostMetrics, ProviderId, MenuPreview, SaveOutcome, SuggestionPreview } from "../shared/messages";
 import {
   CHAIN_PHASES,
+  CUSTOM_MAX_LENGTH,
+  CUSTOM_MIN_LENGTH,
   STEP_WHATS,
   type StepWhat,
   type ChainPhase,
@@ -439,8 +441,18 @@ function previewOf(o: Obj): SuggestionPreview {
   return { password, strength: strength as SuggestionPreview["strength"], length };
 }
 
-/** The menu's `menu_preview`, `menu_regenerate` and `menu_profile` reply. */
-export const parseSuggestionPreview = (v: unknown): SuggestionPreview | null => guard(() => previewOf(obj(v)));
+/**
+ * The menu's `menu_preview`, `menu_regenerate` and `menu_profile` reply: the preview and the stored
+ * custom profile (an integer length within the custom bounds, a boolean).
+ */
+export const parseMenuPreview = (v: unknown): MenuPreview | null =>
+  guard(() => {
+    const o = obj(v);
+    const p = obj(o.profile);
+    const length = num(p.length);
+    if (!Number.isInteger(length) || length < CUSTOM_MIN_LENGTH || length > CUSTOM_MAX_LENGTH) throw new Bad();
+    return { ...previewOf(o), profile: { length, symbols: bool(p.symbols) } };
+  });
 
 /** The ghost page's `ghost_init` reply: the held password, its strength and the field's metrics. */
 export const parseGhostInit = (v: unknown): (SuggestionPreview & { metrics: GhostMetrics }) | null =>

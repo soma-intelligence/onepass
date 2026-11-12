@@ -11,7 +11,7 @@
 // relays the arrows and Return to the worker, the menu asks for them
 // (`menu_keys`), and the focus stays in the page.
 import { ext } from "../shared/browser";
-import type { MenuKey, ProviderId, SignupMode, SuggestionPreview, UiToBg } from "../shared/messages";
+import type { MenuKey, ProviderId, SignupMode, MenuPreview, UiToBg } from "../shared/messages";
 import { NEW_PASSWORD_FORMS } from "../shared/messages";
 import { t, tn } from "../shared/i18n";
 import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH, type MenuInit, type ProviderChoice, type SignInChoice, type Summary } from "../shared/ui";
@@ -43,7 +43,7 @@ import {
   wayArt,
   wayTile,
 } from "./components";
-import { parseEmpty, parseKeys, parseLocked, parseMenuInit, parseNativeVaultState, parseSuggestionPreview, type NativeVaultState } from "./parse";
+import { parseEmpty, parseKeys, parseLocked, parseMenuInit, parseNativeVaultState, parseMenuPreview, type NativeVaultState } from "./parse";
 
 export interface MenuHandle {
   /** Resolves once the first render is done. */
@@ -482,6 +482,8 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   function render(init: MenuInit): void {
     waitSeq++;
     const errLine = h("p", { class: "error-line", attrs: { role: "alert" } });
+    lastErr = errLine;
+    pwEl = barEl = lineEl = lenEl = null;
     // A plan opened this menu because the page refused every generated password.
     if (init.notice) errLine.textContent = errorText(init.notice);
     const list = h("div", { class: "menu-group menu-list" });
@@ -616,7 +618,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
           label: t("menu.lengthAndCharacters"),
           lead: glyphTile("more", 14),
           cls: "row-quiet",
-          attrs: { "data-action": "length", "aria-expanded": String(lengthOpen) },
+          attrs: { "data-action": "length", "aria-pressed": String(lengthOpen) },
           run: () => {
             lengthOpen = !lengthOpen;
             const at = active;
@@ -670,7 +672,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   }
 
   /** The held suggestion of this menu's field (`menu_preview`); null: the plain Generate row. */
-  let suggestion: SuggestionPreview | null = null;
+  let suggestion: MenuPreview | null = null;
   let lengthOpen = false;
   /** The panel's own values: the length asked, and whether symbols are on. */
   let profile = { length: 16, symbols: true };
@@ -683,7 +685,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   /** The error line of the list on screen. */
   let lastErr: HTMLElement | null = null;
 
-  const strengthLine = (p: SuggestionPreview) =>
+  const strengthLine = (p: MenuPreview) =>
     p.strength >= 3 ? t("menu.suggestStrong", { n: p.length }) : `${t(p.strength === 0 ? "popup.weak" : "popup.fair")}, ${p.length}`;
 
   /** Writes the current suggestion into the row's parts (the row itself stays, so does the focus). */
@@ -699,15 +701,13 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   /** The worker redrew (other suggestion, or a new profile): show the answer, if still the newest. */
   async function redraw(m: UiToBg): Promise<void> {
     const seq = ++drawSeq;
-    const r = await call(deps.send, m, parseSuggestionPreview);
+    const r = await call(deps.send, m, parseMenuPreview);
     if (seq !== drawSeq) return;
     if (!r.ok) {
       showError(lastErr, r.code);
       return;
     }
     suggestion = r.value;
-    // A plain redraw (other suggestion) follows the profile the worker holds; a profile draw is ours.
-    if (m.type === "menu_regenerate") profile = { ...profile, length: clampLength(r.value.length) };
     paint();
   }
 
@@ -722,7 +722,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   function suggestRow(run: () => Promise<void>, first: boolean): HTMLButtonElement {
     pwEl = h("span", { class: "suggest-pw mono" });
     barEl = h("span", { class: "strength-bar", attrs: { "aria-hidden": "true" } }, ...[0, 1, 2, 3].map(() => h("span", { class: "strength-seg" })));
-    lineEl = h("span", { class: "suggest-line" });
+    lineEl = h("span", { class: "suggest-line", attrs: { "aria-live": "polite" } });
     const row = h(
       "button",
       {
@@ -755,7 +755,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         },
         sign,
       );
-    lenEl = h("span", { class: "len-value" }, String(profile.length));
+    lenEl = h("span", { class: "len-value", attrs: { "aria-live": "polite" } }, String(profile.length));
     const sw = h("button", {
       class: "len-symbols",
       attrs: { type: "button", role: "switch", "aria-checked": String(profile.symbols), "aria-label": t("menu.symbols") },
@@ -798,10 +798,11 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     if (r.ok) {
       suggestion = null;
       if (NEW_PASSWORD_FORMS.has(r.value.formKind)) {
-        const p = await call(deps.send, { type: "menu_preview", token }, parseSuggestionPreview);
+        const p = await call(deps.send, { type: "menu_preview", token }, parseMenuPreview);
         if (p.ok) {
           suggestion = p.value;
-          profile = { length: clampLength(p.value.length), symbols: /[^\p{L}\p{N}\p{M}]/u.test(p.value.password) };
+          // The panel starts from the stored custom profile, not from the password drawn.
+          profile = { ...p.value.profile };
         }
       }
       render(r.value);
