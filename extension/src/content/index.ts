@@ -689,24 +689,45 @@ export function createContentScript(o: ContentOptions): ContentScript {
         !isDismissed(t.el);
       /**
        * Partly covered (spec 3.4): the hit test of the field's own root (a shadow root answers with
-       * its own elements) at its center and inset corners finds something else than the field, an
-       * element inside it or our host. No hit testing in this engine: not covered.
+       * its own elements) at five points inside its box finds something else than the field, an
+       * element inside it, our host, an ancestor of it or its label. No hit testing in this engine:
+       * not covered.
        */
       const fieldHitTest = o.fieldHitTest ?? domFieldHitTest;
       const fieldCovered = (el: Element): boolean => {
         const r = el.getBoundingClientRect();
-        const inset = 2;
+        // Away from the corners: a rounded corner (and a fractional box) shows the field's own
+        // wrapper there. Points at a quarter and three quarters of the box and its centre, at
+        // least the largest corner radius plus a pixel in, rounded inward.
+        const cs = view?.getComputedStyle(el);
+        const radius = cs
+          ? Math.max(
+              ...[cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomLeftRadius, cs.borderBottomRightRadius].map(
+                (v) => parseFloat(v ?? "") || 0,
+              ),
+            )
+          : 0;
+        const inset = Math.max(radius, 2) + 1;
+        const lo = (start: number, size: number) => Math.ceil(start + Math.min(size / 2, Math.max(size / 4, inset)));
+        const hi = (start: number, size: number) => Math.floor(start + size - Math.min(size / 2, Math.max(size / 4, inset)));
+        const xs = [lo(r.left, r.width), hi(r.left, r.width)];
+        const ys = [lo(r.top, r.height), hi(r.top, r.height)];
         const points: [number, number][] = [
-          [r.left + r.width / 2, r.top + r.height / 2],
-          [r.left + inset, r.top + inset],
-          [r.right - inset, r.top + inset],
-          [r.left + inset, r.bottom - inset],
-          [r.right - inset, r.bottom - inset],
+          [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)],
+          [xs[0]!, ys[0]!],
+          [xs[1]!, ys[0]!],
+          [xs[0]!, ys[1]!],
+          [xs[1]!, ys[1]!],
         ];
+        const labels = Array.from((el as HTMLInputElement).labels ?? []);
         for (const [x, y] of points) {
           const hit = fieldHitTest(el, x, y);
           if (hit === null || hit === undefined) continue;
           if (hitIsField(el, hit, (h) => sh.isHost(h))) continue;
+          // The field's own wrapper (an ancestor shows only around it) or its own label (a
+          // floating label lies over it on purpose): not a cover.
+          if (composedContains(hit, el)) continue;
+          if (labels.some((l) => l === hit || l.contains(hit))) continue;
           return true;
         }
         return false;

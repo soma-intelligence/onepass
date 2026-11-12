@@ -382,11 +382,67 @@ describe("ghost fix round 1", () => {
     expect(s.ext.ofType("open_menu")).toHaveLength(0);
   });
 
+  it("a field with a rounded corner whose corner hit is its own wrapper gets a ghost (fix round 2)", async () => {
+    setPage(`<div id="wrap">${SIGNUP}</div>`);
+    const field = input("n");
+    field.style.borderRadius = "6px";
+    // A fractional box, as floating-label layouts give.
+    const r = { x: 10.4, y: 20.6, width: 240, height: 36 };
+    field.getBoundingClientRect = () =>
+      ({ ...r, left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height, toJSON: () => r }) as DOMRect;
+    const wrap = document.getElementById("wrap")!;
+    const seen: [number, number][] = [];
+    // Within the corner radius (plus a pixel) of an edge: the wrapper shows through.
+    const corner = (x: number, y: number) => {
+      const dx = Math.min(x - r.x, r.x + r.width - x);
+      const dy = Math.min(y - r.y, r.y + r.height - y);
+      return dx < 7 && dy < 7;
+    };
+    s = start(undefined, {
+      fieldHitTest: (el, x, y) => {
+        seen.push([x, y]);
+        return corner(x, y) ? wrap : el;
+      },
+    });
+    worker(s);
+    await settle();
+    userFocus(field);
+    await settle();
+    expect(s.ext.ofType("ghost_open")).toHaveLength(1);
+    expect(ghostFrame(s)).not.toBeNull();
+    // Whole pixels, inside the box.
+    for (const [x, y] of seen) {
+      expect(Number.isInteger(x) && Number.isInteger(y)).toBe(true);
+      expect(x > r.x && x < r.x + r.width && y > r.y && y < r.y + r.height).toBe(true);
+    }
+  });
+
+  it("a wrapper hit anywhere is no cover; an overlay over half the field gets the menu", async () => {
+    setPage(`<div id="wrap">${SIGNUP}</div><div id="cover"></div>`);
+    wide(input("n"));
+    const wrap = document.getElementById("wrap")!;
+    const cover = document.getElementById("cover")!;
+    s = start(undefined, { fieldHitTest: (el, x) => (x < 60 ? wrap : el) });
+    worker(s);
+    await settle();
+    userFocus(input("n"));
+    await settle();
+    expect(s.ext.ofType("ghost_open")).toHaveLength(1);
+    s.cs.stop();
+    s = start(undefined, { fieldHitTest: (el, x) => (x > 130 ? cover : el) });
+    worker(s);
+    await settle();
+    userFocus(input("n"));
+    await settle();
+    expect(s.ext.ofType("ghost_open")).toHaveLength(0);
+    expect(s.ext.ofType("open_menu")).toEqual([expect.objectContaining({ auto: true })]);
+  });
+
   it("a field really covered by another element gets the menu", async () => {
     setPage(`${SIGNUP}<div id="cover"></div>`);
     wide(input("n"));
     const cover = document.getElementById("cover")!;
-    s = start(undefined, { fieldHitTest: (el, x) => (x > 200 ? cover : el) });
+    s = start(undefined, { fieldHitTest: (el, x) => (x > 130 ? cover : el) });
     worker(s);
     await settle();
     userFocus(input("n"));
