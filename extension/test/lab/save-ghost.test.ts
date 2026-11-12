@@ -8,7 +8,7 @@
 // failed_login assert their premise in the vault.
 import { describe, expect, it } from "vitest";
 import {
-  firstLoginHosts, firstLoginKey, GHOST_VARIANTS, generate, groupOf, loadPatterns, parseDriverGroups, SAVE_VARIANTS, saveGhostScenarios, withDrivers, withoutSiteLogins, withStarts,
+  firstLoginHosts, firstLoginKey, GHOST_SHOWN_VARIANTS, GHOST_VARIANTS, generate, ghostFieldWidth, ghostFits, groupOf, loadPatterns, parseDriverGroups, SAVE_VARIANTS, saveGhostScenarios, withDrivers, withoutSiteLogins, withStarts,
 } from "../../lab/gen/generate.ts";
 import type { Scenario, Site } from "../../lab/gen/model.ts";
 import { isRed, renderReport, summarize } from "../../lab/report.ts";
@@ -20,6 +20,26 @@ const full = withDrivers(world, ["current", "save_ghost"]);
 const sg = full.scenarios.filter((s) => s.driver === "ghost" || s.driver === "save_typed");
 
 describe("generator", () => {
+  it("ghost_variants_needing_the_ghost_draw_only_fields_wide_enough", () => {
+    // ghost-fit.ts: 120 px at least, and the field less its insets, the pill and its gap keeps 48 px of text.
+    const policy = { via: ["hints" as const], min: 14 };
+    expect(ghostFits({ layout: "stacked", lang: "en" })).toBe(true);
+    expect(ghostFits({ layout: "side_label", lang: "en" })).toBe(true);
+    expect(ghostFits({ layout: "grid", lang: "en" })).toBe(false);
+    expect(ghostFieldWidth({ layout: "inline", lang: "en", passwordPolicy: policy })).toBeUndefined();
+    expect(ghostFits({ layout: "inline", lang: "en", passwordPolicy: policy })).toBe(false);
+    expect(ghostFits({ layout: "inline", lang: "en" })).toBe(true);
+    const siteOf = new Map(full.sites.map((s) => [s.index, s]));
+    const ghosts = sg.filter((s) => s.driver === "ghost");
+    for (const s of ghosts.filter((s) => GHOST_SHOWN_VARIANTS.has(s.variant as never))) expect(ghostFits(siteOf.get(s.site)!), s.id).toBe(true);
+    // The fallbacks keep any signup site: their driver narrows or turns the field itself.
+    expect(ghosts.some((s) => !GHOST_SHOWN_VARIANTS.has(s.variant as never))).toBe(true);
+    // pass6 site 93 (inline, hint beside the field, about 125 px): no variant that needs the ghost.
+    const p6 = withDrivers(generate("pass6-2026-11-11", { sites: 200, patterns: loadPatterns() }), ["save_ghost"]);
+    const on93 = p6.scenarios.filter((s) => s.driver === "ghost" && s.site === 93);
+    expect(on93.filter((s) => GHOST_SHOWN_VARIANTS.has(s.variant as never))).toEqual([]);
+  });
+
   it("emits_every_variant_with_stable_ids", () => {
     for (const v of SAVE_VARIANTS) expect(sg.some((s) => s.driver === "save_typed" && s.variant === v), v).toBe(true);
     for (const v of GHOST_VARIANTS) expect(sg.some((s) => s.driver === "ghost" && s.variant === v), v).toBe(true);

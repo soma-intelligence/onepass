@@ -14,7 +14,8 @@ import { buildForms, FORMS_FLOWS, isFormsFlow, type CoreLabeler } from "./forms-
 import { address, brandOf, card, formatCardNumber, hostName, lookalikeHost, passkey, passkeyPkcs8, password, person, totpSecret, userHandle } from "./data.ts";
 import { GENERATOR_VERSION, START_STATES } from "./model.ts";
 import { LAYOUTS } from "./layouts.ts";
-import { drawPolicy, POLICY_RATE } from "./policy.ts";
+import { drawPolicy, POLICY_RATE, policyHint } from "./policy.ts";
+import { DESIGN_TOKENS } from "../../src/shared/design-tokens.ts";
 import { ACCOUNT_FLOWS, ACCOUNT_OUTCOME, accountProfiles, DEFAULT_PROFILE_ID, drawProfiles, fixtureFor, meantAccount, type Profile } from "./population.ts";
 import type {
   Account, DriverGroup, DriverId, FieldSpec, FixtureFile, FlowId, FrameworkId, GhostVariant, HoneypotStyle, IdpAccount, LabRole, Lang, LayoutId, LoginStyle, LookalikeKind, ProviderId, Role, SaveVariant, Scenario, Site, StartState, TraitId, World,
@@ -200,6 +201,46 @@ export const GHOST_VARIANTS: readonly GhostVariant[] = ["accept_tab", "accept_cl
 const SAVE_GHOST_PER_VARIANT = 2;
 const SAVE_FLOWS = new Set<FlowId>(["login_single", "login_username_first", "login_email_then_password"]);
 
+/** A px design token (src/ui/theme.css through src/shared/design-tokens.ts); 0 when missing. */
+const tokenPx = (name: string): number => {
+  const n = parseFloat(DESIGN_TOKENS.light[name] ?? "");
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+/** The lab's copy of src/content/ghost-fit.ts MIN_GHOST_WIDTH (that module reads the DOM, so it is not imported). */
+const GHOST_MIN_WIDTH = 120;
+/** As ghost-fit.ts: the pill at its widest and the gap beside it, then the least room for the grey text. */
+const GHOST_PILL_ROOM = tokenPx("ghost-pill-max") + tokenPx("space-xs");
+const GHOST_TEXT_MIN = tokenPx("ghost-text-min");
+/** render-forms.ts CSS: `main` is 440 px wide less its 28 px padding and 1 px border on each side. */
+const FORM_CONTENT_PX = 440 - 2 * 28 - 2 * 1;
+/** render-forms.ts CSS: an input's padding (10 px) and border (1 px) on each side, the ghost's insets. */
+const FIELD_INSETS_PX = 2 * (10 + 1);
+
+/**
+ * The width of a signup site's first new-password field (the ghost's field, drive.ts ghost), from the
+ * layout CSS (layouts.ts), or undefined when the lab cannot tell: an inline row with the policy hint
+ * beside the field shrinks it by the hint's own text width (pass6 site 93: about 125 px).
+ */
+export function ghostFieldWidth(site: Pick<Site, "layout" | "lang" | "passwordPolicy">): number | undefined {
+  const hint = site.passwordPolicy !== undefined && policyHint(site.passwordPolicy, site.lang) !== undefined;
+  switch (site.layout) {
+    case "side_label": return FORM_CONTENT_PX - 0.4 * FORM_CONTENT_PX - 10;
+    case "grid": return (FORM_CONTENT_PX - 12) / 2;
+    case "inline": return hint ? undefined : FORM_CONTENT_PX - 0.35 * FORM_CONTENT_PX - 8;
+    case "card": return FORM_CONTENT_PX - 2 * 16 - 2 * 1;
+    default: return FORM_CONTENT_PX;
+  }
+}
+
+/** Whether the product's fit rule (ghost-fit.ts fitGhost, its width tests) leaves room for the ghost on the site's field. */
+export function ghostFits(site: Pick<Site, "layout" | "lang" | "passwordPolicy">): boolean {
+  const w = ghostFieldWidth(site);
+  return w !== undefined && w >= GHOST_MIN_WIDTH && w - FIELD_INSETS_PX - GHOST_PILL_ROOM >= GHOST_TEXT_MIN;
+}
+
+/** The ghost variants that need the ghost itself (the fallbacks narrow or turn the field on purpose). */
+export const GHOST_SHOWN_VARIANTS: ReadonlySet<GhostVariant> = new Set<GhostVariant>(["accept_tab", "accept_click", "ignore_typing", "menu_arrow"]);
+
 /**
  * The save and ghost scenarios (spec 7.2): every save variant on plain password login sites (the typed sign-in
  * the save follows), every ghost variant on signup sites (where a new password is asked). Not part of the
@@ -230,8 +271,10 @@ export function saveGhostScenarios(sites: readonly Site[], perVariant: number = 
     const pool = v === "no_username" && idFirst.length > 0 ? idFirst : saveSites;
     for (const s of pick(pool, k, prefer)) out.push({ id: `save:${v}:${s.index}`, site: s.index, driver: "save_typed", variant: v, expect: "pass" });
   });
+  // A variant that needs the ghost only on a field wide enough for it (ghostFits); the fallbacks on any.
+  const roomy = ghostSites.filter(ghostFits);
   GHOST_VARIANTS.forEach((v, k) => {
-    for (const s of pick(ghostSites, k)) out.push({ id: `ghost:${v}:${s.index}`, site: s.index, driver: "ghost", variant: v, expect: "pass" });
+    for (const s of pick(GHOST_SHOWN_VARIANTS.has(v) ? roomy : ghostSites, k)) out.push({ id: `ghost:${v}:${s.index}`, site: s.index, driver: "ghost", variant: v, expect: "pass" });
   });
   return out;
 }
