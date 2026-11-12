@@ -1,6 +1,6 @@
 // Spec 3.4: the ghost fits its field, or the menu opens instead, for the first reason that holds.
 import { afterEach, describe, expect, it } from "vitest";
-import { fitGhost, MIN_GHOST_WIDTH } from "../../src/content/ghost-fit";
+import { fitGhost, type GhostFallback, MIN_GHOST_WIDTH } from "../../src/content/ghost-fit";
 import { DESIGN_TOKENS } from "../../src/shared/design-tokens";
 
 function field(html: string, rect = { x: 10, y: 20, width: 240, height: 36 }): HTMLInputElement {
@@ -149,7 +149,10 @@ describe("fitGhost", () => {
     expect(r.ok && [r.metrics.paddingLeft, r.metrics.paddingRight]).toEqual([13, 8]);
   });
 
-  it("checks the reasons in order: narrow, touch, transform, indent, covered, cross_origin, sheet", () => {
+  it("checks the reasons in order: narrow, touch, transform, indent, covered, cross_origin", () => {
+    // The whole list (the bottom sheet is a touch layout: "touch" takes it, no reason of its own).
+    const reasons: Record<GhostFallback, true> = { narrow: true, touch: true, transform: true, indent: true, covered: true, cross_origin: true };
+    expect(Object.keys(reasons)).toHaveLength(6);
     const foreign = {
       get location(): never {
         throw new DOMException("Blocked a frame", "SecurityError");
@@ -167,7 +170,6 @@ describe("fitGhost", () => {
     const plain = `<div><input id="f" type="password"></div>`;
     expect(fitGhost(field(plain, wide), view({ top: foreign }), () => true)).toEqual({ ok: false, reason: "covered" });
     expect(fitGhost(field(plain, wide), view({ top: foreign }), never)).toEqual({ ok: false, reason: "cross_origin" });
-    // "sheet" is a touch layout, already caught by "touch": it stays last, for a layout that says sheet without touch.
     expect(fitGhost(field(plain, wide), view(), never).ok).toBe(true);
   });
 });

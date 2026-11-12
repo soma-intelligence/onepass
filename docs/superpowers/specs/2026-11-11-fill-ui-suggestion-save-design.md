@@ -133,7 +133,7 @@ The menu with its preview row opens instead of the ghost when any of these holds
   `text-indent`;
 - the field is partly covered (the existing occlusion check, `content/occlusion.ts`);
 - the field is in a cross-origin child frame;
-- the narrow touch layout (bottom sheet, `SHEET_MAX_VIEWPORT`) is active.
+- a touch layout is active (the narrow bottom sheet, `SHEET_MAX_VIEWPORT`, is one; see section 9).
 
 ### 3.5 Security
 
@@ -283,7 +283,8 @@ Decided during the build, each against the text above.
   pill lifetime). `undo_save` keeps its 60 s. Reason: the earlier copy-then-undo was bounded
   by the 60 s of Undo, too short for Edit.
 - 3.4: touch layouts fall back to the menu (new fallback reason "touch"), because the ghost frame
-  covers the field and would steal field taps. The "sheet" reason is now unreachable behind it.
+  covers the field and would steal field taps. The "sheet" reason, unreachable behind it, is
+  removed: the bottom sheet is a touch layout.
 - 3.4: the narrow fallback also fires when the room beside the ghost pill is below
   `--ghost-text-min` (the ghost needs about 180 px plus insets), on top of the 120 px rule.
   Reason: on a field of about 125 px the pill covered the whole text.

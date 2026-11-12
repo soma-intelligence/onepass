@@ -23,7 +23,7 @@ const GHOST_PILL_ROOM = tokenPx("ghost-pill-max") + tokenPx("space-xs");
 /** The least width the grey text needs to be read (--ghost-text-min). */
 const GHOST_TEXT_MIN = tokenPx("ghost-text-min");
 
-export type GhostFallback = "narrow" | "touch" | "transform" | "indent" | "covered" | "cross_origin" | "sheet";
+export type GhostFallback = "narrow" | "touch" | "transform" | "indent" | "covered" | "cross_origin";
 
 export type GhostFit = { ok: true; metrics: GhostMetrics } | { ok: false; reason: GhostFallback };
 
@@ -151,8 +151,8 @@ function familyOf(cs: CSSStyleDeclaration, doc: Document): string | null {
  * opens its pill to the pointer on `pointermove`, which a finger never sends, so a tap would land on
  * the field: touch screens get the menu); a transform other than a translation on the field or an
  * ancestor, across shadow roots; a non-zero `text-indent`; partly covered (`occluded`, the occlusion
- * check of occlusion.ts); in a cross-origin child frame; the narrow touch layout (the bottom sheet:
- * a touch layout too, so "touch" takes it first; kept last for the spec's list).
+ * check of occlusion.ts); in a cross-origin child frame. The narrow touch layout (the bottom sheet)
+ * is a touch layout: "touch" takes it.
  *
  * `paddingLeft` and `paddingRight` include the field's borders: the ghost covers the border box,
  * so the grey text starts where the caret does.
@@ -173,7 +173,6 @@ export function fitGhost(field: HTMLInputElement, view: Window, occluded: (el: E
   if (Number.isFinite(indent) && indent !== 0) return { ok: false, reason: "indent" };
   if (occluded(field)) return { ok: false, reason: "covered" };
   if (crossOrigin(view)) return { ok: false, reason: "cross_origin" };
-  if (layout.sheet) return { ok: false, reason: "sheet" };
   const fontSize = px(cs.fontSize, 13);
   const lh = parseFloat(cs.lineHeight);
   return {
