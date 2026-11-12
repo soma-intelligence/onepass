@@ -109,13 +109,13 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   (deps.observe ?? observeVisibility)(container, (v) => guard.setVisibility(v));
   // The prompt is as tall as its content; the edit view takes the whole frame.
   let fit = true;
-  /** The folded pill's box: the frame then shrinks to its width too, so nothing around it blocks the page. */
-  let pillBox: HTMLElement | null = null;
+  /** The box of the pill or the toast: the frame then shrinks to its width too, so nothing around it blocks the page. */
+  let sizeBox: HTMLElement | null = null;
   let sentWidth = 0;
   const sendSize = (height: number) => {
     if (!token) return;
     const m: { type: "save_resize"; token: string; height: number; width?: number } = { type: "save_resize", token, height: fit ? height : FULL_HEIGHT };
-    const w = pillBox ? Math.ceil(pillBox.offsetWidth) : 0;
+    const w = sizeBox ? Math.ceil(sizeBox.offsetWidth) : 0;
     if (w > 0) m.width = w;
     sentWidth = w;
     void call(deps.send, m, parseEmpty);
@@ -182,9 +182,13 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     h("button", { class: "btn-icon", attrs: { type: "button", "aria-label": label }, on: { click: guard.wrap(fn) } }, icon(glyph, 12));
 
   const show = (...children: (HTMLElement | null)[]) => {
+    // A view that leaves the pill or the toast: the frame takes the card's width again.
+    const hadBox = sizeBox !== null;
+    sizeBox = null;
     mount(container, ...children);
     guard.reset();
     remeasure();
+    if (hadBox) resendSize();
   };
   const setFit = (on: boolean) => {
     fit = on;
@@ -658,9 +662,20 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       return;
     }
     quietOn = true;
-    pillBox = null;
+    sizeBox = null;
     renderPrompt();
     resendSize();
+  }
+
+  /** Shows `box` as the whole content, the frame sized to its width and height. */
+  function fitBox(box: HTMLElement): void {
+    show(box);
+    sizeBox = box;
+    resendSize();
+    // Its width moves without its height (a late font): the frame follows.
+    (deps.observeSize ?? observeSize)(box, () => {
+      if (sizeBox === box && Math.ceil(box.offsetWidth) !== sentWidth) resendSize();
+    });
   }
 
   /** "1 login to update" / "1 login to save": one tap target, a small x to put it away for good. */
@@ -685,13 +700,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           iconBtn(t("common.close"), "close", () => void decide("dismiss", errLine(), () => undefined)),
         ),
     );
-    pillBox = wrap;
-    show(wrap);
-    resendSize();
-    // The pill's own width moves without its height (a late font): the frame follows.
-    (deps.observeSize ?? observeSize)(wrap, () => {
-      if (pillBox === wrap && Math.ceil(wrap.offsetWidth) !== sentWidth) resendSize();
-    });
+    fitBox(wrap);
   }
 
   function renderEdit(): void {
@@ -856,10 +865,13 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           renderToastEdit(d);
         })
       : null;
-    show(
+    // Its own box: the frame is as big as the toast and no more (no strip around it over the page).
+    const box = h(
+      "div",
+      { class: "save-toast-wrap" },
       h(
         "div",
-        { class: "saved quiet toast", attrs: { role: "status" } },
+        { class: "saved quiet save-toast", attrs: { role: "status" } },
         h("span", { class: "ok-dot", attrs: { "aria-hidden": "true" } }, icon("check", 11)),
         h("span", { class: "stack" }, h("span", { class: "t1" }, t("save.toastSaved", { site: i.site })), d.username !== "" ? h("span", { class: "t2" }, d.username) : null),
         undo,
@@ -867,6 +879,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       ),
       err,
     );
+    fitBox(box);
     quietMs = TOAST_MS;
     quietDone = () => {
       if (tok) void call(deps.send, { type: "save_close", token: tok }, parseEmpty);

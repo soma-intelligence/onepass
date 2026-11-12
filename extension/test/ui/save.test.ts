@@ -669,6 +669,41 @@ describe("save toast (spec 4.1, 4.4)", () => {
     expect(text(s.r)).toContain("Impossible d'annuler");
   });
 
+  it("toast state: the frame is the toast's own box (height and width); Edit restores the card size", async () => {
+    const origH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const origW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.querySelector(".save-toast") ? 64 : 300;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("save-toast-wrap") ? 312 : 340;
+      },
+    });
+    try {
+      const { r, handle, worker, click } = setupToast(toast);
+      await handle.ready;
+      await new Promise((x) => setTimeout(x, 30));
+      const sizes = () => worker.sent.filter((m) => m.type === "save_resize") as { height: number; width?: number }[];
+      expect(sizes().at(-1)).toEqual(expect.objectContaining({ height: 64, width: 312 }));
+      // Not the absolutely placed popup toast: it would leave the frame empty and tall.
+      expect(r.querySelector(".toast")).toBeNull();
+      await click("Modifier");
+      await new Promise((x) => setTimeout(x, 30));
+      expect(sizes().at(-1)!.width).toBeUndefined();
+      expect(sizes().at(-1)!.height).toBeGreaterThan(64);
+    } finally {
+      for (const [k, d] of [["scrollHeight", origH], ["offsetWidth", origW]] as const) {
+        if (d) Object.defineProperty(HTMLElement.prototype, k, d);
+        else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+      }
+    }
+  });
+
   it("Edit opens the edit view with name, identifier, vault", async () => {
     const { r, handle, worker, click } = setupToast(toast, (m) => (m.type === "save_decide" ? { ok: { outcome: "saved", vault: "Projet Atlas" } } : null));
     await handle.ready;

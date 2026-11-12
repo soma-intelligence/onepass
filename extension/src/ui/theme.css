@@ -979,7 +979,8 @@ body.passkey-page { overflow: hidden; }
 .sc-gap { flex-grow: 1; }
 /* The folded save card (spec 4.2): a capsule in the card's corner, the site's tile and one line. */
 /* Its own width (the frame shrinks to it), at the right edge. */
-.save-pill-wrap { width: max-content; max-width: 100%; margin-left: auto; padding: var(--space-xs); }
+.save-toast-wrap, .save-pill-wrap { width: max-content; max-width: 100%; margin-left: auto; }
+.save-pill-wrap { padding: var(--space-xs); }
 .save-pill {
   display: inline-flex; align-items: center; gap: var(--space-xs); max-width: 100%; min-height: var(--control-m);
   padding: var(--space-xxs) var(--space-xxs) var(--space-xxs) var(--space-s);
