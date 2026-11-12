@@ -113,7 +113,7 @@ export interface SavePending {
    * none filled in the tab: the update card asks which one (Update names it in `edits.itemId`).
    */
   choices?: LoginChoice[];
-  /** With `choices`: the pending Login holding the generated password, deleted once Update moved it. */
+  /** Spec 5.2: the pending Login holding the generated password, deleted once Update moved it into a login. */
   pendingItemId?: string;
 }
 
@@ -180,6 +180,8 @@ interface Held {
   password: string;
   update?: { itemId: string; title: string };
   locked?: boolean;
+  /** Spec 5.2: the pending Login holding the generated password, discarded once the update is in. */
+  pendingItemId?: string;
 }
 
 interface Waiting extends Held {
@@ -544,12 +546,7 @@ export class SavePrompts {
         }
         if (rec.kind !== "login" || !rec.update) throw new BgError("invalid");
         out = (await this.commit(rec, "update", edits)).out;
-        // Spec 5.2: the password is in the picked login now; its pending item goes (a refusal
-        // leaves it, nothing lost).
-        if (rec.choices && rec.pendingItemId !== undefined)
-          await this.deps.session
-            .request({ op: "discard_pending", ctx: "save_prompt", item_id: rec.pendingItemId, origin: rec.origin })
-            .catch(() => undefined);
+        await this.discardPending(rec);
         break;
     }
     // Answered here (a folded card's popup entry would be a stale second copy).
@@ -659,6 +656,15 @@ export class SavePrompts {
     const out: SaveOutcome = { outcome: status === "update" ? "updated" : "saved" };
     if (vaultName !== undefined) out.vault = vaultName;
     return { out, itemId: saved };
+  }
+
+  /**
+   * Spec 5.2: a login now holds the generated password; the pending item that kept it safe goes. A
+   * refusal (another bridge session, edited since) leaves it in the vault, nothing lost.
+   */
+  private async discardPending(h: Pick<Held, "origin" | "pendingItemId">): Promise<void> {
+    if (h.pendingItemId === undefined) return;
+    await this.deps.session.request({ op: "discard_pending", ctx: "save_prompt", item_id: h.pendingItemId, origin: h.origin }).catch(() => undefined);
   }
 
   // ---- automatic save (spec 4.1) ----
@@ -867,6 +873,7 @@ export class SavePrompts {
     };
     if (rec.update) w.update = { ...rec.update };
     if (rec.locked) w.locked = true;
+    if (rec.pendingItemId !== undefined) w.pendingItemId = rec.pendingItemId;
     this.waiting.set(id, w);
   }
 
@@ -945,6 +952,7 @@ export class SavePrompts {
       tags: [],
     };
     const { out } = await this.commit(w, decision === "update" ? "update" : "save", edits);
+    if (decision === "update") await this.discardPending(w);
     this.forget(id);
     await this.dropLive(w);
     return out;

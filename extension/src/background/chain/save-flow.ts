@@ -28,7 +28,10 @@
 // submission of that very password opens the update card that asks which one
 // (`choices`). Its Update moves the password into the picked login, then
 // deletes the pending item (`discard_pending`); Later, expiry, a closed tab or
-// a worker restart leave the pending item in the vault.
+// a worker restart leave the pending item in the vault. A change form that
+// sends the account's username gets the host's `update` for that login (it
+// answers before the pending match); the update then discards the pending
+// item the same way, never confirming it as a second copy.
 //
 // A sign-in that keeps its form on screen (spec 5.3): the content script
 // reports `submit_outcome` UNCERTAIN_MS after a trusted submission whose form
@@ -539,9 +542,11 @@ export class SaveFlow {
     };
     if (confirmed) p.confirmed = true;
     // Spec 5.2: the generated password of a change form, several logins, none known here.
-    if (!confirmed && generated && username.trim() === "" && pick && pick.site === page.site) {
-      p.choices = pick.logins;
+    if (!confirmed && generated && pick && pick.site === page.site) {
+      // The pending item holding this generated password: discarded once a login takes it.
       p.pendingItemId = pick.pendingItemId;
+      // No identifier sent: the card asks which login. One sent: the host names its login.
+      if (username.trim() === "") p.choices = pick.logins;
     }
     if (cs.documentId !== undefined) p.documentId = cs.documentId;
     // Spec 8.5: kept at most 2 minutes.
@@ -767,7 +772,11 @@ export class SaveFlow {
     if (!top) return;
     const pending: SavePending = { tabId, origin, kind: "login", status: r.status, username, password, topOrigin: top.origin };
     if (top.documentId !== undefined) pending.documentId = top.documentId;
-    if (r.status === "update" && r.item_id !== undefined) pending.update = { itemId: r.item_id, title: r.title ?? "" };
+    if (r.status === "update" && r.item_id !== undefined) {
+      pending.update = { itemId: r.item_id, title: r.title ?? "" };
+      // Spec 5.2: the change form sent the account's username; its pending item goes after the update.
+      if (pendingItemId !== undefined) pending.pendingItemId = pendingItemId;
+    }
     if (locked) pending.locked = true;
     try {
       if (r.status === "new" && !locked && !uncertain && username.trim() !== "" && this.deps.saves.autoSave && !(await this.isPrivate(tabId))) {

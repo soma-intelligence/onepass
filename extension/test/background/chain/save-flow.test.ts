@@ -122,7 +122,7 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = [], 
 }
 
 describe("save flow", () => {
-  it("new: no prompt on a mere delay; once the form is gone for 1 s, checks and opens the prompt on the submitting document", async () => {
+  it("new: no prompt on a mere delay; once the form is gone for SETTLE_MS (1.75 s), checks and opens the prompt on the submitting document", async () => {
     const t = setup("new");
     await t.submit();
     await t.timers.advance(SUBMIT_TTL_MS / 2);
@@ -807,7 +807,7 @@ describe("save every time", () => {
       top = `${origin}/home`;
       flow.onNavigation(7, top);
       flow.onAnalysis(page(false), { tabId: 7, frameId: 0, origin, documentId: `doc-${doc}` });
-      // The new page counts once UNCERTAIN_MS passed without a `page_alert` (spec 5.3).
+      // The new page counts once PAGE_ALERT_WAIT_MS passed without a `page_alert` (spec 5.3).
       await timers.advance(PAGE_ALERT_WAIT_MS);
     };
     /** A card or address form sent by hand on `origin`; the next page has no form (or `still` one). */
@@ -1137,7 +1137,13 @@ describe("save gaps (spec 5)", () => {
   const GEN = "Gen-Pass-77";
   const DOC1: CsContext = { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-1" };
 
-  function gaps(opts: { items?: { item_id: string; kind: string; title: string; subtitle: string }[]; fail?: (r: Record<string, unknown>) => Error | undefined } = {}) {
+  function gaps(
+    opts: {
+      items?: { item_id: string; kind: string; title: string; subtitle: string }[];
+      fail?: (r: Record<string, unknown>) => Error | undefined;
+      check?: (r: Record<string, unknown>) => unknown;
+    } = {},
+  ) {
     const timers = new FakeTimers();
     const requests: Record<string, unknown>[] = [];
     const opened: SavePending[] = [];
@@ -1147,7 +1153,7 @@ describe("save gaps (spec 5)", () => {
         requests.push(r);
         const failed = opts.fail?.(r);
         if (failed) throw failed;
-        if (r.op === "check_credentials") return { status: "new" };
+        if (r.op === "check_credentials") return opts.check?.(r) ?? { status: "new" };
         if (r.op === "vaults") return { vaults: [{ id: "v1", name: "Perso", color: null }] };
         if (r.op === "save_login") return { item_id: `it_saved_${++saves}` };
         if (r.op === "list_for_origin") return { items: opts.items ?? [] };
@@ -1262,6 +1268,57 @@ describe("save gaps (spec 5)", () => {
     ]);
   });
 
+  it("change form that sends the account's username, several logins: updates that login, discards the pending item", async () => {
+    // The host answers `update` for the login with that username, ahead of the pending item (core).
+    const t = gaps({ items: LOGINS, check: (r) => (r.username === "alex@atlas.dev" ? { status: "update", item_id: "it_01", title: "Atlas Cloud" } : undefined) });
+    t.flow.rememberGenerated(7, SITE, GEN);
+    expect(await t.flow.savePendingUpdate(7, SITE, GEN)).toBe(true);
+    await t.submit("alex@atlas.dev", GEN, true);
+    t.flow.onAnalysis(page(false), DOC1);
+    await t.settle(SETTLE_MS);
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01" }, pendingItemId: "it_saved_1" });
+    expect(t.opened[0]?.choices).toBeUndefined();
+    await t.prompts.decide(t.tokens[0] as string, UI, "update");
+    expect(t.ops()).not.toContain("confirm_pending");
+    expect(t.requests.filter((r) => ["update_password", "discard_pending", "confirm_pending"].includes(String(r.op)))).toEqual([
+      { op: "update_password", ctx: "save_prompt", item_id: "it_01", origin: SITE, password: GEN },
+      { op: "discard_pending", ctx: "save_prompt", item_id: "it_saved_1", origin: SITE },
+    ]);
+  });
+
+  it("the same update answered from the popup discards the pending item too", async () => {
+    const t = gaps({ items: LOGINS, check: (r) => (r.username === "alex@atlas.dev" ? { status: "update", item_id: "it_01", title: "Atlas Cloud" } : undefined) });
+    t.flow.rememberGenerated(7, SITE, GEN);
+    await t.flow.savePendingUpdate(7, SITE, GEN);
+    await t.submit("alex@atlas.dev", GEN, true);
+    t.flow.onAnalysis(page(false), DOC1);
+    await t.settle(SETTLE_MS);
+    await t.prompts.decide(t.tokens[0] as string, UI, "later");
+    const [w] = await t.prompts.pendingList();
+    expect(w).toMatchObject({ status: "update", username: "alex@atlas.dev" });
+    await t.prompts.decidePending(w!.id, "update");
+    expect(t.requests.filter((r) => ["update_password", "discard_pending", "confirm_pending"].includes(String(r.op)))).toEqual([
+      { op: "update_password", ctx: "save_prompt", item_id: "it_01", origin: SITE, password: GEN },
+      { op: "discard_pending", ctx: "save_prompt", item_id: "it_saved_1", origin: SITE },
+    ]);
+  });
+
+  it("a failed update leaves the pending item of a username-sending change form", async () => {
+    const t = gaps({
+      items: LOGINS,
+      check: (r) => (r.username === "alex@atlas.dev" ? { status: "update", item_id: "it_01", title: "Atlas Cloud" } : undefined),
+      fail: (r) => (r.op === "update_password" ? new BgError("not_found") : undefined),
+    });
+    t.flow.rememberGenerated(7, SITE, GEN);
+    await t.flow.savePendingUpdate(7, SITE, GEN);
+    await t.submit("alex@atlas.dev", GEN, true);
+    t.flow.onAnalysis(page(false), DOC1);
+    await t.settle(SETTLE_MS);
+    await expect(t.prompts.decide(t.tokens[0] as string, UI, "update")).rejects.toThrow();
+    expect(t.ops()).not.toContain("discard_pending");
+  });
+
   it("change-password regenerated: the same pending item gets the new password", async () => {
     const t = gaps({ items: LOGINS });
     expect(await t.flow.savePendingUpdate(7, SITE, GEN)).toBe(true);
@@ -1328,7 +1385,7 @@ describe("save gaps (spec 5)", () => {
     expect(t.opened[0]?.view).toBeUndefined();
   });
 
-  it("a page_alert a little after UNCERTAIN_MS (worker grace) still keeps the card", async () => {
+  it("a page_alert a little after UNCERTAIN_MS (within PAGE_ALERT_WAIT_MS) still keeps the card", async () => {
     const t = gaps();
     await t.submit();
     t.flow.onNavigation(7, `${SITE}/home`);
@@ -1404,7 +1461,7 @@ describe("save gaps (spec 5)", () => {
     expect(t.opened[0]?.view).toBeUndefined();
   });
 
-  it("no alert after navigation: saved automatically once UNCERTAIN_MS passed", async () => {
+  it("no alert after navigation: saved automatically once PAGE_ALERT_WAIT_MS passed", async () => {
     const t = gaps();
     await t.submit();
     t.flow.onNavigation(7, `${SITE}/home`);
