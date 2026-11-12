@@ -118,6 +118,11 @@
   --chip-max: 180px;
   --select-min: 170px;
   --tag-input-w: 150px;
+  /* The ghost (spec 3.2, 3.4): the widest its pill may draw, and the least room the grey text needs
+     beside it. content/ghost-fit.ts reads both (mirrored in shared/design-tokens.ts): a field with
+     less room for the text gets the menu. */
+  --ghost-pill-max: 128px;
+  --ghost-text-min: 48px;
   /* The popup's own type sizes: the five-step scale binds the fill surfaces, the popup keeps
      its larger headings and readouts. */
   --popup-type-totp: 16px;
@@ -1074,6 +1079,7 @@ body.island:has(.ghost) { overflow: hidden; }
 .ghost-text { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--text3); }
 .ghost-pill {
   flex-shrink: 0;
+  max-width: var(--ghost-pill-max);
   display: inline-flex;
   align-items: stretch;
   height: min(var(--control-s), calc(100vh - var(--space-xs)));

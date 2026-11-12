@@ -3,10 +3,25 @@
 // reason. On a fit, the field's text metrics as the ghost page needs them (`GhostMetrics`): sizes,
 // alignment and font, never a value of the field.
 import type { GhostMetrics } from "../shared/messages";
+import { DESIGN_TOKENS } from "../shared/design-tokens";
 import { readLayout } from "./frames";
 
 /** Narrower than this, a field gets the menu (spec 3.4). */
 export const MIN_GHOST_WIDTH = 120;
+
+/** A px token of theme.css (the same in both themes); 0 when missing. */
+function tokenPx(name: string): number {
+  const n = parseFloat(DESIGN_TOKENS.light[name] ?? "");
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * The width the ghost page draws beside the grey text, taken from the tokens it uses: the pill at
+ * its widest (`.ghost-pill` is capped at --ghost-pill-max) and the gap of `.ghost` (--space-xs).
+ */
+const GHOST_PILL_ROOM = tokenPx("ghost-pill-max") + tokenPx("space-xs");
+/** The least width the grey text needs to be read (--ghost-text-min). */
+const GHOST_TEXT_MIN = tokenPx("ghost-text-min");
 
 export type GhostFallback = "narrow" | "touch" | "transform" | "indent" | "covered" | "cross_origin" | "sheet";
 
@@ -131,7 +146,8 @@ function familyOf(cs: CSSStyleDeclaration, doc: Document): string | null {
 }
 
 /**
- * Spec 3.4, in order: under MIN_GHOST_WIDTH wide; a touch layout (fix round 1 ruling: the frame
+ * Spec 3.4, in order: under MIN_GHOST_WIDTH wide, or too little room for the grey text beside the
+ * pill (the field's width less its insets, the pill and the gap, under --ghost-text-min); a touch layout (fix round 1 ruling: the frame
  * opens its pill to the pointer on `pointermove`, which a finger never sends, so a tap would land on
  * the field: touch screens get the menu); a transform other than a translation on the field or an
  * ancestor, across shadow roots; a non-zero `text-indent`; partly covered (`occluded`, the occlusion
@@ -144,10 +160,14 @@ function familyOf(cs: CSSStyleDeclaration, doc: Document): string | null {
 export function fitGhost(field: HTMLInputElement, view: Window, occluded: (el: Element) => boolean): GhostFit {
   const r = field.getBoundingClientRect();
   if (!(r.width >= MIN_GHOST_WIDTH)) return { ok: false, reason: "narrow" };
+  const cs = style(view, field);
+  const insetLeft = cs ? px(cs.paddingLeft) + px(cs.borderLeftWidth) : 0;
+  const insetRight = cs ? px(cs.paddingRight) + px(cs.borderRightWidth) : 0;
+  // Past the minimum width, the pill can still cover the text (lab pass6 site 93, 125 px).
+  if (r.width - insetLeft - insetRight - GHOST_PILL_ROOM < GHOST_TEXT_MIN) return { ok: false, reason: "narrow" };
   const layout = readLayout(view);
   if (layout.touch) return { ok: false, reason: "touch" };
   if (transformed(field, view)) return { ok: false, reason: "transform" };
-  const cs = style(view, field);
   if (!cs) return { ok: false, reason: "transform" };
   const indent = parseFloat(cs.textIndent);
   if (Number.isFinite(indent) && indent !== 0) return { ok: false, reason: "indent" };
@@ -162,8 +182,8 @@ export function fitGhost(field: HTMLInputElement, view: Window, occluded: (el: E
       fontSize,
       // "normal": the usual 1.2 of the font size.
       lineHeight: Number.isFinite(lh) && lh > 0 ? lh : Math.round(fontSize * 1.2 * 100) / 100,
-      paddingLeft: px(cs.paddingLeft) + px(cs.borderLeftWidth),
-      paddingRight: px(cs.paddingRight) + px(cs.borderRightWidth),
+      paddingLeft: insetLeft,
+      paddingRight: insetRight,
       textAlign: alignOf(cs),
       fontFamily: familyOf(cs, field.ownerDocument),
       box: { x: r.left, y: r.top, width: r.width, height: r.height },

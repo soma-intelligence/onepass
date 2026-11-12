@@ -1,6 +1,7 @@
 // Spec 3.4: the ghost fits its field, or the menu opens instead, for the first reason that holds.
 import { afterEach, describe, expect, it } from "vitest";
 import { fitGhost, MIN_GHOST_WIDTH } from "../../src/content/ghost-fit";
+import { DESIGN_TOKENS } from "../../src/shared/design-tokens";
 
 function field(html: string, rect = { x: 10, y: 20, width: 240, height: 36 }): HTMLInputElement {
   document.body.innerHTML = html;
@@ -68,8 +69,23 @@ describe("fitGhost", () => {
     expect(MIN_GHOST_WIDTH).toBe(120);
     const f = field(`<input id="f" type="password">`, { x: 0, y: 0, width: 119, height: 30 });
     expect(fitGhost(f, view(), never)).toEqual({ ok: false, reason: "narrow" });
-    const g = field(`<input id="f" type="password">`, { x: 0, y: 0, width: 120, height: 30 });
-    expect(fitGhost(g, view(), never).ok).toBe(true);
+  });
+
+  it("a field that leaves too little room for the text beside the pill gives narrow (lab pass6 site 93)", () => {
+    const pill = parseFloat(DESIGN_TOKENS.light["ghost-pill-max"]!);
+    const gap = parseFloat(DESIGN_TOKENS.light["space-xs"]!);
+    const minText = parseFloat(DESIGN_TOKENS.light["ghost-text-min"]!);
+    expect([pill, gap, minText].every((n) => Number.isFinite(n) && n > 0)).toBe(true);
+    // 125 px: past MIN_GHOST_WIDTH, but the pill covers nearly all of it.
+    const f = field(`<input id="f" type="password" style="padding: 1px 2px; border: 1px solid">`, { x: 0, y: 0, width: 125, height: 30 });
+    expect(fitGhost(f, view(), never)).toEqual({ ok: false, reason: "narrow" });
+    // The insets count: exactly enough room fits, one px less does not.
+    const html = `<input id="f" type="password" style="padding: 0 6px 0 10px; border: 0">`;
+    const room = 16 + gap + pill + minText;
+    expect(fitGhost(field(html, { x: 0, y: 0, width: room, height: 30 }), view(), never).ok).toBe(true);
+    expect(fitGhost(field(html, { x: 0, y: 0, width: room - 1, height: 30 }), view(), never)).toEqual({ ok: false, reason: "narrow" });
+    // A wide field keeps the ghost.
+    expect(fitGhost(field(html, { x: 0, y: 0, width: 280, height: 36 }), view(), never).ok).toBe(true);
   });
 
   it("a rotation on an ancestor gives transform, a translation is fine", () => {
