@@ -417,6 +417,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       return savePrompts.open(p);
     },
     recentlyDismissed: (origin: string, key: string) => savePrompts.recentlyDismissed(origin, key),
+    /** A new login saved at once (spec 4.1): its toast, or the card, takes the overlay's place too. */
+    autoSave: async (p: SavePending) => {
+      await overlays.yieldTo(p.tabId).catch(() => false);
+      return savePrompts.autoSave(p);
+    },
   };
   const saveFlow = new SaveFlow({
     session,
@@ -425,6 +430,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     neverSave,
     topFrame: (t) => frames.details(t, 0),
     chainRunning,
+    // A private window keeps the card (spec 4.3); a browser that does not say counts as not private.
+    incognito: async (tabId) => (await ext.tabs.get?.(tabId))?.incognito === true,
     ...(opts.now ? { now: opts.now } : {}),
   });
   filler.onFilled = (tabId, origin, kind, itemId) => saveFlow.noteFilled(tabId, origin, kind, itemId);
@@ -1365,6 +1372,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       save_generate: async (m, from) => savePrompts.generate(m.token, from),
       save_decide: async (m, from) => savePrompts.decide(m.token, from, m.decision, m.edits),
       save_close: async (m, from) => savePrompts.close(m.token, from),
+      save_undo: async (m, from) => savePrompts.undo(m.token, from),
+      save_edit: async (m, from) => savePrompts.edit(m.token, from),
       save_resize: async (m, from) => savePrompts.resize(m.token, from, m.height),
       ...popup.handlers(),
       popup_pending: async () => ({ pending: await savePrompts.pendingList() }),
