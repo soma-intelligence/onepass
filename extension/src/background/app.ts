@@ -717,6 +717,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   /** The sign-in card that appears by itself on a ready page (auto-pill.ts); shows only, starts nothing. */
   const autoPill = new AutoPill({
     local: ext.storage.local,
+    // The sites it showed for survive a worker the browser stopped; memory where there is no session area.
+    ...(ext.storage.session ? { session: ext.storage.session } : {}),
     topFrame: (tabId) => frames.details(tabId, 0),
     // A private window: the pill stays away (the extension already treats it apart, spec 4.3).
     incognito: async (tabId) => (await ext.tabs.get?.(tabId))?.incognito === true,
@@ -1579,7 +1581,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       });
       ext.tabs.onRemoved.addListener((tabId) => {
         saveFlow.onTabRemoved(tabId);
-        autoPill.onTabRemoved(tabId);
+        void autoPill.onTabRemoved(tabId).catch(() => undefined);
         suggestions.drop(tabId);
         for (const [m, st] of menuSuggestions) if (!suggestions.recordOf(st)) menuSuggestions.delete(m);
         savePrompts.forgetTab(tabId);
@@ -1590,6 +1592,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         asks.delete(tabId);
         void providerFlows.drop(tabId).catch(() => undefined);
       });
+      ext.tabs.onReplaced?.addListener((added, removed) => void autoPill.onReplaced(added, removed).catch(() => undefined));
       ext.runtime.onMessage.addListener(createRouter(ext.runtime, handlers));
       passkeys.install(ext);
       ext.runtime.onMessage.addListener(createPasskeyRouter(ext.runtime, passkeys));

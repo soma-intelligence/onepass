@@ -74,6 +74,8 @@ export class FakeExt implements BgExt {
   readonly sentToTabs: SentToTab[] = [];
   readonly onRemoved = new Emitter<(tabId: number) => void>();
   readonly onCreated = new Emitter<(tab: { id?: number; openerTabId?: number }) => void>();
+  /** `tabs.onReplaced(addedTabId, removedTabId)`: a prerendered tab took another's place. */
+  readonly onReplaced = new Emitter<(added: number, removed: number) => void>();
   /** `webNavigation.onCreatedNavigationTarget`, once `withNavigationTargets()` gave the browser that event. */
   readonly onTarget = new Emitter<(d: { tabId: number; sourceTabId: number; sourceFrameId: number; url: string }) => void>();
   /** A browser that tells which frame opened a tab (Chromium, Firefox). Call before `install()`. */
@@ -107,6 +109,7 @@ export class FakeExt implements BgExt {
     },
     onRemoved: this.onRemoved,
     onCreated: this.onCreated,
+    onReplaced: this.onReplaced,
     query: async () => (this.activeTab ? [{ ...this.activeTab }] : []),
     get: async (tabId) => ({ ...(this.tabStates.get(tabId) ?? { active: true, windowId: 1 }) }),
   };

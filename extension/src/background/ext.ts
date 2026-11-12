@@ -82,6 +82,8 @@ export interface BgExt {
     onRemoved: Event<(tabId: number) => void>;
     /** A tab opened (a popup window's too); `openerTabId` is the tab whose page opened it. No `tabs` permission needed for these two. */
     onCreated?: Event<(tab: { id?: number; openerTabId?: number }) => void>;
+    /** A tab took another's place (prerender, instant pages): `addedTabId` replaces `removedTabId`. */
+    onReplaced?: Event<(addedTabId: number, removedTabId: number) => void>;
     /** The popup's active tab (url readable through activeTab / host permissions). */
     query(q: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string }[]>;
     /**

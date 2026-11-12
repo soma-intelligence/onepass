@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { createBackground } from "../../src/background/app";
 import { MemoryPairingStore, Store } from "../../src/background/store";
+import { AUTO_PILL_SHOWN_KEY } from "../../src/background/auto-pill";
 import { AUTO_PILL_KEY, AUTO_PILL_NEVER_KEY } from "../../src/shared/auto-pill";
 import { BridgeAppError } from "../../src/bridge/client";
 import type { FieldRole, FormContext, PageAnalysis, PlanOut } from "../../src/shared/messages";
@@ -289,6 +290,20 @@ describe("auto sign-in pill: never shown when", () => {
     t.ext.navigate(7, 0, `${SITE}/login`, "doc-2");
     t.top.documentId = "doc-2";
     await t.ready("login");
+    expect(t.cards()).toHaveLength(1);
+  });
+
+  it("it showed in a tab that another replaced (prerender): not again there; kept in storage.session", async () => {
+    const t = await setup();
+    await t.ready("login");
+    expect(t.ext.session.data.get(AUTO_PILL_SHOWN_KEY)).toEqual(["7|atlas-cloud.test"]);
+    t.ext.onReplaced.emit(9, 7);
+    await settle();
+    expect(t.ext.session.data.get(AUTO_PILL_SHOWN_KEY)).toEqual(["9|atlas-cloud.test"]);
+    t.ext.setFrame(9, 0, `${SITE}/login`, "doc-9");
+    await t.ext.send({ type: "page_analysis", analysis: analysis("login") }, csSender(`${SITE}/login`, 9, 0, { documentId: "doc-9" }));
+    t.ext.complete(9, 0);
+    await settle();
     expect(t.cards()).toHaveLength(1);
   });
 

@@ -1,7 +1,7 @@
 // The sign-in pill that appears by itself (auto-pill.ts): when it shows, which face, and never
 // anything filled, submitted or started by its appearance.
 import { describe, expect, it } from "vitest";
-import { AutoPill, type AutoFace, type AutoPillDeps, type AutoVault } from "../../src/background/auto-pill";
+import { AUTO_PILL_SHOWN_KEY, AutoPill, type AutoFace, type AutoPillDeps, type AutoVault } from "../../src/background/auto-pill";
 import type { CsContext } from "../../src/background/frames";
 import { AUTO_PILL_KEY, AUTO_PILL_NEVER_KEY, readAutoPill } from "../../src/shared/auto-pill";
 import { FakeArea } from "./fake-ext";
@@ -24,7 +24,7 @@ interface Page {
   onVault?: () => void;
 }
 
-function setup(over: Partial<Page> = {}) {
+function setup(over: Partial<Page> = {}, session?: FakeArea) {
   const local = new FakeArea();
   const page: Page = { url: `${SITE}/login`, doc: "doc-1", login: ["f1"], signup: [], prefilled: false, vault: "open", logins: 1, busy: false, incognito: false, ...over };
   const opened: { cs: CsContext; face: AutoFace }[] = [];
@@ -32,6 +32,7 @@ function setup(over: Partial<Page> = {}) {
   let failOpen = false;
   const deps: AutoPillDeps = {
     local,
+    ...(session ? { session } : {}),
     topFrame: async () => ({ url: page.url, documentId: page.doc }),
     incognito: async () => page.incognito,
     busy: async () => page.busy,
@@ -51,8 +52,11 @@ function setup(over: Partial<Page> = {}) {
     },
   };
   const pill = new AutoPill(deps);
+  /** The worker restarted: a new instance on the same storage. */
+  const restart = () => new AutoPill(deps);
   return {
     pill,
+    restart,
     page,
     local,
     opened,
@@ -251,6 +255,48 @@ describe("auto sign-in pill: once per site per tab", () => {
   it("two triggers at once show one pill", async () => {
     const t = setup();
     await Promise.all([t.pill.onReady(7), t.pill.onAnalysis(7, 0), t.pill.onAnalysis(7, 0)]);
+    expect(t.opened).toHaveLength(1);
+  });
+});
+
+describe("auto sign-in pill: once per site per tab, across a restart of the worker (storage.session)", () => {
+  it("a worker stopped and started again still knows the site showed in this tab", async () => {
+    const session = new FakeArea();
+    const t = setup({}, session);
+    await t.pill.onReady(7);
+    const again = t.restart();
+    await again.onReady(7);
+    expect(t.opened).toHaveLength(1);
+    expect(session.data.get(AUTO_PILL_SHOWN_KEY)).toEqual(["7|atlas-cloud.test"]);
+  });
+
+  it("a closed tab is forgotten in storage.session too", async () => {
+    const session = new FakeArea();
+    const t = setup({}, session);
+    await t.pill.onReady(7);
+    await t.pill.onReady(8);
+    await t.pill.onTabRemoved(7);
+    expect(session.data.get(AUTO_PILL_SHOWN_KEY)).toEqual(["8|atlas-cloud.test"]);
+    await t.restart().onReady(7);
+    expect(t.opened).toHaveLength(3);
+  });
+
+  it("a tab replaced by another (prerender, instant pages) carries what it showed", async () => {
+    const session = new FakeArea();
+    const t = setup({}, session);
+    await t.pill.onReady(7);
+    await t.pill.onReplaced(9, 7);
+    expect(session.data.get(AUTO_PILL_SHOWN_KEY)).toEqual(["9|atlas-cloud.test"]);
+    await t.restart().onReady(9);
+    await t.pill.onReady(9);
+    expect(t.opened).toHaveLength(1);
+  });
+
+  it("without storage.session, worker memory", async () => {
+    const t = setup();
+    await t.pill.onReady(7);
+    await t.pill.onReplaced(9, 7);
+    await t.pill.onReady(9);
     expect(t.opened).toHaveLength(1);
   });
 });
