@@ -725,8 +725,12 @@ export function createContentScript(o: ContentOptions): ContentScript {
           if (hit === null || hit === undefined) continue;
           if (hitIsField(el, hit, (h) => sh.isHost(h))) continue;
           // The field's own wrapper (an ancestor shows only around it) or its own label (a
-          // floating label lies over it on purpose): not a cover.
-          if (composedContains(hit, el)) continue;
+          // floating label lies over it on purpose): not a cover. The root and the body are no
+          // wrapper: a page-wide overlay (body::after, html::after) still covers. The ghost frame
+          // is drawn above any ancestor pseudo-element, and the pill's own click guard in
+          // frames.ts stays the clickjacking protection.
+          const doc = el.ownerDocument;
+          if (hit !== doc.documentElement && hit !== doc.body && composedContains(hit, el)) continue;
           if (labels.some((l) => l === hit || l.contains(hit))) continue;
           return true;
         }

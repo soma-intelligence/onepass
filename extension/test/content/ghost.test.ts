@@ -438,6 +438,21 @@ describe("ghost fix round 1", () => {
     expect(s.ext.ofType("open_menu")).toEqual([expect.objectContaining({ auto: true })]);
   });
 
+  it("a page-wide overlay hitting as the body or the root still covers", async () => {
+    for (const hitOf of [() => document.body, () => document.documentElement]) {
+      setPage(SIGNUP);
+      wide(input("n"));
+      s = start(undefined, { fieldHitTest: (el, x) => (x > 130 ? hitOf() : el) });
+      worker(s);
+      await settle();
+      userFocus(input("n"));
+      await settle();
+      expect(s.ext.ofType("ghost_open")).toHaveLength(0);
+      expect(s.ext.ofType("open_menu")).toEqual([expect.objectContaining({ auto: true })]);
+      s.cs.stop();
+    }
+  });
+
   it("a field really covered by another element gets the menu", async () => {
     setPage(`${SIGNUP}<div id="cover"></div>`);
     wide(input("n"));
