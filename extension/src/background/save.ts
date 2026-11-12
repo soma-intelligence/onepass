@@ -308,6 +308,9 @@ export class SavePrompts {
     if (!rec.folded) {
       rec.folded = true;
       await this.tokens.rearm(token, rec);
+      // As ever for a card left unanswered: the sign-in also waits in the popup (10 min). The
+      // pill going away (expiry, leaving the site) takes the pill only, not this entry.
+      if (rec.password !== "") this.hold(rec);
     }
     return {};
   }
@@ -338,9 +341,9 @@ export class SavePrompts {
   }
 
   /** The prompt's content height: its frame is sized to it. */
-  async resize(token: string, ui: UiContext, height: number): Promise<object> {
+  async resize(token: string, ui: UiContext, height: number, width?: number): Promise<object> {
     const rec = await this.record(token, ui, false);
-    await resizeFrame(this.deps.ext.tabs, rec, "save", height);
+    await resizeFrame(this.deps.ext.tabs, rec, "save", height, width);
     return {};
   }
 
@@ -470,6 +473,7 @@ export class SavePrompts {
       case "dismiss": {
         const key = quietKey(rec);
         if (key !== null) await this.noteDismissed(rec.origin, key);
+        this.forgetFor(rec);
         await this.tokens.drop(token);
         await removeFrame(this.deps.ext.tabs, rec, "save");
         return {};
@@ -517,6 +521,8 @@ export class SavePrompts {
         out = (await this.commit(rec, "update", edits)).out;
         break;
     }
+    // Answered here (a folded card's popup entry would be a stale second copy).
+    this.forgetFor(rec);
     rec.password = "";
     wipeDrafts(rec);
     rec.decided = true;
@@ -829,6 +835,12 @@ export class SavePrompts {
     if (rec.update) w.update = { ...rec.update };
     if (rec.locked) w.locked = true;
     this.waiting.set(id, w);
+  }
+
+  /** The waiting sign-in of the card's tab and site goes (the card was answered). */
+  private forgetFor(rec: Pick<SaveRecord, "tabId" | "origin">): void {
+    const site = parseOrigin(rec.origin)?.site ?? rec.origin;
+    for (const w of [...this.waiting.values()]) if (w.tabId === rec.tabId && w.site === site) this.forget(w.id);
   }
 
   private forget(id: string): void {

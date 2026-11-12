@@ -461,6 +461,12 @@ const MENU_KEYS: ReadonlySet<string> = new Set(["down", "up", "enter"]);
 /** Frame heights a page may ask for (the content script clamps again per kind). */
 const MAX_FRAME_HEIGHT = 2000;
 
+const MAX_FRAME_WIDTH = 1000;
+function frameWidth(v: unknown): number {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > MAX_FRAME_WIDTH) throw new Invalid();
+  return v;
+}
+
 function height(v: unknown): number {
   if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > MAX_FRAME_HEIGHT) throw new Invalid();
   return v;
@@ -551,9 +557,13 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         }
         return s;
       }
+      case "save_resize": {
+        const r: UiToBg = { type: o.type, token: token(o.token), height: height(o.height) };
+        if (o.width !== undefined) r.width = frameWidth(o.width);
+        return r;
+      }
       case "menu_resize":
       case "overlay_resize":
-      case "save_resize":
         return { type: o.type, token: token(o.token), height: height(o.height) };
       case "save_decide": {
         const d: UiToBg = {

@@ -210,6 +210,43 @@ describe("save prompt", () => {
     }
   });
 
+  it("the pill's width goes with its height; the card's width is back after unfolding", async () => {
+    const orig = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const origW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.querySelector(".save-pill") ? 40 : this.querySelector(".save-card") ? 120 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("save-pill-wrap") ? 188 : 340;
+      },
+    });
+    try {
+      const { handle, worker, click } = setup(base);
+      await handle.ready;
+      await new Promise((r) => setTimeout(r, 40));
+      const sizes = () => worker.sent.filter((m) => m.type === "save_resize") as { height: number; width?: number }[];
+      expect(sizes().at(-1)).toMatchObject({ height: 120 });
+      expect(sizes().at(-1)!.width).toBeUndefined();
+      await click("Plus tard");
+      await new Promise((r) => setTimeout(r, 40));
+      expect(sizes().at(-1)).toMatchObject({ height: 40, width: 188 });
+      await click("1 login à enregistrer");
+      await new Promise((r) => setTimeout(r, 40));
+      expect(sizes().at(-1)).toMatchObject({ height: 120 });
+      expect(sizes().at(-1)!.width).toBeUndefined();
+    } finally {
+      for (const [k, d] of [["scrollHeight", orig], ["offsetWidth", origW]] as const) {
+        if (d) Object.defineProperty(HTMLElement.prototype, k, d);
+        else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+      }
+    }
+  });
+
   it("pill click unfolds the card (save_unfold) and the card works again", async () => {
     const upd: SaveInit = { ...base, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } };
     const { r, handle, worker, click } = setup(upd);

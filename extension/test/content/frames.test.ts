@@ -153,6 +153,29 @@ describe("shell placement", () => {
     frames.destroy();
   });
 
+  it("save pill: the frame takes the pill's width at the same right edge, and the card's width again after", () => {
+    setPage(`<input id="f" data-test-rect="10,10,200,30">`);
+    shell = createShell(document);
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry, layout: () => ({ touch: false, sheet: false }) });
+    frames.showFrame("save", `${CHROME}save.html#${TOKEN}`);
+    const iframe = shell.root.querySelector("iframe")!;
+    frames.resize("save", 200);
+    expect(iframe.style.width).toBe(`${FRAME_WIDTHS.save}px`);
+    const right = parseFloat(iframe.style.left) + parseFloat(iframe.style.width);
+    frames.resize("save", 40, 180);
+    expect(iframe.style.width).toBe("180px");
+    expect(iframe.style.height).toBe("44px");
+    expect(parseFloat(iframe.style.left) + parseFloat(iframe.style.width)).toBe(right);
+    // Never wider than the card, never a sliver.
+    frames.resize("save", 40, 5000);
+    expect(iframe.style.width).toBe(`${FRAME_WIDTHS.save}px`);
+    frames.resize("save", 40, 180);
+    frames.resize("save", 200);
+    expect(iframe.style.width).toBe(`${FRAME_WIDTHS.save}px`);
+    expect(parseFloat(iframe.style.left) + parseFloat(iframe.style.width)).toBe(right);
+    frames.destroy();
+  });
+
   it("touch screen: the sheet sits on top of the keyboard (the visual viewport), not under it", () => {
     setPage(`<input id="f" data-test-rect="10,10,200,30">`);
     const vv = { offsetTop: 40, height: 400 };

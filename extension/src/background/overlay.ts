@@ -187,8 +187,9 @@ export async function resizeFrame(
   rec: Pick<BoundRecord, "tabId" | "frameId" | "documentId">,
   kind: FrameKind,
   height: number,
+  width?: number,
 ): Promise<void> {
-  const msg: BgToCs = { type: "resize_frame", kind, height };
+  const msg: BgToCs = { type: "resize_frame", kind, height, ...(width !== undefined ? { width } : {}) };
   const opts = rec.documentId !== undefined ? { documentId: rec.documentId } : { frameId: rec.frameId };
   try {
     await tabs.sendMessage(rec.tabId, msg, opts);

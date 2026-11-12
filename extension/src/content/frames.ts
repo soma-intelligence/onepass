@@ -38,6 +38,8 @@ export const SHEET_MAX_WIDTH = 480;
 export const SHEET_MIN_HEIGHT = 160;
 /** Smallest height a page may ask for. */
 export const FRAME_MIN_HEIGHT = 44;
+/** Smallest width a page may ask for (the folded save pill). */
+export const FRAME_MIN_WIDTH = 40;
 /**
  * A frame stays transparent until its page reported its height, so it never
  * shows at a guessed size and then jumps; past this delay it shows anyway.
@@ -522,8 +524,8 @@ export interface Frames {
    */
   removeFrame(kind: FrameKind): void;
   has(kind: FrameKind): boolean;
-  /** Sizes the frame to its page's content (clamped), and shows it. */
-  resize(kind: FrameKind, height: number): void;
+  /** Sizes the frame to its page's content (clamped), and shows it. `width`: narrower than the kind's (the save pill); absent: the kind's. */
+  resize(kind: FrameKind, height: number, width?: number): void;
   /** Moves the keyboard focus into the frame (the user pressed a key to enter it). */
   focus(kind: FrameKind): void;
   /** The element the frame is anchored to, if any. */
@@ -561,7 +563,7 @@ export function createFrames(opts: FramesOptions): Frames {
    * at the same place on the screen brings nothing new under the finger.
    */
   const onScreen = new WeakMap<HTMLIFrameElement, { left: number; top: number; width: number; height: number; scale: number }>();
-  const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null; height: number; reveal: ReturnType<typeof setTimeout> | null }>();
+  const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null; height: number; width?: number; reveal: ReturnType<typeof setTimeout> | null }>();
   let ring: { box: HTMLElement; el: Element } | null = null;
   const guards = new Map<HTMLIFrameElement, ReturnType<typeof setTimeout>>();
 
@@ -788,12 +790,12 @@ export function createFrames(opts: FramesOptions): Frames {
    * right. True when the position, the width or a larger height changed (a
    * smaller height brings nothing new under the pointer).
    */
-  const place = (kind: FrameKind, iframe: HTMLIFrameElement, anchor: Element | null, height: number) => {
+  const place = (kind: FrameKind, iframe: HTMLIFrameElement, anchor: Element | null, height: number, ownWidth?: number) => {
     const { w, h: vh } = viewport();
     const { touch } = layout();
     // A sheet's height, kept after a rotation made it a popover, is the popover's again.
     height = Math.min(height, maxHeight(kind));
-    const width = Math.min(FRAME_WIDTHS[kind], Math.max(0, w - 2 * EDGE));
+    const width = Math.min(ownWidth !== undefined ? Math.min(ownWidth, FRAME_WIDTHS[kind]) : FRAME_WIDTHS[kind], Math.max(0, w - 2 * EDGE));
     let left = w - width - EDGE;
     let top = EDGE;
     let width2 = width;
@@ -980,11 +982,13 @@ export function createFrames(opts: FramesOptions): Frames {
       }
     },
     has: (kind) => frames.has(kind),
-    resize(kind, height) {
+    resize(kind, height, width) {
       const f = frames.get(kind);
       if (!f || !Number.isFinite(height)) return;
       f.height = Math.round(Math.min(maxHeight(kind), Math.max(FRAME_MIN_HEIGHT, height)));
-      const moved = place(kind, f.iframe, f.anchor, f.height);
+      if (width !== undefined && Number.isFinite(width) && width > 0) f.width = Math.round(Math.max(FRAME_MIN_WIDTH, width));
+      else delete f.width;
+      const moved = place(kind, f.iframe, f.anchor, f.height, f.width);
       if (f.iframe.classList.contains("shown")) {
         if (moved) guard(f.iframe);
       } else {
@@ -1017,7 +1021,7 @@ export function createFrames(opts: FramesOptions): Frames {
           // The progress outlives the field it started from: to the top right.
           f.anchor = null;
         }
-        if (place(kind, f.iframe, f.anchor, f.height)) {
+        if (place(kind, f.iframe, f.anchor, f.height, f.width)) {
           // The pill moved from under the pointer: it takes the pointer again once the pointer is on it.
           if (kind === "ghost" && pill) pill.hot = false;
           guard(f.iframe);

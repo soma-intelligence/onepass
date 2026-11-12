@@ -101,13 +101,21 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   (deps.observe ?? observeVisibility)(container, (v) => guard.setVisibility(v));
   // The prompt is as tall as its content; the edit view takes the whole frame.
   let fit = true;
-  const remeasure = autosize(
-    container,
-    (height) => {
-      if (token) void call(deps.send, { type: "save_resize", token, height: fit ? height : FULL_HEIGHT }, parseEmpty);
-    },
-    deps.observeSize,
-  );
+  /** The folded pill's box: the frame then shrinks to its width too, so nothing around it blocks the page. */
+  let pillBox: HTMLElement | null = null;
+  const sendSize = (height: number) => {
+    if (!token) return;
+    const m: { type: "save_resize"; token: string; height: number; width?: number } = { type: "save_resize", token, height: fit ? height : FULL_HEIGHT };
+    const w = pillBox ? Math.ceil(pillBox.offsetWidth) : 0;
+    if (w > 0) m.width = w;
+    void call(deps.send, m, parseEmpty);
+  };
+  const remeasure = autosize(container, sendSize, deps.observeSize);
+  /** After a fold or an unfold: the size goes out even when the height did not change. */
+  const resendSize = () => {
+    const height = Math.ceil(container.scrollHeight);
+    if (height > 0) sendSize(height);
+  };
 
   let init: SaveInit | null = null;
   let draft: Draft | null = null;
@@ -594,7 +602,9 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       return;
     }
     quietOn = true;
+    pillBox = null;
     renderPrompt();
+    resendSize();
   }
 
   /** "1 login to update" / "1 login to save": one tap target, a small x to put it away for good. */
@@ -604,8 +614,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     setFit(true);
     const updating = mode === "update" && i.update !== undefined;
     const label = t(updating ? "save.updatePill" : "save.savePill");
-    show(
-      h(
+    const wrap = h(
         "div",
         { class: "save-pill-wrap" },
         h(
@@ -619,8 +628,10 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           ),
           iconBtn(t("common.close"), "close", () => void decide("dismiss", errLine(), () => undefined)),
         ),
-      ),
     );
+    pillBox = wrap;
+    show(wrap);
+    resendSize();
   }
 
   function renderEdit(): void {

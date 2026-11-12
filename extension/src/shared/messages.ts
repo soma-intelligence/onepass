@@ -618,7 +618,8 @@ export type UiToBg =
   | { type: "save_undo"; token: string }
   /** The toast's Edit: its edit view opens; its Save then replaces the saved login. */
   | { type: "save_edit"; token: string }
-  | { type: "save_resize"; token: string; height: number }
+  /** `width`: the pill's own width (absent: the card's). */
+  | { type: "save_resize"; token: string; height: number; width?: number }
   /** The card folds into its pill (spec 4.2): the worker keeps the sign-in for PILL_TTL_MS. */
   | { type: "save_fold"; token: string }
   /** A click on the pill: the card again. */
@@ -704,7 +705,7 @@ export type BgToCs =
   | { type: "remove_frame"; kind: FrameKind }
   | { type: "chain_highlight"; ref: string | null }
   /** Height the extension page asked for (validated by token in the worker, clamped here). */
-  | { type: "resize_frame"; kind: FrameKind; height: number }
+  | { type: "resize_frame"; kind: FrameKind; height: number; width?: number }
   /** The ghost page's pill box and pointer state (`ghost_pill` of UiToBg), vouched by the worker. */
   | { type: "ghost_pill"; rect: GhostRect; over: boolean }
   /**

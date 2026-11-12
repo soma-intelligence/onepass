@@ -483,7 +483,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         break;
       case "resize_frame":
         if (typeof m.kind === "string" && FRAME_KINDS.has(m.kind) && typeof m.height === "number") {
-          parts.frames.resize(m.kind as FrameKind, m.height);
+          parts.frames.resize(m.kind as FrameKind, m.height, typeof m.width === "number" ? m.width : undefined);
           ok = true;
         }
         break;

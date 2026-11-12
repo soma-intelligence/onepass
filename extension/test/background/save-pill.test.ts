@@ -111,6 +111,42 @@ describe("save pill", () => {
     await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
   });
 
+  it("folding keeps the sign-in in the popup list like the old auto-dismiss; pill expiry leaves it there", async () => {
+    const { prompts, open } = setup();
+    const token = await open();
+    expect(await prompts.pendingList()).toEqual([]);
+    await prompts.fold(token, UI);
+    const listed = await prompts.pendingList();
+    expect(listed).toEqual([expect.objectContaining({ site: "atlas-cloud.test", username: "alex@atlas.dev", status: "update" })]);
+    // The pill goes after PILL_TTL_MS (same 10 minutes as the popup entry's own lifetime): only the pill.
+    await vi.advanceTimersByTimeAsync(PILL_TTL_MS - 1000);
+    await expect(prompts.init(token, UI)).resolves.toMatchObject({ folded: true });
+    expect(await prompts.pendingList()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
+    // PENDING_SAVE_TTL_MS is the same 10 minutes: the entry ends by its own timer, not the pill's.
+  });
+
+  it("leaving the site removes the pill only; the popup entry stays", async () => {
+    const { ext, prompts, open } = setup();
+    const token = await open();
+    await prompts.fold(token, UI);
+    ext.navigate(TAB, 0, "https://elsewhere.test/", "doc-9");
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
+    expect(await prompts.pendingList()).toHaveLength(1);
+  });
+
+  it("answering the unfolded card removes its popup entry", async () => {
+    const { prompts, open } = setup();
+    const token = await open();
+    await prompts.fold(token, UI);
+    await prompts.unfold(token, UI);
+    expect(await prompts.pendingList()).toHaveLength(1);
+    await prompts.decide(token, UI, "dismiss");
+    expect(await prompts.pendingList()).toEqual([]);
+  });
+
   it("a dropped record cannot fold", async () => {
     const { prompts, open } = setup();
     const token = await open("new");
