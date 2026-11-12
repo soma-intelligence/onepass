@@ -46,8 +46,8 @@ const GAP = 4;
 const EDGE = 12;
 /** Between our save card and another manager's prompt. */
 const CARD_GAP = 8;
-/** Side of the in-field glyph's box, and on a touch screen (icon.ts places it by these). */
-export const ICON_SIZE = 20;
+/** Side of the in-field glyph's hit area, and on a touch screen (icon.ts places it by these). */
+export const ICON_SIZE = 22;
 export const TOUCH_ICON_SIZE = 28;
 /**
  * The design tokens of theme.css, as concrete values: the shadow root cannot read the extension
@@ -55,6 +55,63 @@ export const TOUCH_ICON_SIZE = 28;
  */
 const DARK = DESIGN_TOKENS.dark;
 const LIGHT = DESIGN_TOKENS.light;
+
+/** The design tokens of a glyph theme. */
+export type GlyphTheme = "light" | "dark";
+
+/** Relative luminance (WCAG) of an sRGB colour, channels 0 to 255. */
+function luminance(r: number, g: number, b: number): number {
+  const lin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** Channels and alpha of a computed `rgb()` or `rgba()` colour; null for anything else. */
+function rgba(color: string): [number, number, number, number] | null {
+  if (!/^rgba?\(/.test(color)) return null;
+  const n = color.match(/[\d.]+%?/g);
+  if (!n || n.length < 3) return null;
+  const alpha = n[3] === undefined ? 1 : n[3].endsWith("%") ? parseFloat(n[3]) / 100 : parseFloat(n[3]);
+  return [parseFloat(n[0]!), parseFloat(n[1]!), parseFloat(n[2]!), alpha];
+}
+
+/**
+ * Which tokens the glyph of `field` takes (spec 2026-11-11 fill UI, section 2): the luminance of
+ * the first computed background that is not transparent, from the field up to the root element,
+ * so a dark field on a light page still gets a visible glyph. Transparent all the way up: the
+ * system appearance.
+ */
+export function glyphTheme(field: HTMLElement, view: Window): GlyphTheme {
+  const root = field.ownerDocument.documentElement;
+  for (let el: Element | null = field; el; el = el === root ? null : el.parentElement) {
+    let bg = "";
+    try {
+      bg = view.getComputedStyle(el).backgroundColor;
+    } catch {
+      bg = "";
+    }
+    const c = rgba(bg);
+    if (!c || c[3] <= 0) continue;
+    return luminance(c[0], c[1], c[2]) > 0.5 ? "light" : "dark";
+  }
+  let dark = false;
+  try {
+    dark = view.matchMedia("(prefers-color-scheme: dark)").matches;
+  } catch {
+    dark = false;
+  }
+  return dark ? "dark" : "light";
+}
+
+/** Colour and background of a glyph at rest or in the focused field, from the design tokens. */
+export function glyphPaint(theme: GlyphTheme, focus: boolean): { color: string; background: string } {
+  const tk = theme === "dark" ? DARK : LIGHT;
+  return focus
+    ? { color: tk["glyph-focus"] ?? "", background: tk["glyph-focus-bg"] ?? "" }
+    : { color: tk["glyph-rest"] ?? "", background: "transparent" };
+}
 
 const PAGE_OF: Readonly<Record<FrameKind, string>> = { menu: "menu.html", overlay: "overlay.html", save: "save.html" };
 const EXTENSION_SCHEMES: ReadonlySet<string> = new Set(["chrome-extension:", "moz-extension:", "safari-web-extension:"]);
@@ -82,6 +139,8 @@ const STYLE = `
   contain: none !important;
 }
 .layer { all: initial; position: fixed; top: 0; left: 0; width: 0; height: 0; pointer-events: none; }
+/* The field glyph: the grey Lattice mark, no tile; in the focused field, indigo on a soft accent
+   background. Its colours are set inline from the tokens of the field's theme (icon.ts). */
 .icon {
   all: initial;
   position: fixed;
@@ -89,23 +148,23 @@ const STYLE = `
   width: ${ICON_SIZE}px;
   height: ${ICON_SIZE}px;
   border-radius: ${DARK["r-chip"]};
-  background: ${DARK["accent"]};
-  color: ${DARK["accent-text"]};
+  background: transparent;
+  color: ${LIGHT["glyph-rest"]};
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   pointer-events: auto;
-  transition: transform .12s ease, background-color .12s ease;
+  transition: transform .12s ease, color .12s ease, background-color .12s ease;
 }
-.icon:hover { background: ${DARK["accent-hover"]}; transform: scale(1.08); }
-/* Pressed: a darker tile, not a smaller one (a downscale makes IntersectionObserver v2, the icon's
+.icon:hover { transform: scale(1.08); }
+/* Pressed: a darker mark, not a smaller one (a downscale makes IntersectionObserver v2, the icon's
    click guard on Chromium, report the icon as not visible). */
-.icon:active { filter: brightness(.88); }
+.icon:active { filter: brightness(.8); }
 .icon[hidden] { display: none; }
 /* Touch screens: a finger-sized icon, and the label above the focused field's icon. */
-.icon.touch { width: ${TOUCH_ICON_SIZE}px; height: ${TOUCH_ICON_SIZE}px; border-radius: ${DARK["r-chip"]}; }
-.icon.touch svg { width: 15px; height: 15px; }
+.icon.touch { width: ${TOUCH_ICON_SIZE}px; height: ${TOUCH_ICON_SIZE}px; }
+.icon.touch svg { width: 18px; height: 18px; }
 .tip {
   all: initial;
   position: fixed;
@@ -120,7 +179,7 @@ const STYLE = `
   box-shadow: ${DARK["frame-shadow-quiet"]};
 }
 .tip[hidden] { display: none; }
-.icon svg { display: block; width: 12px; height: 12px; }
+.icon svg { display: block; width: 16px; height: 16px; }
 .ring {
   all: initial;
   position: fixed;
