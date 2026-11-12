@@ -11,7 +11,7 @@
 // as a pending Login (`savePending`), a change-password form as an update of
 // the login being changed (`savePendingUpdate`, spec 5.2).
 import type { GenerationReport } from "../bridge/client";
-import type { FormKind, GhostMetrics, SuggestionPageKind, SuggestionPreview } from "../shared/messages";
+import type { FormKind, FrameKind, GhostMetrics, SuggestionPreview } from "../shared/messages";
 import { newToken } from "../shared/tokens";
 import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH, GENERATOR_PROFILE_KEY, type GeneratorProfile } from "../shared/ui";
 import type { SaveFlow } from "./chain/save-flow";
@@ -25,7 +25,9 @@ export const SUGGESTION_TTL_MS = 10 * 60 * 1000;
 /** Held suggestions per tab (one per field); the oldest goes first. */
 const MAX_PER_TAB = 8;
 
-const PAGES: Readonly<Record<string, SuggestionPageKind>> = { "ghost.html": "ghost", "menu.html": "menu" };
+/** The frames that may read a held suggestion: the ghost over the field and the menu's preview row. */
+const PEEK_FRAMES: readonly FrameKind[] = ["ghost", "menu"];
+const PEEK_PAGES: ReadonlySet<string> = new Set(PEEK_FRAMES.map((k) => `${k}.html`));
 
 export interface SuggestionDeps {
   generator: Pick<FormGenerator, "generateForForm">;
@@ -108,7 +110,7 @@ export class Suggestions {
   /** The held password of `token`, only to the ghost or menu page of its own tab; null otherwise. */
   peek(token: string, from: UiContext): { password: string; report: GenerationReport | null } | null {
     const h = this.live(token);
-    if (!h || !Object.hasOwn(PAGES, from.page) || from.tabId === undefined || from.tabId !== h.rec.tabId) return null;
+    if (!h || !PEEK_PAGES.has(from.page) || from.tabId === undefined || from.tabId !== h.rec.tabId) return null;
     return { password: h.password, report: h.report };
   }
 

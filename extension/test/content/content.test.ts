@@ -245,6 +245,30 @@ describe("show_frame / remove_frame", () => {
     expect(root.querySelector("iframe")).toBeNull();
   });
 
+  it("task 6: the ghost needs its field; the worker's pill box opens it to the pointer over the pill only", () => {
+    setPage(LOGIN);
+    s = start();
+    const root = s.cs.internals.root;
+    const url = `${EXT_BASE}ghost.html#${TOKEN}`;
+    s.ext.deliver({ type: "show_frame", kind: "ghost", url });
+    expect(root.querySelector("iframe")).toBeNull();
+    const field = analysis(s).forms[0]!.fields[0]!;
+    s.ext.deliver({ type: "show_frame", kind: "ghost", url: `${EXT_BASE}menu.html#${TOKEN}`, ref: field.ref });
+    expect(root.querySelector("iframe")).toBeNull();
+    s.ext.deliver({ type: "show_frame", kind: "ghost", url, ref: field.ref });
+    const f = root.querySelector("iframe")!;
+    expect(f.style.pointerEvents).toBe("none");
+    // A malformed box is dropped; a good one shows the ghost.
+    expect(s.ext.deliver({ type: "ghost_pill", rect: { x: "1" }, over: false })).toEqual({ ok: false });
+    expect(f.classList.contains("shown")).toBe(false);
+    expect(s.ext.deliver({ type: "ghost_pill", rect: { x: 150, y: 4, width: 40, height: 22 }, over: false })).toEqual({ ok: true });
+    expect(f.classList.contains("shown")).toBe(true);
+    // From another sender: nothing.
+    expect(s.ext.deliver({ type: "ghost_pill", rect: { x: 0, y: 0, width: 40, height: 22 }, over: false }, { id: "other" })).not.toEqual({ ok: true });
+    s.ext.deliver({ type: "remove_frame", kind: "ghost" });
+    expect(root.querySelector("iframe")).toBeNull();
+  });
+
   it("an origin pin must match this document's origin", () => {
     setPage(LOGIN);
     s = start();

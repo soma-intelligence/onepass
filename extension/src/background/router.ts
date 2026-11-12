@@ -28,6 +28,7 @@ import {
   type FormInfo,
   type FormKind,
   type GhostMetrics,
+  type GhostRect,
   type IntentHints,
   PAGE_CONTEXT_MAX_BUTTONS,
   PAGE_CONTEXT_MAX_FIELDS,
@@ -269,6 +270,12 @@ function ghostMetrics(v: unknown): GhostMetrics {
   };
 }
 
+/** The ghost pill's box inside its frame: frame-local, never negative. */
+function pillRect(v: unknown): GhostRect {
+  const o = obj(v);
+  return { x: metric(o.x), y: metric(o.y), width: metric(o.width), height: metric(o.height) };
+}
+
 // ---- plan_context (smart fill) ----
 // Bounds of the bridge's `PageContext` (it checks them again); the origins
 // and frame kind the content script may add are dropped, never read.
@@ -499,7 +506,10 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "menu_regenerate":
       case "ghost_init":
       case "ghost_accept":
+      case "ghost_menu":
         return { type: o.type, token: token(o.token) };
+      case "ghost_pill":
+        return { type: o.type, token: token(o.token), rect: pillRect(o.rect), over: bool(o.over) };
       case "menu_profile": {
         const n = o.length;
         if (typeof n !== "number" || !Number.isInteger(n) || n < CUSTOM_MIN_LENGTH || n > CUSTOM_MAX_LENGTH) throw new Invalid();

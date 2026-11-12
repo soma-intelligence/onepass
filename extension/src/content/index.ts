@@ -116,7 +116,7 @@ export interface ContentScript {
   readonly internals: { readonly root: ShadowRoot; readonly refs: RefRegistry };
 }
 
-const FRAME_KINDS: ReadonlySet<string> = new Set<FrameKind>(["menu", "overlay", "save"]);
+const FRAME_KINDS: ReadonlySet<string> = new Set<FrameKind>(["menu", "overlay", "save", "ghost"]);
 const MAX_VALUE = 4096;
 
 function str(v: unknown): v is string {
@@ -459,7 +459,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
         const url = checkFrameUrl(m.url, kind, ext.runtime.getURL(""), true);
         if (url === null) break;
         const anchor = typeof m.ref === "string" ? refs.get(m.ref) : null;
-        if (kind === "menu" && !anchor) break;
+        // The menu and the ghost belong to a field: no field, no frame.
+        if ((kind === "menu" || kind === "ghost") && !anchor) break;
         parts.frames.showFrame(kind, url, anchor);
         ok = true;
         break;
@@ -476,6 +477,15 @@ export function createContentScript(o: ContentOptions): ContentScript {
           ok = true;
         }
         break;
+      case "ghost_pill": {
+        // The ghost page's pill box (frame-local), vouched by the worker: the pointer pass-through.
+        const r = m.rect as Partial<Record<"x" | "y" | "width" | "height", unknown>> | null;
+        const n = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+        if (!r || typeof r !== "object" || !n(r.x) || !n(r.y) || !n(r.width) || !n(r.height) || typeof m.over !== "boolean") break;
+        parts.frames.ghostPill({ x: r.x as number, y: r.y as number, width: r.width as number, height: r.height as number }, m.over);
+        ok = true;
+        break;
+      }
       case "chain_highlight":
         if (m.ref === null) parts.frames.highlight(null);
         else if (typeof m.ref === "string") parts.frames.highlight(refs.get(m.ref));

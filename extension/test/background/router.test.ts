@@ -556,6 +556,37 @@ describe("ghost and preview messages (task 5)", () => {
     expect(await ext.send({ type: "ghost_init", token: again }, uiSender(`ghost.html#${again}`, 7))).toEqual({ err: "invalid" });
   });
 
+  it("task 6: the ghost page's pill box goes to its own frame; its chevron swaps the ghost for the menu; the pill removes it", async () => {
+    const { ext } = await setup(drawing());
+    const token = await ghostOpen(ext);
+    const ui = uiSender(`ghost.html#${token}`, 7);
+    const toTab = (type: string) => ext.sentToTabs.filter((x) => (x.message as { type?: string }).type === type);
+    const rect = { x: 180, y: 6, width: 52, height: 24 };
+    expect(await ext.send({ type: "ghost_pill", token, rect, over: false }, ui)).toEqual({ ok: {} });
+    expect(toTab("ghost_pill").map((x) => [x.tabId, x.message])).toEqual([[7, { type: "ghost_pill", rect, over: false }]]);
+    // Another tab's ghost page, or a bad box: nothing.
+    expect(await ext.send({ type: "ghost_pill", token, rect, over: false }, uiSender(`ghost.html#${token}`, 8))).toEqual({ err: "invalid" });
+    expect(await ext.send({ type: "ghost_pill", token, rect: { ...rect, x: -1 }, over: false }, ui)).toBe(NO_REPLY);
+    // The chevron: the ghost goes, the menu opens at the field on the same suggestion.
+    const r = (await ext.send({ type: "ghost_menu", token }, ui)) as { ok: object };
+    expect(r).toEqual({ ok: {} });
+    expect(toTab("remove_frame").map((x) => x.message)).toEqual([{ type: "remove_frame", kind: "ghost" }]);
+    const shown = toTab("show_frame").map((x) => x.message as { kind: string; url: string; ref?: string });
+    expect(shown).toHaveLength(1);
+    expect(shown[0]!.kind).toBe("menu");
+    expect(shown[0]!.ref).toBe("e1");
+    const mt = shown[0]!.url.slice(shown[0]!.url.indexOf("#") + 1);
+    expect(await ext.send({ type: "menu_preview", token: mt }, uiSender(`menu.html#${mt}`, 7))).toEqual({
+      ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16 },
+    });
+    // The pill of a new ghost: filled, and the ghost frame removed.
+    const again = await ghostOpen(ext);
+    expect(await ext.send({ type: "ghost_accept", token: again }, uiSender(`ghost.html#${again}`, 7))).toEqual({ ok: {} });
+    expect(toTab("remove_frame")).toHaveLength(2);
+    // A menu page cannot send the ghost's messages.
+    expect(await ext.send({ type: "ghost_menu", token: again }, uiSender(`menu.html#${again}`, 7))).toBe(NO_REPLY);
+  });
+
   it("ghost_open only on new-password forms of a secure page", async () => {
     const { ext } = await setup(drawing());
     const m = { type: "ghost_open", fieldRef: "e1", formRef: "f1", formKind: "login", metrics: METRICS };
