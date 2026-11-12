@@ -171,12 +171,17 @@ describe("save prompt", () => {
     expect(text(r)).toContain("Mettre à jour le mot de passe pour atlas-cloud.test ?");
     const sel = r.querySelector<HTMLSelectElement>("select.sc-choice")!;
     expect(sel.getAttribute("aria-label")).toBe("Quel login ?");
+    // No login picked for the user: a blank first entry, Update disabled until one is chosen.
     expect([...sel.options].map((o) => [o.value, o.textContent])).toEqual([
+      ["", "Quel login ?"],
       ["it_01", "Atlas Cloud · alex@atlas.dev"],
       ["it_02", "Atlas Cloud (work) · alex@work.dev"],
     ]);
+    expect(sel.value).toBe("");
+    expect(button(r, "Mettre à jour").disabled).toBe(true);
     sel.value = "it_02";
     sel.dispatchEvent(new Event("change"));
+    expect(button(r, "Mettre à jour").disabled).toBe(false);
     await click("Mettre à jour");
     expect(worker.sent.filter((m) => m.type === "save_decide").at(-1)).toEqual({
       type: "save_decide",

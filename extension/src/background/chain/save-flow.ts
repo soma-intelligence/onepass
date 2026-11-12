@@ -22,17 +22,23 @@
 //
 // Change-password with a generated password (spec 5.2): `savePendingUpdate`
 // writes it at once to the login being changed. Several logins on the site
-// and none filled in this tab: the logins (ids, titles, usernames, never a
-// password) are kept for the tab, and the submission of that very password
-// opens the update card that asks which one (`choices`).
+// and none filled in this tab: the password goes at once to a pending Login of
+// its own (no username, like a signup's), the logins (ids, titles, usernames,
+// never a password) are kept for the tab with that item's id, and the
+// submission of that very password opens the update card that asks which one
+// (`choices`). Its Update moves the password into the picked login, then
+// deletes the pending item (`discard_pending`); Later, expiry, a closed tab or
+// a worker restart leave the pending item in the vault.
 //
 // A sign-in that keeps its form on screen (spec 5.3): the content script
 // reports `submit_outcome` UNCERTAIN_MS after a trusted submission whose form
 // is still there. URL changed, password field cleared and no alert in the
-// form: a success marked `uncertain` (the card, never automatic); anything
-// else changes nothing. A success by navigation waits UNCERTAIN_MS on the new
-// page: a `page_alert` from that new top document of the same site (an error
-// or captcha page) marks it `uncertain` too. A page can only make the outcome
+// form: a success marked `uncertain` (the card, never automatic); an alert in
+// the form marks a waiting sign-in `uncertain` (SETTLE_MS outlasts the
+// outcome); anything else changes nothing. A success by navigation waits
+// PAGE_ALERT_WAIT_MS on the new page: a `page_alert` from that new top
+// document of the same site (an error or captcha page) marks it `uncertain`
+// too. A page can only make the outcome
 // more cautious, never turn a sign-in into an automatic save.
 //
 // Pending save (spec 7): right after a generated password went into a signup
@@ -81,7 +87,7 @@
 // `storage.local` key `autoSubmit:<itemId>`, true unless set to false.
 import { parseOrigin, sameSite } from "../../shared/domain";
 import type { IdentityValues } from "../../bridge/client";
-import type { CsToBg, FormKind, PageAnalysis, SavedFormKind, SubmittedValues } from "../../shared/messages";
+import { type CsToBg, type FormKind, type PageAnalysis, type SavedFormKind, type SubmittedValues, UNCERTAIN_MS } from "../../shared/messages";
 import type { StorageArea } from "../ext";
 import type { CsContext } from "../frames";
 import type { NeverSave } from "../never-save";
@@ -100,18 +106,22 @@ import {
 import { HostCompat } from "../host-compat";
 import { BgError, type Session } from "../session";
 
+export { UNCERTAIN_MS };
+
 export const SUBMIT_TTL_MS = 2 * 60 * 1000;
-/** The same document stays without its password form this long before it counts as signed in. */
-export const SETTLE_MS = 1000;
+/** Margin for a content script message sent UNCERTAIN_MS after its event to reach the worker. */
+const UNCERTAIN_GRACE_MS = 250;
+/**
+ * The same document stays without its password form this long before it counts as signed in: past
+ * the `submit_outcome` of a form that stays (spec 5.3), so an alert in it can still make it uncertain.
+ */
+export const SETTLE_MS = UNCERTAIN_MS + UNCERTAIN_GRACE_MS;
+/** A sign-in's new top document waits this long for a `page_alert` before its success counts. */
+export const PAGE_ALERT_WAIT_MS = UNCERTAIN_MS + UNCERTAIN_GRACE_MS;
 /** A new top document without any analysis (no form, no content script) counts after this. */
 export const NAV_SETTLE_MS = 2000;
 /** The identifier of a lone identifier step feeds the next password step this long. */
 export const IDENTIFIER_TTL_MS = 10 * 60 * 1000;
-/**
- * Spec 5.3: a form kept on screen is judged this long after its submission (`submit_outcome`),
- * and a new page waits this long for a `page_alert` before its success counts.
- */
-export const UNCERTAIN_MS = 1500;
 /** A `submit_outcome` this late after its submission is not the one the content script sent on time. */
 const OUTCOME_LATE_MS = 2 * UNCERTAIN_MS;
 
@@ -234,9 +244,10 @@ interface Pending {
   formRef?: string;
   /** Spec 5.2: the logins the card asks to pick from (a generated password, several logins). */
   choices?: LoginChoice[];
+  /** Spec 5.2: the pending login holding the generated password until the card names the login. */
+  pendingItemId?: string;
   expire: unknown;
 }
-
 
 interface Identifier {
   site: string;
@@ -292,7 +303,7 @@ export class SaveFlow {
   private readonly saved = new Map<number, Saved>();
   private readonly identifiers = new Map<number, Identifier>();
   /** Spec 5.2: the logins of a site with several, for the change-password card of a tab. */
-  private readonly choices = new Map<number, { site: string; logins: LoginChoice[] }>();
+  private readonly choices = new Map<number, { site: string; pendingItemId: string; logins: LoginChoice[] }>();
   /** Login, card and identity items OnePass filled per tab, with their site and when. */
   private readonly filled = new Map<number, { site: string; kind: FilledKind; itemId: string; at: number }[]>();
   private readonly now: () => number;
@@ -343,26 +354,33 @@ export class SaveFlow {
       }
     }
     const username = opts.username?.trim() ?? "";
+    const itemId = await this.writePending(origin, page.site, password, username, opts.weak === true);
+    if (itemId === null) return false;
+    this.saved.set(tabId, { site: page.site, itemId, username });
+    return true;
+  }
+
+  /** A new Login tagged `onepass:pending` in the page's default vault: its id, or null. Never throws. */
+  private async writePending(origin: string, site: string, password: string, username: string, weak: boolean): Promise<string | null> {
     try {
       // Listed for the page: the first is the default vault of the account it routes to.
       const { vaults } = await this.host.vaults(origin);
       const vault = vaults[0];
-      if (!vault) return false;
+      if (!vault) return null;
       const saved = await this.deps.session.request({
         op: "save_login",
         ctx: "save_prompt",
         origin,
-        title: titleFromSite(page.site),
+        title: titleFromSite(site),
         username,
         password,
         vault_id: vault.id,
         rule: "domain",
-        tags: opts.weak === true ? [PENDING_TAG, WEAK_BY_SITE_TAG] : [PENDING_TAG],
+        tags: weak ? [PENDING_TAG, WEAK_BY_SITE_TAG] : [PENDING_TAG],
       });
-      this.saved.set(tabId, { site: page.site, itemId: saved.item_id, username });
-      return true;
+      return saved.item_id;
     } catch {
-      return false;
+      return null;
     }
   }
 
@@ -373,22 +391,41 @@ export class SaveFlow {
    * `onepass:pending`): the site's only login, or the one OnePass filled in
    * this tab. The form's submission confirms it like a signup's pending
    * item (`confirm`, or the host's `pending` verdict). Several logins and none
-   * filled here: nothing written, the password stays remembered for the
-   * submission (the card asks which one, Task 11). Never throws.
+   * filled here: the password goes at once to a pending Login of its own (no
+   * username) and the card asks which login at the submission; its Update
+   * moves the password there, then deletes the pending item. Never throws.
    */
   async savePendingUpdate(tabId: number, origin: string, password: string, opts: PendingOptions = {}): Promise<boolean> {
     const page = parseOrigin(origin);
     if (page?.https !== true || password === "") return false;
+    const prev = this.choices.get(tabId);
+    if (prev?.site === page.site) {
+      // Generated again on the same form: its pending item takes the new password.
+      try {
+        await this.deps.session.request({ op: "update_password", ctx: "save_prompt", item_id: prev.pendingItemId, origin, password, weak_by_site: opts.weak === true });
+        return true;
+      } catch (e) {
+        if (!(e instanceof BgError) || (e.code !== "not_found" && e.code !== "origin_mismatch")) return false;
+        if (this.choices.get(tabId) === prev) this.choices.delete(tabId);
+      }
+    }
     try {
       const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "save_prompt", origin });
       const logins = items.filter((x) => x.kind === "login");
       const here = this.lastFilled(tabId, origin, "login");
       const itemId = here !== null && logins.some((x) => x.item_id === here) ? here : logins.length === 1 ? logins[0]?.item_id : undefined;
       if (itemId === undefined) {
-        // Several logins, none filled here: the card asks which one once the form is sent.
-        if (logins.length > 1)
-          this.choices.set(tabId, { site: page.site, logins: logins.map((x) => ({ itemId: x.item_id, title: x.title, username: x.subtitle })) });
-        return false;
+        if (logins.length < 2) return false;
+        // Several logins, none filled here: safe at once in a pending Login of its own, the card
+        // asks which login once the form is sent (spec 5.2).
+        const pendingItemId = await this.writePending(origin, page.site, password, "", opts.weak === true);
+        if (pendingItemId === null) return false;
+        this.choices.set(tabId, {
+          site: page.site,
+          pendingItemId,
+          logins: logins.map((x) => ({ itemId: x.item_id, title: x.title, username: x.subtitle })),
+        });
+        return true;
       }
       this.choices.delete(tabId);
       await this.deps.session.request({
@@ -502,7 +539,10 @@ export class SaveFlow {
     };
     if (confirmed) p.confirmed = true;
     // Spec 5.2: the generated password of a change form, several logins, none known here.
-    if (!confirmed && generated && username.trim() === "" && pick && pick.site === page.site) p.choices = pick.logins;
+    if (!confirmed && generated && username.trim() === "" && pick && pick.site === page.site) {
+      p.choices = pick.logins;
+      p.pendingItemId = pick.pendingItemId;
+    }
     if (cs.documentId !== undefined) p.documentId = cs.documentId;
     // Spec 8.5: kept at most 2 minutes.
     p.expire = this.timers.setTimeout(() => this.drop(cs.tabId), SUBMIT_TTL_MS);
@@ -593,8 +633,8 @@ export class SaveFlow {
     }
     if (newDoc) {
       // A sign-in's new page may still show an error or a captcha (`page_alert`, spec 5.3): it
-      // counts after UNCERTAIN_MS. A card or an address: at once, as before.
-      if (p.kind === undefined) p.check = this.timers.setTimeout(() => void this.check(cs.tabId), UNCERTAIN_MS);
+      // counts after PAGE_ALERT_WAIT_MS. A card or an address: at once, as before.
+      if (p.kind === undefined) p.check = this.timers.setTimeout(() => void this.check(cs.tabId), PAGE_ALERT_WAIT_MS);
       else void this.check(cs.tabId);
       return;
     }
@@ -603,8 +643,9 @@ export class SaveFlow {
 
   /**
    * Spec 5.3: the submitting document kept its form UNCERTAIN_MS after the submission. URL
-   * changed, password field cleared, no alert in the form: an uncertain success (the card).
-   * Anything else changes nothing (the usual rule still decides, or the record expires). Only
+   * changed, password field cleared, no alert in the form: an uncertain success (the card). An
+   * alert in the form: the sign-in stays waiting, marked uncertain. Anything else changes
+   * nothing (the usual rule still decides, or the record expires). Only
    * for a sign-in of this very frame, document and form, sent moments ago.
    */
   onOutcome(m: Extract<CsToBg, { type: "submit_outcome" }>, cs: CsContext): void {
@@ -612,7 +653,12 @@ export class SaveFlow {
     if (!p || p.kind !== undefined || p.confirmed || p.navigated) return;
     if (cs.frameId !== p.frameId || cs.documentId !== p.documentId || m.formRef !== p.formRef) return;
     if (this.now() - p.at > OUTCOME_LATE_MS) return;
-    if (!m.urlChanged || !m.passwordCleared || m.alert) return;
+    // An alert in the kept form: whatever the settle check decides, never automatic.
+    if (m.alert) {
+      p.uncertain = true;
+      return;
+    }
+    if (!m.urlChanged || !m.passwordCleared) return;
     this.timers.clearTimeout(p.check);
     p.check = null;
     p.uncertain = true;
@@ -664,7 +710,7 @@ export class SaveFlow {
   async check(tabId: number): Promise<void> {
     const p = this.pending.get(tabId);
     if (!p) return;
-    const { origin, username, password, at, confirmed, kind, card, identity, uncertain, choices } = p;
+    const { origin, username, password, at, confirmed, kind, card, identity, uncertain, choices, pendingItemId } = p;
     // Copied before the drop (which blanks the held number).
     const cardCopy = card ? { ...card } : undefined;
     this.drop(tabId);
@@ -681,8 +727,8 @@ export class SaveFlow {
     }
     // "Pas maintenant" on this very credential moments ago: not asked again.
     if (await this.quiet(origin, loginQuietKey(username, password))) return;
-    if (choices) {
-      await this.askWhich(tabId, origin, password, choices);
+    if (choices && pendingItemId !== undefined) {
+      await this.askWhich(tabId, origin, password, choices, pendingItemId);
       return;
     }
     // The prompt goes to the top frame: it must show this site (checked
@@ -788,10 +834,10 @@ export class SaveFlow {
   }
 
   /** Spec 5.2: the update card that asks which of the site's logins gets the generated password. */
-  private async askWhich(tabId: number, origin: string, password: string, choices: LoginChoice[]): Promise<void> {
+  private async askWhich(tabId: number, origin: string, password: string, choices: LoginChoice[], pendingItemId: string): Promise<void> {
     const top = await this.verifiedTop(tabId, origin);
     if (!top) return;
-    const pending: SavePending = { tabId, origin, kind: "login", status: "update", username: "", password, topOrigin: top.origin, choices };
+    const pending: SavePending = { tabId, origin, kind: "login", status: "update", username: "", password, topOrigin: top.origin, choices, pendingItemId };
     if (top.documentId !== undefined) pending.documentId = top.documentId;
     try {
       await this.deps.saves.open(pending);

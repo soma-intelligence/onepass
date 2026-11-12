@@ -60,12 +60,13 @@ import {
   type PageAnalysis,
   type SavedFormKind,
   type SubmittedValues,
+  UNCERTAIN_MS,
 } from "../shared/messages";
 import { buttonClass } from "./context";
 import { BUTTON_SELECTOR } from "./detect/forms";
 import { findPasskeySignIn } from "./detect/passkey-button";
 import type { RefRegistry } from "./detect/refs";
-import { composedClosest, composedContains } from "./detect/shadow";
+import { MAX_SHADOW_DEPTH, MAX_SHADOW_ELEMENTS, composedClosest, composedContains } from "./detect/shadow";
 import { type Geometry, isRendered } from "./detect/visibility";
 import { nativeValue } from "./filler";
 
@@ -74,8 +75,6 @@ export const SPA_WINDOW_MS = 10_000;
 const SPA_POLL_MS = 250;
 /** A `submit` event counts only after a trusted gesture in that form this recent. */
 export const GESTURE_MS = 5000;
-/** Spec 5.3, the same value as the worker's (background/chain/save-flow.ts). */
-export const UNCERTAIN_MS = 1500;
 const ALERT_SELECTOR = '[role="alert" i]';
 
 const CREDENTIAL_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "change_password"]);
@@ -353,9 +352,28 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       return doc.URL;
     }
   };
-  /** A rendered `role="alert"` with text in `root`. */
-  const alertIn = (root: ParentNode): boolean =>
-    Array.from(root.querySelectorAll(ALERT_SELECTOR)).some((el) => (el.textContent ?? "").trim() !== "" && isRendered(el, geometry));
+  /** Elements matching `selector` in `root` and in the open shadow roots nested in it (bounded walk). */
+  const deepMatches = (root: Element | Document, selector: string): Element[] => {
+    const out: Element[] = [];
+    let budget = MAX_SHADOW_ELEMENTS;
+    const queue: { r: Element | Document | ShadowRoot; depth: number }[] = [{ r: root, depth: 0 }];
+    for (let k = 0; k < queue.length && budget > 0; k++) {
+      const { r, depth } = queue[k]!;
+      out.push(...Array.from(r.querySelectorAll(selector)));
+      if (depth >= MAX_SHADOW_DEPTH) continue;
+      const walker = doc.createTreeWalker(r, NodeFilter.SHOW_ELEMENT);
+      for (let n: Node | null = walker.currentNode; n !== null && budget > 0; n = walker.nextNode()) {
+        budget--;
+        const sr = n instanceof Element ? n.shadowRoot : null;
+        if (sr) queue.push({ r: sr, depth: depth + 1 });
+      }
+    }
+    return out;
+  };
+  /** A rendered `role="alert"` with text among `els`. */
+  const shownAlert = (els: Element[]): boolean => els.some((el) => (el.textContent ?? "").trim() !== "" && isRendered(el, geometry));
+  /** A rendered `role="alert"` with text in `root` (light DOM: the page-wide watch stays cheap). */
+  const alertIn = (root: ParentNode): boolean => shownAlert(Array.from(root.querySelectorAll(ALERT_SELECTOR)));
   let outcomeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Spec 5.3: UNCERTAIN_MS after the report of `f`, the form still there: what changed. */
   const watchOutcome = (f: FormInfo) => {
@@ -372,7 +390,8 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       if (outcomeTimer === t) outcomeTimer = null;
       if (!container?.isConnected) return;
       const passwordCleared = !pw || !pw.isConnected || !composedContains(container, pw) || nativeValue(pw) === "";
-      const alert = container.querySelector('[aria-invalid="true" i]') !== null || alertIn(container);
+      // In the form, nested open shadow roots included.
+      const alert = deepMatches(container, '[aria-invalid="true" i]').length > 0 || shownAlert(deepMatches(container, ALERT_SELECTOR));
       opts.onOutcome?.({ type: "submit_outcome", formRef: f.ref, urlChanged: where() !== from, passwordCleared, alert });
     }, UNCERTAIN_MS);
     outcomeTimer = t;

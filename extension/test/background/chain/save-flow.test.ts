@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   IDENTIFIER_TTL_MS,
   NAV_SETTLE_MS,
+  PAGE_ALERT_WAIT_MS,
   SETTLE_MS,
   SUBMIT_TTL_MS,
   SaveFlow,
@@ -112,8 +113,8 @@ function setup(status: "new" | "same" | "update" = "new", never: string[] = [], 
       const now: CsContext = { tabId: 7, frameId: 0, origin: SITE };
       if (topDoc !== null) now.documentId = topDoc;
       flow.onAnalysis(page(withPassword), now);
-      // A new page waits UNCERTAIN_MS for a `page_alert` before it counts (spec 5.3).
-      await timers.advance(UNCERTAIN_MS);
+      // A new page waits PAGE_ALERT_WAIT_MS for a `page_alert` before it counts (spec 5.3).
+      await timers.advance(PAGE_ALERT_WAIT_MS);
     },
     page,
     cs,
@@ -807,7 +808,7 @@ describe("save every time", () => {
       flow.onNavigation(7, top);
       flow.onAnalysis(page(false), { tabId: 7, frameId: 0, origin, documentId: `doc-${doc}` });
       // The new page counts once UNCERTAIN_MS passed without a `page_alert` (spec 5.3).
-      await timers.advance(UNCERTAIN_MS);
+      await timers.advance(PAGE_ALERT_WAIT_MS);
     };
     /** A card or address form sent by hand on `origin`; the next page has no form (or `still` one). */
     const sendForm = async (origin: string, m: Extract<CsToBg, { type: "submitted_form" }>, still?: PageAnalysis) => {
@@ -1136,7 +1137,7 @@ describe("save gaps (spec 5)", () => {
   const GEN = "Gen-Pass-77";
   const DOC1: CsContext = { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-1" };
 
-  function gaps(opts: { items?: { item_id: string; kind: string; title: string; subtitle: string }[]; top?: string } = {}) {
+  function gaps(opts: { items?: { item_id: string; kind: string; title: string; subtitle: string }[]; fail?: (r: Record<string, unknown>) => Error | undefined } = {}) {
     const timers = new FakeTimers();
     const requests: Record<string, unknown>[] = [];
     const opened: SavePending[] = [];
@@ -1144,6 +1145,8 @@ describe("save gaps (spec 5)", () => {
     const session = {
       request: (async (r: Record<string, unknown>) => {
         requests.push(r);
+        const failed = opts.fail?.(r);
+        if (failed) throw failed;
         if (r.op === "check_credentials") return { status: "new" };
         if (r.op === "vaults") return { vaults: [{ id: "v1", name: "Perso", color: null }] };
         if (r.op === "save_login") return { item_id: `it_saved_${++saves}` };
@@ -1210,37 +1213,134 @@ describe("save gaps (spec 5)", () => {
     expect(t.requests.find((r) => r.op === "save_login")).toMatchObject({ username: "alex@atlas.dev", password: PASS });
   });
 
-  it("change-password with several logins asks which one", async () => {
-    const items = [
-      { item_id: "it_01", kind: "login", title: "Atlas Cloud", subtitle: "alex@atlas.dev" },
-      { item_id: "it_02", kind: "login", title: "Atlas Cloud (work)", subtitle: "alex@work.dev" },
-    ];
-    const t = gaps({ items });
+  const LOGINS = [
+    { item_id: "it_01", kind: "login", title: "Atlas Cloud", subtitle: "alex@atlas.dev" },
+    { item_id: "it_02", kind: "login", title: "Atlas Cloud (work)", subtitle: "alex@work.dev" },
+  ];
+  const UI = { page: "save.html", tabId: 7 } as never;
+  const NO_EDITS = { title: "", username: "", password: "", vaultId: "", rule: "domain" as const, tags: [] };
+
+  /** Generated in a change form of a site with several logins, sent, the page moved on: the card. */
+  async function changeSent(t: ReturnType<typeof gaps>): Promise<void> {
     t.flow.rememberGenerated(7, SITE, GEN);
-    // Several logins, none filled here: nothing written yet.
-    expect(await t.flow.savePendingUpdate(7, SITE, GEN)).toBe(false);
+    expect(await t.flow.savePendingUpdate(7, SITE, GEN)).toBe(true);
     await t.submit("", GEN, true);
     t.flow.onAnalysis(page(false), DOC1);
     await t.settle(SETTLE_MS);
-    expect(t.ops()).not.toContain("save_login");
+  }
+
+  it("change-password with several logins asks which one", async () => {
+    const t = gaps({ items: LOGINS });
+    t.flow.rememberGenerated(7, SITE, GEN);
+    expect(await t.flow.savePendingUpdate(7, SITE, GEN)).toBe(true);
+    // Safe before any card: a pending login holds the generated password, no username yet.
+    expect(t.requests.filter((r) => r.op === "save_login")).toEqual([
+      { op: "save_login", ctx: "save_prompt", origin: SITE, title: "Atlas Cloud", username: "", password: GEN, vault_id: "v1", rule: "domain", tags: [PENDING_TAG] },
+    ]);
+    await t.submit("", GEN, true);
+    t.flow.onAnalysis(page(false), DOC1);
+    await t.settle(SETTLE_MS);
+    // Not confirmed as a login of its own, never updated before the card is answered.
+    expect(t.ops()).not.toContain("confirm_pending");
     expect(t.ops()).not.toContain("update_password");
     expect(t.opened).toHaveLength(1);
     expect(t.opened[0]).toMatchObject({
       status: "update",
       username: "",
+      pendingItemId: "it_saved_1",
       choices: [
         { itemId: "it_01", title: "Atlas Cloud", username: "alex@atlas.dev" },
         { itemId: "it_02", title: "Atlas Cloud (work)", username: "alex@work.dev" },
       ],
     });
-    const ui = { page: "save.html", tabId: 7 } as never;
-    const edits = { title: "", username: "", password: "", vaultId: "", rule: "domain" as const, tags: [] };
     // Only one of the logins offered: the page cannot pick another item.
-    await expect(t.prompts.decide(t.tokens[0] as string, ui, "update", { ...edits, itemId: "it_99" })).rejects.toThrow();
-    await t.prompts.decide(t.tokens[0] as string, ui, "update", { ...edits, itemId: "it_02" });
-    expect(t.requests.filter((r) => r.op === "update_password")).toEqual([
+    await expect(t.prompts.decide(t.tokens[0] as string, UI, "update", { ...NO_EDITS, itemId: "it_99" })).rejects.toThrow();
+    await t.prompts.decide(t.tokens[0] as string, UI, "update", { ...NO_EDITS, itemId: "it_02" });
+    expect(t.requests.filter((r) => r.op === "update_password" || r.op === "discard_pending")).toEqual([
       { op: "update_password", ctx: "save_prompt", item_id: "it_02", origin: SITE, password: GEN },
+      { op: "discard_pending", ctx: "save_prompt", item_id: "it_saved_1", origin: SITE },
     ]);
+  });
+
+  it("change-password regenerated: the same pending item gets the new password", async () => {
+    const t = gaps({ items: LOGINS });
+    expect(await t.flow.savePendingUpdate(7, SITE, GEN)).toBe(true);
+    expect(await t.flow.savePendingUpdate(7, SITE, "Gen-Pass-78")).toBe(true);
+    expect(t.ops().filter((o) => o === "save_login")).toHaveLength(1);
+    expect(t.requests.filter((r) => r.op === "update_password")).toEqual([
+      { op: "update_password", ctx: "save_prompt", item_id: "it_saved_1", origin: SITE, password: "Gen-Pass-78", weak_by_site: false },
+    ]);
+  });
+
+  it("change-password, Later: the pending item stays, nothing in the popup list", async () => {
+    const t = gaps({ items: LOGINS });
+    await changeSent(t);
+    await t.prompts.decide(t.tokens[0] as string, UI, "later");
+    expect(t.ops()).not.toContain("discard_pending");
+    expect(t.ops()).not.toContain("update_password");
+    // The popup cannot ask which login: not listed.
+    expect(await t.prompts.pendingList()).toEqual([]);
+  });
+
+  it("change-password, a failed update keeps the pending item", async () => {
+    const t = gaps({ items: LOGINS, fail: (r) => (r.op === "update_password" ? new BgError("not_found") : undefined) });
+    await changeSent(t);
+    await expect(t.prompts.decide(t.tokens[0] as string, UI, "update", { ...NO_EDITS, itemId: "it_01" })).rejects.toThrow();
+    expect(t.ops()).not.toContain("discard_pending");
+  });
+
+  it("no identifier, Later: nothing in the popup list (it cannot ask for one)", async () => {
+    const t = gaps();
+    await t.submit("", PASS);
+    t.flow.onAnalysis(page(false), DOC1);
+    await t.settle(SETTLE_MS);
+    expect(t.opened).toHaveLength(1);
+    await t.prompts.decide(t.tokens[0] as string, UI, "later");
+    expect(await t.prompts.pendingList()).toEqual([]);
+    // A card with an identifier still waits there.
+    await t.submit(USER, "Other-Pass-3");
+    t.flow.onAnalysis(page(false), DOC1);
+    await t.settle(SETTLE_MS);
+    // (saved automatically: a new login with identifier never waits; an update does)
+    expect(t.ops()).toContain("save_login");
+  });
+
+  it("the popup refuses to save a waiting sign-in without identifier", async () => {
+    const t = gaps();
+    // Defense in depth: such an entry is never held; one forced in is still refused.
+    const waiting = (t.prompts as unknown as { waiting: Map<string, Record<string, unknown>> }).waiting;
+    waiting.set("w1", { id: "w1", site: "atlas-cloud.test", at: 0, tabId: 7, origin: SITE, status: "new", username: " ", password: PASS, timer: 0 });
+    await expect(t.prompts.decidePending("w1", "save")).rejects.toThrow();
+    expect(t.ops()).not.toContain("save_login");
+  });
+
+  it("SPA removes the password field and shows an alert inside the form: card, no automatic save", async () => {
+    const t = gaps();
+    await t.submit();
+    // The page dropped its password field at once (the form stays, with its error).
+    t.flow.onAnalysis(page(false), DOC1);
+    await t.settle(UNCERTAIN_MS);
+    expect(t.requests).toEqual([]);
+    await t.outcome({ urlChanged: false, passwordCleared: true, alert: true });
+    await t.settle(SETTLE_MS);
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.view).toBeUndefined();
+  });
+
+  it("a page_alert a little after UNCERTAIN_MS (worker grace) still keeps the card", async () => {
+    const t = gaps();
+    await t.submit();
+    t.flow.onNavigation(7, `${SITE}/home`);
+    t.setTop(`${SITE}/home`, "doc-2");
+    const doc2: CsContext = { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-2" };
+    t.flow.onAnalysis(page(false), doc2);
+    await t.settle(UNCERTAIN_MS + 100);
+    expect(t.requests).toEqual([]);
+    t.flow.onPageAlert(doc2);
+    await t.settle(200);
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.opened).toHaveLength(1);
   });
 
   it("form stays, url changed, field cleared, no alert: card, not automatic", async () => {
@@ -1311,7 +1411,7 @@ describe("save gaps (spec 5)", () => {
     t.setTop(`${SITE}/home`, "doc-2");
     const doc2: CsContext = { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-2" };
     t.flow.onAnalysis(page(false), doc2);
-    await t.settle(UNCERTAIN_MS - 1);
+    await t.settle(UNCERTAIN_MS + 249);
     expect(t.requests).toEqual([]);
     await t.settle(1);
     expect(t.ops()).toContain("save_login");
@@ -1329,7 +1429,7 @@ describe("save gaps (spec 5)", () => {
     t.flow.onPageAlert({ tabId: 7, frameId: 2, origin: SITE, documentId: "doc-3" });
     t.flow.onPageAlert({ tabId: 7, frameId: 0, origin: "https://evil.test", documentId: "doc-2" });
     t.flow.onAnalysis(page(false), { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-2" });
-    await t.settle(UNCERTAIN_MS);
+    await t.settle(PAGE_ALERT_WAIT_MS);
     expect(t.ops()).toContain("save_login");
     expect(t.opened[0]?.view).toBe("toast");
   });

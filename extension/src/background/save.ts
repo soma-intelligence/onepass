@@ -113,6 +113,8 @@ export interface SavePending {
    * none filled in the tab: the update card asks which one (Update names it in `edits.itemId`).
    */
   choices?: LoginChoice[];
+  /** With `choices`: the pending Login holding the generated password, deleted once Update moved it. */
+  pendingItemId?: string;
 }
 
 /** A login of the site the change-password card offers (no password). */
@@ -305,6 +307,7 @@ export class SavePrompts {
     if (p.undo) rec.undo = true;
     if (p.locked) rec.locked = true;
     if (p.choices) rec.choices = p.choices.map((c) => ({ ...c }));
+    if (p.pendingItemId !== undefined) rec.pendingItemId = p.pendingItemId;
     const token = await this.tokens.register(rec);
     const msg: BgToCs = { type: "show_frame", kind: "save", url: `${this.deps.ext.runtime.getURL("save.html")}#${token}` };
     if (p.documentId === undefined && p.topOrigin !== undefined) msg.origin = p.topOrigin;
@@ -541,6 +544,12 @@ export class SavePrompts {
         }
         if (rec.kind !== "login" || !rec.update) throw new BgError("invalid");
         out = (await this.commit(rec, "update", edits)).out;
+        // Spec 5.2: the password is in the picked login now; its pending item goes (a refusal
+        // leaves it, nothing lost).
+        if (rec.choices && rec.pendingItemId !== undefined)
+          await this.deps.session
+            .request({ op: "discard_pending", ctx: "save_prompt", item_id: rec.pendingItemId, origin: rec.origin })
+            .catch(() => undefined);
         break;
     }
     // Answered here (a folded card's popup entry would be a stale second copy).
@@ -834,6 +843,8 @@ export class SavePrompts {
   // ---- waiting in the popup ----
 
   private hold(rec: SaveRecord): void {
+    // The popup cannot ask for an identifier or which login: such a sign-in waits in its card only.
+    if (rec.username.trim() === "" || rec.choices) return;
     const id = newToken();
     const site = parseOrigin(rec.origin)?.site ?? rec.origin;
     // One per tab and site: a newer sign-in replaces the older one.
@@ -922,6 +933,8 @@ export class SavePrompts {
       return {};
     }
     if (decision === "update" && !w.update) throw new BgError("invalid");
+    // Never a login without identifier from the popup (it cannot ask for one).
+    if (decision === "save" && w.username.trim() === "") throw new BgError("invalid");
     const vaults = w.locked || decision === "update" ? [] : (await this.host.vaults(w.origin)).vaults;
     const edits: SaveEdits = {
       title: titleFromSite(w.site),

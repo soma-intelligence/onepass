@@ -308,6 +308,15 @@ interface Ops {
     res: Record<string, never>;
   };
   /**
+   * Delete for good a pending Login (tag `onepass:pending`) of the same registrable domain: a
+   * generated password the save card moved into the login the user picked (spec 5.2). `invalid`
+   * for an item without the tag.
+   */
+  discard_pending: {
+    req: { ctx: "save_prompt"; item_id: string; origin: string };
+    res: Record<string, never>;
+  };
+  /**
    * The save toast's Edit: a Login the bridge saved itself through `save_login` in the last 600 s,
    * same registrable domain, not edited since, gets `title` (blank: the site) and `username`
    * (blank: kept) in place; another `vault_id` moves it (saved there first, the old item deleted

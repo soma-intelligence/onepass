@@ -1,7 +1,7 @@
 // Security review M3: OnePass never submits a form the browser would send to another site.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { UNCERTAIN_MS, submitTargetAllowed } from "../../src/content/submit";
-import type { FormInfo, PageAnalysis } from "../../src/shared/messages";
+import { submitTargetAllowed } from "../../src/content/submit";
+import { type FormInfo, type PageAnalysis, UNCERTAIN_MS } from "../../src/shared/messages";
 import { flush, input, setPage, start, type Started, userClick, useTimers } from "./harness";
 
 // The origin the harness pins (relative actions resolve against the jsdom document URL).
@@ -179,6 +179,23 @@ describe("sign-in that keeps its form (spec 5.3)", () => {
     document.getElementById("login")!.append(msg);
     vi.advanceTimersByTime(UNCERTAIN_MS);
     expect(st2.ext.ofType("submit_outcome")).toEqual([expect.objectContaining({ urlChanged: false, passwordCleared: false, alert: true })]);
+  });
+
+  it("aria-invalid or a role=alert inside a nested open shadow root of the form: alert", async () => {
+    const st = signIn(`<form id="login"><input id="u" autocomplete="username"><input id="p" type="password" autocomplete="current-password"><div id="host"></div><button id="go" type="submit">Sign in</button></form>`);
+    const outer = document.getElementById("host")!.attachShadow({ mode: "open" });
+    outer.innerHTML = `<div id="inner-host"></div>`;
+    const inner = (outer.getElementById("inner-host") as HTMLElement).attachShadow({ mode: "open" });
+    inner.innerHTML = `<p role="alert">Wrong password</p>`;
+    vi.advanceTimersByTime(UNCERTAIN_MS);
+    expect(st.ext.ofType("submit_outcome")).toEqual([expect.objectContaining({ alert: true })]);
+    st.cs.stop();
+
+    const st2 = signIn(`<form id="login"><input id="u" autocomplete="username"><input id="p" type="password" autocomplete="current-password"><div id="host"></div><button id="go" type="submit">Sign in</button></form>`);
+    const root = document.getElementById("host")!.attachShadow({ mode: "open" });
+    root.innerHTML = `<input aria-invalid="true">`;
+    vi.advanceTimersByTime(UNCERTAIN_MS);
+    expect(st2.ext.ofType("submit_outcome")).toEqual([expect.objectContaining({ alert: true })]);
   });
 
   it("the form gone from the document: no outcome (the usual success rule decides)", async () => {

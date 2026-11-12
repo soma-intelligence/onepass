@@ -555,7 +555,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           void decide("save", err, (o) => renderOutcome(o.outcome === "done" ? { outcome: "saved", vault: vaultName() } : o, d)),
         );
     const noVault = !updating && !i.locked && i.vaults.length === 0;
-    const blocked = () => noVault || (asking && d.username.trim() === "");
+    const blocked = () => noVault || (asking && d.username.trim() === "") || (choosing && d.choice === undefined);
     primary.disabled = blocked();
     let ask: HTMLElement | null = null;
     if (asking) {
@@ -571,12 +571,21 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       ask = h("div", { class: "sc-ask" }, field);
     } else if (choosing) {
       const sel = h("select", { class: "select sc-choice", attrs: { "aria-label": t("save.whichLogin") } });
+      // No login picked for the user: Update waits for a choice.
+      const none = h("option", { attrs: { value: "" } }, t("save.whichLogin"));
+      none.disabled = true;
+      none.selected = d.choice === undefined;
+      sel.append(none);
       for (const c of i.choices ?? []) {
         const o = h("option", { attrs: { value: c.itemId } }, c.username !== "" ? `${c.title} · ${c.username}` : c.title);
         if (c.itemId === d.choice) o.selected = true;
         sel.append(o);
       }
-      sel.addEventListener("change", () => (d.choice = sel.value));
+      sel.addEventListener("change", () => {
+        if (sel.value === "") delete d.choice;
+        else d.choice = sel.value;
+        primary.disabled = blocked();
+      });
       ask = h("div", { class: "sc-ask" }, sel);
     }
     show(
@@ -926,10 +935,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       revealed: false,
       typed: "",
     };
-    if (init.choices?.[0]) {
-      draft.choice = init.choices[0].itemId;
-      mode = "update";
-    }
+    if (init.choices?.[0]) mode = "update";
     if (init.view === "edit") renderEdit();
     else if (init.view === "saved") renderSaved(t("save.titleSaved", { title: init.title }), init.username);
     else if (init.view === "toast") renderToast(init, draft);

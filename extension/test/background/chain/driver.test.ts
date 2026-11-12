@@ -1,7 +1,7 @@
 // The chain driver and the save / link proposals wired in the background
 // (createBackground with the real ChainRunner), against fake browser and host.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { UNCERTAIN_MS } from "../../../src/background/chain/save-flow";
+import { PAGE_ALERT_WAIT_MS, SETTLE_MS } from "../../../src/background/chain/save-flow";
 import { type BackgroundOptions, createBackground } from "../../../src/background/app";
 import type { ChainRunner } from "../../../src/background/chain/driver";
 import { UNKNOWN_MS } from "../../../src/background/chain/machine";
@@ -1222,8 +1222,8 @@ describe("save and link proposals (wired)", () => {
     t.ext.complete(7, 0);
     // The new page asks for no password: the sign-in went through.
     await analyze(t, `${SITE}/home`, page(`${SITE}/home`), "doc-2");
-    // It counts once UNCERTAIN_MS passed without a page_alert (spec 5.3).
-    await vi.advanceTimersByTimeAsync(UNCERTAIN_MS);
+    // It counts once PAGE_ALERT_WAIT_MS passed without a page_alert (spec 5.3).
+    await vi.advanceTimersByTimeAsync(PAGE_ALERT_WAIT_MS);
     expect(t.client.requests.find((r) => r.op === "check_credentials")).toEqual({
       op: "check_credentials",
       ctx: "save_prompt",
@@ -1253,7 +1253,7 @@ describe("save and link proposals (wired)", () => {
     );
     // The form went away on the same document (a single-page app).
     await analyze(t, `${SITE}/signup`, page(`${SITE}/signup`), "doc-1");
-    await vi.advanceTimersByTimeAsync(1500);
+    await vi.advanceTimersByTimeAsync(SETTLE_MS);
     expect(ops(t)).toContain("check_credentials");
     expect(toTab(t, "show_frame").at(-1)).toMatchObject({ kind: "save" });
   });
