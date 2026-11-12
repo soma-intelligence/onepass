@@ -16,7 +16,7 @@ import { t } from "../shared/i18n";
 import type { FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
 import type { Geometry, Rect } from "./detect/visibility";
-import { type Layout, readLayout, type Shell } from "./frames";
+import { ICON_SIZE, type Layout, readLayout, type Shell, TOUCH_ICON_SIZE } from "./frames";
 import { domHitTest, type HitTest, hostOnTop, rootHidden, type Scopes, topLayerOpen } from "./occlusion";
 
 /** Roles that carry an icon. */
@@ -39,7 +39,7 @@ export const ICON_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>([
  */
 export const SECONDARY_ICON_ROLES: ReadonlySet<FieldRole> = new Set<FieldRole>(["address_line1", "postal_code", "tel", "cc_name", "cc_exp"]);
 
-export const ICON_SIZE = 20;
+export { ICON_SIZE, TOUCH_ICON_SIZE };
 /** Inset from the field's right edge. */
 const ICON_INSET = 6;
 /** Below this width the icon sits just outside the field (OTP cells). */
@@ -83,9 +83,6 @@ export interface IconsOptions {
   /** IntersectionObserver v2 visibility of an icon (Chromium); the real observer by default. */
   observe?: ObserveVisibility;
 }
-
-/** Icon side on a touch screen. */
-export const TOUCH_ICON_SIZE = 28;
 
 export interface Icons {
   attachIcons(analysis: PageAnalysis): void;

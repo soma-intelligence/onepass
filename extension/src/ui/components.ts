@@ -12,7 +12,7 @@ import { t, tn } from "../shared/i18n";
 import { POINTER_QUERIES, touchDevice } from "../shared/layout";
 import { PROVIDERS } from "../shared/providers";
 import { UNLOCK_WAIT_MS } from "../shared/unlock";
-import { type ArtKind, art } from "./art";
+import { type ArtKind, art, fixedColor } from "./art";
 import type { ObserveVisibility } from "../shared/click-guard";
 
 // ---- DOM ----
@@ -170,7 +170,7 @@ export function icon(name: IconName, size = 14): SVGSVGElement {
 }
 
 const COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-export const FALLBACK_COLOR = "#5B6472";
+export const FALLBACK_COLOR = fixedColor("tile-fallback");
 
 /** A hex color from the host, or a neutral one. */
 export function safeColor(c: string): string {
@@ -280,26 +280,26 @@ const BRAND_MARKS: Partial<Record<ProviderId, { view: string; paths: readonly (r
   google: {
     view: "0 0 48 48",
     paths: [
-      ["#EA4335", "M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"],
-      ["#4285F4", "M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"],
-      ["#FBBC05", "M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"],
-      ["#34A853", "M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"],
+      [fixedColor("brand-google-red"), "M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"],
+      [fixedColor("brand-google-blue"), "M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"],
+      [fixedColor("brand-google-yellow"), "M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"],
+      [fixedColor("brand-google-green"), "M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"],
     ],
   },
   microsoft: {
     view: "0 0 23 23",
     paths: [
-      ["#F25022", "M1 1h10v10H1z"],
-      ["#7FBA00", "M12 1h10v10H12z"],
-      ["#00A4EF", "M1 12h10v10H1z"],
-      ["#FFB900", "M12 12h10v10H12z"],
+      [fixedColor("brand-microsoft-red"), "M1 1h10v10H1z"],
+      [fixedColor("brand-microsoft-green"), "M12 1h10v10H12z"],
+      [fixedColor("brand-microsoft-blue"), "M1 12h10v10H1z"],
+      [fixedColor("brand-microsoft-yellow"), "M12 12h10v10H12z"],
     ],
   },
   apple: {
     view: "0 0 24 24",
     paths: [
       [
-        "#000000",
+        fixedColor("brand-apple"),
         "M16.37 1.43c0 1.14-.49 2.27-1.18 3.08-.74.9-1.99 1.57-2.99 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.57-2.27 1.21-2.98.8-.94 2.14-1.64 3.25-1.68.03.13.05.28.05.43zm4.56 15.71c-.03.07-.46 1.58-1.52 3.12-.94 1.34-1.94 2.71-3.43 2.71-1.52 0-1.9-.88-3.63-.88-1.7 0-2.3.91-3.67.91-1.38 0-2.33-1.26-3.43-2.8-1.29-1.82-2.32-4.63-2.32-7.28 0-4.28 2.8-6.55 5.55-6.55 1.45 0 2.68.95 3.6.95.87 0 2.22-1.01 3.9-1.01.61 0 2.89.06 4.37 2.19-.13.09-2.38 1.37-2.38 4.19 0 3.26 2.85 4.42 2.96 4.45z",
       ],
     ],
@@ -308,7 +308,7 @@ const BRAND_MARKS: Partial<Record<ProviderId, { view: string; paths: readonly (r
     view: "0 0 16 16",
     paths: [
       [
-        "#181717",
+        fixedColor("brand-github"),
         "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z",
       ],
     ],
@@ -316,8 +316,8 @@ const BRAND_MARKS: Partial<Record<ProviderId, { view: string; paths: readonly (r
   facebook: {
     view: "0 0 24 24",
     paths: [
-      ["#0866FF", "M24 12a12 12 0 1 0-13.88 11.85v-8.38H7.08V12h3.04V9.36c0-3 1.79-4.67 4.53-4.67 1.31 0 2.68.24 2.68.24v2.95h-1.51c-1.49 0-1.95.92-1.95 1.87V12h3.32l-.53 3.47h-2.79v8.38A12 12 0 0 0 24 12z"],
-      ["#FFFFFF", "M16.67 15.47 17.2 12h-3.32V9.75c0-.95.46-1.87 1.95-1.87h1.51V4.93s-1.37-.24-2.68-.24c-2.74 0-4.53 1.66-4.53 4.67V12H7.08v3.47h3.04v8.38a12.1 12.1 0 0 0 3.76 0v-8.38z"],
+      [fixedColor("brand-facebook"), "M24 12a12 12 0 1 0-13.88 11.85v-8.38H7.08V12h3.04V9.36c0-3 1.79-4.67 4.53-4.67 1.31 0 2.68.24 2.68.24v2.95h-1.51c-1.49 0-1.95.92-1.95 1.87V12h3.32l-.53 3.47h-2.79v8.38A12 12 0 0 0 24 12z"],
+      [fixedColor("brand-facebook-f"), "M16.67 15.47 17.2 12h-3.32V9.75c0-.95.46-1.87 1.95-1.87h1.51V4.93s-1.37-.24-2.68-.24c-2.74 0-4.53 1.66-4.53 4.67V12H7.08v3.47h3.04v8.38a12.1 12.1 0 0 0 3.76 0v-8.38z"],
     ],
   },
 };
@@ -360,7 +360,7 @@ export function brandTile(url: string | null | undefined, letter: string, provid
   );
 }
 
-const VAULT_COLORS = ["#6E5BD6", "#E8590C", "#2F9E44", "#1C7ED6", "#C2255C", "#B08900"] as const;
+const VAULT_COLORS = [1, 2, 3, 4, 5, 6].map((n) => fixedColor(`vault-${n}`));
 
 /** A stable colour for a vault, from its id. */
 export function vaultColor(id: string): string {

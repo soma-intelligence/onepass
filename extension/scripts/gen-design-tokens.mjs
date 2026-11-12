@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CSS = join(root, "src/ui/theme.css");
 const OUT = join(root, "src/shared/design-tokens.ts");
-/** Variable families the content script needs. */
-const FAMILY = /^(glyph-|frame-|accent(-|$)|r-|space-)/;
+/** Variable families the content script needs, and the fixed SVG colours of the pages (art, brand marks, vaults). */
+const FAMILY = /^(glyph-|frame-|accent(-|$)|r-|space-|art-|brand-|vault-|tile-fallback$)/;
 
 /** Body of the first `{ ... }` block after `header` (braces balanced). */
 function block(css, header, from = 0) {

@@ -53,7 +53,6 @@ export const SAVED_CLOSE_MS = 2500;
 export const AUTO_DISMISS_MS = 20_000;
 
 const MASK = "••••••••••••";
-const ACCENT_TILE = "#14532D";
 
 export const RULES: readonly { value: SaveEdits["rule"]; label: string }[] = [
   { value: "domain", label: t("save.wholeDomain") },

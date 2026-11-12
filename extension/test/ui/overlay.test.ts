@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DESIGN_TOKENS } from "../../src/shared/design-tokens";
 import type { UiToBg } from "../../src/shared/messages";
 import type { ChainView, OverlayAccount, StopReason } from "../../src/shared/ui";
 import type { Timers } from "../../src/ui/components";
@@ -195,7 +196,9 @@ describe("overlay", () => {
     expect(optSays(pill)).toBe("Atlas Perso | Google · alex.perso@example.com");
     const mark = pill.querySelector(".brand-badge svg.mark-google")!;
     expect(mark.querySelectorAll("path")).toHaveLength(4);
-    expect([...mark.querySelectorAll("path")].map((p) => p.getAttribute("fill"))).toEqual(["#EA4335", "#4285F4", "#FBBC05", "#34A853"]);
+    const google = ["red", "blue", "yellow", "green"].map((c) => DESIGN_TOKENS.dark[`brand-google-${c}`]);
+    expect(google).toEqual(["#EA4335", "#4285F4", "#FBBC05", "#34A853"]);
+    expect([...mark.querySelectorAll("path")].map((p) => p.getAttribute("fill"))).toEqual(google);
     button(r, "Se connecter").click();
     await flush();
     expect(worker.sent.at(-1)).toEqual({ type: "overlay_start", token: TOKEN, itemId: "it_02", provider: "google", accountId: "g_perso" });

@@ -11,6 +11,7 @@ import { t } from "../shared/i18n";
 import type { PasskeyAccount, PasskeyInit } from "../shared/messages";
 import {
   ClickGuard,
+  FALLBACK_COLOR,
   type FrameDeps,
   call,
   errorText,
@@ -24,7 +25,6 @@ import {
   tokenFromHash,
 } from "./components";
 
-const TILE = "#3F3DB8";
 const MAX_TEXT = 1024;
 
 export interface PasskeyHandle {
@@ -159,7 +159,7 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
           attrs: { type: "button", "aria-label": t("passkey.signInAsName", { name }) },
           on: { click: guard.wrap(() => void act({ type: "passkey_pick", token: token ?? "", itemId: a.itemId, credentialId: a.credentialId })) },
         },
-        tile(initial(a.title), TILE, "m"),
+        tile(initial(a.title), FALLBACK_COLOR, "m"),
         h("span", { class: "stack" }, h("span", { class: "t1" }, name), h("span", { class: "t2" }, `${a.title} · ${a.vaultName}`)),
         h("span", { class: "pk-key" }, icon("key", 14)),
       );
@@ -202,7 +202,7 @@ export function mountPasskey(root: HTMLElement, deps: FrameDeps): PasskeyHandle 
         h(
           "div",
           { class: "pk-card" },
-          tile(initial(i.rpId), TILE, "l"),
+          tile(initial(i.rpId), FALLBACK_COLOR, "l"),
           h("span", { class: "stack" }, h("span", { class: "t1" }, userName), h("span", { class: "t2" }, i.rpId)),
         ),
         h(

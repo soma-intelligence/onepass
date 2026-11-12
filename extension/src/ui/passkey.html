@@ -5,35 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OnePass · Passkey</title>
     <link rel="stylesheet" href="theme.css" />
-    <style>
-      /* The passkey choice window: one column on the extension's surface,
-         the accounts as rows, the ways out at the foot. Tokens from theme.css. */
-      body { overflow: hidden; }
-      .passkey { height: 100vh; display: flex; flex-direction: column; }
-      .passkey.busy { cursor: progress; }
-      .pk-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 18px 16px 14px; gap: 12px; }
-      .pk-head { display: flex; align-items: center; gap: 12px; }
-      .pk-head h1 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; line-height: 1.25; }
-      .pk-site { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text2); min-width: 0; }
-      .pk-site span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .pk-site .glyph { color: var(--ok-ink); }
-      .pk-origin { font-size: 11.5px; color: var(--text2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-      .pk-lead { margin: 0; font-size: 13px; color: var(--text); line-height: 1.45; }
-      .pk-list { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; margin: 0 -6px; padding: 2px; border-radius: var(--r-m); background: var(--glass); }
-      .pk-row { min-height: 52px; padding: 8px 10px; }
-      .pk-row:disabled { opacity: .55; }
-      .pk-key { color: var(--accent-label); display: inline-flex; opacity: .8; transition: opacity .12s ease, transform .12s ease; }
-      .pk-row:hover .pk-key, .pk-row:focus-visible .pk-key { opacity: 1; transform: translateX(1px); }
-      .pk-card { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--r-m); background: var(--glass); }
-      .pk-card .t1 { font-size: 15px; }
-      .pk-field { display: flex; flex-direction: column; gap: 6px; }
-      .pk-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 4px; }
-      .pk-gap { flex: 1; }
-      .error-line { margin: 0; }
-      @media (prefers-reduced-motion: reduce) { .pk-key { transition: none; } }
-    </style>
   </head>
-  <body class="frame">
+  <body class="frame passkey-page">
     <div id="root"></div>
     <script src="passkey.js"></script>
   </body>
