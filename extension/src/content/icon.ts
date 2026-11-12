@@ -1,5 +1,7 @@
-// In-field icon (spec 8.3): a 20 px indigo tile with the Lattice mark at the right edge of each
-// fillable field, inside the closed shadow root. A click runs smart fill (the
+// In-field icon (spec 8.3, restyled by spec 2026-11-11 fill UI section 2): the grey Lattice mark
+// with no tile, in a 22 px hit area at the right edge of each fillable field, inside the closed
+// shadow root; indigo on a soft accent background in the focused field, in the light or dark
+// tokens the field's own background calls for (glyphTheme). A click runs smart fill (the
 // menu when the plan cannot choose) only when the browser vouches for it
 // (`isTrusted`): a page cannot start a fill nor open the menu with a
 // synthetic click (S2).
@@ -16,7 +18,7 @@ import { t } from "../shared/i18n";
 import type { FieldRole, FormInfo, PageAnalysis } from "../shared/messages";
 import type { RefRegistry } from "./detect/refs";
 import type { Geometry, Rect } from "./detect/visibility";
-import { ICON_SIZE, type Layout, readLayout, type Shell, TOUCH_ICON_SIZE } from "./frames";
+import { glyphPaint, glyphTheme, type GlyphTheme, ICON_SIZE, type Layout, readLayout, type Shell, TOUCH_ICON_SIZE } from "./frames";
 import { domHitTest, type HitTest, hostOnTop, rootHidden, type Scopes, topLayerOpen } from "./occlusion";
 
 /** Roles that carry an icon. */
@@ -95,7 +97,7 @@ export interface Icons {
 }
 
 function glyph(doc: Document): SVGElement {
-  // The OnePass mark: the white Lattice on the indigo tile (as in the app).
+  // The OnePass mark: the Lattice (2 x 3 dots and a bar), in the glyph's colour.
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 100 100");
   svg.setAttribute("fill", "currentColor");
@@ -159,12 +161,34 @@ export function createIcons(opts: IconsOptions): Icons {
     box.style.setProperty("left", `${Math.round(left + size / 2)}px`);
     box.style.setProperty("top", `${Math.round(top - 30)}px`);
   };
+  /** Colours the glyph of `entry` for its field's theme, grey at rest, indigo in the focused field. */
+  const paint = (entry: Entry) => {
+    const focus = focused !== null && byField.get(focused) === entry;
+    const { color, background } = glyphPaint(entry.theme, focus);
+    entry.icon.dataset.state = focus ? "focus" : "rest";
+    entry.icon.dataset.theme = entry.theme;
+    entry.icon.style.setProperty("color", color);
+    entry.icon.style.setProperty("background-color", background);
+  };
+  /** The theme of a field's glyph, read again from the field's computed background. */
+  const themeOf = (el: Element): GlyphTheme =>
+    el instanceof HTMLElement && doc.defaultView ? glyphTheme(el, doc.defaultView) : "light";
   const onFocusIn = (e: Event) => {
+    const was = focused ? byField.get(focused) : undefined;
     focused = e.target instanceof Element && byField.has(e.target) ? e.target : null;
+    const now = focused ? byField.get(focused) : undefined;
+    if (was && was !== now) paint(was);
+    if (now) {
+      // A field may change its background on focus.
+      now.theme = themeOf(now.target.el);
+      paint(now);
+    }
     placeTip();
   };
   const onFocusOut = () => {
+    const was = focused ? byField.get(focused) : undefined;
     focused = null;
+    if (was) paint(was);
     placeTip();
   };
   doc.addEventListener("focusin", onFocusIn, true);
@@ -185,6 +209,8 @@ export function createIcons(opts: IconsOptions): Icons {
     unobserve: (() => void) | void;
     /** Where the icon is on the screen (`placeAt`), null while hidden. */
     screen: string | null;
+    /** Tokens of the glyph, from the field's background. */
+    theme: GlyphTheme;
   }
   const byField = new Map<Element, Entry>();
   // The host moved back (the page removed or covered it): every icon appeared anew.
@@ -259,6 +285,11 @@ export function createIcons(opts: IconsOptions): Icons {
   const place = (entry: Entry) => {
     const was = entry.icon.hidden ? null : entry.screen;
     entry.screen = placeAt(entry.icon, entry.anchor);
+    if (entry.screen !== null && was === null) {
+      // Shown anew: the field's background is read again (not on every scroll).
+      entry.theme = themeOf(entry.target.el);
+      paint(entry);
+    }
     if (entry.screen !== null && entry.screen !== was) entry.guard.reset();
   };
 
@@ -288,6 +319,8 @@ export function createIcons(opts: IconsOptions): Icons {
     const o = shell.origin();
     icon.style.setProperty("left", `${Math.round(left - o.left)}px`);
     icon.style.setProperty("top", `${Math.round(top - o.top)}px`);
+    icon.style.setProperty("width", `${size}px`);
+    icon.style.setProperty("height", `${size}px`);
     return `${Math.round(left)} ${Math.round(top)} ${size}`;
   };
 
@@ -344,7 +377,9 @@ export function createIcons(opts: IconsOptions): Icons {
           guard: new ClickGuard({ now, trusted: isTrusted }),
           unobserve: undefined,
           screen: null,
+          theme: themeOf(w.target.el),
         };
+        if (doc.activeElement === el) focused = el;
         byField.set(el, entry);
         shell.layer.appendChild(entry.icon);
         entry.unobserve = observe(entry.icon, (v) => entry.guard.setVisibility(v));

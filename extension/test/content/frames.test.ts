@@ -5,6 +5,7 @@ import {
   createShell,
   FRAME_HEIGHT,
   FRAME_MIN_HEIGHT,
+  glyphTheme,
   MOVE_GUARD_MS,
   type Layout,
   readLayout,
@@ -14,6 +15,7 @@ import {
   type Shell,
   watchLayout,
 } from "../../src/content/frames";
+import { DESIGN_TOKENS } from "../../src/shared/design-tokens";
 import { testGeometry } from "../detect/helpers";
 import { flush, setPage, start, type Started } from "./harness";
 
@@ -538,5 +540,120 @@ describe("shell placement", () => {
     frames.removeFrame("menu");
     expect(document.activeElement).toBe(other);
     frames.destroy();
+  });
+});
+
+describe("field glyph (spec 2026-11-11 fill UI, section 2)", () => {
+  let st: Started | null = null;
+  afterEach(() => {
+    st?.cs.stop();
+    st = null;
+    vi.unstubAllGlobals();
+  });
+
+  /** A colour as jsdom serialises it, to compare a token with a computed style. */
+  const css = (c: string): string => {
+    const probe = document.createElement("div");
+    probe.style.color = c;
+    return probe.style.color;
+  };
+  const TRANSPARENT = ["", "transparent", "rgba(0, 0, 0, 0)"];
+  const LOGIN = `
+    <form id="login">
+      <input id="u" name="username" autocomplete="username" data-test-rect="20,40,240,36">
+      <input id="p" type="password" autocomplete="current-password" data-test-rect="20,90,240,36">
+      <button type="submit">Sign in</button>
+    </form>`;
+  const glyphs = (s: Started) => Array.from(s.cs.internals.root.querySelectorAll<HTMLElement>(".icon"));
+  /**
+   * The computed style of a glyph. jsdom keeps computed styles in a cache that a change inside a
+   * shadow root does not clear; a change in the document does.
+   */
+  const look = (el: Element): CSSStyleDeclaration => {
+    document.body.append(document.createComment(""));
+    return getComputedStyle(el);
+  };
+  /** The system appearance: matchMedia answering `dark` for prefers-color-scheme: dark. */
+  const scheme = (dark: boolean) =>
+    vi.stubGlobal("matchMedia", (q: string) => ({
+      matches: dark && q.includes("prefers-color-scheme: dark"),
+      media: q,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+    }));
+
+  it("glyphTheme reads the field background", () => {
+    setPage(`<div id="wrap"><input id="a"></div>`);
+    const field = document.getElementById("a") as HTMLInputElement;
+    field.style.backgroundColor = "rgb(255, 255, 255)";
+    expect(glyphTheme(field, window)).toBe("light");
+    field.style.backgroundColor = "rgb(20, 20, 24)";
+    expect(glyphTheme(field, window)).toBe("dark");
+    // Transparent all the way up: the system appearance decides.
+    field.style.backgroundColor = "transparent";
+    scheme(true);
+    expect(glyphTheme(field, window)).toBe("dark");
+    scheme(false);
+    expect(glyphTheme(field, window)).toBe("light");
+    // A dark page under a transparent field.
+    (document.getElementById("wrap") as HTMLElement).style.backgroundColor = "rgb(12, 12, 14)";
+    expect(glyphTheme(field, window)).toBe("dark");
+  });
+
+  it("glyph has no tile", () => {
+    setPage(LOGIN);
+    (document.getElementById("u") as HTMLElement).style.backgroundColor = "rgb(255, 255, 255)";
+    st = start();
+    const g = glyphs(st)[0]!;
+    expect(g.dataset.state).toBe("rest");
+    const cs = look(g);
+    expect(TRANSPARENT).toContain(cs.backgroundColor);
+    expect(cs.color).toBe(css(DESIGN_TOKENS.light["glyph-rest"]!));
+    // The Lattice mark, in the glyph's colour.
+    const svg = g.querySelector("svg")!;
+    expect(svg.getAttribute("fill")).toBe("currentColor");
+    expect(svg.querySelectorAll("circle")).toHaveLength(6);
+    expect(svg.querySelectorAll("rect")).toHaveLength(1);
+  });
+
+  it("glyph turns indigo on focus", () => {
+    setPage(LOGIN);
+    const u = document.getElementById("u") as HTMLInputElement;
+    u.style.backgroundColor = "rgb(255, 255, 255)";
+    st = start();
+    const g = glyphs(st)[0]!;
+    u.focus();
+    expect(g.dataset.state).toBe("focus");
+    expect(look(g).color).toBe(css(DESIGN_TOKENS.light["glyph-focus"]!));
+    expect(look(g).backgroundColor).toBe(css(DESIGN_TOKENS.light["glyph-focus-bg"]!));
+    // The other field's glyph stays grey; leaving the field greys it again.
+    expect(glyphs(st)[1]!.dataset.state).toBe("rest");
+    u.blur();
+    expect(g.dataset.state).toBe("rest");
+    expect(look(g).color).toBe(css(DESIGN_TOKENS.light["glyph-rest"]!));
+    expect(TRANSPARENT).toContain(look(g).backgroundColor);
+  });
+
+  it("a dark field gets the dark tokens", () => {
+    setPage(LOGIN);
+    const p = document.getElementById("p") as HTMLInputElement;
+    p.style.backgroundColor = "rgb(20, 20, 24)";
+    st = start();
+    const g = glyphs(st)[1]!;
+    expect(g.dataset.theme).toBe("dark");
+    expect(look(g).color).toBe(css(DESIGN_TOKENS.dark["glyph-rest"]!));
+    p.focus();
+    expect(look(g).color).toBe(css(DESIGN_TOKENS.dark["glyph-focus"]!));
+    expect(look(g).backgroundColor).toBe(css(DESIGN_TOKENS.dark["glyph-focus-bg"]!));
+  });
+
+  it("hit area stays 22 px", () => {
+    setPage(LOGIN);
+    st = start();
+    const g = glyphs(st)[0]!;
+    expect(g.style.width).toBe("22px");
+    expect(g.style.height).toBe("22px");
   });
 });
