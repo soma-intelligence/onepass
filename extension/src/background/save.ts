@@ -56,6 +56,8 @@ import { BgError, type Session } from "./session";
 import { type BoundRecord, FrameTokens } from "./tokens";
 
 export const SAVE_TTL_MS = 2 * 60 * 1000;
+/** A save or update card folded into its pill (spec 4.2) is kept this long. */
+export const PILL_TTL_MS = 600_000;
 /** A submission whose card went away unanswered waits this long in the popup. */
 export const PENDING_SAVE_TTL_MS = 10 * 60 * 1000;
 /** At most this many waiting submissions (the oldest goes first). */
@@ -178,6 +180,10 @@ interface SaveRecord extends BoundRecord, Omit<SavePending, "tabId" | "origin" |
   decided: boolean;
   /** View `toast`: Edit was opened, its Save replaces the saved login. */
   editing?: boolean;
+  /** The card is folded into its pill: kept PILL_TTL_MS, through navigation inside the site. */
+  folded?: boolean;
+  /** Folded, and a navigation inside the site is under way: where the pill shows again. */
+  nextOrigin?: string;
 }
 
 /** Tag of a Login saved before its form was sent (onepass_core::model::PENDING_TAG). */
@@ -238,7 +244,17 @@ export class SavePrompts {
     this.host = deps.host ?? new HostCompat(deps.session);
     this.tokens = new FrameTokens<SaveRecord>({
       prefix: "save:",
-      ttlMs: SAVE_TTL_MS,
+      ttlMs: (rec) => (rec.folded ? PILL_TTL_MS : SAVE_TTL_MS),
+      // A pill follows the tab through pages of the same registrable domain, and goes elsewhere.
+      keepOnNavigate: (rec, url) => {
+        if (!rec.folded) return false;
+        const to = parseOrigin(url);
+        const site = parseOrigin(rec.origin)?.site;
+        if (!to || site === undefined || to.site !== site) return false;
+        rec.nextOrigin = to.origin;
+        return true;
+      },
+      onKept: (token, rec) => this.reshow(token, rec),
       // Dismiss, close, navigation and tab removal all end in a drop.
       onDrop: (rec) => {
         rec.password = "";
@@ -282,6 +298,43 @@ export class SavePrompts {
     const opts = p.documentId !== undefined ? { documentId: p.documentId } : { frameId: 0 };
     await this.deps.ext.tabs.sendMessage(p.tabId, msg, opts);
     return token;
+  }
+
+  /** The card folds into its pill (the page sizes the frame itself): the record is kept longer. */
+  async fold(token: string, ui: UiContext): Promise<object> {
+    const rec = await this.record(token, ui);
+    // The toast and the edit views are not cards: nothing to fold.
+    if (rec.view !== undefined || rec.kind !== "login") throw new BgError("invalid");
+    if (!rec.folded) {
+      rec.folded = true;
+      await this.tokens.rearm(token, rec);
+    }
+    return {};
+  }
+
+  /** A click on the pill: the card again, with its own short life. */
+  async unfold(token: string, ui: UiContext): Promise<object> {
+    const rec = await this.record(token, ui);
+    if (rec.folded) {
+      delete rec.folded;
+      await this.tokens.rearm(token, rec);
+    }
+    return {};
+  }
+
+  /** The pill survived a navigation inside the site: shown again in the new top document. */
+  private async reshow(token: string, rec: SaveRecord): Promise<void> {
+    delete rec.documentId;
+    const msg: BgToCs = { type: "show_frame", kind: "save", url: `${this.deps.ext.runtime.getURL("save.html")}#${token}` };
+    if (rec.nextOrigin !== undefined) msg.origin = rec.nextOrigin;
+    delete rec.nextOrigin;
+    await this.tokens.update(token, rec);
+    try {
+      await this.deps.ext.tabs.sendMessage(rec.tabId, msg, { frameId: 0 });
+    } catch {
+      // The page cannot show it (no content script): the pill goes.
+      await this.tokens.drop(token);
+    }
   }
 
   /** The prompt's content height: its frame is sized to it. */
@@ -332,6 +385,7 @@ export class SavePrompts {
       if (rec.provider.title !== undefined) out.provider.title = rec.provider.title;
     }
     if (rec.view) out.view = rec.view;
+    if (rec.folded) out.folded = true;
     if (rec.view === "toast" && rec.undo && rec.savedItemId !== undefined) out.undo = true;
     if (rec.card) {
       out.card = { last4: cardLast4(rec.card.number) };

@@ -1408,6 +1408,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       save_undo: async (m, from) => savePrompts.undo(m.token, from),
       save_edit: async (m, from) => savePrompts.edit(m.token, from),
       save_resize: async (m, from) => savePrompts.resize(m.token, from, m.height),
+      save_fold: async (m, from) => savePrompts.fold(m.token, from),
+      save_unfold: async (m, from) => savePrompts.unfold(m.token, from),
       ...popup.handlers(),
       popup_pending: async () => ({ pending: await savePrompts.pendingList() }),
       popup_pending_decide: async (m) => savePrompts.decidePending(m.id, m.decision),

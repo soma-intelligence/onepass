@@ -972,6 +972,20 @@ body.passkey-page { overflow: hidden; }
 .sc-more { align-self: flex-start; width: 24px; height: 24px; color: var(--text3); }
 .sc-foot { display: flex; align-items: center; gap: var(--space-xs); min-height: var(--control-s); }
 .sc-gap { flex-grow: 1; }
+/* The folded save card (spec 4.2): a capsule in the card's corner, the site's tile and one line. */
+.save-pill-wrap { display: flex; justify-content: flex-end; padding: var(--space-xs); }
+.save-pill {
+  display: inline-flex; align-items: center; gap: var(--space-xs); max-width: 100%; min-height: var(--control-m);
+  padding: var(--space-xxs) var(--space-xxs) var(--space-xxs) var(--space-s);
+  border-radius: calc(var(--row-tall) / 2);
+  background: var(--glass-solid); border: 1px solid var(--hair-2); box-shadow: var(--shadow); color: var(--text);
+}
+.save-pill-main {
+  display: inline-flex; align-items: center; gap: var(--space-s); min-width: 0; min-height: var(--control-s); padding: 0; border: 0; background: transparent;
+  font: inherit; font-size: var(--type-body); font-weight: 600; color: inherit; cursor: pointer;
+}
+.save-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.save-pill .btn-icon { flex-shrink: 0; color: var(--text3); }
 .sc-note:empty { display: none; }
 .sc-chip {
   display: inline-flex; align-items: center; gap: var(--space-s); flex-shrink: 1; min-width: 0; max-width: var(--chip-max); height: 24px; padding: 0 var(--space-s);

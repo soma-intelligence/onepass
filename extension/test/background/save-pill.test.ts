@@ -1,0 +1,120 @@
+// The save card folds into a pill (spec 4.2): the record outlives the card for PILL_TTL_MS,
+// survives navigation inside the site, and goes when the tab leaves its registrable domain.
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PILL_TTL_MS, SAVE_TTL_MS, SavePrompts } from "../../src/background/save";
+import { FakeExt } from "./fake-ext";
+
+const SITE = "https://atlas-cloud.test";
+const TAB = 7;
+const UI = { page: "save.html", tabId: TAB };
+
+function setup() {
+  const ext = new FakeExt();
+  const prompts = new SavePrompts({
+    ext: ext as never,
+    session: { request: (async (r: { op: string }) => (r.op === "vaults" ? { vaults: [{ id: "v1", name: "Perso", color: null }] } : {})) as never },
+    generator: { generate: async () => ({ password: "unused" }) } as never,
+    neverSave: { has: async () => false, add: async () => undefined, list: async () => [], remove: async () => undefined } as never,
+  });
+  prompts.tokens.install(ext);
+  ext.setFrame(TAB, 0, `${SITE}/home`, "doc-2");
+  const open = async (status: "new" | "update" = "update") =>
+    prompts.open({
+      tabId: TAB,
+      origin: SITE,
+      documentId: "doc-2",
+      kind: "login",
+      status,
+      username: "alex@atlas.dev",
+      password: "Atlas-Pass-1",
+      ...(status === "update" ? { update: { itemId: "it_01", title: "Atlas Cloud" } } : {}),
+    });
+  const sent = (type: string) => ext.sentToTabs.filter((s) => (s.message as { type: string }).type === type);
+  return { ext, prompts, open, sent };
+}
+
+describe("save pill", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("folded: the record lives PILL_TTL_MS, not SAVE_TTL_MS", async () => {
+    expect(PILL_TTL_MS).toBe(600_000);
+    const { prompts, open } = setup();
+    const token = await open();
+    await prompts.fold(token, UI);
+    await vi.advanceTimersByTimeAsync(SAVE_TTL_MS + 1000);
+    expect((await prompts.init(token, UI)).folded).toBe(true);
+    await vi.advanceTimersByTimeAsync(PILL_TTL_MS - SAVE_TTL_MS - 2000);
+    await expect(prompts.init(token, UI)).resolves.toMatchObject({ status: "update" });
+  });
+
+  it("an unfolded card still expires after SAVE_TTL_MS", async () => {
+    const { prompts, open } = setup();
+    const token = await open();
+    await vi.advanceTimersByTimeAsync(SAVE_TTL_MS + 1000);
+    await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("pill goes after PILL_TTL_MS: record gone, frame removed", async () => {
+    const { prompts, open, sent } = setup();
+    const token = await open();
+    await prompts.fold(token, UI);
+    await vi.advanceTimersByTimeAsync(PILL_TTL_MS + 1000);
+    await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
+    expect(sent("remove_frame")).toHaveLength(1);
+  });
+
+  it("unfold gives the card its own SAVE_TTL_MS again and clears the folded flag", async () => {
+    const { prompts, open } = setup();
+    const token = await open();
+    await prompts.fold(token, UI);
+    await vi.advanceTimersByTimeAsync(300_000);
+    await prompts.unfold(token, UI);
+    expect((await prompts.init(token, UI)).folded).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(SAVE_TTL_MS + 1000);
+    await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("pill goes when the tab leaves the registrable domain", async () => {
+    const { ext, prompts, open } = setup();
+    const token = await open();
+    await prompts.fold(token, UI);
+    ext.navigate(TAB, 0, "https://elsewhere.test/", "doc-9");
+    ext.complete(TAB, 0);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("pill stays across a navigation inside the site and is shown again once the page loaded", async () => {
+    const { ext, prompts, open, sent } = setup();
+    const token = await open();
+    await prompts.fold(token, UI);
+    const before = sent("show_frame").length;
+    ext.navigate(TAB, 0, "https://app.atlas-cloud.test/dash", "doc-3");
+    await vi.advanceTimersByTimeAsync(10);
+    // Not before the new document finished loading.
+    expect(sent("show_frame")).toHaveLength(before);
+    ext.complete(TAB, 0);
+    await vi.advanceTimersByTimeAsync(10);
+    const shown = sent("show_frame");
+    expect(shown).toHaveLength(before + 1);
+    expect((shown.at(-1)!.message as { url: string }).url).toContain(`#${token}`);
+    expect(shown.at(-1)!.options).toEqual({ frameId: 0 });
+    expect((await prompts.init(token, UI)).folded).toBe(true);
+  });
+
+  it("an unfolded card still goes on any navigation", async () => {
+    const { ext, prompts, open } = setup();
+    const token = await open();
+    ext.navigate(TAB, 0, `${SITE}/other`, "doc-3");
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("a dropped record cannot fold", async () => {
+    const { prompts, open } = setup();
+    const token = await open("new");
+    await prompts.decide(token, UI, "dismiss");
+    await expect(prompts.fold(token, UI)).rejects.toMatchObject({ code: "invalid" });
+  });
+});

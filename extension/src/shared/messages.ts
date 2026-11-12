@@ -619,6 +619,10 @@ export type UiToBg =
   /** The toast's Edit: its edit view opens; its Save then replaces the saved login. */
   | { type: "save_edit"; token: string }
   | { type: "save_resize"; token: string; height: number }
+  /** The card folds into its pill (spec 4.2): the worker keeps the sign-in for PILL_TTL_MS. */
+  | { type: "save_fold"; token: string }
+  /** A click on the pill: the card again. */
+  | { type: "save_unfold"; token: string }
   | { type: "popup_status" }
   /** Sign-ins whose save card went away unanswered. */
   | { type: "popup_pending" }

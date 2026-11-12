@@ -255,6 +255,7 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
     }
     if (o.view !== undefined) s.view = oneOf<"edit" | "saved" | "toast">(o.view, ["edit", "saved", "toast"]);
     if (o.undo !== undefined) s.undo = o.undo === true;
+    if (o.folded === true) s.folded = true;
     if (o.card !== undefined) {
       const c = obj(o.card);
       s.card = { last4: str(c.last4, 4) };

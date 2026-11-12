@@ -508,6 +508,10 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "ghost_accept":
       case "ghost_menu":
         return { type: o.type, token: token(o.token) };
+      // Apart: one group of this many members is past what the union check distributes.
+      case "save_fold":
+      case "save_unfold":
+        return { type: o.type, token: token(o.token) };
       case "ghost_pill":
         return { type: o.type, token: token(o.token), rect: pillRect(o.rect), over: bool(o.over) };
       case "menu_profile": {

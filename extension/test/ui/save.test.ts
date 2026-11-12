@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
 import type { SaveInit } from "../../src/shared/ui";
 import type { Timers } from "../../src/ui/components";
-import { TOAST_MS, mountSave } from "../../src/ui/save";
+import { AUTO_DISMISS_MS, TOAST_MS, mountSave } from "../../src/ui/save";
 import { Clock, FakeWorker, HASH, type Reply, TOKEN, button, flush, root, text } from "./helpers";
 
 const SITE = "https://atlas-cloud.test";
@@ -146,25 +146,89 @@ describe("save prompt", () => {
     expect(text(r)).toContain("OnePass ne proposera plus rien ici");
   });
 
-  it("Pas maintenant dismisses", async () => {
-    const { handle, worker, click } = setup(base);
+  it("Plus tard folds the card into the pill at once (no decision)", async () => {
+    const { r, handle, worker, click } = setup(base);
+    await handle.ready;
+    await click("Plus tard");
+    expect(worker.sent.at(-1)).toEqual({ type: "save_fold", token: TOKEN });
+    expect(worker.types()).not.toContain("save_decide");
+    expect(r.querySelector(".save-pill")).not.toBeNull();
+    expect(text(r)).toContain("1 login à enregistrer");
+    expect(r.querySelector(".save-card")).toBeNull();
+  });
+
+  it("the card of a card or an address keeps Pas maintenant, which dismisses", async () => {
+    const { handle, worker, click } = setup({ ...base, kind: "card", card: { last4: "4242" } });
     await handle.ready;
     await click("Pas maintenant");
     expect(worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "dismiss" });
   });
 
-  it("left alone 20 s, the card goes and the sign-in waits in the popup; not while hovered", async () => {
-    const { r, handle, worker, timers } = setup(base);
+  it("update card folds after AUTO_DISMISS_MS into the pill; not while hovered", async () => {
+    const upd: SaveInit = { ...base, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } };
+    const { r, handle, worker, timers } = setup(upd);
     await handle.ready;
     // Hovered: the timer is stopped (its callback does nothing).
     r.querySelector(".save")!.dispatchEvent(new Event("pointerenter"));
     timers.pending.splice(0).forEach((f) => f());
     await flush();
-    expect(worker.types()).not.toContain("save_decide");
+    expect(worker.types()).not.toContain("save_fold");
     r.querySelector(".save")!.dispatchEvent(new Event("pointerleave"));
     timers.pending.splice(0).forEach((f) => f());
     await flush();
-    expect(worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "later" });
+    expect(worker.sent.filter((m) => m.type === "save_fold")).toEqual([{ type: "save_fold", token: TOKEN }]);
+    expect(worker.types()).not.toContain("save_decide");
+    expect(text(r)).toContain("1 login à mettre à jour");
+    expect(AUTO_DISMISS_MS).toBe(20_000);
+  });
+
+  it("the frame height shrinks when the card folds", async () => {
+    const heights = new Map<string, number>([
+      ["save-card", 120],
+      ["save-pill", 40],
+    ]);
+    const orig = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        for (const [cls, h] of heights) if (this.querySelector(`.${cls}`)) return h;
+        return 0;
+      },
+    });
+    try {
+      const { handle, worker, click } = setup(base);
+      await handle.ready;
+      await new Promise((r) => setTimeout(r, 40));
+      await click("Plus tard");
+      await new Promise((r) => setTimeout(r, 40));
+      const resizes = worker.sent.filter((m) => m.type === "save_resize").map((m) => (m as { height: number }).height);
+      expect(resizes[0]).toBe(120);
+      expect(resizes.at(-1)).toBe(40);
+    } finally {
+      if (orig) Object.defineProperty(HTMLElement.prototype, "scrollHeight", orig);
+      else delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+    }
+  });
+
+  it("pill click unfolds the card (save_unfold) and the card works again", async () => {
+    const upd: SaveInit = { ...base, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } };
+    const { r, handle, worker, click } = setup(upd);
+    await handle.ready;
+    await click("Plus tard");
+    expect(text(r)).toContain("1 login à mettre à jour");
+    await click("1 login à mettre à jour");
+    expect(worker.sent.at(-1)).toEqual({ type: "save_unfold", token: TOKEN });
+    expect(r.querySelector(".save-pill")).toBeNull();
+    expect(text(r)).toContain("Mettre à jour le mot de passe pour atlas-cloud.test ?");
+    await click("Mettre à jour");
+    expect(worker.sent.at(-1)).toMatchObject({ type: "save_decide", decision: "update" });
+  });
+
+  it("a frame reloaded on a folded record opens as the pill", async () => {
+    const { r, handle } = setup({ ...base, folded: true });
+    await handle.ready;
+    expect(r.querySelector(".save-pill")).not.toBeNull();
+    expect(text(r)).toContain("1 login à enregistrer");
   });
 
   it("edit view: fields, reveal on click only, Générer, rule and tags", async () => {

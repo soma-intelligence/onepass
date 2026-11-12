@@ -178,6 +178,8 @@ export interface SaveInit {
   view?: "edit" | "saved" | "toast";
   /** View `toast`: Undo and Edit are offered (the login saved moments ago); absent: neither. */
   undo?: boolean;
+  /** The card is folded into its pill (a frame shown again after a navigation inside the site opens as the pill). */
+  folded?: boolean;
 }
 
 export interface PopupStatus {

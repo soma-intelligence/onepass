@@ -15,8 +15,11 @@
 // four digits and expiry (never the number), or "Enregistrer cette adresse ?"
 // with the name and city; the vault chip, "Pas maintenant", "Enregistrer".
 // No sound, no motion of its own. Left alone AUTO_DISMISS_MS (no pointer or
-// focus in it, no menu open), it goes away by itself and the sign-in waits
-// in the toolbar popup ("later").
+// focus in it, no menu open), or on "Later", a sign-in card (new or update)
+// folds into a small pill in the same corner ("1 login to update", spec 4.2):
+// a click opens the card again, the worker drops the pill after PILL_TTL_MS or
+// when the tab leaves the site. The cards of a card or an address typed by hand
+// still go away by themselves ("later": nothing is kept).
 //
 // The toast (`view: "toast"`, spec 4.1, 4.4): a login OnePass saved by
 // itself. "Login for <site> saved", the username, Undo and Edit (only when
@@ -517,7 +520,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     const title = updating ? t("save.updatePasswordFor", { site: i.site }) : t("save.saveLoginFor", { site: i.site });
     const sub = updating && i.update && i.update.title !== "" ? `${i.update.title} · ${d.username}` : d.username;
     const primary = updating
-      ? btn(t("save.update"), "btn-text sc-primary", () => void decide("update", err, (o) => renderOutcome(o.outcome === "done" ? { outcome: "updated" } : o, d)))
+      ? btn(t("save.updateAction"), "btn-text sc-primary", () => void decide("update", err, (o) => renderOutcome(o.outcome === "done" ? { outcome: "updated" } : o, d)))
       : btn(t("common.save"), "btn-text sc-primary", () =>
           void decide("save", err, (o) => renderOutcome(o.outcome === "done" ? { outcome: "saved", vault: vaultName() } : o, d)),
         );
@@ -554,13 +557,70 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           { class: "sc-foot" },
           updating ? h("span", { class: "sc-note" }, "") : chip(d) ?? h("span", { class: "sc-note" }, ""),
           h("span", { class: "sc-gap" }),
-          btn(t("save.notNow"), "btn-text sc-quiet", () => void decide("dismiss", err, () => undefined)),
+          btn(t("save.later"), "btn-text sc-quiet", () => void fold()),
           primary,
         ),
         err,
       ),
     );
+    // Left alone, or on "Later", the card folds into its pill (spec 4.2).
+    quietMs = AUTO_DISMISS_MS;
+    quietDone = () => void fold();
     armQuiet();
+  }
+
+  /** The card folds into a small pill in the same corner; the worker keeps the sign-in PILL_TTL_MS. */
+  async function fold(): Promise<void> {
+    if (!token || !init) return;
+    quietOn = false;
+    stopQuiet();
+    more = false;
+    picking = false;
+    const r = await call(deps.send, { type: "save_fold", token }, parseEmpty);
+    if (!r.ok) {
+      // The sign-in is gone from the worker (expired): nothing to come back to.
+      void call(deps.send, { type: "save_close", token }, parseEmpty);
+      return;
+    }
+    renderPill();
+  }
+
+  /** A click on the pill: the card again, quiet for AUTO_DISMISS_MS once more. */
+  async function unfold(): Promise<void> {
+    if (!token) return;
+    const r = await call(deps.send, { type: "save_unfold", token }, parseEmpty);
+    if (!r.ok) {
+      void call(deps.send, { type: "save_close", token }, parseEmpty);
+      return;
+    }
+    quietOn = true;
+    renderPrompt();
+  }
+
+  /** "1 login to update" / "1 login to save": one tap target, a small x to put it away for good. */
+  function renderPill(): void {
+    if (!init) return;
+    const i = init;
+    setFit(true);
+    const updating = mode === "update" && i.update !== undefined;
+    const label = t(updating ? "save.updatePill" : "save.savePill");
+    show(
+      h(
+        "div",
+        { class: "save-pill-wrap" },
+        h(
+          "div",
+          { class: "save-pill", attrs: { role: "group", "aria-label": label } },
+          h(
+            "button",
+            { class: "save-pill-main", attrs: { type: "button" }, on: { click: guard.wrap(() => void unfold()) } },
+            siteTile(i.origin, i.title, 20),
+            h("span", { class: "save-pill-text" }, label),
+          ),
+          iconBtn(t("common.close"), "close", () => void decide("dismiss", errLine(), () => undefined)),
+        ),
+      ),
+    );
   }
 
   function renderEdit(): void {
@@ -807,6 +867,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     if (init.view === "edit") renderEdit();
     else if (init.view === "saved") renderSaved(t("save.titleSaved", { title: init.title }), init.username);
     else if (init.view === "toast") renderToast(init, draft);
+    else if (init.folded && init.kind === "login") renderPill();
     else {
       quietOn = init.kind !== "provider_link";
       renderPrompt();
