@@ -10,9 +10,17 @@ const UI = { page: "save.html", tabId: TAB };
 
 function setup() {
   const ext = new FakeExt();
+  const requests: { op: string }[] = [];
   const prompts = new SavePrompts({
     ext: ext as never,
-    session: { request: (async (r: { op: string }) => (r.op === "vaults" ? { vaults: [{ id: "v1", name: "Perso", color: null }] } : {})) as never },
+    session: {
+      request: (async (r: { op: string }) => {
+        requests.push(r);
+        if (r.op === "vaults") return { vaults: [{ id: "v1", name: "Perso", color: null }] };
+        if (r.op === "save_login") return { item_id: "it_new" };
+        return {};
+      }) as never,
+    },
     generator: { generate: async () => ({ password: "unused" }) } as never,
     neverSave: { has: async () => false, add: async () => undefined, list: async () => [], remove: async () => undefined } as never,
   });
@@ -30,7 +38,7 @@ function setup() {
       ...(status === "update" ? { update: { itemId: "it_01", title: "Atlas Cloud" } } : {}),
     });
   const sent = (type: string) => ext.sentToTabs.filter((s) => (s.message as { type: string }).type === type);
-  return { ext, prompts, open, sent };
+  return { ext, prompts, open, sent, requests };
 }
 
 describe("save pill", () => {
@@ -145,6 +153,33 @@ describe("save pill", () => {
     expect(await prompts.pendingList()).toHaveLength(1);
     await prompts.decide(token, UI, "dismiss");
     expect(await prompts.pendingList()).toEqual([]);
+  });
+
+  it("saved from the popup: the pill and its record go, a later unfold or decide saves nothing", async () => {
+    const { prompts, open, sent, requests } = setup();
+    const token = await open("new");
+    await prompts.fold(token, UI);
+    const [w] = await prompts.pendingList();
+    await prompts.decidePending(w!.id, "save");
+    expect(requests.filter((r) => r.op === "save_login")).toHaveLength(1);
+    expect(sent("remove_frame")).toHaveLength(1);
+    await expect(prompts.init(token, UI)).rejects.toMatchObject({ code: "invalid" });
+    await expect(prompts.unfold(token, UI)).rejects.toMatchObject({ code: "invalid" });
+    const edits = { title: "Atlas Cloud", username: "alex@atlas.dev", password: "", vaultId: "v1", rule: "domain" as const, tags: [] };
+    await expect(prompts.decide(token, UI, "save", edits)).rejects.toMatchObject({ code: "invalid" });
+    expect(requests.filter((r) => r.op === "save_login")).toHaveLength(1);
+  });
+
+  it("never and dismiss from the popup also take the pill", async () => {
+    for (const d of ["never", "dismiss"] as const) {
+      const { prompts, open, sent } = setup();
+      const token = await open("new");
+      await prompts.fold(token, UI);
+      const [w] = await prompts.pendingList();
+      await prompts.decidePending(w!.id, d);
+      expect(sent("remove_frame")).toHaveLength(1);
+      await expect(prompts.unfold(token, UI)).rejects.toMatchObject({ code: "invalid" });
+    }
   });
 
   it("a dropped record cannot fold", async () => {

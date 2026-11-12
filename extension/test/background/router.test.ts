@@ -350,6 +350,14 @@ describe("message validation", () => {
     expect(parseCsToBg({ type: "submitted_form", formRef: "f1", kind: "identity", values: {} })).toBeNull();
   });
 
+  it("save_resize: width is optional, an integer from 1 to 1000", () => {
+    const token = "A".repeat(22);
+    expect(parseUiToBg({ type: "save_resize", token, height: 100 })).toEqual({ type: "save_resize", token, height: 100 });
+    expect(parseUiToBg({ type: "save_resize", token, height: 40, width: 188 })).toEqual({ type: "save_resize", token, height: 40, width: 188 });
+    for (const width of [0, 1001, 1.5, -3, "188", null]) expect(parseUiToBg({ type: "save_resize", token, height: 40, width })).toBeNull();
+    expect(parseUiToBg({ type: "save_fold", token })).toEqual({ type: "save_fold", token });
+  });
+
   it("validates UI messages", () => {
     const token = "A".repeat(22);
     expect(parseUiToBg({ type: "menu_pick", token, itemId: "it_01", extra: 1 })).toEqual({

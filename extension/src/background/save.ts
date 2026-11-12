@@ -890,11 +890,13 @@ export class SavePrompts {
     if (!w) throw new BgError("not_found");
     if (decision === "dismiss") {
       this.forget(id);
+      await this.dropLive(w);
       return {};
     }
     if (decision === "never") {
       await this.deps.neverSave.add(w.site);
       this.forget(id);
+      await this.dropLive(w);
       return {};
     }
     if (decision === "update" && !w.update) throw new BgError("invalid");
@@ -909,7 +911,24 @@ export class SavePrompts {
     };
     const { out } = await this.commit(w, decision === "update" ? "update" : "save", edits);
     this.forget(id);
+    await this.dropLive(w);
     return out;
+  }
+
+  /**
+   * The popup answered a waiting sign-in: the card or pill of the same tab and site goes too (its
+   * password wiped, the record marked answered), so a click on it cannot save the login again.
+   */
+  private async dropLive(w: Pick<Waiting, "tabId" | "site">): Promise<void> {
+    const live = await this.tokens.forTab(w.tabId);
+    if (!live) return;
+    const { token, rec } = live;
+    if ((parseOrigin(rec.origin)?.site ?? rec.origin) !== w.site) return;
+    rec.decided = true;
+    rec.password = "";
+    wipeDrafts(rec);
+    await this.tokens.drop(token);
+    await removeFrame(this.deps.ext.tabs, rec, "save");
   }
 
   async close(token: string, ui: UiContext): Promise<object> {

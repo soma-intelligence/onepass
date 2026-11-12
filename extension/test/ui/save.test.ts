@@ -247,6 +247,56 @@ describe("save prompt", () => {
     }
   });
 
+  it("the pill's width is sent again when only its width changes (late font)", async () => {
+    let w = 188;
+    const origW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    const origH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("save-pill-wrap") ? w : 340;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 40 });
+    try {
+      const r = root();
+      const clock = new Clock();
+      const observers: (() => void)[] = [];
+      const worker = new FakeWorker((m) => (m.type === "save_init" ? { ok: base } : { ok: {} }));
+      const handle = mountSave(r, {
+        send: worker.send,
+        hash: HASH,
+        now: clock.now,
+        trusted: () => true,
+        observe: () => undefined,
+        timers: new Later(),
+        observeSize: (_el, cb) => void observers.push(cb),
+      });
+      await handle.ready;
+      clock.advance(300);
+      button(r, "Plus tard").click();
+      await flush();
+      const widths = () => worker.sent.filter((m) => m.type === "save_resize").map((m) => (m as { width?: number }).width);
+      expect(widths().at(-1)).toBe(188);
+      await new Promise((x) => setTimeout(x, 30));
+      const n = widths().length;
+      // Nothing changed: no new message.
+      observers.forEach((f) => f());
+      await new Promise((x) => setTimeout(x, 30));
+      expect(widths()).toHaveLength(n);
+      w = 204;
+      observers.forEach((f) => f());
+      await new Promise((x) => setTimeout(x, 30));
+      expect(widths().at(-1)).toBe(204);
+      expect(r.querySelector(".save-pill-text")).not.toBeNull();
+    } finally {
+      for (const [k, d] of [["offsetWidth", origW], ["scrollHeight", origH]] as const) {
+        if (d) Object.defineProperty(HTMLElement.prototype, k, d);
+        else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+      }
+    }
+  });
+
   it("pill click unfolds the card (save_unfold) and the card works again", async () => {
     const upd: SaveInit = { ...base, status: "update", update: { itemId: "it_01", title: "Atlas Cloud" } };
     const { r, handle, worker, click } = setup(upd);

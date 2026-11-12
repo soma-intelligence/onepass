@@ -41,6 +41,7 @@ import {
   mark,
   messageBlock,
   mount,
+  observeSize,
   observeVisibility,
   providerLabel,
   realTimers,
@@ -103,11 +104,13 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   let fit = true;
   /** The folded pill's box: the frame then shrinks to its width too, so nothing around it blocks the page. */
   let pillBox: HTMLElement | null = null;
+  let sentWidth = 0;
   const sendSize = (height: number) => {
     if (!token) return;
     const m: { type: "save_resize"; token: string; height: number; width?: number } = { type: "save_resize", token, height: fit ? height : FULL_HEIGHT };
     const w = pillBox ? Math.ceil(pillBox.offsetWidth) : 0;
     if (w > 0) m.width = w;
+    sentWidth = w;
     void call(deps.send, m, parseEmpty);
   };
   const remeasure = autosize(container, sendSize, deps.observeSize);
@@ -443,6 +446,11 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   /** A card or identity typed in the page: what it is, the vault, "Pas maintenant", "Enregistrer". */
   function renderForm(i: SaveInit, d: Draft): void {
     setFit(true);
+    // A card or an address: it is put away by itself ("later", nothing is kept), never folded.
+    quietMs = AUTO_DISMISS_MS;
+    quietDone = () => {
+      if (token) void call(deps.send, { type: "save_decide", token, decision: "later" }, parseEmpty);
+    };
     const err = errLine();
     const isCard = i.kind === "card";
     const updating = isCard && i.status === "update" && i.update !== undefined;
@@ -632,6 +640,10 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     pillBox = wrap;
     show(wrap);
     resendSize();
+    // The pill's own width moves without its height (a late font): the frame follows.
+    (deps.observeSize ?? observeSize)(wrap, () => {
+      if (pillBox === wrap && Math.ceil(wrap.offsetWidth) !== sentWidth) resendSize();
+    });
   }
 
   function renderEdit(): void {
