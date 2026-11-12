@@ -832,6 +832,15 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     menuSuggestions.set(token, opened.token);
     return opened.token;
   };
+  /** Sends `msg` to the exact frame (document when known) of a suggestion; a gone document gets nothing. */
+  const sendToFrame = async (rec: Pick<SuggestionRecord, "tabId" | "frameId" | "documentId">, msg: BgToCs): Promise<void> => {
+    const to = rec.documentId !== undefined ? { documentId: rec.documentId } : { frameId: rec.frameId };
+    try {
+      await ext.tabs.sendMessage(rec.tabId, msg, to);
+    } catch {
+      // Document gone: nothing to show there.
+    }
+  };
   /** The suggestion the ghost of this content script's frame shows, bound to its document and origin. */
   const frameSuggestion = (from: CsContext): string => {
     const token = suggestions.forFrame(from.tabId, from.frameId, from.documentId);
@@ -1193,7 +1202,31 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       ghost_accept: async (m, from) => {
         // The ghost's "Use" pill: only the ghost page of the suggestion's own tab.
         if (!suggestions.peek(m.token, from)) throw new BgError("invalid");
+        const rec = suggestions.recordOf(m.token);
         await suggestions.accept(m.token);
+        // Filled: the ghost has nothing left to show over the field.
+        if (rec) await removeFrame(ext.tabs, rec, "ghost");
+        return {};
+      },
+      ghost_menu: async (m, from) => {
+        // The ghost's chevron: the ghost goes, the menu opens at its field on the same suggestion.
+        if (!suggestions.peek(m.token, from)) throw new BgError("invalid");
+        const rec = suggestions.recordOf(m.token);
+        if (!rec?.fieldRef) throw new BgError("invalid");
+        const cs: CsContext = { tabId: rec.tabId, frameId: rec.frameId, origin: rec.origin };
+        if (rec.documentId !== undefined) cs.documentId = rec.documentId;
+        const token = await menus.register(cs, { formRef: rec.formRef, fieldRef: rec.fieldRef, formKind: rec.formKind });
+        menuSuggestions.set(token, m.token);
+        await removeFrame(ext.tabs, rec, "ghost");
+        await sendToFrame(rec, { type: "show_frame", kind: "menu", url: `${ext.runtime.getURL("menu.html")}#${token}`, ref: rec.fieldRef });
+        return {};
+      },
+      ghost_pill: async (m, from) => {
+        // The pill's box, to the content script of the ghost's own frame (pointer pass-through).
+        if (!suggestions.peek(m.token, from)) throw new BgError("invalid");
+        const rec = suggestions.recordOf(m.token);
+        if (!rec) throw new BgError("invalid");
+        await sendToFrame(rec, { type: "ghost_pill", rect: m.rect, over: m.over });
         return {};
       },
       menu_signup: async (m, from) => {
