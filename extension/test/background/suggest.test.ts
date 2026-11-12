@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SaveFlow } from "../../src/background/chain/save-flow";
 import type { FillTarget } from "../../src/background/fill";
 import { FormGenerator } from "../../src/background/generate";
@@ -105,6 +105,47 @@ describe("Suggestions", () => {
     const { token } = (await s.open(target(), rec()))!;
     advance(SUGGESTION_TTL_MS + 1);
     expect(s.peek(token, ghost())).toBeNull();
+  });
+
+  it("a held password is wiped when its TTL runs out, with nothing asking for it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { s, advance } = setup();
+      const { token } = (await s.open(target(), rec()))!;
+      const held = (s as unknown as { held: Map<string, { password: string }> }).held;
+      const h = held.get(token)!;
+      expect(h.password).not.toBe("");
+      // A new draw starts its life again.
+      vi.advanceTimersByTime(SUGGESTION_TTL_MS - 1000);
+      advance(SUGGESTION_TTL_MS - 1000);
+      expect(await s.regenerate(token)).toBe(true);
+      vi.advanceTimersByTime(2000);
+      expect(held.size).toBe(1);
+      vi.advanceTimersByTime(SUGGESTION_TTL_MS);
+      expect(held.size).toBe(0);
+      expect(h.password).toBe("");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a suggestion forgotten before its TTL leaves no timer behind", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { s } = setup();
+      const a = (await s.open(target(), rec()))!;
+      await s.open(target(), rec("signup", "e2"));
+      await s.open(target(), rec("signup", "e3"));
+      s.dismiss(a.token);
+      s.drop(7);
+      expect(vi.getTimerCount()).toBe(0);
+      const b = (await s.open(target(), rec()))!;
+      await s.accept(b.token);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("accept fills and saves pending on signup", async () => {

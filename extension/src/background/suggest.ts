@@ -57,6 +57,8 @@ interface Held {
   password: string;
   report: GenerationReport | null;
   at: number;
+  /** Wipes it SUGGESTION_TTL_MS after its last draw, even if nothing asks for it again. */
+  timer: ReturnType<typeof setTimeout>;
 }
 
 /** The four-segment strength of a generated password: the report's entropy, else an estimate. */
@@ -103,7 +105,8 @@ export class Suggestions {
     const mine = [...this.held].filter(([, h]) => h.rec.tabId === rec.tabId);
     for (const [k] of mine.slice(0, Math.max(0, mine.length - MAX_PER_TAB + 1))) this.forget(k);
     const token = newToken();
-    this.held.set(token, { rec: { ...rec }, target: { ...t }, password: g.password, report: g.report, at: this.now() });
+    const h: Held = { rec: { ...rec }, target: { ...t }, password: g.password, report: g.report, at: this.now(), timer: this.expiry(token) };
+    this.held.set(token, h);
     return { token };
   }
 
@@ -163,6 +166,8 @@ export class Suggestions {
     h.password = g.password;
     h.report = g.report;
     h.at = this.now();
+    clearTimeout(h.timer);
+    h.timer = this.expiry(token);
     return true;
   }
 
@@ -186,6 +191,7 @@ export class Suggestions {
     const h = this.live(token);
     if (!h) return;
     // Spent before anything else: a second accept racing this one does nothing.
+    clearTimeout(h.timer);
     this.held.delete(token);
     const { target: t, password, rec } = h;
     h.password = "";
@@ -231,9 +237,17 @@ export class Suggestions {
     return h;
   }
 
+  /** The sweep of `token`: its password does not outlive SUGGESTION_TTL_MS in this worker's memory. */
+  private expiry(token: string): ReturnType<typeof setTimeout> {
+    return setTimeout(() => this.forget(token), SUGGESTION_TTL_MS);
+  }
+
   private forget(token: string): void {
     const h = this.held.get(token);
-    if (h) h.password = "";
+    if (h) {
+      clearTimeout(h.timer);
+      h.password = "";
+    }
     this.held.delete(token);
   }
 }
