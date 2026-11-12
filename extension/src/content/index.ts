@@ -629,6 +629,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
         onCredentials: (c) => void send(c),
         onIdentifier: (c) => void send(c),
         onForm: (c) => void send(c),
+        onOutcome: (c) => void send(c),
+        onPageAlert: () => void send({ type: "page_alert" }),
         onStep: (c) => recorder?.step(c),
         listen: (t, type, fn, options) => tree.listen(t, type, fn, options),
       });
