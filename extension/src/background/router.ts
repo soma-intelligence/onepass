@@ -493,6 +493,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "save_reveal":
       case "save_generate":
       case "save_close":
+      case "save_undo":
+      case "save_edit":
       case "menu_preview":
       case "menu_regenerate":
       case "ghost_init":
