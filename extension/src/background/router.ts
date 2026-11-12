@@ -424,6 +424,7 @@ export function parseCsToBg(m: unknown): CsToBg | null {
       case "ghost_accept":
       case "ghost_dismiss":
       case "ghost_menu":
+      case "page_typed":
         return { type: o.type };
       default:
         return null;
@@ -530,6 +531,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       // Apart: one group of this many members is past what the union check distributes.
       case "save_fold":
       case "save_unfold":
+      case "overlay_create":
+      case "overlay_never":
         return { type: o.type, token: token(o.token) };
       case "ghost_pill":
         return { type: o.type, token: token(o.token), rect: pillRect(o.rect), over: bool(o.over) };

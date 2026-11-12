@@ -528,7 +528,12 @@ export type CsToBg =
   /** A printable key or Escape: the ghost goes, its password is forgotten. */
   | { type: "ghost_dismiss" }
   /** Arrow Down or the chevron: the ghost goes, the menu opens on its suggestion (answers its URL). */
-  | { type: "ghost_menu" };
+  | { type: "ghost_menu" }
+  /**
+   * A trusted input in the top page while the sign-in pill it showed by itself is there: that
+   * card folds away (the worker checks it is one, and idle). Carries nothing typed.
+   */
+  | { type: "page_typed" };
 
 /** What the content script sends of a `PageContext`: everything but the origins and frame kind. */
 export type PlanContextBody = Pick<PageContext, "forms" | "typed_username_hash">;
@@ -640,6 +645,10 @@ export type UiToBg =
   | { type: "overlay_unlock"; token: string }
   | { type: "overlay_stop"; token: string }
   | { type: "overlay_close"; token: string }
+  /** The create pill's click (a card that appeared by itself on a signup page): a strong password fills the form, nothing is sent. */
+  | { type: "overlay_create"; token: string }
+  /** "Never on this site" on a card that appeared by itself: its site joins the never-list, the card goes. */
+  | { type: "overlay_never"; token: string }
   | { type: "save_init"; token: string }
   | { type: "save_reveal"; token: string }
   | { type: "save_generate"; token: string }
@@ -732,7 +741,8 @@ export type BgToCs =
   /** The page context of this frame, for a plan made without a click (popup line, chain replan): replied, never sent. */
   | { type: "plan_request" }
   /** `origin`: when set, shown only by a frame still at exactly this origin (no documentId pin). */
-  | { type: "show_frame"; kind: FrameKind; url: string; ref?: string; origin?: string }
+  /** `auto`: the sign-in card that appeared by itself (no gesture); the page's first input folds it (`page_typed`). */
+  | { type: "show_frame"; kind: FrameKind; url: string; ref?: string; origin?: string; auto?: true }
   | { type: "remove_frame"; kind: FrameKind }
   | { type: "chain_highlight"; ref: string | null }
   /** Height the extension page asked for (validated by token in the worker, clamped here). */
@@ -808,6 +818,7 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "ghost_accept",
   "ghost_dismiss",
   "ghost_menu",
+  "page_typed",
 ]);
 
 /** Cheap discriminant check for messages received from content scripts. */

@@ -145,6 +145,12 @@ export interface OverlayInit {
    * account and holds nothing of the vault. Its one button unlocks, then the page's plan runs.
    */
   generic?: true;
+  /**
+   * The card appeared by itself on a recognised page (no gesture): it folds away after
+   * AUTO_PILL_MS untouched and offers "Never on this site". `signin`: the pill (or, with
+   * `generic`, the locked card); `signup`: "Create with OnePass", no account listed.
+   */
+  auto?: "signin" | "signup";
 }
 
 export interface SaveInit {

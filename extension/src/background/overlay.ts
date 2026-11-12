@@ -71,7 +71,12 @@ export interface OverlayRecord extends BoundRecord {
   pending?: OverlayPending;
   /** Opened on a locked vault, with nothing of it: no account until the vault answers. */
   generic?: boolean;
+  /** Appeared by itself on a recognised page (auto-pill.ts), no gesture: which face. */
+  auto?: OverlayAuto;
 }
+
+/** The face of a card that appeared by itself: the sign-in pill (or the generic card), or "Create with OnePass". */
+export type OverlayAuto = "signin" | "signup";
 
 function parsePending(raw: unknown): OverlayPending | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -131,6 +136,7 @@ function parseOverlay(raw: unknown): OverlayRecord | null {
     if (pending) rec.pending = pending;
   }
   if (r.generic === true) rec.generic = true;
+  if (r.auto === "signin" || r.auto === "signup") rec.auto = r.auto;
   return rec;
 }
 
@@ -233,6 +239,14 @@ export interface OverlayDeps {
    * it chooses one: the card's first account. Absent or null: the order of the list.
    */
   primary?: (tabId: number, origin: string, documentId: string | undefined) => Promise<string | null>;
+  /**
+   * The click on the create pill of a card that appeared by itself on a signup page: a strong
+   * password with the site's rules fills the form of the card's top document (the one-click
+   * signup fill), nothing is sent. Throws when nothing could be filled.
+   */
+  createAccount?: (rec: Pick<OverlayRecord, "tabId" | "origin" | "documentId">) => Promise<void>;
+  /** "Never on this site" on a card that appeared by itself: the site of `origin` joins the never-list. */
+  never?: (origin: string) => Promise<void>;
   now?: () => number;
 }
 
@@ -260,15 +274,17 @@ export class Overlays {
    * that document when given (the progress of a chain started from the
    * menu shows where the user clicked), else at the top right.
    */
-  async open(cs: CsContext, anchorRef?: string, generic = false, pending?: OverlayPending): Promise<string> {
+  async open(cs: CsContext, anchorRef?: string, generic = false, pending?: OverlayPending, auto?: OverlayAuto): Promise<string> {
     if (cs.frameId !== 0) throw new BgError("invalid");
     const rec: Omit<OverlayRecord, "createdAt"> = { tabId: cs.tabId, frameId: 0, origin: cs.origin };
     if (cs.documentId !== undefined) rec.documentId = cs.documentId;
     if (generic) rec.generic = true;
     if (pending) rec.pending = pending;
+    if (auto) rec.auto = auto;
     const token = await this.tokens.register(rec);
     const msg: BgToCs = { type: "show_frame", kind: "overlay", url: `${this.deps.ext.runtime.getURL("overlay.html")}#${token}` };
     if (anchorRef !== undefined) msg.ref = anchorRef;
+    if (auto) msg.auto = true;
     const opts = cs.documentId !== undefined ? { documentId: cs.documentId } : { frameId: 0 };
     try {
       await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
@@ -297,6 +313,11 @@ export class Overlays {
     // chain). Not offered here until that pick made it this site's own.
     const all = overlayAccounts(items.filter((x) => x.associated !== true), choices);
     return { accounts: only ? all.filter((x) => x.provider !== undefined && only.includes(x.provider)) : all, only: !!only };
+  }
+
+  /** How many sign-ins the card would offer in top document `cs` (the auto pill shows only with one at least). */
+  async offers(cs: CsContext): Promise<number> {
+    return (await this.accountsFor(cs.tabId, cs.origin, cs.documentId)).accounts.length;
   }
 
   /** `accounts` with the password login of `itemId` first (the page's plan would sign in with it); the rest in order. */
@@ -335,8 +356,22 @@ export class Overlays {
     return true;
   }
 
+  /**
+   * The card that appears by itself on a ready page (auto-pill.ts) in top document `cs`: the
+   * sign-in pill, the generic card of a locked vault, or the create pill. It shows, nothing more.
+   */
+  async openAuto(cs: CsContext, face: "signin" | "generic" | "signup"): Promise<void> {
+    await this.open(cs, undefined, face === "generic", undefined, face === "signup" ? "signup" : "signin");
+  }
+
   async init(token: string, ui: UiContext): Promise<OverlayInit & { waiting?: OverlayWaiting }> {
     const rec = await this.record(token, ui);
+    if (rec.auto === "signup" && !rec.pending) {
+      // The create pill lists nothing of the vault: one button, for the page's signup form.
+      rec.offered = {};
+      await this.tokens.update(token, rec);
+      return { origin: rec.origin, accounts: [], chain: await this.deps.chain.state(rec.tabId, true, rec.documentId), auto: "signup" };
+    }
     let accounts: OverlayAccount[] = [];
     let generic = false;
     try {
@@ -365,7 +400,8 @@ export class Overlays {
     rec.accounts = shown;
     await this.tokens.update(token, rec);
     let chain = await this.deps.chain.state(rec.tabId, true, rec.documentId);
-    if (!rec.pending) return generic ? { origin: rec.origin, accounts, chain, generic: true } : { origin: rec.origin, accounts, chain };
+    const auto = rec.auto ? { auto: rec.auto } : {};
+    if (!rec.pending) return generic ? { origin: rec.origin, accounts, chain, generic: true, ...auto } : { origin: rec.origin, accounts, chain, ...auto };
     const waiting = await this.resume(token, rec);
     if (waiting) return { origin: rec.origin, accounts, chain, waiting };
     chain = await this.deps.chain.state(rec.tabId, true, rec.documentId);
@@ -601,6 +637,44 @@ export class Overlays {
     await removeFrame(this.deps.ext.tabs, live.rec, "overlay");
     await this.deps.chain.closed?.(tabId, live.rec.origin, live.rec.documentId);
     return false;
+  }
+
+  /** The create pill's click: the signup form of the card's document fills (`createAccount`), then the card goes. */
+  async create(token: string, ui: UiContext): Promise<object> {
+    const rec = await this.record(token, ui);
+    if (rec.auto !== "signup" || !this.deps.createAccount) throw new BgError("invalid");
+    if (!(await this.stillBound(rec))) throw new BgError("invalid");
+    await this.deps.createAccount(rec);
+    await this.dropCard(token, rec);
+    return {};
+  }
+
+  /** "Never on this site" on a card that appeared by itself: the site is kept, the card goes. */
+  async neverHere(token: string, ui: UiContext): Promise<object> {
+    const rec = await this.record(token, ui);
+    if (!rec.auto || !this.deps.never) throw new BgError("invalid");
+    await this.deps.never(rec.origin);
+    await this.dropCard(token, rec);
+    return {};
+  }
+
+  /**
+   * The page's user typed (`page_typed`), or another surface opens on a field (the ghost): a card
+   * that appeared by itself folds away, unless the user already acted on it (a running chain, an
+   * unlock it waits for). A card opened by a gesture stays.
+   */
+  async foldAuto(tabId: number): Promise<void> {
+    const live = await this.tokens.forTab(tabId);
+    if (!live?.rec.auto || live.rec.pending) return;
+    if ((await this.deps.chain.state(tabId))?.status === "running") return;
+    await this.dropCard(live.token, live.rec);
+  }
+
+  private async dropCard(token: string, rec: OverlayRecord): Promise<void> {
+    this.checked.delete(token);
+    await this.tokens.drop(token);
+    await removeFrame(this.deps.ext.tabs, rec, "overlay");
+    await this.deps.chain.closed?.(rec.tabId, rec.origin, rec.documentId);
   }
 
   async stop(token: string, ui: UiContext): Promise<object> {

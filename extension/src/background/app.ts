@@ -33,6 +33,7 @@ import type { MenuInit, MenuNotice } from "../shared/ui";
 import { UNLOCK_WAIT_MS } from "../shared/unlock";
 import { signInChoices } from "./chain/choices";
 import { PageAnalyses } from "./analyses";
+import { AutoPill } from "./auto-pill";
 import { ChainRunner, type CrossVerdict } from "./chain/driver";
 import { ProviderFlows } from "./chain/provider-flow";
 import { SaveFlow } from "./chain/save-flow";
@@ -356,6 +357,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     resumeChain: (tabId) => (runner ? runner.resumeLocked(tabId) : Promise.resolve(false)),
     resumePage: (rec) => resumePage(rec),
     primary: (tabId, origin, documentId) => primaryLogin(tabId, origin, documentId),
+    createAccount: (rec) => createAccount(rec),
+    never: (origin) => autoPill.never(origin),
     ...(opts.now ? { now: opts.now } : {}),
   });
   // The chain plans unknown pages; the planner starts chains.
@@ -687,6 +690,65 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     const r = await planWithoutGesture(cs, "overlay");
     return r ? (plannerRef.current.signIn(r.t, r.plan)?.itemId ?? null) : null;
   }
+
+  /**
+   * The click on the create pill of a card that appeared by itself on a signup page (overlay.ts
+   * checked the card's document): the page's signup plan runs as the glyph's click would (the
+   * identity, a strong password with the site's rules, the Login in waiting), never a submit.
+   * A plan that leaves the choice to a menu (several identities) gets the strong password alone,
+   * as the menu's "generate" row would.
+   */
+  async function createAccount(rec: { tabId: number; origin: string; documentId?: string }): Promise<void> {
+    const cs: CsContext = { tabId: rec.tabId, frameId: 0, origin: rec.origin, ...(rec.documentId !== undefined ? { documentId: rec.documentId } : {}) };
+    const r = await planWithoutGesture(cs, "overlay");
+    if (!r || r.plan.intent !== "signup") throw new BgError("not_found");
+    const outcome = r.plan.passkey ? await planner.runSignup(r.t, r.plan, "password") : await planner.run(r.t, r.plan);
+    if (outcome === "filled") return;
+    const gen = r.plan.groups.find((g) => g.kind === "generated_password");
+    if (outcome !== "menu" || !gen) throw new BgError("not_found");
+    const t: FillTarget = { ...r.t, formRef: gen.form_ref };
+    const g = await generator.generateForForm(t, "overlay");
+    if (g === null) throw new BgError("site_refused");
+    await filler.fillGenerated(t, g.password);
+    saveFlow.rememberGenerated(rec.tabId, rec.origin, g.password);
+    await saveFlow.savePending(rec.tabId, rec.origin, g.password, { weak: g.report?.weak_by_site === true });
+  }
+
+  /** The sign-in card that appears by itself on a ready page (auto-pill.ts); shows only, starts nothing. */
+  const autoPill = new AutoPill({
+    local: ext.storage.local,
+    topFrame: (tabId) => frames.details(tabId, 0),
+    // A private window: the pill stays away (the extension already treats it apart, spec 4.3).
+    incognito: async (tabId) => (await ext.tabs.get?.(tabId))?.incognito === true,
+    busy: async (tabId) =>
+      (await chainRunning(tabId)) ||
+      (await chain.state(tabId).catch(() => null))?.status === "running" ||
+      (await overlays.tokens.hasTab(tabId)) ||
+      (await menus.hasTab(tabId)) ||
+      (await savePrompts.tokens.hasTab(tabId)),
+    page: async (tabId) => {
+      const a = await analyses.top(tabId);
+      if (!a) return null;
+      const refs = (kind: string) => a.analysis.forms.filter((f) => f.kind === kind).map((f) => f.ref);
+      return { origin: a.origin, ...(a.documentId !== undefined ? { documentId: a.documentId } : {}), login: refs("login"), signup: refs("signup") };
+    },
+    prefilled: async (cs, refs) => {
+      const body = await requestContext(cs);
+      // A page that does not answer: no pill rather than one over a form we could not read.
+      if (!body) return true;
+      const mine = body.forms.filter((f) => refs.includes(f.form_ref));
+      return (mine.length > 0 ? mine : body.forms).some((f) => f.fields.some((x) => x.prefilled !== "empty"));
+    },
+    vault: async () => {
+      try {
+        return (await session.request({ op: "status" })).locked ? "locked" : "open";
+      } catch (e) {
+        return toBgError(e).code === "locked" ? "locked" : "missing";
+      }
+    },
+    logins: (cs) => overlays.offers(cs),
+    open: (cs, face) => overlays.openAuto(cs, face),
+  });
   const popup = new PopupBackend({
     ext,
     area: store.session,
@@ -1011,6 +1073,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       ghost_open: async (m, from) => {
         if (!isPage(from.origin)) throw new BgError("insecure_origin");
+        // One surface: a card that appeared by itself steps aside for the field's ghost.
+        await overlays.foldAuto(from.tabId).catch(() => undefined);
         // Spec 3.1: a new password on a signup or change-password form only.
         if (!NEW_PASSWORD_FORMS.has(m.formKind)) throw new BgError("invalid");
         // A cross-origin child frame gets the menu instead (spec 3.4).
@@ -1039,6 +1103,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const token = await menus.register(from, { formRef: rec.formRef, fieldRef: rec.fieldRef, formKind: rec.formKind });
         menuSuggestions.set(token, held);
         return { url: `${ext.runtime.getURL("menu.html")}#${token}` };
+      },
+      page_typed: async (_m, from) => {
+        // The user types in the page: a card that appeared by itself folds away.
+        await overlays.foldAuto(from.tabId);
+        return {};
       },
       menu_key: async (m, from) => {
         // Only to the menu of this very frame (and document).
@@ -1407,6 +1476,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       overlay_resize: async (m, from) => overlays.resize(m.token, from, m.height),
       overlay_stop: async (m, from) => overlays.stop(m.token, from),
       overlay_close: async (m, from) => overlays.close(m.token, from),
+      overlay_create: async (m, from) => overlays.create(m.token, from),
+      overlay_never: async (m, from) => overlays.neverHere(m.token, from),
       save_init: async (m, from) => savePrompts.init(m.token, from),
       save_reveal: async (m, from) => savePrompts.reveal(m.token, from),
       save_generate: async (m, from) => savePrompts.generate(m.token, from),
@@ -1465,6 +1536,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     providerFlows,
     neverSave,
     overlays,
+    autoPill,
     saves: savePrompts,
     analyses,
     popup,
@@ -1486,6 +1558,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       analyses.onAnalysis((a, cs) => {
         // The sign that a sign-in worked (or failed) comes from the submitting frame too.
         saveFlow.onAnalysis(a, cs);
+        void autoPill.onAnalysis(cs.tabId, cs.frameId).catch(() => undefined);
         if (cs.frameId !== 0) return;
         void providerFlows.onAnalysis(a, cs).catch(() => undefined);
       });
@@ -1494,15 +1567,19 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (d.frameId === 0) suggestions.drop(d.tabId);
         else suggestions.dropFrame(d.tabId, d.frameId);
         if (d.frameId !== 0) return;
+        autoPill.onCommitted(d.tabId);
         void notes.onNavigation(d.tabId, d.url).catch(() => undefined);
         saveFlow.onNavigation(d.tabId, d.url);
         void providerFlows.onNavigation(d.tabId, d.url).catch(() => undefined);
       });
       ext.webNavigation.onCompleted.addListener((d) => {
-        if (d.frameId === 0) saveFlow.onReady(d.tabId);
+        if (d.frameId !== 0) return;
+        saveFlow.onReady(d.tabId);
+        void autoPill.onReady(d.tabId).catch(() => undefined);
       });
       ext.tabs.onRemoved.addListener((tabId) => {
         saveFlow.onTabRemoved(tabId);
+        autoPill.onTabRemoved(tabId);
         suggestions.drop(tabId);
         for (const [m, st] of menuSuggestions) if (!suggestions.recordOf(st)) menuSuggestions.delete(m);
         savePrompts.forgetTab(tabId);
