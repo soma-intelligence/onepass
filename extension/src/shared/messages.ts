@@ -86,6 +86,9 @@ export function isDocumentRole(role: string): boolean {
 /** The form kinds that never take a document role. */
 export const NO_DOCUMENT_KINDS: ReadonlySet<FormKind> = new Set<FormKind>(["login", "signup", "otp", "change_password"]);
 
+/** The form kinds with a new password to make: the menu's generator, the ghost (spec 3.1). */
+export const NEW_PASSWORD_FORMS: ReadonlySet<string> = new Set<FormKind>(["signup", "change_password"]);
+
 // ---- fill_identity (mirror of onepass_bridge::api) ----
 
 /** What `fill_identity` may add to the identity's own values, asked only for the roles a form has. */
