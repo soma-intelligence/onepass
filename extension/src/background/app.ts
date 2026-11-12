@@ -55,6 +55,7 @@ import { Planner, type PlanOrigins, type RunOutcome, framesFromSender, mainRoles
 import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup";
 import { type Handlers, createRouter, parsePlanContextBody } from "./router";
 import { type SavePending, SavePrompts } from "./save";
+import { type SuggestionRecord, Suggestions } from "./suggest";
 import type { ModelSession } from "./model";
 import { BgError, type BridgeLike, Session, toBgError } from "./session";
 import { IdbPairingStore, type PairingStore, Store } from "./store";
@@ -435,7 +436,15 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     chainRunning,
     ...(opts.now ? { now: opts.now } : {}),
   });
-  session.onLocked(() => saveFlow.clearGenerated());
+  // Suggested passwords held for the ghost and the menu's preview (suggest.ts): memory only.
+  const suggestions = new Suggestions({ generator, filler, saveFlow, area: ext.storage.local, ...(opts.now ? { now: opts.now } : {}) });
+  /** Menu token to the suggestion its preview row shows (opened from the ghost, or on the menu's first preview). */
+  const menuSuggestions = new Map<string, string>();
+  session.onLocked(() => {
+    saveFlow.clearGenerated();
+    suggestions.clear();
+    menuSuggestions.clear();
+  });
   /** Frames (`tab:frame`) whose last run found every generated password refused by the page. */
   const refusedRuns = new Set<string>();
   const planner = new Planner(session, filler, chain, saveFlow, generator, {
@@ -794,6 +803,35 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     return form ? ownerRoles(form) : undefined;
   };
 
+  /** The suggestion record of a menu's field; a planned signup counts as one. */
+  const suggestionOf = (rec: MenuRecord): SuggestionRecord => {
+    const s: SuggestionRecord = {
+      tabId: rec.tabId,
+      frameId: rec.frameId,
+      origin: rec.origin,
+      formKind: rec.planned?.intent === "signup" ? "signup" : rec.formKind,
+      fieldRef: rec.fieldRef,
+    };
+    if (rec.documentId !== undefined) s.documentId = rec.documentId;
+    return s;
+  };
+  /** The live suggestion of the menu `token`, opened now when it has none (the menu shown instead of the ghost). */
+  const menuSuggestion = async (token: string, rec: MenuRecord): Promise<string> => {
+    const held = menuSuggestions.get(token);
+    if (held !== undefined && suggestions.recordOf(held)) return held;
+    const opened = await suggestions.open(targetOf(rec), suggestionOf(rec));
+    if (!opened) throw new BgError("site_refused");
+    for (const [m, st] of menuSuggestions) if (!suggestions.recordOf(st)) menuSuggestions.delete(m);
+    menuSuggestions.set(token, opened.token);
+    return opened.token;
+  };
+  /** The suggestion the ghost of this content script's frame shows, bound to its document and origin. */
+  const frameSuggestion = (from: CsContext): string => {
+    const token = suggestions.forFrame(from.tabId, from.frameId, from.documentId);
+    if (token === null || suggestions.recordOf(token)?.origin !== from.origin) throw new BgError("invalid");
+    return token;
+  };
+
   const handlers: Handlers = {
     cs: {
       page_analysis: async (m, from) => {
@@ -948,6 +986,37 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           throw e;
         }
       },
+      ghost_open: async (m, from) => {
+        if (!isPage(from.origin)) throw new BgError("insecure_origin");
+        // Spec 3.1: a new password on a signup or change-password form only.
+        if (!NEW_PASSWORD_FORMS.has(m.formKind)) throw new BgError("invalid");
+        // A cross-origin child frame gets the menu instead (spec 3.4).
+        if (!(await topOf(from))) throw new BgError("cross_site_frame");
+        const rec: SuggestionRecord = { tabId: from.tabId, frameId: from.frameId, origin: from.origin, formKind: m.formKind, fieldRef: m.fieldRef, metrics: m.metrics };
+        if (from.documentId !== undefined) rec.documentId = from.documentId;
+        const opened = await suggestions.open(fillTarget(from, m.formRef), rec);
+        if (!opened) throw new BgError("site_refused");
+        return { url: `${ext.runtime.getURL("ghost.html")}#${opened.token}` };
+      },
+      ghost_accept: async (_m, from) => {
+        // Tab or Enter in the field while its ghost shows (trusted keys, read by the content script).
+        await suggestions.accept(frameSuggestion(from));
+        return {};
+      },
+      ghost_dismiss: async (_m, from) => {
+        const token = suggestions.forFrame(from.tabId, from.frameId, from.documentId);
+        if (token !== null) suggestions.dismiss(token);
+        return {};
+      },
+      ghost_menu: async (_m, from) => {
+        // The ghost goes, the menu opens on its suggestion (the same password, previewed).
+        const held = frameSuggestion(from);
+        const rec = suggestions.recordOf(held);
+        if (!rec?.fieldRef) throw new BgError("invalid");
+        const token = await menus.register(from, { formRef: rec.formRef, fieldRef: rec.fieldRef, formKind: rec.formKind });
+        menuSuggestions.set(token, held);
+        return { url: `${ext.runtime.getURL("menu.html")}#${token}` };
+      },
       menu_key: async (m, from) => {
         // Only to the menu of this very frame (and document).
         const token = await menus.forFrame(from.tabId, from.frameId, from.documentId);
@@ -1068,6 +1137,13 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       menu_generate: async (m, from) => {
         const rec = await menuRecord(m.token, from);
+        // The suggestion the menu previews: that very password is filled (and saved).
+        const held = menuSuggestions.get(m.token);
+        if (held !== undefined && suggestions.recordOf(held)) {
+          menuSuggestions.delete(m.token);
+          await suggestions.accept(held, { signup: rec.planned?.intent === "signup" });
+          return {};
+        }
         const t = targetOf(rec);
         // The page's rules for the menu's form; a page that refuses all three: nothing filled.
         const g = await generator.generateForForm(t, "menu");
@@ -1077,6 +1153,40 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         // A signup form: in the vault before it is sent (spec 7.1), as from the planner.
         const intent = rec.planned?.intent ?? (rec.formKind === "signup" ? "signup" : undefined);
         if (intent === "signup") await saveFlow.savePending(rec.tabId, rec.origin, g.password, { weak: g.report?.weak_by_site === true });
+        return {};
+      },
+      menu_preview: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const p = suggestions.preview(await menuSuggestion(m.token, rec), from);
+        if (!p) throw new BgError("invalid");
+        return p;
+      },
+      menu_regenerate: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const st = await menuSuggestion(m.token, rec);
+        if (!(await suggestions.regenerate(st))) throw new BgError("site_refused");
+        const p = suggestions.preview(st, from);
+        if (!p) throw new BgError("invalid");
+        return p;
+      },
+      menu_profile: async (m, from) => {
+        const rec = await menuRecord(m.token, from);
+        const st = await menuSuggestion(m.token, rec);
+        if (!(await suggestions.setProfile(st, m.length, m.symbols))) throw new BgError("site_refused");
+        const p = suggestions.preview(st, from);
+        if (!p) throw new BgError("invalid");
+        return p;
+      },
+      ghost_init: async (m, from) => {
+        const p = suggestions.preview(m.token, from);
+        const metrics = suggestions.metrics(m.token);
+        if (!p || !metrics) throw new BgError("invalid");
+        return { ...p, metrics };
+      },
+      ghost_accept: async (m, from) => {
+        // The ghost's "Use" pill: only the ghost page of the suggestion's own tab.
+        if (!suggestions.peek(m.token, from)) throw new BgError("invalid");
+        await suggestions.accept(m.token);
         return {};
       },
       menu_signup: async (m, from) => {
@@ -1329,6 +1439,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         void providerFlows.onAnalysis(a, cs).catch(() => undefined);
       });
       ext.webNavigation.onCommitted.addListener((d) => {
+        // A new document takes its held suggestions with it (a new top one, every frame's).
+        if (d.frameId === 0) suggestions.drop(d.tabId);
+        else suggestions.dropFrame(d.tabId, d.frameId);
         if (d.frameId !== 0) return;
         void notes.onNavigation(d.tabId, d.url).catch(() => undefined);
         saveFlow.onNavigation(d.tabId, d.url);
@@ -1339,6 +1452,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       });
       ext.tabs.onRemoved.addListener((tabId) => {
         saveFlow.onTabRemoved(tabId);
+        suggestions.drop(tabId);
+        for (const [m, st] of menuSuggestions) if (!suggestions.recordOf(st)) menuSuggestions.delete(m);
         savePrompts.forgetTab(tabId);
         notes.onTabRemoved(tabId);
         for (const k of planMenus.keys()) if (k.startsWith(`${tabId}:`)) planMenus.delete(k);
