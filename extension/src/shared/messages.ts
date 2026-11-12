@@ -404,14 +404,16 @@ export interface PlanFillResponse {
   plan: PlanOut;
 }
 
-export type FrameKind = "menu" | "overlay" | "save";
+/** The extension frames of the in-page shell (content/frames.ts); `ghost`: the suggested password over its field. */
+export type FrameKind = "menu" | "overlay" | "save" | "ghost";
 
-/**
- * Extension pages a held password suggestion may be read by (background/suggest.ts): the ghost
- * over the field and the menu's preview row. Kept apart from `FrameKind` until the ghost frame
- * is wired in content/frames.ts.
- */
-export type SuggestionPageKind = "ghost" | "menu";
+/** A box in CSS px: the field's in the viewport, or the ghost's pill in its own frame. */
+export interface GhostRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 /**
  * The field's text box as the content script measures it, for the ghost laid over it (spec
@@ -426,7 +428,7 @@ export interface GhostMetrics {
   textAlign: "left" | "right" | "center";
   /** The field's own family when it is a local font; null: the system font. */
   fontFamily: string | null;
-  box: { x: number; y: number; width: number; height: number };
+  box: GhostRect;
 }
 
 /** What the ghost and the menu's preview row show of a held suggestion (no metrics for the menu). */
@@ -550,6 +552,14 @@ export type UiToBg =
   | { type: "ghost_init"; token: string }
   /** A click on the ghost's "Use" pill. */
   | { type: "ghost_accept"; token: string }
+  /** A click on the ghost's chevron: the ghost goes, the menu opens on its suggestion. */
+  | { type: "ghost_menu"; token: string }
+  /**
+   * Where the ghost's pill is in its frame (frame-local CSS px), sent once laid out and again when
+   * the pointer leaves the pill (`over: false`): the content script lets the frame take the pointer
+   * only over the pill (spec 3.2), every other point of the field goes through to the page.
+   */
+  | { type: "ghost_pill"; token: string; rect: GhostRect; over: boolean }
   /** The signup choice of a menu a passkey-offering plan opened (one-click signup). */
   | { type: "menu_signup"; token: string; mode: SignupMode }
   /** "Enregistrer un nouveau login": the save prompt in its edit view. */
@@ -687,6 +697,8 @@ export type BgToCs =
   | { type: "chain_highlight"; ref: string | null }
   /** Height the extension page asked for (validated by token in the worker, clamped here). */
   | { type: "resize_frame"; kind: FrameKind; height: number }
+  /** The ghost page's pill box and pointer state (`ghost_pill` of UiToBg), vouched by the worker. */
+  | { type: "ghost_pill"; rect: GhostRect; over: boolean }
   /**
    * What the page says about the new password fields of `formRef` (rules,
    * lengths, written hints, `pattern`): replied as `PasswordContextReply`,
