@@ -8,7 +8,7 @@ const SITE = "https://atlas-cloud.test";
 const TAB = 7;
 const UI = { page: "save.html", tabId: TAB };
 
-function setup() {
+function setup(hook?: (r: { op: string }) => Promise<void> | void) {
   const ext = new FakeExt();
   const requests: { op: string }[] = [];
   const prompts = new SavePrompts({
@@ -16,6 +16,7 @@ function setup() {
     session: {
       request: (async (r: { op: string }) => {
         requests.push(r);
+        await hook?.(r);
         if (r.op === "vaults") return { vaults: [{ id: "v1", name: "Perso", color: null }] };
         if (r.op === "save_login") return { item_id: "it_new" };
         return {};
@@ -187,5 +188,75 @@ describe("save pill", () => {
     const token = await open("new");
     await prompts.decide(token, UI, "dismiss");
     await expect(prompts.fold(token, UI)).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  describe("one answer only (the pill and the popup at once)", () => {
+    /** update_password waits until `release` (an answer in flight). */
+    function gated() {
+      let release = () => {};
+      const gate = new Promise<void>((r) => (release = r));
+      const t = setup(async (r) => {
+        if (r.op === "update_password") await gate;
+      });
+      const updates = () => t.requests.filter((r) => r.op === "update_password").length;
+      return { ...t, release, updates };
+    }
+
+    it("the same card answered twice at once: one update, the second answer refused", async () => {
+      const t = gated();
+      const token = await t.open();
+      const first = t.prompts.decide(token, UI, "update");
+      await vi.advanceTimersByTimeAsync(0);
+      const second = t.prompts.decide(token, UI, "update").catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(0);
+      t.release();
+      expect(await second).toMatchObject({ code: "invalid" });
+      await expect(first).resolves.toMatchObject({ outcome: "updated" });
+      expect(t.updates()).toBe(1);
+    });
+
+    it("the pill answered while the popup answer is in flight: one update", async () => {
+      const t = gated();
+      const token = await t.open();
+      await t.prompts.fold(token, UI);
+      const [w] = await t.prompts.pendingList();
+      const fromPopup = t.prompts.decidePending(w!.id, "update");
+      await vi.advanceTimersByTimeAsync(0);
+      const second = t.prompts.decide(token, UI, "update").catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(0);
+      t.release();
+      expect(await second).toMatchObject({ code: "invalid" });
+      await expect(fromPopup).resolves.toMatchObject({ outcome: "updated" });
+      expect(t.updates()).toBe(1);
+    });
+
+    it("the popup answered while the pill answer is in flight: one update", async () => {
+      const t = gated();
+      const token = await t.open();
+      await t.prompts.fold(token, UI);
+      const [w] = await t.prompts.pendingList();
+      const fromPill = t.prompts.decide(token, UI, "update");
+      await vi.advanceTimersByTimeAsync(0);
+      const second = t.prompts.decidePending(w!.id, "update").catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(0);
+      t.release();
+      expect(await second).toMatchObject({ code: "invalid" });
+      await expect(fromPill).resolves.toMatchObject({ outcome: "updated" });
+      expect(t.updates()).toBe(1);
+    });
+
+    it("an answer that fails can be given again", async () => {
+      let fail = true;
+      const t = setup((r) => {
+        if (r.op === "update_password" && fail) {
+          fail = false;
+          throw new Error("host down");
+        }
+      });
+      const token = await t.open();
+      await expect(t.prompts.decide(token, UI, "update")).rejects.toThrow();
+      await expect(t.prompts.decide(token, UI, "update")).resolves.toMatchObject({ outcome: "updated" });
+      expect(t.requests.filter((r) => r.op === "update_password")).toHaveLength(2);
+    });
   });
 });

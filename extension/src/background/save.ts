@@ -251,6 +251,8 @@ interface VaultMemory {
 export class SavePrompts {
   readonly tokens: FrameTokens<SaveRecord>;
   private readonly waiting = new Map<string, Waiting>();
+  /** Waiting sign-ins the popup is answering right now (`claimed`). */
+  private readonly answering = new Set<string>();
   /** Keyed hashes of put-away credentials, with when. */
   private readonly dismissed = new Map<string, number>();
   private quietKeyHmac: Promise<CryptoKey> | null = null;
@@ -488,66 +490,74 @@ export class SavePrompts {
     let out: SaveOutcome = { outcome: "done" };
     // A toast: the login is saved already. Only Edit's Save, "never" and closing it apply.
     if (rec.view === "toast" && (decision === "update" || (decision === "save" && !rec.editing))) throw new BgError("invalid");
-    switch (decision) {
-      case "dismiss": {
-        const key = quietKey(rec);
-        if (key !== null) await this.noteDismissed(rec.origin, key);
-        this.forgetFor(rec);
-        await this.tokens.drop(token);
-        await removeFrame(this.deps.ext.tabs, rec, "save");
-        return {};
-      }
-      case "later":
-        // Unanswered: it waits in the popup (a sign-in the card offered, not the menu's blank login).
-        if (rec.kind === "login" && rec.view === undefined && rec.password !== "") this.hold(rec);
-        await this.tokens.drop(token);
-        await removeFrame(this.deps.ext.tabs, rec, "save");
-        return {};
-      case "never":
-        await this.deps.neverSave.add(parseOrigin(rec.origin)?.site ?? rec.origin);
-        break;
-      case "save":
-        if (rec.kind === "card" || rec.kind === "identity") {
-          if (!edits) throw new BgError("invalid");
-          out = rec.known ? { outcome: "already" } : await this.commitForm(rec, edits);
-        } else if (rec.kind === "provider_link") {
-          if (!rec.provider) throw new BgError("invalid");
-          await this.deps.session.request({
-            op: "link_provider",
-            ctx: "save_prompt",
-            site_origin: rec.origin,
-            provider: rec.provider.id,
-            account_item_id: rec.provider.accountItemId,
-          });
-        } else {
-          if (!edits) throw new BgError("invalid");
-          // Spec 5.1: a sign-in sent without an identifier is saved with the one typed in the card.
-          if (rec.view === undefined && rec.username.trim() === "" && edits.username.trim() === "") throw new BgError("invalid");
-          if (rec.view === "toast") {
-            // Edit's Save: the saved login changes in place (or moves to another vault) in the
-            // bridge; a refusal (too late, edited since) is said in the card, nothing written.
-            out = await this.amend(rec, edits);
-          } else {
-            out = (await this.commit(rec, "save", edits)).out;
-          }
+    // Claimed before any await: a second answer (the same card twice, its pill and the popup at
+    // once) is refused instead of saving the login again. A failed answer can be given again.
+    rec.decided = true;
+    try {
+      switch (decision) {
+        case "dismiss": {
+          const key = quietKey(rec);
+          if (key !== null) await this.noteDismissed(rec.origin, key);
+          this.forgetFor(rec);
+          await this.tokens.drop(token);
+          await removeFrame(this.deps.ext.tabs, rec, "save");
+          return {};
         }
-        break;
-      case "update":
-        // Only the item check_credentials (or check_card) named; the page cannot pick another.
-        if (rec.kind === "card" && rec.update) {
-          out = await this.commitForm(rec, edits ?? { title: "", username: "", password: "", vaultId: "", rule: "domain", tags: [] });
+        case "later":
+          // Unanswered: it waits in the popup (a sign-in the card offered, not the menu's blank login).
+          if (rec.kind === "login" && rec.view === undefined && rec.password !== "") this.hold(rec);
+          await this.tokens.drop(token);
+          await removeFrame(this.deps.ext.tabs, rec, "save");
+          return {};
+        case "never":
+          await this.deps.neverSave.add(parseOrigin(rec.origin)?.site ?? rec.origin);
           break;
-        }
-        if (rec.kind === "login" && rec.choices) {
-          // Spec 5.2: one of the logins the card offered, never another item.
-          const pick = rec.choices.find((c) => c.itemId === edits?.itemId);
-          if (!pick) throw new BgError("invalid");
-          rec.update = { itemId: pick.itemId, title: pick.title };
-        }
-        if (rec.kind !== "login" || !rec.update) throw new BgError("invalid");
-        out = (await this.commit(rec, "update", edits)).out;
-        await this.discardPending(rec);
-        break;
+        case "save":
+          if (rec.kind === "card" || rec.kind === "identity") {
+            if (!edits) throw new BgError("invalid");
+            out = rec.known ? { outcome: "already" } : await this.commitForm(rec, edits);
+          } else if (rec.kind === "provider_link") {
+            if (!rec.provider) throw new BgError("invalid");
+            await this.deps.session.request({
+              op: "link_provider",
+              ctx: "save_prompt",
+              site_origin: rec.origin,
+              provider: rec.provider.id,
+              account_item_id: rec.provider.accountItemId,
+            });
+          } else {
+            if (!edits) throw new BgError("invalid");
+            // Spec 5.1: a sign-in sent without an identifier is saved with the one typed in the card.
+            if (rec.view === undefined && rec.username.trim() === "" && edits.username.trim() === "") throw new BgError("invalid");
+            if (rec.view === "toast") {
+              // Edit's Save: the saved login changes in place (or moves to another vault) in the
+              // bridge; a refusal (too late, edited since) is said in the card, nothing written.
+              out = await this.amend(rec, edits);
+            } else {
+              out = (await this.commit(rec, "save", edits)).out;
+            }
+          }
+          break;
+        case "update":
+          // Only the item check_credentials (or check_card) named; the page cannot pick another.
+          if (rec.kind === "card" && rec.update) {
+            out = await this.commitForm(rec, edits ?? { title: "", username: "", password: "", vaultId: "", rule: "domain", tags: [] });
+            break;
+          }
+          if (rec.kind === "login" && rec.choices) {
+            // Spec 5.2: one of the logins the card offered, never another item.
+            const pick = rec.choices.find((c) => c.itemId === edits?.itemId);
+            if (!pick) throw new BgError("invalid");
+            rec.update = { itemId: pick.itemId, title: pick.title };
+          }
+          if (rec.kind !== "login" || !rec.update) throw new BgError("invalid");
+          out = (await this.commit(rec, "update", edits)).out;
+          await this.discardPending(rec);
+          break;
+      }
+    } catch (e) {
+      rec.decided = false;
+      throw e;
     }
     // Answered here (a folded card's popup entry would be a stale second copy).
     this.forgetFor(rec);
@@ -957,11 +967,36 @@ export class SavePrompts {
       rule: "domain",
       tags: [],
     };
-    const { out } = await this.commit(w, decision === "update" ? "update" : "save", edits);
+    const { out } = await this.claimed(w, () => this.commit(w, decision === "update" ? "update" : "save", edits));
     if (decision === "update") await this.discardPending(w);
     this.forget(id);
     await this.dropLive(w);
     return out;
+  }
+
+  /**
+   * One answer only: the popup's answer runs while no other is in flight for this sign-in, and its
+   * card or pill is marked answered meanwhile (refused there, as `decide` marks it for the popup).
+   * A failure gives both back, so the answer can be given again.
+   */
+  private async claimed<T>(w: Waiting, run: () => Promise<T>): Promise<T> {
+    if (this.answering.has(w.id)) throw new BgError("invalid");
+    const live = await this.tokens.forTab(w.tabId);
+    const card =
+      live && live.rec.kind === "login" && live.rec.view === undefined && (parseOrigin(live.rec.origin)?.site ?? live.rec.origin) === w.site
+        ? live.rec
+        : null;
+    if (card?.decided || this.answering.has(w.id)) throw new BgError("invalid");
+    this.answering.add(w.id);
+    if (card) card.decided = true;
+    try {
+      return await run();
+    } catch (e) {
+      if (card) card.decided = false;
+      throw e;
+    } finally {
+      this.answering.delete(w.id);
+    }
   }
 
   /**
