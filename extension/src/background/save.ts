@@ -28,6 +28,15 @@
 // The vault picked first: the last one used to save for that site, else the
 // last one used anywhere, else the first the host lists (`storage.local`
 // key `saveVaults`, vault ids and sites only, no secret).
+//
+// A new login after a detected success is saved at once (`autoSave`, spec 4.1)
+// in that vault, then a toast says so (`view: "toast"`) with Undo and Edit.
+// A shared target vault gets the card instead. Undo (`undo`) asks the bridge
+// to delete that very item (`undo_save`: only within 60 s, same site, not
+// edited since; anything else is `not_found`) and quiets the credential like
+// "Pas maintenant". Edit (`edit`) opens the edit view; its Save replaces the
+// saved item (undo, then `save_login` with the edits). The toast record keeps
+// the submitted password in memory for that, wiped like any other record.
 import type { Address, IdentityValues } from "../bridge/client";
 import type { BgToCs, ProviderId, SaveDecision, SaveEdits, SaveOutcome } from "../shared/messages";
 import { parseOrigin } from "../shared/domain";
@@ -81,7 +90,11 @@ export interface SavePending {
    * Open straight in the edit view (menu "Enregistrer un nouveau login"), or as done (`saved`: a
    * generated signup password OnePass saved and the submission confirmed).
    */
-  view?: "edit" | "saved";
+  view?: "edit" | "saved" | "toast";
+  /** View `toast`: the login `autoSave` just wrote (what Undo deletes). */
+  savedItemId?: string;
+  /** View `toast`: Undo is offered (a login saved here moments ago); absent: Edit only. */
+  undo?: boolean;
   /**
    * Verified origin of the top document, sent as an origin pin when no
    * `documentId` is known (the content script shows the prompt only there).
@@ -159,6 +172,8 @@ interface Waiting extends Held {
 interface SaveRecord extends BoundRecord, Omit<SavePending, "tabId" | "origin" | "documentId"> {
   /** Set once saved, updated or "never": only `save_close` remains. */
   decided: boolean;
+  /** View `toast`: Edit was opened, its Save replaces the saved login. */
+  editing?: boolean;
 }
 
 /** Tag of a Login saved before its form was sent (onepass_core::model::PENDING_TAG). */
@@ -254,6 +269,8 @@ export class SavePrompts {
     if (p.known) rec.known = true;
     if (p.identity) rec.identity = { ...p.identity, ...(p.identity.address ? { address: { ...p.identity.address } } : {}) };
     if (p.view) rec.view = p.view;
+    if (p.savedItemId !== undefined) rec.savedItemId = p.savedItemId;
+    if (p.undo) rec.undo = true;
     if (p.locked) rec.locked = true;
     const token = await this.tokens.register(rec);
     const msg: BgToCs = { type: "show_frame", kind: "save", url: `${this.deps.ext.runtime.getURL("save.html")}#${token}` };
@@ -311,6 +328,7 @@ export class SavePrompts {
       if (rec.provider.title !== undefined) out.provider.title = rec.provider.title;
     }
     if (rec.view) out.view = rec.view;
+    if (rec.view === "toast" && rec.undo && rec.savedItemId !== undefined) out.undo = true;
     if (rec.card) {
       out.card = { last4: cardLast4(rec.card.number) };
       if (rec.card.exp_month !== "" && rec.card.exp_year !== "") out.card.exp = `${rec.card.exp_month.padStart(2, "0")}/${rec.card.exp_year.slice(-2)}`;
@@ -388,6 +406,8 @@ export class SavePrompts {
     const rec = await this.record(token, ui);
     /** The login saved or updated (a confirmed save). */
     let out: SaveOutcome = { outcome: "done" };
+    // A toast: the login is saved already. Only Edit's Save, "never" and closing it apply.
+    if (rec.view === "toast" && (decision === "update" || (decision === "save" && !rec.editing))) throw new BgError("invalid");
     switch (decision) {
       case "dismiss": {
         const key = quietKey(rec);
@@ -398,7 +418,7 @@ export class SavePrompts {
       }
       case "later":
         // Unanswered: it waits in the popup (a sign-in the card offered, not the menu's blank login).
-        if (rec.kind === "login" && rec.view !== "edit" && rec.password !== "") this.hold(rec);
+        if (rec.kind === "login" && rec.view === undefined && rec.password !== "") this.hold(rec);
         await this.tokens.drop(token);
         await removeFrame(this.deps.ext.tabs, rec, "save");
         return {};
@@ -420,7 +440,25 @@ export class SavePrompts {
           });
         } else {
           if (!edits) throw new BgError("invalid");
-          out = await this.commit(rec, "save", edits);
+          if (rec.view === "toast") {
+            // Edit's Save: the saved login goes, the edited one takes its place. Only while the
+            // bridge still takes the undo (a confirmed generated password cannot: Edit only).
+            // The edited one is written first: a failure never loses the login.
+            const old = rec.savedItemId;
+            if (!rec.undo || old === undefined || rec.password === "") throw new BgError("not_found");
+            const done = await this.commit({ tabId: rec.tabId, origin: rec.origin, status: "new", username: rec.username, password: rec.password }, "save", edits, true);
+            try {
+              await this.deps.session.request({ op: "undo_save", ctx: "save_prompt", item_id: old, origin: rec.origin });
+            } catch (e) {
+              // Too late to replace it: the edited copy goes again, the saved login stays as it was.
+              if (done.itemId !== undefined) await this.deps.session.request({ op: "undo_save", ctx: "save_prompt", item_id: done.itemId, origin: rec.origin }).catch(() => undefined);
+              throw e;
+            }
+            delete rec.savedItemId;
+            out = done.out;
+          } else {
+            out = (await this.commit(rec, "save", edits)).out;
+          }
         }
         break;
       case "update":
@@ -430,7 +468,7 @@ export class SavePrompts {
           break;
         }
         if (rec.kind !== "login" || !rec.update) throw new BgError("invalid");
-        out = await this.commit(rec, "update", edits);
+        out = (await this.commit(rec, "update", edits)).out;
         break;
     }
     rec.password = "";
@@ -443,18 +481,19 @@ export class SavePrompts {
   /**
    * Saves or updates `h`. A card opened while locked unlocks first and asks
    * the host again: the login may already be there, or be one to update.
+   * `checked`: the host just said `new` for it (no second check).
    */
-  private async commit(h: Held, decision: "save" | "update", edits?: SaveEdits): Promise<SaveOutcome> {
+  private async commit(h: Held, decision: "save" | "update", edits?: SaveEdits, checked = false): Promise<{ out: SaveOutcome; itemId?: string }> {
     const site = parseOrigin(h.origin)?.site ?? h.origin;
     let status: "save" | "update" = decision;
     let update = h.update;
-    if (!h.locked && decision === "save" && h.password !== "" && (!edits || edits.password === "")) {
+    if (!checked && !h.locked && decision === "save" && h.password !== "" && (!edits || edits.password === "")) {
       // The card may have waited: the same login can have been saved since (iOS's own "Save
       // Password?" sheet through OnePass's AutoFill, another tab). Never a second copy.
       const r = await this.deps.session
         .request({ op: "check_credentials", ctx: "save_prompt", origin: h.origin, username: edits && edits.username.trim() !== "" ? edits.username : h.username, password: h.password })
         .catch(() => null);
-      if (r && (r.status === "same" || r.status === "pending")) return { outcome: "already" };
+      if (r && (r.status === "same" || r.status === "pending")) return { out: { outcome: "already" } };
     }
     if (h.locked) {
       const native = this.deps.nativeUnlock ? await this.deps.nativeUnlock().catch(() => false) : null;
@@ -471,7 +510,7 @@ export class SavePrompts {
         username: edits && edits.username.trim() !== "" ? edits.username : h.username,
         password: edits && edits.password !== "" ? edits.password : h.password,
       });
-      if (r.status === "same" || r.status === "pending") return { outcome: "already" };
+      if (r.status === "same" || r.status === "pending") return { out: { outcome: "already" } };
       if (r.status === "update" && r.item_id !== undefined) {
         status = "update";
         update = { itemId: r.item_id, title: r.title ?? "" };
@@ -521,7 +560,67 @@ export class SavePrompts {
     await this.deps.onSaved?.(h.tabId, h.origin, saved).catch(() => undefined);
     const out: SaveOutcome = { outcome: status === "update" ? "updated" : "saved" };
     if (vaultName !== undefined) out.vault = vaultName;
-    return out;
+    return { out, itemId: saved };
+  }
+
+  // ---- automatic save (spec 4.1) ----
+
+  /**
+   * A sign-in with a new login that worked: saved at once in the default vault for the site
+   * (`defaultVault`, through the card's own `commit`), then the toast with Undo and Edit. A shared
+   * target vault, no vault, or a save that fails: nothing saved, the card opens instead (null).
+   */
+  async autoSave(p: SavePending): Promise<{ itemId: string } | null> {
+    const site = parseOrigin(p.origin)?.site ?? p.origin;
+    let itemId: string | undefined;
+    try {
+      const listed = await this.host.vaults(p.origin);
+      const vaults = Array.isArray(listed.vaults) ? listed.vaults : [];
+      const vaultId = await this.defaultVault(site, vaults);
+      const vault = vaults.find((v) => v.id === vaultId);
+      if (vault && vault.shared !== true && p.kind === "login" && p.status === "new" && p.username.trim() !== "" && p.password !== "") {
+        const edits: SaveEdits = { title: titleFromSite(site), username: p.username, password: "", vaultId: vault.id, rule: "domain", tags: [] };
+        itemId = (await this.commit({ tabId: p.tabId, origin: p.origin, status: "new", username: p.username, password: p.password }, "save", edits, true)).itemId;
+      }
+    } catch {
+      itemId = undefined;
+    }
+    if (itemId === undefined) {
+      await this.open(p);
+      return null;
+    }
+    try {
+      await this.open({ ...p, view: "toast", savedItemId: itemId, undo: true });
+    } catch {
+      // Content script gone: the login is saved anyway.
+    }
+    return { itemId };
+  }
+
+  /**
+   * The toast's Undo: the bridge deletes the login it saved moments ago (`undo_save`; anything it
+   * no longer takes is `not_found`, said by the toast), and this credential is quiet for a while,
+   * so the same submission gets nothing again.
+   */
+  async undo(token: string, ui: UiContext): Promise<object> {
+    const rec = await this.record(token, ui);
+    if (rec.view !== "toast" || !rec.undo || rec.savedItemId === undefined) throw new BgError("invalid");
+    await this.deps.session.request({ op: "undo_save", ctx: "save_prompt", item_id: rec.savedItemId, origin: rec.origin });
+    if (rec.password !== "") await this.noteDismissed(rec.origin, loginQuietKey(rec.username, rec.password));
+    rec.password = "";
+    delete rec.savedItemId;
+    rec.decided = true;
+    await this.tokens.update(token, rec);
+    return {};
+  }
+
+  /** The toast's Edit: its edit view's Save then replaces the saved login (`decide`). */
+  async edit(token: string, ui: UiContext): Promise<object> {
+    const rec = await this.record(token, ui);
+    if (rec.view !== "toast") throw new BgError("invalid");
+    rec.editing = true;
+    await this.tokens.update(token, rec);
+    return {};
   }
 
   /** Saves the card or identity of `rec` (a new item, or the expiry of the card `check_card` named). */
@@ -714,7 +813,7 @@ export class SavePrompts {
       rule: "domain",
       tags: [],
     };
-    const out = await this.commit(w, decision === "update" ? "update" : "save", edits);
+    const { out } = await this.commit(w, decision === "update" ? "update" : "save", edits);
     this.forget(id);
     return out;
   }

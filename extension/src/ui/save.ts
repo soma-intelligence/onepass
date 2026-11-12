@@ -17,6 +17,13 @@
 // No sound, no motion of its own. Left alone AUTO_DISMISS_MS (no pointer or
 // focus in it, no menu open), it goes away by itself and the sign-in waits
 // in the toolbar popup ("later").
+//
+// The toast (`view: "toast"`, spec 4.1, 4.4): a login OnePass saved by
+// itself. "Login for <site> saved", the username, Undo (only when `undo`)
+// and Edit. Left alone TOAST_MS (same hover and focus rule) it closes. Undo
+// asks the worker to delete it (`save_undo`) and says "Removed", or that it
+// could not; Edit (`save_edit`) opens a short edit view: name, identifier,
+// vault, "Never on this site", Save.
 import { ext } from "../shared/browser";
 import type { SaveDecision, SaveEdits, SaveOutcome } from "../shared/messages";
 import type { SaveInit } from "../shared/ui";
@@ -51,6 +58,9 @@ export const SAVED_CLOSE_MS = 2500;
 
 /** Left alone this long, the card goes away and the sign-in waits in the popup. */
 export const AUTO_DISMISS_MS = 20_000;
+
+/** The toast of a login saved by itself stays this long when nobody looks at it. */
+export const TOAST_MS = 8000;
 
 const MASK = "••••••••••••";
 
@@ -107,6 +117,11 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
   let focused = false;
   let quietTimer: unknown = null;
   let quietOn = false;
+  /** How long the card or toast waits, and what it does then. */
+  let quietMs = AUTO_DISMISS_MS;
+  let quietDone = () => {
+    if (token) void call(deps.send, { type: "save_decide", token, decision: "later" }, parseEmpty);
+  };
   const stopQuiet = () => {
     if (quietTimer !== null) timers.clearTimeout(quietTimer);
     quietTimer = null;
@@ -118,8 +133,8 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
       quietTimer = null;
       if (!quietOn || hovered || focused || more || picking) return;
       quietOn = false;
-      if (token) void call(deps.send, { type: "save_decide", token, decision: "later" }, parseEmpty);
-    }, AUTO_DISMISS_MS);
+      quietDone();
+    }, quietMs);
   };
   container.addEventListener("pointerenter", () => {
     hovered = true;
@@ -682,6 +697,89 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     );
   }
 
+  /** A login OnePass saved by itself: what it is, Undo (when offered) and Edit. */
+  function renderToast(i: SaveInit, d: Draft): void {
+    setFit(true);
+    const err = errLine();
+    const tok = token;
+    const undo = i.undo
+      ? btn(t("save.undo"), "btn-link", async () => {
+          if (!tok) return;
+          const r = await call(deps.send, { type: "save_undo", token: tok }, parseEmpty);
+          if (!r.ok) {
+            // Too late, edited since, or gone: the login stays, the toast says so.
+            err.textContent = t("save.undoFailed");
+            return;
+          }
+          renderSaved(t("save.removed"), "");
+        })
+      : null;
+    const edit = btn(t("save.edit"), "btn-link", async () => {
+      if (!tok) return;
+      const r = await call(deps.send, { type: "save_edit", token: tok }, parseEmpty);
+      if (!r.ok) {
+        err.textContent = errorText(r.code);
+        return;
+      }
+      renderToastEdit(d);
+    });
+    show(
+      h(
+        "div",
+        { class: "saved quiet toast", attrs: { role: "status" } },
+        h("span", { class: "ok-dot", attrs: { "aria-hidden": "true" } }, icon("check", 11)),
+        h("span", { class: "stack" }, h("span", { class: "t1" }, t("save.toastSaved", { site: i.site })), d.username !== "" ? h("span", { class: "t2" }, d.username) : null),
+        undo,
+        edit,
+      ),
+      err,
+    );
+    quietMs = TOAST_MS;
+    quietDone = () => {
+      if (tok) void call(deps.send, { type: "save_close", token: tok }, parseEmpty);
+    };
+    quietOn = true;
+    armQuiet();
+  }
+
+  /** The toast's Edit: name, identifier, vault, "Never on this site"; Save replaces the saved login. */
+  function renderToastEdit(d: Draft): void {
+    if (!token) return;
+    const tok = token;
+    setFit(false);
+    quietOn = false;
+    stopQuiet();
+    const err = errLine();
+    const title = h("input", { class: "title-input", attrs: { type: "text", "aria-label": t("save.title"), maxlength: "256" } });
+    title.value = d.title;
+    title.addEventListener("input", () => (d.title = title.value));
+    const user = h("input", { attrs: { type: "text", "aria-label": t("save.username"), maxlength: "1024" } });
+    user.value = d.username;
+    user.addEventListener("input", () => (d.username = user.value));
+    show(
+      h(
+        "div",
+        { class: "save-body edit-head", attrs: { role: "dialog", "aria-label": t("save.edit") } },
+        h(
+          "div",
+          { class: "save-head" },
+          mark("m"),
+          h("h1", null, t("save.edit")),
+          iconBtn(t("common.close"), "close", () => void call(deps.send, { type: "save_close", token: tok }, parseEmpty)),
+        ),
+      ),
+      h(
+        "div",
+        { class: "edit-sheet" },
+        title,
+        h("div", { class: "group" }, h("label", { class: "cell" }, h("span", { class: "stack" }, h("span", { class: "cell-label" }, t("save.username")), user))),
+        btn(t("save.neverForSite"), "btn-link", never),
+        err,
+      ),
+      saveActions("actions save-foot", err, d),
+    );
+  }
+
   async function load(): Promise<void> {
     if (!token) {
       show(messageBlock(errorText("invalid")));
@@ -706,6 +804,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     };
     if (init.view === "edit") renderEdit();
     else if (init.view === "saved") renderSaved(t("save.titleSaved", { title: init.title }), init.username);
+    else if (init.view === "toast") renderToast(init, draft);
     else {
       quietOn = init.kind !== "provider_link";
       renderPrompt();

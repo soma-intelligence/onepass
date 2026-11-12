@@ -172,9 +172,12 @@ export interface SaveInit {
   /**
    * `edit`: the edit view, nothing typed yet (menu "Enregistrer un nouveau login"). `saved`: a
    * login OnePass already saved (a generated signup password, confirmed at the submission),
-   * shown as done, nothing to answer.
+   * shown as done, nothing to answer. `toast`: a login OnePass just saved by itself (spec 4.1), or
+   * a generated one confirmed at the submission (spec 4.4): it says so for TOAST_MS, with Edit.
    */
-  view?: "edit" | "saved";
+  view?: "edit" | "saved" | "toast";
+  /** View `toast`: Undo is offered too (the login saved moments ago). */
+  undo?: boolean;
 }
 
 export interface PopupStatus {

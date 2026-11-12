@@ -16,7 +16,7 @@ import type { FillTarget } from "../../../src/background/fill";
 import type { CsContext } from "../../../src/background/frames";
 import { Planner } from "../../../src/background/planner";
 import type { CsToBg, FormInfo, PageAnalysis, PlanOut } from "../../../src/shared/messages";
-import { PENDING_TAG, type SavePending, WEAK_BY_SITE_TAG, loginQuietKey } from "../../../src/background/save";
+import { PENDING_TAG, type SavePending, SavePrompts, WEAK_BY_SITE_TAG, loginQuietKey } from "../../../src/background/save";
 import { BgError } from "../../../src/background/session";
 import { FakeArea } from "../fake-ext";
 
@@ -582,8 +582,8 @@ describe("pending save of a generated password (spec 7)", () => {
     await t.timers.advance(SETTLE_MS);
     expect(ops(t)).toEqual(["vaults", "save_login", "check_credentials", "confirm_pending"]);
     expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
-    // Nothing to answer: the card only says it is saved, without the password.
-    expect(t.opened).toEqual([expect.objectContaining({ view: "saved", username: "alex@atlas.dev", password: "" })]);
+    // Nothing to answer: the toast (Edit only, spec 4.4) says it is saved, without the password.
+    expect(t.opened).toEqual([expect.objectContaining({ view: "toast", username: "alex@atlas.dev", password: "" })]);
   });
 
   it("change-password: the generated password updates the login pending, its submission confirms it (spec 5.2)", async () => {
@@ -605,7 +605,7 @@ describe("pending save of a generated password (spec 7)", () => {
     expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_01", origin: SITE, username: "" });
     await t.succeed();
     expect(ops(t)).toEqual(["list_for_origin", "update_password", "confirm_pending"]);
-    expect(t.opened).toEqual([expect.objectContaining({ view: "saved", password: "" })]);
+    expect(t.opened).toEqual([expect.objectContaining({ view: "toast", password: "" })]);
   });
 
   it("change-password, memory lost: the host's pending verdict confirms the updated login", async () => {
@@ -648,12 +648,12 @@ describe("pending save of a generated password (spec 7)", () => {
     await plannerFor(t).run(target, signup());
     await t.submit("alex@atlas.dev", GEN, true);
     expect(t.requests.at(-1)).toEqual({ op: "confirm_pending", ctx: "save_prompt", item_id: "it_new", origin: SITE, username: "alex@atlas.dev" });
-    // Confirmed instead of a new save prompt; once signed up, the card shows it saved.
+    // Confirmed instead of a new save prompt; once signed up, the toast shows it saved (Edit only).
     expect(t.opened).toEqual([]);
     await t.succeed();
     expect(ops(t)).toEqual(["vaults", "save_login", "confirm_pending"]);
     expect(t.opened).toEqual([
-      { tabId: 7, origin: SITE, kind: "login", status: "new", username: "alex@atlas.dev", password: "", view: "saved", topOrigin: SITE, documentId: "doc-1" },
+      { tabId: 7, origin: SITE, kind: "login", status: "new", username: "alex@atlas.dev", password: "", view: "toast", topOrigin: SITE, documentId: "doc-1" },
     ]);
     expect(t.flow.size).toBe(0);
     await t.flow.savePending(7, SITE, "again-Pass-5");
@@ -947,5 +947,163 @@ describe("save every time", () => {
     expect(cardFromValues({ cc_number: "4111111111111111", cc_exp_month: "04", cc_exp_year: "1234" })).toMatchObject({ exp_month: "", exp_year: "" });
     expect(cardFromValues({ cc_number: "4111-1111-1111-1111", cc_exp_month: "13x" })).toEqual({ cardholder: "", number: "4111111111111111", exp_month: "", exp_year: "" });
     expect(cardFromValues({ cc_number: "1234" })).toBeNull();
+  });
+});
+
+describe("automatic save of a new login (spec 4.1, 4.3)", () => {
+  const PASS = "Atlas-Pass-1";
+  const USER = "alex@atlas.dev";
+
+  /** The real save prompts over a scripted host; `open` is watched. */
+  function auto(opts: { vaults?: { id: string; name: string; color: null; shared?: boolean }[]; locked?: boolean; status?: "new" | "update"; never?: string[]; check?: (r: Record<string, unknown>) => unknown } = {}) {
+    const timers = new FakeTimers();
+    const requests: Record<string, unknown>[] = [];
+    const opened: SavePending[] = [];
+    const incognito = new Set<number>();
+    let saves = 0;
+    const session = {
+      request: (async (r: Record<string, unknown>) => {
+        requests.push(r);
+        const scripted = opts.check?.(r);
+        if (scripted instanceof Error) throw scripted;
+        if (scripted !== undefined) return scripted;
+        if (r.op === "check_credentials") {
+          if (opts.locked) throw new BgError("locked");
+          return opts.status === "update" ? { status: "update", item_id: "it_01", title: "Atlas Cloud" } : { status: "new" };
+        }
+        if (r.op === "vaults") return { vaults: opts.vaults ?? [{ id: "v1", name: "Perso", color: null }] };
+        if (r.op === "save_login") return { item_id: `it_saved_${++saves}` };
+        return {};
+      }) as never,
+    };
+    const neverSave = { has: async (s: string) => (opts.never ?? []).includes(s), add: async () => undefined, list: async () => [], remove: async () => undefined };
+    const prompts = new SavePrompts({
+      ext: { tabs: { sendMessage: async () => undefined }, runtime: { getURL: (p: string) => `chrome-extension://x/${p}` } } as never,
+      session,
+      generator: { generate: async () => ({ password: "unused" }) } as never,
+      neverSave: neverSave as never,
+      now: () => timers.t,
+    });
+    const open = prompts.open.bind(prompts);
+    const tokens: string[] = [];
+    prompts.open = async (p: SavePending) => {
+      opened.push(structuredClone(p));
+      const tok = await open(p);
+      tokens.push(tok);
+      return tok;
+    };
+    const flow = new SaveFlow({
+      session,
+      saves: prompts,
+      neverSave,
+      topFrame: async () => ({ url: `${SITE}/home`, documentId: "doc-2" }),
+      incognito: async (tabId: number) => incognito.has(tabId),
+      now: () => timers.t,
+      timers,
+    });
+    const signIn = async (username = USER, password = PASS, tabId = 7) => {
+      await flow.onSubmitted({ type: "submitted_credentials", formRef: "f1", username, password, isNew: false }, { tabId, frameId: 0, origin: SITE, documentId: "doc-1" });
+      flow.onAnalysis(page(false), { tabId, frameId: 0, origin: SITE, documentId: "doc-1" });
+      await timers.advance(SETTLE_MS);
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    };
+    const ops = () => requests.map((r) => r.op);
+    return { flow, prompts, requests, opened, tokens, incognito, signIn, ops, timers };
+  }
+
+  it("new login is saved without a card", async () => {
+    const t = auto();
+    await t.signIn();
+    expect(t.requests.find((r) => r.op === "save_login")).toMatchObject({ op: "save_login", origin: SITE, username: USER, password: PASS, vault_id: "v1", tags: [] });
+    expect(t.opened).toEqual([expect.objectContaining({ view: "toast", undo: true, savedItemId: "it_saved_1", username: USER })]);
+  });
+
+  it("update still opens the card", async () => {
+    const t = auto({ status: "update" });
+    await t.signIn();
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.view).toBeUndefined();
+    expect(t.opened[0]).toMatchObject({ status: "update", update: { itemId: "it_01" } });
+  });
+
+  it("locked keeps the card", async () => {
+    const t = auto({ locked: true });
+    await t.signIn();
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.opened).toEqual([expect.objectContaining({ status: "new", locked: true })]);
+    expect(t.opened[0]?.view).toBeUndefined();
+  });
+
+  it("private window keeps the card", async () => {
+    const t = auto();
+    t.incognito.add(7);
+    await t.signIn();
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.view).toBeUndefined();
+  });
+
+  it("shared vault keeps the card", async () => {
+    const t = auto({ vaults: [{ id: "vs", name: "Équipe", color: null, shared: true }, { id: "v1", name: "Perso", color: null }] });
+    await t.signIn();
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.view).toBeUndefined();
+  });
+
+  it("no username keeps the card", async () => {
+    const t = auto();
+    // A generated password filled here, sent without an identifier (nothing saved pending).
+    t.flow.rememberGenerated(7, SITE, "Gen-Pass-9");
+    await t.signIn("", "Gen-Pass-9");
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.opened).toEqual([expect.objectContaining({ status: "new", username: "" })]);
+    expect(t.opened[0]?.view).toBeUndefined();
+  });
+
+  it("uncertain success keeps the card (flag set by Task 11)", async () => {
+    const t = auto();
+    await t.flow.onSubmitted({ type: "submitted_credentials", formRef: "f1", username: USER, password: PASS, isNew: false }, { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-1" });
+    (t.flow as unknown as { pending: Map<number, { uncertain?: boolean }> }).pending.get(7)!.uncertain = true;
+    t.flow.onAnalysis(page(false), { tabId: 7, frameId: 0, origin: SITE, documentId: "doc-1" });
+    await t.timers.advance(SETTLE_MS);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(t.ops()).not.toContain("save_login");
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.view).toBeUndefined();
+  });
+
+  it("never-save site gets nothing", async () => {
+    const t = auto({ never: ["atlas-cloud.test"] });
+    await t.signIn();
+    expect(t.requests).toEqual([]);
+    expect(t.opened).toEqual([]);
+  });
+
+  it("confirmed generated password shows the toast with Edit only", async () => {
+    const t = auto();
+    t.flow.rememberGenerated(7, SITE, "Gen-Pass-9");
+    expect(await t.flow.savePending(7, SITE, "Gen-Pass-9")).toBe(true);
+    await t.signIn(USER, "Gen-Pass-9");
+    expect(t.ops()).toEqual(["vaults", "save_login", "confirm_pending"]);
+    expect(t.opened).toEqual([expect.objectContaining({ view: "toast", password: "" })]);
+    expect(t.opened[0]?.undo).toBeUndefined();
+  });
+
+  it("undo is per tab", async () => {
+    const t = auto();
+    await t.signIn(USER, PASS, 7);
+    await t.signIn("sam@atlas.dev", "Other-Pass-2", 8);
+    expect(t.opened.map((p) => [p.tabId, p.savedItemId])).toEqual([
+      [7, "it_saved_1"],
+      [8, "it_saved_2"],
+    ]);
+    const [a, b] = t.tokens as [string, string];
+    // Tab B's page cannot use tab A's toast.
+    await expect(t.prompts.undo(a, { page: "save.html", tabId: 8 })).rejects.toThrow();
+    await t.prompts.undo(a, { page: "save.html", tabId: 7 });
+    expect(t.requests.filter((r) => r.op === "undo_save")).toEqual([{ op: "undo_save", ctx: "save_prompt", item_id: "it_saved_1", origin: SITE }]);
+    expect(b).not.toBe(a);
   });
 });

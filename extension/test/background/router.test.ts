@@ -450,7 +450,7 @@ describe("message validation", () => {
     expect(parseUiToBg({ type: "menu_unlock_password", token, password: 3 })).toBeNull();
     expect(parseUiToBg({ type: "menu_unlock_password", token, password: "é".repeat(513) })).toBeNull();
     expect(parseUiToBg({ type: "menu_unlock_password", token: "short", password: "x" })).toBeNull();
-    for (const type of ["menu_vault", "menu_unlock_biometric", "menu_unlock", "menu_close", "overlay_state", "overlay_close", "save_reveal", "save_generate", "save_close"]) {
+    for (const type of ["menu_vault", "menu_unlock_biometric", "menu_unlock", "menu_close", "overlay_state", "overlay_close", "save_reveal", "save_generate", "save_close", "save_undo", "save_edit"]) {
       expect(parseUiToBg({ type, token, password: "x" })).toEqual({ type, token });
       expect(parseUiToBg({ type, token: "short" })).toBeNull();
     }

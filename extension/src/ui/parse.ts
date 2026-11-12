@@ -1,6 +1,6 @@
 // Validation of service worker replies before rendering. A malformed reply
 // renders as an internal error, never partially.
-import type { FormKind, ProviderId, SaveOutcome } from "../shared/messages";
+import type { FormKind, GhostMetrics, ProviderId, SaveOutcome, SuggestionPreview } from "../shared/messages";
 import {
   CHAIN_PHASES,
   STEP_WHATS,
@@ -253,7 +253,8 @@ export const parseSaveInit = (v: unknown): SaveInit | null =>
       s.provider = { id: oneOf<ProviderId>(p.id, PROVIDERS), email: str(p.email, 320) };
       if (p.title !== undefined) s.provider.title = str(p.title, 256);
     }
-    if (o.view !== undefined) s.view = oneOf<"edit" | "saved">(o.view, ["edit", "saved"]);
+    if (o.view !== undefined) s.view = oneOf<"edit" | "saved" | "toast">(o.view, ["edit", "saved", "toast"]);
+    if (o.undo !== undefined) s.undo = o.undo === true;
     if (o.card !== undefined) {
       const c = obj(o.card);
       s.card = { last4: str(c.last4, 4) };
@@ -415,3 +416,36 @@ export const parseHistory = (v: unknown): { entries: GeneratorEntry[] } | null =
       return { password: str(o.password, 4096), kind: oneOf<GeneratorKind>(o.kind, GEN_KINDS), at: num(o.at) };
     }, 20),
   }));
+
+const TEXT_ALIGNS = ["left", "right", "center"];
+/** Largest metric the worker accepts for a field (router.ts MAX_METRIC). */
+const MAX_METRIC = 100_000;
+const metric = (v: unknown, min = 0) => {
+  const n = num(v);
+  if (n < min || n > MAX_METRIC) throw new Bad();
+  return n;
+};
+
+/** The ghost page's `ghost_init` reply: the held password, its strength and the field's metrics. */
+export const parseGhostInit = (v: unknown): (SuggestionPreview & { metrics: GhostMetrics }) | null =>
+  guard(() => {
+    const o = obj(v);
+    const m = obj(o.metrics);
+    const b = obj(m.box);
+    const strength = num(o.strength);
+    if (!Number.isInteger(strength) || strength < 0 || strength > 4) throw new Bad();
+    return {
+      password: str(o.password, 1024),
+      strength: strength as SuggestionPreview["strength"],
+      length: num(o.length),
+      metrics: {
+        fontSize: metric(m.fontSize),
+        lineHeight: metric(m.lineHeight),
+        paddingLeft: metric(m.paddingLeft),
+        paddingRight: metric(m.paddingRight),
+        textAlign: oneOf<GhostMetrics["textAlign"]>(m.textAlign, TEXT_ALIGNS),
+        fontFamily: m.fontFamily === null ? null : str(m.fontFamily, 256),
+        box: { x: metric(b.x, -MAX_METRIC), y: metric(b.y, -MAX_METRIC), width: metric(b.width), height: metric(b.height) },
+      },
+    };
+  });

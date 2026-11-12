@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
 import type { SaveInit } from "../../src/shared/ui";
 import type { Timers } from "../../src/ui/components";
-import { mountSave } from "../../src/ui/save";
+import { TOAST_MS, mountSave } from "../../src/ui/save";
 import { Clock, FakeWorker, HASH, type Reply, TOKEN, button, flush, root, text } from "./helpers";
 
 const SITE = "https://atlas-cloud.test";
@@ -350,5 +350,123 @@ describe("save prompt", () => {
     s2.r.querySelector<HTMLButtonElement>("button[aria-label=Fermer]")!.click();
     await flush();
     expect(s2.worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "dismiss" });
+  });
+});
+
+describe("save toast (spec 4.1, 4.4)", () => {
+  /** Timeouts with their delay, fired by hand. */
+  class Delays implements Timers {
+    pending = new Map<number, { fn: () => void; ms: number }>();
+    private n = 0;
+    setTimeout(fn: () => void, ms: number) {
+      this.pending.set(++this.n, { fn, ms });
+      return this.n;
+    }
+    clearTimeout(id: unknown) {
+      this.pending.delete(id as number);
+    }
+    setInterval() {
+      return 0;
+    }
+    clearInterval() {}
+    /** Fires every timeout of `ms`. */
+    fire(ms: number) {
+      for (const [id, t] of [...this.pending]) {
+        if (t.ms !== ms) continue;
+        this.pending.delete(id);
+        t.fn();
+      }
+    }
+  }
+
+  const toast: SaveInit = { ...base, view: "toast", undo: true, defaultVault: "v2" };
+
+  function setupToast(init: SaveInit, extra?: (m: UiToBg) => Reply | null) {
+    const r = root();
+    const clock = new Clock();
+    const timers = new Delays();
+    const worker = new FakeWorker((m) => {
+      const x = extra?.(m);
+      if (x) return x;
+      if (m.type === "save_init") return { ok: init };
+      return { ok: {} };
+    });
+    const handle = mountSave(r, { send: worker.send, hash: HASH, now: clock.now, trusted: () => true, observe: () => undefined, timers });
+    const click = async (label: string) => {
+      clock.advance(300);
+      button(r, label).click();
+      await flush();
+    };
+    return { r, worker, handle, click, timers };
+  }
+
+  it("toast shows site and two actions", async () => {
+    const { r, handle } = setupToast(toast);
+    await handle.ready;
+    expect(TOAST_MS).toBe(8000);
+    expect(text(r)).toContain("Login pour atlas-cloud.test enregistré");
+    expect(text(r)).toContain("alex@atlas.dev");
+    expect(r.querySelector("[role=status]")).not.toBeNull();
+    expect(button(r, "Annuler")).toBeTruthy();
+    expect(button(r, "Modifier")).toBeTruthy();
+    // A generated password confirmed at the submission: Edit only.
+    const s = setupToast({ ...base, view: "toast" });
+    await s.handle.ready;
+    expect(() => button(s.r, "Annuler")).toThrow();
+    expect(button(s.r, "Modifier")).toBeTruthy();
+  });
+
+  it("toast stays while hovered and goes after 8000 ms otherwise", async () => {
+    const { r, handle, worker, timers } = setupToast(toast);
+    await handle.ready;
+    r.querySelector(".save")!.dispatchEvent(new Event("pointerenter"));
+    timers.fire(TOAST_MS);
+    await flush();
+    expect(worker.types()).not.toContain("save_close");
+    r.querySelector(".save")!.dispatchEvent(new Event("pointerleave"));
+    timers.fire(TOAST_MS - 1);
+    await flush();
+    expect(worker.types()).not.toContain("save_close");
+    timers.fire(TOAST_MS);
+    await flush();
+    expect(worker.sent.at(-1)).toEqual({ type: "save_close", token: TOKEN });
+    // Never "later": the login is saved, nothing waits in the popup.
+    expect(worker.sent.some((m) => m.type === "save_decide")).toBe(false);
+  });
+
+  it('Undo sends save_undo and shows "Removed"', async () => {
+    const { r, handle, worker, click } = setupToast(toast);
+    await handle.ready;
+    await click("Annuler");
+    expect(worker.sent.at(-1)).toEqual({ type: "save_undo", token: TOKEN });
+    expect(text(r)).toContain("Supprimé");
+    // The bridge refused (too late, edited): said so, nothing crashes.
+    const s = setupToast(toast, (m) => (m.type === "save_undo" ? { err: "not_found" } : null));
+    await s.handle.ready;
+    await s.click("Annuler");
+    expect(text(s.r)).toContain("Impossible d'annuler");
+  });
+
+  it("Edit opens the edit view with name, identifier, vault", async () => {
+    const { r, handle, worker, click } = setupToast(toast, (m) => (m.type === "save_decide" ? { ok: { outcome: "saved", vault: "Projet Atlas" } } : null));
+    await handle.ready;
+    await click("Modifier");
+    expect(worker.sent.at(-1)).toEqual({ type: "save_edit", token: TOKEN });
+    const title = r.querySelector<HTMLInputElement>("input.title-input")!;
+    expect(title.value).toBe("Atlas Cloud");
+    const user = r.querySelector<HTMLInputElement>(`input[aria-label="nom d'utilisateur"]`)!;
+    expect(user.value).toBe("alex@atlas.dev");
+    const vault = r.querySelector<HTMLSelectElement>('select[aria-label="Coffre"]')!;
+    expect(vault.value).toBe("v2");
+    expect(button(r, "Ne jamais proposer pour ce site")).toBeTruthy();
+    title.value = "Atlas pro";
+    title.dispatchEvent(new Event("input"));
+    await click("Enregistrer");
+    expect(worker.sent.at(-1)).toEqual({
+      type: "save_decide",
+      token: TOKEN,
+      decision: "save",
+      edits: { title: "Atlas pro", username: "alex@atlas.dev", password: "", vaultId: "v2", rule: "domain", tags: [] },
+    });
   });
 });

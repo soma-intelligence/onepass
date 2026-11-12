@@ -30,17 +30,21 @@
 // tab and site replaces the item's password (`update_password`, the old one
 // goes to its history, the weak tag follows the new draw). The submission of
 // that password confirms the item (`confirm_pending`); once the sign-up
-// worked (same success rule as a sign-in), the card shows it as saved, with
-// nothing to answer (a generated password is never saved out of sight). When this memory is gone (lock, service worker restart), the
+// worked (same success rule as a sign-in), the toast shows it as saved, with
+// Edit only (a generated password is never saved out of sight). When this memory is gone (lock, service worker restart), the
 // host still finds the item: `check_credentials` answers `pending` for it
 // whatever the username, and the submission confirms it, or leaves it pending
 // silently without a username; never a second save. The confirmation happens
 // at the submission: a signup the server then refuses stays confirmed.
 //
 // Every time (founder, 2026-11-04): each sign-in with credentials OnePass
-// does not hold gets the card, on any site, for any account: a site never
+// does not hold is offered, on any site, for any account: a site never
 // seen, a second account on a known site (`new`), a known account with
-// another password (`update`). "Pas maintenant" puts away that very card
+// another password (`update`). A `new` login is saved at once (spec 4.1,
+// `SavePrompts.autoSave`), a toast says so with Undo and Edit; the card
+// stays for an update, and for a new login when the vault is locked, the
+// window is private, the success is uncertain (`uncertain`, set by Task 11),
+// the submission has no identifier, or the target vault is shared (spec 4.3). "Pas maintenant" puts away that very card
 // only (save.ts `recentlyDismissed`: the same site, identifier and password
 // within a few minutes); "Ne jamais proposer pour <site>" silences the site.
 //
@@ -201,6 +205,8 @@ interface Pending {
   check: unknown;
   /** Already saved and confirmed (a generated password): the card only shows it saved. */
   confirmed?: boolean;
+  /** The success is not sure (spec 5.3, set by Task 11): a new login gets the card, never an automatic save. */
+  uncertain?: boolean;
   expire: unknown;
 }
 
@@ -237,7 +243,9 @@ export interface SaveFlowDeps {
   session: Pick<Session, "request">;
   /** `vaults` with its origin, whatever the app's age (shared by the worker). */
   host?: HostCompat;
-  saves: Pick<SavePrompts, "open"> & Partial<Pick<SavePrompts, "recentlyDismissed">>;
+  saves: Pick<SavePrompts, "open"> & Partial<Pick<SavePrompts, "recentlyDismissed" | "autoSave">>;
+  /** The tab is in a private window (`tab.incognito`; false where the browser does not say). */
+  incognito?: (tabId: number) => Promise<boolean>;
   neverSave: Pick<NeverSave, "has">;
   /**
    * The top frame of a tab as the browser reports it now
@@ -575,7 +583,7 @@ export class SaveFlow {
   async check(tabId: number): Promise<void> {
     const p = this.pending.get(tabId);
     if (!p) return;
-    const { origin, username, password, at, confirmed, kind, card, identity } = p;
+    const { origin, username, password, at, confirmed, kind, card, identity, uncertain } = p;
     // Copied before the drop (which blanks the held number).
     const cardCopy = card ? { ...card } : undefined;
     this.drop(tabId);
@@ -631,10 +639,21 @@ export class SaveFlow {
     if (r.status === "update" && r.item_id !== undefined) pending.update = { itemId: r.item_id, title: r.title ?? "" };
     if (locked) pending.locked = true;
     try {
+      if (r.status === "new" && !locked && !uncertain && username.trim() !== "" && this.deps.saves.autoSave && !(await this.isPrivate(tabId))) {
+        // Saved at once, the toast says so (a shared target vault: the card, from autoSave).
+        await this.deps.saves.autoSave(pending);
+        return;
+      }
       await this.deps.saves.open(pending);
     } catch {
       // Content script gone (tab closed, navigated again): nothing to show.
     }
+  }
+
+  private async isPrivate(tabId: number): Promise<boolean> {
+    if (!this.deps.incognito) return false;
+    // Unknown: treated as private, the card asks instead of a save out of sight.
+    return this.deps.incognito(tabId).catch(() => true);
   }
 
   private async quiet(origin: string, key: string): Promise<boolean> {
@@ -683,11 +702,11 @@ export class SaveFlow {
     }
   }
 
-  /** The card, as done: a generated password OnePass saved, confirmed by this sign-up. */
+  /** The toast, Edit only (spec 4.4): a generated password OnePass saved, confirmed by this sign-up. */
   private async showSaved(tabId: number, origin: string, username: string): Promise<void> {
     const top = await this.verifiedTop(tabId, origin);
     if (!top) return;
-    const pending: SavePending = { tabId, origin, kind: "login", status: "new", username, password: "", view: "saved", topOrigin: top.origin };
+    const pending: SavePending = { tabId, origin, kind: "login", status: "new", username, password: "", view: "toast", topOrigin: top.origin };
     if (top.documentId !== undefined) pending.documentId = top.documentId;
     try {
       await this.deps.saves.open(pending);

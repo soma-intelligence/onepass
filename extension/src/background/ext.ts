@@ -84,8 +84,11 @@ export interface BgExt {
     onCreated?: Event<(tab: { id?: number; openerTabId?: number }) => void>;
     /** The popup's active tab (url readable through activeTab / host permissions). */
     query(q: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string }[]>;
-    /** Is the tab the active one of its window, and which window (no permission needed for these two). */
-    get?(tabId: number): Promise<{ active?: boolean; windowId?: number } | undefined>;
+    /**
+     * Is the tab the active one of its window, and which window (no permission needed for these
+     * two). `incognito`: a private window (Chromium, Firefox, and Safari's private windows).
+     */
+    get?(tabId: number): Promise<{ active?: boolean; windowId?: number; incognito?: boolean } | undefined>;
   };
   webNavigation: {
     getFrame(details: { tabId: number; frameId: number }): Promise<FrameDetails | null>;

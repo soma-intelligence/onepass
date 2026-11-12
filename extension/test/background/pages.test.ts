@@ -47,8 +47,11 @@ let planFor: Record<string, unknown> | null = null;
 let client_unlock_fails = false;
 /** What `vaults` answers for a request (the routed list of a page); null: the two default vaults. */
 let vaultsFor: ((r: Record<string, unknown>) => unknown) | null = null;
+/** What `undo_save` answers; null: done. */
+let undoAnswer: unknown = null;
 afterEach(() => {
   vaultsFor = null;
+  undoAnswer = null;
   appLocked = null;
   onUnlock = null;
   client_unlock_fails = false;
@@ -79,6 +82,8 @@ const answer: Answer = (r) => {
       return { vaults: [{ id: "v1", name: "Personnel", color: null }, { id: "v2", name: "Projet Atlas", color: "#0E7490" }] };
     case "generate":
       return { password: "Gen-Pass-123", entropy_bits: 90 };
+    case "undo_save":
+      return undoAnswer ?? {};
     case "unlock":
       if (client_unlock_fails) return new BridgeAppError("host_missing", "no app");
       onUnlock?.();
@@ -1134,6 +1139,70 @@ describe("save prompt", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("automatic save and its toast (spec 4.1)", () => {
+    const tokenOf = (ext: FakeExt) => {
+      const m = ext.sentToTabs.filter((x) => (x.message as { type?: string }).type === "show_frame").at(-1)?.message as { url: string };
+      return hashOf(m.url);
+    };
+
+    it("autoSave saves in the default vault, then opens the toast; init names it a toast with undo", async () => {
+      const { ext, bg, client } = await setup();
+      expect(await bg.saves.autoSave(pending)).toEqual({ itemId: "it_new" });
+      expect(client.requests.find((r) => r.op === "save_login")).toMatchObject({ origin: SITE, username: "alex@atlas.dev", password: "typed-Secret-1", vault_id: "v1" });
+      const token = tokenOf(ext);
+      const init = (await ext.send({ type: "save_init", token }, uiSender("save.html", 7))) as { ok: Record<string, unknown> };
+      expect(init.ok).toMatchObject({ view: "toast", undo: true, username: "alex@atlas.dev" });
+      expect(JSON.stringify(init)).not.toContain("typed-Secret-1");
+    });
+
+    it("a shared target vault: nothing saved, the card instead", async () => {
+      const { ext, bg, client } = await setup();
+      vaultsFor = () => ({ vaults: [{ id: "vs", name: "Équipe", color: null, shared: true }] });
+      expect(await bg.saves.autoSave(pending)).toBeNull();
+      expect(client.requests.some((r) => r.op === "save_login")).toBe(false);
+      const init = (await ext.send({ type: "save_init", token: tokenOf(ext) }, uiSender("save.html", 7))) as { ok: Record<string, unknown> };
+      expect(init.ok.view).toBeUndefined();
+    });
+
+    it("undo marks the credential quiet", async () => {
+      const { ext, bg, client } = await setup();
+      await bg.saves.autoSave(pending);
+      const token = tokenOf(ext);
+      expect(await bg.saves.recentlyDismissed(SITE, loginQuietKey("alex@atlas.dev", "typed-Secret-1"))).toBe(false);
+      expect(await ext.send({ type: "save_undo", token }, uiSender("save.html", 7))).toEqual({ ok: {} });
+      expect(client.requests.at(-1)).toEqual({ op: "undo_save", ctx: "save_prompt", item_id: "it_new", origin: SITE });
+      // The same submission gets nothing now (save-flow asks recentlyDismissed first).
+      expect(await bg.saves.recentlyDismissed(SITE, loginQuietKey("alex@atlas.dev", "typed-Secret-1"))).toBe(true);
+      // Done: the record holds no password any more, a second undo is refused.
+      expect(await ext.send({ type: "save_undo", token }, uiSender("save.html", 7))).toEqual({ err: "invalid" });
+    });
+
+    it("undo refused by the bridge: not_found, nothing quieted", async () => {
+      const { ext, bg } = await setup();
+      await bg.saves.autoSave(pending);
+      const token = tokenOf(ext);
+      undoAnswer = new BridgeAppError("not_found", "gone");
+      expect(await ext.send({ type: "save_undo", token }, uiSender("save.html", 7))).toEqual({ err: "not_found" });
+      expect(await bg.saves.recentlyDismissed(SITE, loginQuietKey("alex@atlas.dev", "typed-Secret-1"))).toBe(false);
+    });
+
+    it("Edit then Save: the auto-saved login is replaced by the edited one", async () => {
+      const { ext, bg, client } = await setup();
+      await bg.saves.autoSave(pending);
+      const token = tokenOf(ext);
+      const ui = uiSender("save.html", 7);
+      // Not in edit mode yet: a toast takes no save.
+      expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ err: "invalid" });
+      expect(await ext.send({ type: "save_edit", token }, ui)).toEqual({ ok: {} });
+      expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ ok: { outcome: "saved", vault: "Projet Atlas" } });
+      // The edited login is written first, then the saved one goes.
+      const ops = client.requests.map((r) => r.op);
+      expect(ops.slice(ops.lastIndexOf("save_login") - 1)).toEqual(["vaults", "save_login", "undo_save"]);
+      expect(client.requests.at(-2)).toMatchObject({ op: "save_login", password: "typed-Secret-1", vault_id: "v2", rule: "exact_host" });
+      expect(client.requests.at(-1)).toEqual({ op: "undo_save", ctx: "save_prompt", item_id: "it_new", origin: SITE });
+    });
   });
 
   it("the vault used last for the site is picked first next time", async () => {
