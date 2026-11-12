@@ -1960,6 +1960,23 @@ impl<V: VaultAccess> Service<V> {
         };
         let username = username.trim();
         if !username.is_empty() {
+            // Never a second login of the site under one identifier: a new identifier another
+            // (non-pending) login of the site already has is refused, nothing written. That
+            // login is the one to update.
+            let renamed =
+                !login_identifier(&item).is_some_and(|u| u.eq_ignore_ascii_case(username));
+            if renamed
+                && self.items_on(&page)?.iter().any(|(_, i)| {
+                    i.id != item.id
+                        && eligible(i)
+                        && i.item_type == ItemType::Login
+                        && !i.is_pending()
+                        && item_match(i, &page).is_some()
+                        && login_identifier(i).is_some_and(|u| u.eq_ignore_ascii_case(username))
+                })
+            {
+                return Err(AppErrorCode::Invalid);
+            }
             set_value(&mut item, "username", FieldValue::Text(username.to_owned()))?;
         }
         item.updated_at = unix(now);

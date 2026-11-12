@@ -4409,6 +4409,40 @@ fn amend_save_moves_to_another_vault() {
 }
 
 #[test]
+fn amend_save_refuses_an_identifier_another_login_of_the_site_has() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    h.svc
+        .vault_mut()
+        .add_login("Taken", "taken@atlas.dev", NEWSITE, MatchRule::Domain);
+    let before = item_of(&h, &item).unwrap().clone();
+    let v = h.call_at(
+        amend(&item, NEWSITE, "Atlas pro", "Taken@Atlas.dev", ""),
+        NOW + 30,
+    );
+    assert_eq!(err(&v), "invalid");
+    // Nothing written: the saved login as it was, still amendable.
+    let i = item_of(&h, &item).unwrap();
+    assert_eq!(i.title, before.title);
+    assert_eq!(login_identifier_of(i), Some("fresh@atlas.dev".to_owned()));
+    // A login of another site with that identifier, or its own identifier again, is no conflict.
+    h.svc.vault_mut().add_login(
+        "Elsewhere",
+        "other@atlas.dev",
+        "https://elsewhere.test",
+        MatchRule::Domain,
+    );
+    ok(&h.call_at(
+        amend(&item, NEWSITE, "Mine", "other@atlas.dev", ""),
+        NOW + 40,
+    ));
+    ok(&h.call_at(
+        amend(&item, NEWSITE, "Mine", "OTHER@atlas.dev", ""),
+        NOW + 50,
+    ));
+}
+
+#[test]
 fn amend_save_move_rolls_back_when_the_old_login_cannot_be_deleted() {
     let mut h = H::new();
     let item = save_fresh(&mut h, NOW);
