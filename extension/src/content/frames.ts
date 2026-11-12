@@ -566,6 +566,8 @@ export function createFrames(opts: FramesOptions): Frames {
   const frames = new Map<FrameKind, { iframe: HTMLIFrameElement; anchor: Element | null; height: number; width?: number; reveal: ReturnType<typeof setTimeout> | null }>();
   let ring: { box: HTMLElement; el: Element } | null = null;
   const guards = new Map<HTMLIFrameElement, ReturnType<typeof setTimeout>>();
+  /** Frames whose page reported its size (`resize`, the ghost's `ghostPill`): only they take the pointer. */
+  const sized = new WeakSet<HTMLIFrameElement>();
 
   /**
    * Anti-clickjacking (spec 8.3): the menu cannot see its own position, so
@@ -617,6 +619,12 @@ export function createFrames(opts: FramesOptions): Frames {
    */
   const release = (iframe: HTMLIFrameElement) => {
     if (guards.has(iframe) || blocked.has(iframe)) return;
+    // Not yet shown at its page's size (created at its largest size, invisible or revealed by
+    // REVEAL_TIMEOUT_MS only): the pointer goes through to the page, no dead zone over it.
+    if (!iframe.classList.contains("shown") || !sized.has(iframe)) {
+      iframe.style.setProperty("pointer-events", "none");
+      return;
+    }
     if (isGhost(iframe)) iframe.style.setProperty("pointer-events", pill?.hot ? "auto" : "none");
     else iframe.style.removeProperty("pointer-events");
   };
@@ -958,11 +966,10 @@ export function createFrames(opts: FramesOptions): Frames {
       const f = { iframe, anchor, height, reveal: null as ReturnType<typeof setTimeout> | null };
       f.reveal = setTimeout(() => show(f), REVEAL_TIMEOUT_MS);
       frames.set(kind, f);
-      if (kind === "ghost") {
-        // Through to the page until the pointer is on the pill the page reports.
-        iframe.style.setProperty("pointer-events", "none");
-        listenPointer(true);
-      }
+      // Through to the page until the frame is shown at its page's size (`release`); the ghost
+      // then only over the pill its page reports.
+      iframe.style.setProperty("pointer-events", "none");
+      if (kind === "ghost") listenPointer(true);
       watchShift();
       // Shown while the layer is out of place: no pointer from the start.
       const at = shell.shift();
@@ -992,8 +999,11 @@ export function createFrames(opts: FramesOptions): Frames {
       if (width !== undefined && Number.isFinite(width) && width > 0) f.width = Math.round(Math.max(FRAME_MIN_WIDTH, width));
       else delete f.width;
       const moved = place(kind, f.iframe, f.anchor, f.height, f.width);
+      const first = !sized.has(f.iframe);
+      sized.add(f.iframe);
       if (f.iframe.classList.contains("shown")) {
-        if (moved) guard(f.iframe);
+        // First sized after the fallback reveal: its real box appears under the pointer, a move.
+        if (moved || first) guard(f.iframe);
       } else {
         show(f);
       }
@@ -1043,6 +1053,7 @@ export function createFrames(opts: FramesOptions): Frames {
       const y = Math.min(Math.max(0, rect.y), h);
       const box = { x, y, width: Math.min(Math.max(0, rect.width), w - x), height: Math.min(Math.max(0, rect.height), h - y) };
       pill = { rect: box, hot: (pill?.hot ?? false) && over };
+      sized.add(f.iframe);
       release(f.iframe);
       // Laid out: the ghost shows (appearing under the pointer counts as a move).
       show(f);
