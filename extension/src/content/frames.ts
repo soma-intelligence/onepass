@@ -77,11 +77,15 @@ function rgba(color: string): [number, number, number, number] | null {
   return [parseFloat(n[0]!), parseFloat(n[1]!), parseFloat(n[2]!), alpha];
 }
 
+/** Below this alpha a background is a wash over what is under it, which decides instead. */
+const OPAQUE_ENOUGH = 0.5;
+
 /**
  * Which tokens the glyph of `field` takes (spec 2026-11-11 fill UI, section 2): the luminance of
- * the first computed background that is not transparent, from the field up to the root element,
- * so a dark field on a light page still gets a visible glyph. Transparent all the way up: the
- * system appearance.
+ * the first computed background that is mostly opaque (alpha 0.5 or more), from the field up to
+ * the root element, so a dark field on a light page still gets a visible glyph. A translucent
+ * wash (a dark input with rgba(255,255,255,.06) on a dark page) or a colour this parser cannot
+ * read (oklch(), color()) is walked past. Nothing found: the system appearance.
  */
 export function glyphTheme(field: HTMLElement, view: Window): GlyphTheme {
   const root = field.ownerDocument.documentElement;
@@ -93,7 +97,7 @@ export function glyphTheme(field: HTMLElement, view: Window): GlyphTheme {
       bg = "";
     }
     const c = rgba(bg);
-    if (!c || c[3] <= 0) continue;
+    if (!c || c[3] < OPAQUE_ENOUGH) continue;
     return luminance(c[0], c[1], c[2]) > 0.5 ? "light" : "dark";
   }
   let dark = false;
@@ -158,9 +162,11 @@ const STYLE = `
   transition: transform .12s ease, color .12s ease, background-color .12s ease;
 }
 .icon:hover { transform: scale(1.08); }
-/* Pressed: a darker mark, not a smaller one (a downscale makes IntersectionObserver v2, the icon's
-   click guard on Chromium, report the icon as not visible). */
-.icon:active { filter: brightness(.8); }
+/* Pressed: a darker mark by colour only. A filter, a downscale or an opacity change makes
+   IntersectionObserver v2, the icon's click guard on Chromium, report the icon as not visible, and
+   a long press then loses its click. !important: paint() sets the resting colours inline. */
+.icon[data-theme="light"]:active { color: ${LIGHT["glyph-press"]} !important; background-color: ${LIGHT["glyph-focus-bg"]} !important; }
+.icon[data-theme="dark"]:active { color: ${DARK["glyph-press"]} !important; background-color: ${DARK["glyph-focus-bg"]} !important; }
 .icon[hidden] { display: none; }
 /* Touch screens: a finger-sized icon, and the label above the focused field's icon. */
 .icon.touch { width: ${TOUCH_ICON_SIZE}px; height: ${TOUCH_ICON_SIZE}px; }
