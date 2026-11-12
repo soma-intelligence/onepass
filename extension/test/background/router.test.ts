@@ -499,3 +499,121 @@ describe("classify message (Task 15)", () => {
     expect(parseCsToBg({ type: "classify", fields: f })).toBeNull();
   });
 });
+
+describe("ghost and preview messages (task 5)", () => {
+  const METRICS = {
+    fontSize: 15,
+    lineHeight: 20,
+    paddingLeft: 12,
+    paddingRight: 8,
+    textAlign: "left",
+    fontFamily: "Inter",
+    box: { x: 10, y: 20, width: 300, height: 40 },
+  };
+  /** A host whose every draw is a new password; a custom profile's length is honoured. */
+  const drawing = (): Answer => {
+    let n = 0;
+    return (r) => {
+      if (r.op !== "generate") return defaultAnswer(r);
+      n++;
+      const length = (r.recipe as { length?: number }).length;
+      const base = `Draw-${n}-Pass-xyz!`;
+      return { password: length !== undefined ? base.padEnd(length, "a").slice(0, length) : base, entropy_bits: 90 };
+    };
+  };
+  const ghostOpen = async (ext: FakeExt, formKind = "signup") => {
+    const r = (await ext.send({ type: "ghost_open", fieldRef: "e1", formRef: "f1", formKind, metrics: METRICS }, page())) as { ok: { url: string } };
+    const url = r.ok.url;
+    expect(url.startsWith(`chrome-extension://${EXT_ID}/ghost.html#`)).toBe(true);
+    return url.slice(url.indexOf("#") + 1);
+  };
+  const filled = (ext: FakeExt) =>
+    ext.sentToTabs.filter((x) => (x.message as { type?: string }).type === "fill").map((x) => (x.message as { values: unknown }).values);
+
+  it("routes the ghost messages: open, init from the ghost page only, accept from the field", async () => {
+    const { ext } = await setup(drawing());
+    const token = await ghostOpen(ext);
+    const init = await ext.send({ type: "ghost_init", token }, uiSender(`ghost.html#${token}`, 7));
+    expect(init).toEqual({ ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16, metrics: METRICS } });
+    // Never to a content script, another page family or another tab.
+    expect(await ext.send({ type: "ghost_init", token }, page())).toBe(NO_REPLY);
+    expect(await ext.send({ type: "ghost_init", token }, uiSender(`menu.html#${token}`, 7))).toBe(NO_REPLY);
+    expect(await ext.send({ type: "ghost_init", token }, uiSender(`ghost.html#${token}`, 8))).toEqual({ err: "invalid" });
+    // Tab in the field: the held password is filled.
+    expect(await ext.send({ type: "ghost_accept" }, page())).toEqual({ ok: {} });
+    expect(filled(ext)).toEqual([{ new_password: "Draw-1-Pass-xyz!", confirm_password: "Draw-1-Pass-xyz!" }]);
+    // Spent.
+    expect(await ext.send({ type: "ghost_init", token }, uiSender(`ghost.html#${token}`, 7))).toEqual({ err: "invalid" });
+  });
+
+  it("the ghost page's pill accepts its token; dismiss forgets it", async () => {
+    const { ext } = await setup(drawing());
+    const token = await ghostOpen(ext);
+    expect(await ext.send({ type: "ghost_accept", token }, uiSender(`ghost.html#${token}`, 7))).toEqual({ ok: {} });
+    expect(filled(ext)).toHaveLength(1);
+    const again = await ghostOpen(ext);
+    expect(await ext.send({ type: "ghost_dismiss" }, page())).toEqual({ ok: {} });
+    expect(await ext.send({ type: "ghost_init", token: again }, uiSender(`ghost.html#${again}`, 7))).toEqual({ err: "invalid" });
+  });
+
+  it("ghost_open only on new-password forms of a secure page", async () => {
+    const { ext } = await setup(drawing());
+    const m = { type: "ghost_open", fieldRef: "e1", formRef: "f1", formKind: "login", metrics: METRICS };
+    expect(await ext.send(m, page())).toEqual({ err: "invalid" });
+    expect(await ext.send({ ...m, formKind: "signup" }, csSender("http://atlas-cloud.test/login"))).toEqual({ err: "insecure_origin" });
+  });
+
+  it("the menu opened from the ghost previews, redraws, sets the profile and fills the held password", async () => {
+    const { ext } = await setup(drawing());
+    await ghostOpen(ext);
+    const r = (await ext.send({ type: "ghost_menu" }, page())) as { ok: { url: string } };
+    expect(r.ok.url.startsWith(`chrome-extension://${EXT_ID}/menu.html#`)).toBe(true);
+    const mt = r.ok.url.slice(r.ok.url.indexOf("#") + 1);
+    const ui = uiSender(`menu.html#${mt}`, 7);
+    expect(await ext.send({ type: "menu_preview", token: mt }, ui)).toEqual({ ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16 } });
+    expect(await ext.send({ type: "menu_regenerate", token: mt }, ui)).toEqual({ ok: { password: "Draw-2-Pass-xyz!", strength: 4, length: 16 } });
+    const p = (await ext.send({ type: "menu_profile", token: mt, length: 20, symbols: false }, ui)) as { ok: { password: string; length: number } };
+    expect(p.ok.length).toBe(20);
+    expect(ext.local.data.get("generator_profile")).toEqual({ kind: "custom", length: 20, symbols: false });
+    expect(await ext.send({ type: "menu_generate", token: mt }, ui)).toEqual({ ok: {} });
+    expect(filled(ext)).toEqual([{ new_password: p.ok.password, confirm_password: p.ok.password }]);
+  });
+
+  it("a menu opened without a ghost gets its own preview", async () => {
+    const { ext } = await setup(drawing());
+    const token = await openMenu(ext, { formKind: "signup" });
+    const ui = uiSender(`menu.html#${token}`, 7);
+    expect(await ext.send({ type: "menu_preview", token }, ui)).toEqual({ ok: { password: "Draw-1-Pass-xyz!", strength: 4, length: 16 } });
+    expect(await ext.send({ type: "menu_generate", token }, ui)).toEqual({ ok: {} });
+    expect(filled(ext)).toEqual([{ new_password: "Draw-1-Pass-xyz!", confirm_password: "Draw-1-Pass-xyz!" }]);
+  });
+
+  it("validates the new messages", () => {
+    expect(parseCsToBg({ type: "ghost_open", fieldRef: "e1", formRef: "f1", formKind: "signup", metrics: { ...METRICS, evil: 1 } })).toEqual({
+      type: "ghost_open",
+      fieldRef: "e1",
+      formRef: "f1",
+      formKind: "signup",
+      metrics: METRICS,
+    });
+    expect(parseCsToBg({ type: "ghost_open", fieldRef: "e1", formRef: "f1", formKind: "signup", metrics: { ...METRICS, fontFamily: null } })).not.toBeNull();
+    for (const bad of [
+      { ...METRICS, textAlign: "justify" },
+      { ...METRICS, fontSize: Number.NaN },
+      { ...METRICS, fontSize: -1 },
+      { ...METRICS, fontFamily: "x".repeat(300) },
+      { ...METRICS, box: { x: 0, y: 0, width: "1", height: 2 } },
+    ]) {
+      expect(parseCsToBg({ type: "ghost_open", fieldRef: "e1", formRef: "f1", formKind: "signup", metrics: bad })).toBeNull();
+    }
+    for (const t of ["ghost_accept", "ghost_dismiss", "ghost_menu"]) expect(parseCsToBg({ type: t, token: "x" })).toEqual({ type: t });
+    // Page messages are never content script messages.
+    expect(parseCsToBg({ type: "ghost_init", token: "A".repeat(22) })).toBeNull();
+    expect(parseCsToBg({ type: "menu_preview", token: "A".repeat(22) })).toBeNull();
+    const tk = "A".repeat(22);
+    for (const t of ["ghost_init", "ghost_accept", "menu_preview", "menu_regenerate"]) expect(parseUiToBg({ type: t, token: tk })).toEqual({ type: t, token: tk });
+    expect(parseUiToBg({ type: "menu_profile", token: tk, length: 20, symbols: false })).toEqual({ type: "menu_profile", token: tk, length: 20, symbols: false });
+    for (const length of [7, 65, 20.5, "20"]) expect(parseUiToBg({ type: "menu_profile", token: tk, length, symbols: true })).toBeNull();
+    expect(parseUiToBg({ type: "menu_profile", token: tk, length: 20, symbols: 1 })).toBeNull();
+  });
+});

@@ -223,6 +223,9 @@ interface Saved {
   username: string;
 }
 
+/** What `noteFilled` records. */
+export type FilledKind = "login" | "card" | "identity";
+
 export interface PendingOptions {
   /** The identifier known at fill time; empty when none. */
   username?: string;
@@ -252,8 +255,8 @@ export class SaveFlow {
   private readonly generated = new Map<number, Generated>();
   private readonly saved = new Map<number, Saved>();
   private readonly identifiers = new Map<number, Identifier>();
-  /** Card and identity items OnePass filled per tab, with their site and when. */
-  private readonly filled = new Map<number, { site: string; kind: "card" | "identity"; itemId: string; at: number }[]>();
+  /** Login, card and identity items OnePass filled per tab, with their site and when. */
+  private readonly filled = new Map<number, { site: string; kind: FilledKind; itemId: string; at: number }[]>();
   private readonly now: () => number;
   private readonly timers: Timers;
   private readonly host: HostCompat;
@@ -319,6 +322,37 @@ export class SaveFlow {
         tags: opts.weak === true ? [PENDING_TAG, WEAK_BY_SITE_TAG] : [PENDING_TAG],
       });
       this.saved.set(tabId, { site: page.site, itemId: saved.item_id, username });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Spec 5.2: `password`, just generated and filled in a change-password
+   * form of `tabId`, goes at once to the login being changed
+   * (`update_password`, the old password to its history): the site's only
+   * login, or the one OnePass filled in this tab. Several logins and none
+   * filled here: nothing written, the password stays remembered for the
+   * submission (the card asks which one, Task 11). Never throws.
+   */
+  async savePendingUpdate(tabId: number, origin: string, password: string, opts: PendingOptions = {}): Promise<boolean> {
+    const page = parseOrigin(origin);
+    if (page?.https !== true || password === "") return false;
+    try {
+      const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "save_prompt", origin });
+      const logins = items.filter((x) => x.kind === "login");
+      const here = this.lastFilled(tabId, origin, "login");
+      const itemId = here !== null && logins.some((x) => x.item_id === here) ? here : logins.length === 1 ? logins[0]?.item_id : undefined;
+      if (itemId === undefined) return false;
+      await this.deps.session.request({
+        op: "update_password",
+        ctx: "save_prompt",
+        item_id: itemId,
+        origin,
+        password,
+        weak_by_site: opts.weak === true,
+      });
       return true;
     } catch {
       return false;
@@ -418,8 +452,8 @@ export class SaveFlow {
     this.pending.set(cs.tabId, p);
   }
 
-  /** OnePass filled the card or identity `itemId` in `tabId` (menu, popup or plan). */
-  noteFilled(tabId: number, origin: string, kind: "card" | "identity", itemId: string): void {
+  /** OnePass filled the login, card or identity `itemId` in `tabId` (menu, popup, plan or chain). */
+  noteFilled(tabId: number, origin: string, kind: FilledKind, itemId: string): void {
     const site = parseOrigin(origin)?.site;
     if (!site) return;
     const now = this.now();
@@ -428,10 +462,18 @@ export class SaveFlow {
     this.filled.set(tabId, list.slice(-8));
   }
 
-  private filledHere(tabId: number, origin: string, kind: "card" | "identity", itemId?: string): boolean {
+  private filledHere(tabId: number, origin: string, kind: FilledKind, itemId?: string): boolean {
     const site = parseOrigin(origin)?.site;
     const now = this.now();
     return (this.filled.get(tabId) ?? []).some((f) => f.site === site && f.kind === kind && now - f.at <= FILLED_TTL_MS && (itemId === undefined || f.itemId === itemId));
+  }
+
+  /** The last item of `kind` OnePass filled in `tabId` on the site of `origin`, if still recent. */
+  private lastFilled(tabId: number, origin: string, kind: FilledKind): string | null {
+    const site = parseOrigin(origin)?.site;
+    const now = this.now();
+    const hit = (this.filled.get(tabId) ?? []).filter((f) => f.site === site && f.kind === kind && now - f.at <= FILLED_TTL_MS).at(-1);
+    return hit?.itemId ?? null;
   }
 
   /** A card, identity or address form was sent by hand in `cs`: followed like a sign-in. */

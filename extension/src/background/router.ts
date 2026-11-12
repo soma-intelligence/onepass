@@ -27,6 +27,7 @@ import {
   type FormContext,
   type FormInfo,
   type FormKind,
+  type GhostMetrics,
   type IntentHints,
   PAGE_CONTEXT_MAX_BUTTONS,
   PAGE_CONTEXT_MAX_FIELDS,
@@ -40,6 +41,7 @@ import {
   type UiToBg,
 } from "../shared/messages";
 import type { BgExt, MessageListener } from "./ext";
+import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH } from "../shared/ui";
 import { type CsContext, type UiContext, contentSender, extensionSender } from "./frames";
 import { toBgError } from "./session";
 
@@ -240,6 +242,33 @@ function analysis(v: unknown): PageAnalysis {
   };
 }
 
+// ---- ghost (spec 3.2) ----
+
+/** Largest metric (CSS px) or box coordinate the ghost accepts. */
+const MAX_METRIC = 100_000;
+const MAX_FONT_FAMILY = 256;
+const TEXT_ALIGNS: ReadonlySet<string> = new Set<GhostMetrics["textAlign"]>(["left", "right", "center"]);
+
+function metric(v: unknown, min = 0): number {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > MAX_METRIC) throw new Invalid();
+  return v;
+}
+
+/** A field's measured metrics, rebuilt and bounded (geometry only, never a value). */
+function ghostMetrics(v: unknown): GhostMetrics {
+  const o = obj(v);
+  const b = obj(o.box);
+  return {
+    fontSize: metric(o.fontSize),
+    lineHeight: metric(o.lineHeight),
+    paddingLeft: metric(o.paddingLeft),
+    paddingRight: metric(o.paddingRight),
+    textAlign: member<GhostMetrics["textAlign"]>(o.textAlign, TEXT_ALIGNS),
+    fontFamily: o.fontFamily === null ? null : str(o.fontFamily, MAX_FONT_FAMILY),
+    box: { x: metric(b.x, -MAX_METRIC), y: metric(b.y, -MAX_METRIC), width: metric(b.width), height: metric(b.height) },
+  };
+}
+
 // ---- plan_context (smart fill) ----
 // Bounds of the bridge's `PageContext` (it checks them again); the origins
 // and frame kind the content script may add are dropped, never read.
@@ -367,6 +396,18 @@ export function parseCsToBg(m: unknown): CsToBg | null {
       }
       case "classify":
         return { type: "classify", fields: list(o.fields, MAX_CLASSIFY_FIELDS, features) };
+      case "ghost_open":
+        return {
+          type: "ghost_open",
+          fieldRef: ref(o.fieldRef),
+          formRef: ref(o.formRef),
+          formKind: member<FormKind>(o.formKind, FORM_KINDS),
+          metrics: ghostMetrics(o.metrics),
+        };
+      case "ghost_accept":
+      case "ghost_dismiss":
+      case "ghost_menu":
+        return { type: o.type };
       default:
         return null;
     }
@@ -452,7 +493,16 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "save_reveal":
       case "save_generate":
       case "save_close":
+      case "menu_preview":
+      case "menu_regenerate":
+      case "ghost_init":
+      case "ghost_accept":
         return { type: o.type, token: token(o.token) };
+      case "menu_profile": {
+        const n = o.length;
+        if (typeof n !== "number" || !Number.isInteger(n) || n < CUSTOM_MIN_LENGTH || n > CUSTOM_MAX_LENGTH) throw new Invalid();
+        return { type: o.type, token: token(o.token), length: n, symbols: bool(o.symbols) };
+      }
       case "menu_pick":
         return { type: o.type, token: token(o.token), itemId: itemId(o.itemId) };
       case "menu_unlock_biometric":

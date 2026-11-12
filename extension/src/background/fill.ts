@@ -117,8 +117,8 @@ export function handleCandidates(given: string | undefined, family: string | und
 }
 
 export class Filler {
-  /** Told each card or identity item this filler wrote into a page (the save flow stays quiet on it). */
-  onFilled: ((tabId: number, origin: string, kind: "card" | "identity", itemId: string) => void) | null = null;
+  /** Told each login, card or identity item this filler wrote into a page (the save flow stays quiet on cards and identities, knows the login a change-password form is about). */
+  onFilled: ((tabId: number, origin: string, kind: "login" | "card" | "identity", itemId: string) => void) | null = null;
 
   constructor(
     private readonly tabs: Pick<BgExt["tabs"], "sendMessage">,
@@ -200,7 +200,10 @@ export class Filler {
   async fillLogin(t: FillTarget, itemId: string, fields: FillField[], ctx: Ctx = "menu", roles?: readonly FieldRole[]): Promise<number> {
     await this.verify(t);
     const r = await this.session.request({ op: "fill_login", ctx, item_id: itemId, origin: t.origin, fields });
-    return this.deliver(t, loginValues(r), roles);
+    const written = await this.deliver(t, loginValues(r), roles);
+    // The login a change-password form in this tab is about (save-flow `savePendingUpdate`).
+    if (written > 0) this.onFilled?.(t.tabId, t.origin, "login", itemId);
+    return written;
   }
 
   /**
