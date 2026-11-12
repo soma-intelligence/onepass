@@ -38,6 +38,11 @@ android/**/.gradle/
 android/**/.kotlin/
 android/**/build/
 android/local.properties
+# Desktop (Tauri): npm, the UI bundle, cargo and Tauri's generated schemas
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
 # Hosted mailbox secrets
 mailbox/supabase/.env.hosted
 

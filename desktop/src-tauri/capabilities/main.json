@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The one window with capabilities: the app's own commands and event listening, nothing else (no fs, shell, http or opener plugin).",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-status",
+    "allow-create-account",
+    "allow-unlock",
+    "allow-lock",
+    "allow-vaults",
+    "allow-items",
+    "allow-item",
+    "allow-item-types",
+    "allow-new-item",
+    "allow-save-item",
+    "allow-trash-item",
+    "allow-set-favorite",
+    "allow-reveal-field",
+    "allow-copy-field",
+    "allow-totp",
+    "allow-generate-password"
+  ]
+}

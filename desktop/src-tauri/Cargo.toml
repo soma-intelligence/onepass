@@ -1,0 +1,61 @@
+[package]
+name = "onepass-desktop"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+rust-version = "1.99"
+description = "OnePass for Windows and Linux (Tauri 2), milestone X2"
+
+# Its own workspace: Tauri and its tree stay out of core/Cargo.lock, which
+# the Apple and Android builds share.
+[workspace]
+
+[[bin]]
+name = "onepass-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# The same Rust API the Apple apps reach through UniFFI, linked directly
+# (spec 2026-10-30 section 3.2: no FFI on the desktop).
+onepass-ffi = { path = "../../core/onepass-ffi" }
+onepass-core = { path = "../../core/onepass-core" }
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+postcard = { version = "1", default-features = false, features = ["alloc", "use-std"] }
+zeroize = { version = "1.9", features = ["derive", "serde"] }
+time = { version = "0.3", default-features = false, features = ["std"] }
+# Copy without the secret crossing the IPC (section 3.2), kept out of the
+# Windows clipboard history and cloud clipboard.
+arboard = { version = "3", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_System_Memory",
+] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+# Same reasoning as core/Cargo.toml: the crypto dominates a debug run.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.slh-dsa]
+opt-level = 3
+[profile.dev.package.aws-lc-sys]
+opt-level = 3
+[profile.dev.package.aws-lc-rs]
+opt-level = 3
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
