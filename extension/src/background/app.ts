@@ -28,6 +28,7 @@
 import { BridgeClient, type Summary } from "../bridge/client";
 import { isPage, parseOrigin, sameSite } from "../shared/domain";
 import type { BgToCs, FieldRole, FillIntent, PageContext, PlanContextBody, PlanOut, ProviderId } from "../shared/messages";
+import { NEW_PASSWORD_FORMS } from "../shared/messages";
 import type { MenuInit, MenuNotice } from "../shared/ui";
 import { UNLOCK_WAIT_MS } from "../shared/unlock";
 import { signInChoices } from "./chain/choices";
@@ -96,8 +97,6 @@ export const PLAN_MENU_MS = 30_000;
 const SIGN_IN_FORMS: ReadonlySet<string> = new Set(["login", "signup", "change_password", "otp"]);
 /** Forms where picking a login runs the whole sign-in (chain) rather than a fill of the page. */
 const CHAIN_FORMS: ReadonlySet<string> = new Set(["login", "otp"]);
-/** Forms where the menu offers to generate a password, items or not. */
-const NEW_PASSWORD_FORMS: ReadonlySet<string> = new Set(["signup", "change_password"]);
 
 /** The autofill history's key of the menu of a frame. */
 function menuList(tabId: number, frameId: number): string {
