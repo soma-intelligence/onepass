@@ -147,6 +147,17 @@ describe("auto sign-in pill: appears by itself", () => {
     expect(t.chainCalls).toEqual([[7, A, undefined, {}]]);
   });
 
+  it("case 1: its button starts nothing once the top frame holds another document", async () => {
+    const t = await setup();
+    await t.ready("login");
+    const token = t.tokenOf();
+    const ui = uiSender(`overlay.html#${token}`, 7);
+    await t.ext.send({ type: "overlay_init", token }, ui);
+    t.ext.setFrame(7, 0, "https://foreign.test/", "doc-2");
+    expect(await t.ext.send({ type: "overlay_start", token, itemId: A }, ui)).toEqual({ err: "invalid" });
+    expect(t.chainCalls).toEqual([]);
+  });
+
   it("case 2: a login page on a locked vault gets the generic card; its click asks the unlock", async () => {
     const t = await setup({ locked: true });
     await t.ready("login");

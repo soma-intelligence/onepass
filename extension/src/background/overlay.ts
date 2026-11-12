@@ -430,6 +430,8 @@ export class Overlays {
       const shown = rec.accounts && Object.hasOwn(rec.accounts, provider) ? rec.accounts[provider] : undefined;
       if (!shown?.includes(accountId)) throw new BgError("invalid");
     }
+    // A card that appeared by itself acts only in the top document it was shown for.
+    if (rec.auto && !(await this.stillBound(rec))) throw new BgError("invalid");
     await this.setPending(token, rec, undefined);
     const pending = await this.startOrAsk(rec.tabId, itemId, provider, accountId !== undefined ? { accountId } : {});
     if (!pending) return {};
