@@ -127,7 +127,8 @@ describe("target and label text", () => {
     const same = rows.filter((r) => r.label === r.target).length;
     expect(same / rows.length).toBeLessThan(0.2);
     expect(rows.some((r) => r.label !== undefined && r.label !== r.target)).toBe(true);
-  });
+    // Renders every static site twice: a few seconds alone, far more under a loaded full run.
+  }, 60_000);
 });
 
 describe("datasetPages follows the routes the lab serves", () => {
