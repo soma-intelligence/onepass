@@ -4,6 +4,7 @@ import {
   createFrames,
   createShell,
   FRAME_HEIGHT,
+  FRAME_WIDTHS,
   FRAME_MIN_HEIGHT,
   glyphTheme,
   MOVE_GUARD_MS,
@@ -684,5 +685,144 @@ describe("field glyph (spec 2026-11-11 fill UI, section 2)", () => {
     const g = glyphs(st)[0]!;
     expect(g.style.width).toBe("22px");
     expect(g.style.height).toBe("22px");
+  });
+});
+
+describe("ghost frame (spec 3.2)", () => {
+  let shell: Shell | null = null;
+
+  afterEach(() => {
+    shell?.destroy();
+    shell = null;
+    vi.useRealTimers();
+  });
+
+  const ghostUrl = `${CHROME}ghost.html#${TOKEN}`;
+  /** The pill at the field's right edge, frame-local. */
+  const PILL = { x: 180, y: 6, width: 52, height: 24 };
+  const move = (x: number, y: number) => document.dispatchEvent(new MouseEvent("pointermove", { clientX: x, clientY: y, bubbles: true }));
+
+  it("checkFrameUrl accepts ghost.html only for kind ghost", () => {
+    expect(checkFrameUrl(ghostUrl, "ghost", CHROME, false)).toBe(ghostUrl);
+    expect(checkFrameUrl(ghostUrl, "menu", CHROME, true)).toBeNull();
+    expect(checkFrameUrl(`${CHROME}menu.html#${TOKEN}`, "ghost", CHROME, true)).toBeNull();
+    expect(checkFrameUrl(`${CHROME}ghost.html#short`, "ghost", CHROME, true)).toBeNull();
+  });
+
+  it("lies over its field, clamped to 600 x 120, without shadow or radius", () => {
+    setPage(`<input id="f" data-test-rect="10,20,240,36"><input id="w" data-test-rect="0,300,900,150">`);
+    shell = createShell(document);
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry });
+    frames.showFrame("ghost", ghostUrl, document.getElementById("f"));
+    const iframe = shell.root.querySelector("iframe")!;
+    expect([iframe.style.left, iframe.style.top, iframe.style.width, iframe.style.height]).toEqual(["10px", "20px", "240px", "36px"]);
+    expect(iframe.classList.contains("ghost")).toBe(true);
+    expect(iframe.classList.contains("corner")).toBe(false);
+    frames.showFrame("ghost", ghostUrl, document.getElementById("w"));
+    const wide = shell.root.querySelector("iframe")!;
+    expect(shell.root.querySelectorAll("iframe")).toHaveLength(1);
+    expect([wide.style.width, wide.style.height]).toEqual([`${FRAME_WIDTHS.ghost}px`, `${FRAME_HEIGHT.ghost}px`]);
+    expect([FRAME_WIDTHS.ghost, FRAME_HEIGHT.ghost]).toEqual([600, 120]);
+    const css = shell.root.querySelector("style")!.textContent!;
+    expect(css).toMatch(/iframe\.ghost \{[^}]*pointer-events: none;[^}]*\}/);
+    expect(css).toMatch(/iframe\.ghost \{[^}]*box-shadow: none;[^}]*\}/);
+    // No field, no ghost.
+    frames.removeFrame("ghost");
+    frames.showFrame("ghost", ghostUrl, null);
+    expect(frames.has("ghost")).toBe(false);
+    frames.destroy();
+  });
+
+  it("ghost frame passes pointer events through outside the pill", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    setPage(`<input id="f" data-test-rect="10,20,240,36">`);
+    shell = createShell(document);
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry });
+    frames.showFrame("ghost", ghostUrl, document.getElementById("f"));
+    const iframe = shell.root.querySelector("iframe")!;
+    expect(iframe.style.pointerEvents).toBe("none");
+    // The page reports its pill: the frame shows (appearing is a move: guarded).
+    frames.ghostPill(PILL, false);
+    expect(iframe.classList.contains("shown")).toBe(true);
+    // On the pill during the move guard: nothing until the guard is over.
+    move(10 + 190, 20 + 18);
+    expect(iframe.style.pointerEvents).toBe("none");
+    vi.advanceTimersByTime(MOVE_GUARD_MS);
+    // Over the pill: the frame takes the pointer; anywhere else in the field it goes through.
+    expect(iframe.style.pointerEvents).toBe("auto");
+    move(10 + 40, 20 + 18);
+    expect(iframe.style.pointerEvents).toBe("none");
+    move(10 + 190, 20 + 18);
+    expect(iframe.style.pointerEvents).toBe("auto");
+    // Inside the frame the page says the pointer left the pill (the document sees nothing then).
+    frames.ghostPill(PILL, false);
+    expect(iframe.style.pointerEvents).toBe("none");
+    // The page can never make the frame take the pointer by itself.
+    frames.ghostPill({ x: 0, y: 0, width: 240, height: 36 }, true);
+    expect(iframe.style.pointerEvents).toBe("none");
+    // A move of the field arms the move guard again.
+    frames.ghostPill(PILL, false);
+    move(10 + 190, 20 + 18);
+    expect(iframe.style.pointerEvents).toBe("auto");
+    document.getElementById("f")!.setAttribute("data-test-rect", "10,60,240,36");
+    frames.reposition();
+    expect(iframe.style.pointerEvents).toBe("none");
+    vi.advanceTimersByTime(MOVE_GUARD_MS);
+    // The pill moved away from under the pointer: it takes it again only once the pointer is on it.
+    expect(iframe.style.pointerEvents).toBe("none");
+    move(10 + 190, 60 + 18);
+    expect(iframe.style.pointerEvents).toBe("auto");
+    frames.destroy();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("without IntersectionObserver v2 the ghost is not blocked by the field under it, only its pill is hit-tested", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    setPage(`<input id="f" data-test-rect="10,20,240,36">`);
+    shell = createShell(document);
+    const field = document.getElementById("f")!;
+    let hit: Element | null = field;
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry, covers: { hitTest: () => hit } });
+    frames.showFrame("ghost", ghostUrl, field);
+    const iframe = shell.root.querySelector("iframe")!;
+    frames.ghostPill(PILL, false);
+    vi.advanceTimersByTime(MOVE_GUARD_MS);
+    expect(frames.covered("ghost")).toBe(false);
+    expect(iframe.hasAttribute("inert")).toBe(false);
+    // Over the pill, the hit test must find our host there.
+    hit = document.documentElement.querySelector("onepass-root");
+    move(10 + 190, 20 + 18);
+    expect(iframe.style.pointerEvents).toBe("auto");
+    hit = document.body;
+    expect(frames.covered("ghost")).toBe(true);
+    frames.destroy();
+  });
+
+  it("ghost follows its field on scroll", () => {
+    setPage(`<input id="f" data-test-rect="10,200,240,36">`);
+    shell = createShell(document);
+    const frames = createFrames({ shell, doc: document, geometry: testGeometry });
+    const field = document.getElementById("f")!;
+    frames.showFrame("ghost", ghostUrl, field);
+    const iframe = shell.root.querySelector("iframe")!;
+    expect(iframe.style.top).toBe("200px");
+    // A scroll moves the field up 40 px: the ghost moves with it.
+    field.setAttribute("data-test-rect", "10,160,240,36");
+    window.dispatchEvent(new Event("scroll"));
+    frames.reposition();
+    expect(iframe.style.top).toBe("160px");
+    expect(iframe.style.left).toBe("10px");
+    // Scrolled out of the viewport: the ghost goes.
+    field.setAttribute("data-test-rect", "10,-60,240,36");
+    frames.reposition();
+    expect(frames.has("ghost")).toBe(false);
+    expect(shell.root.querySelector("iframe")).toBeNull();
+    // Shown again, then its field is removed: gone too.
+    field.setAttribute("data-test-rect", "10,160,240,36");
+    frames.showFrame("ghost", ghostUrl, field);
+    field.remove();
+    frames.reposition();
+    expect(frames.has("ghost")).toBe(false);
+    frames.destroy();
   });
 });

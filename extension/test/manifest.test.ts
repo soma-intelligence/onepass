@@ -71,11 +71,11 @@ describe.each(BROWSERS)("manifest %s", (b) => {
     expect(load(b).web_accessible_resources[0]?.matches).toEqual(PAGES);
   });
 
-  it("exposes only the three pages and their scripts", () => {
+  it("exposes only the four pages and their scripts (the ghost like the menu)", () => {
     const m = load(b);
     expect(m.web_accessible_resources).toHaveLength(1);
     expect([...(m.web_accessible_resources[0]?.resources ?? [])].sort()).toEqual(
-      ["menu.html", "menu.js", "overlay.html", "overlay.js", "save.html", "save.js"].sort(),
+      ["ghost.html", "ghost.js", "menu.html", "menu.js", "overlay.html", "overlay.js", "save.html", "save.js"].sort(),
     );
   });
 

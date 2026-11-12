@@ -1039,6 +1039,57 @@ button.sc-chip:hover { color: var(--text); }
 :root.touch .ov-pill .ov-close, :root.touch .ov-picker .ov-close { margin: 0; }
 :root.touch .ov-signin { height: 44px; padding: 0 var(--space-m); border-radius: var(--r-control); }
 
+/* ---- ghost (spec 3.2): the suggested password in grey over its new-password field, and at
+   the field's right edge the "Use" pill with its Tab keycap and a chevron. The frame is
+   transparent: the field shows through, only the text and the pill are drawn. ---- */
+body.island:has(.ghost) { overflow: hidden; }
+.ghost {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  box-sizing: border-box;
+  height: 100vh;
+  white-space: pre;
+  overflow: hidden;
+  user-select: none;
+}
+.ghost-text { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--text3); }
+.ghost-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: stretch;
+  height: min(var(--control-s), calc(100vh - var(--space-xs)));
+  border-radius: var(--r-chip);
+  background: var(--elevated);
+  box-shadow: var(--card-shadow);
+  font: 500 var(--type-footnote)/1 var(--font);
+  color: var(--text);
+  overflow: hidden;
+}
+.ghost-pill button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 0;
+  margin: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ghost-use { padding: 0 var(--space-xs) 0 var(--space-s); }
+.ghost-use:hover, .ghost-more:hover { background: var(--hover); }
+.ghost-use:active, .ghost-more:active, .ghost-pill .held { background: var(--press); }
+.ghost-pill kbd {
+  padding: var(--space-xxs) var(--space-xs);
+  border: 1px solid var(--hair-2);
+  border-radius: var(--space-xs);
+  font: 500 var(--type-caption)/1 var(--font);
+  color: var(--text2);
+}
+.ghost-more { padding: 0 var(--space-s) 0 var(--space-xs); border-left: 1px solid var(--hair) !important; color: var(--text2) !important; }
+.ghost-more svg { transform: rotate(90deg); }
+
 /* Popup in Slide Over or a narrow Split View (320 to 375 pt): the compact states fit the width and
    grow with their content instead of being cut on the right. Touch only: on a Mac or a desktop
    Chromium the popover's own viewport is the 380 px body, which must keep its fixed size. */

@@ -41,7 +41,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["menu.html", "overlay.html", "save.html", "menu.js", "overlay.js", "save.js"],
+      "resources": ["menu.html", "overlay.html", "save.html", "ghost.html", "menu.js", "overlay.js", "save.js", "ghost.js"],
       "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*", "http://[::1]/*"]
     }
   ],
