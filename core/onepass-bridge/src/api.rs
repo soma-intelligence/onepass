@@ -417,6 +417,15 @@ pub enum Request {
         item_id: String,
         origin: String,
     },
+    /// Delete for good a pending Login (tag `onepass:pending`) of the same
+    /// site: a generated password the save card moved into another login
+    /// (spec 5.2). An item without the tag is `invalid`.
+    DiscardPending {
+        id: u64,
+        ctx: Ctx,
+        item_id: String,
+        origin: String,
+    },
     /// Rename, change the username of, or move to another vault a Login
     /// this session saved through `save_login` in the last 600 s, for the
     /// same site and not edited since (the toast's Edit). Anything else is
@@ -604,6 +613,7 @@ impl Request {
             | Self::UpdatePassword { id, .. }
             | Self::ConfirmPending { id, .. }
             | Self::UndoSave { id, .. }
+            | Self::DiscardPending { id, .. }
             | Self::AmendSave { id, .. }
             | Self::Generate { id, .. }
             | Self::ProviderAccounts { id, .. }
@@ -647,6 +657,7 @@ impl Request {
             Self::UpdatePassword { .. } => "update_password",
             Self::ConfirmPending { .. } => "confirm_pending",
             Self::UndoSave { .. } => "undo_save",
+            Self::DiscardPending { .. } => "discard_pending",
             Self::AmendSave { .. } => "amend_save",
             Self::Generate { .. } => "generate",
             Self::ProviderAccounts { .. } => "provider_accounts",
@@ -687,6 +698,7 @@ impl Request {
             | Self::UpdatePassword { ctx, .. }
             | Self::ConfirmPending { ctx, .. }
             | Self::UndoSave { ctx, .. }
+            | Self::DiscardPending { ctx, .. }
             | Self::AmendSave { ctx, .. }
             | Self::Generate { ctx, .. }
             | Self::ProviderAccounts { ctx, .. }
@@ -1557,6 +1569,15 @@ mod tests {
             r#"{"id":32,"op":"amend_save","ctx":"save_prompt","item_id":"i","origin":"https://atlas-cloud.test","title":"Atlas","username":"alex@atlas.dev","vault_id":"v"}"#,
             32,
             "amend_save",
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_discard_pending() {
+        round_trip(
+            r#"{"id":33,"op":"discard_pending","ctx":"save_prompt","item_id":"i","origin":"https://atlas-cloud.test"}"#,
+            33,
+            "discard_pending",
         );
     }
 

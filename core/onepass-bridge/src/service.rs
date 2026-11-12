@@ -954,6 +954,12 @@ impl<V: VaultAccess> Service<V> {
                 origin: o,
                 ..
             } => self.undo_save(*ctx, item_id, o, now),
+            Request::DiscardPending {
+                ctx,
+                item_id,
+                origin: o,
+                ..
+            } => self.discard_pending(*ctx, item_id, o, now),
             Request::AmendSave {
                 ctx,
                 item_id,
@@ -1419,6 +1425,16 @@ impl<V: VaultAccess> Service<V> {
         }) {
             return Ok(verdict(CredentialStatus::Pending, Some(i)));
         }
+        // No identifier (a re-authentication asking for the password alone):
+        // any login of the site holding this password is that one.
+        if user.is_empty()
+            && let Some((_, i)) = site.iter().find(|(_, i)| {
+                !i.is_pending()
+                    && stored_password(i).is_some_and(|p| same_secret(p, password.expose()))
+            })
+        {
+            return Ok(verdict(CredentialStatus::Same, Some(i)));
+        }
         let mut candidates: Vec<(Option<MatchQuality>, &Item)> = site
             .into_iter()
             .filter(|(_, i)| !i.is_pending())
@@ -1829,6 +1845,37 @@ impl<V: VaultAccess> Service<V> {
         self.recent_saves.remove(pos);
         self.owners.remove(&id);
         self.record("undo_save", id, Some(o), ctx, now);
+        Ok(Response::Empty {})
+    }
+
+    /// Delete a pending Login of the site of `o` (spec 5.2: its generated
+    /// password went to the login the user picked). Same origin check as
+    /// `confirm_pending`; an item without `PENDING_TAG` is `invalid`, never
+    /// deleted.
+    fn discard_pending(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        o: &str,
+        now: u64,
+    ) -> OpResult<Response> {
+        save_ctx(ctx)?;
+        let page = origin(o)?;
+        let (vault, item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Login {
+            return Err(AppErrorCode::NotFound);
+        }
+        self.followed_match(&item, &page)?;
+        if !item.is_pending() {
+            return Err(AppErrorCode::Invalid);
+        }
+        let id = item.id;
+        self.vault.delete(vault.id, id).map_err(app_code)?;
+        if let Some(pos) = self.recent_saves.iter().position(|r| r.item_id == id) {
+            self.recent_saves.remove(pos);
+        }
+        self.owners.remove(&id);
+        self.record("discard_pending", id, Some(o), ctx, now);
         Ok(Response::Empty {})
     }
 

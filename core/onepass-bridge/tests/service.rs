@@ -2421,6 +2421,65 @@ fn check_credentials_pending_other_site_ignored() {
     assert_eq!(ok(&v), &json!({"status":"new"}));
 }
 
+#[test]
+fn check_credentials_without_username_finds_the_login_holding_the_password() {
+    let mut h = H::new();
+    // A re-authentication form asks for the password alone: the login holding it, no card.
+    let v = h.call(check("https://app.atlas-cloud.test", "", ATLAS_PASSWORD));
+    assert_eq!(
+        ok(&v),
+        &json!({"status":"same","item_id":id(h.ids.atlas),"title":"Atlas Cloud"})
+    );
+    let v = h.call(check("https://app.atlas-cloud.test", "  ", ATLAS_PASSWORD));
+    assert_eq!(ok(&v)["status"], "same");
+    // Another password, or another site: still new.
+    let v = h.call(check(ATLAS, "", "Typed-Pass-0099"));
+    assert_eq!(ok(&v), &json!({"status":"new"}));
+    let v = h.call(check("https://evil.test", "", ATLAS_PASSWORD));
+    assert_eq!(ok(&v), &json!({"status":"new"}));
+    // The archived login never answers.
+    let v = h.call(check(ATLAS, "", ARCHIVED_PASSWORD));
+    assert_eq!(ok(&v), &json!({"status":"new"}));
+}
+
+fn discard(item: Id, origin: &str) -> Value {
+    json!({"op":"discard_pending","ctx":"save_prompt","item_id":id(item),"origin":origin})
+}
+
+#[test]
+fn discard_pending_deletes_a_pending_login_of_the_site() {
+    let mut h = H::new();
+    let item = save_pending(&mut h, ATLAS, "");
+    // Another site: refused, the item stays.
+    assert_eq!(
+        err(&h.call(discard(item, "https://evil.test"))),
+        "origin_mismatch"
+    );
+    assert!(h.vault().items.iter().any(|i| i.id == item));
+    // Another context: refused.
+    let v = h.call(json!({"op":"discard_pending","ctx":"menu","item_id":id(item),"origin":ATLAS}));
+    assert_eq!(err(&v), "not_allowed");
+    assert!(h.vault().items.iter().any(|i| i.id == item));
+    let v = h.call(discard(item, "https://login.atlas-cloud.test"));
+    assert_eq!(ok(&v), &json!({}));
+    assert!(h.vault().items.iter().all(|i| i.id != item));
+    assert_eq!(err(&h.call(discard(item, ATLAS))), "not_found");
+}
+
+#[test]
+fn discard_pending_refuses_a_confirmed_login() {
+    let mut h = H::new();
+    let atlas = h.ids.atlas;
+    assert_eq!(err(&h.call(discard(atlas, ATLAS))), "invalid");
+    assert!(h.vault().items.iter().any(|i| i.id == atlas));
+    let item = save_pending(&mut h, ATLAS, "alex.new@atlas.dev");
+    ok(&h.call(
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),"origin":ATLAS,"username":""}),
+    ));
+    assert_eq!(err(&h.call(discard(item, ATLAS))), "invalid");
+    assert!(h.vault().items.iter().any(|i| i.id == item));
+}
+
 // Cards and identities typed by hand in a page form (MS-04).
 
 const SHOP: &str = "https://shop.atlas-cloud.test";
