@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { UiToBg } from "../../src/shared/messages";
 import { UNLOCK_WAIT_MS } from "../../src/shared/unlock";
 import { UNLOCK_POLL_MS, UNLOCK_WAIT_TRIES } from "../../src/ui/components";
+import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH } from "../../src/shared/ui";
 import { mountMenu } from "../../src/ui/menu";
 import { Clock, FakeVisibility, FakeWorker, HASH, ManualTimers, type Reply, TOKEN, button, flush, login, root, text } from "./helpers";
 
@@ -738,6 +739,150 @@ describe("inline menu", () => {
     button(r, "<img").click();
     await new Promise((res) => setTimeout(res, 0));
     expect(text(r)).toContain("La page a changé : remplissage annulé.");
+  });
+
+  describe("suggestion row", () => {
+    const POOL = ["Tr0ub4dor&3xKq9!Zv", "Lm7#pQ2vXe9Rt5@Hb", "Aa1!Bb2@Cc3#Dd4$Ee"];
+    const strongOf = (pw: string) => ({ password: pw, strength: 4, length: [...pw].length });
+
+    /** A worker holding one suggestion: regenerate cycles the pool, a profile draws `length` characters. */
+    function suggest(formKind = "signup", opts: { items?: unknown[] } = {}) {
+      let n = 0;
+      let current = strongOf(POOL[0]!);
+      const answer = (m: UiToBg): Reply => {
+        if (m.type === "menu_init") return ok({ origin: SITE, formKind, items: opts.items ?? [] });
+        if (m.type === "menu_preview") return ok(current);
+        if (m.type === "menu_regenerate") {
+          n += 1;
+          current = strongOf(POOL[n % POOL.length]!);
+          return ok(current);
+        }
+        if (m.type === "menu_profile") {
+          const pool = m.symbols ? "Ab3$Cd4%Ef5^" : "Ab3Cd4Ef5Gh6";
+          current = strongOf(Array.from({ length: m.length }, (_, i) => pool[i % pool.length]).join(""));
+          return ok(current);
+        }
+        return ok();
+      };
+      return setup(answer, formKind);
+    }
+    const flushAll = async () => {
+      for (let i = 0; i < 6; i++) await new Promise((x) => setTimeout(x, 0));
+    };
+    const pwText = (r: Element) => r.querySelector(".suggest-pw")!.textContent;
+
+    it("previews the password with colored digits and symbols, a four segment bar and the strength line", async () => {
+      const { r, handle, worker } = suggest();
+      await handle.ready;
+      expect(worker.types()).toEqual(["menu_init", "menu_preview"]);
+      const pw = r.querySelector(".suggest-pw")!;
+      expect(pw.classList.contains("mono")).toBe(true);
+      expect(pw.textContent).toBe(POOL[0]);
+      expect([...pw.querySelectorAll(".digit")].map((x) => x.textContent).join("")).toBe("0439");
+      expect([...pw.querySelectorAll(".symbol")].map((x) => x.textContent).join("")).toBe("&!");
+      expect(r.querySelectorAll(".strength-seg")).toHaveLength(4);
+      expect(r.querySelectorAll(".strength-seg.on")).toHaveLength(4);
+      expect(r.querySelector(".suggest-line")!.textContent).toBe("Fort, 18 caractères, règles du site respectées");
+      // The row keeps its accessible name.
+      expect(r.querySelector(".row-suggest")!.getAttribute("aria-label")).toBe("Générer un mot de passe");
+    });
+
+    it("the row is still first and accented on a signup form, below the logins on a change form", async () => {
+      const s = suggest("signup", { items: [login("it_01")] });
+      await s.handle.ready;
+      const rows = [...s.r.querySelectorAll("[role=option]")];
+      expect(rows[0]!.classList.contains("row-suggest")).toBe(true);
+      expect(rows[0]!.querySelector(".act.hint")).not.toBeNull();
+      const c = suggest("change_password", { items: [login("it_01")] });
+      await c.handle.ready;
+      const crows = [...c.r.querySelectorAll("[role=option]")];
+      expect(crows[0]!.classList.contains("row-suggest")).toBe(false);
+      expect(crows.some((x) => x.classList.contains("row-suggest"))).toBe(true);
+    });
+
+    it("Use fills the previewed password: menu_generate with the token, nothing regenerated", async () => {
+      const { r, handle, worker, clock } = suggest();
+      await handle.ready;
+      clock.advance(300);
+      (r.querySelector(".row-suggest") as HTMLButtonElement).click();
+      await flushAll();
+      expect(worker.sent.at(-1)).toEqual({ type: "menu_generate", token: TOKEN });
+      expect(worker.types()).not.toContain("menu_regenerate");
+    });
+
+    it("Other suggestion redraws and the preview text changes", async () => {
+      const { r, handle, worker, clock } = suggest();
+      await handle.ready;
+      clock.advance(300);
+      button(r, "Autre suggestion").click();
+      await flushAll();
+      expect(worker.sent.at(-1)).toEqual({ type: "menu_regenerate", token: TOKEN });
+      expect(pwText(r)).toBe(POOL[1]);
+    });
+
+    it("the length panel writes the profile and the preview redraws", async () => {
+      const { r, handle, worker, clock } = suggest();
+      await handle.ready;
+      clock.advance(300);
+      expect(r.querySelector(".length-panel")).toBeNull();
+      button(r, "Longueur et caractères").click();
+      await flushAll();
+      // The panel appearing under the pointer restarts the click delay.
+      clock.advance(300);
+      expect(r.querySelector(".length-panel")).not.toBeNull();
+      expect(r.querySelector(".len-value")!.textContent).toBe("18");
+      const plus = r.querySelector<HTMLButtonElement>(".len-plus")!;
+      const minus = r.querySelector<HTMLButtonElement>(".len-minus")!;
+      minus.click();
+      minus.click();
+      await flushAll();
+      expect(r.querySelector(".len-value")!.textContent).toBe("16");
+      plus.click();
+      plus.click();
+      plus.click();
+      plus.click();
+      await flushAll();
+      expect(r.querySelector(".len-value")!.textContent).toBe("20");
+      const sym = r.querySelector<HTMLButtonElement>(".len-symbols")!;
+      expect(sym.getAttribute("aria-checked")).toBe("true");
+      sym.click();
+      await flushAll();
+      expect(sym.getAttribute("aria-checked")).toBe("false");
+      expect(worker.sent.at(-1)).toEqual({ type: "menu_profile", token: TOKEN, length: 20, symbols: false });
+      expect([...pwText(r)!]).toHaveLength(20);
+      expect(pwText(r)).not.toMatch(/[$%^]/);
+      expect(r.querySelector(".suggest-line")!.textContent).toContain("20 caractères");
+    });
+
+    it("the stepper stays within CUSTOM_MIN_LENGTH and CUSTOM_MAX_LENGTH", async () => {
+      const { r, handle, worker, clock } = suggest();
+      await handle.ready;
+      clock.advance(300);
+      button(r, "Longueur et caractères").click();
+      await flushAll();
+      clock.advance(300);
+      const plus = r.querySelector<HTMLButtonElement>(".len-plus")!;
+      const minus = r.querySelector<HTMLButtonElement>(".len-minus")!;
+      for (let i = 0; i < 80; i++) minus.click();
+      await flushAll();
+      expect(r.querySelector(".len-value")!.textContent).toBe(String(CUSTOM_MIN_LENGTH));
+      for (let i = 0; i < 100; i++) plus.click();
+      await flushAll();
+      expect(r.querySelector(".len-value")!.textContent).toBe(String(CUSTOM_MAX_LENGTH));
+      const lens = worker.sent.filter((m) => m.type === "menu_profile").map((m) => (m as { length: number }).length);
+      expect(Math.min(...lens)).toBe(CUSTOM_MIN_LENGTH);
+      expect(Math.max(...lens)).toBe(CUSTOM_MAX_LENGTH);
+      // No send once at a bound.
+      expect(lens.filter((n) => n === CUSTOM_MIN_LENGTH)).toHaveLength(1);
+    });
+
+    it("a preview the worker refuses leaves the plain Generate row", async () => {
+      const { r, handle } = setup((m) => (m.type === "menu_init" ? ok({ origin: SITE, formKind: "signup", items: [] }) : { err: "invalid" }), "signup");
+      await handle.ready;
+      expect(r.querySelector(".suggest-pw")).toBeNull();
+      expect(r.querySelector("[aria-label='Générer un mot de passe'], .row")).not.toBeNull();
+      expect(button(r, "Générer un mot de passe")).toBeTruthy();
+    });
   });
 
   it("an invalid hash never contacts the worker", async () => {

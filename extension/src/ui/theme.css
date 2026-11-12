@@ -1112,3 +1112,24 @@ body.island:has(.ghost) { overflow: hidden; }
   body.popup.compact { width: min(380px, 100vw); height: auto; min-height: min(420px, 100vh); max-height: 100vh; overflow-y: auto; }
   body.popup.compact .center { height: auto; min-height: min(420px, 100vh); padding: var(--space-xl) var(--space-l); box-sizing: border-box; }
 }
+
+/* Menu: the suggestion row (preview of the held password) and the length panel. */
+.menu .row-suggest { align-items: flex-start; padding-top: var(--space-m); padding-bottom: var(--space-m); }
+.menu .row-suggest .stack { gap: var(--space-s); min-width: 0; }
+.suggest-pw { font-family: var(--mono); font-size: var(--type-headline); line-height: 1.35; letter-spacing: .02em; word-break: break-all; color: var(--text); }
+.suggest-pw .digit { color: var(--digit); }
+.suggest-pw .symbol { color: var(--symbol); }
+.strength-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-xs); width: 100%; }
+.strength-seg { height: var(--space-xs); border-radius: var(--space-xxs); background: var(--track); }
+.strength-seg.on { background: var(--ok); }
+.suggest-line { font-size: var(--type-footnote); color: var(--ok-ink); }
+.length-panel { display: grid; gap: var(--space-s); margin: var(--space-s) var(--space-m) var(--space-m); padding: var(--space-m); border-radius: var(--r-control); background: var(--field); }
+.len-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-m); font-size: var(--type-body); color: var(--text); }
+.len-stepper { display: inline-flex; align-items: center; gap: var(--space-m); }
+.len-value { min-width: var(--space-xl); text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.len-step { width: var(--control-s); height: var(--control-s); border-radius: var(--r-chip); background: var(--glass-2); color: var(--text); font-size: var(--type-headline); line-height: 1; }
+.len-step:focus-visible, .len-symbols:focus-visible { outline: 2px solid var(--accent); }
+.len-symbols { position: relative; width: var(--space-xxl); height: var(--space-l); border-radius: var(--r-sheet); background: var(--track); transition: background-color 120ms ease; }
+.len-symbols::after { content: ""; position: absolute; top: var(--space-xxs); left: var(--space-xxs); width: var(--space-m); height: var(--space-m); border-radius: 50%; background: var(--text); transition: transform 120ms ease; }
+.len-symbols[aria-checked="true"] { background: var(--accent); }
+.len-symbols[aria-checked="true"]::after { transform: translateX(var(--space-m)); }

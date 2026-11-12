@@ -429,22 +429,27 @@ const metric = (v: unknown, min = 0) => {
   return n;
 };
 
+function previewOf(o: Obj): SuggestionPreview {
+  const strength = num(o.strength);
+  if (!Number.isInteger(strength) || strength < 0 || strength > 4) throw new Bad();
+  // The router's password bounds (1 to MAX_PASSWORD), and the length is its character count.
+  const password = str(o.password, MAX_PASSWORD);
+  const length = num(o.length);
+  if (!Number.isInteger(length) || length < 1 || length > MAX_PASSWORD || length !== [...password].length) throw new Bad();
+  return { password, strength: strength as SuggestionPreview["strength"], length };
+}
+
+/** The menu's `menu_preview`, `menu_regenerate` and `menu_profile` reply. */
+export const parseSuggestionPreview = (v: unknown): SuggestionPreview | null => guard(() => previewOf(obj(v)));
+
 /** The ghost page's `ghost_init` reply: the held password, its strength and the field's metrics. */
 export const parseGhostInit = (v: unknown): (SuggestionPreview & { metrics: GhostMetrics }) | null =>
   guard(() => {
     const o = obj(v);
     const m = obj(o.metrics);
     const b = obj(m.box);
-    const strength = num(o.strength);
-    if (!Number.isInteger(strength) || strength < 0 || strength > 4) throw new Bad();
-    // The router's password bounds (1 to MAX_PASSWORD), and the length is its character count.
-    const password = str(o.password, MAX_PASSWORD);
-    const length = num(o.length);
-    if (!Number.isInteger(length) || length < 1 || length > MAX_PASSWORD || length !== [...password].length) throw new Bad();
     return {
-      password,
-      strength: strength as SuggestionPreview["strength"],
-      length,
+      ...previewOf(o),
       metrics: {
         fontSize: metric(m.fontSize),
         lineHeight: metric(m.lineHeight),

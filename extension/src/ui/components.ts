@@ -112,6 +112,30 @@ const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
+/**
+ * A password as runs of letters, `.digit` and `.symbol` spans (colors from the tokens), built with
+ * text nodes only. For an extension page; a secret never goes to the page's DOM.
+ */
+export function passwordRuns(password: string): Node[] {
+  const out: Node[] = [];
+  let kind = "";
+  let buf = "";
+  const flush = () => {
+    if (buf === "") return;
+    if (kind === "") out.push(document.createTextNode(buf));
+    else out.push(h("span", { class: kind }, buf));
+    buf = "";
+  };
+  for (const c of password) {
+    const k = /\p{N}/u.test(c) ? "digit" : /[\p{L}\p{M}]/u.test(c) ? "" : "symbol";
+    if (k !== kind) flush();
+    kind = k;
+    buf += c;
+  }
+  flush();
+  return out;
+}
+
 const VIEWBOX: Partial<Record<IconName, string>> = {
   key: "0 0 18 18",
   plus: "0 0 12 12",

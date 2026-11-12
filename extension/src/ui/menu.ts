@@ -11,10 +11,10 @@
 // relays the arrows and Return to the worker, the menu asks for them
 // (`menu_keys`), and the focus stays in the page.
 import { ext } from "../shared/browser";
-import type { MenuKey, ProviderId, SignupMode, UiToBg } from "../shared/messages";
+import type { MenuKey, ProviderId, SignupMode, SuggestionPreview, UiToBg } from "../shared/messages";
 import { NEW_PASSWORD_FORMS } from "../shared/messages";
 import { t, tn } from "../shared/i18n";
-import type { MenuInit, ProviderChoice, SignInChoice, Summary } from "../shared/ui";
+import { CUSTOM_MAX_LENGTH, CUSTOM_MIN_LENGTH, type MenuInit, type ProviderChoice, type SignInChoice, type Summary } from "../shared/ui";
 import {
   ClickGuard,
   type FrameDeps,
@@ -25,8 +25,10 @@ import {
   h,
   hostOf,
   icon,
+  type IconName,
   mark,
   markTouch,
+  passwordRuns,
   messageBlock,
   mount,
   observeVisibility,
@@ -41,7 +43,7 @@ import {
   wayArt,
   wayTile,
 } from "./components";
-import { parseEmpty, parseKeys, parseLocked, parseMenuInit, parseNativeVaultState, type NativeVaultState } from "./parse";
+import { parseEmpty, parseKeys, parseLocked, parseMenuInit, parseNativeVaultState, parseSuggestionPreview, type NativeVaultState } from "./parse";
 
 export interface MenuHandle {
   /** Resolves once the first render is done. */
@@ -167,7 +169,7 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       h("span", { class: "menu-host" }, origin ? hostOf(origin) : "OnePass"),
       logins ? h("span", { class: "menu-count" }, tn("menu.loginCount", logins, { n: logins })) : null,
     );
-  const glyphTile = (name: "key" | "plus" | "shield", size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
+  const glyphTile = (name: IconName, size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
 
   const showError = (line: HTMLElement | null, code: string) => {
     if (code === "locked" || code === "unpaired" || code === "host_missing") {
@@ -592,20 +594,48 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     // On a sign-up form the strong password comes first, above the logins the site already has
     // (they stay reachable below); the passkey choice, when offered, already leads the list.
     const lead: HTMLElement[] = [];
+    let panel: HTMLElement | null = null;
     if (NEW_PASSWORD_FORMS.has(init.formKind)) {
       const first = init.formKind === "signup" && !init.signup?.passkey;
-      (first ? lead : extras).push(
-        option({
-          label: t("menu.generatePassword"),
-          lead: glyphTile("key", 16),
-          ...(first ? { act: fill, accent: true } : {}),
-          run: async () => {
-            if (!token) return;
-            const r = await call(deps.send, { type: "menu_generate", token }, parseEmpty);
-            if (!r.ok) showError(errLine, r.code);
+      const generate = async () => {
+        if (!token) return;
+        const r = await call(deps.send, { type: "menu_generate", token }, parseEmpty);
+        if (!r.ok) showError(errLine, r.code);
+      };
+      if (suggestion) {
+        // The preview of the held password (mockup B): Use fills that very one.
+        const row = suggestRow(generate, first);
+        const other = option({
+          label: t("menu.otherSuggestion"),
+          lead: glyphTile("refresh", 14),
+          cls: "row-quiet",
+          attrs: { "data-action": "other" },
+          run: () => redraw({ type: "menu_regenerate", token: token ?? "" }),
+        });
+        const more = option({
+          label: t("menu.lengthAndCharacters"),
+          lead: glyphTile("more", 14),
+          cls: "row-quiet",
+          attrs: { "data-action": "length", "aria-expanded": String(lengthOpen) },
+          run: () => {
+            lengthOpen = !lengthOpen;
+            const at = active;
+            render(init);
+            if (at >= 0) highlight(at);
           },
-        }),
-      );
+        });
+        (first ? lead : extras).push(row, other, more);
+        if (lengthOpen) panel = lengthPanel();
+      } else {
+        (first ? lead : extras).push(
+          option({
+            label: t("menu.generatePassword"),
+            lead: glyphTile("key", 16),
+            ...(first ? { act: fill, accent: true } : {}),
+            run: generate,
+          }),
+        );
+      }
     }
     if (LOGIN_FORMS.has(init.formKind)) {
       // Spec 8.3; the save prompt opens in its edit view (nothing typed is read from the page).
@@ -633,10 +663,117 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         ? h("div", { class: "menu-options", attrs: { role: "listbox", "aria-label": t("menu.onepassSuggestions") } }, ...groups)
         : null;
     const logins = init.items.filter((x) => x.kind === "login").length;
-    mount(container, header(init.origin, logins), empty, listbox, errLine);
+    mount(container, header(init.origin, logins), empty, listbox, panel, errLine);
     active = -1;
     guard.reset();
     remeasure();
+  }
+
+  /** The held suggestion of this menu's field (`menu_preview`); null: the plain Generate row. */
+  let suggestion: SuggestionPreview | null = null;
+  let lengthOpen = false;
+  /** The panel's own values: the length asked, and whether symbols are on. */
+  let profile = { length: 16, symbols: true };
+  /** Newest redraw only: an older answer never overwrites a newer one. */
+  let drawSeq = 0;
+  let pwEl: HTMLElement | null = null;
+  let barEl: HTMLElement | null = null;
+  let lineEl: HTMLElement | null = null;
+  let lenEl: HTMLElement | null = null;
+  /** The error line of the list on screen. */
+  let lastErr: HTMLElement | null = null;
+
+  const strengthLine = (p: SuggestionPreview) =>
+    p.strength >= 3 ? t("menu.suggestStrong", { n: p.length }) : `${t(p.strength === 0 ? "popup.weak" : "popup.fair")}, ${p.length}`;
+
+  /** Writes the current suggestion into the row's parts (the row itself stays, so does the focus). */
+  const paint = () => {
+    const p = suggestion;
+    if (!p) return;
+    if (pwEl) pwEl.replaceChildren(...passwordRuns(p.password));
+    if (barEl) [...barEl.children].forEach((seg, i) => seg.classList.toggle("on", i < p.strength));
+    if (lineEl) lineEl.textContent = strengthLine(p);
+    if (lenEl) lenEl.textContent = String(profile.length);
+  };
+
+  /** The worker redrew (other suggestion, or a new profile): show the answer, if still the newest. */
+  async function redraw(m: UiToBg): Promise<void> {
+    const seq = ++drawSeq;
+    const r = await call(deps.send, m, parseSuggestionPreview);
+    if (seq !== drawSeq) return;
+    if (!r.ok) {
+      showError(lastErr, r.code);
+      return;
+    }
+    suggestion = r.value;
+    // A plain redraw (other suggestion) follows the profile the worker holds; a profile draw is ours.
+    if (m.type === "menu_regenerate") profile = { ...profile, length: clampLength(r.value.length) };
+    paint();
+  }
+
+  const clampLength = (n: number) => Math.min(CUSTOM_MAX_LENGTH, Math.max(CUSTOM_MIN_LENGTH, n));
+  const writeProfile = (length: number, symbols: boolean) => {
+    profile = { length: clampLength(length), symbols };
+    if (lenEl) lenEl.textContent = String(profile.length);
+    if (token) void redraw({ type: "menu_profile", token, length: profile.length, symbols: profile.symbols });
+  };
+
+  /** The suggestion row: the password in mono, four strength segments, the strength line, Use. */
+  function suggestRow(run: () => Promise<void>, first: boolean): HTMLButtonElement {
+    pwEl = h("span", { class: "suggest-pw mono" });
+    barEl = h("span", { class: "strength-bar", attrs: { "aria-hidden": "true" } }, ...[0, 1, 2, 3].map(() => h("span", { class: "strength-seg" })));
+    lineEl = h("span", { class: "suggest-line" });
+    const row = h(
+      "button",
+      {
+        class: `row row-suggest${first ? "" : " row-suggest-later"}`,
+        attrs: { type: "button", role: "option", "data-opt": "", "aria-selected": "false", "aria-label": t("menu.generatePassword") },
+        on: { click: guard.wrap(() => void run()) },
+      },
+      h("span", { class: "stack" }, pwEl, barEl, lineEl),
+      h("span", { class: first ? "act hint" : "act" }, t("menu.use")),
+    );
+    row.addEventListener("op-activate", () => void run());
+    paint();
+    return row;
+  }
+
+  /** "Length and characters": a stepper and the Symbols switch; each change writes the profile. */
+  function lengthPanel(): HTMLElement {
+    const step = (d: number, cls: string, sign: string) =>
+      h(
+        "button",
+        {
+          class: `len-step ${cls}`,
+          attrs: { type: "button", "aria-label": `${t("menu.length")} ${sign}` },
+          on: {
+            click: guard.wrap(() => {
+              const next = clampLength(profile.length + d);
+              if (next !== profile.length) writeProfile(next, profile.symbols);
+            }),
+          },
+        },
+        sign,
+      );
+    lenEl = h("span", { class: "len-value" }, String(profile.length));
+    const sw = h("button", {
+      class: "len-symbols",
+      attrs: { type: "button", role: "switch", "aria-checked": String(profile.symbols), "aria-label": t("menu.symbols") },
+    });
+    sw.addEventListener(
+      "click",
+      guard.wrap(() => {
+        const on = !profile.symbols;
+        sw.setAttribute("aria-checked", String(on));
+        writeProfile(profile.length, on);
+      }),
+    );
+    return h(
+      "div",
+      { class: "length-panel" },
+      h("div", { class: "len-row" }, h("span", { class: "len-label" }, t("menu.length")), h("span", { class: "len-stepper" }, step(-1, "len-minus", "\u2212"), lenEl, step(1, "len-plus", "+"))),
+      h("div", { class: "len-row" }, h("span", { class: "len-label" }, t("menu.symbols")), sw),
+    );
   }
 
   /** One more account of the provider, unfolded under its method. */
@@ -659,6 +796,14 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
     }
     const r = await call(deps.send, { type: "menu_init", token }, parseMenuInit);
     if (r.ok) {
+      suggestion = null;
+      if (NEW_PASSWORD_FORMS.has(r.value.formKind)) {
+        const p = await call(deps.send, { type: "menu_preview", token }, parseSuggestionPreview);
+        if (p.ok) {
+          suggestion = p.value;
+          profile = { length: clampLength(p.value.length), symbols: /[^\p{L}\p{N}\p{M}]/u.test(p.value.password) };
+        }
+      }
       render(r.value);
       void listenKeys();
     } else renderState(r.code, null);
