@@ -77,6 +77,8 @@ pub struct FakeVault {
     pub reprompts: Vec<(Id, Option<String>)>,
     pub served: Vec<(&'static str, Id, Option<String>)>,
     pub client: Option<[u8; 16]>,
+    /// `delete` of this item fails (a host write error), nothing deleted.
+    pub fail_delete: Option<Id>,
 }
 
 /// Account key and label of the fixture's second account (`two_accounts`).
@@ -322,6 +324,7 @@ impl FakeVault {
             reprompts: Vec::new(),
             served: Vec::new(),
             client: None,
+            fail_delete: None,
             vaults: vec![perso, pro],
             items: vec![
                 atlas,
@@ -514,6 +517,9 @@ impl VaultAccess for FakeVault {
     }
 
     fn delete(&mut self, _vault_id: Id, item_id: Id) -> Result<()> {
+        if self.fail_delete == Some(item_id) {
+            return Err(BridgeError::App(AppErrorCode::Internal));
+        }
         let before = self.items.len();
         self.items.retain(|i| i.id != item_id);
         if self.items.len() == before {

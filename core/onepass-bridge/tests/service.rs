@@ -4409,6 +4409,36 @@ fn amend_save_moves_to_another_vault() {
 }
 
 #[test]
+fn amend_save_move_rolls_back_when_the_old_login_cannot_be_deleted() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    let pro = h.ids.pro;
+    let old: Id = item.parse().unwrap();
+    h.svc.vault_mut().fail_delete = Some(old);
+    let count = h.vault().items.len();
+    let before = item_of(&h, &item).unwrap().clone();
+    let v = h.call_at(amend(&item, NEWSITE, "Atlas pro", "", &id(pro)), NOW + 30);
+    assert_eq!(err(&v), "internal");
+    // The old login intact, the new copy gone: one copy, as before.
+    assert_eq!(h.vault().items.len(), count);
+    let i = item_of(&h, &item).expect("old login kept");
+    assert_eq!(i.vault_id, before.vault_id);
+    assert_eq!(i.title, before.title);
+    assert!(
+        !h.vault()
+            .items
+            .iter()
+            .any(|i| i.vault_id == pro && i.title == "Atlas pro")
+    );
+    // recent_saves unchanged: the old id is still the one to amend or undo.
+    h.svc.vault_mut().fail_delete = None;
+    ok(&h.call_at(amend(&item, NEWSITE, "Renamed", "", ""), NOW + 40));
+    assert_eq!(item_of(&h, &item).unwrap().title, "Renamed");
+    assert_eq!(ok(&h.call_at(undo(&item, NEWSITE), NOW + 50)), &json!({}));
+    assert!(item_of(&h, &item).is_none());
+}
+
+#[test]
 fn amend_and_undo_refuse_a_ctx_other_than_save_prompt() {
     let mut h = H::new();
     let item = save_fresh(&mut h, NOW);
