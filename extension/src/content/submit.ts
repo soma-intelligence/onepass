@@ -281,6 +281,28 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     return { formRef: f.ref, username, password, isNew: f.kind !== "login" };
   };
 
+  /**
+   * `f` as the page is now: the analysis may lag the page by a few hundred ms (a password field a
+   * "Next" button just revealed in the same form, typed and sent at once). Read when a submission
+   * finds no password in `f`: the copy a fresh analysis has of it, else `f`.
+   */
+  const fresh = (f: FormInfo): FormInfo => {
+    const container = refs.get(f.ref);
+    if (!container) return f;
+    const passwords = Array.from(container.querySelectorAll('input[type="password" i]')).filter((el) => nativeValue(el) !== "" && isRendered(el, geometry));
+    const known = new Set(f.fields.map((x) => refs.get(x.ref)));
+    if (passwords.every((el) => known.has(el))) return f;
+    const g = opts.resolve(f.ref, opts.analyze());
+    return g && CREDENTIAL_KINDS.has(g.kind) ? g : f;
+  };
+  /** The credentials of `f`, read again from a fresh analysis when the one known has no password. */
+  const readNow = (f: FormInfo): { f: FormInfo; c: Credentials | null } => {
+    const c = read(f);
+    if (c) return { f, c };
+    const g = fresh(f);
+    return g === f ? { f, c: null } : { f: g, c: read(g) };
+  };
+
   /** A sign-in step that asks for the identifier alone: its value, else null. */
   const readIdentifier = (f: FormInfo): string | null => {
     if (f.kind !== "login") return null;
@@ -496,8 +518,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       return;
     }
     if (!activated(f)) return;
-    report(read(f), f);
-    reportIdentifier(f);
+    const now = readNow(f);
+    report(now.c, now.f);
+    if (!now.c) reportIdentifier(now.f);
   };
 
   const onClick = (e: Event) => {
@@ -506,14 +529,15 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
     const button = composedClosest(e.target, BUTTONS);
     if (!button) return;
     if (isSubmitType(button)) opts.onStep?.(stepContainer(button));
-    const f = formOf(button);
-    if (!f) {
+    const known = formOf(button);
+    if (!known) {
       const saved = formOf(button, SAVED_FORM_KINDS);
       if (saved && ((saved.submitRef !== undefined && refs.get(saved.submitRef) === button) || isSubmitType(button))) reportForm(saved);
       return;
     }
-    const sends = (f.submitRef !== undefined && refs.get(f.submitRef) === button) || isSubmitType(button);
-    const snapshot = read(f);
+    const sends = (known.submitRef !== undefined && refs.get(known.submitRef) === button) || isSubmitType(button);
+    // The form as the page is now (a password field just revealed in it).
+    const { f, c: snapshot } = readNow(known);
     if (!snapshot) {
       if (readIdentifier(f) === null) return;
       if (sends) reportIdentifier(f);
@@ -535,8 +559,9 @@ export function createSubmitWatcher(opts: SubmitOptions): SubmitWatcher {
       reportForm(formOf(e.target, SAVED_FORM_KINDS));
       return;
     }
-    report(read(f), f);
-    reportIdentifier(f);
+    const now = readNow(f);
+    report(now.c, now.f);
+    if (!now.c) reportIdentifier(now.f);
   };
 
   const target: EventTarget = view ?? doc;

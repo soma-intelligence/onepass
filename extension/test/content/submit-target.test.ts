@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { submitTargetAllowed } from "../../src/content/submit";
 import { type FormInfo, type PageAnalysis, UNCERTAIN_MS } from "../../src/shared/messages";
-import { flush, input, setPage, start, type Started, userClick, useTimers } from "./harness";
+import { asUser, flush, input, setPage, start, type Started, userClick, useTimers } from "./harness";
 
 // The origin the harness pins (relative actions resolve against the jsdom document URL).
 const ORIGIN = "https://atlas-cloud.test";
@@ -250,5 +250,62 @@ describe("sign-in that keeps its form (spec 5.3)", () => {
     document.getElementById("m")!.append(after);
     await flush();
     expect(s.ext.ofType("page_alert")).toEqual([]);
+  });
+});
+
+describe("email, then the password revealed in the same form (lab login_email_then_password)", () => {
+  // The lab's markup: the password step hidden until "Next" (a plain button), then a submit button.
+  const TWO_STEP = `<form id="lab-form" method="post" action="/login">
+    <div class="field"><label for="email">Email</label><input type="email" id="email" name="email" autocomplete="email"></div>
+    <div id="lab-pw-step" hidden><div class="field"><label for="pw">Password</label><input type="password" id="pw" name="password" autocomplete="current-password"></div></div>
+    <button type="button" id="lab-next">Next</button>
+    <button type="submit" id="lab-submit" hidden>Sign in</button>
+  </form>`;
+
+  function twoStep(): Started {
+    useTimers();
+    setPage(TWO_STEP);
+    s = start();
+    const form = document.getElementById("lab-form") as HTMLFormElement;
+    form.addEventListener("submit", (e) => e.preventDefault());
+    document.getElementById("lab-next")!.addEventListener("click", (e) => {
+      e.preventDefault();
+      document.getElementById("lab-pw-step")!.hidden = false;
+      document.getElementById("lab-next")!.hidden = true;
+      document.getElementById("lab-submit")!.hidden = false;
+      input("pw").focus();
+    });
+    return s;
+  }
+
+  it("the sign-in is reported with the email of the first step (submit click)", async () => {
+    const st = twoStep();
+    input("email").value = "alex@atlas.dev";
+    userClick(document.getElementById("lab-next")!);
+    // The user types the password right away (no new analysis yet) and signs in.
+    input("pw").value = "Typed-Pass-1";
+    userClick(document.getElementById("lab-submit")!);
+    expect(st.ext.ofType("submitted_credentials").map((m) => [m.username, m.password])).toEqual([["alex@atlas.dev", "Typed-Pass-1"]]);
+  });
+
+  it("the same with Enter in the password field", async () => {
+    const st = twoStep();
+    input("email").value = "alex@atlas.dev";
+    userClick(document.getElementById("lab-next")!);
+    input("pw").value = "Typed-Pass-1";
+    asUser(input("pw"), new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true, cancelable: true }));
+    expect(st.ext.ofType("submitted_credentials").map((m) => [m.username, m.password])).toEqual([["alex@atlas.dev", "Typed-Pass-1"]]);
+  });
+
+  it("after the analysis caught up with the revealed field, too", async () => {
+    const st = twoStep();
+    input("email").value = "alex@atlas.dev";
+    userClick(document.getElementById("lab-next")!);
+    vi.advanceTimersByTime(1000);
+    await flush();
+    vi.advanceTimersByTime(1000);
+    input("pw").value = "Typed-Pass-1";
+    userClick(document.getElementById("lab-submit")!);
+    expect(st.ext.ofType("submitted_credentials").map((m) => [m.username, m.password])).toEqual([["alex@atlas.dev", "Typed-Pass-1"]]);
   });
 });
