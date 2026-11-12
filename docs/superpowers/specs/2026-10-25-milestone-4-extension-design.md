@@ -280,7 +280,7 @@ Ruling R-10 : aucune exception à la règle "pas de remplissage dans une iframe 
 
 ### 8.6 Overlay "Connexion en un clic" et chaîne d'authentification
 
-L'overlay est l'iframe `overlay.html#<jeton>` en haut à droite du cadre principal, affichée sur une page de connexion reconnue du site d'un item (maquette Inline : "Se connecter à <site>", comptes, "Se connecter", texte "Un clic enchaîne toutes les étapes. Arrêt automatique si le domaine change ou sur un CAPTCHA.", puis la liste des étapes et "Arrêter" / "Recommencer").
+L'overlay est l'iframe `overlay.html#<jeton>` en haut au centre du cadre principal, affichée sur une page de connexion reconnue du site d'un item (maquette Inline : "Se connecter à <site>", comptes, "Se connecter", texte "Un clic enchaîne toutes les étapes. Arrêt automatique si le domaine change ou sur un CAPTCHA.", puis la liste des étapes et "Arrêter" / "Recommencer").
 
 Machine à états dans le service worker, une chaîne par onglet :
 
@@ -298,6 +298,7 @@ Machine à états dans le service worker, une chaîne par onglet :
 - Soumission : clic sur le bouton de soumission du formulaire classé, sinon `requestSubmit()`, sinon Entrée. Désactivable par item (préférence locale, voir R-12) ; désactivée, la chaîne remplit puis attend que l'utilisateur soumette.
 - Plusieurs comptes pour le site : l'overlay les liste tous (y compris "Se connecter avec Google (perso@…)"), l'utilisateur choisit.
 - Démarrage seulement par un clic dans l'overlay, le menu ou la popup.
+- Apparition sans geste (2026-11-12) : l'overlay, en haut au centre du cadre principal, apparaît aussi de lui-même quand la page est prête et se lit comme une connexion (coffre ouvert et au moins un login du site : la pastille "Se connecter" ; coffre verrouillé : la carte générique "Se connecter avec OnePass") ou comme une inscription (coffre ouvert : "Créer avec OnePass"). Son apparition ne remplit, ne soumet et ne démarre rien : le démarrage reste un clic dans l'overlay, comme ci-dessus. Il se replie après 8 s sans action, à la première saisie dans la page, à l'ouverture du menu ou du fantôme d'un champ, ou par ×. Règles détaillées : `2026-11-10-one-gesture-login-design.md`, section "Sign-in pill that appears by itself".
 
 Ruling R-11 : la chaîne ne fait aucune action sur une page dont le domaine sort de la liste, même pour une redirection intermédiaire attendue (SSO d'entreprise, domaine de CDN d'authentification) - arrêter est sûr, deviner ne l'est pas - coût si faux : `handoff` plus fréquent sur les SSO à domaines multiples ; une liste de domaines associés par item pourra suivre.
 

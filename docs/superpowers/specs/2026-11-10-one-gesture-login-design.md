@@ -90,6 +90,38 @@ Android, Windows, Linux and borrowed computers are out of scope here and get the
 - A secret served to the browser restarts that account's idle delay through a bridge callback,
   capped at 12 hours after the last unlock or the last time the app was in front.
 
+### Sign-in pill that appears by itself (extension, 2026-11-12)
+
+The top-centre card no longer waits for a gesture to show. Once the top page of a tab has loaded
+(`webNavigation.onCompleted`, or a later analysis of the top frame of that loaded page), the
+worker (`background/auto-pill.ts`) shows it when the page reads as:
+
+1. a login form, the vault open, at least one login for the site: the pill "Sign in", named for
+   its login, with "Other logins" when there are several. Its click runs the card's chain (fill,
+   submit, identifier then password, stop on CAPTCHA);
+2. a login form, the vault locked: the generic card. Its click unlocks, then the page's plan runs
+   (the unlock-then-resume above);
+3. a signup form, the vault open: "Create with OnePass". Its click runs the page's signup plan
+   (identity and a strong password made with the site's rules, the Login kept in waiting); a plan
+   that leaves the identity to a menu gets the password alone. Nothing is submitted.
+
+A login page with nothing saved, a signup page on a locked vault, and no app at all show nothing.
+
+Appearing fills, submits and starts nothing. Only a trusted click inside the card (an
+extension-origin frame behind the click guard) acts. The card takes no focus and takes the
+pointer only once shown and sized, as every frame.
+
+It goes away after `AUTO_PILL_MS` (8 s) untouched, at the page's first trusted input
+(`page_typed`, nothing typed goes with it), when the field menu or a field's ghost opens, on ×, or
+on "Never on this site". A click on its button, its list or its unlock stops the fold.
+
+It never shows when the setting is off (popup switch "Sign-in pill", `storage.local`
+`auto_pill`, on by default), the site (registrable domain) is in the never-list
+(`auto_pill_never`, cleared from the popup), the top page is not https, the window is private,
+a chain runs in the tab, the card, a menu or a save prompt is already there, a field of the
+recognised form holds a value, or the form is only in a child frame. It shows at most once per
+site per tab (worker memory: a reload does not bring it back, another site in the tab may).
+
 ## Evidence
 
 Lab run `extension/lab/out/pass5-2026-11-11-evidence`: 20 sites, 293 scenarios, three start
