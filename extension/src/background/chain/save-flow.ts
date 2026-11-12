@@ -331,8 +331,10 @@ export class SaveFlow {
   /**
    * Spec 5.2: `password`, just generated and filled in a change-password
    * form of `tabId`, goes at once to the login being changed
-   * (`update_password`, the old password to its history): the site's only
-   * login, or the one OnePass filled in this tab. Several logins and none
+   * (`update_password`, the old password to its history, tagged
+   * `onepass:pending`): the site's only login, or the one OnePass filled in
+   * this tab. The form's submission confirms it like a signup's pending
+   * item (`confirm`, or the host's `pending` verdict). Several logins and none
    * filled here: nothing written, the password stays remembered for the
    * submission (the card asks which one, Task 11). Never throws.
    */
@@ -352,7 +354,10 @@ export class SaveFlow {
         origin,
         password,
         weak_by_site: opts.weak === true,
+        pending: true,
       });
+      // The submission confirms it; a blank username keeps the login's own.
+      this.saved.set(tabId, { site: page.site, itemId, username: "" });
       return true;
     } catch {
       return false;

@@ -135,6 +135,7 @@ describe("Suggestions", () => {
       origin: SITE,
       password: "Gen-1-Pass-xyz!",
       weak_by_site: false,
+      pending: true,
     });
   });
 

@@ -281,8 +281,12 @@ interface Ops {
     res: { item_id: string };
   };
   update_password: {
-    /** `weak_by_site`: a regenerated pending Login's weak tag is set (true) or cleared (false). */
-    req: { ctx: Ctx; item_id: string; origin: string; password: string; weak_by_site?: boolean };
+    /**
+     * `weak_by_site`: a regenerated pending Login's weak tag is set (true) or cleared (false).
+     * `pending`: a change-password form's generated password (spec 5.2): the Login gets
+     * `onepass:pending` in the same write, its form's submission confirms it (`confirm_pending`).
+     */
+    req: { ctx: Ctx; item_id: string; origin: string; password: string; weak_by_site?: boolean; pending?: boolean };
     res: Record<string, never>;
   };
   /**
