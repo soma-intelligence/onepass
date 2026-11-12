@@ -661,13 +661,15 @@ export class Overlays {
   }
 
   /**
-   * The page's user typed (`page_typed`), or another surface opens on a field (the ghost): a card
+   * The page's user typed (`page_typed`, from top document `documentId`), or another surface opens on a field (the ghost): a card
    * that appeared by itself folds away, unless the user already acted on it (a running chain, an
    * unlock it waits for). A card opened by a gesture stays.
    */
-  async foldAuto(tabId: number): Promise<void> {
+  async foldAuto(tabId: number, documentId?: string): Promise<void> {
     const live = await this.tokens.forTab(tabId);
     if (!live?.rec.auto || live.rec.pending) return;
+    // Only from the document the card is in, where the browser names both.
+    if (documentId !== undefined && live.rec.documentId !== undefined && documentId !== live.rec.documentId) return;
     if ((await this.deps.chain.state(tabId))?.status === "running") return;
     await this.dropCard(live.token, live.rec);
   }

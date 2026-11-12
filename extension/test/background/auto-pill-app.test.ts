@@ -217,6 +217,15 @@ describe("auto sign-in pill: goes away", () => {
     expect(await t.ext.send({ type: "overlay_init", token }, uiSender(`overlay.html#${token}`, 7))).toEqual({ err: "invalid" });
   });
 
+  it("typing in a child frame, or reported for another top document, leaves it", async () => {
+    const t = await setup();
+    await t.ready("login");
+    t.ext.setFrame(7, 3, `${SITE}/frame`, "doc-3");
+    expect(await t.ext.send({ type: "page_typed" }, csSender(`${SITE}/frame`, 7, 3, { documentId: "doc-3" }))).toEqual({ ok: {} });
+    expect(await t.ext.send({ type: "page_typed" }, csSender(`${SITE}/login`, 7, 0, { documentId: "doc-0" }))).toEqual({ ok: {} });
+    expect(t.toTab("remove_frame")).toEqual([]);
+  });
+
   it("typing leaves a card opened by a gesture, and a running chain, alone", async () => {
     const t = await setup();
     await t.b.overlays.open({ tabId: 7, frameId: 0, origin: SITE, documentId: "doc-1" });

@@ -1105,8 +1105,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         return { url: `${ext.runtime.getURL("menu.html")}#${token}` };
       },
       page_typed: async (_m, from) => {
-        // The user types in the page: a card that appeared by itself folds away.
-        await overlays.foldAuto(from.tabId);
+        // The user types in the top page the card was shown on: a card that appeared by itself folds away.
+        if (from.frameId === 0) await overlays.foldAuto(from.tabId, from.documentId);
         return {};
       },
       menu_key: async (m, from) => {
