@@ -12,6 +12,7 @@
 // (`menu_keys`), and the focus stays in the page.
 import { ext } from "../shared/browser";
 import type { MenuKey, ProviderId, SignupMode, UiToBg } from "../shared/messages";
+import { NEW_PASSWORD_FORMS } from "../shared/messages";
 import { t, tn } from "../shared/i18n";
 import type { MenuInit, ProviderChoice, SignInChoice, Summary } from "../shared/ui";
 import {
@@ -48,7 +49,6 @@ export interface MenuHandle {
 }
 
 const LOGIN_FORMS = new Set(["login", "signup", "change_password", "otp"]);
-const NEW_PASSWORD_FORMS = new Set(["signup", "change_password"]);
 
 function emptyText(init: MenuInit): string {
   if (init.formKind === "card") return t("menu.noCardInOnepass");

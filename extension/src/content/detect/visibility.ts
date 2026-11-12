@@ -166,6 +166,14 @@ export const domFieldHitTest: FieldHitTest = (el, x, y) => {
   return typeof root.elementFromPoint === "function" ? root.elementFromPoint(x, y) : undefined;
 };
 
+/**
+ * A hit at a point of `el` (from `domFieldHitTest`, its own root asked) that leaves the field
+ * uncovered: the field itself, an element inside it, or our own host (its icon sits on the field).
+ */
+export function hitIsField(el: Element, hit: Element, isOwn?: (el: Element) => boolean): boolean {
+  return hit === el || el.contains(hit) || isOwn?.(hit) === true;
+}
+
 export interface PerceivableOptions {
   hitTest?: FieldHitTest;
   /** Our own host (its icon sits on the field). */
@@ -201,7 +209,7 @@ export function isPerceivable(el: Element, geometry: Geometry = domGeometry, opt
   // No hit testing in this engine: the other rules only.
   if (hit === undefined) return true;
   if (hit === null) return false;
-  if (hit === el || el.contains(hit) || opts.isOwn?.(hit) === true) return true;
+  if (hitIsField(el, hit, opts.isOwn)) return true;
   const labels = (el as Partial<HTMLInputElement>).labels;
   return labels ? Array.from(labels).some((l) => l === hit || l.contains(hit)) : false;
 }

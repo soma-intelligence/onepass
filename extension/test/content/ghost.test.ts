@@ -359,6 +359,87 @@ describe("ghost keys (spec 3.3)", () => {
   });
 });
 
+describe("ghost fix round 1", () => {
+  it("a field inside an open shadow root, hit by the field's own root, gets a ghost", async () => {
+    document.documentElement.innerHTML = `<head></head><body><div id="host"></div></body>`;
+    const host = document.getElementById("host")!;
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = SIGNUP;
+    const field = root.getElementById("n") as HTMLInputElement;
+    wide(field);
+    // As a browser does: the document's hit test sees the host, the shadow root's the field.
+    s = start(undefined, { hitTest: () => host, fieldHitTest: (el) => el });
+    worker(s);
+    await settle();
+    userFocus(field);
+    await settle();
+    expect(s.ext.ofType("ghost_open")).toHaveLength(1);
+    expect(ghostFrame(s)).not.toBeNull();
+    expect(s.ext.ofType("open_menu")).toHaveLength(0);
+  });
+
+  it("a field really covered by another element gets the menu", async () => {
+    setPage(`${SIGNUP}<div id="cover"></div>`);
+    wide(input("n"));
+    const cover = document.getElementById("cover")!;
+    s = start(undefined, { fieldHitTest: (el, x) => (x > 200 ? cover : el) });
+    worker(s);
+    await settle();
+    userFocus(input("n"));
+    await settle();
+    expect(s.ext.ofType("ghost_open")).toHaveLength(0);
+    expect(s.ext.ofType("open_menu")).toEqual([expect.objectContaining({ auto: true })]);
+    expect(ghostFrame(s)).toBeNull();
+  });
+
+  it("the keyup of an accepted Enter never reaches the page", async () => {
+    s = await ghostShown();
+    const ups: string[] = [];
+    input("n").addEventListener("keyup", (e) => ups.push(e.key));
+    document.addEventListener("keyup", (e) => ups.push(`doc:${e.key}`));
+    userKey(input("n"), "Enter");
+    const up = asUser(input("n"), new KeyboardEvent("keyup", { key: "Enter", bubbles: true, composed: true, cancelable: true }));
+    await settle();
+    expect(up.defaultPrevented).toBe(true);
+    expect(ups).toEqual([]);
+    expect(s.ext.ofType("ghost_accept")).toHaveLength(1);
+    // Only that one keyup: the next is the page's again.
+    asUser(input("n"), new KeyboardEvent("keyup", { key: "Enter", bubbles: true, composed: true, cancelable: true }));
+    expect(ups).toEqual(["Enter", "doc:Enter"]);
+  });
+
+  it("focus leaving the ghost frame for the body drops the ghost, not dismissed", async () => {
+    s = await ghostShown();
+    const frame = ghostFrame(s)!;
+    frame.focus();
+    await settle();
+    expect(ghostFrame(s)).toBe(frame);
+    frame.blur();
+    await settle();
+    expect(document.activeElement).toBe(document.body);
+    expect(ghostFrame(s)).toBeNull();
+    expect(s.ext.ofType("ghost_dismiss")).toHaveLength(0);
+    // Not dismissed: the user's next focus brings it back.
+    userFocus(input("n"));
+    await settle();
+    expect(s.ext.ofType("ghost_open")).toHaveLength(2);
+  });
+
+  it("a ghost the frames drop (field scrolled out) comes back on a click into the still focused field", async () => {
+    s = await ghostShown();
+    input("n").setAttribute("data-test-rect", "0,5000,240,36");
+    window.dispatchEvent(new Event("scroll"));
+    await settle();
+    expect(ghostFrame(s)).toBeNull();
+    expect(document.activeElement).toBe(input("n"));
+    input("n").removeAttribute("data-test-rect");
+    userClick(input("n"));
+    await settle();
+    expect(s.ext.ofType("ghost_open")).toHaveLength(2);
+    expect(ghostFrame(s)).not.toBeNull();
+  });
+});
+
 describe("ghost on touch layouts (ruling: the menu instead)", () => {
   it("a trusted tap on touch opens the menu on its suggestion row, never a ghost", async () => {
     setPage(SIGNUP);

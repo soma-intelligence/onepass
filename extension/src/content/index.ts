@@ -31,6 +31,7 @@ import { ext as browserExt, openOrClosedShadowRoot } from "../shared/browser";
 import { hasVisibilityV2 } from "../shared/click-guard";
 import { parseOrigin } from "../shared/domain";
 import type { BgToCs, CsToBg, FieldRole, FillHints, FrameKind, PageAnalysis } from "../shared/messages";
+import { NEW_PASSWORD_FORMS } from "../shared/messages";
 import { buildPageContext, findTypedUsername, withTypedUsernameHash } from "./context";
 import { classifierFor, createModelHook, type ModelHook, remoteSession } from "./detect/classifier";
 import { analyzeDocument } from "./detect/forms";
@@ -44,7 +45,7 @@ import {
   TreeListeners,
   WatchedRoots,
 } from "./detect/shadow";
-import { domGeometry, type FieldHitTest, type Geometry } from "./detect/visibility";
+import { domFieldHitTest, domGeometry, type FieldHitTest, type Geometry, hitIsField } from "./detect/visibility";
 import { createFiller, SETTLE_MS } from "./filler";
 import { collectPasswordContext, patternMatches } from "./password-context";
 import { usernameFits } from "./username-fit";
@@ -171,8 +172,6 @@ export const LATE_ROOT_CHECKS_MS: readonly number[] = [500, 1_500, 3_000, 6_000,
 /** A focus opens the ghost only this soon after a trusted gesture of the user (spec 3.5). */
 export const GHOST_GESTURE_MS = 1000;
 
-/** The form kinds whose new-password field gets the ghost (spec 3.1). */
-const GHOST_FORMS: ReadonlySet<string> = new Set(["signup", "change_password"]);
 
 export function createContentScript(o: ContentOptions): ContentScript {
   const { doc, ext } = o;
@@ -245,6 +244,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
 
   /** Set in start(): drops an open ghost when the layout turned to touch (resize, rotation). */
   let ghostLayoutCheck = (): void => undefined;
+  /** Set in start(): the frames removed the ghost of `field` on their own. */
+  let ghostRemovedByFrames = (_field: Element): void => undefined;
   let layoutQueued = false;
   const queueLayout = () => {
     if (layoutQueued || stopped) return;
@@ -254,7 +255,9 @@ export function createContentScript(o: ContentOptions): ContentScript {
       if (!parts || stopped) return;
       ghostLayoutCheck();
       parts.icons.reposition();
+      const ghostAt = parts.frames.has("ghost") ? parts.frames.anchorOf("ghost") : null;
       parts.frames.reposition();
+      if (ghostAt && !parts.frames.has("ghost")) ghostRemovedByFrames(ghostAt);
     });
   };
 
@@ -668,16 +671,26 @@ export function createContentScript(o: ContentOptions): ContentScript {
       ghostLayoutCheck = () => {
         if (currentLayout().touch && (frames.has("ghost") || ghostPending)) dropGhost();
       };
+      ghostRemovedByFrames = (field) => {
+        // Its field left the viewport (frames.reposition): a trusted click back into the field,
+        // focused still, may offer again.
+        if (offered === field) offered = null;
+      };
       /** A new-password field of a signup or change-password form, empty, not dismissed. */
       const ghostEligible = (t: IconTarget): t is IconTarget & { el: HTMLInputElement } =>
         t.el instanceof HTMLInputElement &&
         t.el.value === "" &&
         !t.el.disabled &&
         !t.el.readOnly &&
-        GHOST_FORMS.has(t.form.kind) &&
+        NEW_PASSWORD_FORMS.has(t.form.kind) &&
         t.form.fields.some((f) => f.ref === t.fieldRef && f.role === "new_password") &&
         !isDismissed(t.el);
-      /** Partly covered (spec 3.4): the hit test at its center and inset corners finds something else. */
+      /**
+       * Partly covered (spec 3.4): the hit test of the field's own root (a shadow root answers with
+       * its own elements) at its center and inset corners finds something else than the field, an
+       * element inside it or our host. No hit testing in this engine: not covered.
+       */
+      const fieldHitTest = o.fieldHitTest ?? domFieldHitTest;
       const fieldCovered = (el: Element): boolean => {
         const r = el.getBoundingClientRect();
         const inset = 2;
@@ -689,9 +702,9 @@ export function createContentScript(o: ContentOptions): ContentScript {
           [r.right - inset, r.bottom - inset],
         ];
         for (const [x, y] of points) {
-          const hit = hitTest(x, y);
+          const hit = fieldHitTest(el, x, y);
           if (hit === null || hit === undefined) continue;
-          if (hit === el || composedContains(el, hit) || sh.isHost(hit)) continue;
+          if (hitIsField(el, hit, (h) => sh.isHost(h))) continue;
           return true;
         }
         return false;
@@ -755,6 +768,8 @@ export function createContentScript(o: ContentOptions): ContentScript {
         const url = raw === null ? null : checkFrameUrl(raw, "menu", ext.runtime.getURL(""), true);
         if (url !== null) frames.showFrame("menu", url, el);
       };
+      /** The keyup still to come of an accepted Tab or Enter, on its field. */
+      let swallowKeyup: { el: Element; key: string } | null = null;
       /** The keys of the field under the ghost (trusted, read here only while it shows). True: handled. */
       const ghostKey = (e: KeyboardEvent, field: Element): boolean => {
         if (currentLayout().touch) {
@@ -764,7 +779,9 @@ export function createContentScript(o: ContentOptions): ContentScript {
         if (e.ctrlKey || e.metaKey || e.altKey) return false;
         if ((e.key === "Tab" || e.key === "Enter") && !e.shiftKey) {
           e.preventDefault();
-          e.stopPropagation();
+          e.stopImmediatePropagation();
+          // Its keyup is ours too: a page that submits on keyup Enter never sees it.
+          swallowKeyup = { el: field, key: e.key };
           acceptGhost();
           return true;
         }
@@ -807,6 +824,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
         "keydown",
         (e) => {
           if (!isTrusted(e) || !(e instanceof KeyboardEvent)) return;
+          if (swallowKeyup && swallowKeyup.key !== e.key) swallowKeyup = null;
           // The ghost shows over this very field: its keys first (spec 3.3).
           const g = ghostField();
           if (g !== null && e.target === g && ghostKey(e, g)) return;
@@ -954,12 +972,37 @@ export function createContentScript(o: ContentOptions): ContentScript {
           // click on its pill). Not dismissed: the next focus brings it back. From any blur, page
           // script's included: removing the ghost gives nothing away.
           const el = e.target;
+          // The ghost's frame had the focus (a click on its pill) and lost it: unless it went
+          // back to the field, the ghost goes (the body, a part of the page that takes no focus).
+          if (el instanceof Element && sh.isHost(el)) {
+            const g = ghostField();
+            if (g === null) return;
+            setTimeout(() => {
+              if (stopped || !parts || ghostField() !== g || ghostFocused() || focusedField() === g) return;
+              if (offered === g) offered = null;
+              dropGhost();
+            }, 0);
+            return;
+          }
           if (!(el instanceof Element) || (el !== offered && el !== ghostField() && el !== ghostPending)) return;
           setTimeout(() => {
             if (stopped || !parts || focusedField() === el || ghostFocused()) return;
             if (offered === el) offered = null;
             if (ghostField() === el || ghostPending === el) dropGhost();
           }, 0);
+        },
+        { capture: true },
+      );
+      listen(
+        doc,
+        "keyup",
+        (e) => {
+          // The keyup of an accepted Tab or Enter: neither the page nor its other listeners get it.
+          if (!isTrusted(e) || !(e instanceof KeyboardEvent) || !swallowKeyup) return;
+          if (e.target !== swallowKeyup.el || e.key !== swallowKeyup.key) return;
+          swallowKeyup = null;
+          e.preventDefault();
+          e.stopImmediatePropagation();
         },
         { capture: true },
       );
