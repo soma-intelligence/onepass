@@ -1,12 +1,12 @@
 // The in-page shell (spec 8.3): one `<onepass-root>` host appended to
 // `document.documentElement`, with a CLOSED shadow root holding the field
-// icons and the extension frames (menu, overlay, save). The page cannot reach
+// icons and the extension frames (menu, overlay, save, ghost). The page cannot reach
 // the shadow root (`host.shadowRoot` is null) and the frames are of another
 // origin, so it can read neither the menu nor the overlay (S1). References to
 // the root and to the frames live in closures only, never on window/document.
 import { DESIGN_TOKENS } from "../shared/design-tokens";
 import { POINTER_QUERIES, touchDevice } from "../shared/layout";
-import type { FrameKind } from "../shared/messages";
+import type { FrameKind, GhostRect } from "../shared/messages";
 import { type Geometry, type Rect } from "./detect/visibility";
 import { type HitTest, hostOnTop, rootHidden, type Scopes, topLayerOpen } from "./occlusion";
 import { stackInCorner } from "./occupants";
@@ -18,14 +18,16 @@ export const FRAME_WIDTH = 360;
 /**
  * Width per frame: the menu's inset list is 380 px; the one-click card is a
  * transparent frame holding the capsule, its detached close button and the
- * room their shadows need.
+ * room their shadows need. The ghost takes its field's box, at most this wide
+ * (ruling R3: a very wide field gets a narrower ghost, from its left edge).
  */
-export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 430, save: 340 };
+export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 430, save: 340, ghost: 600 };
 /**
  * Largest frame heights: each page asks for its content height (a resize
- * message vouched by the worker) and scrolls inside past these.
+ * message vouched by the worker) and scrolls inside past these. The ghost
+ * takes its field's height, at most this tall.
  */
-export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 420, overlay: 440, save: 520 };
+export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 420, overlay: 440, save: 520, ghost: 120 };
 /** On a narrow touch screen the menu is a bottom sheet, up to this tall (the unlock sheet fits). */
 export const SHEET_HEIGHT = 560;
 /** The bottom sheet only below this window width (iPhone, Slide Over, narrow Split View); wider, the menu follows its field. */
@@ -117,7 +119,7 @@ export function glyphPaint(theme: GlyphTheme, focus: boolean): { color: string; 
     : { color: tk["glyph-rest"] ?? "", background: "transparent" };
 }
 
-const PAGE_OF: Readonly<Record<FrameKind, string>> = { menu: "menu.html", overlay: "overlay.html", save: "save.html" };
+const PAGE_OF: Readonly<Record<FrameKind, string>> = { menu: "menu.html", overlay: "overlay.html", save: "save.html", ghost: "ghost.html" };
 const EXTENSION_SCHEMES: ReadonlySet<string> = new Set(["chrome-extension:", "moz-extension:", "safari-web-extension:"]);
 const TOKEN_HASH = /^#[A-Za-z0-9_-]{22}$/;
 
@@ -225,12 +227,17 @@ iframe.shown { opacity: 1; transform: none; }
 /* Narrow touch screens: the menu rises from the bottom edge as a sheet. */
 iframe.sheet { border-radius: ${DARK["r-card"]} ${DARK["r-card"]} 0 0; transform-origin: bottom center; transform: translateY(${DARK["space-xl"]}); box-shadow: ${DARK["frame-shadow-sheet"]}; }
 iframe.sheet.shown { transform: none; }
+/* The ghost: transparent over its field, no shape of its own, no movement. It lets the pointer
+   through to the field (the caret goes where the user clicks) except over its pill, which
+   createFrames opens to the pointer inline while the pointer is on it. */
+iframe.ghost { border-radius: 0; box-shadow: none; transform: none; pointer-events: none; transition: opacity 120ms ease; }
 @media (prefers-color-scheme: light) {
   .ring { box-shadow: 0 0 0 ${LIGHT["space-xs"]} ${LIGHT["accent-ring"]}; }
   iframe { box-shadow: ${LIGHT["frame-shadow"]}; }
   iframe.quiet { box-shadow: ${LIGHT["frame-shadow-quiet"]}; }
   iframe.sheet { box-shadow: ${LIGHT["frame-shadow-sheet"]}; }
   iframe.bare { box-shadow: none; }
+  iframe.ghost { box-shadow: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   iframe { transform: none; transition: opacity 120ms ease; }
@@ -519,8 +526,18 @@ export interface Frames {
   focus(kind: FrameKind): void;
   /** The element the frame is anchored to, if any. */
   anchorOf(kind: FrameKind): Element | null;
-  /** Follows anchors after a scroll or resize. */
+  /**
+   * Follows anchors after a scroll or resize. The ghost goes when its field is removed or leaves
+   * the viewport.
+   */
   reposition(): void;
+  /**
+   * The ghost page's pill (frame-local box, vouched by the worker): the ghost frame takes the
+   * pointer only while the pointer is over it, and shows. `over: false` (the page saw the pointer
+   * leave the pill, which the document cannot see then) gives the pointer back to the page; the
+   * page can never make the frame take it.
+   */
+  ghostPill(rect: GhostRect, over: boolean): void;
   /** Rings the element (chain step), or clears the ring. */
   highlight(el: Element | null): void;
   /**
@@ -560,7 +577,7 @@ export function createFrames(opts: FramesOptions): Frames {
       setTimeout(() => {
         guards.delete(iframe);
         if (blocked.has(iframe)) return;
-        iframe.style.removeProperty("pointer-events");
+        release(iframe);
         // Taking the pointer again: a cover the hit test can see blocks it at once, in this same task.
         if (opts.covers && coveredNow(iframe)) block(iframe);
       }, MOVE_GUARD_MS),
@@ -577,7 +594,58 @@ export function createFrames(opts: FramesOptions): Frames {
       for (const f of frames.values()) guard(f.iframe);
     });
   };
+  // ---- the ghost's pill (spec 3.2) ----
+
+  /** The ghost's pill as its page reported it, and whether the pointer is on it now. */
+  let pill: { rect: GhostRect; hot: boolean } | null = null;
+  const isGhost = (iframe: HTMLIFrameElement) => frames.get("ghost")?.iframe === iframe;
+  /** The pill's box in client coordinates, from the frame's own place in the fixed layer. */
+  const pillBox = (iframe: HTMLIFrameElement): Rect | null => {
+    if (!pill) return null;
+    const o = shell.origin();
+    const left = (parseFloat(iframe.style.left) || 0) + o.left + pill.rect.x;
+    const top = (parseFloat(iframe.style.top) || 0) + o.top + pill.rect.y;
+    return { left, top, width: pill.rect.width, height: pill.rect.height };
+  };
+  /**
+   * Out of its move guard and not covered: a frame takes the pointer again. The ghost only over its
+   * pill; anywhere else the pointer goes through to the page.
+   */
+  const release = (iframe: HTMLIFrameElement) => {
+    if (guards.has(iframe) || blocked.has(iframe)) return;
+    if (isGhost(iframe)) iframe.style.setProperty("pointer-events", pill?.hot ? "auto" : "none");
+    else iframe.style.removeProperty("pointer-events");
+  };
+  /**
+   * The document sees the pointer only where the ghost lets it through: entering the pill opens the
+   * frame to it. A synthetic move from the page can do no more than a real one: the click itself
+   * still has to be trusted and pass the page's own click guard.
+   */
+  const onPointer = (e: Event) => {
+    const f = frames.get("ghost");
+    if (!f || !pill) return;
+    const { clientX: x, clientY: y } = e as MouseEvent;
+    const b = pillBox(f.iframe);
+    const inside = !!b && x >= b.left && x < b.left + b.width && y >= b.top && y < b.top + b.height;
+    if (inside === pill.hot) return;
+    pill.hot = inside;
+    release(f.iframe);
+    // Taking the pointer: a cover the hit test can see blocks the pill at once.
+    if (inside && opts.covers && coveredNow(f.iframe)) block(f.iframe);
+  };
+  let listening = false;
+  const listenPointer = (on: boolean) => {
+    if (on === listening) return;
+    listening = on;
+    if (on) doc.addEventListener("pointermove", onPointer, { capture: true, passive: true });
+    else doc.removeEventListener("pointermove", onPointer, { capture: true });
+  };
+
   const drop = (iframe: HTMLIFrameElement) => {
+    if (isGhost(iframe)) {
+      pill = null;
+      listenPointer(false);
+    }
     const t = guards.get(iframe);
     if (t !== undefined) clearTimeout(t);
     guards.delete(iframe);
@@ -603,6 +671,13 @@ export function createFrames(opts: FramesOptions): Frames {
     if (!c) return false;
     if (topLayerOpen(doc, c.scopes) || rootHidden(doc, shell.parent())) return true;
     if (guards.has(iframe) || blocked.has(iframe)) return false;
+    if (isGhost(iframe)) {
+      // The ghost lets the pointer through to its field except over its pill: only the pill, and
+      // only while it takes the pointer, can be hit-tested (anything else finds the field).
+      const b = pill?.hot ? pillBox(iframe) : null;
+      if (!b) return false;
+      return !hostOnTop(c.hitTest, (el) => shell.isHost(el), b.left + b.width / 2, b.top + b.height / 2);
+    }
     const r = iframe.getBoundingClientRect();
     if (!(r.width > 0 && r.height > 0)) return false;
     return !hostOnTop(c.hitTest, (el) => shell.isHost(el), r.left + r.width / 2, r.top + r.height / 2);
@@ -696,6 +771,14 @@ export function createFrames(opts: FramesOptions): Frames {
     return r;
   };
 
+  /** The anchor is in the document and at least partly inside the viewport. */
+  const inView = (anchor: Element | null): boolean => {
+    if (!anchor?.isConnected) return false;
+    const r = fixedRect(anchor);
+    const { w, h } = viewport();
+    return r.width > 0 && r.height > 0 && r.left + r.width > 0 && r.top + r.height > 0 && r.left < w && r.top < h;
+  };
+
   /**
    * Under the anchor (the menu, or the overlay of a chain started from a
    * field), or above it when the viewport has no room below; else the top
@@ -741,6 +824,15 @@ export function createFrames(opts: FramesOptions): Frames {
         height = Math.max(FRAME_MIN_HEIGHT, Math.min(height, room));
         top = Math.max(0, bottom - height);
       }
+    } else if (kind === "ghost") {
+      // Over its field's box (spec 3.2), clamped to the ghost's largest size (ruling R3).
+      if (anchor) {
+        const r = fixedRect(anchor);
+        left = r.left;
+        top = r.top;
+        width2 = Math.round(Math.min(Math.max(0, r.width), FRAME_WIDTHS.ghost));
+        height = Math.round(Math.min(Math.max(0, r.height), FRAME_HEIGHT.ghost));
+      }
     } else if (kind === "overlay") {
       // The one-click offer and its progress sit centered at the top of what the user sees
       // (touch: the visual viewport, as the save card; the keyboard may have scrolled it).
@@ -784,6 +876,7 @@ export function createFrames(opts: FramesOptions): Frames {
     iframe.classList.toggle("top-center", kind === "overlay");
     iframe.classList.toggle("bare", kind === "overlay");
     iframe.classList.toggle("sheet", asSheet);
+    iframe.classList.toggle("ghost", kind === "ghost");
     iframe.classList.toggle("corner", !sheet(kind) && kind !== "overlay" && !(anchor && kind !== "save"));
     const s = iframe.style;
     const prevHeight = parseFloat(s.getPropertyValue("height")) || 0;
@@ -837,6 +930,8 @@ export function createFrames(opts: FramesOptions): Frames {
 
   return {
     showFrame(kind, url, anchor = null) {
+      // The ghost lies over its field: no field, no ghost.
+      if (kind === "ghost" && !anchor) return;
       shell.ensureAttached();
       const old = frames.get(kind);
       if (old) drop(old.iframe);
@@ -854,6 +949,11 @@ export function createFrames(opts: FramesOptions): Frames {
       const f = { iframe, anchor, height, reveal: null as ReturnType<typeof setTimeout> | null };
       f.reveal = setTimeout(() => show(f), REVEAL_TIMEOUT_MS);
       frames.set(kind, f);
+      if (kind === "ghost") {
+        // Through to the page until the pointer is on the pill the page reports.
+        iframe.style.setProperty("pointer-events", "none");
+        listenPointer(true);
+      }
       watchShift();
       // Shown while the layer is out of place: no pointer from the start.
       const at = shell.shift();
@@ -895,6 +995,14 @@ export function createFrames(opts: FramesOptions): Frames {
     anchorOf: (kind) => frames.get(kind)?.anchor ?? null,
     reposition() {
       for (const [kind, f] of frames) {
+        if (kind === "ghost" && !inView(f.anchor)) {
+          // Its field went away or out of the viewport: so does the ghost (its page forgets nothing
+          // the worker does not hold; the next trusted focus asks again).
+          if (f.reveal !== null) clearTimeout(f.reveal);
+          drop(f.iframe);
+          frames.delete(kind);
+          continue;
+        }
         if (f.anchor && !f.anchor.isConnected) {
           if (kind === "menu") {
             if (f.reveal !== null) clearTimeout(f.reveal);
@@ -905,10 +1013,28 @@ export function createFrames(opts: FramesOptions): Frames {
           // The progress outlives the field it started from: to the top right.
           f.anchor = null;
         }
-        if (place(kind, f.iframe, f.anchor, f.height)) guard(f.iframe);
+        if (place(kind, f.iframe, f.anchor, f.height)) {
+          // The pill moved from under the pointer: it takes the pointer again once the pointer is on it.
+          if (kind === "ghost" && pill) pill.hot = false;
+          guard(f.iframe);
+        }
       }
       checkCovers();
       placeRing();
+    },
+    ghostPill(rect, over) {
+      const f = frames.get("ghost");
+      if (!f || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return;
+      // Inside the frame, whatever the page says.
+      const w = parseFloat(f.iframe.style.width) || 0;
+      const h = parseFloat(f.iframe.style.height) || 0;
+      const x = Math.min(Math.max(0, rect.x), w);
+      const y = Math.min(Math.max(0, rect.y), h);
+      const box = { x, y, width: Math.min(Math.max(0, rect.width), w - x), height: Math.min(Math.max(0, rect.height), h - y) };
+      pill = { rect: box, hot: (pill?.hot ?? false) && over };
+      release(f.iframe);
+      // Laid out: the ghost shows (appearing under the pointer counts as a move).
+      show(f);
     },
     covered(kind) {
       const f = frames.get(kind);
