@@ -406,6 +406,37 @@ export interface PlanFillResponse {
 
 export type FrameKind = "menu" | "overlay" | "save";
 
+/**
+ * Extension pages a held password suggestion may be read by (background/suggest.ts): the ghost
+ * over the field and the menu's preview row. Kept apart from `FrameKind` until the ghost frame
+ * is wired in content/frames.ts.
+ */
+export type SuggestionPageKind = "ghost" | "menu";
+
+/**
+ * The field's text box as the content script measures it, for the ghost laid over it (spec
+ * 3.2): its computed type metrics in CSS px and its box in the viewport. Never a value of the
+ * field.
+ */
+export interface GhostMetrics {
+  fontSize: number;
+  lineHeight: number;
+  paddingLeft: number;
+  paddingRight: number;
+  textAlign: "left" | "right" | "center";
+  /** The field's own family when it is a local font; null: the system font. */
+  fontFamily: string | null;
+  box: { x: number; y: number; width: number; height: number };
+}
+
+/** What the ghost and the menu's preview row show of a held suggestion (no metrics for the menu). */
+export interface SuggestionPreview {
+  password: string;
+  /** The four-segment strength bar: 0 (none) to 4. */
+  strength: 0 | 1 | 2 | 3 | 4;
+  length: number;
+}
+
 /** Content script to background (untrusted sender: origin comes from `sender`). */
 export type CsToBg =
   | { type: "page_analysis"; analysis: PageAnalysis }
@@ -455,7 +486,18 @@ export type CsToBg =
    * Model builds only (Task 15): features of one form (never a field value), one label per field
    * back. An empty list is the handshake: the worker answers its model kind, or null.
    */
-  | { type: "classify"; fields: FieldFeatures[] };
+  | { type: "classify"; fields: FieldFeatures[] }
+  /**
+   * A trusted focus in an empty new-password field of a signup or change-password form (spec
+   * 3.1): the worker generates and holds a password for it, and answers the ghost frame's URL.
+   */
+  | { type: "ghost_open"; fieldRef: string; formRef: string; formKind: FormKind; metrics: GhostMetrics }
+  /** Tab or Enter in the field while the ghost shows: the held password is filled. */
+  | { type: "ghost_accept" }
+  /** A printable key or Escape: the ghost goes, its password is forgotten. */
+  | { type: "ghost_dismiss" }
+  /** Arrow Down or the chevron: the ghost goes, the menu opens on its suggestion (answers its URL). */
+  | { type: "ghost_menu" };
 
 /** What the content script sends of a `PageContext`: everything but the origins and frame kind. */
 export type PlanContextBody = Pick<PageContext, "forms" | "typed_username_hash">;
@@ -495,6 +537,19 @@ export type UiToBg =
    */
   | { type: "menu_signin"; token: string; itemId: string; provider: ProviderId; accountId?: string }
   | { type: "menu_generate"; token: string }
+  /** The suggestion row's preview (`SuggestionPreview`): the held password of the menu's field. */
+  | { type: "menu_preview"; token: string }
+  /** "Other suggestion": a new draw for the held password; answers the preview. */
+  | { type: "menu_regenerate"; token: string }
+  /**
+   * "Length and characters": writes the custom generator profile (`GENERATOR_PROFILE_KEY`) and
+   * redraws the held password with it; answers the preview.
+   */
+  | { type: "menu_profile"; token: string; length: number; symbols: boolean }
+  /** The ghost page's first call: `SuggestionPreview` plus the field's `GhostMetrics`. */
+  | { type: "ghost_init"; token: string }
+  /** A click on the ghost's "Use" pill. */
+  | { type: "ghost_accept"; token: string }
   /** The signup choice of a menu a passkey-offering plan opened (one-click signup). */
   | { type: "menu_signup"; token: string; mode: SignupMode }
   /** "Enregistrer un nouveau login": the save prompt in its edit view. */
@@ -695,6 +750,10 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "fill_salt",
   "plan_context",
   "classify",
+  "ghost_open",
+  "ghost_accept",
+  "ghost_dismiss",
+  "ghost_menu",
 ]);
 
 /** Cheap discriminant check for messages received from content scripts. */
