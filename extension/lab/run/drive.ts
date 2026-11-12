@@ -807,7 +807,10 @@ async function menuStep(env: ScenarioEnv, page: Page, scope: Frame, selectors: s
     return m;
   }
   const menu = await env.driver.menuOpen(page, scope, selectors);
-  if (!menu) return { shown: false, offered: false };
+  if (!menu) {
+    if (process.env.LAB_DEBUG) await debugDump(page, blank("menu_fill"));
+    return { shown: false, offered: false };
+  }
   if ((await unlockFromMenu(env, page, menu, g)) === "resumed") return { shown: true, offered: true };
   const now = env.driver.menuFrame(page);
   const offered = now !== undefined && title !== undefined && (await env.driver.menuOffers(now, title));

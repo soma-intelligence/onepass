@@ -603,7 +603,18 @@ export async function launchLab(state: LabState, world: World, server: LabServer
       },
       async ghostUse(ghost) {
         await sleep(GUARD_WAIT_MS);
-        await userClick(ghost.locator("button.ghost-use").first());
+        // The ghost frame lets the pointer through to the page except over its pill, and opens to the
+        // pointer only once a trusted move enters the pill (frames.ts onPointer): the user's mouse
+        // reaches the pill before her click, as here.
+        const use = ghost.locator("button.ghost-use").first();
+        const box = await use.boundingBox({ timeout: 2_000 }).catch(() => null);
+        if (box) {
+          const p = ghost.page();
+          await p.bringToFront();
+          await p.mouse.move(box.x + box.width / 2 - 8, box.y + box.height / 2);
+          await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
+        }
+        await userClick(use);
       },
       async saveView(p) {
         const f = findExtFrame(p, "save");
