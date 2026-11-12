@@ -1434,34 +1434,38 @@ impl<V: VaultAccess> Service<V> {
             .filter_map(|i| item_match(i, &page).map(|q| (Some(q), i)))
             .collect();
         site.sort_by_key(|(q, _)| rank(*q));
+        let mut candidates: Vec<(Option<MatchQuality>, &Item)> = site
+            .iter()
+            .filter(|(_, i)| !i.is_pending())
+            .filter(|(_, i)| login_identifier(i).is_some_and(|u| u.eq_ignore_ascii_case(user)))
+            .copied()
+            .collect();
+        candidates.sort_by_key(|(q, _)| rank(*q));
+        let same = |i: &Item| stored_password(i).is_some_and(|p| same_secret(p, password.expose()));
+        // A login of the site with this very identifier answers first (spec
+        // 5.2): a change form that sends the account's username updates that
+        // login, never confirms a pending item as a second copy of it.
+        if !user.is_empty() && !candidates.is_empty() {
+            return Ok(match candidates.iter().find(|(_, i)| same(i)) {
+                Some((_, i)) => verdict(CredentialStatus::Same, Some(i)),
+                None => verdict(CredentialStatus::Update, Some(candidates[0].1)),
+            });
+        }
         // A pending login (saved before its form was sent, often without a
-        // username) holding this password answers first, whatever the
-        // username: the submission confirms it (spec 7.2).
-        if let Some((_, i)) = site.iter().find(|(_, i)| {
-            i.is_pending() && stored_password(i).is_some_and(|p| same_secret(p, password.expose()))
-        }) {
+        // username) holding this password answers next, for a username no
+        // login has (a true signup) or none: the submission confirms it
+        // (spec 7.2).
+        if let Some((_, i)) = site.iter().find(|(_, i)| i.is_pending() && same(i)) {
             return Ok(verdict(CredentialStatus::Pending, Some(i)));
         }
         // No identifier (a re-authentication asking for the password alone):
         // any login of the site holding this password is that one.
         if user.is_empty()
-            && let Some((_, i)) = site.iter().find(|(_, i)| {
-                !i.is_pending()
-                    && stored_password(i).is_some_and(|p| same_secret(p, password.expose()))
-            })
+            && let Some((_, i)) = site.iter().find(|(_, i)| !i.is_pending() && same(i))
         {
             return Ok(verdict(CredentialStatus::Same, Some(i)));
         }
-        let mut candidates: Vec<(Option<MatchQuality>, &Item)> = site
-            .into_iter()
-            .filter(|(_, i)| !i.is_pending())
-            .filter(|(_, i)| login_identifier(i).is_some_and(|u| u.eq_ignore_ascii_case(user)))
-            .collect();
-        candidates.sort_by_key(|(q, _)| rank(*q));
-        if let Some((_, i)) = candidates
-            .iter()
-            .find(|(_, i)| stored_password(i).is_some_and(|p| same_secret(p, password.expose())))
-        {
+        if let Some((_, i)) = candidates.iter().find(|(_, i)| same(i)) {
             return Ok(verdict(CredentialStatus::Same, Some(i)));
         }
         Ok(match candidates.first() {

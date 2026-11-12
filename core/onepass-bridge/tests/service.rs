@@ -2363,10 +2363,11 @@ fn check(origin: &str, user: &str, pass: &str) -> Value {
 }
 
 #[test]
-fn check_credentials_finds_pending_any_username() {
+fn check_credentials_finds_pending_for_a_new_or_no_username() {
     let mut h = H::new();
     let item = save_pending(&mut h, "https://signup.atlas-cloud.test/join", "");
-    for user in ["alex@atlas.dev", "", "someone@else.test"] {
+    // A username no login of the site has (a true signup), or none: the pending item.
+    for user in ["", "someone@else.test", "alex.new@atlas.dev"] {
         let v = h.call(check("https://app.atlas-cloud.test", user, "Gen-Pass-0042"));
         assert_eq!(
             ok(&v),
@@ -2374,19 +2375,10 @@ fn check_credentials_finds_pending_any_username() {
             "{user}"
         );
     }
-    // A pending item with a known username: still `pending`, never `same`.
-    let known = save_pending(&mut h, ATLAS, "alex@atlas.dev");
-    h.call(
-        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
-        "origin":ATLAS,"username":"first@atlas.dev"}),
-    );
-    let v = h.call(check(ATLAS, "alex@atlas.dev", "Gen-Pass-0042"));
-    assert_eq!(ok(&v)["status"], "pending");
-    assert_eq!(ok(&v)["item_id"], id(known));
     // Confirmed items answer as before.
     ok(&h.call(
-        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(known),
-        "origin":ATLAS,"username":""}),
+        json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),
+        "origin":ATLAS,"username":"first@atlas.dev"}),
     ));
     let v = h.call(check(ATLAS, "first@atlas.dev", "Gen-Pass-0042"));
     assert_eq!(ok(&v)["status"], "same");
@@ -2395,6 +2387,35 @@ fn check_credentials_finds_pending_any_username() {
     let v = h.call(check(ATLAS, "alex@atlas.dev", ATLAS_PASSWORD));
     assert_eq!(ok(&v)["status"], "same");
     assert_eq!(ok(&v)["item_id"], id(h.ids.atlas));
+}
+
+#[test]
+fn check_credentials_existing_username_updates_that_login_before_a_pending_item() {
+    let mut h = H::new();
+    // A change form's generated password, held in a pending item of its own (spec 5.2).
+    let pending = save_pending(&mut h, ATLAS, "");
+    // The form sends the account's username: that login is updated, the pending item is no copy.
+    let v = h.call(check(ATLAS, "alex@atlas.dev", "Gen-Pass-0042"));
+    assert_eq!(
+        ok(&v),
+        &json!({"status":"update","item_id":id(h.ids.atlas),"title":"Atlas Cloud"})
+    );
+    let v = h.call(check(ATLAS, "Alex@Atlas.dev", "Gen-Pass-0042"));
+    assert_eq!(ok(&v)["status"], "update");
+    // A pending item with that very username too: still the existing login.
+    save_pending(&mut h, ATLAS, "alex@atlas.dev");
+    let v = h.call(check(ATLAS, "alex@atlas.dev", "Gen-Pass-0042"));
+    assert_eq!(ok(&v)["item_id"], id(h.ids.atlas));
+    assert_eq!(ok(&v)["status"], "update");
+    // Its stored password is still `same`.
+    let v = h.call(check(ATLAS, "alex@atlas.dev", ATLAS_PASSWORD));
+    assert_eq!(ok(&v)["status"], "same");
+    // A new username, or none: the pending item.
+    let v = h.call(check(ATLAS, "nobody@atlas.dev", "Gen-Pass-0042"));
+    assert_eq!(ok(&v)["status"], "pending");
+    assert_eq!(ok(&v)["item_id"], id(pending));
+    let v = h.call(check(ATLAS, "", "Gen-Pass-0042"));
+    assert_eq!(ok(&v)["status"], "pending");
 }
 
 #[test]
