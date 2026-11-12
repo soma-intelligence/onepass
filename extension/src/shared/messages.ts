@@ -470,6 +470,17 @@ export type CsToBg =
    */
   | { type: "submitted_identifier"; formRef: string; username: string }
   /**
+   * Spec 5.3: UNCERTAIN_MS after a trusted sign-in submission whose form is still in the
+   * document: the URL changed (path or hash), the password field was emptied or removed, a
+   * `role="alert"` or `aria-invalid="true"` is in the form. No identifier, no password.
+   */
+  | { type: "submit_outcome"; formRef: string; urlChanged: boolean; passwordCleared: boolean; alert: boolean }
+  /**
+   * Spec 5.3: a top document shows a `role="alert"` within UNCERTAIN_MS of its load (an error or
+   * captcha page). The worker only ever makes a pending sign-in more cautious with it.
+   */
+  | { type: "page_alert" }
+  /**
    * A card, identity or address form sent by the user (trusted gesture, like a sign-in): the
    * values of its card or identity roles (never a security code), to offer saving them.
    */
@@ -538,6 +549,8 @@ export interface SaveEdits {
   vaultId: string;
   rule: "domain" | "exact_host" | "exact_url" | "never";
   tags: string[];
+  /** Spec 5.2, decision `update`: the login picked among the card's `choices`. */
+  itemId?: string;
 }
 
 /** Extension pages (menu, overlay, save, popup) to background; `token` binds the frame. */
@@ -775,6 +788,8 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "close_menu",
   "submitted_credentials",
   "submitted_identifier",
+  "submit_outcome",
+  "page_alert",
   "submitted_form",
   "provider_click",
   "account_click",
