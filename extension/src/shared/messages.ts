@@ -442,6 +442,14 @@ export interface SuggestionPreview {
   length: number;
 }
 
+/**
+ * The menu's reply to `menu_preview`, `menu_regenerate` and `menu_profile`: the preview and the
+ * stored custom generator profile the length panel starts from (never read off the password).
+ */
+export interface MenuPreview extends SuggestionPreview {
+  profile: { length: number; symbols: boolean };
+}
+
 /** Content script to background (untrusted sender: origin comes from `sender`). */
 export type CsToBg =
   | { type: "page_analysis"; analysis: PageAnalysis }
