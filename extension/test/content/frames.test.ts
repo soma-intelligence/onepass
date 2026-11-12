@@ -649,6 +649,35 @@ describe("field glyph (spec 2026-11-11 fill UI, section 2)", () => {
     expect(look(g).backgroundColor).toBe(css(DESIGN_TOKENS.dark["glyph-focus-bg"]!));
   });
 
+  it("glyphTheme skips a translucent or unreadable background", () => {
+    setPage(`<div id="wrap"><input id="a"></div>`);
+    const field = document.getElementById("a") as HTMLInputElement;
+    (document.getElementById("wrap") as HTMLElement).style.backgroundColor = "rgb(20, 20, 24)";
+    // A dark input painted with a light wash on a dark page.
+    field.style.backgroundColor = "rgba(255, 255, 255, 0.06)";
+    expect(glyphTheme(field, window)).toBe("dark");
+    // A colour this parser cannot read: walked past as well.
+    const view = {
+      getComputedStyle: (el: Element) => ({ backgroundColor: el === field ? "oklch(0.98 0 0)" : getComputedStyle(el).backgroundColor }),
+      matchMedia: () => ({ matches: false }),
+    } as unknown as Window;
+    expect(glyphTheme(field, view)).toBe("dark");
+  });
+
+  it("a pressed glyph darkens by colour only (no filter, transform or opacity: IntersectionObserver v2)", () => {
+    setPage(LOGIN);
+    st = start();
+    const sheet = st.cs.internals.root.querySelector("style")!.textContent ?? "";
+    const pressed = [...sheet.matchAll(/([^{}]*:active[^{}]*)\{([^}]*)\}/g)].filter((m) => m[1]!.includes(".icon"));
+    expect(pressed.length).toBeGreaterThan(0);
+    for (const [, , body] of pressed) {
+      expect(body).not.toMatch(/\b(filter|transform|opacity)\s*:/);
+    }
+    const all = pressed.map((m) => m[2]).join(" ");
+    expect(all).toContain(DESIGN_TOKENS.light["glyph-press"]!);
+    expect(all).toContain(DESIGN_TOKENS.dark["glyph-press"]!);
+  });
+
   it("hit area stays 22 px", () => {
     setPage(LOGIN);
     st = start();

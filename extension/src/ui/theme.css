@@ -67,6 +67,9 @@
   --glyph-rest: #8D8D98;
   --glyph-focus: #ABA9F4;
   --glyph-focus-bg: rgba(171, 169, 244, .14);
+  /* A pressed glyph: a darker mark by colour only (a filter or a transform hides it from
+     IntersectionObserver v2, the glyph's click guard). */
+  --glyph-press: #8F8CE8;
   --frame-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 16px 40px rgba(0,0,0,.28);
   --frame-shadow-quiet: 0 0 0 .5px rgba(0,0,0,.16), 0 6px 20px rgba(0,0,0,.16);
   --frame-shadow-sheet: 0 -8px 32px rgba(0,0,0,.28);
@@ -115,6 +118,14 @@
   --chip-max: 180px;
   --select-min: 170px;
   --tag-input-w: 150px;
+  /* The popup's own type sizes: the five-step scale binds the fill surfaces, the popup keeps
+     its larger headings and readouts. */
+  --popup-type-totp: 16px;
+  --popup-type-gen-title: 18px;
+  --popup-type-gen-out: 19px;
+  --popup-type-title: 20px;
+  --popup-type-hero: 21px;
+  --popup-type-sas: 40px;
   /* Fixed colours, the same in both themes, drawn by ui/*.ts as SVG fills (mirrored in
      shared/design-tokens.ts). The category art (art.ts): the app's palette, each face with its
      shaded band (mixed 32 % toward ink, as the app does). */
@@ -174,6 +185,7 @@
     --glyph-rest: #8A8A94;
     --glyph-focus: #5856D6;
     --glyph-focus-bg: rgba(88, 86, 214, .12);
+    --glyph-press: #403EB0;
     --accent-soft: rgba(88, 86, 214, .15);
     --accent-ring: rgba(88, 86, 214, .45);
     --ground: #EEEEF3;
@@ -560,7 +572,8 @@ html:has(> body.island), body.island { background: transparent; }
   gap: var(--space-m);
   min-height: var(--row-tall);
   padding: var(--space-m) var(--space-s) var(--space-m) var(--space-m);
-  border-radius: var(--r-sheet);
+  /* A capsule: half its height, the ends round. */
+  border-radius: calc(var(--row-tall) / 2);
 }
 .ov-pill .stack { gap: var(--space-xxs); }
 .ov-pill .t1, .ov-opt .t1 { font-size: var(--type-headline); font-weight: 500; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -798,7 +811,7 @@ button.account:hover { background: var(--glass); }
 .pp-main > .center p { font-size: var(--type-body); }
 .pp-bar { flex-shrink: 0; display: flex; align-items: center; gap: var(--space-m); padding: var(--space-l) var(--space-l) var(--space-l) var(--space-l); }
 .pp-title { min-width: 0; flex-grow: 1; display: flex; flex-direction: column; gap: var(--space-xs); }
-.pp-title h2 { font-size: var(--type-title); font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; letter-spacing: -.01em; }
+.pp-title h2 { font-size: var(--popup-type-title); font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; letter-spacing: -.01em; }
 .vault { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--type-footnote); color: var(--text2); }
 .vault::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
 .pp-bar .btn { height: 44px; padding: 0 var(--space-xl); }
@@ -809,7 +822,7 @@ button.account:hover { background: var(--glass); }
 .field-row .btn-icon { opacity: .75; }
 .field-row:hover .btn-icon, .field-row .btn-icon:focus-visible { opacity: 1; }
 .field-row .btn-link { min-height: var(--control-s); }
-.totp-code { font-size: var(--type-title); letter-spacing: .05em; font-weight: 500; }
+.totp-code { font-size: var(--popup-type-totp); letter-spacing: .05em; font-weight: 500; }
 .totp-pill { display: inline-flex; align-items: center; gap: var(--space-s); height: 26px; padding: 0 var(--space-s) 0 var(--space-s); border-radius: var(--r-control); background: var(--field); flex-shrink: 0; }
 .totp-pill .field-note { font-weight: 500; }
 .totp-pill.low .field-note { color: var(--danger-ink); }
@@ -820,8 +833,8 @@ button.account:hover { background: var(--glass); }
 .website .field-value { color: var(--accent-label); }
 .gen { padding: 0 var(--space-l) var(--space-l) var(--space-l); display: flex; flex-direction: column; gap: var(--space-m); overflow-y: auto; }
 .gen-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--space-m); padding: var(--space-l) var(--space-l) var(--space-l) var(--space-l); }
-.gen-head h2 { font-size: var(--type-title); font-weight: 700; letter-spacing: -.01em; }
-.gen-out { min-height: var(--row-tall); padding: var(--space-l) var(--space-l); border-radius: var(--r-m); background: var(--glass); border: 1px solid var(--hair); font-family: var(--mono); font-size: var(--type-title); line-height: 1.45; letter-spacing: .02em; word-break: break-all; }
+.gen-head h2 { font-size: var(--popup-type-gen-title); font-weight: 700; letter-spacing: -.01em; }
+.gen-out { min-height: var(--row-tall); padding: var(--space-l) var(--space-l); border-radius: var(--r-m); background: var(--glass); border: 1px solid var(--hair); font-family: var(--mono); font-size: var(--popup-type-gen-out); line-height: 1.45; letter-spacing: .02em; word-break: break-all; }
 .ch-digit { color: var(--digit); }
 .ch-symbol { color: var(--symbol); }
 .strength-line { display: flex; align-items: center; gap: var(--space-s); margin-top: -2px; }
@@ -841,14 +854,14 @@ button.account:hover { background: var(--glass); }
 .history-list li + li { border-top: 1px solid var(--hair); }
 .center { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-m); padding: var(--space-xxl); text-align: center; }
 .center > .mark-l { margin-bottom: var(--space-s); }
-.center h1 { font-size: var(--type-title); font-weight: 700; line-height: 1.25; letter-spacing: -.01em; }
+.center h1 { font-size: var(--popup-type-hero); font-weight: 700; line-height: 1.25; letter-spacing: -.01em; }
 .center p { margin: 0; font-size: var(--type-body); color: var(--text2); line-height: 1.5; max-width: 380px; }
 .center .btn { height: 44px; padding: 0 var(--space-xl); }
 .center .actions { margin-top: var(--space-s); }
 .center .error-line { margin: 0; }
 .center .btn-link { min-height: 32px; color: var(--text3); font-weight: 500; }
 .pp-main > .center h2 { font-size: var(--type-headline); font-weight: 600; }
-.sas { font-family: var(--mono); font-size: calc(var(--type-title) * 2); font-weight: 700; letter-spacing: .08em; padding: var(--space-m) var(--space-xl); border-radius: var(--r-l); background: var(--glass); border: 1px solid var(--hair); font-variant-numeric: tabular-nums; margin: var(--space-s) 0; }
+.sas { font-family: var(--mono); font-size: var(--popup-type-sas); font-weight: 700; letter-spacing: .08em; padding: var(--space-m) var(--space-xl); border-radius: var(--r-l); background: var(--glass); border: 1px solid var(--hair); font-variant-numeric: tabular-nums; margin: var(--space-s) 0; }
 .toast {
   position: absolute;
   left: 50%;
