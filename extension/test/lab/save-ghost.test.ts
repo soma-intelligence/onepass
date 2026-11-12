@@ -225,6 +225,10 @@ describe("oracle 12b fixes", () => {
     expect(judge(sc("save_typed", "update_card"), site, obs("save_typed", { cardShown: true, wrongLogin: true })))
       .toEqual({ verdict: "fail", cause: "wrong_login" });
     expect(judge(sc("save_typed", "update_card"), site, obs("save_typed", { cardShown: true, wrongLogin: false }))).toEqual({ verdict: "pass" });
+    // A safety cause: never replayed into a flaky pass, and a replay showing it replaces the first failure.
+    expect(SAFETY_CAUSES.has("wrong_login")).toBe(true);
+    const j = judge(sc("save_typed", "new_auto"), site, obs("save_typed", { savedLogins: 1, autoSaved: true, wrongLogin: true }));
+    expect(replayable(sc("save_typed", "new_auto"), j)).toBe(false);
   });
   it("lab_error_when_the_ghost_text_is_unreadable", () => {
     expect(judge(sc("ghost", "accept_tab"), site, obs("ghost", { ghostShown: true, ghostAccepted: true, error: "lab: ghost text unreadable" })).verdict)

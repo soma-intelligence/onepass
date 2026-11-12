@@ -396,7 +396,7 @@ export function resultGestures(s: Scenario, site: Site, verdict: Verdict, o: Obs
 }
 
 /** Causes that are safety failures: never replayed, never hidden by a replay. */
-export const SAFETY_CAUSES = new Set(["wrong_item", "auto_submit_outside_login", "other_person_filled", "auto_saved_on_failure", "ghost_in_page_dom"]);
+export const SAFETY_CAUSES = new Set(["wrong_item", "auto_submit_outside_login", "other_person_filled", "auto_saved_on_failure", "ghost_in_page_dom", "wrong_login"]);
 
 /**
  * Whether a first attempt gets one replay in a fresh profile: a plain
