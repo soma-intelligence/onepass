@@ -428,6 +428,11 @@ pub struct Service<V: VaultAccess> {
     /// Logins this session just saved through `save_login`, newest last,
     /// for `undo_save` (at most `RECENT_SAVES`).
     recent_saves: Vec<RecentSave>,
+    /// Pending Logins (tag `onepass:pending`) this session wrote through
+    /// `save_login`, newest last, for `discard_pending` (at most
+    /// `PENDING_SAVES`). The version follows this session's own
+    /// `update_password` of the item; `confirm_pending` drops the entry.
+    pending_saves: Vec<PendingSave>,
 }
 
 /// How long a fresh save can be undone, in seconds.
@@ -437,6 +442,17 @@ const UNDO_WINDOW_SECS: u64 = 60;
 const AMEND_WINDOW_SECS: u64 = 600;
 /// Saves remembered for `undo_save`; the oldest is dropped.
 const RECENT_SAVES: usize = 16;
+/// Pending saves remembered for `discard_pending`; the oldest is dropped.
+const PENDING_SAVES: usize = 32;
+
+/// A pending Login this session wrote through `save_login`.
+struct PendingSave {
+    item_id: Id,
+    /// Registrable domain of the page it was saved on.
+    site: String,
+    /// The item's version after this session's last write of it.
+    version: u64,
+}
 
 /// A login saved by this session, as `save_login` left it (or as
 /// `amend_save` left it since: its id after a move, its new version; the
@@ -468,6 +484,7 @@ impl<V: VaultAccess> Service<V> {
             owners: HashMap::new(),
             picked: HashSet::new(),
             recent_saves: Vec::new(),
+            pending_saves: Vec::new(),
         }
     }
 
@@ -1495,6 +1512,7 @@ impl<V: VaultAccess> Service<V> {
         validate(&item).map_err(|_| AppErrorCode::Invalid)?;
         let id = item.id;
         let version = item_version(&item);
+        let pending = item.is_pending();
         self.save(vault_id, item)?;
         self.recent_saves.push(RecentSave {
             item_id: id,
@@ -1504,6 +1522,16 @@ impl<V: VaultAccess> Service<V> {
         });
         if self.recent_saves.len() > RECENT_SAVES {
             self.recent_saves.remove(0);
+        }
+        if pending {
+            self.pending_saves.push(PendingSave {
+                item_id: id,
+                site: page.site(),
+                version,
+            });
+            if self.pending_saves.len() > PENDING_SAVES {
+                self.pending_saves.remove(0);
+            }
         }
         self.record("save_login", id, Some(o), ctx, now);
         Ok(Response::ItemId {
@@ -1761,7 +1789,12 @@ impl<V: VaultAccess> Service<V> {
         }
         item.updated_at = at;
         let (id, vault_id) = (item.id, item.vault_id);
+        let version = item_version(&item);
         self.save(vault_id, item)?;
+        // A pending item this session wrote, written again by it: still its own.
+        if let Some(p) = self.pending_saves.iter_mut().find(|p| p.item_id == id) {
+            p.version = version;
+        }
         self.record("update_password", id, Some(o), ctx, now);
         Ok(Response::Empty {})
     }
@@ -1798,6 +1831,7 @@ impl<V: VaultAccess> Service<V> {
         item.updated_at = unix(now);
         let (id, vault_id) = (item.id, item.vault_id);
         self.save(vault_id, item)?;
+        self.pending_saves.retain(|p| p.item_id != id);
         self.record("confirm_pending", id, Some(o), ctx, now);
         Ok(Response::Empty {})
     }
@@ -1848,10 +1882,11 @@ impl<V: VaultAccess> Service<V> {
         Ok(Response::Empty {})
     }
 
-    /// Delete a pending Login of the site of `o` (spec 5.2: its generated
-    /// password went to the login the user picked). Same origin check as
-    /// `confirm_pending`; an item without `PENDING_TAG` is `invalid`, never
-    /// deleted.
+    /// Delete the pending Login `item_id` (spec 5.2: its generated password
+    /// went to the login the user picked). Only one this session wrote
+    /// through `save_login` as pending, for the site of `o`, still tagged
+    /// `PENDING_TAG` and untouched since (but by this session's own
+    /// `update_password`). Anything else is `not_found`, nothing deleted.
     fn discard_pending(
         &mut self,
         ctx: Ctx,
@@ -1861,16 +1896,26 @@ impl<V: VaultAccess> Service<V> {
     ) -> OpResult<Response> {
         save_ctx(ctx)?;
         let page = origin(o)?;
-        let (vault, item) = self.eligible_item(item_id)?;
-        if item.item_type != ItemType::Login {
+        let id = parse_id(item_id)?;
+        let pos = self
+            .pending_saves
+            .iter()
+            .position(|p| p.item_id == id)
+            .ok_or(AppErrorCode::NotFound)?;
+        let (site, version) = {
+            let p = &self.pending_saves[pos];
+            (p.site.clone(), p.version)
+        };
+        if page.site() != site {
             return Err(AppErrorCode::NotFound);
         }
-        self.followed_match(&item, &page)?;
-        if !item.is_pending() {
-            return Err(AppErrorCode::Invalid);
+        let (vault, item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Login || !item.is_pending() || item_version(&item) != version
+        {
+            return Err(AppErrorCode::NotFound);
         }
-        let id = item.id;
         self.vault.delete(vault.id, id).map_err(app_code)?;
+        self.pending_saves.remove(pos);
         if let Some(pos) = self.recent_saves.iter().position(|r| r.item_id == id) {
             self.recent_saves.remove(pos);
         }

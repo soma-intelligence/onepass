@@ -417,9 +417,11 @@ pub enum Request {
         item_id: String,
         origin: String,
     },
-    /// Delete for good a pending Login (tag `onepass:pending`) of the same
-    /// site: a generated password the save card moved into another login
-    /// (spec 5.2). An item without the tag is `invalid`.
+    /// Delete for good the pending Login `item_id` (tag `onepass:pending`):
+    /// a generated password the save card moved into another login (spec
+    /// 5.2). Only one this session wrote through `save_login` as pending,
+    /// for the same site, still pending and untouched since; anything else
+    /// is `not_found`.
     DiscardPending {
         id: u64,
         ctx: Ctx,

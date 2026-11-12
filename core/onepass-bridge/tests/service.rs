@@ -2447,36 +2447,90 @@ fn discard(item: Id, origin: &str) -> Value {
 }
 
 #[test]
-fn discard_pending_deletes_a_pending_login_of_the_site() {
+fn discard_pending_deletes_its_own_pending_item() {
     let mut h = H::new();
     let item = save_pending(&mut h, ATLAS, "");
-    // Another site: refused, the item stays.
-    assert_eq!(
-        err(&h.call(discard(item, "https://evil.test"))),
-        "origin_mismatch"
-    );
-    assert!(h.vault().items.iter().any(|i| i.id == item));
+    // Its own new password since (a second generation): still its own.
+    ok(&h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(item),
+        "origin":ATLAS,"password":"Gen-Pass-0043"}),
+    ));
     // Another context: refused.
     let v = h.call(json!({"op":"discard_pending","ctx":"menu","item_id":id(item),"origin":ATLAS}));
     assert_eq!(err(&v), "not_allowed");
     assert!(h.vault().items.iter().any(|i| i.id == item));
+    // Another subdomain of the same registrable domain is the same site.
     let v = h.call(discard(item, "https://login.atlas-cloud.test"));
     assert_eq!(ok(&v), &json!({}));
     assert!(h.vault().items.iter().all(|i| i.id != item));
+    // Used once.
     assert_eq!(err(&h.call(discard(item, ATLAS))), "not_found");
 }
 
 #[test]
-fn discard_pending_refuses_a_confirmed_login() {
+fn discard_pending_refuses_another_site() {
+    let mut h = H::new();
+    let item = save_pending(&mut h, ATLAS, "");
+    assert_eq!(
+        err(&h.call(discard(item, "https://evil.test"))),
+        "not_found"
+    );
+    assert!(h.vault().items.iter().any(|i| i.id == item));
+}
+
+#[test]
+fn discard_pending_refuses_an_item_it_did_not_write() {
     let mut h = H::new();
     let atlas = h.ids.atlas;
-    assert_eq!(err(&h.call(discard(atlas, ATLAS))), "invalid");
+    // A login of the site, made pending by a change form (`update_password` pending): not its own.
+    ok(&h.call(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":id(atlas),
+        "origin":ATLAS,"password":"Gen-Pass-0044","pending":true}),
+    ));
+    assert_eq!(err(&h.call(discard(atlas, ATLAS))), "not_found");
     assert!(h.vault().items.iter().any(|i| i.id == atlas));
+    // A pending item another session (or the app) wrote.
+    let mut other = H::new();
+    let theirs = save_pending(&mut other, ATLAS, "");
+    assert_eq!(err(&h.call(discard(theirs, ATLAS))), "not_found");
+    assert!(other.vault().items.iter().any(|i| i.id == theirs));
+    // A save that was not pending.
+    let perso = h.ids.perso;
+    let v = h.call(json!({"op":"save_login","ctx":"save_prompt","origin":ATLAS,"title":"",
+        "username":"new@atlas.dev","password":"Typed-Pass-0045","vault_id":id(perso),"rule":"domain","tags":[]}));
+    let plain: Id = ok(&v)["item_id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(err(&h.call(discard(plain, ATLAS))), "not_found");
+    assert!(h.vault().items.iter().any(|i| i.id == plain));
+}
+
+#[test]
+fn discard_pending_refuses_an_item_no_longer_pending() {
+    let mut h = H::new();
     let item = save_pending(&mut h, ATLAS, "alex.new@atlas.dev");
     ok(&h.call(
         json!({"op":"confirm_pending","ctx":"save_prompt","item_id":id(item),"origin":ATLAS,"username":""}),
     ));
-    assert_eq!(err(&h.call(discard(item, ATLAS))), "invalid");
+    assert_eq!(err(&h.call(discard(item, ATLAS))), "not_found");
+    assert!(h.vault().items.iter().any(|i| i.id == item));
+}
+
+#[test]
+fn discard_pending_refuses_an_edited_item() {
+    let mut h = H::new();
+    let item = save_pending(&mut h, ATLAS, "");
+    // Edited in the app since (still pending).
+    {
+        let it = h
+            .svc
+            .vault_mut()
+            .items
+            .iter_mut()
+            .find(|i| i.id == item)
+            .unwrap();
+        it.title = "Renamed by hand".to_owned();
+        it.updated_at += time::Duration::seconds(5);
+    }
+    assert_eq!(err(&h.call(discard(item, ATLAS))), "not_found");
     assert!(h.vault().items.iter().any(|i| i.id == item));
 }
 

@@ -308,9 +308,10 @@ interface Ops {
     res: Record<string, never>;
   };
   /**
-   * Delete for good a pending Login (tag `onepass:pending`) of the same registrable domain: a
-   * generated password the save card moved into the login the user picked (spec 5.2). `invalid`
-   * for an item without the tag.
+   * Delete for good the pending Login `item_id`: a generated password the save card moved into the
+   * login the user picked (spec 5.2). Only one this bridge session wrote through `save_login` as
+   * pending, same registrable domain, still tagged `onepass:pending` and not edited since (but by
+   * the session's own `update_password`). `not_found` for anything else.
    */
   discard_pending: {
     req: { ctx: "save_prompt"; item_id: string; origin: string };
