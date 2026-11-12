@@ -1,6 +1,6 @@
 # Fill UI, inline password suggestion and save on first sign-in
 
-Date: 2026-11-11. Status: design approved in conversation, not built.
+Date: 2026-11-11. Status: Built on main, lab pass6-2026-11-11, not run on real devices.
 
 Sub-project 1 of 5 from the owner's request "improve the design, add SSO, one-click sign-in,
 first-pass save and new password suggestion inline". The others, in order: 2 complete SSO,
@@ -272,3 +272,43 @@ menu, toast, update card, pill, each in light and dark, on a light and a dark te
   `shared/l10n/*.json`, `e2e/save-shots.spec.ts`, lab scenario files.
 - Core (`core/onepass-bridge`): new op `undo_save`, `VaultEntry.shared`. Nothing else;
   `check_credentials`, `save_login` and `update_password` already exist.
+
+## 9. Deviations and rulings
+
+Decided during the build, each against the text above.
+
+- 4.4: the toast of a confirmed generated password has no Edit. The item was saved pending before
+  the submission, not by `save_login`, so `amend_save` refuses it; the user edits it in the app.
+- 4.1: Edit after an automatic save goes through a new bridge op `amend_save` (600 s window, the
+  pill lifetime). `undo_save` keeps its 60 s. Reason: the earlier copy-then-undo was bounded
+  by the 60 s of Undo, too short for Edit.
+- 3.4: touch layouts fall back to the menu (new fallback reason "touch"), because the ghost frame
+  covers the field and would steal field taps. The "sheet" reason is now unreachable behind it.
+- 3.4: the narrow fallback also fires when the room beside the ghost pill is below
+  `--ghost-text-min` (the ghost needs about 180 px plus insets), on top of the 120 px rule.
+  Reason: on a field of about 125 px the pill covered the whole text.
+- 3.4: the cover check tests the centre and the 25% and 75% points, inset by the corner radius.
+  The field's ancestors (not body or root) and its own label are not a cover.
+- 4.3: automatic save never re-picks a vault and never goes to a shared vault, also when a
+  re-pick would land on one (race in commit).
+- 4.2: a folded card keeps its entry in the popup waiting list for 10 min, as before the work.
+  A popup answer drops the pill.
+- 5.2: a pending item is written at generation. `discard_pending` takes the item id and deletes
+  only a pending item this bridge session wrote (another tab's signup must not lose its item).
+  `check_credentials` answers update for an existing non-pending username ahead of a pending
+  match, and the same for an empty username when a login of the site holds the password.
+  `update_password` gained an optional `pending` flag (default false).
+- 5.3: same-document sign-ins settle at `UNCERTAIN_MS + 250` (1750 ms), and `page_alert` waits
+  `UNCERTAIN_MS + 250`, so a late error message still counts as a failure.
+- The extension and the native app must ship together: the order of `check_credentials` answers
+  changed in the core, so a mismatched pair can answer a changed password or a password-only sign-in wrongly.
+- 7.2: the lab skips `private_window` always. Playwright cannot drive an incognito window with
+  the extension loaded, so that guard has unit tests only.
+
+### Known issues found by the lab, outside this spec
+
+- `wrong_fill` after a scroll (13 sites, 39 menu_fill scenarios). Pre-existing smart fill bug
+  (`filler.ts`), same signature as site 12 of pass5.
+- "Nom naiss." is read as the family name on site 40: `birth_name` in `detect/lexicon.ts` lacks
+  that abbreviation. Pre-existing.
+- The locked one-click overlay swallows clicks before its first resize on site 60. Pre-existing.
