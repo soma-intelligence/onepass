@@ -430,6 +430,8 @@ export interface FramesOptions {
    * inert. Off where the frames have IOv2 (Chromium keeps its own behaviour).
    */
   covers?: { hitTest: HitTest; scopes?: Scopes };
+  /** Whether an event comes from the user: `event.isTrusted` in production (tests vouch for theirs). */
+  isTrusted?: (e: Event) => boolean;
 }
 
 /**
@@ -616,12 +618,13 @@ export function createFrames(opts: FramesOptions): Frames {
     if (isGhost(iframe)) iframe.style.setProperty("pointer-events", pill?.hot ? "auto" : "none");
     else iframe.style.removeProperty("pointer-events");
   };
+  const isTrusted = opts.isTrusted ?? ((e: Event) => e.isTrusted);
   /**
    * The document sees the pointer only where the ghost lets it through: entering the pill opens the
-   * frame to it. A synthetic move from the page can do no more than a real one: the click itself
-   * still has to be trusted and pass the page's own click guard.
+   * frame to it. Only the user's own moves count: a page dispatching `pointermove` changes nothing.
    */
   const onPointer = (e: Event) => {
+    if (!isTrusted(e)) return;
     const f = frames.get("ghost");
     if (!f || !pill) return;
     const { clientX: x, clientY: y } = e as MouseEvent;
@@ -930,8 +933,9 @@ export function createFrames(opts: FramesOptions): Frames {
 
   return {
     showFrame(kind, url, anchor = null) {
-      // The ghost lies over its field: no field, no ghost.
-      if (kind === "ghost" && !anchor) return;
+      // The ghost lies over its field: no field, no ghost. Nor on a touch layout: a finger sends no
+      // `pointermove`, so the pill would never take the tap (fitGhost sends touch to the menu).
+      if (kind === "ghost" && (!anchor || layout().touch)) return;
       shell.ensureAttached();
       const old = frames.get(kind);
       if (old) drop(old.iframe);
