@@ -34,9 +34,13 @@
 // A shared target vault gets the card instead. Undo (`undo`) asks the bridge
 // to delete that very item (`undo_save`: only within 60 s, same site, not
 // edited since; anything else is `not_found`) and quiets the credential like
-// "Pas maintenant". Edit (`edit`) opens the edit view; its Save replaces the
-// saved item (undo, then `save_login` with the edits). The toast record keeps
-// the submitted password in memory for that, wiped like any other record.
+// "Pas maintenant". Edit (`edit`) opens the edit view; its Save changes the
+// saved item through the bridge's `amend_save` (name and identifier in place,
+// another vault moves it; only within 600 s, same site, not edited since),
+// never a second copy. The toast record keeps the submitted password in
+// memory (for the quiet key of an Undo), wiped like any other record. A
+// generated password confirmed at the submission (spec 4.4) gets the toast
+// without Undo or Edit: it was saved pending, the bridge amends no such item.
 import type { Address, IdentityValues } from "../bridge/client";
 import type { BgToCs, ProviderId, SaveDecision, SaveEdits, SaveOutcome } from "../shared/messages";
 import { parseOrigin } from "../shared/domain";
@@ -93,7 +97,7 @@ export interface SavePending {
   view?: "edit" | "saved" | "toast";
   /** View `toast`: the login `autoSave` just wrote (what Undo deletes). */
   savedItemId?: string;
-  /** View `toast`: Undo is offered (a login saved here moments ago); absent: Edit only. */
+  /** View `toast`: Undo and Edit are offered (a login `autoSave` wrote moments ago); absent: neither. */
   undo?: boolean;
   /**
    * Verified origin of the top document, sent as an origin pin when no
@@ -441,21 +445,9 @@ export class SavePrompts {
         } else {
           if (!edits) throw new BgError("invalid");
           if (rec.view === "toast") {
-            // Edit's Save: the saved login goes, the edited one takes its place. Only while the
-            // bridge still takes the undo (a confirmed generated password cannot: Edit only).
-            // The edited one is written first: a failure never loses the login.
-            const old = rec.savedItemId;
-            if (!rec.undo || old === undefined || rec.password === "") throw new BgError("not_found");
-            const done = await this.commit({ tabId: rec.tabId, origin: rec.origin, status: "new", username: rec.username, password: rec.password }, "save", edits, true);
-            try {
-              await this.deps.session.request({ op: "undo_save", ctx: "save_prompt", item_id: old, origin: rec.origin });
-            } catch (e) {
-              // Too late to replace it: the edited copy goes again, the saved login stays as it was.
-              if (done.itemId !== undefined) await this.deps.session.request({ op: "undo_save", ctx: "save_prompt", item_id: done.itemId, origin: rec.origin }).catch(() => undefined);
-              throw e;
-            }
-            delete rec.savedItemId;
-            out = done.out;
+            // Edit's Save: the saved login changes in place (or moves to another vault) in the
+            // bridge; a refusal (too late, edited since) is said in the card, nothing written.
+            out = await this.amend(rec, edits);
           } else {
             out = (await this.commit(rec, "save", edits)).out;
           }
@@ -483,7 +475,13 @@ export class SavePrompts {
    * the host again: the login may already be there, or be one to update.
    * `checked`: the host just said `new` for it (no second check).
    */
-  private async commit(h: Held, decision: "save" | "update", edits?: SaveEdits, checked = false): Promise<{ out: SaveOutcome; itemId?: string }> {
+  private async commit(
+    h: Held,
+    decision: "save" | "update",
+    edits?: SaveEdits,
+    opts: { checked?: boolean; auto?: boolean } = {},
+  ): Promise<{ out: SaveOutcome; itemId?: string }> {
+    const checked = opts.checked === true;
     const site = parseOrigin(h.origin)?.site ?? h.origin;
     let status: "save" | "update" = decision;
     let update = h.update;
@@ -537,11 +535,20 @@ export class SavePrompts {
       // The vault list names the vault in the outcome; a card opened locked had none: the default one now.
       // A host that cannot list (yet) leaves the choice as is: save_login answers for it.
       // An explicit choice goes as it is. No list: `""`, the default vault of the page's account.
-      const listed = await this.host.vaults(h.origin).catch(() => ({ vaults: [] }));
+      // An automatic save never re-picks: the default vault of this very list, refused when
+      // missing or shared (the card then asks instead).
+      const listed = opts.auto ? await this.host.vaults(h.origin) : await this.host.vaults(h.origin).catch(() => ({ vaults: [] }));
       const vaults = Array.isArray(listed.vaults) ? listed.vaults : [];
-      const vaultId =
-        vaults.length === 0 || vaults.some((v) => v.id === edits.vaultId) ? edits.vaultId : await this.defaultVault(site, vaults);
+      const vaultId = opts.auto
+        ? await this.defaultVault(site, vaults)
+        : vaults.length === 0 || vaults.some((v) => v.id === edits.vaultId)
+          ? edits.vaultId
+          : await this.defaultVault(site, vaults);
       if (vaultId === undefined) throw new BgError("not_found");
+      if (opts.auto) {
+        const v = vaults.find((x) => x.id === vaultId);
+        if (!v || v.shared === true) throw new BgError("not_found");
+      }
       vaultName = vaults.find((v) => v.id === vaultId)?.name;
       const r = await this.deps.session.request({
         op: "save_login",
@@ -573,17 +580,14 @@ export class SavePrompts {
   async autoSave(p: SavePending): Promise<{ itemId: string } | null> {
     const site = parseOrigin(p.origin)?.site ?? p.origin;
     let itemId: string | undefined;
-    try {
-      const listed = await this.host.vaults(p.origin);
-      const vaults = Array.isArray(listed.vaults) ? listed.vaults : [];
-      const vaultId = await this.defaultVault(site, vaults);
-      const vault = vaults.find((v) => v.id === vaultId);
-      if (vault && vault.shared !== true && p.kind === "login" && p.status === "new" && p.username.trim() !== "" && p.password !== "") {
-        const edits: SaveEdits = { title: titleFromSite(site), username: p.username, password: "", vaultId: vault.id, rule: "domain", tags: [] };
-        itemId = (await this.commit({ tabId: p.tabId, origin: p.origin, status: "new", username: p.username, password: p.password }, "save", edits, true)).itemId;
+    if (p.kind === "login" && p.status === "new" && p.username.trim() !== "" && p.password !== "") {
+      const edits: SaveEdits = { title: titleFromSite(site), username: p.username, password: "", vaultId: "", rule: "domain", tags: [] };
+      try {
+        const held: Held = { tabId: p.tabId, origin: p.origin, status: "new", username: p.username, password: p.password };
+        itemId = (await this.commit(held, "save", edits, { checked: true, auto: true })).itemId;
+      } catch {
+        itemId = undefined;
       }
-    } catch {
-      itemId = undefined;
     }
     if (itemId === undefined) {
       await this.open(p);
@@ -595,6 +599,30 @@ export class SavePrompts {
       // Content script gone: the login is saved anyway.
     }
     return { itemId };
+  }
+
+  /** Edit's Save on a toast: `amend_save` of the login `autoSave` wrote (name, identifier, vault). */
+  private async amend(rec: SaveRecord, edits: SaveEdits): Promise<SaveOutcome> {
+    const itemId = rec.savedItemId;
+    if (!rec.undo || itemId === undefined) throw new BgError("not_found");
+    const site = parseOrigin(rec.origin)?.site ?? rec.origin;
+    const r = await this.deps.session.request({
+      op: "amend_save",
+      ctx: "save_prompt",
+      item_id: itemId,
+      origin: rec.origin,
+      title: edits.title.trim() === "" ? titleFromSite(site) : edits.title,
+      username: edits.username,
+      vault_id: edits.vaultId,
+    });
+    rec.savedItemId = r.item_id;
+    if (edits.vaultId !== "") await this.rememberVault(site, edits.vaultId);
+    if (r.item_id !== itemId) await this.deps.onSaved?.(rec.tabId, rec.origin, r.item_id).catch(() => undefined);
+    const out: SaveOutcome = { outcome: "saved" };
+    const listed = await this.host.vaults(rec.origin).catch(() => ({ vaults: [] }));
+    const name = (Array.isArray(listed.vaults) ? listed.vaults : []).find((v) => v.id === edits.vaultId)?.name;
+    if (name !== undefined) out.vault = name;
+    return out;
   }
 
   /**
@@ -617,7 +645,7 @@ export class SavePrompts {
   /** The toast's Edit: its edit view's Save then replaces the saved login (`decide`). */
   async edit(token: string, ui: UiContext): Promise<object> {
     const rec = await this.record(token, ui);
-    if (rec.view !== "toast") throw new BgError("invalid");
+    if (rec.view !== "toast" || !rec.undo || rec.savedItemId === undefined) throw new BgError("invalid");
     rec.editing = true;
     await this.tokens.update(token, rec);
     return {};

@@ -307,6 +307,16 @@ interface Ops {
     req: { ctx: "save_prompt"; item_id: string; origin: string };
     res: Record<string, never>;
   };
+  /**
+   * The save toast's Edit: a Login the bridge saved itself through `save_login` in the last 600 s,
+   * same registrable domain, not edited since, gets `title` (blank: the site) and `username`
+   * (blank: kept) in place; another `vault_id` moves it (saved there first, the old item deleted
+   * after). `item_id`: the login as it is now (a new id after a move). `not_found` for anything else.
+   */
+  amend_save: {
+    req: { ctx: "save_prompt"; item_id: string; origin: string; title: string; username: string; vault_id: string };
+    res: { item_id: string };
+  };
   generate: {
     req: {
       ctx: Ctx;

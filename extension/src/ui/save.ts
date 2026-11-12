@@ -19,8 +19,8 @@
 // in the toolbar popup ("later").
 //
 // The toast (`view: "toast"`, spec 4.1, 4.4): a login OnePass saved by
-// itself. "Login for <site> saved", the username, Undo (only when `undo`)
-// and Edit. Left alone TOAST_MS (same hover and focus rule) it closes. Undo
+// itself. "Login for <site> saved", the username, Undo and Edit (only when
+// `undo`: a generated password confirmed at the submission gets neither). Left alone TOAST_MS (same hover and focus rule) it closes. Undo
 // asks the worker to delete it (`save_undo`) and says "Removed", or that it
 // could not; Edit (`save_edit`) opens a short edit view: name, identifier,
 // vault, "Never on this site", Save.
@@ -714,15 +714,17 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
           renderSaved(t("save.removed"), "");
         })
       : null;
-    const edit = btn(t("save.edit"), "btn-link", async () => {
-      if (!tok) return;
-      const r = await call(deps.send, { type: "save_edit", token: tok }, parseEmpty);
-      if (!r.ok) {
-        err.textContent = errorText(r.code);
-        return;
-      }
-      renderToastEdit(d);
-    });
+    const edit = i.undo
+      ? btn(t("save.edit"), "btn-link", async () => {
+          if (!tok) return;
+          const r = await call(deps.send, { type: "save_edit", token: tok }, parseEmpty);
+          if (!r.ok) {
+            err.textContent = errorText(r.code);
+            return;
+          }
+          renderToastEdit(d);
+        })
+      : null;
     show(
       h(
         "div",
@@ -742,7 +744,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     armQuiet();
   }
 
-  /** The toast's Edit: name, identifier, vault, "Never on this site"; Save replaces the saved login. */
+  /** The toast's Edit: name, identifier, vault, "Never on this site"; Save amends the saved login. */
   function renderToastEdit(d: Draft): void {
     if (!token) return;
     const tok = token;

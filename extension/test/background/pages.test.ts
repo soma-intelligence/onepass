@@ -49,9 +49,12 @@ let client_unlock_fails = false;
 let vaultsFor: ((r: Record<string, unknown>) => unknown) | null = null;
 /** What `undo_save` answers; null: done. */
 let undoAnswer: unknown = null;
+/** What `amend_save` answers; null: the same item. */
+let amendAnswer: unknown = null;
 afterEach(() => {
   vaultsFor = null;
   undoAnswer = null;
+  amendAnswer = null;
   appLocked = null;
   onUnlock = null;
   client_unlock_fails = false;
@@ -84,6 +87,8 @@ const answer: Answer = (r) => {
       return { password: "Gen-Pass-123", entropy_bits: 90 };
     case "undo_save":
       return undoAnswer ?? {};
+    case "amend_save":
+      return amendAnswer ?? { item_id: r.item_id };
     case "unlock":
       if (client_unlock_fails) return new BridgeAppError("host_missing", "no app");
       onUnlock?.();
@@ -1188,7 +1193,7 @@ describe("save prompt", () => {
       expect(await bg.saves.recentlyDismissed(SITE, loginQuietKey("alex@atlas.dev", "typed-Secret-1"))).toBe(false);
     });
 
-    it("Edit then Save: the auto-saved login is replaced by the edited one", async () => {
+    it("Edit then Save: amend_save changes the saved login, no second copy", async () => {
       const { ext, bg, client } = await setup();
       await bg.saves.autoSave(pending);
       const token = tokenOf(ext);
@@ -1196,12 +1201,37 @@ describe("save prompt", () => {
       // Not in edit mode yet: a toast takes no save.
       expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ err: "invalid" });
       expect(await ext.send({ type: "save_edit", token }, ui)).toEqual({ ok: {} });
+      const before = client.requests.length;
       expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ ok: { outcome: "saved", vault: "Projet Atlas" } });
-      // The edited login is written first, then the saved one goes.
-      const ops = client.requests.map((r) => r.op);
-      expect(ops.slice(ops.lastIndexOf("save_login") - 1)).toEqual(["vaults", "save_login", "undo_save"]);
-      expect(client.requests.at(-2)).toMatchObject({ op: "save_login", password: "typed-Secret-1", vault_id: "v2", rule: "exact_host" });
-      expect(client.requests.at(-1)).toEqual({ op: "undo_save", ctx: "save_prompt", item_id: "it_new", origin: SITE });
+      const after = client.requests.slice(before);
+      expect(after.filter((r) => r.op === "save_login" || r.op === "undo_save")).toEqual([]);
+      expect(after.find((r) => r.op === "amend_save")).toEqual({
+        op: "amend_save",
+        ctx: "save_prompt",
+        item_id: "it_new",
+        origin: SITE,
+        title: "Atlas Cloud",
+        username: "alex@atlas.dev",
+        vault_id: "v2",
+      });
+    });
+
+    it("Edit refused by the bridge (too late, edited): the error in the card, nothing written", async () => {
+      const { ext, bg, client } = await setup();
+      await bg.saves.autoSave(pending);
+      const token = tokenOf(ext);
+      const ui = uiSender("save.html", 7);
+      await ext.send({ type: "save_edit", token }, ui);
+      amendAnswer = new BridgeAppError("not_found", "too late");
+      const before = client.requests.length;
+      expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, ui)).toEqual({ err: "not_found" });
+      expect(client.requests.slice(before).map((r) => r.op)).toEqual(["amend_save"]);
+    });
+
+    it("a confirmed generated password's toast takes no Edit", async () => {
+      const { ext, bg } = await setup();
+      const token = await bg.saves.open({ ...pending, password: "", view: "toast" });
+      expect(await ext.send({ type: "save_edit", token }, uiSender("save.html", 7))).toEqual({ err: "invalid" });
     });
   });
 

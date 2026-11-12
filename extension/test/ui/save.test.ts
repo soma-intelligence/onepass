@@ -409,11 +409,12 @@ describe("save toast (spec 4.1, 4.4)", () => {
     expect(r.querySelector("[role=status]")).not.toBeNull();
     expect(button(r, "Annuler")).toBeTruthy();
     expect(button(r, "Modifier")).toBeTruthy();
-    // A generated password confirmed at the submission: Edit only.
+    // A generated password confirmed at the submission (spec 4.4): saved, neither Undo nor Edit.
     const s = setupToast({ ...base, view: "toast" });
     await s.handle.ready;
+    expect(text(s.r)).toContain("Login pour atlas-cloud.test enregistré");
     expect(() => button(s.r, "Annuler")).toThrow();
-    expect(button(s.r, "Modifier")).toBeTruthy();
+    expect(() => button(s.r, "Modifier")).toThrow();
   });
 
   it("toast stays while hovered and goes after 8000 ms otherwise", async () => {

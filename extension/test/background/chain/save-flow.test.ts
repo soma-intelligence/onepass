@@ -1074,6 +1074,20 @@ describe("automatic save of a new login (spec 4.1, 4.3)", () => {
     expect(t.opened[0]?.view).toBeUndefined();
   });
 
+  it("the remembered vault gone, the default left is shared: the card, one vault list only", async () => {
+    const t = auto({ vaults: [{ id: "vs", name: "Équipe", color: null, shared: true }] });
+    await t.signIn();
+    expect(t.ops()).toEqual(["check_credentials", "vaults"]);
+    expect(t.opened).toHaveLength(1);
+    expect(t.opened[0]?.view).toBeUndefined();
+  });
+
+  it("new login: one vault list, then save_login", async () => {
+    const t = auto();
+    await t.signIn();
+    expect(t.ops()).toEqual(["check_credentials", "vaults", "save_login"]);
+  });
+
   it("never-save site gets nothing", async () => {
     const t = auto({ never: ["atlas-cloud.test"] });
     await t.signIn();
@@ -1081,7 +1095,7 @@ describe("automatic save of a new login (spec 4.1, 4.3)", () => {
     expect(t.opened).toEqual([]);
   });
 
-  it("confirmed generated password shows the toast with Edit only", async () => {
+  it("confirmed generated password shows the toast without Undo or Edit", async () => {
     const t = auto();
     t.flow.rememberGenerated(7, SITE, "Gen-Pass-9");
     expect(await t.flow.savePending(7, SITE, "Gen-Pass-9")).toBe(true);
@@ -1089,6 +1103,8 @@ describe("automatic save of a new login (spec 4.1, 4.3)", () => {
     expect(t.ops()).toEqual(["vaults", "save_login", "confirm_pending"]);
     expect(t.opened).toEqual([expect.objectContaining({ view: "toast", password: "" })]);
     expect(t.opened[0]?.undo).toBeUndefined();
+    // Its toast takes no Edit: the bridge amends only what save_login wrote moments ago.
+    await expect(t.prompts.edit(t.tokens[0] as string, { page: "save.html", tabId: 7 })).rejects.toThrow();
   });
 
   it("undo is per tab", async () => {
