@@ -625,7 +625,10 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
                 lengthOpen = !lengthOpen;
                 render(init);
                 // The row was rebuilt: the keyboard stays on the toggle.
-                container.querySelector<HTMLElement>(".length-toggle")?.focus();
+                container.querySelector<HTMLElement>(".length-toggle")?.focus({ preventScroll: true });
+                // Short viewport: the frame stops at the room there is and the list scrolls, so the
+                // opened panel is brought into view (focus stays on the toggle).
+                if (lengthOpen) container.querySelector<HTMLElement>(".length-panel")?.scrollIntoView?.({ block: "nearest" });
               }),
             },
           },

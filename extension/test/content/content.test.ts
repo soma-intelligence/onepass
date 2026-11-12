@@ -1,3 +1,4 @@
+import { FRAME_HEIGHT } from "../../src/content/frames";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FormInfo, PageAnalysis } from "../../src/shared/messages";
 import { GESTURE_MS } from "../../src/content/submit";
@@ -188,7 +189,7 @@ describe("shell and icon", () => {
     await flush();
     const f = s.cs.internals.root.querySelector("iframe")!;
     s.ext.deliver({ type: "resize_frame", kind: "menu", height: 166 }, { id: "other" });
-    expect(f.style.height).toBe("420px");
+    expect(f.style.height).toBe(`${FRAME_HEIGHT.menu}px`);
     s.ext.deliver({ type: "resize_frame", kind: "menu", height: 166 });
     expect(f.style.height).toBe("166px");
     s.ext.deliver({ type: "resize_frame", kind: "menu", height: "9999" });

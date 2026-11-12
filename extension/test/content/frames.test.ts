@@ -329,6 +329,26 @@ describe("shell placement", () => {
     });
   });
 
+  it("a desktop menu taller than the room under its field (and above it) takes the room left; one that fits is whole", () => {
+    const orig = window.innerHeight;
+    try {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 500 });
+      setPage(`<input id="f" data-test-rect="40,20,300,30">`);
+      shell = createShell(document);
+      const frames = createFrames({ shell, doc: document, geometry: testGeometry, layout: () => ({ touch: false, sheet: false }) });
+      frames.showFrame("menu", `${CHROME}menu.html#${TOKEN}`, document.getElementById("f"));
+      const iframe = shell.root.querySelector("iframe")!;
+      frames.resize("menu", 300);
+      expect(iframe.style.height).toBe("300px");
+      frames.resize("menu", 540);
+      const top = parseFloat(iframe.style.top);
+      expect(parseFloat(iframe.style.height)).toBeLessThan(540);
+      expect(top + parseFloat(iframe.style.height)).toBeLessThanOrEqual(500);
+    } finally {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: orig });
+    }
+  });
+
   it("IPAD-01: the layout is read live; a trackpad or Slide Over changes it mid-page", () => {
     setPage(`<input id="f" data-test-rect="40,100,300,30">`);
     shell = createShell(document);
@@ -343,10 +363,10 @@ describe("shell placement", () => {
     frames.resize("menu", 520);
     expect(iframe.classList.contains("sheet")).toBe(true);
     expect(iframe.style.height).toBe("520px");
-    // Wide again: the popover's own largest height.
+    // Wide again: the popover keeps the height its page asked for, within its largest.
     now = IPAD;
     frames.reposition();
-    expect(iframe.style.height).toBe(`${FRAME_HEIGHT.menu}px`);
+    expect(iframe.style.height).toBe(`${Math.min(520, FRAME_HEIGHT.menu)}px`);
     // A mouse layout: the desktop dropdown again.
     now = { touch: false, sheet: false };
     frames.resize("menu", 200);

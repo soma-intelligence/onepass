@@ -27,7 +27,7 @@ export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, ov
  * message vouched by the worker) and scrolls inside past these. The ghost
  * takes its field's height, at most this tall.
  */
-export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 420, overlay: 440, save: 520, ghost: 120 };
+export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 560, overlay: 440, save: 520, ghost: 120 };
 /** On a narrow touch screen the menu is a bottom sheet, up to this tall (the unlock sheet fits). */
 export const SHEET_HEIGHT = 560;
 /** The bottom sheet only below this window width (iPhone, Slide Over, narrow Split View); wider, the menu follows its field. */
@@ -864,6 +864,9 @@ export function createFrames(opts: FramesOptions): Frames {
       } else {
         const above = r.top - GAP - height;
         if (top + height > vh - EDGE && above >= EDGE) top = above;
+        // Neither side holds it: the popover takes the room left under its field and the page
+        // inside scrolls (an open length panel must not hang below the viewport).
+        else if (kind === "menu" && top + height > vh - EDGE) height = Math.max(FRAME_MIN_HEIGHT, vh - EDGE - top);
       }
     } else if (kind === "save" && touch) {
       // Touch (iPhone, iPad): centered at the top of what the user sees. Safari's own bars and

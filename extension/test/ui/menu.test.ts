@@ -950,6 +950,49 @@ describe("inline menu", () => {
       expect([...pwText(r)!]).toHaveLength(25);
     });
 
+    it("opening the panel reports a bigger height; in a short viewport it is scrolled into view, focus on the toggle", async () => {
+      const r = root();
+      const worker = new FakeWorker((m) => (m.type === "menu_init" ? ok({ origin: SITE, formKind: "signup", items: [] }) : m.type === "menu_preview" ? ok({ ...strongOf(POOL[0]!), profile: { length: 18, symbols: true } }) : ok()));
+      const clock = new Clock();
+      const sizes: Array<() => void> = [];
+      const orig = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+      const scrolled: Element[] = [];
+      const origScroll = Element.prototype.scrollIntoView;
+      const g = globalThis as { requestAnimationFrame?: (cb: () => void) => number };
+      const origRaf = g.requestAnimationFrame;
+      g.requestAnimationFrame = (cb) => (cb(), 0);
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this);
+      };
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.classList.contains("menu") ? (this.querySelector(".length-panel") ? 520 : 300) : 0;
+        },
+      });
+      try {
+        const handle = mountMenu(r, { send: worker.send, hash: HASH, now: clock.now, trusted: () => true, observe: new FakeVisibility().observe, observeSize: (_el, cb) => void sizes.push(cb) });
+        await handle.ready;
+        for (const cb of sizes) cb();
+        await flushAll();
+        const heights = () => worker.sent.filter((m) => m.type === "menu_resize").map((m) => (m as { height: number }).height);
+        expect(heights().at(-1)).toBe(300);
+        clock.advance(300);
+        button(r, "Longueur et caractères").click();
+        await flushAll();
+        for (const cb of sizes) cb();
+        await flushAll();
+        expect(heights().at(-1)).toBe(520);
+        expect(scrolled).toEqual([r.querySelector(".length-panel")]);
+        expect(document.activeElement === r.querySelector(".length-toggle") || document.activeElement === document.body).toBe(true);
+      } finally {
+        if (orig) Object.defineProperty(HTMLElement.prototype, "scrollHeight", orig);
+        else delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+        Element.prototype.scrollIntoView = origScroll;
+        g.requestAnimationFrame = origRaf;
+      }
+    });
+
     it("a refused redraw shows the error line", async () => {
       const { r, handle, clock } = suggest("signup", { refuse: "site_refused" });
       await handle.ready;
