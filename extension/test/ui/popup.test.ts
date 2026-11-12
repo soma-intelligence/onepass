@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AUTO_PILL_KEY, AUTO_PILL_NEVER_KEY } from "../../src/shared/auto-pill";
 import type { UiToBg } from "../../src/shared/messages";
 import { UNLOCK_WAIT_TRIES } from "../../src/ui/components";
 import { CLIPBOARD_CLEAR_MS, GENERATOR_TYPES, mountPopup } from "../../src/ui/popup";
@@ -713,5 +714,58 @@ describe("popup clipboard (security review L2)", () => {
     expect(p.timers.pending(CLIPBOARD_CLEAR_MS)).toBe(1);
     p.timers.fire(CLIPBOARD_CLEAR_MS);
     expect(p.writes).toEqual(["pw-Secret-1", "703083", ""]);
+  });
+});
+
+describe("popup: the sign-in pill setting", () => {
+  const store = (init: Record<string, unknown> = {}) => {
+    const stored = new Map<string, unknown>(Object.entries(init));
+    return {
+      stored,
+      storage: {
+        get: async (k: string) => (stored.has(k) ? { [k]: structuredClone(stored.get(k)) } : {}),
+        set: async (items: Record<string, unknown>) => {
+          for (const [k, v] of Object.entries(items)) stored.set(k, structuredClone(v));
+        },
+      },
+    };
+  };
+
+  it("a switch, on by default; turning it off is kept in storage.local", async () => {
+    const { stored, storage } = store();
+    const r = root();
+    const handle = mountPopup(r, { send: worker().send, timers: new ManualTimers(), storage });
+    await handle.ready;
+    await handle.settled();
+    const box = r.querySelector<HTMLInputElement>("input[type=checkbox][aria-label='Pastille de connexion']")!;
+    expect(box.checked).toBe(true);
+    box.checked = false;
+    box.dispatchEvent(new Event("change"));
+    await handle.settled();
+    expect(stored.get(AUTO_PILL_KEY)).toBe(false);
+  });
+
+  it("lists the never-list; a site's remove button takes it out", async () => {
+    const { stored, storage } = store({ [AUTO_PILL_KEY]: false, [AUTO_PILL_NEVER_KEY]: ["linear.app", "atlas-cloud.test"] });
+    const r = root();
+    const handle = mountPopup(r, { send: worker().send, timers: new ManualTimers(), storage });
+    await handle.ready;
+    await handle.settled();
+    expect(r.querySelector<HTMLInputElement>("input[aria-label='Pastille de connexion']")!.checked).toBe(false);
+    expect(text(r)).toContain("Jamais sur ces sites");
+    expect(text(r)).toContain("linear.app");
+    r.querySelector<HTMLButtonElement>("button[aria-label='Retirer linear.app']")!.click();
+    await handle.settled();
+    expect(stored.get(AUTO_PILL_NEVER_KEY)).toEqual(["atlas-cloud.test"]);
+    expect(text(r)).not.toContain("linear.app");
+  });
+
+  it("no never-list: no list shown", async () => {
+    const { storage } = store();
+    const r = root();
+    const handle = mountPopup(r, { send: worker().send, timers: new ManualTimers(), storage });
+    await handle.ready;
+    await handle.settled();
+    expect(text(r)).not.toContain("Jamais sur ces sites");
   });
 });

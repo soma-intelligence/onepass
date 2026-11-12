@@ -5,6 +5,7 @@
 // (spec 6.4) from the main and locked views. Smart fill: the plan of the
 // active tab in one line with its Fill (alternatives listed first below it),
 // and "Oublier mes choix sur ce site".
+import { AUTO_PILL_KEY, readAutoPill, removeNever } from "../shared/auto-pill";
 import { ext } from "../shared/browser";
 import { t } from "../shared/i18n";
 import type { UiToBg } from "../shared/messages";
@@ -643,6 +644,58 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
         h("p", null, t("popup.orOpenGeneratorTo")),
       ),
     );
+    void track(renderPillSetting());
+  }
+
+  /**
+   * The sign-in pill that appears by itself on a recognised page: a switch (on by default) and
+   * the sites where the user asked never to see it, each with its remove button. `storage.local`,
+   * read by the worker (auto-pill.ts).
+   */
+  async function renderPillSetting(): Promise<void> {
+    const storage = deps.storage;
+    if (!storage) return;
+    let enabled = true;
+    let never: string[] = [];
+    try {
+      ({ enabled, never } = await readAutoPill(storage));
+    } catch {
+      // Unreadable: the defaults.
+    }
+    // The idle view may have been replaced meanwhile (a row picked, the generator).
+    const center = main.querySelector(":scope > .center");
+    if (view !== "none" || !center) return;
+    const box = h("input", { attrs: { type: "checkbox", "aria-label": t("popup.signInPill") } }) as HTMLInputElement;
+    box.checked = enabled;
+    box.addEventListener("change", () => void track(storage.set({ [AUTO_PILL_KEY]: box.checked })));
+    const card = h("div", { class: "card pill-setting" }, h("label", { class: "gen-line" }, t("popup.signInPill"), box), h("p", { class: "gen-help" }, t("popup.signInPillHelp")));
+    if (never.length > 0) {
+      const list = h("ul", { class: "history-list", attrs: { "aria-label": t("popup.pillNeverSites") } });
+      const fill = () => {
+        list.replaceChildren(
+          ...never.map((site) =>
+            h(
+              "li",
+              { class: "gen-line" },
+              site,
+              iconButton(t("popup.removeSite", { site }), "close", () => {
+                never = never.filter((x) => x !== site);
+                void track(removeNever(storage, site));
+                if (never.length > 0) fill();
+                else {
+                  heading.remove();
+                  list.remove();
+                }
+              }, 10),
+            ),
+          ),
+        );
+      };
+      const heading = h("p", { class: "gen-line" }, t("popup.pillNeverSites"));
+      fill();
+      card.append(heading, list);
+    }
+    center.append(card);
   }
 
   function renderSide(): void {

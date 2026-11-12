@@ -10,7 +10,8 @@ export const AUTO_PILL_KEY = "auto_pill";
 export const AUTO_PILL_NEVER_KEY = "auto_pill_never";
 /** The part of a storage area these settings use (`storage.local`, the popup's `storage`). */
 export interface SettingsArea {
-  get(keys: string | string[] | null): Promise<Record<string, unknown>>;
+  /** One key per read: the popup's `storage` takes no list. */
+  get(key: string): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
 }
 const MAX_SITES = 1000;
@@ -29,8 +30,8 @@ export function parseNeverList(raw: unknown): string[] {
 }
 
 export async function readAutoPill(area: Pick<SettingsArea, "get">): Promise<AutoPillSettings> {
-  const got = await area.get([AUTO_PILL_KEY, AUTO_PILL_NEVER_KEY]);
-  return { enabled: got[AUTO_PILL_KEY] !== false, never: parseNeverList(got[AUTO_PILL_NEVER_KEY]) };
+  const enabled = (await area.get(AUTO_PILL_KEY))[AUTO_PILL_KEY] !== false;
+  return { enabled, never: parseNeverList((await area.get(AUTO_PILL_NEVER_KEY))[AUTO_PILL_NEVER_KEY]) };
 }
 
 /** Adds a registrable domain to the never-list, once. */
