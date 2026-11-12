@@ -417,6 +417,20 @@ pub enum Request {
         item_id: String,
         origin: String,
     },
+    /// Rename, change the username of, or move to another vault a Login
+    /// this session saved through `save_login` in the last 600 s, for the
+    /// same site and not edited since (the toast's Edit). Anything else is
+    /// `not_found`. A move saves the login in `vault_id` first, then deletes
+    /// the old item: `item_id` in the answer names the login as it is now.
+    AmendSave {
+        id: u64,
+        ctx: Ctx,
+        item_id: String,
+        origin: String,
+        title: String,
+        username: String,
+        vault_id: String,
+    },
     Generate {
         id: u64,
         ctx: Ctx,
@@ -590,6 +604,7 @@ impl Request {
             | Self::UpdatePassword { id, .. }
             | Self::ConfirmPending { id, .. }
             | Self::UndoSave { id, .. }
+            | Self::AmendSave { id, .. }
             | Self::Generate { id, .. }
             | Self::ProviderAccounts { id, .. }
             | Self::FillProvider { id, .. }
@@ -632,6 +647,7 @@ impl Request {
             Self::UpdatePassword { .. } => "update_password",
             Self::ConfirmPending { .. } => "confirm_pending",
             Self::UndoSave { .. } => "undo_save",
+            Self::AmendSave { .. } => "amend_save",
             Self::Generate { .. } => "generate",
             Self::ProviderAccounts { .. } => "provider_accounts",
             Self::FillProvider { .. } => "fill_provider",
@@ -671,6 +687,7 @@ impl Request {
             | Self::UpdatePassword { ctx, .. }
             | Self::ConfirmPending { ctx, .. }
             | Self::UndoSave { ctx, .. }
+            | Self::AmendSave { ctx, .. }
             | Self::Generate { ctx, .. }
             | Self::ProviderAccounts { ctx, .. }
             | Self::FillProvider { ctx, .. }
@@ -1531,6 +1548,15 @@ mod tests {
             r#"{"id":16,"op":"confirm_pending","ctx":"save_prompt","item_id":"x","origin":"https://atlas-cloud.test","username":"alex@atlas.dev"}"#,
             16,
             "confirm_pending",
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_amend_save() {
+        round_trip(
+            r#"{"id":32,"op":"amend_save","ctx":"save_prompt","item_id":"i","origin":"https://atlas-cloud.test","title":"Atlas","username":"alex@atlas.dev","vault_id":"v"}"#,
+            32,
+            "amend_save",
         );
     }
 

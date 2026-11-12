@@ -432,10 +432,15 @@ pub struct Service<V: VaultAccess> {
 
 /// How long a fresh save can be undone, in seconds.
 const UNDO_WINDOW_SECS: u64 = 60;
+/// How long a fresh save can be amended (the toast's Edit), in seconds: the
+/// lifetime of the extension's pending pill (`PILL_TTL`).
+const AMEND_WINDOW_SECS: u64 = 600;
 /// Saves remembered for `undo_save`; the oldest is dropped.
 const RECENT_SAVES: usize = 16;
 
-/// A login saved by this session, as `save_login` left it.
+/// A login saved by this session, as `save_login` left it (or as
+/// `amend_save` left it since: its id after a move, its new version; the
+/// time of the save stays, so the undo window still runs from it).
 struct RecentSave {
     item_id: Id,
     /// Registrable domain of the page it was saved on.
@@ -949,6 +954,15 @@ impl<V: VaultAccess> Service<V> {
                 origin: o,
                 ..
             } => self.undo_save(*ctx, item_id, o, now),
+            Request::AmendSave {
+                ctx,
+                item_id,
+                origin: o,
+                title,
+                username,
+                vault_id,
+                ..
+            } => self.amend_save(*ctx, item_id, o, title, username, vault_id, now),
             Request::Generate {
                 recipe, origin: o, ..
             } => {
@@ -1772,10 +1786,17 @@ impl<V: VaultAccess> Service<V> {
         Ok(Response::Empty {})
     }
 
-    /// Delete a login `save_login` made in the last 60 s for the same
-    /// site, untouched since. Everything else is `not_found`.
-    fn undo_save(&mut self, ctx: Ctx, item_id: &str, o: &str, now: u64) -> OpResult<Response> {
-        let page = origin(o)?;
+    /// The login `item_id` if this session saved it through `save_login`
+    /// at most `window` seconds ago, for the site of `page`, and nothing
+    /// edited it since: its place in `recent_saves`, its vault, the item.
+    /// Anything else is `not_found`.
+    fn recent_save(
+        &mut self,
+        item_id: &str,
+        page: &Origin,
+        now: u64,
+        window: u64,
+    ) -> OpResult<(usize, VaultInfo, Item)> {
         let id = parse_id(item_id)?;
         let pos = self
             .recent_saves
@@ -1786,18 +1807,95 @@ impl<V: VaultAccess> Service<V> {
             let r = &self.recent_saves[pos];
             (r.saved_at, r.site.clone(), r.version)
         };
-        if now.saturating_sub(saved_at) > UNDO_WINDOW_SECS || page.site() != site {
+        if now.saturating_sub(saved_at) > window || page.site() != site {
             return Err(AppErrorCode::NotFound);
         }
         let (vault, item) = self.eligible_item(item_id)?;
         if item.item_type != ItemType::Login || item_version(&item) != version {
             return Err(AppErrorCode::NotFound);
         }
+        Ok((pos, vault, item))
+    }
+
+    /// Delete a login `save_login` made in the last 60 s for the same
+    /// site, untouched since (an `amend_save` keeps it undoable within the
+    /// 60 s of the save). Everything else is `not_found`.
+    fn undo_save(&mut self, ctx: Ctx, item_id: &str, o: &str, now: u64) -> OpResult<Response> {
+        save_ctx(ctx)?;
+        let page = origin(o)?;
+        let (pos, vault, item) = self.recent_save(item_id, &page, now, UNDO_WINDOW_SECS)?;
+        let id = item.id;
         self.vault.delete(vault.id, id).map_err(app_code)?;
         self.recent_saves.remove(pos);
         self.owners.remove(&id);
         self.record("undo_save", id, Some(o), ctx, now);
         Ok(Response::Empty {})
+    }
+
+    /// The toast's Edit: a login `save_login` made in the last 600 s for the
+    /// same site, untouched since, gets `title` (blank: the site) and
+    /// `username` (blank: the stored one) in place. Another `vault_id` (one
+    /// the page may save to) moves it: the login is saved there under a new
+    /// id first, the old item deleted only then; if that delete fails, the
+    /// new copy goes again and the error is returned (never two copies
+    /// left silently). Answers the login's id as it is now.
+    #[allow(clippy::too_many_arguments)]
+    fn amend_save(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        o: &str,
+        title: &str,
+        username: &str,
+        vault_id: &str,
+        now: u64,
+    ) -> OpResult<Response> {
+        save_ctx(ctx)?;
+        let page = origin(o)?;
+        let (pos, vault, mut item) = self.recent_save(item_id, &page, now, AMEND_WINDOW_SECS)?;
+        let target = if vault_id.trim().is_empty() {
+            vault.id
+        } else {
+            self.known_vault(vault_id, &page)?
+        };
+        item.title = match title.trim() {
+            "" => page.site(),
+            t => t.to_owned(),
+        };
+        let username = username.trim();
+        if !username.is_empty() {
+            set_value(&mut item, "username", FieldValue::Text(username.to_owned()))?;
+        }
+        item.updated_at = unix(now);
+        validate(&item).map_err(|_| AppErrorCode::Invalid)?;
+        let old = item.id;
+        let id = if target == vault.id {
+            let version = item_version(&item);
+            self.save(vault.id, item)?;
+            self.recent_saves[pos].version = version;
+            old
+        } else {
+            let id = Id::new();
+            item.id = id;
+            item.vault_id = target;
+            let version = item_version(&item);
+            self.save(target, item)?;
+            if let Err(e) = self.vault.delete(vault.id, old) {
+                // The old login stays as it was: the new copy goes again.
+                let _ = self.vault.delete(target, id);
+                self.owners.remove(&id);
+                return Err(app_code(e));
+            }
+            self.owners.remove(&old);
+            let r = &mut self.recent_saves[pos];
+            r.item_id = id;
+            r.version = version;
+            id
+        };
+        self.record("amend_save", id, Some(o), ctx, now);
+        Ok(Response::ItemId {
+            item_id: id.to_string(),
+        })
     }
 
     fn provider_accounts(&mut self, p: ProviderId, o: &str) -> OpResult<Response> {

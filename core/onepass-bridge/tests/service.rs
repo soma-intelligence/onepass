@@ -2196,7 +2196,10 @@ fn update_password_pending_tags_the_item() {
     );
     assert_eq!(ok(&v), &json!({}));
     let item = h.vault().item(atlas);
-    assert_eq!(item.tags.iter().filter(|t| *t == "onepass:pending").count(), 1);
+    assert_eq!(
+        item.tags.iter().filter(|t| *t == "onepass:pending").count(),
+        1
+    );
     match &item.field("password").unwrap().value {
         FieldValue::Password(p) => assert_eq!(p.as_str(), "Gen-Pass-0050"),
         _ => panic!("password field"),
@@ -2227,14 +2230,26 @@ fn update_password_pending_tags_the_item() {
         "origin":ATLAS,"password":"Gen-Pass-0052"}),
     );
     assert_eq!(ok(&v), &json!({}));
-    assert!(h2.vault().item(bare).tags.iter().all(|t| t != "onepass:pending"));
+    assert!(
+        h2.vault()
+            .item(bare)
+            .tags
+            .iter()
+            .all(|t| t != "onepass:pending")
+    );
 }
 
 #[test]
 fn confirm_pending_clears_an_updated_item() {
     let mut h = H::new();
     let atlas = h.ids.atlas;
-    let username = h.vault().item(atlas).field("username").unwrap().value.clone();
+    let username = h
+        .vault()
+        .item(atlas)
+        .field("username")
+        .unwrap()
+        .value
+        .clone();
     let v = h.call(
         json!({"op":"update_password","ctx":"save_prompt","item_id":id(atlas),
         "origin":ATLAS,"password":"Gen-Pass-0053","pending":true}),
@@ -4132,6 +4147,148 @@ fn undo_save_refuses_an_item_it_did_not_save() {
     let v = h.call(undo(&id(other), "https://direct.atlas-cloud.test"));
     assert_eq!(err(&v), "not_found");
     assert!(h.vault().items.iter().any(|i| i.id == other));
+}
+
+// ---- amend_save (the toast's Edit, spec 2026-11-11 4.1) ----
+
+fn amend(item: &str, origin: &str, title: &str, username: &str, vault: &str) -> Value {
+    json!({"op":"amend_save","ctx":"save_prompt","item_id":item,"origin":origin,
+           "title":title,"username":username,"vault_id":vault})
+}
+
+fn item_of<'a>(h: &'a H, item: &str) -> Option<&'a onepass_core::model::Item> {
+    h.vault().items.iter().find(|i| i.id.to_string() == item)
+}
+
+fn login_identifier_of(i: &onepass_core::model::Item) -> Option<String> {
+    match &i.field("username")?.value {
+        FieldValue::Text(t) => Some(t.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn amend_save_changes_title_and_username_in_place() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    let perso = id(h.ids.perso);
+    let v = h.call_at(
+        amend(&item, NEWSITE, "Atlas pro", "pro@atlas.dev", &perso),
+        NOW + 300,
+    );
+    assert_eq!(ok(&v), &json!({"item_id": item}));
+    let i = item_of(&h, &item).expect("still there");
+    assert_eq!(i.title, "Atlas pro");
+    assert_eq!(login_identifier_of(i), Some("pro@atlas.dev".to_owned()));
+    // Amended inside the undo window of the save: still undoable, within 60 s of the save only.
+    let item2 = save_fresh(&mut h, NOW);
+    ok(&h.call_at(amend(&item2, NEWSITE, "Renamed", "", ""), NOW + 10));
+    assert_eq!(item_of(&h, &item2).unwrap().title, "Renamed");
+    assert_eq!(ok(&h.call_at(undo(&item2, NEWSITE), NOW + 20)), &json!({}));
+    assert!(item_of(&h, &item2).is_none());
+}
+
+#[test]
+fn amend_save_refuses_after_600_s() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    assert_eq!(
+        err(&h.call_at(amend(&item, NEWSITE, "Late", "", ""), NOW + 601)),
+        "not_found"
+    );
+    assert_ne!(item_of(&h, &item).unwrap().title, "Late");
+}
+
+#[test]
+fn amend_save_refuses_other_site() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    assert_eq!(
+        err(&h.call_at(amend(&item, "https://evil.test", "Evil", "", ""), NOW + 5)),
+        "not_found"
+    );
+    assert_ne!(item_of(&h, &item).unwrap().title, "Evil");
+}
+
+#[test]
+fn amend_save_refuses_an_edited_item() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    let v = h.call_at(
+        json!({"op":"update_password","ctx":"save_prompt","item_id":item,"origin":NEWSITE,
+               "password":"Changed-Pass-7788"}),
+        NOW + 10,
+    );
+    assert!(v.get("error").is_none(), "{v}");
+    assert_eq!(
+        err(&h.call_at(amend(&item, NEWSITE, "After", "", ""), NOW + 20)),
+        "not_found"
+    );
+}
+
+#[test]
+fn amend_save_refuses_an_item_it_did_not_save() {
+    let mut h = H::new();
+    let other = h.svc.vault_mut().add_login(
+        "Direct",
+        "d@atlas.dev",
+        "https://direct.atlas-cloud.test",
+        MatchRule::Domain,
+    );
+    let v = h.call(amend(
+        &id(other),
+        "https://direct.atlas-cloud.test",
+        "Mine",
+        "",
+        "",
+    ));
+    assert_eq!(err(&v), "not_found");
+    assert_eq!(
+        h.vault()
+            .items
+            .iter()
+            .find(|i| i.id == other)
+            .unwrap()
+            .title,
+        "Direct"
+    );
+}
+
+#[test]
+fn amend_save_moves_to_another_vault() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    let pro = h.ids.pro;
+    let v = h.call_at(amend(&item, NEWSITE, "Atlas pro", "", &id(pro)), NOW + 30);
+    let moved = ok(&v)["item_id"].as_str().unwrap().to_owned();
+    assert_ne!(moved, item);
+    // One copy only: in the new vault, the old item gone for good.
+    assert!(item_of(&h, &item).is_none());
+    let i = item_of(&h, &moved).expect("moved");
+    assert_eq!(i.vault_id, pro);
+    assert_eq!(i.title, "Atlas pro");
+    assert_eq!(login_identifier_of(i), Some("fresh@atlas.dev".to_owned()));
+    // The old id is no longer amendable or undoable; the new one is (same save time).
+    assert_eq!(err(&h.call_at(undo(&item, NEWSITE), NOW + 40)), "not_found");
+    assert_eq!(ok(&h.call_at(undo(&moved, NEWSITE), NOW + 40)), &json!({}));
+    assert!(item_of(&h, &moved).is_none());
+}
+
+#[test]
+fn amend_and_undo_refuse_a_ctx_other_than_save_prompt() {
+    let mut h = H::new();
+    let item = save_fresh(&mut h, NOW);
+    let v = h.call_at(
+        json!({"op":"undo_save","ctx":"popup","item_id":item,"origin":NEWSITE}),
+        NOW + 5,
+    );
+    assert_eq!(err(&v), "not_allowed");
+    let v = h.call_at(
+        json!({"op":"amend_save","ctx":"popup","item_id":item,"origin":NEWSITE,"title":"x","username":"","vault_id":""}),
+        NOW + 5,
+    );
+    assert_eq!(err(&v), "not_allowed");
+    assert!(item_of(&h, &item).is_some());
 }
 
 #[test]
