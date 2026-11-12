@@ -899,6 +899,14 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         saveFlow.onIdentifier(m, from);
         return {};
       },
+      submit_outcome: async (m, from) => {
+        saveFlow.onOutcome(m, from);
+        return {};
+      },
+      page_alert: async (_m, from) => {
+        saveFlow.onPageAlert(from);
+        return {};
+      },
       submitted_form: async (m, from) => {
         saveFlow.onForm(m, from);
         return {};
