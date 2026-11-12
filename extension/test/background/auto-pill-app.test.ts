@@ -264,6 +264,16 @@ describe("auto sign-in pill: goes away", () => {
     expect(t.toTab("remove_frame").map((m) => m.message)).toContainEqual({ type: "remove_frame", kind: "overlay" });
   });
 
+  it("a ghost request the worker refuses (not a new-password form, a frame of another site) leaves it", async () => {
+    const t = await setup();
+    await t.ready("login");
+    const metrics = { fontSize: 16, lineHeight: 20, paddingLeft: 4, paddingRight: 4, textAlign: "left", fontFamily: null, box: { x: 0, y: 0, width: 200, height: 30 } };
+    expect(await t.ext.send({ type: "ghost_open", fieldRef: "f1e1", formRef: "f1", formKind: "login", metrics }, t.top)).toEqual({ err: "invalid" });
+    t.ext.setFrame(7, 4, "https://ads.test/x", "doc-4");
+    expect(await t.ext.send({ type: "ghost_open", fieldRef: "f1e1", formRef: "f1", formKind: "signup", metrics }, csSender("https://ads.test/x", 7, 4, { documentId: "doc-4" }))).toEqual({ err: "cross_site_frame" });
+    expect(t.toTab("remove_frame")).toEqual([]);
+  });
+
   it("\"Never on this site\": the site is kept in the never-list and the card goes", async () => {
     const t = await setup();
     await t.ready("login");

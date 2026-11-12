@@ -1075,14 +1075,15 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       },
       ghost_open: async (m, from) => {
         if (!isPage(from.origin)) throw new BgError("insecure_origin");
-        // One surface: a card that appeared by itself steps aside for the field's ghost.
-        await overlays.foldAuto(from.tabId).catch(() => undefined);
         // Spec 3.1: a new password on a signup or change-password form only.
         if (!NEW_PASSWORD_FORMS.has(m.formKind)) throw new BgError("invalid");
         // A cross-origin child frame gets the menu instead (spec 3.4).
-        if (!(await topOf(from))) throw new BgError("cross_site_frame");
+        const top = await topOf(from);
+        if (!top) throw new BgError("cross_site_frame");
         const rec: SuggestionRecord = { tabId: from.tabId, frameId: from.frameId, origin: from.origin, formKind: m.formKind, fieldRef: m.fieldRef, metrics: m.metrics };
         if (from.documentId !== undefined) rec.documentId = from.documentId;
+        // One surface: a card that appeared by itself steps aside for the field's ghost.
+        await overlays.foldAuto(from.tabId, top.documentId).catch(() => undefined);
         const opened = await suggestions.open(fillTarget(from, m.formRef), rec);
         if (!opened) throw new BgError("site_refused");
         return { url: `${ext.runtime.getURL("ghost.html")}#${opened.token}` };
