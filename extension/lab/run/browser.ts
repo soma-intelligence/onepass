@@ -340,7 +340,9 @@ function overlayAccount(overlay: Frame, title: string) {
 function menuRowOf(menu: Frame, title: string) {
   const row = accountRow(title);
   const rows = row.provider ? `button.row:not(.row-sub)[data-provider="${row.provider}"]` : "button.row";
-  return menu.locator(rows).filter({ has: menu.locator(".t1", { hasText: exact(row.title) }) });
+  // The generate row became a suggestion row (task 8): the password and Use, its name only in aria-label.
+  const named = menu.locator(rows).filter({ has: menu.locator(".t1", { hasText: exact(row.title) }) });
+  return named.or(menu.locator(`${rows}.row-suggest[aria-label="${row.title.replace(/["\\]/g, "\\$&")}"]`));
 }
 
 /** A fresh browser of the lab for simulated user `profileId` (default: the single default one) with that user's vault. */
