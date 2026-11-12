@@ -22,7 +22,7 @@ import { generate as generateDesignTokens } from "./scripts/gen-design-tokens.mj
 
 const root = dirname(fileURLToPath(import.meta.url));
 const BROWSERS = ["chromium", "firefox", "safari"];
-const UI_PAGES = ["popup", "menu", "overlay", "save", "passkey"];
+const UI_PAGES = ["popup", "menu", "overlay", "save", "passkey", "ghost"];
 
 const CLASSIFIERS = ["heuristic", "gbm", "encoder"];
 const DEFAULT_CSP = "script-src 'self'; object-src 'none'";
