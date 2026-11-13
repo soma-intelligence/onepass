@@ -221,6 +221,13 @@ cd ../mailbox && scripts/hosted-admin.sh e2e-teardown   # mailboxes, objects, pl
 `reset-rate`, called by the suite before every case, empties all rate windows:
 run the suite only while nobody else uses the instance.
 
+## Organisation mailboxes (OnePass Business)
+
+- Plan `org`: 16 GiB, 200 000 records, 4096 credentials, 600 requests a minute, batches of 20 000 operations, no children.
+- Create the mailbox with `scripts/hosted-admin.sh invite org 1 7`, and give the invite to the organisation's first owner only. Never set `open_signup_plan` to `org`.
+- Kinds 29 and 30 (org lineage and roster) are write-once: a put on an existing key is a `conflict` carrying the current row, a delete is `403 forbidden`.
+- The trigger `records_org_immutable` refuses any other change to those rows outside maintenance, which is what lets the purge of a deleted mailbox remove them (migration 20261113120000).
+
 ## Troubleshooting
 
 ### Revoked credentials and the credential row cap
