@@ -1,7 +1,7 @@
 //! The app's state: where the store lives, the sealer of `device.bin`, and
 //! the unlocked session if any.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -47,10 +47,6 @@ impl AppState {
 
     pub fn device_path(&self) -> PathBuf {
         self.dir.join("device.bin")
-    }
-
-    pub fn dir(&self) -> &Path {
-        &self.dir
     }
 
     pub fn load_secrets(&self) -> Result<Option<DeviceSecrets>, String> {

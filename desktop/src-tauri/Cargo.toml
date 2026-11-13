@@ -16,14 +16,15 @@ name = "onepass-desktop"
 path = "src/main.rs"
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2", features = ["isolation"] }
 
 [dependencies]
 # The same Rust API the Apple apps reach through UniFFI, linked directly
 # (spec 2026-10-30 section 3.2: no FFI on the desktop).
 onepass-ffi = { path = "../../core/onepass-ffi" }
 onepass-core = { path = "../../core/onepass-core" }
-tauri = { version = "2", features = [] }
+# `isolation`: the isolation pattern of tauri.conf.json (spec 3.2).
+tauri = { version = "2", features = ["isolation"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 postcard = { version = "1", default-features = false, features = ["alloc", "use-std"] }
