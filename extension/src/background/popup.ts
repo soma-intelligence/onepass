@@ -39,7 +39,7 @@ export function resetGeneratorHistoryForTests(): void {
 export interface PopupDeps {
   ext: Pick<BgExt, "tabs">;
   area: StorageArea;
-  session: Pick<Session, "request" | "onLocked">;
+  session: Pick<Session, "request" | "onLocked"> & Partial<Pick<Session, "withWake">>;
   /** `unlock` with its origin, whatever the app's age (shared by the worker). */
   host?: HostCompat;
   /** Brings the app forward for "Déverrouiller dans OnePass" (native.ts `openApp`). */
@@ -343,10 +343,16 @@ export class PopupBackend {
     return {
       popup_status: async () => this.status(),
       popup_unlock: async () => {
-        await this.deps.openApp?.();
         // The page the popup was opened over, when it is one: the app shows it on its unlock.
         const tab = await this.activeTab().catch(() => null);
-        return (this.deps.host ?? new HostCompat(this.deps.session)).unlock(tab?.origin);
+        const unlock = () => (this.deps.host ?? new HostCompat(this.deps.session)).unlock(tab?.origin);
+        // A running app asks Touch ID over the browser and comes forward only when it is refused;
+        // the launch link (which brings the window forward) only when the app does not answer.
+        if (!this.deps.session.withWake) {
+          await this.deps.openApp?.();
+          return unlock();
+        }
+        return this.deps.session.withWake(() => this.deps.openApp?.(), unlock);
       },
       popup_vault: async () => this.vault({ op: "vault_state" }),
       popup_unlock_biometric: async () => this.vault({ op: "unlock_biometric" }),

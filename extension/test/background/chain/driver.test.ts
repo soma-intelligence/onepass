@@ -473,7 +473,8 @@ describe("chain driver", () => {
     it("stops locked, asks the app once, waits, then fills and submits from the step it could not run", async () => {
       const t = await lockedChain();
       expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "locked" });
-      expect(t.opened.n).toBe(1);
+      // Running: Touch ID over the browser, no launch link.
+      expect(t.opened.n).toBe(0);
       expect(ops(t).filter((o) => o === "unlock")).toHaveLength(1);
       expect(toTab(t, "submit")).toEqual([]);
       // The card waits: still locked.
@@ -497,7 +498,8 @@ describe("chain driver", () => {
       expect(toTab(t, "submit")).toHaveLength(1);
       expect([...t.ext.session.data.keys()].some((k) => k.startsWith("unlock-chain:"))).toBe(false);
       expect(await t.runner.resumeLocked(7)).toBe(false);
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
+      expect(ops(t).filter((o) => o === "unlock")).toHaveLength(1);
     });
 
     it("the resumed chain gets a fresh deadline and ends done", async () => {
@@ -522,7 +524,7 @@ describe("chain driver", () => {
       t.vault.locked = false;
       expect((await t.poll()).ok).toEqual({ chain: expect.objectContaining({ status: "handoff", reason: "locked" }) });
       expect(ops(t).filter((o) => o === "fill_login")).toHaveLength(2);
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
       expect(ops(t).filter((o) => o === "unlock")).toHaveLength(1);
       expect(await t.runner.resumeLocked(7)).toBe(false);
       t.clock.t += 2_000;
@@ -626,16 +628,18 @@ describe("chain driver", () => {
       expect(toTab(t, "submit")).toHaveLength(2);
     });
 
-    it("iOS: the worker never prompts by itself; the app that cannot be opened: the plain stop, retry by a click", async () => {
+    it("iOS: the worker never prompts by itself; a running app the launch link cannot open still asks its unlock", async () => {
       let t = await lockedChain({ nativeVault: async () => ({ locked: true, account: "Camille", biometry: "faceID" }) });
       expect(await t.runner.state(7)).toMatchObject({ status: "handoff", reason: "locked" });
       expect(t.opened.n).toBe(0);
       expect((await t.poll()).ok.waiting).toBeUndefined();
       expect([...t.ext.session.data.keys()].some((k) => k.startsWith("unlock-chain:"))).toBe(false);
 
+      // The app answers the bridge: the link is not needed, the card waits for its Touch ID.
       t = await lockedChain({ openApp: async () => false });
-      expect((await t.poll()).ok.waiting).toBeUndefined();
-      expect([...t.ext.session.data.keys()].some((k) => k.startsWith("unlock-chain:"))).toBe(false);
+      expect((await t.poll()).ok.waiting).toBe("locked");
+      expect(t.opened.n).toBe(0);
+      expect(ops(t).filter((o) => o === "unlock")).toHaveLength(1);
     });
   });
 

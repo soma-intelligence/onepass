@@ -370,7 +370,7 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
       const t = await lockedMac();
       (t.ext as unknown as { windows: unknown }).windows = { get: async (id: number) => ({ id, focused: true }) };
       expect(await click(t)).toEqual({ err: "locked" });
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
       expect(unlocks(t)).toBe(1);
     });
 
@@ -380,21 +380,21 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
         expect(await click(t)).toEqual({ err: "locked" });
         t.clock.t += 5_000;
       }
-      expect(t.opened.n).toBe(APP_ASKS_PER_MIN);
+      expect(t.opened.n).toBe(0);
       expect(unlocks(t)).toBe(APP_ASKS_PER_MIN);
       expect(await click(t)).toEqual({ err: "locked" });
       const m = await menuOf(t);
       expect(await t.ext.send({ type: "menu_unlock", token: m.token }, m.ui)).toEqual({ err: "refused" });
-      expect(t.opened.n).toBe(APP_ASKS_PER_MIN);
+      expect(t.opened.n).toBe(0);
       expect(unlocks(t)).toBe(APP_ASKS_PER_MIN);
       // Another tab is not held back by this one.
       t.ext.setFrame(8, 0, `${SITE}/login`, "doc-8");
       expect(await t.ext.send({ type: "plan_context", formRef: "f1", fieldRef: "f1e0", context: body(LOGIN_FORM) }, csSender(`${SITE}/login`, 8, 0, { documentId: "doc-8" }))).toEqual({ err: "locked" });
-      expect(t.opened.n).toBe(APP_ASKS_PER_MIN + 1);
+      expect(unlocks(t)).toBe(APP_ASKS_PER_MIN + 1);
       // A minute later the first tab may ask again.
       t.clock.t += 61_000;
       expect(await click(t)).toEqual({ err: "locked" });
-      expect(t.opened.n).toBe(APP_ASKS_PER_MIN + 2);
+      expect(unlocks(t)).toBe(APP_ASKS_PER_MIN + 2);
     });
   });
 
@@ -487,7 +487,7 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
       await t.b.runner?.state(7);
       const before = t.cards().length;
       expect(await t.ext.send({ type: "plan_context", context: body([]), bare: true }, t.top)).toEqual({ err: "locked" });
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
       expect(t.cards()).toHaveLength(before + 1);
       const url = (t.cards().at(-1)?.message as { url: string }).url;
       const token = url.split("#")[1] as string;
@@ -501,7 +501,7 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
       // The plan that page then sends is the same gesture resumed: no second launch, no second unlock.
       const unlocks = t.client.requests.filter((r) => r.op === "unlock").length;
       expect(await t.ext.send({ type: "plan_context", context: body([]), bare: true }, t.top)).toEqual({ ok: { outcome: "nothing" } });
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
       expect(t.client.requests.filter((r) => r.op === "unlock")).toHaveLength(unlocks);
       t.clock.t += 1500;
       await t.ext.send({ type: "overlay_state", token }, ui);
@@ -513,7 +513,7 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
       await t.ext.send({ type: "page_analysis", analysis: plain }, t.top);
       await t.b.runner?.state(7);
       expect(await t.ext.send({ type: "plan_context", context: body([]), bare: true }, t.top)).toEqual({ err: "locked" });
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
       expect(t.cards()).toEqual([]);
       expect(t.smart()).toEqual([]);
     });
@@ -532,7 +532,7 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
     expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
     expect(t.toTab("smart_fill")).toHaveLength(1);
     expect(unlocks(t)).toBe(1);
-    expect(t.opened.n).toBe(1);
+    expect(t.opened.n).toBe(0);
   });
 
   it("a menu no gesture asked an unlock for just lists when the vault is open (nothing fills by itself)", async () => {
@@ -548,7 +548,7 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
   it("the click opens the app with its unlock; the menu it opens waits, then resumes once", async () => {
     const t = await lockedMac();
     expect(await click(t)).toEqual({ err: "locked" });
-    expect(t.opened.n).toBe(1);
+    expect(t.opened.n).toBe(0);
     expect(unlocks(t)).toBe(1);
     const { token, ui } = await menuOf(t);
     // Still locked: the menu waits, nothing is used up.
@@ -565,7 +565,7 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
     expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
     expect(t.toTab("smart_fill")).toHaveLength(1);
     // The app was asked once, by the gesture.
-    expect(t.opened.n).toBe(1);
+    expect(t.opened.n).toBe(0);
     expect(unlocks(t)).toBe(1);
   });
 
@@ -578,14 +578,14 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
     // The vault locked again before the replayed plan: the menu comes with its button, no app.
     t.vault.locked = true;
     expect(await click(t)).toEqual({ err: "locked" });
-    expect(t.opened.n).toBe(1);
+    expect(t.opened.n).toBe(0);
     expect(unlocks(t)).toBe(1);
     const again = await menuOf(t);
     expect(await t.ext.send({ type: "menu_resume", token: again.token }, again.ui)).toEqual({ err: "invalid" });
     // A new click on the icon is a gesture again.
     t.clock.t += 3000;
     await click(t);
-    expect(t.opened.n).toBe(2);
+    expect(unlocks(t)).toBe(2);
   });
 
   it("the keyboard command's menu (no field in the plan) resumes its own field", async () => {
@@ -600,21 +600,23 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
   it("the app unlocks at once: the plan runs in the click's own call, no menu", async () => {
     const t = await lockedMac({ instant: true });
     expect(await click(t)).toEqual({ ok: { outcome: "filled" } });
-    expect(t.opened.n).toBe(1);
+    expect(t.opened.n).toBe(0);
     expect(t.toTab("fill")).toHaveLength(1);
   });
 
-  it("the app cannot be opened: no waiting state, the menu keeps its button", async () => {
+  it("the launch link cannot open the app: no matter while it runs, the gesture's unlock waits", async () => {
     const t = await lockedMac({ opens: false });
     expect(await click(t)).toEqual({ err: "locked" });
+    expect(unlocks(t)).toBe(1);
     const { token, ui } = await menuOf(t);
-    expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "invalid" });
+    expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "locked" });
     // The button: asked from the menu, it waits and resumes as before.
     expect(await t.ext.send({ type: "menu_unlock", token }, ui)).toEqual({ ok: { locked: true } });
     expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ err: "locked" });
     t.vault.locked = false;
     expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ ok: {} });
     expect(t.toTab("smart_fill")).toHaveLength(1);
+    expect(t.opened.n).toBe(0);
   });
 
   it("only the gesture's own menu waits: not an auto menu, another field, another document, or a late one", async () => {
@@ -861,7 +863,8 @@ describe("one gesture when the app is not running: it is launched, then the fill
       t.app.locked = false;
       expect(await t.ext.send({ type: "menu_resume", token }, ui)).toEqual({ ok: {} });
       expect(unlockOps(t)).toBe(1);
-      expect(t.opened.n).toBe(1);
+      // Running: the app asks Touch ID over the browser, the launch link stays closed.
+      expect(t.opened.n).toBe(0);
     });
 
     it("the Open OnePass button on a cold app: `unlock` once when it answers, already unlocked or not", async () => {

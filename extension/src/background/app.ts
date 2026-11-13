@@ -300,20 +300,38 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     await unlockOp(owed.tabId).catch(() => undefined);
   };
   /**
-   * After a trusted gesture found the vault locked or the app missing (never on iOS): the app
-   * comes forward and is asked to unlock (Touch ID; it gives the front back to the browser once
-   * unlocked). "unlocked": open already; "asked": its unlock shows; "launching": opened, not
-   * answering yet (the unlock is asked once it does); "failed": neither opened nor reached, or
-   * `tabId` may not ask (`mayAsk`: not the tab in front, or too many asks this minute).
+   * After a trusted gesture found the vault locked or the app missing (never on iOS): the app is
+   * asked to unlock. Running, it asks Touch ID over the browser and comes forward only when Touch
+   * ID is refused or the password is due (giving the front back once unlocked); not answering,
+   * the launch link opens it (`withWake`) and the unlock goes once it answers. "unlocked": open
+   * already; "asked": its unlock shows; "launching": opened, not answering yet (the unlock is
+   * asked once it does); "failed": neither opened nor reached, or `tabId` may not ask (`mayAsk`:
+   * not the tab in front, or too many asks this minute).
    */
   const askAppUnlock = async (tabId: number, fresh = false): Promise<UnlockAsked> => {
     if (!(await mayAsk(tabId, fresh))) return "failed";
-    const opened = await wakeApp(fresh);
+    const r = await unlockOrLaunch(tabId, () => wakeApp(fresh));
+    if ("locked" in r) return r.locked ? "asked" : "unlocked";
+    return r.opened ? "launching" : "failed";
+  };
+  /**
+   * The bridge `unlock` of a trusted gesture in `tabId`, the app launched (`launch`, the link that
+   * also brings its window forward) only when it does not answer. A running app asks Touch ID over
+   * the browser and comes forward by itself only when Touch ID is refused or the password is due.
+   * Settled with the vault's lock state, or with the request's error and whether the app opened.
+   */
+  const unlockOrLaunch = async (
+    tabId: number,
+    launch: () => Promise<boolean>,
+  ): Promise<{ locked: boolean } | { error: unknown; opened: boolean }> => {
+    let woke: Promise<boolean> | undefined;
     try {
-      if (!(await unlockOp(tabId))) return "unlocked";
-      return opened ? "asked" : "failed";
-    } catch {
-      return opened ? "launching" : "failed";
+      return { locked: await session.withWake(() => (woke ??= launch()), () => unlockOp(tabId)) };
+    } catch (error) {
+      const code = toBgError(error).code;
+      // Not answering, and the opening did not launch it (it failed some other way): now.
+      if (woke === undefined && (code === "host_missing" || code === "timeout")) woke = launch();
+      return { error, opened: woke !== undefined && (await woke) };
     }
   };
   const frames = new Frames(ext.webNavigation);
@@ -1367,15 +1385,16 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const at = now();
         // Not the tab in front, or too many asks this minute: the app stays where it is.
         if (!(await mayAsk(rec.tabId, true))) throw new BgError("refused");
-        const opened = await openApp().catch(() => false);
         let locked = true;
         let sent = true;
-        try {
-          locked = await unlockOp(rec.tabId);
-        } catch (e) {
+        // A running app asks Touch ID over the browser (its window comes forward only when
+        // refused); the launch link only when it does not answer.
+        const r = await unlockOrLaunch(rec.tabId, () => openApp().catch(() => false));
+        if ("locked" in r) locked = r.locked;
+        else {
           // Launched and not answering yet: the menu waits, the unlock is asked once it does.
-          const code = toBgError(e).code;
-          if (!opened || (code !== "host_missing" && code !== "timeout")) throw e;
+          const code = toBgError(r.error).code;
+          if (!r.opened || (code !== "host_missing" && code !== "timeout")) throw r.error;
           sent = false;
         }
         await askedUnlock(m.token, rec, at, sent);
