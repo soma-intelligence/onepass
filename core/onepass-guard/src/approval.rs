@@ -9,10 +9,15 @@ use crate::grants::{DEFAULT_GRANT_TTL, MAX_GRANT_TTL};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+#[cfg(unix)]
+use std::io::Read;
+use std::io::Write;
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+#[cfg(unix)]
+use std::time::Instant;
+use std::time::Duration;
 
 /// Which front end asks.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -266,10 +271,26 @@ pub fn parse_answer(line: &str, code: &str, remember_allowed: bool) -> Decision 
 }
 
 /// Longest answer line read from the terminal; a longer one denies.
+#[cfg(unix)]
 const MAX_ANSWER: usize = 256;
+
+/// Windows: no `/dev/tty` (the approver cannot open it and denies first).
+/// Terminal approvals there wait for the console port of milestone X3;
+/// until then this fails, so any path that reaches it denies.
+#[cfg(not(unix))]
+fn flush_input(_f: &File) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+
+/// Windows: never an answer (see [`flush_input`]).
+#[cfg(not(unix))]
+fn read_line_with_timeout(_f: &File, _timeout: Duration) -> Option<String> {
+    None
+}
 
 /// Discards input queued on the terminal `f` (typeahead, or text injected
 /// before the prompt was shown). Fails on a non-terminal.
+#[cfg(unix)]
 fn flush_input(f: &File) -> std::io::Result<()> {
     // SAFETY: tcflush only reads the descriptor number, which `f` keeps open.
     if unsafe { libc::tcflush(f.as_raw_fd(), libc::TCIFLUSH) } != 0 {
@@ -279,6 +300,7 @@ fn flush_input(f: &File) -> std::io::Result<()> {
 }
 
 /// Pause between two non-blocking reads while no answer is available.
+#[cfg(unix)]
 const READ_POLL: Duration = Duration::from_millis(20);
 
 /// Reads one line (ended by `\n` or `\r`, so raw-mode terminals work too)
@@ -290,6 +312,7 @@ const READ_POLL: Duration = Duration::from_millis(20);
 /// `/dev/tty`. The mode is not restored: `f` is always our own open of
 /// `/dev/tty` (its own open file description, never the client's
 /// descriptors) and is closed right after the prompt.
+#[cfg(unix)]
 fn read_line_with_timeout(f: &File, timeout: Duration) -> Option<String> {
     let fd = f.as_raw_fd();
     // SAFETY: fcntl only reads and sets the status flags of `fd`, which `f`
@@ -491,6 +514,7 @@ pub mod testing {
 mod tests {
     use super::testing::ScriptedApprover;
     use super::*;
+    #[cfg(unix)]
     use std::os::fd::FromRawFd;
 
     fn req(remember_allowed: bool) -> ApprovalRequest {
@@ -623,6 +647,7 @@ mod tests {
         assert!(!CHALLENGE_ALPHABET.contains(['i', 'l', 'o']));
     }
 
+    #[cfg(unix)]
     #[test]
     fn read_line_with_timeout_reads_one_line() {
         use std::os::unix::net::UnixStream;
@@ -635,6 +660,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn read_line_with_timeout_times_out_and_bounds_length() {
         use std::os::unix::net::UnixStream;
@@ -661,6 +687,7 @@ mod tests {
     }
 
     /// A pseudo-terminal: (master, slave).
+    #[cfg(unix)]
     fn pty() -> (File, File) {
         let mut master: libc::c_int = -1;
         let mut slave: libc::c_int = -1;
@@ -686,14 +713,17 @@ mod tests {
     }
 
     /// Env var that turns [`tty_child_helper`] into the child side.
+    #[cfg(unix)]
     const CHILD_ENV: &str = "ONEPASS_GUARD_TTY_CHILD_TIMEOUT_MS";
     /// Env var that makes the child go through [`TtyApprover`] with this
     /// confirmation code (`-` for an empty one).
+    #[cfg(unix)]
     const APPROVER_ENV: &str = "ONEPASS_GUARD_TTY_CHILD_APPROVER_CODE";
 
     /// Child side of the pty tests (a no-op in a normal run): opens
     /// `/dev/tty`, whose controlling terminal the parent set to a pty, runs
     /// one prompt for code `kq` and prints the decision.
+    #[cfg(unix)]
     #[test]
     fn tty_child_helper() {
         let Ok(ms) = std::env::var(CHILD_ENV) else {
@@ -731,6 +761,7 @@ mod tests {
     /// master after 300 ms, if any. Returns the decision printed by the
     /// child, or `None` if it did not exit within `limit`, and the time it
     /// took.
+    #[cfg(unix)]
     fn prompt_in_child(
         timeout: Duration,
         answer: Option<&'static [u8]>,
@@ -741,6 +772,7 @@ mod tests {
 
     /// [`prompt_in_child`], through [`TtyApprover`] when `approver_code` is
     /// given. The result is the whole `decision=... on=...` text.
+    #[cfg(unix)]
     fn prompt_child_with(
         timeout: Duration,
         answer: Option<&'static [u8]>,
@@ -818,6 +850,7 @@ mod tests {
 
     /// Reads the master side in the background so prompt writes never fill
     /// the pty buffer.
+    #[cfg(unix)]
     fn drain(master: &File) {
         let mut m = master.try_clone().unwrap();
         std::thread::spawn(move || {
@@ -826,6 +859,7 @@ mod tests {
         });
     }
 
+    #[cfg(unix)]
     #[test]
     fn tty_prompt_times_out_on_a_real_terminal() {
         let timeout = Duration::from_millis(1000);
@@ -836,6 +870,7 @@ mod tests {
         assert!(elapsed >= Duration::from_millis(900));
     }
 
+    #[cfg(unix)]
     #[test]
     fn tty_prompt_reads_the_code_ended_by_cr() {
         let (d, _) = prompt_in_child(
@@ -846,6 +881,7 @@ mod tests {
         assert_eq!(d.as_deref(), Some("AllowOnce"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn tty_approver_shows_guard_code() {
         // The approver types against the code the guard put in the request
@@ -863,8 +899,10 @@ mod tests {
     }
 
     /// Allowance for starting the child test process.
+    #[cfg(unix)]
     const STARTUP: Duration = Duration::from_secs(2);
 
+    #[cfg(unix)]
     #[test]
     fn pending_input_is_flushed_before_reading() {
         // On a terminal, typeahead (or TIOCSTI injection before the prompt)

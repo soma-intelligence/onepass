@@ -597,6 +597,7 @@ mod tests {
     use crate::clock::testing::FakeClock;
     use crate::testutil::TestSigner;
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     const T0: i64 = 1_800_000_000;
@@ -672,6 +673,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn grants_file_mode_0600() {
         let (_d, path, s, c) = setup();
         let mut st = GrantStore::open(&path, "acc");
