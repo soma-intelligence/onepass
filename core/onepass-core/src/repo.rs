@@ -1567,6 +1567,29 @@ impl<S: RecordStore> Repository<S> {
         Ok(true)
     }
 
+    /// Remember a use of the item inside the app at `now`
+    /// (`Item::note_app_use`): saved every time, with its `updated_at`
+    /// unchanged, so it never beats a real edit from another device.
+    /// Returns the item as saved.
+    pub fn record_app_use(
+        &mut self,
+        vault: &Vault,
+        item_id: Id,
+        now: OffsetDateTime,
+    ) -> Result<Item> {
+        self.sync_epoch()?;
+        let loaded = self.served(vault, Use::Write)?;
+        let (_, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
+        let mut item = vault.open_item(rec)?;
+        // The account profile is no item of the lists.
+        if item.is_profile() {
+            return Err(Error::NotFound);
+        }
+        item.note_app_use(now);
+        self.save_item(vault, item.clone())?;
+        Ok(item)
+    }
+
     /// Forget `site` in every item of every vault this device opens (spec
     /// 7, erase by site), leaving a tombstone in each so other devices'
     /// copies do not bring it back. The vaults come from `vaults` (epoch and
@@ -2425,6 +2448,25 @@ mod tests {
         // Unless the caller saw a newer use elsewhere (another vault).
         let t30 = t0 + min(30);
         assert!(repo.record_usage(&v, a.id, u(t30), t30, true).unwrap());
+    }
+
+    #[test]
+    fn app_use_is_saved_every_time_without_moving_updated_at() {
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let a = login(&v, "alice");
+        repo.save_item(&v, a.clone()).unwrap();
+        let t0 = OffsetDateTime::now_utc();
+        let t1 = t0 + time::Duration::seconds(5);
+        repo.record_app_use(&v, a.id, t0).unwrap();
+        let saved = repo.record_app_use(&v, a.id, t1).unwrap();
+        assert_eq!((saved.use_count(), saved.last_used_at()), (2, Some(t1)));
+        let stored = repo.items(&v).unwrap().remove(0);
+        assert_eq!((stored.use_count(), stored.last_used_at()), (2, Some(t1)));
+        assert_eq!(stored.updated_at, a.updated_at);
+        assert!(matches!(
+            repo.record_app_use(&v, Id::new(), t1),
+            Err(Error::NotFound)
+        ));
     }
 
     #[test]

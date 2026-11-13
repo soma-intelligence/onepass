@@ -653,6 +653,8 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
         has_places: has_places(i),
         travel_hidden: i.travel_hidden(),
         travel_guard: i.travel_guarded(),
+        uses: i.use_count(),
+        last_use_at: i.last_used_at().map(ts),
     }
 }
 

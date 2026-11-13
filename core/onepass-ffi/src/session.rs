@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use onepass_core::Id;
 use onepass_core::model::{self, Item};
+use onepass_core::repo::profile::ItemRef;
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::{RemoteChange, SyncStore};
 use onepass_core::vault::Vault;
@@ -12,6 +13,7 @@ use time::{Duration, OffsetDateTime};
 
 use crate::convert::*;
 use crate::error::{OnePassError, invalid};
+use crate::pairing::FfiItemRef;
 use crate::rotation::FfiRemoteCommit;
 use crate::types::*;
 
@@ -257,6 +259,24 @@ impl Session {
         })
     }
 
+    /// Name the main identity and the main credit card of the account
+    /// profile for every device, dated now, the name and photo untouched
+    /// (`None` names none). `NotFound` for an item that is not there (or
+    /// trashed), `Validation` for one of another type. The profile after
+    /// the call.
+    pub fn set_profile_main(
+        &self,
+        identity: Option<FfiItemRef>,
+        card: Option<FfiItemRef>,
+    ) -> Result<FfiProfile, OnePassError> {
+        let identity = identity.as_ref().map(item_ref_to_core).transpose()?;
+        let card = card.as_ref().map(item_ref_to_core).transpose()?;
+        self.with(|repo| {
+            let p = repo.set_profile_main(identity, card, time::OffsetDateTime::now_utc())?;
+            Ok(profile_to_ffi(p))
+        })
+    }
+
     /// Publish a profile this device kept locally (from before the profile
     /// synced) when the account has none: it loses to any real edit. The
     /// account profile after the call.
@@ -279,6 +299,24 @@ impl Session {
                 out.extend(repo.items(&v)?.iter().map(summary));
             }
             Ok(out)
+        })
+    }
+
+    /// Remember a use of the item inside the app (its password or one-time
+    /// code copied, its website opened): counted every time, never a
+    /// ranking signal of a fill, the item's `updated_at` unchanged. The
+    /// item's summary after the write, for the "recently used" and
+    /// "frequently used" lists.
+    pub fn note_app_use(
+        &self,
+        vault_id: String,
+        item_id: String,
+    ) -> Result<FfiItemSummary, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            let item = repo.record_app_use(&vault, item_id, time::OffsetDateTime::now_utc())?;
+            Ok(summary(&item))
         })
     }
 
@@ -693,9 +731,22 @@ impl SyncStoreHandle {
 }
 
 fn profile_to_ffi(p: onepass_core::repo::profile::Profile) -> FfiProfile {
+    let item_ref = |r: ItemRef| FfiItemRef {
+        vault_id: id_hex(r.vault_id),
+        item_id: id_hex(r.item_id),
+    };
     FfiProfile {
         name: p.name,
         photo: p.photo,
         updated_at: p.updated_at.unix_timestamp(),
+        main_identity: p.main_identity.map(item_ref),
+        main_card: p.main_card.map(item_ref),
     }
+}
+
+fn item_ref_to_core(r: &FfiItemRef) -> Result<ItemRef, OnePassError> {
+    Ok(ItemRef {
+        vault_id: parse_id(&r.vault_id)?,
+        item_id: parse_id(&r.item_id)?,
+    })
 }

@@ -2349,6 +2349,73 @@ fn profile_round_trips_and_stays_hidden() {
 }
 
 #[test]
+fn profile_main_identity_and_card_are_checked_and_kept() {
+    let fx = fixture();
+    let saved = |kind: FfiItemType, title: &str| {
+        let mut item = fx
+            .session
+            .new_item(fx.vault_id.clone(), kind, title.into())
+            .unwrap();
+        fill(&mut item);
+        fx.session.save_item(item).unwrap()
+    };
+    let me = saved(FfiItemType::Identity, "Camille");
+    let visa = saved(FfiItemType::CreditCard, "Visa");
+    let r = |i: &FfiItem| FfiItemRef {
+        vault_id: i.vault_id.clone(),
+        item_id: i.id.clone(),
+    };
+    fx.session.set_profile("Camille".into(), vec![1]).unwrap();
+    assert!(matches!(
+        fx.session.set_profile_main(Some(r(&visa)), None),
+        Err(OnePassError::Validation { .. })
+    ));
+    let p = fx
+        .session
+        .set_profile_main(Some(r(&me)), Some(r(&visa)))
+        .unwrap();
+    assert_eq!(
+        (p.main_identity, p.main_card),
+        (Some(r(&me)), Some(r(&visa)))
+    );
+    assert_eq!(
+        (p.name.as_str(), p.photo.as_slice()),
+        ("Camille", &[1u8][..])
+    );
+    // A name write keeps them.
+    let p = fx.session.set_profile("C.".into(), vec![]).unwrap();
+    assert_eq!(p.main_card, Some(r(&visa)));
+    let p = fx.session.set_profile_main(None, None).unwrap();
+    assert_eq!(
+        (p.main_identity, p.main_card, p.name.as_str()),
+        (None, None, "C.")
+    );
+}
+
+#[test]
+fn app_use_counts_in_the_summary_and_keeps_updated_at() {
+    let fx = fixture();
+    let item = saved_login(&fx, "Motdepasse-tres-long-42");
+    let before = fx.session.item_summaries().unwrap().remove(0);
+    assert_eq!((before.uses, before.last_use_at), (0, None));
+    let once = fx
+        .session
+        .note_app_use(item.vault_id.clone(), item.id.clone())
+        .unwrap();
+    let twice = fx
+        .session
+        .note_app_use(item.vault_id.clone(), item.id.clone())
+        .unwrap();
+    assert_eq!((once.uses, twice.uses), (1, 2));
+    assert!(twice.last_use_at.is_some());
+    let listed = fx.session.item_summaries().unwrap().remove(0);
+    assert_eq!(listed, twice);
+    assert_eq!(listed.updated_at, before.updated_at);
+    // No site to forget.
+    assert!(fx.session.known_usage_sites(Vec::new()).unwrap().is_empty());
+}
+
+#[test]
 fn seed_profile_publishes_when_none() {
     let fx = fixture();
     let seeded = fx

@@ -74,6 +74,13 @@ pub fn associated_pick_host(key: &str) -> Option<&str> {
     key.strip_prefix(ASSOCIATED_PICK)
 }
 
+/// The usage key of the uses inside the app: the password or one-time code
+/// copied, the item's website opened. Never a site (a colon never appears
+/// in a registrable domain, as `assoc:` and `app:` keys), so no fill plan
+/// ranks on it and no list of sites shows it; it only feeds the "recently
+/// used" and "frequently used" lists (`Item::use_count`, `last_used_at`).
+pub const APP_USE_KEY: &str = "onepass:app";
+
 /// A site forgotten on purpose, and when: an entry for it no newer than
 /// this is dropped wherever it comes from, so a forget survives the union
 /// of a sync merge.
@@ -185,6 +192,9 @@ pub fn merge_trailers(a: &UsageTrailer, b: &UsageTrailer) -> UsageTrailer {
 /// tie to the higher count, then the lowest item id. The caller passes the
 /// candidates of one kind, so there is exactly one `last_on_site` per kind.
 pub fn last_used_on<'a>(items: impl IntoIterator<Item = &'a Item>, site: &str) -> Option<Id> {
+    if site == APP_USE_KEY {
+        return None;
+    }
     items
         .into_iter()
         .filter_map(|i| {
@@ -243,6 +253,55 @@ impl Item {
         write && self.usage.iter().any(|e| e.site == site)
     }
 
+    /// Remember a use inside the app at `now` (`APP_USE_KEY`): the count
+    /// grows and the date moves on every use, never throttled like a fill,
+    /// so the item must always be saved. Entries and tombstones older than
+    /// `USAGE_TTL_DAYS` are dropped. Never touches `updated_at`.
+    pub fn note_app_use(&mut self, now: OffsetDateTime) {
+        let cutoff = now - Duration::days(USAGE_TTL_DAYS);
+        self.usage.retain(|e| e.last_at >= cutoff);
+        self.usage_forgotten.retain(|(_, at)| *at >= cutoff);
+        match self.usage.iter_mut().find(|e| e.site == APP_USE_KEY) {
+            Some(e) => {
+                e.count = e.count.saturating_add(1);
+                e.last_at = now.max(e.last_at);
+            }
+            None => self.usage.push(SiteUsage {
+                site: APP_USE_KEY.into(),
+                form_shape_hash: form_shape_hash(&[]),
+                intent: Intent::Login,
+                step_seq: Vec::new(),
+                count: 1,
+                last_at: now,
+            }),
+        }
+        bury(&mut self.usage, &self.usage_forgotten);
+        settle(&mut self.usage);
+    }
+
+    /// How many times the item was used: the counts of every entry, fills
+    /// and uses inside the app alike (a forgotten site no longer counts).
+    pub fn use_count(&self) -> u32 {
+        self.usage
+            .iter()
+            .fold(0u32, |n, e| n.saturating_add(e.count))
+    }
+
+    /// When the item was last used, a fill or a use inside the app.
+    pub fn last_used_at(&self) -> Option<OffsetDateTime> {
+        self.usage.iter().map(|e| e.last_at).max()
+    }
+
+    /// When the item last filled anything: `last_used_at` without the uses
+    /// inside the app, which never rank a fill.
+    pub fn last_fill_at(&self) -> Option<OffsetDateTime> {
+        self.usage
+            .iter()
+            .filter(|e| e.site != APP_USE_KEY)
+            .map(|e| e.last_at)
+            .max()
+    }
+
     /// What this item remembers of `site`.
     pub fn usage_on(&self, site: &str) -> Option<&SiteUsage> {
         self.usage.iter().find(|e| e.site == site)
@@ -257,6 +316,10 @@ impl Item {
         last: Option<Id>,
         shape: Option<[u8; 16]>,
     ) -> Option<UsageSignal> {
+        // The uses inside the app never rank a fill.
+        if site == APP_USE_KEY {
+            return None;
+        }
         self.usage_on(site).map(|u| UsageSignal {
             last_on_site: Some(self.id) == last,
             same_shape: Some(u.form_shape_hash) == shape,
@@ -305,6 +368,10 @@ impl Item {
     /// The picks made through the associated tier on the hosts of `site`
     /// (`associated_pick_key`) go with it, each with its own tombstone.
     pub fn forget_site_usage(&mut self, site: &str, now: OffsetDateTime) -> bool {
+        // The uses inside the app are no site to forget.
+        if site == APP_USE_KEY {
+            return false;
+        }
         let of_site = |key: &str| {
             key == site
                 || associated_pick_host(key)
@@ -507,6 +574,44 @@ mod tests {
         }
         assert!(!it.note_usage(usage("late.com", LOGIN, T0), T0));
         assert!(it.usage.iter().all(|u| u.site != "late.com"));
+    }
+
+    #[test]
+    fn app_use_counts_every_time_and_never_ranks_a_fill() {
+        let mut it = item();
+        assert_eq!((it.use_count(), it.last_used_at()), (0, None));
+        it.note_usage(usage("example.com", LOGIN, T0), T0);
+        // Uses inside the app within the hour: each one counts, unlike a fill.
+        let t1 = T0 + Duration::minutes(1);
+        let t2 = T0 + Duration::minutes(2);
+        it.note_app_use(t1);
+        it.note_app_use(t2);
+        let app = it.usage_on(APP_USE_KEY).unwrap();
+        assert_eq!((app.count, app.last_at), (2, t2));
+        assert_eq!(it.use_count(), 3);
+        assert_eq!(it.last_used_at(), Some(t2));
+        assert_eq!(it.last_fill_at(), Some(T0));
+        // Never a ranking signal nor a "last used here".
+        assert_eq!(it.usage_signal(APP_USE_KEY, Some(it.id), None), None);
+        assert_eq!(last_used_on([&it], APP_USE_KEY), None);
+        assert!(it.usage_signal("example.com", None, None).is_some());
+        // Forgetting a site leaves the uses inside the app.
+        assert!(it.forget_site_usage("example.com", t2));
+        assert_eq!(it.use_count(), 2);
+        assert!(!it.forget_site_usage(APP_USE_KEY, t2));
+    }
+
+    #[test]
+    fn app_use_merges_like_a_site() {
+        let (mut a, mut b) = (item(), item());
+        a.note_app_use(T0);
+        a.note_app_use(T0 + Duration::minutes(1));
+        b.note_app_use(T0 + Duration::minutes(5));
+        b.note_usage(usage("example.com", LOGIN, T0), T0);
+        let m = merge_trailers(&a.usage_trailer(), &b.usage_trailer());
+        let app = m.sites.iter().find(|u| u.site == APP_USE_KEY).unwrap();
+        assert_eq!((app.count, app.last_at), (2, T0 + Duration::minutes(5)));
+        assert_eq!(m.sites.len(), 2);
     }
 
     #[test]

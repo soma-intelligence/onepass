@@ -333,6 +333,13 @@ pub struct FfiProfile {
     pub photo: Vec<u8>,
     /// Unix seconds of the last write, from any device.
     pub updated_at: i64,
+    /// The identity the app shows first, if one was chosen
+    /// (`Session::set_profile_main`). It may name an item since deleted.
+    #[uniffi(default = None)]
+    pub main_identity: Option<crate::pairing::FfiItemRef>,
+    /// The credit card the app shows first, as `main_identity`.
+    #[uniffi(default = None)]
+    pub main_card: Option<crate::pairing::FfiItemRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -387,6 +394,15 @@ pub struct FfiItemSummary {
     /// See `FfiItem::travel_guard`.
     #[uniffi(default = false)]
     pub travel_guard: bool,
+    /// How many times the item was used: fills and uses inside the app
+    /// (`Session::note_app_use`), a forgotten site no longer counted. Named
+    /// so the Swift side keeps `useCount` (an `Int`) for its own extension.
+    #[uniffi(default = 0)]
+    pub uses: u32,
+    /// Unix seconds of the last use, a fill or a use inside the app. `None`
+    /// for an item never used. Swift exposes it as `lastUsedAt` (a `Date`).
+    #[uniffi(default = None)]
+    pub last_use_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

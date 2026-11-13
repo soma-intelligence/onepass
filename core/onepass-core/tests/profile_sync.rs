@@ -173,3 +173,113 @@ fn seeded_profile_loses_to_any_real_edit() {
     assert!(!a.repo().seed_profile("Other", &[]).unwrap());
     assert_eq!(a.repo().profile().unwrap().unwrap().name, "Real");
 }
+
+fn typed(vault: Id, kind: ItemType, title: &str) -> Item {
+    let mut item = new_item(kind, vault, title);
+    let required = if kind == ItemType::Identity {
+        "first_name"
+    } else {
+        "cardholder"
+    };
+    item.field_mut(required).unwrap().value = FieldValue::Text(title.into());
+    if kind == ItemType::CreditCard {
+        item.field_mut("number").unwrap().value =
+            FieldValue::Concealed(String::from("4111111111111111").into());
+        item.field_mut("expiry").unwrap().value = FieldValue::MonthYear {
+            year: 2030,
+            month: 12,
+        };
+    }
+    item.created_at = at(T0);
+    item.updated_at = at(T0);
+    item
+}
+
+#[test]
+fn main_identity_and_card_are_set_checked_and_kept_by_name_writes() {
+    use onepass_core::repo::profile::ItemRef;
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("camille", T0)]);
+    let v = items[0].vault_id;
+    let me = typed(v, ItemType::Identity, "Camille");
+    let visa = typed(v, ItemType::CreditCard, "Visa");
+    a.save(&me);
+    a.save(&visa);
+    let r = |i: &Item| ItemRef {
+        vault_id: i.vault_id,
+        item_id: i.id,
+    };
+
+    // A profile written without them names none (as one from before them).
+    a.repo()
+        .set_profile("Camille", &photo(1, 4), at(T0 + 1))
+        .unwrap();
+    let p = a.repo().profile().unwrap().unwrap();
+    assert_eq!((p.main_identity, p.main_card), (None, None));
+
+    // The wrong type, an unknown item: refused, nothing written.
+    assert!(matches!(
+        a.repo().set_profile_main(Some(r(&visa)), None, at(T0 + 2)),
+        Err(Error::Validation(_))
+    ));
+    assert!(matches!(
+        a.repo().set_profile_main(None, Some(r(&me)), at(T0 + 2)),
+        Err(Error::Validation(_))
+    ));
+    let ghost = ItemRef {
+        vault_id: v,
+        item_id: Id::new(),
+    };
+    assert!(matches!(
+        a.repo().set_profile_main(Some(ghost), None, at(T0 + 2)),
+        Err(Error::NotFound)
+    ));
+    assert_eq!(a.repo().profile().unwrap().unwrap().updated_at, at(T0 + 1));
+
+    // Set: dated now, name and photo untouched.
+    let p = a
+        .repo()
+        .set_profile_main(Some(r(&me)), Some(r(&visa)), at(T0 + 3))
+        .unwrap();
+    assert_eq!(
+        (p.main_identity, p.main_card),
+        (Some(r(&me)), Some(r(&visa)))
+    );
+    assert_eq!((p.name.as_str(), p.photo.clone()), ("Camille", photo(1, 4)));
+    assert_eq!(p.updated_at, at(T0 + 3));
+
+    // A name write keeps them, and they reach the other device.
+    a.repo().set_profile("Camille D.", &[], at(T0 + 4)).unwrap();
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    let p = b.repo().profile().unwrap().unwrap();
+    assert_eq!(p.name, "Camille D.");
+    assert_eq!(
+        (p.main_identity, p.main_card),
+        (Some(r(&me)), Some(r(&visa)))
+    );
+
+    // Cleared one at a time.
+    let p = b
+        .repo()
+        .set_profile_main(Some(r(&me)), None, at(T0 + 5))
+        .unwrap();
+    assert_eq!((p.main_identity, p.main_card), (Some(r(&me)), None));
+    assert_eq!(p.name, "Camille D.");
+}
+
+#[test]
+fn main_card_on_an_account_without_profile_creates_it() {
+    use onepass_core::repo::profile::ItemRef;
+    let (mut a, _sk) = Device::create();
+    let v = personal_vault_of(&mut a);
+    let visa = typed(v, ItemType::CreditCard, "Visa");
+    a.save(&visa);
+    let card = ItemRef {
+        vault_id: v,
+        item_id: visa.id,
+    };
+    let p = a.repo().set_profile_main(None, Some(card), at(T0)).unwrap();
+    assert_eq!((p.name.as_str(), p.main_card), ("", Some(card)));
+    assert_eq!(a.items(), vec![visa]);
+}
