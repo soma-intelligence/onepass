@@ -12,7 +12,10 @@ import VaultKit
 /// launch screen or the privacy cover, and never again after that prompt answers (success, cancel or
 /// failure), whatever scene phases its sheet causes; after it only the button asks. While the system
 /// checks, the dial is worked tick by tick; it opens into the vault door on success and unwinds
-/// against its stop on a refusal.
+/// against its stop on a refusal. Mac: Touch ID first. The automatic try runs as soon as the
+/// screen is shown in an active scene, and while it is due or up (or Touch ID asked over the
+/// browser is up) the screen shows only the glyph, the title and a quiet Touch ID state; the
+/// password column appears, focused, only once it answers without unlocking.
 struct LockView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
@@ -33,6 +36,8 @@ struct LockView: View {
     @State private var biometricCheck = false
     /// This lock screen is in the view hierarchy (the automatic try waits for it).
     @State private var shown = false
+    /// The automatic try is taken and its prompt not raised yet (Mac: the password column waits).
+    @State private var automaticStarting = false
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
@@ -69,21 +74,26 @@ struct LockView: View {
             // runs again on every scene phase change (the Face ID sheet causes some), but only a
             // real lock makes a new try due. It waits until this screen has been on screen, active
             // and uncovered, for a moment: run at once, the system prompt rose over the launch
-            // screen or the privacy cover before the lock screen was ever seen. The password field
-            // takes the focus (and the keyboard comes up) only when no biometric check runs.
+            // screen or the privacy cover before the lock screen was ever seen. The Mac has no
+            // launch screen or cover over its window: Touch ID comes first, at once. The password
+            // field takes the focus (and the keyboard comes up) only when no biometric check runs.
             guard shown, scenePhase == .active else { return }
             #if DEBUG && os(iOS)
             if await playDemoVaultDoor() { return }
             #endif
             if model.automaticBiometricAttemptDue, session.canUseBiometrics {
-                do {
-                    try await Task.sleep(for: BiometricAutoPrompt.settle)
-                } catch {
-                    return
+                let settle = model.biometricAutoPrompt.settleDelay
+                if settle > .zero {
+                    do {
+                        try await Task.sleep(for: settle)
+                    } catch {
+                        return
+                    }
                 }
                 if model.takeAutomaticBiometricAttempt(), session.canUseBiometrics {
                     // Not tied to this task: the prompt makes the scene inactive, which ends this
                     // task, and a cancelled task would dismiss the system sheet (`decrypt`).
+                    automaticStarting = true
                     Task { await unlockWithBiometrics(automatic: true) }
                     return
                 }
@@ -130,11 +140,30 @@ struct LockView: View {
                 .accessibilityAddTraits(.isHeader)
             account
                 .padding(.top, 10)
-            passwordField
-                .padding(.top, 26)
-            status
+            if showsPasswordColumn {
+                passwordField
+                    .padding(.top, 26)
+                    .transition(.opacity)
+                status
+            } else {
+                biometricWaiting
+                    .padding(.top, 26)
+                    .transition(.opacity)
+            }
         }
+        .animation(.smooth(duration: 0.2), value: showsPasswordColumn)
         .animation(.smooth(duration: 0.2), value: password.isEmpty)
+        #if os(macOS)
+        .task(id: showsPasswordColumn) {
+            // The column appears after Touch ID answered without unlocking: its field takes the
+            // focus once it is in the window (asked in the same turn as its insertion, it was lost).
+            guard showsPasswordColumn, session.state == .locked, !biometricCheck else { return }
+            fieldFocused = false
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled, showsPasswordColumn, session.state == .locked, !biometricCheck else { return }
+            fieldFocused = true
+        }
+        #endif
         .animation(.smooth(duration: 0.2), value: message)
     }
 
@@ -145,6 +174,24 @@ struct LockView: View {
         // Mac: the window's translucent glass (`containerBackground`); Vision Pro: the system glass.
         Color.clear
         #endif
+    }
+
+    /// Mac: not while Touch ID comes first (`BiometricAutoPrompt.showsPasswordColumn`).
+    private var showsPasswordColumn: Bool {
+        model.lockShowsPasswordColumn(canUseBiometrics: biometrics, checking: automaticStarting)
+    }
+
+    /// Where the password column will be: a quiet Touch ID state while the system prompt is due or up.
+    private var biometricWaiting: some View {
+        Label {
+            Text(verbatim: OnboardingModel.biometryName)
+        } icon: {
+            Image(systemName: OnboardingModel.biometrySymbol)
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .frame(height: Self.fieldHeight)
+        .accessibilityIdentifier("lock.biometricWaiting")
     }
 
     // MARK: - Account
@@ -479,6 +526,7 @@ struct LockView: View {
     /// the whole check (the system prompt, then the vault opening): on success it hands over to the
     /// door's quarter turn where it stands, so nothing pauses between the two.
     private func unlockWithBiometrics(automatic: Bool) async {
+        defer { if automatic { automaticStarting = false } }
         guard session.canUseBiometrics, !unlocking, !biometricCheck else {
             if automatic, !biometricCheck { fieldFocused = true }
             return
@@ -486,7 +534,7 @@ struct LockView: View {
         message = nil
         fieldFocused = false
         biometricCheck = true
-        model.biometricPromptStarted()
+        model.biometricPromptStarted(automatic: automatic)
         do {
             try await session.unlockWithBiometrics()
             biometricCheck = false

@@ -215,8 +215,10 @@ final class AppModel {
     /// At most one automatic biometric attempt per lock presentation, whatever the number of
     /// windows, and the privacy shield kept down while that prompt is over the lock screen
     /// (`BiometricAutoPrompt`). iPhone, iPad, Vision Pro: scene phases never make a try due (the
-    /// prompt itself makes the scene inactive); only a launch or a real lock does.
-    private(set) var biometricAutoPrompt = BiometricAutoPrompt(activationBeginsPresentation: Platform.isMac)
+    /// prompt itself makes the scene inactive); only a launch or a real lock does. Mac: Touch ID
+    /// first, before the password column, and over the browser for a browser's request.
+    private(set) var biometricAutoPrompt = BiometricAutoPrompt(
+        activationBeginsPresentation: Platform.isMac, biometricsFirst: Platform.isMac)
     /// "Utiliser Touch ID pour déverrouiller ?" after a password unlock (once per account and device).
     /// Replacing or dropping it wipes the password it holds.
     var biometricOffer: BiometricOffer? {
@@ -870,10 +872,19 @@ final class AppModel {
         return due
     }
 
+    /// Whether the lock screen shows its password column (`BiometricAutoPrompt`): on the Mac, not
+    /// while Touch ID is due or up. `checking`: the lock screen's own check runs.
+    func lockShowsPasswordColumn(canUseBiometrics: Bool, checking: Bool) -> Bool {
+        BiometricAutoPrompt.showsPasswordColumn(
+            biometricsFirst: biometricAutoPrompt.biometricsFirst, canUseBiometrics: canUseBiometrics,
+            attemptDue: automaticBiometricAttemptDue, promptRunning: biometricAutoPrompt.automaticPromptRunning,
+            checking: checking)
+    }
+
     /// The lock screen raised the system biometric prompt (automatic or tapped): it spends this
     /// presentation's automatic try, and the privacy shield stays down for it.
-    func biometricPromptStarted() {
-        biometricAutoPrompt.promptStarted()
+    func biometricPromptStarted(automatic: Bool) {
+        biometricAutoPrompt.promptStarted(automatic: automatic)
         #if os(macOS)
         // The bridge serves the primary account: only its biometric unlock answers a browser's request.
         browserBridge?.biometricUnlockRunning = session === primarySession
@@ -1241,12 +1252,59 @@ final class AppModel {
         if fromBrowser, accounts.activeSlot != AccountDirectoryStore.primarySlot, !editorDirty {
             switchAccount(to: AccountDirectoryStore.primarySlot)
         }
+        if fromBrowser, session === primarySession, session.state == .locked {
+            switch biometricAutoPrompt.browserUnlockRoute(
+                appActive: NSApplication.shared.isActive, canUseBiometrics: session.canUseBiometrics)
+            {
+            case .asking:
+                // The prompt on screen answers this request too; the browser keeps the front.
+                return
+            case .direct:
+                Task { await unlockOverBrowser() }
+                return
+            case .window:
+                break
+            }
+        }
         if session.state != .unlocked {
             biometricAutoPrompt.unlockRequested()
             if fromBrowser { browserReturn.arm() } else { browserReturn.linkOpened() }
         }
         mainWindowRequest &+= 1
         NSApplication.shared.activate()
+    }
+
+    /// Touch ID for a browser's request while the app is not in front (`BrowserUnlockRoute.direct`):
+    /// the system prompt runs over the browser and the window stays where it is. Unlocked, the
+    /// extension resumes and the browser keeps the front. Refused (cancel, failure, the password
+    /// due after a reboot, 14 days or an enrolment change): the window comes forward on the
+    /// password column, with no second automatic try, and gives the front back once unlocked.
+    private func unlockOverBrowser() async {
+        let target = session
+        // Nothing to give back: the app never came forward.
+        browserReturn.cancel()
+        biometricPromptStarted(automatic: true)
+        do {
+            try await target.unlockWithBiometrics()
+            biometricPromptEnded()
+        } catch {
+            biometricPromptEnded()
+            guard target.state != .unlocked else { return }
+            biometricAutoPrompt.directPromptRefused()
+            browserReturn.arm()
+            mainWindowRequest &+= 1
+            bringAppForward()
+        }
+    }
+
+    /// Since macOS 14 the app's own activation is ignored while the browser is in front: the
+    /// LaunchServices open of this running app is what brings it forward (as the extension's
+    /// `onepass://unlock` does). `activate()` stays for when the app may take the front itself.
+    private func bringAppForward() {
+        NSApplication.shared.activate()
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration)
     }
 
     /// The main window closed; the app stays in the menu bar. The vault stays open for the browsers

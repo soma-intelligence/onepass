@@ -239,6 +239,87 @@ struct BiometricAutoPromptTests {
         #expect(take(&gate))
     }
 
+    // MARK: - Mac: Touch ID first
+
+    /// The Mac lock screen asks at once; iPhone, iPad and Vision Pro wait to be seen.
+    @Test func macAsksWithoutSettle() {
+        #expect(BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true).settleDelay == .zero)
+        #expect(BiometricAutoPrompt(activationBeginsPresentation: false).settleDelay == BiometricAutoPrompt.settle)
+    }
+
+    /// Mac: the password column stays hidden while the automatic try is due and while the prompt
+    /// is up, and appears once it answers.
+    @Test func macHidesThePasswordUntilTouchIDAnswers() {
+        var gate = BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true)
+        #expect(!gate.showsPasswordColumn(canUseBiometrics: true, checking: false))
+        #expect(take(&gate))
+        // Taken, the prompt not raised yet: the lock screen's own check holds the column.
+        #expect(!gate.showsPasswordColumn(canUseBiometrics: true, checking: true))
+        gate.promptStarted()
+        #expect(!gate.showsPasswordColumn(canUseBiometrics: true, checking: false))
+        gate.promptEnded(sceneActive: true)
+        #expect(gate.showsPasswordColumn(canUseBiometrics: true, checking: false))
+    }
+
+    /// The Touch ID button inside the field: the column it belongs to stays.
+    @Test func macTappedPromptKeepsThePassword() {
+        var gate = BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true)
+        _ = take(&gate)
+        gate.promptEnded(sceneActive: true)
+        gate.promptStarted(automatic: false)
+        #expect(gate.showsPasswordColumn(canUseBiometrics: true, checking: false))
+    }
+
+    @Test func passwordColumnWithoutBiometricsOrOffTheMac() {
+        let mac = BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true)
+        #expect(mac.showsPasswordColumn(canUseBiometrics: false, checking: false))
+        var phone = BiometricAutoPrompt(activationBeginsPresentation: false)
+        #expect(phone.showsPasswordColumn(canUseBiometrics: true, checking: false))
+        phone.promptStarted()
+        #expect(phone.showsPasswordColumn(canUseBiometrics: true, checking: true))
+    }
+
+    /// A lock the user asked for has no automatic try: the password column shows at once.
+    @Test func macUserLockShowsThePassword() {
+        var gate = BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true)
+        _ = take(&gate)
+        gate.userWillLock()
+        gate.vaultLocked()
+        #expect(gate.showsPasswordColumn(canUseBiometrics: true, checking: false))
+    }
+
+    @Test func browserUnlockRoute() {
+        var gate = BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true)
+        #expect(gate.browserUnlockRoute(appActive: false, canUseBiometrics: true) == .direct)
+        #expect(gate.browserUnlockRoute(appActive: true, canUseBiometrics: true) == .window)
+        #expect(gate.browserUnlockRoute(appActive: false, canUseBiometrics: false) == .window)
+        gate.promptStarted()
+        #expect(gate.browserUnlockRoute(appActive: false, canUseBiometrics: true) == .asking)
+        let phone = BiometricAutoPrompt(activationBeginsPresentation: false)
+        #expect(phone.browserUnlockRoute(appActive: false, canUseBiometrics: true) == .window)
+    }
+
+    /// Touch ID asked over the browser and refused: the window that comes forward shows the
+    /// password column, with no second automatic try for that request, whatever phases its
+    /// return goes through. A later return to the app asks again, as before.
+    @Test func directRefusalShowsThePasswordOnce() {
+        var gate = BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true)
+        _ = take(&gate)
+        gate.scenePhaseChanged(.background)
+        gate.promptStarted()
+        gate.promptEnded(sceneActive: false)
+        gate.directPromptRefused()
+        #expect(gate.showsPasswordColumn(canUseBiometrics: true, checking: false))
+        gate.scenePhaseChanged(.background)
+        gate.scenePhaseChanged(.inactive)
+        gate.scenePhaseChanged(.active)
+        #expect(!gate.automaticAttemptDue)
+        #expect(gate.showsPasswordColumn(canUseBiometrics: true, checking: false))
+        gate.scenePhaseChanged(.inactive)
+        gate.scenePhaseChanged(.active)
+        #expect(take(&gate))
+    }
+
     // MARK: - Privacy shield
 
     /// The shield stays down for the app's own prompt and while its sheet leaves, so the prompt
