@@ -31,74 +31,111 @@ struct PairingStep: View {
     }
 
     @ViewBuilder private func content(_ flow: PairingNewcomerFlow) -> some View {
+        if let stage = Self.stage(flow.state) {
+            // One tile through the QR, the connection and the code to compare: it animates from one
+            // to the next (`CipherQRCode`).
+            switch flow.state {
+            case .joining:
+                StepTitle(
+                    title: "Connexion à ton autre appareil",
+                    subtitle: "Les deux appareils doivent être proches, sur le même Wi-Fi.")
+            case .comparing:
+                StepTitle(
+                    title: "Compare les codes",
+                    subtitle: "Le même code doit s'afficher sur ton autre appareil. S'il est différent, quelqu'un d'autre essaie de se connecter.")
+            default:
+                StepTitle(
+                    title: "Scanne ce QR code",
+                    subtitle: "Sur ton iPhone ou ton iPad : Réglages > Appareils > Ajouter un appareil")
+            }
+            PairingStageTile(stage: stage.tile, expiresAt: stage.expiresAt)
+            switch flow.state {
+            case .comparing:
+                compareButtons(flow)
+            case .joining:
+                EmptyView()
+            default:
+                codeFootnotes
+            }
+        } else {
+            other(flow)
+        }
+    }
+
+    /// The tile's moment for the states that share it, with the QR's expiry.
+    private static func stage(_ state: PairingNewcomerFlow.State) -> (tile: CipherQRCode.Stage, expiresAt: Date?)? {
+        switch state {
+        case .showingCode(let text, let expiresAt): (.code(text), expiresAt)
+        case .joining: (.connecting, nil)
+        case .comparing(let sas): (.verify(sas), nil)
+        default: nil
+        }
+    }
+
+    @ViewBuilder private var codeFootnotes: some View {
+        Label(
+            "Les deux appareils doivent être proches, sur le même Wi-Fi.",
+            systemImage: "wifi")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        #if os(iOS)
+        Button {
+            scanningInvite = true
+        } label: {
+            Label("pairing.scanMyOtherDevices", systemImage: "qrcode.viewfinder")
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+        }
+        .buttonStyle(.glass)
+        .accessibilityIdentifier("pairing.scanInvite")
+        .sheet(isPresented: $scanningInvite) {
+            InviteScanSheet { text in
+                scanningInvite = false
+                model.joinInvite(text)
+            }
+        }
+        Text("pairing.otherDeviceMacOpen")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        #endif
+    }
+
+    private func compareButtons(_ flow: PairingNewcomerFlow) -> some View {
+        VStack(spacing: 10) {
+            Button {
+                Task { await flow.confirmCode() }
+            } label: {
+                Text("pairing.codesMatch")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Platform.isMac ? 28 : 40)
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(Platform.isMac ? .large : .regular)
+            .accessibilityIdentifier("pairing.codesMatch")
+            Button(role: .destructive) {
+                flow.rejectCode()
+            } label: {
+                Text("pairing.theyreDifferent")
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Platform.isMac ? 28 : 40)
+            }
+            .buttonStyle(.glass)
+            .controlSize(Platform.isMac ? .large : .regular)
+            .accessibilityIdentifier("pairing.codesDiffer")
+        }
+    }
+
+    @ViewBuilder private func other(_ flow: PairingNewcomerFlow) -> some View {
         switch flow.state {
-        case .idle, .showingCode:
+        case .idle:
             StepTitle(
                 title: "Scanne ce QR code",
                 subtitle: "Sur ton iPhone ou ton iPad : Réglages > Appareils > Ajouter un appareil")
-            if case .showingCode(let text, let expiresAt) = flow.state {
-                PairingQRView(text: text, expiresAt: expiresAt)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 220)
-            }
-            Label(
-                "Les deux appareils doivent être proches, sur le même Wi-Fi.",
-                systemImage: "wifi")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            #if os(iOS)
-            Button {
-                scanningInvite = true
-            } label: {
-                Label("pairing.scanMyOtherDevices", systemImage: "qrcode.viewfinder")
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-            }
-            .buttonStyle(.glass)
-            .accessibilityIdentifier("pairing.scanInvite")
-            .sheet(isPresented: $scanningInvite) {
-                InviteScanSheet { text in
-                    scanningInvite = false
-                    model.joinInvite(text)
-                }
-            }
-            Text("pairing.otherDeviceMacOpen")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            #endif
-        case .joining:
-            StepTitle(
-                title: "Connexion à ton autre appareil",
-                subtitle: "Les deux appareils doivent être proches, sur le même Wi-Fi.")
-            ProgressView().frame(maxWidth: .infinity, minHeight: 80)
-        case .comparing(let sas):
-            StepTitle(
-                title: "Compare les codes",
-                subtitle: "Le même code doit s'afficher sur ton autre appareil. S'il est différent, quelqu'un d'autre essaie de se connecter.")
-            PairingCodeView(code: sas)
-            VStack(spacing: 10) {
-                Button {
-                    Task { await flow.confirmCode() }
-                } label: {
-                    Text("pairing.codesMatch")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: Platform.isMac ? 28 : 40)
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(Platform.isMac ? .large : .regular)
-                .accessibilityIdentifier("pairing.codesMatch")
-                Button(role: .destructive) {
-                    flow.rejectCode()
-                } label: {
-                    Text("pairing.theyreDifferent")
-                        .frame(maxWidth: .infinity)
-                        .frame(height: Platform.isMac ? 28 : 40)
-                }
-                .buttonStyle(.glass)
-                .controlSize(Platform.isMac ? .large : .regular)
-                .accessibilityIdentifier("pairing.codesDiffer")
-            }
+            ProgressView().frame(maxWidth: .infinity, minHeight: 220)
+        case .showingCode, .joining, .comparing:
+            // Drawn by the shared tile above.
+            EmptyView()
         case .waitingForApproval:
             StepTitle(
                 title: "En attente de ton autre appareil",
@@ -185,8 +222,8 @@ private struct InviteScanSheet: View {
 }
 #endif
 
-/// The QR code of the pairing (CoreImage, sharp modules on white) and the time it stays valid. The
-/// flow replaces it before it expires.
+/// The QR code of the pairing on its tile (`CipherQRCode`) and the time it stays valid. The flow
+/// replaces it before it expires.
 struct PairingQRView: View {
     /// How the code on screen is replaced: every 30 s (the new device's QR), or shortly before it
     /// expires (the approver's invite).
@@ -198,32 +235,10 @@ struct PairingQRView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            if let image = Self.image(text, side: 600) {
-                Image(decorative: image, scale: 1)
-                    .interpolation(.none)
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fit)
-                    .frame(maxWidth: Platform.isMac ? 260 : 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .accessibilityLabel(Text("pairing.pairingQrCode"))
-                    .accessibilityIdentifier("pairing.qr")
-            }
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let left = max(0, Int(expiresAt.timeIntervalSince(context.date).rounded(.up)))
-                Group {
-                    switch renewal {
-                    case .every30s: Text("pairing.newCodeShowsEvery \(left)")
-                    case .beforeExpiry: Text("pairing.codeStaysValidFor \(left)")
-                    }
-                }
-                    .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            PairingStageTile(stage: .code(text), expiresAt: expiresAt)
+            PairingCountdown(expiresAt: expiresAt, renewal: renewal)
         }
-        .padding(16)
         .frame(maxWidth: .infinity)
-        .card()
         #if DEBUG
         // Simulator end to end (ruling A3): the other device takes this text with
         // `-OnePassPairingQRText` (or `-OnePassPairingInviteText` for an invite). Debug builds only:
@@ -253,6 +268,65 @@ struct PairingQRView: View {
         let white = CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: full, height: full))
         let composed = code.composited(over: white).cropped(to: white.extent)
         return CIContext(options: [.useSoftwareRenderer: true]).createCGImage(composed, from: composed.extent)
+    }
+}
+
+/// The pairing tile (`CipherQRCode`) at the size of the pairing screens, named for assistive
+/// technologies after what it shows: the QR code, the connection, or the code to compare.
+struct PairingStageTile: View {
+    let stage: CipherQRCode.Stage
+    var expiresAt: Date?
+
+    private var label: Text {
+        switch stage {
+        case .code: Text("pairing.pairingQrCode")
+        case .connecting: Text("Connexion à ton autre appareil")
+        case .verify: Text("Code de vérification")
+        }
+    }
+
+    private var value: Text {
+        if case .verify(let code) = stage { Text(verbatim: code.map(String.init).joined(separator: " ")) } else { Text(verbatim: "") }
+    }
+
+    private var identifier: String {
+        switch stage {
+        case .code: "pairing.qr"
+        case .connecting: "pairing.connecting"
+        case .verify: "pairing.code"
+        }
+    }
+
+    var body: some View {
+        CipherQRCode(stage: stage, expiresAt: expiresAt)
+            .frame(maxWidth: Platform.isMac ? 260 : 280)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+            .accessibilityValue(value)
+            .accessibilityIdentifier(identifier)
+    }
+}
+
+/// How long the code on screen stays, in words under the tile (the ring around the tile says the
+/// same).
+private struct PairingCountdown: View {
+    let expiresAt: Date
+    let renewal: PairingQRView.Renewal
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let left = max(0, Int(expiresAt.timeIntervalSince(context.date).rounded(.up)))
+            Group {
+                switch renewal {
+                case .every30s: Text("pairing.newCodeShowsEvery \(left)")
+                case .beforeExpiry: Text("pairing.codeStaysValidFor \(left)")
+                }
+            }
+            .font(.footnote.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
     }
 }
 
