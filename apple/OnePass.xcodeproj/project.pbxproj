@@ -32,6 +32,7 @@
 		1477CD379703B78BDAF940D8 /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = A0A01364B1DB7E9E76CB8258 /* DesignKit */; };
 		15FB8F91DBC0162C7EBD40AC /* ReceivedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C620AB29D8AD99FA48847C5 /* ReceivedItemsView.swift */; };
 		167746F3C029FF29F71A6152 /* CryptoWalletWatchCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83445BEBCAE9923380128647 /* CryptoWalletWatchCard.swift */; };
+		18744CB02F3B648F6B5BCC40 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7907A548EB7701F8B71580BB /* ProfileView.swift */; };
 		1920E0C0A4999B60233A7594 /* LocationEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 129B81D637BE1364C28F598B /* LocationEditor.swift */; };
 		19B02EE7F352A2AB453481BE /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */; };
 		1A01631BC6E3741270EADC38 /* RecoveryHelperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF91253BDC4BD15D61A7EF70 /* RecoveryHelperView.swift */; };
@@ -464,6 +465,7 @@
 		7787CB5F5A9CEEF470689AF5 /* AccountsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSection.swift; sourceTree = "<group>"; };
 		782CA900B64928632D2B1890 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		78C6A4F3E974319AAAAE4349 /* CryptoPhraseAlertCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoPhraseAlertCard.swift; sourceTree = "<group>"; };
+		7907A548EB7701F8B71580BB /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		79113AA7B53A92888B8DEF34 /* SecretFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretFieldEditor.swift; sourceTree = "<group>"; };
 		7A6857D334917C685876DF29 /* PairingCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingCodeView.swift; sourceTree = "<group>"; };
 		7A9506E7AEA529E14EF1B426 /* IntentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentBridge.swift; sourceTree = "<group>"; };
@@ -1110,6 +1112,7 @@
 				EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */,
 				B6B6A1BAE0385A425AE55355 /* ItemZoom.swift */,
 				4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */,
+				7907A548EB7701F8B71580BB /* ProfileView.swift */,
 				75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */,
 				0D2CBC8A40BF965B7FA9A227 /* WatchtowerTab.swift */,
 			);
@@ -1954,6 +1957,7 @@
 				D21C020FD752FEE1668BF6D7 /* PasswordHistoryView.swift in Sources */,
 				B19D7967A80446677BDC9032 /* PhoneTabsView.swift in Sources */,
 				608A23FFF1AF64C0A8871372 /* PrivacyShield.swift in Sources */,
+				18744CB02F3B648F6B5BCC40 /* ProfileView.swift in Sources */,
 				0792B9A17998C8FFA5C457A9 /* PublicSessionMonitor.swift in Sources */,
 				399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */,
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,

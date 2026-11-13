@@ -628,6 +628,7 @@ struct CryptoSplitPage: View {
                 case .list(let filter): CategoryListView(filter: filter)
                 case .watchtower(let title, let itemIDs): WatchtowerItemsList(title: title, itemIDs: itemIDs)
                 case .duplicates: DuplicatesReviewView()
+                case .profile: ProfileView()
                 }
             }
             #else

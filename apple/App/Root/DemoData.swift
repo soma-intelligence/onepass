@@ -445,6 +445,9 @@ private struct DemoSeeder {
             "last_name": .text(value: "Durand"),
             "email": .email(value: "camille.durand@exemple.fr"),
             "mobile_phone": .phone(value: "+33 6 00 00 00 00"),
+            "address": .address(value: FfiAddress(
+                line1: "12 rue de l'Exemple", line2: "", city: "Paris", postalCode: "75011", region: "",
+                country: "France")),
         ], favorite: true)
         try await add(.idCard, "Carte d'identité", personal, [
             "country": .text(value: "France"),
@@ -549,6 +552,21 @@ private struct DemoSeeder {
         try await session.trash(itemID: draft.id, vaultID: draft.vaultId)
         _ = forge
         try await addBulk(personal: personal, atlas: atlas, family: family)
+        try await noteDemoUses()
+    }
+
+    /// A few in-app uses, so "Utilisés fréquemment" and "Utilisés récemment" are not empty. The last
+    /// title in the list is the most recent use.
+    private func noteDemoUses() async throws {
+        let uses: [(String, Int)] = [
+            ("Gmail", 9), ("Compte Google", 4), ("Visa Banque Exemple", 2), ("Forge Atlas", 6),
+        ]
+        for (title, count) in uses {
+            guard let summary = session.summaries.first(where: { $0.title == title }) else { continue }
+            for _ in 0..<count {
+                try await session.noteAppUse(vaultID: summary.vaultId, itemID: summary.id)
+            }
+        }
     }
 
     /// `-OnePassDemoBulkItems <n>`: n more fictional logins over the three vaults, so a large vault

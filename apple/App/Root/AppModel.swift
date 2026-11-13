@@ -154,6 +154,8 @@ final class AppModel {
     var showHostDevice = false
     // Menu commands handled by the views on screen (bumped, observed with `onChange`).
     var editRequest = 0
+    /// iPhone Profil: the item whose detail, once pushed and loaded, opens straight in its editor.
+    var editOnOpen: ItemRef?
     var saveRequest = 0
     var searchFocusRequest = 0 {
         // ⌘F searches the items: a full page gives way to the list.
@@ -1487,7 +1489,15 @@ final class AppModel {
             return
         }
         session.copy(totp.code, concealed: true)
+        noteItemUse(ref)
         showToast(String(localized: "root.codeCopied"))
+    }
+
+    /// An in-app use of an item (password or one-time code copied, website opened): it feeds
+    /// Fréquemment utilisés and Récemment utilisés. Viewing an item is not a use.
+    func noteItemUse(_ ref: ItemRef) {
+        let session = session
+        Task { try? await session.noteAppUse(vaultID: ref.vaultID, itemID: ref.itemID) }
     }
 
     /// Drops every item-bearing navigation state (the new item's draft holds typed values).
@@ -1498,6 +1508,7 @@ final class AppModel {
         watchtower.clear()
         cryptoWatch.clear()
         editing = false
+        editOnOpen = nil
         newItemDraft = nil
         editorDirty = false
         pendingDiscard = nil

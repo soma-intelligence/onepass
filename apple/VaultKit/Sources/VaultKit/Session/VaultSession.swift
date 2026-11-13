@@ -26,6 +26,8 @@ public final class VaultSession {
     public private(set) var isTravelling = false
     /// Recently opened item ids, newest first. Memory only, emptied on lock.
     public private(set) var recents: [String] = []
+    /// When each of `recents` was opened, for `recentlyUsed` (opened counts as recent, not as a use).
+    @ObservationIgnored var openedAt: [String: Date] = [:]
     /// Searches typed in this session, newest first (`RecentSearches`). Memory only, emptied on lock.
     public private(set) var recentSearches: [String] = []
     public var lastError: VaultError?
@@ -79,6 +81,11 @@ public final class VaultSession {
     @ObservationIgnored var profileTask: Task<Void, Never>?
     /// How long an edit of the profile waits before its write (typing a name writes once).
     @ObservationIgnored var profileWriteDelay: Duration = .milliseconds(800)
+    /// The main identity the account profile names, as last read from the vault (`mainIdentity`
+    /// resolves it). Emptied on lock.
+    public internal(set) var profileMainIdentity: FfiItemRef?
+    /// The main credit card the account profile names (`mainCard` resolves it). Emptied on lock.
+    public internal(set) var profileMainCard: FfiItemRef?
 
     /// Contacts, shared vaults, invitations, identity changes, family and received items
     /// (`refreshSharing`, sharing plan 4). Emptied on lock.
@@ -1061,6 +1068,9 @@ public final class VaultSession {
         summaries = []
         allVaults = []
         recents = []
+        openedAt = [:]
+        profileMainIdentity = nil
+        profileMainCard = nil
         recentSearches = []
         isTravelling = false
         locationIndex = LocationIndex()
@@ -1197,9 +1207,11 @@ public final class VaultSession {
     /// The full item, for the detail view only (which forgets it when closed).
     public func loadItem(vaultID: String, itemID: String) async throws -> FfiItem {
         let item = try await read { try $0.item(vaultId: vaultID, itemId: itemID) }
+        openedAt[itemID] = environment.clock.now
         recents.removeAll { $0 == itemID }
         recents.insert(itemID, at: 0)
         if recents.count > Self.maxRecents { recents.removeLast(recents.count - Self.maxRecents) }
+        openedAt = openedAt.filter { recents.contains($0.key) }
         return item
     }
 
@@ -1238,6 +1250,7 @@ public final class VaultSession {
     public func deletePermanently(itemID: String, vaultID: String) async throws {
         try await write { try $0.deleteItem(vaultId: vaultID, itemId: itemID) }
         recents.removeAll { $0 == itemID }
+        openedAt[itemID] = nil
     }
 
     public func move(itemID: String, from source: String, to destination: String) async throws {
@@ -1410,6 +1423,20 @@ public final class VaultSession {
             notifySync { await $0.localChangesWritten() }
         }
         return written
+    }
+
+    /// Remembers a use of the item inside the app (its password or one-time code copied, its
+    /// website opened), for Récemment utilisés and Fréquemment utilisés. Opening an item is no use.
+    /// Never ranks an AutoFill choice. Fire and forget: nothing when locked; the item's summary is
+    /// replaced in place (no list reload) and the sync layer told.
+    public func noteAppUse(vaultID: String, itemID: String) async throws {
+        guard session != nil else { return }
+        let summary = try await readUnmapped { try $0.noteAppUse(vaultId: vaultID, itemId: itemID) }
+        if let index = summaries.firstIndex(where: { $0.id == itemID && $0.vaultId == vaultID }) {
+            summaries[index] = summary
+            summariesRevision &+= 1
+        }
+        notifySync { await $0.localChangesWritten() }
     }
 
     /// `autofillCandidates(service:includeAll:)` for a typed service: an app matches only the Logins
@@ -2064,6 +2091,9 @@ public final class VaultSession {
         summariesRevision &+= 1
         let known = Set(snapshot.summaries.map(\.id))
         recents.removeAll { !known.contains($0) }
+        openedAt = openedAt.filter { known.contains($0.key) }
+        profileMainIdentity = snapshot.profile?.mainIdentity
+        profileMainCard = snapshot.profile?.mainCard
         syncProfile(snapshot.profile)
     }
 

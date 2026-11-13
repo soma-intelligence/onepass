@@ -6,6 +6,12 @@ import UniformTypeIdentifiers
 import SwiftUI
 import VaultKit
 
+extension EnvironmentValues {
+    /// The item whose detail is on screen: copying its password or one-time code, or opening its
+    /// website, counts as a use (Fréquemment utilisés, Récemment utilisés). Nil elsewhere.
+    @Entry var itemUseRef: ItemRef?
+}
+
 extension String {
     /// Field labels read like the editor's: lowercase in French ("mot de passe"), a capital first in
     /// English, Spanish and Italian (`LabelCase`). An acronym first ("PIN", "URL") stays as is.
@@ -19,6 +25,7 @@ extension String {
 struct FieldValueView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
+    @Environment(\.itemUseRef) private var itemUseRef
     #if os(iOS) || os(visionOS)
     @Environment(\.isSceneCaptured) private var captured
     #else
@@ -42,7 +49,10 @@ struct FieldValueView: View {
     var body: some View {
         switch field.value {
         case .otp(let secret):
-            TotpFieldView(field: field, captured: captured) { code in copy(code, concealed: true) }
+            TotpFieldView(field: field, captured: captured) { code in
+                copy(code, concealed: true)
+                noteUse()
+            }
                 .id(secret)
                 .privacySensitive()
         case .password(let value):
@@ -118,7 +128,10 @@ struct FieldValueView: View {
             // "Afficher en grand" for passwords (barcodes have their own row).
             allowsLarge: allowsLarge ?? (field.kind == .password),
             concealToken: session.concealGeneration, captured: captured, hiddenText: hiddenText,
-            onCopy: { copy(value, concealed: secret) },
+            onCopy: {
+                copy(value, concealed: secret)
+                if field.kind == .password { noteUse() }
+            },
             onReveal: onReveal,
             accessory: accessory)
             .privacySensitive(secret)
@@ -147,6 +160,11 @@ struct FieldValueView: View {
         onCopied(String(localized: "app.copiedClearedIn90"))
     }
 
+    /// A password or one-time code copied, a website opened: the item was used.
+    private func noteUse() {
+        if let itemUseRef { model.noteItemUse(itemUseRef) }
+    }
+
     private func urlRow(url: String) -> some View {
         let target = Self.openable(url)
         return DetailRow(
@@ -158,7 +176,10 @@ struct FieldValueView: View {
             EmptyView()
         } menu: {
             if let target {
-                Button("item.openInBrowser", systemImage: "arrow.up.forward.app") { openURL(target) }
+                Button("item.openInBrowser", systemImage: "arrow.up.forward.app") {
+                    openURL(target)
+                    noteUse()
+                }
             }
         }
     }
@@ -683,6 +704,7 @@ private struct BarcodeRow: View {
 struct WebsiteRow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
+    @Environment(\.itemUseRef) private var itemUseRef
     let url: FfiUrl
     let index: Int
     let onCopied: (String) -> Void
@@ -700,6 +722,7 @@ struct WebsiteRow: View {
                 if let target = FieldValueView.openable(url.url) {
                     Button {
                         openURL(target)
+                        if let itemUseRef { model.noteItemUse(itemUseRef) }
                     } label: {
                         Text(url.url)
                             .lineLimit(1)

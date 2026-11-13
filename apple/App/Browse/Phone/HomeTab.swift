@@ -6,9 +6,10 @@ import VaultKit
 
 /// Accueil (spec 6.2, mockup `PhoneHome`): an inline title, the account name as a large secondary
 /// heading, then cards: À proximité (asks for the position only once the card is opened, radius
-/// and map in its header), the profile (the first identity), Favoris and Récents (items opened
-/// during this session, memory only, emptied on lock), each foldable. The options button of the
-/// navigation bar picks the cards shown. An empty vault shows "Créer ton premier élément".
+/// and map in its header), the profile (the main identity, opens the Profil page), Favoris,
+/// Fréquemment utilisés and Récemment utilisés (in-app uses: a password or code copied, a website
+/// opened; stored with the vault, so they survive a lock), each foldable. The options button of
+/// the navigation bar picks the cards shown. An empty vault shows "Créer ton premier élément".
 struct HomeTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.phoneSearchActive) private var searchActive
@@ -16,11 +17,13 @@ struct HomeTab: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("onepass.home.favoritesOpen", store: AppModel.browseDefaults) private var favoritesOpen = true
     @AppStorage("onepass.home.recentsOpen", store: AppModel.browseDefaults) private var recentsOpen = true
+    @AppStorage("onepass.home.frequentOpen", store: AppModel.browseDefaults) private var frequentOpen = true
     // The À proximité tile leads to the same list: its card is off unless chosen.
     @AppStorage("onepass.home.showsNearbyCard", store: AppModel.browseDefaults) private var showsNearby = false
     @AppStorage("onepass.home.showsProfile", store: AppModel.browseDefaults) private var showsProfile = true
     @AppStorage("onepass.home.showsFavorites", store: AppModel.browseDefaults) private var showsFavorites = true
     @AppStorage("onepass.home.showsRecents", store: AppModel.browseDefaults) private var showsRecents = true
+    @AppStorage("onepass.home.showsFrequent", store: AppModel.browseDefaults) private var showsFrequent = true
     // Shown only when a crypto wallet carries watch data (spec 2026-11-02-crypto-watch).
     @AppStorage("onepass.home.showsCrypto", store: AppModel.browseDefaults) private var showsCrypto = true
 
@@ -32,7 +35,8 @@ struct HomeTab: View {
     var body: some View {
         let counts = session.counts()
         let favorites = session.items(filter: .favorites, query: "", sort: .title)
-        let recents = recentItems
+        let frequent = session.frequentlyUsed(limit: Self.usedLimit).filter { $0.trashedAt == nil }
+        let recents = session.recentlyUsed(limit: Self.usedLimit).filter { $0.trashedAt == nil }
         Group {
             if counts.all == 0 {
                 firstItemState
@@ -63,18 +67,25 @@ struct HomeTab: View {
                         }
                         if showsNearby { HomeNearbyCard() }
                         if showsCrypto { HomeCryptoCard() }
-                        if showsProfile, let profile { HomeProfileCard(summary: profile) }
+                        if showsProfile { HomeProfileCard(summary: session.mainIdentity) }
                         if showsFavorites {
                             HomeListCard(
                                 title: "Favoris", symbol: "star.fill", color: .orange, isOpen: $favoritesOpen,
                                 items: favorites, list: .favorites,
                                 emptyText: "browse.tapItemsStarTo", id: "home.favorites")
                         }
+                        // Hidden until an item has been used.
+                        if showsFrequent, !frequent.isEmpty {
+                            HomeListCard(
+                                title: "home.frequentlyUsed", symbol: "chart.bar.fill", color: .teal,
+                                isOpen: $frequentOpen, items: frequent, list: nil,
+                                emptyText: "browse.itemsUsedAppearHere", id: "home.frequent")
+                        }
                         if showsRecents {
                             HomeListCard(
-                                title: "Récents", symbol: "clock.arrow.circlepath", color: Color(white: 0.55), isOpen: $recentsOpen,
+                                title: "home.recentlyUsed", symbol: "clock.arrow.circlepath", color: Color(white: 0.55), isOpen: $recentsOpen,
                                 items: recents, list: nil,
-                                emptyText: "browse.itemsOpenAppearHere", id: "home.recents")
+                                emptyText: "browse.itemsUsedAppearHere", id: "home.recents")
                         }
                     }
                     .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
@@ -93,12 +104,16 @@ struct HomeTab: View {
                     Toggle("À proximité", systemImage: "location", isOn: $showsNearby)
                     Toggle("Profil", systemImage: "person.crop.circle", isOn: $showsProfile)
                     Toggle("Favoris", systemImage: "star", isOn: $showsFavorites)
-                    Toggle("Récents", systemImage: "clock.arrow.circlepath", isOn: $showsRecents)
+                    Toggle("home.frequentlyUsed", systemImage: "chart.bar", isOn: $showsFrequent)
+                    Toggle("home.recentlyUsed", systemImage: "clock.arrow.circlepath", isOn: $showsRecents)
                     Toggle("crypto.title", systemImage: "bitcoinsign.circle", isOn: $showsCrypto)
                 }
             }
         }
     }
+
+    /// Rows of Fréquemment utilisés and Récemment utilisés.
+    static let usedLimit = 6
 
     /// "Accueil", or "Bonjour" and the account's first name.
     private var greeting: String {
@@ -147,19 +162,6 @@ struct HomeTab: View {
         .buttonStyle(PressableButtonStyle())
     }
 
-
-    /// The first identity, the account holder's card.
-    private var profile: FfiItemSummary? {
-        session.items(filter: .category(.identity), query: "", sort: .title).first
-    }
-
-    /// Recently opened items still present and active, newest first.
-    private var recentItems: [FfiItemSummary] {
-        let active = Dictionary(
-            session.items(filter: .all, query: "", sort: .title).map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first })
-        return session.recents.compactMap { active[$0] }
-    }
 
     private var firstItemState: some View {
         VStack(spacing: Theme.Space.l) {
@@ -312,12 +314,22 @@ private struct HomeListCard: View {
     }
 }
 
-/// The profile: the first identity, one row (name and email) that opens it.
+/// The profile: the main identity (name and email), one row that opens the Profil page. Without
+/// an identity, the row still leads there (it offers to add one).
 private struct HomeProfileCard: View {
-    let summary: FfiItemSummary
+    @Environment(AppModel.self) private var model
+    let summary: FfiItemSummary?
+
+    private var detail: String {
+        if let summary {
+            return [summary.title, summary.subtitle].filter { !$0.isEmpty }.joined(separator: ", ")
+        }
+        let name = model.settings.displayName
+        return name.isEmpty ? String(localized: "profile.addIdentityAndCard") : name
+    }
 
     var body: some View {
-        NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
+        NavigationLink(value: PhoneRoute.profile) {
             HStack(spacing: Theme.Space.m) {
                 Image(systemName: "person.fill")
                     .font(.system(size: 15, weight: .semibold))
@@ -326,7 +338,7 @@ private struct HomeProfileCard: View {
                     .background(Color.blue, in: Circle())
                 VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text("Profil").font(.headline).foregroundStyle(.primary)
-                    Text(verbatim: [summary.title, summary.subtitle].filter { !$0.isEmpty }.joined(separator: ", "))
+                    Text(verbatim: detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -340,12 +352,25 @@ private struct HomeProfileCard: View {
             .padding(.vertical, Theme.Space.m)
             .contentShape(.rect)
         }
-        .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
         .buttonStyle(RowHighlightButtonStyle())
         .phoneCard()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("home.profile")
+        #if DEBUG
+        // Screenshots: `-OnePassDemoProfile YES` opens the Profile page once.
+        .task {
+            if UserDefaults.standard.bool(forKey: "OnePassDemoProfile"), !Self.demoProfileShown {
+                Self.demoProfileShown = true
+                push(.profile)
+            }
+        }
+        #endif
     }
+
+    #if DEBUG
+    @MainActor private static var demoProfileShown = false
+    #endif
+    @Environment(\.pushPhoneRoute) private var push
 }
 
 /// À proximité: items saved with a place within the chosen radius, closest first, the distance in

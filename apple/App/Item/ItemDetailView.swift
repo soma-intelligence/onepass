@@ -230,6 +230,8 @@ struct ItemDetailView: View {
             // Links in notes and fields open only on a tap, and only web or mail links.
             ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") ? .systemAction : .discarded
         })
+        // Copying the password or the code, opening the website: a use of this item.
+        .environment(\.itemUseRef, ItemRef(vaultID: item.vaultId, itemID: item.id))
         .navigationTitle(item.title)
         #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -824,6 +826,11 @@ struct ItemDetailView: View {
     private func load() async {
         await reload(ref)
         if let item, item.reprompt || travelGuarded(item), !confirmed { await confirmPresence() }
+        // Profil > "Modifier l'identité" or "Modifier la carte": the editor opens once loaded.
+        if !standalone, model.editOnOpen == ref {
+            model.editOnOpen = nil
+            if let item { startEditing(item) }
+        }
     }
 
     private func reload(_ target: ItemRef) async {

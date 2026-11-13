@@ -15,6 +15,8 @@ enum PhoneRoute: Hashable {
     case cryptoCoin(String)
     /// The review of possible duplicates (spec 2026-11-03-duplicates).
     case duplicates
+    /// Accueil > Profil: the main identity and payment card.
+    case profile
 
     var itemRef: ItemRef? {
         if case .item(let ref) = self { return ref }
@@ -31,6 +33,8 @@ extension EnvironmentValues {
     @Entry var openPhoneTab: @MainActor (PhoneTab) -> Void = { _ in }
     /// The iPhone search is presented: Accueil keeps its banners for when it is really on screen.
     @Entry var phoneSearchActive = false
+    /// Pushes a screen on the visible tab's stack (Profil > "Modifier l'identité").
+    @Entry var pushPhoneRoute: @MainActor (PhoneRoute) -> Void = { _ in }
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
@@ -163,6 +167,8 @@ struct PhoneTabsView: View {
                             CryptoCoinView(coin: coin)
                         case .duplicates:
                             DuplicatesReviewView()
+                        case .profile:
+                            ProfileView()
                         case .item(let ref):
                             ItemDetailView(ref: ref)
                                 .id(ref)
@@ -174,6 +180,11 @@ struct PhoneTabsView: View {
                 }
         }
         .environment(\.itemZoomNamespace, itemZoom)
+        .environment(\.pushPhoneRoute) { route in
+            paths[which, default: []].append(route)
+            // As the path binding does: the top item of the visible stack is the selection.
+            if which == tab, let ref = route.itemRef, model.selectedItem != ref { model.perform(.select(ref)) }
+        }
     }
 
     private func path(_ which: PhoneTab) -> Binding<[PhoneRoute]> {
