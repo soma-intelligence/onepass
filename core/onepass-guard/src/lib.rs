@@ -17,7 +17,7 @@ mod control;
 mod display;
 mod grants;
 mod limits;
-mod private;
+pub mod private;
 mod signed;
 mod strong;
 #[cfg(target_os = "macos")]

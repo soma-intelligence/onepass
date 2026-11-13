@@ -2,6 +2,9 @@
 //! and returns early when `ssh-keygen` is not installed. All files live in a
 //! fresh `TempDir`, and `HOME` points there so `ssh-keygen` never looks at
 //! the user's `~/.ssh`.
+//!
+//! Unix only: Windows OpenSSH checks key files by ACL, not by mode.
+#![cfg(unix)]
 
 use std::fs;
 use std::io::Write;

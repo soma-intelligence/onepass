@@ -11,19 +11,28 @@
 //!
 //! The exports exist on every platform (one set of Swift bindings); the
 //! servers are only started by the Mac app.
+// The servers that use this code listen on Unix sockets; their Windows
+// named pipes come with milestone X3 (spec 2026-10-30).
+#![cfg_attr(not(unix), allow(dead_code))]
 
 mod admin;
 mod browser;
+// The MCP host and gate serve a Unix socket; Windows waits for the named
+// pipe of milestone X3 (spec 2026-10-30).
+#[cfg(unix)]
 mod mcp;
 mod ssh;
 
 pub use admin::*;
+#[cfg(unix)]
 pub use mcp::*;
 pub use ssh::*;
 
 pub(crate) use browser::agent_hub;
 
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -48,6 +57,19 @@ pub(crate) const SERVER_STACK: usize = 16 << 20;
 
 /// Longest socket path `sun_path` holds on macOS, terminator included.
 const MAX_SOCKET_PATH: usize = 104;
+
+/// An MCP client as its relay identified it (spec 3.2).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiMcpClient {
+    /// Stable client id (`team:<team>:<identifier>`, `adhoc:<cdhash>`...).
+    pub id: String,
+    /// Display label (sanitized).
+    pub label: String,
+    /// The system vouches for its code (platform or team identity).
+    pub signed: bool,
+    /// The client ids walked from the relay's parent up to the client.
+    pub chain: Vec<String>,
+}
 
 /// The app's side of the servers: approvals, presence and pairing.
 #[uniffi::export(with_foreign)]
@@ -282,24 +304,32 @@ pub(crate) fn guard_account_id(session: &Session) -> Result<String, OnePassError
     Ok(repo.account_id().to_string())
 }
 
-/// The data folder, created `0700` when missing.
+/// The data folder, created `0700` when missing (on Windows, with the
+/// inherited ACL of its parent under the user's profile).
 pub(crate) fn data_dir(dir: &str) -> Result<PathBuf, OnePassError> {
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     let path = PathBuf::from(dir);
     if !path.is_absolute() {
         return Err(invalid("data folder must be absolute"));
     }
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&path)
-        .map_err(|_| invalid("data folder"))?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
-        .map_err(|_| invalid("data folder"))?;
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(&path).map_err(|_| invalid("data folder"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+            .map_err(|_| invalid("data folder"))?;
+    }
     Ok(path)
 }
 
 /// A socket path that fits `sun_path`.
+#[cfg(unix)]
 pub(crate) fn socket_path(path: &str) -> Result<PathBuf, OnePassError> {
     if path.len() + 1 > MAX_SOCKET_PATH {
         return Err(invalid("socket path too long"));
@@ -312,6 +342,7 @@ pub(crate) fn socket_path(path: &str) -> Result<PathBuf, OnePassError> {
 }
 
 /// Device and inode of the socket at `path`, right after binding it.
+#[cfg(unix)]
 pub(crate) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
     use std::os::unix::fs::MetadataExt;
     std::fs::symlink_metadata(path)
@@ -321,6 +352,7 @@ pub(crate) fn socket_identity(path: &Path) -> Option<(u64, u64)> {
 
 /// Removes the socket at `path` only if it is still the one this host
 /// bound (`id`): a newer host's socket at the same path stays.
+#[cfg(unix)]
 pub(crate) fn remove_socket(path: &Path, id: Option<(u64, u64)>) {
     if id.is_some() && socket_identity(path) == id {
         let _ = std::fs::remove_file(path);

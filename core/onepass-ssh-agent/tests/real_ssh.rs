@@ -8,6 +8,7 @@
 //!
 //! The agent serves paired clients only: the code identities of the `ssh`,
 //! `ssh-add` and `ssh-keygen` found on `PATH` are paired before each test.
+#![cfg(unix)]
 
 mod common;
 

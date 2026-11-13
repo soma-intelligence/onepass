@@ -23,13 +23,18 @@
 //! confirm a `reprompt` item with Touch ID, bring the app forward to
 //! unlock, reload after a write. Pairing keys cross the FFI like the Secret
 //! Key does (spec P-06); vault keys never do.
+// The servers that use this code listen on Unix sockets; their Windows
+// named pipes come with milestone X3 (spec 2026-10-30).
+#![cfg_attr(not(unix), allow(dead_code))]
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
+
+use onepass_guard::private::private;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -37,7 +42,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use onepass_bridge::agent::AgentHub;
 use onepass_bridge::audit::{AuditEvent, AuditSink};
-use onepass_bridge::host::{Approval, Approver, Conn, Journal, Limits, PairingStore, spawn_reader};
+#[cfg(unix)]
+use onepass_bridge::host::{Conn, Limits, spawn_reader};
+use onepass_bridge::host::{Approval, Approver, Journal, PairingStore};
 use onepass_bridge::pairing::PairingRecord;
 use onepass_bridge::service::{AccountTag, VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
@@ -392,12 +399,7 @@ impl AuditSink for FileAudit {
         if let (Some(a), Some(obj)) = (e.account, line.as_object_mut()) {
             obj.insert("account".into(), serde_json::json!(a));
         }
-        if let Ok(mut f) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(0o600)
-            .open(&self.0)
-        {
+        if let Ok(mut f) = private(OpenOptions::new().create(true).append(true)).open(&self.0) {
             let _ = writeln!(f, "{line}");
         }
     }
@@ -875,6 +877,9 @@ impl VaultAccess for AppVault<'_> {
 /// Serve one admitted connection until it ends. `allowed`: the caller's
 /// extension id passed the app's list (Safari always does). `vouched`: the
 /// browser the app vouches for, which may then pair without a code.
+/// Unix sockets only: the Windows bridge (named pipe, milestone X3) will
+/// serve its own stream type.
+#[cfg(unix)]
 fn serve_stream(
     shared: &Shared,
     stream: UnixStream,
@@ -1120,6 +1125,30 @@ impl BridgeServer {
     /// so the connection is admitted as Safari and may pair without a code
     /// (ruling I2), unless the user revoked it.
     pub fn connect_in_process(&self) -> Result<i32, OnePassError> {
+        #[cfg(not(unix))]
+        {
+            Err(invalid("in-process bridge: Apple only"))
+        }
+        #[cfg(unix)]
+        self.connect_in_process_unix()
+    }
+
+    /// Current pairings, without their keys' bytes (for the settings list).
+    pub fn pairings(&self) -> Vec<FfiBridgePairing> {
+        lock(&self.shared.pairings)
+            .iter()
+            .map(|p| FfiBridgePairing {
+                key: Vec::new(),
+                ..p.clone()
+            })
+            .collect()
+    }
+}
+
+impl BridgeServer {
+    /// The socket pair of [`BridgeServer::connect_in_process`].
+    #[cfg(unix)]
+    fn connect_in_process_unix(&self) -> Result<i32, OnePassError> {
         use std::os::fd::IntoRawFd;
 
         let (ours, theirs) = UnixStream::pair().map_err(|_| invalid("socket pair"))?;
@@ -1135,17 +1164,6 @@ impl BridgeServer {
             })
             .map_err(|_| invalid("bridge thread"))?;
         Ok(theirs.into_raw_fd())
-    }
-
-    /// Current pairings, without their keys' bytes (for the settings list).
-    pub fn pairings(&self) -> Vec<FfiBridgePairing> {
-        lock(&self.shared.pairings)
-            .iter()
-            .map(|p| FfiBridgePairing {
-                key: Vec::new(),
-                ..p.clone()
-            })
-            .collect()
     }
 }
 
@@ -1207,6 +1225,7 @@ fn serve_admitted(
 
 /// Test entry: serve one connection on `stream` as an admitted client
 /// (the socket admission is tested in `onepass-relay`).
+#[cfg(unix)]
 #[doc(hidden)]
 pub fn serve_for_tests(
     server: &BridgeServer,

@@ -3,7 +3,9 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeSet;
+#[cfg(unix)]
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -19,7 +21,9 @@ use onepass_ssh_agent::keys::{AgentKey, KeyType};
 use onepass_ssh_agent::wire::{
     SSH_AGENTC_REQUEST_IDENTITIES, SSH_AGENTC_SIGN_REQUEST, SshReader, SshWriter,
 };
-use onepass_ssh_agent::{AgentGuards, KeyInfo, KeySource, PeerInfo, peer_info, ssh_client_record};
+#[cfg(unix)]
+use onepass_ssh_agent::peer_info;
+use onepass_ssh_agent::{AgentGuards, KeyInfo, KeySource, PeerInfo, ssh_client_record};
 use tempfile::TempDir;
 use zeroize::Zeroizing;
 
@@ -153,6 +157,14 @@ impl SharedAudit {
 }
 
 /// Uid of this process, as the kernel reports it for a socket pair.
+#[cfg(not(unix))]
+pub fn own_uid() -> u32 {
+    // No uid on Windows: the agent compares with `effective_uid`, 0 there.
+    onepass_peer::effective_uid()
+}
+
+/// Uid of this process, as the kernel reports it for a socket pair.
+#[cfg(unix)]
 pub fn own_uid() -> u32 {
     let (a, _b) = UnixStream::pair().unwrap();
     peer_info(&a).uid.expect("peer uid")
@@ -342,6 +354,7 @@ pub fn guards(limits: Limits) -> (AgentGuards, GuardEnv) {
 }
 
 /// Writes one framed message.
+#[cfg(unix)]
 pub fn send(s: &mut UnixStream, body: &[u8]) {
     let mut w = SshWriter::new();
     w.string(body);
@@ -349,6 +362,7 @@ pub fn send(s: &mut UnixStream, body: &[u8]) {
 }
 
 /// Reads one framed message body.
+#[cfg(unix)]
 pub fn recv(s: &mut UnixStream) -> Vec<u8> {
     let mut len = [0u8; 4];
     s.read_exact(&mut len).unwrap();

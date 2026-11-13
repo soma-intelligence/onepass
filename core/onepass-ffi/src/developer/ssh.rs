@@ -1,21 +1,32 @@
 //! The SSH agent served by the app (spec section 3), and SSH Key items:
 //! generation, import and the keys the agent offers.
+//!
+//! The agent host is Unix only (its socket); on Windows it will serve the
+//! OpenSSH named pipe (spec 2026-10-30 section 7.2, milestone X3). SSH Key
+//! items work everywhere.
 
+#[cfg(unix)]
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(unix)]
 use std::sync::{Arc, Mutex, PoisonError};
+#[cfg(unix)]
 use std::thread::{self, JoinHandle};
 
 use onepass_core::model::{FieldValue, Item, ItemType, SshKeyValue, new_item};
+#[cfg(unix)]
 use onepass_guard::{AuditLog, SignedAuditSink};
 use onepass_ssh_agent::keys::{AgentKey, KeyError, KeyType, is_encrypted};
+use onepass_ssh_agent::{KeyInfo, ssh_keys_of};
+#[cfg(unix)]
 use onepass_ssh_agent::{
-    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of,
-    serve_with_stack, ssh_keys_of,
+    Agent, AgentConfig, AgentGuards, KeySource, bind_socket, load_key_of, serve_with_stack,
 };
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
+#[cfg(unix)]
 use super::{
     AUDIT_FILE, FfiDeveloperUi, SERVER_STACK, SessionSigner, UiApprover, data_dir, socket_path,
 };
@@ -42,8 +53,10 @@ pub struct FfiSshAgentConfig {
 /// so a key edited, removed or moved out of the agent applies at once. A
 /// locked session, or a stopped agent (connections opened before the stop
 /// stay open until their client leaves), offers nothing.
+#[cfg(unix)]
 struct SessionKeys(Arc<Session>, Arc<AtomicBool>);
 
+#[cfg(unix)]
 impl KeySource for SessionKeys {
     fn list(&mut self) -> Result<Vec<KeyInfo>, String> {
         if self.1.load(Ordering::SeqCst) {
@@ -70,6 +83,7 @@ impl KeySource for SessionKeys {
 }
 
 /// A running agent. `stop` (or dropping it) closes the socket.
+#[cfg(unix)]
 #[derive(uniffi::Object)]
 pub struct SshAgentHost {
     socket: PathBuf,
@@ -78,6 +92,7 @@ pub struct SshAgentHost {
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
+#[cfg(unix)]
 #[uniffi::export]
 impl SshAgentHost {
     /// Listens on `config.socket_path` and serves the session's agent keys.
@@ -164,6 +179,7 @@ impl SshAgentHost {
     }
 }
 
+#[cfg(unix)]
 impl Drop for SshAgentHost {
     fn drop(&mut self) {
         self.stop();

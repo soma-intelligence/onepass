@@ -216,6 +216,9 @@ fn run_refused_by_the_workspace_is_a_tool_refusal() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn fill_template_write_refused_by_the_workspace_is_a_tool_refusal() {
     let data = PathBuf::from("/data-dir");
     let (mut t, seen) = scripted_tools(

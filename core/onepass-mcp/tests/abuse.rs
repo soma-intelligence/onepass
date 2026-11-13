@@ -1,5 +1,7 @@
 //! Abuse cases: an agent (or vault content) trying to reach secrets out of
 //! scope, harass the user, or slip instructions into a prompt.
+// Helpers of the Unix-only tests below are unused on Windows.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
 
 mod common;
 
@@ -171,6 +173,9 @@ fn user_denial_runs_nothing() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn reprompt_item_is_never_remembered() {
     let a = approver(vec![
         Decision::AllowFor(std::time::Duration::from_secs(300)),
@@ -246,6 +251,9 @@ impl Approver for Rendering {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn approval_prompt_never_carries_raw_escapes() {
     let r = Arc::new(Rendering::default());
     let (mut t, _) = tools_with_policy(everything, r.clone());
@@ -271,6 +279,9 @@ fn approval_prompt_never_carries_raw_escapes() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn long_command_is_shown_in_full() {
     let r = Arc::new(Rendering::default());
     let mut t = tools(default_policy(), r.clone());
@@ -296,6 +307,9 @@ fn injection_title_is_data_not_instruction() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn secret_never_in_audit() {
     let dir = tempfile::tempdir().unwrap();
     let template = dir.path().join("t.tpl");

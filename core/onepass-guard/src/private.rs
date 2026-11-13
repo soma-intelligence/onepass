@@ -15,7 +15,7 @@ use std::io;
 use std::path::Path;
 
 /// Sets the creation mode 0600 (Unix; nothing to set on Windows).
-pub(crate) fn private(opts: &mut OpenOptions) -> &mut OpenOptions {
+pub fn private(opts: &mut OpenOptions) -> &mut OpenOptions {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -28,7 +28,7 @@ pub(crate) fn private(opts: &mut OpenOptions) -> &mut OpenOptions {
 }
 
 /// Never follows a symlink at the last component.
-pub(crate) fn no_follow(opts: &mut OpenOptions) -> &mut OpenOptions {
+pub fn no_follow(opts: &mut OpenOptions) -> &mut OpenOptions {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -44,7 +44,7 @@ pub(crate) fn no_follow(opts: &mut OpenOptions) -> &mut OpenOptions {
 }
 
 /// Enforces 0600 on an open file (Unix; the inherited ACL on Windows).
-pub(crate) fn set_private(f: &File) -> io::Result<()> {
+pub fn set_private(f: &File) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -58,7 +58,7 @@ pub(crate) fn set_private(f: &File) -> io::Result<()> {
 }
 
 /// Makes a rename in `dir` durable (Unix; a no-op on Windows).
-pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
+pub fn sync_dir(dir: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
         File::open(dir)?.sync_all()
@@ -72,7 +72,7 @@ pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
 
 /// Reads exactly `buf.len()` bytes at `pos`.
 #[cfg(unix)]
-pub(crate) fn read_exact_at(f: &File, buf: &mut [u8], pos: u64) -> io::Result<()> {
+pub fn read_exact_at(f: &File, buf: &mut [u8], pos: u64) -> io::Result<()> {
     use std::os::unix::fs::FileExt;
     f.read_exact_at(buf, pos)
 }
@@ -80,7 +80,7 @@ pub(crate) fn read_exact_at(f: &File, buf: &mut [u8], pos: u64) -> io::Result<()
 /// Reads exactly `buf.len()` bytes at `pos`. `seek_read` moves the cursor
 /// on Windows: callers only use positioned reads and appends.
 #[cfg(windows)]
-pub(crate) fn read_exact_at(f: &File, mut buf: &mut [u8], mut pos: u64) -> io::Result<()> {
+pub fn read_exact_at(f: &File, mut buf: &mut [u8], mut pos: u64) -> io::Result<()> {
     use std::os::windows::fs::FileExt;
     while !buf.is_empty() {
         match f.seek_read(buf, pos) {

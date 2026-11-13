@@ -16,7 +16,10 @@ use crate::runner::{self, ProgramIdentity, RunOutput, RunRequest};
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
+
+use onepass_guard::private::{private, set_private};
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
@@ -167,7 +170,15 @@ fn output_target(
         Ok(_) if !overwrite => Err(invalid("output file exists, set overwrite to replace it")),
         Ok(m) if !m.is_file() => Err(invalid("output path is not a regular file")),
         // A hard link would carry the secrets to another name.
+        #[cfg(unix)]
         Ok(m) if m.nlink() > 1 => Err(invalid("output file has other hard links")),
+        // Windows: the link count needs an API std does not stabilize yet,
+        // so an existing file is never overwritten there.
+        #[cfg(not(unix))]
+        Ok(_) => Err(invalid(
+            "overwriting an existing output file is not available on this system yet",
+        )),
+        #[cfg(unix)]
         Ok(_) => Ok(target),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(target),
         Err(e) => Err(io_refusal("output path is not usable", &e)),
@@ -209,7 +220,7 @@ fn read_template(
 /// regular file when `overwrite`.
 fn write_private(path: &Path, data: &[u8], overwrite: bool) -> Result<(), WorkspaceRefusal> {
     let mut opts = OpenOptions::new();
-    opts.write(true).mode(0o600);
+    private(opts.write(true));
     if overwrite {
         opts.create(true).truncate(true);
     } else {
@@ -218,7 +229,7 @@ fn write_private(path: &Path, data: &[u8], overwrite: bool) -> Result<(), Worksp
     let mut f = opts
         .open(path)
         .map_err(|e| io_refusal("output could not be written", &e))?;
-    f.set_permissions(fs::Permissions::from_mode(0o600))
+    set_private(&f)
         .and_then(|()| f.write_all(data))
         .map_err(|e| io_refusal("output could not be written", &e))
 }
@@ -242,16 +253,34 @@ mod tests {
         );
         let out = dir.path().join("out.env");
         w.write_output(&out, "A=1\n", false, Some(&data)).unwrap();
-        let mode = fs::metadata(&out).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&out).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
         assert_eq!(
             w.write_output(&out, "A=2\n", false, None)
                 .unwrap_err()
                 .message(),
             "output file exists, set overwrite to replace it"
         );
-        w.write_output(&out, "A=2\n", true, None).unwrap();
-        assert_eq!(fs::read_to_string(&out).unwrap(), "A=2\n");
+        #[cfg(unix)]
+        {
+            w.write_output(&out, "A=2\n", true, None).unwrap();
+            assert_eq!(fs::read_to_string(&out).unwrap(), "A=2\n");
+        }
+        // Windows: an existing file is never overwritten.
+        #[cfg(not(unix))]
+        {
+            assert_eq!(
+                w.write_output(&out, "A=2\n", true, None)
+                    .unwrap_err()
+                    .message(),
+                "overwriting an existing output file is not available on this system yet"
+            );
+            assert_eq!(fs::read_to_string(&out).unwrap(), "A=1\n");
+        }
 
         let t = data.join("t.tpl");
         fs::write(&t, "x").unwrap();
@@ -272,9 +301,11 @@ mod tests {
             timeout: std::time::Duration::from_secs(5),
         };
         let e = LocalWorkspace.run(&req).unwrap_err();
+        // Windows refuses every run before looking for the program.
+        let kind = if cfg!(unix) { "entity not found" } else { "unsupported" };
         assert_eq!(
             e.message(),
-            "command could not be started: entity not found"
+            format!("command could not be started: {kind}")
         );
     }
 }
