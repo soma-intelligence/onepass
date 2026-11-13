@@ -38,6 +38,14 @@ struct LockView: View {
     @State private var shown = false
     /// The automatic try is taken and its prompt not raised yet (Mac: the password column waits).
     @State private var automaticStarting = false
+    /// "Utiliser le mot de passe" on the Touch ID state: the column stays for this lock screen.
+    @State private var passwordChosen = false
+    /// The automatic check, so "Utiliser le mot de passe" can end it (cancelled, its system sheet
+    /// goes away).
+    @State private var biometricTask: Task<Void, Never>?
+    /// Counts the biometric checks: one given up for the password no longer touches the screen
+    /// when it answers at last.
+    @State private var biometricRun = 0
 
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
@@ -69,7 +77,7 @@ struct LockView: View {
         }
         .onAppear { shown = true }
         .onDisappear { shown = false }
-        .task(id: AutoAttempt(presentation: model.biometricAutoPrompt.presentation, ready: shown && scenePhase == .active)) {
+        .task(id: AutoAttempt(presentation: model.biometricAutoPrompt.presentation, ready: ready)) {
             // At most one automatic try per lock presentation (`BiometricAutoPrompt`): this task
             // runs again on every scene phase change (the Face ID sheet causes some), but only a
             // real lock makes a new try due. It waits until this screen has been on screen, active
@@ -77,7 +85,10 @@ struct LockView: View {
             // screen or the privacy cover before the lock screen was ever seen. The Mac has no
             // launch screen or cover over its window: Touch ID comes first, at once. The password
             // field takes the focus (and the keyboard comes up) only when no biometric check runs.
-            guard shown, scenePhase == .active else { return }
+            // Never while the Mac's screen is asleep or locked (`AppModel.screenAway`): the lock
+            // that sleep causes shows this screen while it is still active, and a prompt raised
+            // then was never shown and never answered.
+            guard ready else { return }
             #if DEBUG && os(iOS)
             if await playDemoVaultDoor() { return }
             #endif
@@ -94,7 +105,7 @@ struct LockView: View {
                     // Not tied to this task: the prompt makes the scene inactive, which ends this
                     // task, and a cancelled task would dismiss the system sheet (`decrypt`).
                     automaticStarting = true
-                    Task { await unlockWithBiometrics(automatic: true) }
+                    biometricTask = Task { await unlockWithBiometrics(automatic: true) }
                     return
                 }
             }
@@ -176,22 +187,56 @@ struct LockView: View {
         #endif
     }
 
-    /// Mac: not while Touch ID comes first (`BiometricAutoPrompt.showsPasswordColumn`).
+    /// This lock screen can take the automatic try now: on screen, in an active scene, and the
+    /// Mac's screen neither asleep nor locked.
+    private var ready: Bool { shown && scenePhase == .active && !model.screenAway }
+
+    /// Mac: not while Touch ID comes first (`BiometricAutoPrompt.showsPasswordColumn`), unless the
+    /// user asked for the password.
     private var showsPasswordColumn: Bool {
-        model.lockShowsPasswordColumn(canUseBiometrics: biometrics, checking: automaticStarting)
+        passwordChosen
+            || model.lockShowsPasswordColumn(canUseBiometrics: biometrics, checking: automaticStarting, ready: ready)
     }
 
-    /// Where the password column will be: a quiet Touch ID state while the system prompt is due or up.
+    /// Where the password column will be: a quiet Touch ID state while the system prompt is due or
+    /// up, and the way out of it. The state never stands alone: whatever happens to the prompt, the
+    /// password is one click away.
     private var biometricWaiting: some View {
-        Label {
-            Text(verbatim: OnboardingModel.biometryName)
-        } icon: {
-            Image(systemName: OnboardingModel.biometrySymbol)
+        VStack(spacing: 6) {
+            Label {
+                Text(verbatim: OnboardingModel.biometryName)
+            } icon: {
+                Image(systemName: OnboardingModel.biometrySymbol)
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(height: Self.fieldHeight)
+            .accessibilityIdentifier("lock.biometricWaiting")
+            Button("lock.usePassword") { usePassword() }
+                .buttonStyle(.plain)
+                .font(.subheadline)
+                .foregroundStyle(Theme.accent)
+                .accessibilityIdentifier("lock.usePassword")
         }
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .frame(height: Self.fieldHeight)
-        .accessibilityIdentifier("lock.biometricWaiting")
+    }
+
+    /// "Utiliser le mot de passe": the password column comes now and stays. A biometric check
+    /// under way is given up: cancelled, its system sheet goes away; one that never answers (raised
+    /// on a screen that was going away) no longer holds the session in `unlocking`, where the field
+    /// is disabled.
+    private func usePassword() {
+        passwordChosen = true
+        biometricRun &+= 1
+        biometricTask?.cancel()
+        biometricTask = nil
+        automaticStarting = false
+        if biometricCheck {
+            biometricCheck = false
+            model.biometricPromptEnded()
+        }
+        if session.state == .unlocking { session.lock(publishPending: false, stampsAccountLock: false) }
+        message = nil
+        fieldFocused = true
     }
 
     // MARK: - Account
@@ -534,12 +579,17 @@ struct LockView: View {
         message = nil
         fieldFocused = false
         biometricCheck = true
+        biometricRun &+= 1
+        let run = biometricRun
         model.biometricPromptStarted(automatic: automatic)
         do {
             try await session.unlockWithBiometrics()
+            // Given up for the password meanwhile: that already put the screen back.
+            guard run == biometricRun else { return }
             biometricCheck = false
             model.biometricPromptEnded()
         } catch {
+            guard run == biometricRun else { return }
             biometricCheck = false
             model.biometricPromptEnded()
             withAnimation(.linear(duration: 0.5)) { dialRefusals += 1 }

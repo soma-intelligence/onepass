@@ -205,13 +205,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(lockNow), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(lockNow), name: Self.screenLocked, object: nil)
+        // No Touch ID prompt on a screen that is asleep or locked (`AppModel.screenAway`): a
+        // sleeping display counts too, and each of these ends it.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(screenAway), name: NSWorkspace.screensDidSleepNotification, object: nil)
+        for name in [
+            NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ] {
+            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(screenBack), name: name, object: nil)
+        }
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(screenBack), name: Self.screenUnlocked, object: nil)
     }
 
     static let screenLocked = Notification.Name("com.apple.screenIsLocked")
+    static let screenUnlocked = Notification.Name("com.apple.screenIsUnlocked")
+
+    @objc private func screenAway() {
+        model?.screenWentAway()
+    }
+
+    @objc private func screenBack() {
+        model?.screenCameBack()
+    }
 
     /// Delivered on the main thread (workspace and distributed notifications both). Every account,
     /// not only the one on screen: the browsers and the agents reach accounts that are not shown.
     @objc private func lockNow() {
+        // First: the lock screen this lock brings must not ask Touch ID on a screen going away.
+        model?.screenWentAway()
         model?.lockAll()
     }
 

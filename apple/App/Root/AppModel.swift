@@ -219,6 +219,10 @@ final class AppModel {
     /// first, before the password column, and over the browser for a browser's request.
     private(set) var biometricAutoPrompt = BiometricAutoPrompt(
         activationBeginsPresentation: Platform.isMac, biometricsFirst: Platform.isMac)
+    /// Mac: the screen is asleep, locked or with another user. No biometric prompt is raised then:
+    /// one raised as the Mac went to sleep was never shown and never answered, and held the lock
+    /// screen on its Touch ID state with no password field. Always false elsewhere.
+    private(set) var screenAway = false
     /// "Utiliser Touch ID pour déverrouiller ?" after a password unlock (once per account and device).
     /// Replacing or dropping it wipes the password it holds.
     var biometricOffer: BiometricOffer? {
@@ -732,6 +736,10 @@ final class AppModel {
         #endif
         switch phase {
         case .active:
+            #if os(macOS)
+            // The app in front: the screen is there, whatever notification was missed.
+            screenCameBack()
+            #endif
             biometricAutoPrompt.scenePhaseChanged(.active)
             accounts.scenePhaseChanged(.active)
             // A lock asked by a Control while the app was in the background or not notified.
@@ -873,13 +881,29 @@ final class AppModel {
     }
 
     /// Whether the lock screen shows its password column (`BiometricAutoPrompt`): on the Mac, not
-    /// while Touch ID is due or up. `checking`: the lock screen's own check runs.
-    func lockShowsPasswordColumn(canUseBiometrics: Bool, checking: Bool) -> Bool {
+    /// while Touch ID is due or up. `checking`: the lock screen's own check runs. `ready`: that
+    /// lock screen can take the automatic try now.
+    func lockShowsPasswordColumn(canUseBiometrics: Bool, checking: Bool, ready: Bool) -> Bool {
         BiometricAutoPrompt.showsPasswordColumn(
             biometricsFirst: biometricAutoPrompt.biometricsFirst, canUseBiometrics: canUseBiometrics,
             attemptDue: automaticBiometricAttemptDue, promptRunning: biometricAutoPrompt.automaticPromptRunning,
-            checking: checking)
+            checking: checking, ready: ready)
     }
+
+    #if os(macOS)
+    /// The Mac goes to sleep, its screen locks or sleeps, or another user takes it. Called before
+    /// the lock those events cause, so the lock screen that appears does not ask Touch ID.
+    func screenWentAway() {
+        screenAway = true
+    }
+
+    /// Wake, screen unlock, or the user's session back in front: the automatic try may run again,
+    /// unless the screen is still locked (a wake that asks for the Mac's password first).
+    func screenCameBack() {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        screenAway = (session?["CGSSessionScreenIsLocked"] as? Bool) ?? false
+    }
+    #endif
 
     /// The lock screen raised the system biometric prompt (automatic or tapped): it spends this
     /// presentation's automatic try, and the privacy shield stays down for it.
@@ -1254,7 +1278,7 @@ final class AppModel {
         }
         if fromBrowser, session === primarySession, session.state == .locked {
             switch biometricAutoPrompt.browserUnlockRoute(
-                appActive: NSApplication.shared.isActive, canUseBiometrics: session.canUseBiometrics)
+                appActive: NSApplication.shared.isActive, canUseBiometrics: session.canUseBiometrics && !screenAway)
             {
             case .asking:
                 // The prompt on screen answers this request too; the browser keeps the front.

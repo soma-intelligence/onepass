@@ -261,6 +261,24 @@ struct BiometricAutoPromptTests {
         #expect(gate.showsPasswordColumn(canUseBiometrics: true, checking: false))
     }
 
+    /// A try that is due but that the lock screen cannot take (the Mac asleep or its screen
+    /// locked, the window not in an active scene) never hides the column: the screen would offer
+    /// nothing. Regression: a lock on sleep left "Touch ID" alone on the screen after the wake.
+    @Test func macDueButNotReadyKeepsThePassword() {
+        var gate = BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true)
+        #expect(gate.showsPasswordColumn(canUseBiometrics: true, checking: false, ready: false))
+        #expect(!gate.showsPasswordColumn(canUseBiometrics: true, checking: false, ready: true))
+        // The lock that sleep causes: due again, still not ready until the screen is back.
+        _ = take(&gate)
+        gate.promptEnded(sceneActive: true)
+        gate.vaultLocked()
+        #expect(gate.automaticAttemptDue)
+        #expect(gate.showsPasswordColumn(canUseBiometrics: true, checking: false, ready: false))
+        // A prompt that is up holds the column whatever the readiness.
+        gate.promptStarted()
+        #expect(!gate.showsPasswordColumn(canUseBiometrics: true, checking: false, ready: false))
+    }
+
     /// The Touch ID button inside the field: the column it belongs to stays.
     @Test func macTappedPromptKeepsThePassword() {
         var gate = BiometricAutoPrompt(activationBeginsPresentation: true, biometricsFirst: true)

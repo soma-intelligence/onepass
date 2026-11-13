@@ -151,20 +151,24 @@ public struct BiometricAutoPrompt: Equatable, Sendable {
     /// Whether the lock screen shows its password column now. With `biometricsFirst`, a lock
     /// screen that can use biometrics shows only its glyph and title while the automatic try is
     /// due, while an automatic prompt is up, and while its own automatic check (`checking`) starts.
-    /// The Touch ID button's prompt keeps the column it belongs to.
-    public func showsPasswordColumn(canUseBiometrics: Bool, checking: Bool) -> Bool {
+    /// The Touch ID button's prompt keeps the column it belongs to. `ready`: the lock screen can
+    /// take the try now (on screen, in an active scene, the Mac awake and its screen unlocked); a try
+    /// that is due but cannot be taken never hides the column, or the screen would offer nothing.
+    public func showsPasswordColumn(canUseBiometrics: Bool, checking: Bool, ready: Bool = true) -> Bool {
         Self.showsPasswordColumn(
             biometricsFirst: biometricsFirst, canUseBiometrics: canUseBiometrics,
-            attemptDue: automaticAttemptDue, promptRunning: automaticPromptRunning, checking: checking)
+            attemptDue: automaticAttemptDue, promptRunning: automaticPromptRunning, checking: checking,
+            ready: ready)
     }
 
     /// `showsPasswordColumn` with the due state given (the app may veto it in captures);
     /// `promptRunning`: an automatic prompt is up.
     public static func showsPasswordColumn(
-        biometricsFirst: Bool, canUseBiometrics: Bool, attemptDue: Bool, promptRunning: Bool, checking: Bool
+        biometricsFirst: Bool, canUseBiometrics: Bool, attemptDue: Bool, promptRunning: Bool, checking: Bool,
+        ready: Bool = true
     ) -> Bool {
         guard biometricsFirst, canUseBiometrics else { return true }
-        return !(attemptDue || promptRunning || checking)
+        return !((attemptDue && ready) || promptRunning || checking)
     }
 
     /// A browser asks to unlock the locked vault. With `biometricsFirst`, while the app is not in
