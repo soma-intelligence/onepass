@@ -10,13 +10,9 @@ mod org_common;
 
 use std::sync::OnceLock;
 
-use onepass_core::crypto::{HybridKemPublic, IdentityVerifyingKey, KdfParams, random_array};
-use onepass_core::device_keys::{DeviceKeys, DevicePublic};
-use onepass_core::devices::{DeviceKind, DeviceMode};
+use onepass_core::device_keys::DeviceKeys;
 use onepass_core::generator::Wordlist;
-use onepass_core::lineage::{
-    GenesisBody, LineageRecord, RotationBody, RotationReason, Signed, verify_genesis,
-};
+use onepass_core::lineage::{GenesisBody, LineageRecord, RotationBody, RotationReason, Signed};
 use onepass_core::org::{
     Invitation, JoinRequestBody, MAX_ORG_RECORD_BYTES, MemberState, ORG_JOIN_CODE_PREFIX,
     ORG_JOIN_DOMAIN, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgId, OrgLineage, OrgMember,
@@ -27,70 +23,13 @@ use onepass_core::org::{
     scim_id_hash, sign_join_request, sign_org_change, sign_org_genesis, sign_roster,
     verify_join_request, verify_org_genesis,
 };
-use onepass_core::repo::{ManagedGenesis, Repository};
-use onepass_core::store::{RecordKind, RecordStore, SqliteStore};
+use onepass_core::repo::ManagedGenesis;
 use onepass_core::{Error, Id, IntegrityError};
 use org_common::*;
 
 const ORG: OrgId = OrgId([7; 16]);
 const O: u8 = 1;
 const U: u8 = 3;
-const PASSWORD: &str = "Projet Atlas, Camille Durand";
-
-/// A managed (or personal) account as the join request needs it: the
-/// creator device's keys and public half, the genesis record bytes, the
-/// account KEM key and identity.
-struct Joiner {
-    keys: DeviceKeys,
-    device: DevicePublic,
-    genesis: Vec<u8>,
-    kem: HybridKemPublic,
-    identity: IdentityVerifyingKey,
-}
-
-fn create(org: Option<ManagedGenesis>) -> Joiner {
-    let dir = tempfile::tempdir().unwrap();
-    let store = SqliteStore::open(&dir.path().join("vault.db")).unwrap();
-    let keys = DeviceKeys::generate_software().unwrap();
-    let kdf = KdfParams {
-        m_kib: 8192,
-        t: 1,
-        p: 1,
-        salt: random_array().unwrap(),
-    };
-    let (repo, _sk) = Repository::create_account_v2_with_org(
-        store,
-        PASSWORD,
-        kdf,
-        &keys,
-        "iPhone de Camille",
-        DeviceKind::Phone,
-        DeviceMode::Personal,
-        org,
-    )
-    .unwrap();
-    let lineage = repo.store().list(RecordKind::Lineage).unwrap();
-    assert_eq!(lineage.len(), 1);
-    let genesis = lineage[0].data.clone();
-    let LineageRecord::Genesis(g) = LineageRecord::decode(&genesis).unwrap() else {
-        panic!("a genesis")
-    };
-    verify_genesis(&g).unwrap();
-    let c = &g.body.creator;
-    let device = DevicePublic {
-        device_id: c.device_id,
-        sign_pub: c.sign_pub.clone(),
-        kem_pub: c.kem_pub.clone(),
-    };
-    assert_eq!(keys.public(c.device_id).unwrap(), device);
-    Joiner {
-        keys,
-        device,
-        genesis,
-        kem: repo.account().params.kem_pub.clone(),
-        identity: g.body.identity_pub.clone(),
-    }
-}
 
 /// The fixture org: owner O, UserManager U (Active since r3); r4 is U's
 /// invitation of a new member with roles {UserManager}; `joiner` is that
