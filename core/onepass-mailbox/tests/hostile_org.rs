@@ -162,3 +162,16 @@ fn honest_disarms() {
     h.put_join_request([1; 16], b"a".to_vec()).unwrap();
     assert_eq!(h.join_requests().unwrap().len(), 1);
 }
+
+#[test]
+fn withhold_newest_roster_reaches_seq_0() {
+    let fake = FakeMailbox::with_limits(org_plan());
+    let mut c = fake.client(Credential::generate().unwrap());
+    c.create(None, b"org").unwrap();
+    let mut h = HostileOrgStore::new(OrgStore::new(c, ORG));
+    h.put_roster(0, r(0)).unwrap();
+    h.withhold_newest_roster();
+    assert_eq!(h.latest_roster().unwrap(), None);
+    h.put_roster(1, r(1)).unwrap();
+    assert_eq!(h.latest_roster().unwrap(), Some((0, r(0))));
+}
