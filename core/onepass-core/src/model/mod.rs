@@ -51,6 +51,14 @@ mod wire_tests {
     }
 
     #[test]
+    fn key_use_indexes() {
+        use KeyUseAction::*;
+        use KeyUseChannel::*;
+        check(&[App, AutoFill, Cli, Mcp, SshAgent]);
+        check(&[Revealed, Copied, Injected, Totp, Signed, Filled]);
+    }
+
+    #[test]
     fn field_type_indexes() {
         use FieldType::*;
         check(&[

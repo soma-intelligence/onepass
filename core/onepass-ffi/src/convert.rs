@@ -774,6 +774,7 @@ pub(crate) fn item_to_core(
         usage_forgotten: stored
             .map(|s| s.usage_forgotten.clone())
             .unwrap_or_default(),
+        key_uses: stored.map(|s| s.key_uses.clone()).unwrap_or_default(),
     };
     item.set_travel_hidden(f.travel_hidden);
     item.set_travel_guarded(f.travel_guard);

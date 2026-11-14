@@ -4,6 +4,7 @@ use time::{Date, OffsetDateTime};
 use crate::id::Id;
 use crate::model::events::ItemEvent;
 use crate::model::field::{AttachmentRef, Field, FieldValue, PasswordHistoryEntry, Section};
+use crate::model::key_use::KeyUseTrailer;
 use crate::model::templates::ItemType;
 use crate::model::usage::{Forgotten, SiteUsage};
 
@@ -129,9 +130,22 @@ pub struct Item {
     /// Sites forgotten on purpose, sealed with `usage`.
     #[serde(skip)]
     pub usage_forgotten: Vec<Forgotten>,
+    /// Key-use log (see `model::key_use`). Sealed in a third trailer, never
+    /// in the serde form: the MCP and the CLI never see it.
+    #[serde(skip)]
+    pub key_uses: KeyUseTrailer,
 }
 
 impl Item {
+    /// The key-use log and its tombstone, as sealed.
+    pub fn key_use_trailer(&self) -> KeyUseTrailer {
+        self.key_uses.clone()
+    }
+
+    pub fn set_key_use_trailer(&mut self, t: KeyUseTrailer) {
+        self.key_uses = t;
+    }
+
     /// Carries `PENDING_TAG`: saved before the form was sent, not confirmed yet.
     pub fn is_pending(&self) -> bool {
         self.tags.iter().any(|t| t == PENDING_TAG)
@@ -294,6 +308,7 @@ mod tests {
             events: vec![],
             usage: vec![],
             usage_forgotten: vec![],
+            key_uses: KeyUseTrailer::default(),
         }
     }
 

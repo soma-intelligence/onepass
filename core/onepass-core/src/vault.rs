@@ -13,6 +13,7 @@ use crate::crypto::{
     Aad, BlobKind, HybridKemSecret, SymmetricKey, open, seal, unwrap_key, wrap_key,
 };
 use crate::model::events::{EventKind, ItemTrailer};
+use crate::model::key_use::KeyUseTrailer;
 use crate::model::usage::UsageTrailer;
 use crate::model::{Item, validate};
 use crate::store::Zone;
@@ -95,18 +96,21 @@ fn item_aad(item_id: Id, vault_id: Id) -> Aad {
 
 /// Postcard of `(version, item)` in a buffer wiped on drop, sized up front so
 /// no reallocation leaves copies of the plaintext behind. An item with
-/// events gets them after, as an `ItemTrailer` (see `model::events`), and
-/// an item with usage gets an `ItemTrailer` (even empty) then a
-/// `UsageTrailer` (see `model::usage`): an item without either is written
-/// exactly as before events existed.
+/// events gets them after, as an `ItemTrailer` (see `model::events`), an
+/// item with usage gets an `ItemTrailer` (even empty) then a `UsageTrailer`
+/// (see `model::usage`), and an item with a key-use log gets both of those
+/// (even empty) then a `KeyUseTrailer` (see `model::key_use`): an item
+/// without any of them is written exactly as before events existed.
 fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
     const BAD: Error = Error::InvalidFormat("item");
     let value = (version, item);
-    let has_usage = !item.usage.is_empty() || !item.usage_forgotten.is_empty();
+    let has_key_uses = !item.key_uses.is_empty();
+    let has_usage = !item.usage.is_empty() || !item.usage_forgotten.is_empty() || has_key_uses;
     let trailer = (!item.events.is_empty() || has_usage).then(|| ItemTrailer {
         events: item.events.clone(),
     });
     let usage = has_usage.then(|| item.usage_trailer());
+    let key_uses = has_key_uses.then(|| item.key_use_trailer());
     let head = postcard::experimental::serialized_size(&value).map_err(|_| BAD)?;
     let mid = match &trailer {
         Some(t) => postcard::experimental::serialized_size(t).map_err(|_| BAD)?,
@@ -116,9 +120,14 @@ fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
         Some(u) => postcard::experimental::serialized_size(u).map_err(|_| BAD)?,
         None => 0,
     };
-    let mut buf = Zeroizing::new(vec![0u8; head + mid + tail]);
+    let last = match &key_uses {
+        Some(k) => postcard::experimental::serialized_size(k).map_err(|_| BAD)?,
+        None => 0,
+    };
+    let mut buf = Zeroizing::new(vec![0u8; head + mid + tail + last]);
     let (first, rest) = buf.split_at_mut(head);
-    let (second, third) = rest.split_at_mut(mid);
+    let (second, rest) = rest.split_at_mut(mid);
+    let (third, fourth) = rest.split_at_mut(tail);
     postcard::to_slice(&value, first).map_err(|_| BAD)?;
     if let Some(t) = &trailer {
         postcard::to_slice(t, second).map_err(|_| BAD)?;
@@ -126,17 +135,21 @@ fn encode_item(version: u64, item: &Item) -> Result<Zeroizing<Vec<u8>>> {
     if let Some(u) = &usage {
         postcard::to_slice(u, third).map_err(|_| BAD)?;
     }
+    if let Some(k) = &key_uses {
+        postcard::to_slice(k, fourth).map_err(|_| BAD)?;
+    }
     Ok(buf)
 }
 
-/// `(version, item)` then, when bytes remain, an `ItemTrailer` and a
-/// `UsageTrailer`. The item itself is strict. The trailers are history and
-/// fill memory only: one this build cannot read (a variant added later, a
-/// further trailer, damage, more than `MAX_EVENTS` events or `MAX_SITES`
-/// sites or tombstones)
+/// `(version, item)` then, when bytes remain, an `ItemTrailer`, a
+/// `UsageTrailer` and a `KeyUseTrailer`. The item itself is strict. The
+/// trailers are history, fill memory and the key-use log only: one this
+/// build cannot read (a variant added later, a further trailer, damage, more
+/// than `MAX_EVENTS` events, `MAX_SITES` sites or tombstones, or
+/// `MAX_KEY_USES` key uses)
 /// leaves the item without it instead of locking it, and with it the whole
-/// vault listing, out. An unreadable `ItemTrailer` hides the usage too: its
-/// end is unknown. The bytes stay inside the sealed blob, so nobody without
+/// vault listing, out. An unreadable `ItemTrailer` hides the later ones too,
+/// and an unreadable `UsageTrailer` hides the key uses: their end is unknown. The bytes stay inside the sealed blob, so nobody without
 /// the item key can put anything there.
 fn decode_item(plain: &[u8]) -> Result<(u64, Item)> {
     const BAD: Error = Error::InvalidFormat("item");
@@ -149,11 +162,17 @@ fn decode_item(plain: &[u8]) -> Result<(u64, Item)> {
             item.events = trailer.events;
         }
         if !later.is_empty()
-            && let Ok((usage, _beyond)) = postcard::take_from_bytes::<UsageTrailer>(later)
+            && let Ok((usage, beyond)) = postcard::take_from_bytes::<UsageTrailer>(later)
             && usage.sites.len() <= crate::model::usage::MAX_SITES
             && usage.forgotten.len() <= crate::model::usage::MAX_SITES
         {
             item.set_usage_trailer(usage);
+            if !beyond.is_empty()
+                && let Ok((keys, _rest)) = postcard::take_from_bytes::<KeyUseTrailer>(beyond)
+                && keys.entries.len() <= crate::model::key_use::MAX_KEY_USES
+            {
+                item.set_key_use_trailer(keys);
+            }
         }
     }
     Ok((version, item))
@@ -615,6 +634,112 @@ mod tests {
         };
         head.extend(postcard::to_allocvec(&gone).unwrap());
         assert_eq!(decode_item(&head).unwrap(), (1, item));
+    }
+
+    fn key_use(field: &str, count: u32, item: &Item) -> crate::model::KeyUse {
+        use crate::model::{KeyUse, KeyUseAction, KeyUseChannel};
+        KeyUse {
+            channel: KeyUseChannel::Mcp,
+            action: KeyUseAction::Revealed,
+            device_id: Id([1; 16]),
+            device_name: "Mac".into(),
+            client: "Claude Code".into(),
+            field: field.into(),
+            first_at: item.created_at,
+            last_at: item.created_at,
+            count,
+        }
+    }
+
+    fn with_key_uses(mut item: Item) -> Item {
+        item.key_uses = crate::model::KeyUseTrailer {
+            entries: vec![
+                key_use("a", 1, &item),
+                key_use("b", 2, &item),
+                key_use("c", 3, &item),
+            ],
+            cleared_at: Some(item.created_at),
+        };
+        item
+    }
+
+    #[test]
+    fn item_without_key_uses_encodes_as_before() {
+        let (v, _, _) = vault("A");
+        let mut item = with_usage(login(&v));
+        item.record(item.created_at, EventKind::Created);
+        let mut expected = postcard::to_allocvec(&(3u64, &item)).unwrap();
+        expected.extend(
+            postcard::to_allocvec(&ItemTrailer {
+                events: item.events.clone(),
+            })
+            .unwrap(),
+        );
+        expected.extend(postcard::to_allocvec(&item.usage_trailer()).unwrap());
+        assert_eq!(&encode_item(3, &item).unwrap()[..], &expected[..]);
+    }
+
+    #[test]
+    fn key_uses_round_trip() {
+        let (v, _, _) = vault("A");
+        let mut item = with_key_uses(with_usage(login(&v)));
+        item.record(item.created_at, EventKind::Created);
+        let opened = v.open_item(&v.seal_item(&item, 1).unwrap()).unwrap();
+        assert_eq!(opened.key_uses.entries.len(), 3);
+        assert_eq!(opened.key_uses.cleared_at, Some(item.created_at));
+        assert_eq!(opened, item);
+    }
+
+    #[test]
+    fn key_uses_force_earlier_trailers() {
+        let (v, _, _) = vault("A");
+        let item = with_key_uses(login(&v));
+        let plain = encode_item(1, &item).unwrap();
+        let (_, rest): ((u64, Item), &[u8]) = postcard::take_from_bytes(&plain).unwrap();
+        let (events, rest): (ItemTrailer, &[u8]) = postcard::take_from_bytes(rest).unwrap();
+        assert!(events.events.is_empty());
+        let (usage, rest): (UsageTrailer, &[u8]) = postcard::take_from_bytes(rest).unwrap();
+        assert!(usage.sites.is_empty() && usage.forgotten.is_empty());
+        let (keys, rest): (crate::model::KeyUseTrailer, &[u8]) =
+            postcard::take_from_bytes(rest).unwrap();
+        assert_eq!((keys, rest), (item.key_uses.clone(), &[][..]));
+        let opened = v.open_item(&v.seal_item(&item, 1).unwrap()).unwrap();
+        assert!(opened.events.is_empty());
+        assert!(opened.usage.is_empty() && opened.usage_forgotten.is_empty());
+        assert_eq!(opened, item);
+    }
+
+    #[test]
+    fn unreadable_key_use_trailer_opens_item() {
+        let (v, _, _) = vault("A");
+        let mut item = with_usage(login(&v));
+        item.record(item.created_at, EventKind::Created);
+        let head = encode_item(1, &item).unwrap().to_vec();
+        // Damaged: one entry whose device name runs past the end.
+        let mut bad = head.clone();
+        bad.extend([1, 0xff]);
+        assert_eq!(decode_item(&bad).unwrap(), (1, item.clone()));
+        // Plain garbage.
+        let mut junk = head;
+        junk.extend([0xff, 0xff, 0xff]);
+        let (_, opened) = decode_item(&junk).unwrap();
+        assert!(opened.key_uses.is_empty());
+        assert_eq!(opened.events, item.events);
+        assert_eq!(opened.usage, item.usage);
+    }
+
+    #[test]
+    fn oversized_key_use_trailer_is_dropped() {
+        let (v, _, _) = vault("A");
+        let mut item = with_usage(login(&v));
+        item.record(item.created_at, EventKind::Created);
+        let mut over = encode_item(1, &item).unwrap().to_vec();
+        let many = crate::model::KeyUseTrailer {
+            entries: vec![key_use("a", 1, &item); crate::model::MAX_KEY_USES + 1],
+            cleared_at: None,
+        };
+        over.extend(postcard::to_allocvec(&many).unwrap());
+        assert_eq!(decode_item(&over).unwrap(), (1, item));
     }
 
     #[test]

@@ -139,9 +139,10 @@ impl KeyUseTrailer {
     }
 
     /// Record `count` uses of `u`, the latest at `at`. Coalesces into the
-    /// entry with the same key (labels sanitized first), clamps any
-    /// `last_at` in the future to `now`, then prunes.
+    /// entry with the same key (labels sanitized first), clamps `at` and any
+    /// stored `last_at` in the future to `now`, then prunes.
     pub fn note(&mut self, u: &KeyUseInput, count: u32, at: OffsetDateTime, now: OffsetDateTime) {
+        let at = at.min(now);
         self.clamp(now);
         let k = input_key(u);
         match self.entries.iter_mut().find(|e| key_of(e) == k) {
@@ -207,11 +208,17 @@ impl KeyUseTrailer {
 
 /// Merge of two trailers: union by coalescing key (larger `count`, earlier
 /// `first_at`, later `last_at`), the later `cleared_at`, then `prune` with
-/// the latest `last_at` seen as the clock. Commutative and idempotent; the
-/// entries come out most recent first.
+/// the latest `last_at` seen as the clock. Labels are sanitized first: a
+/// trailer decoded from another device is untrusted. Commutative and
+/// idempotent; the entries come out most recent first.
 pub fn merge_key_uses(a: &KeyUseTrailer, b: &KeyUseTrailer) -> KeyUseTrailer {
     let mut by_key: BTreeMap<Key, KeyUse> = BTreeMap::new();
     for u in a.entries.iter().chain(&b.entries) {
+        let mut u = u.clone();
+        u.client = sanitize_label(&u.client);
+        u.field = sanitize_label(&u.field);
+        u.device_name = sanitize_label(&u.device_name);
+        let u = &u;
         match by_key.get_mut(&key_of(u)) {
             None => {
                 by_key.insert(key_of(u), u.clone());
@@ -293,6 +300,18 @@ mod tests {
         assert_eq!(t.entries[0].count, 2);
         assert_eq!(t.entries[0].first_at, T);
         assert_eq!(t.entries[0].last_at, T + secs(10));
+    }
+
+    #[test]
+    fn note_clamps_a_future_at_to_now() {
+        let mut t = KeyUseTrailer::default();
+        t.note(&input("k"), 1, T + Duration::days(1), T);
+        assert_eq!(t.entries[0].last_at, T);
+        assert_eq!(t.entries[0].first_at, T);
+        // A bump with a future time clamps too.
+        t.note(&input("k"), 1, T + Duration::days(1), T + secs(5));
+        assert_eq!(t.entries[0].last_at, T + secs(5));
+        assert!(t.due(&input("k"), T + secs(5) + secs(3600)));
     }
 
     #[test]
@@ -378,6 +397,22 @@ mod tests {
         let k = m.entries.iter().find(|e| e.field == "k").unwrap();
         assert_eq!((k.count, k.first_at, k.last_at), (5, t1, t2));
         assert!(m.entries.iter().any(|e| e.field == "l"));
+    }
+
+    #[test]
+    fn merge_sanitizes_untrusted_labels_before_keying() {
+        let mut dirty = entry("k", 2, T, T + secs(5));
+        dirty.client = "Cla\u{202E}ude".into();
+        let mut clean = entry("k", 1, T, T);
+        clean.client = "Claude".into();
+        for merged in [
+            merge_key_uses(&trailer(vec![clean.clone()]), &trailer(vec![dirty.clone()])),
+            merge_key_uses(&trailer(vec![dirty]), &trailer(vec![clean])),
+        ] {
+            assert_eq!(merged.entries.len(), 1);
+            assert_eq!(merged.entries[0].client, "Claude");
+            assert_eq!(merged.entries[0].count, 2);
+        }
     }
 
     #[test]
