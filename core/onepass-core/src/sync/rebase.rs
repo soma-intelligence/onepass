@@ -80,6 +80,7 @@ use crate::manifest::{
     Manifest, ManifestEntry, SignedManifest, manifest_hash, record_hash, verify_manifest,
 };
 use crate::model::Item;
+use crate::model::key_use::merge_key_uses;
 use crate::model::usage::merge_trailers;
 use crate::repo::replay::recovered_meta;
 use crate::repo::{Repository, Use, seen, split_item_record};
@@ -802,21 +803,25 @@ impl Repository<SyncStore> {
 }
 
 /// The item to save for one changed on both sides, once a side won: the
-/// winner, with the usage of both (`merge_trailers`, tombstones honoured),
-/// its own `updated_at` unchanged. `None` when the remote wins and the
-/// merge changes nothing in it: nothing to write.
+/// winner, with the usage of both (`merge_trailers`, tombstones honoured)
+/// and the key-use log of both (`merge_key_uses`), its own `updated_at`
+/// unchanged. `None` when the remote wins and the merges change nothing in
+/// it: nothing to write.
 fn resolve(local: &Item, remote: Item, local_wins: bool) -> Option<Item> {
     let usage = merge_trailers(&local.usage_trailer(), &remote.usage_trailer());
+    let keys = merge_key_uses(&local.key_use_trailer(), &remote.key_use_trailer());
     if local_wins {
         let mut out = local.clone();
         out.set_usage_trailer(usage);
+        out.set_key_use_trailer(keys);
         return Some(out);
     }
-    if usage == remote.usage_trailer() {
+    if usage == remote.usage_trailer() && keys == remote.key_use_trailer() {
         return None;
     }
     let mut out = remote;
     out.set_usage_trailer(usage);
+    out.set_key_use_trailer(keys);
     Some(out)
 }
 
@@ -846,8 +851,100 @@ mod tests {
     use super::*;
     use crate::fill_plan::context::FieldRole;
     use crate::fill_plan::intent::Intent;
+    use crate::model::key_use::{KeyUse, KeyUseAction, KeyUseChannel, KeyUseTrailer};
     use crate::model::usage::{SiteUsage, StepKind, form_shape_hash};
     use crate::model::{FieldValue, ItemType, new_item};
+
+    fn key_use(device: Id, field: &str, count: u32, at: time::OffsetDateTime) -> KeyUse {
+        KeyUse {
+            channel: KeyUseChannel::Cli,
+            action: KeyUseAction::Revealed,
+            device_id: device,
+            device_name: "Mac".into(),
+            client: String::new(),
+            field: field.into(),
+            first_at: at,
+            last_at: at,
+            count,
+        }
+    }
+
+    fn with_keys(mut item: Item, entries: Vec<KeyUse>) -> Item {
+        item.set_key_use_trailer(KeyUseTrailer {
+            entries,
+            cleared_at: None,
+        });
+        item
+    }
+
+    #[test]
+    fn remote_edit_wins_and_keeps_local_key_uses() {
+        let t0 = datetime!(2026-11-14 12:00 UTC);
+        let dev = Id::new();
+        let mut ancestor = new_item(ItemType::Login, Id::new(), "Example");
+        ancestor.updated_at = t0;
+        let local = with_keys(ancestor.clone(), vec![key_use(dev, "password", 2, t0)]);
+        let mut remote = ancestor.clone();
+        remote.title = "Renamed".into();
+        remote.updated_at = t0 + time::Duration::minutes(5);
+
+        let out = resolve(&local, remote.clone(), false).expect("key uses carried over");
+        assert_eq!(out.title, "Renamed");
+        assert_eq!(out.updated_at, remote.updated_at);
+        assert_eq!(out.key_use_trailer(), local.key_use_trailer());
+    }
+
+    #[test]
+    fn local_win_merges_remote_key_uses() {
+        let t0 = datetime!(2026-11-14 12:00 UTC);
+        let (a, b) = (Id::new(), Id::new());
+        let ancestor = new_item(ItemType::Login, Id::new(), "Example");
+        let mut local = with_keys(ancestor.clone(), vec![key_use(a, "password", 1, t0)]);
+        local.title = "Mine".into();
+        let remote = with_keys(ancestor.clone(), vec![key_use(b, "token", 3, t0)]);
+
+        let out = resolve(&local, remote.clone(), true).unwrap();
+        assert_eq!(out.title, "Mine");
+        assert_eq!(
+            out.key_use_trailer(),
+            merge_key_uses(&local.key_use_trailer(), &remote.key_use_trailer())
+        );
+        assert_eq!(out.key_use_trailer().entries.len(), 2);
+    }
+
+    #[test]
+    fn key_use_only_change_on_both_sides_writes_once() {
+        let t0 = datetime!(2026-11-14 12:00 UTC);
+        let dev = Id::new();
+        let ancestor = new_item(ItemType::Login, Id::new(), "Example");
+        let local = with_keys(ancestor.clone(), vec![key_use(dev, "password", 2, t0)]);
+        // The remote already holds everything the local side has.
+        let mut newer = key_use(dev, "password", 5, t0);
+        newer.last_at = t0 + time::Duration::minutes(1);
+        let remote = with_keys(ancestor.clone(), vec![newer]);
+        assert_eq!(resolve(&local, remote, false), None);
+        // A remote that lacks a local entry is rewritten with it.
+        let behind = with_keys(ancestor.clone(), vec![key_use(Id::new(), "token", 1, t0)]);
+        let out = resolve(&local, behind, false).expect("local entry carried over");
+        assert_eq!(out.key_use_trailer().entries.len(), 2);
+    }
+
+    #[test]
+    fn concurrent_bumps_keep_max_not_sum() {
+        let t0 = datetime!(2026-11-14 12:00 UTC);
+        let dev = Id::new();
+        let ancestor = new_item(ItemType::Login, Id::new(), "Example");
+        let local = with_keys(ancestor.clone(), vec![key_use(dev, "password", 4, t0)]);
+        let remote = with_keys(ancestor.clone(), vec![key_use(dev, "password", 6, t0)]);
+        for wins in [false, true] {
+            let out = resolve(&local, remote.clone(), wins).map_or(6, |o| {
+                let e = o.key_use_trailer().entries;
+                assert_eq!(e.len(), 1);
+                e[0].count
+            });
+            assert_eq!(out, 6, "local wins: {wins}");
+        }
+    }
 
     #[test]
     fn remote_password_change_wins_and_keeps_local_usage() {
