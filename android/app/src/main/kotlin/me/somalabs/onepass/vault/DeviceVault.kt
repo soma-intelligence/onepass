@@ -109,6 +109,17 @@ class DeviceVault private constructor(private val context: Context) {
         }
     }
 
+    /** Changes the master password; the Secret Key stays. */
+    fun changePassword(current: CharArray, new: CharArray) {
+        val s = session ?: error("locked")
+        val secrets = read() ?: error("no device file")
+        try {
+            s.changePassword(String(current), secrets.secretKey, String(new)).fill(0)
+        } finally {
+            secrets.wipe()
+        }
+    }
+
     fun lock() {
         session?.lock()
         session = null
