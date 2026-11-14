@@ -542,6 +542,9 @@ struct AccountMenuPanel: View {
             case .settings:
                 close()
                 openSettings()
+            case .profile:
+                close()
+                model.page = .profile
             case .importItems:
                 close()
                 model.showImport = true

@@ -377,6 +377,8 @@ private struct ProfileCard<Content: View>: View {
             content
         }
         .phoneCard()
+        // A container: the card's identifier never replaces its rows' own.
+        .accessibilityElement(children: .contain)
     }
 }
 
