@@ -16,12 +16,12 @@ use onepass_core::lineage::{GenesisBody, LineageRecord, RotationBody, RotationRe
 use onepass_core::org::{
     Invitation, JoinRequestBody, MAX_ORG_RECORD_BYTES, MemberState, ORG_JOIN_CODE_PREFIX,
     ORG_JOIN_DOMAIN, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgId, OrgLineage, OrgMember,
-    OrgPin, OrgSecrets, PinSource, Role, RoleSet, RosterBody, RosterCheckpoint, SignedJoinRequest,
-    SignedOrgRecord, SignedRoster, accept_next_roster, activate_member, dns_fingerprint,
-    dns_txt_value, fingerprint_base32, fingerprint_words, founding_roster, invite_commit,
-    invite_member, join_code, join_code_of, member_kem_hash, parse_dns_txt, pin_org, scim_id_hash,
-    sign_join_request, sign_org_change, sign_org_genesis, sign_roster, verify_join_request,
-    verify_org_genesis,
+    OrgPin, OrgRecordBody, OrgSecrets, PinSource, Role, RoleSet, RosterBody, RosterCheckpoint,
+    SignedJoinRequest, SignedOrgRecord, SignedRoster, accept_next_roster, activate_member,
+    dns_fingerprint, dns_txt_value, fingerprint_base32, fingerprint_words, founding_roster,
+    invite_commit, invite_member, join_code, join_code_of, member_kem_hash, parse_dns_txt, pin_org,
+    scim_id_hash, sign_join_request, sign_org_change, sign_org_genesis, sign_roster,
+    verify_join_request, verify_org_genesis,
 };
 use onepass_core::repo::ManagedGenesis;
 use onepass_core::{Error, Id, IntegrityError};
@@ -215,9 +215,9 @@ fn join_round_trip() {
     let wire = req.encode();
     assert_eq!(&SignedJoinRequest::decode(&wire).unwrap(), req);
     let joined = verify(req).unwrap();
-    assert_eq!(joined.account_id, f.invitation.account_id);
-    assert_eq!(joined.account_identity_pub, f.joiner.identity);
-    assert_eq!(joined.devices, vec![f.joiner.device.clone()]);
+    assert_eq!(joined.account_id(), f.invitation.account_id);
+    assert_eq!(*joined.account_identity_pub(), f.joiner.identity);
+    assert_eq!(joined.devices(), vec![f.joiner.device.clone()]);
 
     let r5 = activate_member(&f.r4, &joined).unwrap();
     let rec5 = sign_roster(r5.clone(), &f.u.public, &f.u.keys).unwrap();
@@ -412,15 +412,42 @@ fn join_decode_strict() {
         b.display_name = "Camille\nDurand".to_string()
     });
     for c in [
-        '\u{00AD}', '\u{200B}', '\u{200D}', '\u{200F}', '\u{202A}', '\u{202E}', '\u{2060}',
-        '\u{2064}', '\u{2066}', '\u{2069}', '\u{FEFF}',
+        '\u{00AD}',
+        '\u{200B}',
+        '\u{200D}',
+        '\u{200F}',
+        '\u{202A}',
+        '\u{202E}',
+        '\u{2060}',
+        '\u{2064}',
+        '\u{2066}',
+        '\u{2069}',
+        '\u{FEFF}',
+        '\u{034F}',
+        '\u{061C}',
+        '\u{180E}',
+        '\u{2028}',
+        '\u{2029}',
+        '\u{FFF9}',
+        '\u{FFFB}',
+        '\u{E0000}',
+        '\u{E0041}',
+        '\u{E007F}',
     ] {
         refused(&format!("name with U+{:04X}", c as u32), &|b| {
             b.display_name = format!("Cam{c}ille")
         });
     }
     // Neighbours of the refused ranges stay allowed.
-    for c in ['\u{2010}', '\u{2070}', '\u{2065}', '\u{202F}'] {
+    for c in [
+        '\u{2010}',
+        '\u{2070}',
+        '\u{2065}',
+        '\u{202F}',
+        '\u{2027}',
+        '\u{FFFC}',
+        '\u{E0080}',
+    ] {
         let mut b = body();
         b.display_name = format!("Cam{c}ille");
         let ok = signed(b, &fx().joiner.keys);
@@ -454,9 +481,9 @@ fn join_decode_strict() {
 fn join_carries_name_credential_kem() {
     let f = fx();
     let joined = verify(request()).unwrap();
-    assert_eq!(joined.display_name, "Camille Durand");
-    assert_eq!(joined.mailbox_credential, [0x42; 32]);
-    assert_eq!(joined.account_kem_pub, f.joiner.kem);
+    assert_eq!(joined.display_name(), "Camille Durand");
+    assert_eq!(*joined.mailbox_credential(), [0x42; 32]);
+    assert_eq!(*joined.account_kem_pub(), f.joiner.kem);
     let r5 = activate_member(&f.r4, &joined).unwrap();
     assert_eq!(
         member(&r5, f.invitation.account_id).account_kem_hash,
@@ -781,6 +808,8 @@ fn dns_txt_refused_forms() {
         ("padding", format!("v=op1; org={b32}====")),
         ("non-base32 char", format!("v=op1; org={}1", &b32[..51])),
         ("no equal sign", format!("v=op1; org {b32}")),
+        ("empty key", format!("v=op1; =x; org={b32}")),
+        ("empty key, blanks", format!("v=op1;  = ; org={b32}")),
         ("empty", String::new()),
         (
             "over 255 bytes",
@@ -1053,11 +1082,29 @@ fn advance_requires_pinned_head() {
         IntegrityError::OrgLineageFork,
         "pinned generation, other hash",
     );
-    // A record repeated after the head: a rollback.
-    integrity(
+    // A record repeated in the list: a malformed list (minor 10).
+    invalid_format(
         pin.advance(&lineage_list(&[0, 1, 1]), &[]),
-        IntegrityError::OrgLineageRollback,
         "repeated record",
+    );
+    invalid_format(
+        pin.advance(&[(1, f.g1.clone()), (0, f.g0.clone())], &[]),
+        "lineage list out of order",
+    );
+    // The pinned head again with another body and a bad identity
+    // signature: no fork evidence, a signature error (minor 3).
+    let unsigned = {
+        let mut rec = SignedOrgRecord::decode(&f.g1).unwrap();
+        let OrgRecordBody::Change(c) = &mut rec.body else {
+            unreachable!()
+        };
+        c.issued_at += 1;
+        rec.encode()
+    };
+    integrity(
+        at1.advance(&[(1, unsigned)], &[]),
+        IntegrityError::Signature,
+        "pinned generation, other body, not signed",
     );
 }
 
@@ -1081,7 +1128,7 @@ fn advance_replayed_roster() {
     let at2 = mdm_pin()
         .advance(&lineage_list(&[0, 1]), &rosters(&[1, 2]))
         .unwrap();
-    integrity(
+    invalid_format(
         at2.advance(
             &lineage_list(&[1]),
             &[
@@ -1089,8 +1136,11 @@ fn advance_replayed_roster() {
                 (2, pin_fx().rosters[1].clone()),
             ],
         ),
-        IntegrityError::OrgRosterRollback,
         "out of order list",
+    );
+    invalid_format(
+        at2.advance(&lineage_list(&[1]), &rosters(&[3, 3])),
+        "repeated roster",
     );
 }
 

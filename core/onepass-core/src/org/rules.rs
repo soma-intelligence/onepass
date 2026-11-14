@@ -321,9 +321,12 @@ fn check_entry(
         }
         Some(p) => {
             // R7a: taking over an account (its devices, or its activation)
-            // needs the right to grant every role it holds.
+            // needs the right to grant every role it holds. Any other state
+            // change (suspend, reactivate, remove) needs it too (final
+            // review minor 1): a UserManager does not suspend or reactivate
+            // a member it could not grant.
             let activation = p.state == MemberState::Invited && e.state == MemberState::Active;
-            if (e.devices != p.devices || activation)
+            if (e.devices != p.devices || e.state != p.state)
                 && !p_roles
                     .union(e.roles)
                     .without(Role::Owner)
@@ -414,7 +417,29 @@ pub fn check_transition(
         if p == Some(e) {
             continue;
         }
+        check_no_squat(lineage, p, e)?;
         check_entry(&s, &head.owners, p, e)?;
+    }
+    Ok(())
+}
+
+/// Final review minor 2: a changed or new entry may not take a device
+/// fingerprint that `lineage.head()` lists for ANOTHER owner account (an
+/// admin squatting a rotating owner's new device would block its sync).
+fn check_no_squat(lineage: &OrgLineage, p: Option<&OrgMember>, e: &OrgMember) -> Result<()> {
+    let added = e
+        .devices
+        .iter()
+        .filter(|f| p.is_none_or(|p| !p.devices.contains(f)));
+    for f in added {
+        if lineage
+            .head()
+            .owners
+            .iter()
+            .any(|r| r.account_id != e.account_id && r.devices.contains(f))
+        {
+            return Err(denied());
+        }
     }
     Ok(())
 }
@@ -431,6 +456,10 @@ fn verify_roster_sig(rec: &SignedRoster) -> Result<()> {
 /// the signer resolved from `pinned` and the lineage head (`resolve_signer`,
 /// else `OrgRoleDenied`), the signature,
 /// then `check_transition`.
+///
+/// The pinned roster again returns `Ok` after comparing bodies only: it
+/// proves nothing about the received signature, so never store the
+/// received record, keep your own.
 pub fn accept_next_roster(
     lineage: &OrgLineage,
     pinned: &RosterBody,

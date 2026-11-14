@@ -636,6 +636,14 @@ impl<S: RecordStore> Repository<S> {
         v2: Option<(&DeviceKeys, &Registration<'_>)>,
         managed: Option<ManagedGenesis>,
     ) -> Result<(Repository<S>, SecretKey)> {
+        // A managed account's genesis is written only with a device
+        // (format 2 needs `v2`): never take the managed id without it.
+        if managed.is_some() && v2.is_none() {
+            return Err(Error::Validation(crate::ValidationError {
+                field: "managed".into(),
+                reason: "a managed account needs a device registration",
+            }));
+        }
         if !store.list(RecordKind::AccountParams)?.is_empty() {
             return Err(Error::InvalidFormat("store already holds an account"));
         }

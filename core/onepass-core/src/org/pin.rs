@@ -11,7 +11,7 @@
 //!
 //! DNS TXT grammar: `v=op1; org=<BASE32_NOPAD of the fingerprint>`, at most
 //! 255 bytes, parts split on `;` and trimmed of ASCII whitespace, each part
-//! `key=value` (trimmed around `=`), `v=op1` first, `org` exactly once
+//! `key=value` (trimmed around `=`, the key not empty), `v=op1` first, `org` exactly once
 //! (case-insensitive base32, 52 characters, no padding), unknown keys
 //! ignored, any key twice refused, empty parts after the first ignored (a
 //! trailing `;`).
@@ -25,7 +25,9 @@ use std::collections::BTreeMap;
 use data_encoding::BASE32_NOPAD;
 use serde::{Deserialize, Serialize};
 
-use super::lineage::{check_identity_pub, check_kem, check_name, check_owners};
+use super::lineage::{
+    check_identity_pub, check_kem, check_name, check_owners, fork_or_bad_signature,
+};
 use super::{
     ORG_PIN_VERSION, OrgHeadInfo, OrgLineage, OrgRecordBody, RosterBody, RosterCheckpoint,
     SignedOrgRecord, SignedRoster, accept_first_roster, accept_next_roster, org_fingerprint,
@@ -112,6 +114,9 @@ pub fn parse_dns_txt(txt: &str) -> Result<[u8; 32]> {
             continue;
         }
         let (k, v) = key_value(part).ok_or(bad("dns txt part"))?;
+        if k.is_empty() {
+            return Err(bad("dns txt part"));
+        }
         if seen.contains(&k) {
             return Err(bad("dns txt key repeated"));
         }
@@ -312,7 +317,8 @@ impl OrgPin {
 
     /// The pin moved forward by what the server returned
     /// (`OrgStore::lineage_from`, `OrgStore::roster`: `(generation or seq,
-    /// record)` pairs, the key matching the record or `InvalidFormat`).
+    /// record)` pairs, the key matching the record and the keys strictly
+    /// increasing, or `InvalidFormat`).
     ///
     /// Lineage first: the first record must be the pinned head (a genesis
     /// of another fingerprint `OrgPinMismatch`, an empty list or another
@@ -357,6 +363,12 @@ impl OrgPin {
                 Ok(rec)
             })
             .collect::<Result<Vec<_>>>()?;
+        if !decoded
+            .windows(2)
+            .all(|w| w[0].generation() < w[1].generation())
+        {
+            return Err(bad("org lineage list"));
+        }
         let (first, rest) = decoded
             .split_first()
             .ok_or(IntegrityError::OrgLineageRollback)?;
@@ -373,7 +385,7 @@ impl OrgPin {
             return Err(IntegrityError::OrgLineageRollback.into());
         }
         if first.hash() != head.hash {
-            return Err(IntegrityError::OrgLineageFork.into());
+            return Err(fork_or_bad_signature(first, &self.lineage.identity_pub));
         }
         let mut lineage = self.lineage.clone();
         for rec in rest {
@@ -414,6 +426,9 @@ impl OrgPin {
                 Ok(rec)
             })
             .collect::<Result<Vec<_>>>()?;
+        if !decoded.windows(2).all(|w| w[0].body.seq < w[1].body.seq) {
+            return Err(bad("org roster list"));
+        }
         let Some(pinned) = &self.roster else {
             return accept_first_roster(lineage, &decoded).map(Some);
         };

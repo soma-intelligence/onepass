@@ -849,10 +849,11 @@ fn owner_keyset_for_other_owner() {
         ..sealed_a.clone()
     };
     let relabelled = SealedOrgKeyset::decode(&relabelled.encode()).unwrap();
-    assert!(matches!(
+    integrity(
         open_org_keyset(&relabelled, STD_ORG, b, &b_kem.0),
-        Err(Error::Integrity(_))
-    ));
+        IntegrityError::Commitment,
+        "relabelled keyset opened by B",
+    );
     // Control: A opens its own.
     let opened = open_org_keyset(&sealed_a, STD_ORG, a, &a_kem.0).unwrap();
     opened.check_against(lineage()).unwrap();

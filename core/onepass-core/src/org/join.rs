@@ -50,18 +50,26 @@ fn wrong_context() -> Error {
 
 /// Control characters, and invisible or direction-changing characters that
 /// would let a display name pass for another (ruling R9b): soft hyphen,
-/// zero-width and directional marks, bidi embeddings and isolates, word
-/// joiner and invisible operators, BOM.
+/// zero-width and directional marks (the Arabic letter mark included),
+/// bidi embeddings and isolates, word joiner and invisible operators, BOM,
+/// the combining grapheme joiner, the Mongolian vowel separator, line and
+/// paragraph separators, interlinear annotation characters and the tag
+/// block.
 fn refused_name_char(c: char) -> bool {
     c.is_control()
         || matches!(
             c,
             '\u{00AD}'
+                | '\u{034F}'
+                | '\u{061C}'
+                | '\u{180E}'
                 | '\u{200B}'..='\u{200F}'
-                | '\u{202A}'..='\u{202E}'
+                | '\u{2028}'..='\u{202E}'
                 | '\u{2060}'..='\u{2064}'
                 | '\u{2066}'..='\u{2069}'
                 | '\u{FEFF}'
+                | '\u{FFF9}'..='\u{FFFB}'
+                | '\u{E0000}'..='\u{E007F}'
         )
 }
 
@@ -202,16 +210,42 @@ pub fn sign_join_request(body: JoinRequestBody, keys: &DeviceKeys) -> Result<Sig
 /// A verified join request, what `activate_member` writes into the roster:
 /// the identity, the devices' fingerprints and `member_kem_hash` of
 /// `account_kem_pub`. Plan C grants `mailbox_credential` read access.
-/// Only `verify_join_request` should produce one: a `VerifiedJoin` built
-/// by hand carries no proof of anything.
+/// Only `verify_join_request` builds one (private fields, read through
+/// the getters).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedJoin {
-    pub account_id: Id,
-    pub account_identity_pub: IdentityVerifyingKey,
-    pub devices: Vec<DevicePublic>,
-    pub display_name: String,
-    pub mailbox_credential: [u8; 32],
-    pub account_kem_pub: HybridKemPublic,
+    account_id: Id,
+    account_identity_pub: IdentityVerifyingKey,
+    devices: Vec<DevicePublic>,
+    display_name: String,
+    mailbox_credential: [u8; 32],
+    account_kem_pub: HybridKemPublic,
+}
+
+impl VerifiedJoin {
+    pub fn account_id(&self) -> Id {
+        self.account_id
+    }
+
+    pub fn account_identity_pub(&self) -> &IdentityVerifyingKey {
+        &self.account_identity_pub
+    }
+
+    pub fn devices(&self) -> &[DevicePublic] {
+        &self.devices
+    }
+
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    pub fn mailbox_credential(&self) -> &[u8; 32] {
+        &self.mailbox_credential
+    }
+
+    pub fn account_kem_pub(&self) -> &HybridKemPublic {
+        &self.account_kem_pub
+    }
 }
 
 /// The join code: the first group of 5 words of `fingerprint_words(h,

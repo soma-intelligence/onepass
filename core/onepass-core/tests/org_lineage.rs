@@ -527,6 +527,14 @@ fn same_generation_other_record_is_fork() {
     );
     // The very same head again changes nothing.
     assert_eq!(l.apply(&w.g1).unwrap(), l);
+    // Another body at generation 1 without the identity signature: a
+    // signature error, not a fork alarm (minor 3).
+    let mut unsigned = w.g1.clone();
+    let OrgRecordBody::Change(c) = &mut unsigned.body else {
+        unreachable!()
+    };
+    c.issued_at += 1;
+    assert_eq!(integrity(l.apply(&unsigned)), IntegrityError::Signature);
 }
 
 #[test]
@@ -550,8 +558,20 @@ fn wrong_parent_is_fork() {
         unreachable!()
     };
     c.parent = [9; 32];
+    // Not signed by the org identity: no fork evidence (minor 3).
     assert_eq!(
         integrity(lineage_at(1).apply(&rec)),
+        IntegrityError::Signature
+    );
+    // Signed by the identity: a fork.
+    let signed = sign_org_change(
+        change_body(2, [9; 32], rotate_to(2)),
+        identity(),
+        &signers(&[&w.b, &w.c]),
+    )
+    .unwrap();
+    assert_eq!(
+        integrity(lineage_at(1).apply(&signed)),
         IntegrityError::OrgLineageFork
     );
 }
@@ -606,9 +626,19 @@ fn audit_key_rotation_updates_head() {
 #[test]
 fn chain_must_start_with_a_genesis() {
     let w = world();
-    assert!(verify_org_chain(&[]).is_err());
-    assert!(verify_org_chain(std::slice::from_ref(&w.g1)).is_err());
-    assert!(verify_org_chain(&[w.genesis.clone(), w.g1.clone(), w.g1.clone()]).is_err());
+    assert!(matches!(verify_org_chain(&[]), Err(Error::NotFound)));
+    assert!(matches!(
+        verify_org_chain(std::slice::from_ref(&w.g1)),
+        Err(Error::InvalidFormat("org genesis expected"))
+    ));
+    assert_eq!(
+        integrity(verify_org_chain(&[
+            w.genesis.clone(),
+            w.g1.clone(),
+            w.g1.clone()
+        ])),
+        IntegrityError::OrgLineageRollback
+    );
 }
 
 fn refused(b: &[u8]) -> bool {
@@ -868,20 +898,54 @@ fn keyset_seals_to_one_owner() {
     assert!(!format!("{opened:?}").contains("identity"));
 }
 
+/// The integrity error of a refused keyset.
+fn keyset_refused<T: std::fmt::Debug>(
+    r: onepass_core::Result<T>,
+    want: IntegrityError,
+    what: &str,
+) {
+    match r {
+        Err(Error::Integrity(e)) if e == want => {}
+        other => panic!("{what}: expected Integrity({want:?}), got {other:?}"),
+    }
+}
+
 #[test]
 fn keyset_bound_to_owner_and_org() {
     let sealed = sealed_for(1);
     let k = &kem_pool(1).0;
-    assert!(open_org_keyset(&sealed, ORG, Id([2; 16]), k).is_err());
-    assert!(open_org_keyset(&sealed, OrgId([0xee; 16]), Id([1; 16]), k).is_err());
-    assert!(open_org_keyset(&sealed, ORG, Id([1; 16]), &kem_pool(2).0).is_err());
-    // Relabelled record fields do not rescue a swapped context either.
+    use IntegrityError::{Commitment, WrongContext};
+    keyset_refused(
+        open_org_keyset(&sealed, ORG, Id([2; 16]), k),
+        WrongContext,
+        "other owner account",
+    );
+    keyset_refused(
+        open_org_keyset(&sealed, OrgId([0xee; 16]), Id([1; 16]), k),
+        WrongContext,
+        "other org",
+    );
+    keyset_refused(
+        open_org_keyset(&sealed, ORG, Id([1; 16]), &kem_pool(2).0),
+        Commitment,
+        "other KEM secret",
+    );
+    // Relabelled record fields do not rescue a swapped context either: the
+    // KEM context and the AEAD data still name the sealing owner and org.
     let mut relabelled = sealed.clone();
     relabelled.account_id = Id([2; 16]);
-    assert!(open_org_keyset(&relabelled, ORG, Id([2; 16]), k).is_err());
+    keyset_refused(
+        open_org_keyset(&relabelled, ORG, Id([2; 16]), k),
+        Commitment,
+        "relabelled account",
+    );
     let mut other_org = sealed.clone();
     other_org.org_id = OrgId([0xee; 16]);
-    assert!(open_org_keyset(&other_org, OrgId([0xee; 16]), Id([1; 16]), k).is_err());
+    keyset_refused(
+        open_org_keyset(&other_org, OrgId([0xee; 16]), Id([1; 16]), k),
+        Commitment,
+        "relabelled org",
+    );
 }
 
 #[test]
@@ -890,10 +954,18 @@ fn keyset_blob_swap_refused() {
     let b = sealed_for(2);
     let mut franken = a.clone();
     franken.blob = b.blob.clone();
-    assert!(open_org_keyset(&franken, ORG, Id([1; 16]), &kem_pool(1).0).is_err());
+    keyset_refused(
+        open_org_keyset(&franken, ORG, Id([1; 16]), &kem_pool(1).0),
+        IntegrityError::Commitment,
+        "blob of another owner",
+    );
     let mut franken = b.clone();
     franken.envelope = a.envelope.clone();
-    assert!(open_org_keyset(&franken, ORG, Id([2; 16]), &kem_pool(2).0).is_err());
+    keyset_refused(
+        open_org_keyset(&franken, ORG, Id([2; 16]), &kem_pool(2).0),
+        IntegrityError::Commitment,
+        "envelope of another owner",
+    );
 }
 
 #[test]
@@ -946,5 +1018,8 @@ fn sealed_keyset_decode_strict() {
             Err(Error::InvalidFormat(_))
         ));
     }
-    assert!(open_org_keyset(&format2, ORG, Id([1; 16]), &kem_pool(1).0).is_err());
+    assert!(matches!(
+        open_org_keyset(&format2, ORG, Id([1; 16]), &kem_pool(1).0),
+        Err(Error::InvalidFormat("org keyset"))
+    ));
 }

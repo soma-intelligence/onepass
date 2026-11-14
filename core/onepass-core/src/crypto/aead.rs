@@ -50,7 +50,7 @@ pub enum BlobKind {
     RecoverySlot = 17,
     /// A device-local autofill history event (`crate::autofill_history`).
     AutofillHistory = 18,
-    /// An org keyset delivered to a member (`crate::org`).
+    /// The org keyset sealed to one owner's account KEM key (`crate::org`).
     OrgKeyset = 19,
 }
 

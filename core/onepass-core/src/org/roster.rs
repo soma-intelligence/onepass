@@ -186,7 +186,7 @@ impl RosterBody {
         if self.seq == 0 {
             return Err(bad("roster seq"));
         }
-        if self.seq == 1 && self.prev_hash != [0; 32] {
+        if (self.seq == 1) != (self.prev_hash == [0; 32]) {
             return Err(bad("roster prev hash"));
         }
         if self.members.len() > MAX_ROSTER_MEMBERS {
@@ -240,9 +240,11 @@ fn check_member(m: &OrgMember) -> Result<()> {
     }
     match m.state {
         MemberState::Invited => {
+            // D21: an invited member always has an invitation commit.
             if m.account_identity_pub.is_some()
                 || !m.devices.is_empty()
                 || m.account_kem_hash != [0; 32]
+                || m.invite_commit == [0; 32]
             {
                 return Err(bad("invited member shape"));
             }

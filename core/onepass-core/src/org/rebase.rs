@@ -199,7 +199,7 @@ pub fn merge_members(
     let probe = RosterBody {
         format: ORG_FORMAT,
         org_id: OrgId([0; 16]),
-        seq: 2,
+        seq: 1,
         prev_hash: [0; 32],
         org_head: [0; 32],
         members: out,

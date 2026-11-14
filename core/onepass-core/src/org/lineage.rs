@@ -401,6 +401,20 @@ fn verify_signatures(
     Ok(())
 }
 
+/// The alarm for a record that conflicts with a known generation: a fork
+/// (`OrgLineageFork`) only if the org identity signed it, so the alarm
+/// comes with evidence; otherwise the identity signature's error.
+pub(crate) fn fork_or_bad_signature(
+    rec: &SignedOrgRecord,
+    identity_pub: &IdentityVerifyingKey,
+) -> Error {
+    let (domain, msg) = rec.body.message();
+    match identity_pub.verify(domain, &msg, &rec.identity_sig) {
+        Ok(()) => IntegrityError::OrgLineageFork.into(),
+        Err(e) => e,
+    }
+}
+
 /// One accepted generation. `roster_checkpoint` is the one its
 /// `OwnersChanged` carries (X17), `None` for the genesis and an audit key
 /// rotation.
@@ -440,7 +454,12 @@ impl OrgLineage {
     /// generation with another hash is a fork, an older one with the known
     /// hash a rollback, the current head again changes nothing, a gap is
     /// `NotFound`, a wrong parent a fork), identity, quorum of
-    /// `head().owners`, then the new head.
+    /// `head().owners`, then the new head. A fork is reported only for a
+    /// record the org identity signed (else the signature error).
+    ///
+    /// The current head again returns `Ok` after comparing bodies only: it
+    /// proves nothing about the received signatures, so never store the
+    /// received record, keep your own.
     pub fn apply(&self, next: &SignedOrgRecord) -> Result<OrgLineage> {
         check_record(next)?;
         if next.org_id() != self.org_id {
@@ -452,7 +471,7 @@ impl OrgLineage {
             let h = next.hash();
             let known = self.heads.iter().find(|i| i.generation == g);
             return match known {
-                Some(k) if k.hash != h => Err(IntegrityError::OrgLineageFork.into()),
+                Some(k) if k.hash != h => Err(fork_or_bad_signature(next, &self.identity_pub)),
                 Some(_) if g == head.generation => Ok(self.clone()),
                 _ => Err(IntegrityError::OrgLineageRollback.into()),
             };
@@ -464,7 +483,7 @@ impl OrgLineage {
             return Err(bad("org change expected"));
         };
         if c.parent != head.hash {
-            return Err(IntegrityError::OrgLineageFork.into());
+            return Err(fork_or_bad_signature(next, &self.identity_pub));
         }
         verify_signatures(next, &self.identity_pub, &head.owners)?;
         let mut out = self.clone();

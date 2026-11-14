@@ -95,6 +95,44 @@ fn aad(org_id: OrgId, account_id: Id) -> Aad {
     }
 }
 
+/// Bytes of the postcard varint of `n`.
+fn varint_len(mut n: usize) -> usize {
+    let mut len = 1;
+    while n >= 0x80 {
+        n >>= 7;
+        len += 1;
+    }
+    len
+}
+
+/// The keyset plaintext `postcard((format, org_id, identity, audit))`,
+/// written into a buffer of its exact size: no reallocation leaves an
+/// unzeroized copy of the secrets behind.
+fn encode_plain(
+    format: u8,
+    org_id: OrgId,
+    identity: &[u8],
+    audit: &[u8],
+) -> Result<Zeroizing<Vec<u8>>> {
+    let len = 1
+        + org_id.0.len()
+        + varint_len(identity.len())
+        + identity.len()
+        + varint_len(audit.len())
+        + audit.len();
+    let mut out = Zeroizing::new(vec![0u8; len]);
+    let used = postcard::to_slice(
+        &(format, org_id, Bytes::new(identity), Bytes::new(audit)),
+        &mut out[..],
+    )
+    .map_err(|_| bad("org keyset"))?
+    .len();
+    if used != len {
+        return Err(bad("org keyset"));
+    }
+    Ok(out)
+}
+
 /// Seal `keyset` to the owner's account KEM key.
 pub fn seal_org_keyset(
     keyset: &OrgKeyset,
@@ -110,15 +148,7 @@ pub fn seal_org_keyset(
     )?;
     let identity = keyset.secrets.identity.to_bytes();
     let audit = keyset.secrets.audit.to_bytes();
-    let plain = Zeroizing::new(
-        postcard::to_allocvec(&(
-            ORG_FORMAT,
-            keyset.org_id,
-            Bytes::new(&identity),
-            Bytes::new(&audit),
-        ))
-        .map_err(|_| bad("org keyset"))?,
-    );
+    let plain = encode_plain(ORG_FORMAT, keyset.org_id, &identity, &audit)?;
     let blob = seal(
         &key,
         BlobKind::OrgKeyset,
@@ -137,6 +167,10 @@ pub fn seal_org_keyset(
 /// Open `sealed` with the owner's account KEM secret. The context is the
 /// caller's `org_id` and `owner_account_id`, never the sealed record's own
 /// claim, and the plaintext's org id must equal `org_id`.
+///
+/// The result is not authenticated: anyone with the owner's KEM public key
+/// can seal a keyset to it. Call `OrgKeyset::check_against` with the
+/// verified lineage before any use.
 pub fn open_org_keyset(
     sealed: &SealedOrgKeyset,
     org_id: OrgId,
@@ -170,10 +204,7 @@ pub fn open_org_keyset(
     if !rest.is_empty() || format != ORG_FORMAT {
         return Err(bad("org keyset"));
     }
-    let canonical = Zeroizing::new(
-        postcard::to_allocvec(&(format, plain_org, identity, audit))
-            .map_err(|_| bad("org keyset"))?,
-    );
+    let canonical = encode_plain(format, plain_org, identity, audit)?;
     if canonical.as_slice() != plain.as_slice() {
         return Err(bad("org keyset"));
     }

@@ -280,6 +280,7 @@ fn roster_shape_rules() {
     refused_body("format 2", |b| b.format = 2);
     refused_body("seq 0", |b| b.seq = 0);
     refused_body("seq 1 with a prev_hash", |b| b.prev_hash = [1; 32]);
+    refused_body("seq 2 with a zero prev_hash", |b| b.seq = 2);
     refused_body("members unsorted", |b| b.members.swap(0, 1));
     refused_body("member repeated", |b| {
         b.members[1].account_id = b.members[0].account_id
@@ -293,6 +294,9 @@ fn roster_shape_rules() {
     });
     refused_body("invited with a kem hash", |b| {
         b.members[2].account_kem_hash = [1; 32]
+    });
+    refused_body("invited without an invitation commit", |b| {
+        b.members[2].invite_commit = [0; 32]
     });
     for i in [0usize, 1] {
         refused_body("active/suspended without identity", |b| {
@@ -397,7 +401,10 @@ fn roster_worst_case_fits() {
         Role::Auditor,
         Role::Provisioner,
     ]);
-    let body = big_body(MAX_ROSTER_MEMBERS, MAX_MEMBER_DEVICES as u8, roles);
+    let mut body = big_body(MAX_ROSTER_MEMBERS, MAX_MEMBER_DEVICES as u8, roles);
+    // seq and prev_hash at their longest encodings.
+    body.seq = u64::MAX;
+    body.prev_hash = [0xFF; 32];
     let rec = sign_roster(body, &signer().public, &signer().keys).unwrap();
     let enc = rec.encode();
     println!(
@@ -891,13 +898,22 @@ fn admin_invites_and_grants() {
     assert!(accept(base(), n, A).is_ok(), "A grants Auditor to M");
     let n = edit(base(), |b| add_role(b, M, Role::Admin));
     assert!(accept(base(), n, A).is_ok(), "A grants Admin to M");
-    // A new invitation needs an invitation commitment.
+    // A new invitation needs an invitation commitment: the shape refuses
+    // an Invited entry without one (D21, final review minor 8).
     let n = edit(base(), |b| {
         let mut x = invite(X, RoleSet::EMPTY);
         x.invite_commit = [0; 32];
         upsert(b, x)
     });
-    denied(accept(base(), n, A), "invite without commitment");
+    let d = dev(org(), A);
+    assert!(matches!(
+        sign_roster(n.clone(), &d.public, &d.keys),
+        Err(Error::InvalidFormat("invited member shape"))
+    ));
+    assert!(matches!(
+        check_transition(l0(), base(), &n, &d.public),
+        Err(Error::InvalidFormat("invited member shape"))
+    ));
 }
 
 #[test]
@@ -924,6 +940,50 @@ fn user_manager_grants_only_what_it_holds() {
         upsert(b, invite(X, RoleSet::of(&[Role::UserManager])))
     });
     assert!(accept(base(), n, U).is_ok(), "U invites a UserManager");
+}
+
+/// Final review minor 1: a state change needs the GRANT reach over the
+/// member's roles, like a device change.
+#[test]
+fn user_manager_state_change_needs_grant_reach() {
+    // P holds Provisioner, which U (UserManager only) cannot grant.
+    let n = edit(base(), |b| set_state(b, P, MemberState::Suspended));
+    denied(accept(base(), n, U), "U suspends a Provisioner");
+    let n = edit(base(), |b| removed_by(b, P, U));
+    denied(accept(base(), n, U), "U removes a Provisioner");
+    // An Admin suspended P; U cannot reactivate it.
+    let suspended = accept(
+        base(),
+        edit(base(), |b| set_state(b, P, MemberState::Suspended)),
+        A,
+    )
+    .unwrap();
+    let n = edit(&suspended, |b| set_state(b, P, MemberState::Active));
+    denied(accept(&suspended, n, U), "U reactivates a Provisioner");
+    // M holds no role: U may suspend it.
+    let n = edit(base(), |b| set_state(b, M, MemberState::Suspended));
+    assert!(
+        accept(base(), n, U).is_ok(),
+        "U suspends a member without roles"
+    );
+}
+
+/// Final review minor 2: an Admin cannot write a device the lineage head
+/// lists for an owner into another member's entry.
+#[test]
+fn admin_cannot_squat_owner_device() {
+    let org = org();
+    // lineages[6]: O with devices o and o_second; the roster lists only o.
+    let l6 = &org.lineages[6];
+    let squat = org.o_second.public.fingerprint();
+    let n = edit(base(), |b| {
+        let e = entry(b, M);
+        e.devices.push(squat);
+        e.devices.sort_unstable();
+    });
+    denied(accept_in(l6, base(), n.clone(), A), "A gives M o_second");
+    // Under the genesis alone o_second is nobody's device: allowed.
+    assert!(accept_in(l0(), base(), n, A).is_ok());
 }
 
 #[test]
@@ -1607,6 +1667,9 @@ fn sole_owner_syncs_own_rotation() {
         sync(b);
         entry(b, O).account_kem_hash = [1; 32];
     });
+    // The owner mirror refuses this before `follows_lineage` is reached
+    // (both are OrgRoleDenied); with the mirror holding, `follows_lineage`
+    // always holds too, so no case reaches it alone.
     denied(by_new(n), "own KEM hash not the lineage's");
     let n = edit(base(), |b| {
         sync(b);
