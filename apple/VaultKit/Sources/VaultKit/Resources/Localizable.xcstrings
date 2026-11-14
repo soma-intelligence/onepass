@@ -3073,6 +3073,35 @@
         }
       }
     },
+    "org.presence.joinPrompt" : {
+      "comment" : "Biometric prompt before this device signs the request to join an organisation.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign your request to join the organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma tu solicitud para unirte a la organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signe ta demande pour rejoindre l'organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma la tua richiesta di entrare nell'organizzazione"
+          }
+        }
+      }
+    },
     "org.presence.prompt" : {
       "comment" : "Biometric prompt before signing a change to the organisation's members.",
       "localizations" : {

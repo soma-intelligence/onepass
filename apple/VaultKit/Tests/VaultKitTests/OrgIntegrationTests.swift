@@ -54,6 +54,8 @@ struct OrgIntegrationTests {
         await owner.load()
         #expect(owner.phase == .ready)
         #expect(owner.state?.rosterSeq == 1)
+        let ownerState = try #require(owner.state)
+        #expect(ownerState.fingerprintWords == (try orgFingerprintWords(fingerprint: ownerState.fingerprint)))
         #expect(owner.myRoles == [.owner])
         #expect(owner.isOwner && owner.canManageMembers)
         #expect(await owner.ownerKeysAvailable())
@@ -75,7 +77,13 @@ struct OrgIntegrationTests {
         #expect(joiner.state?.fingerprint == owner.state?.fingerprint)
         _ = try await Self.managedAccount(
             joinerHarness, joinerVault, name: "Bob", orgID: invite.orgId, accountID: invite.accountId)
-        let posted = try await joiner.requestToJoin(invite: invite, displayName: "Bob")
+        // No biometrics on the joiner: the master password is the presence check (R31).
+        await #expect(throws: OrgActionError.passwordRequired) {
+            _ = try await joiner.requestToJoin(invite: invite, displayName: "Bob", password: nil)
+        }
+        let password = SecretBytes(utf8: testPassword)
+        defer { password.wipe() }
+        let posted = try await joiner.requestToJoin(invite: invite, displayName: "Bob", password: password)
         #expect(posted.codeWords.count == 5)
         #expect(joiner.me?.state == .invited)
 

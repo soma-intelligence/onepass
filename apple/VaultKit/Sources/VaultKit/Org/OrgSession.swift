@@ -10,6 +10,8 @@ public enum OrgPhase: Equatable, Sendable {
     /// This device started creating the organisation and the publish never finished.
     case unfinishedCreation
     case ready
+    /// The local pin could not be read (`OrgSession.refreshError` says why). `load()` again to retry.
+    case unavailable
     /// The server showed something the pin refuses. The last good state stays shown.
     case refused(OrgRefusal)
 }
@@ -169,9 +171,15 @@ public final class OrgSession {
         do {
             state = try await backend.state()
         } catch {
-            settle(OrgActionError(error))
+            let error = OrgActionError(error)
+            settle(error)
+            if case .loading = phase {
+                refreshError = error
+                phase = .unavailable
+            }
             return
         }
+        refreshError = nil
         guard state != nil else {
             phase = creating ? .unfinishedCreation : .notJoined
             return
@@ -224,10 +232,14 @@ public final class OrgSession {
         state = try await mapped { try await backend.markVerified() }
     }
 
-    /// Posts this account's join request. The returned seed is the member's own org mailbox
-    /// credential (R27): the caller keeps it in the keychain, this session does not.
-    public func requestToJoin(invite: FfiOrgInvite, displayName: String) async throws(OrgActionError) -> FfiJoinPosted {
+    /// Posts this account's join request, signed by this device after a presence check (R31). The
+    /// returned seed is the member's own org mailbox credential (R27): the caller keeps it in the
+    /// keychain, this session does not.
+    public func requestToJoin(
+        invite: FfiOrgInvite, displayName: String, password: SecretBytes?
+    ) async throws(OrgActionError) -> FfiJoinPosted {
         let (session, pair) = try signer()
+        try await confirmPresence(password: password, prompt: "org.presence.joinPrompt")
         let at = timestamp
         let posted = try await mapped {
             try await backend.postJoinRequest(
@@ -314,8 +326,10 @@ public final class OrgSession {
         }
     }
 
-    private func confirmPresence(password: SecretBytes?) async throws(OrgActionError) {
-        let prompt = String(localized: "org.presence.prompt", bundle: VaultKitStrings.bundle)
+    private func confirmPresence(
+        password: SecretBytes?, prompt key: String.LocalizationValue = "org.presence.prompt"
+    ) async throws(OrgActionError) {
+        let prompt = String(localized: key, bundle: VaultKitStrings.bundle)
         try await mapped { try await vault.confirmPresence(password: password, prompt: prompt) }
     }
 

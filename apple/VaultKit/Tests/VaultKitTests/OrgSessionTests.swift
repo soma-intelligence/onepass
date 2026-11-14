@@ -15,8 +15,11 @@ actor FakeOrgBackend: OrgBackend {
     var summaryAllowed = true
     var editError: OnePassError?
 
-    init(state: FfiOrgState?, presence: FakePresence? = nil) {
+    var stateError: OnePassError?
+
+    init(state: FfiOrgState?, presence: FakePresence? = nil, stateError: OnePassError? = nil) {
         local = state
+        self.stateError = stateError
         refreshed = state.map { .success($0) } ?? .failure(OnePassError.NotFound)
         self.presence = presence
     }
@@ -35,6 +38,7 @@ actor FakeOrgBackend: OrgBackend {
 
     func state() async throws -> FfiOrgState? {
         record("state")
+        if let stateError { throw stateError }
         return local
     }
 
@@ -116,7 +120,7 @@ struct OrgFixture {
     /// asked of `FakePresence` (yes by default).
     static func make(
         roles: [FfiOrgRole] = [.admin], source: FfiPinSource = .mdm, biometrics: Bool = true,
-        hasState: Bool = true, creating: Bool = false
+        hasState: Bool = true, creating: Bool = false, stateError: OnePassError? = nil
     ) async throws -> OrgFixture {
         let h = try SessionHarness()
         let vault = h.makeSession()
@@ -124,7 +128,7 @@ struct OrgFixture {
         if biometrics { try await vault.enrollBiometrics(password: testPassword) }
         let me = try #require(h.settings.accountID)
         let state = hasState ? try OrgSessionTests.state(me: me, roles: roles, source: source) : nil
-        let backend = FakeOrgBackend(state: state, presence: h.presence)
+        let backend = FakeOrgBackend(state: state, presence: h.presence, stateError: stateError)
         let keys = FixedKeys(
             pair: DeviceKeyPair(
                 classical: try generateClassicalDeviceKeys(), pq: try CryptoKitPqHalf.generate(secureEnclave: false)))
@@ -302,6 +306,37 @@ struct OrgSessionTests {
         #expect(await f.backend.writes.isEmpty)
     }
 
+    static let invite = FfiOrgInvite(
+        serverUrl: "http://127.0.0.1:1/functions/v1/mailbox", mailboxId: "00112233445566778899aabbccddeeff",
+        orgId: "5f3e2d1c0b0a99887766554433221100", accountId: otherID, fingerprint: fingerprint,
+        nonce: Data(count: 32), credentialSeed: Data(count: 32), memberToken: Data(count: 32), domain: nil)
+
+    /// R31: the join request is signed by this device, so presence comes first.
+    @Test func joinRequestAsksPresenceFirst() async throws {
+        let f = try await OrgFixture.make(roles: [])
+        defer { f.cleanUp() }
+        _ = try await f.org.requestToJoin(invite: Self.invite, displayName: "Alice", password: nil)
+        #expect(await f.backend.writes == ["postJoinRequest@1"])
+    }
+
+    @Test func refusedPresencePostsNoJoinRequest() async throws {
+        let f = try await OrgFixture.make(roles: [])
+        defer { f.cleanUp() }
+        f.harness.presence.answer(false)
+        await #expect(throws: OrgActionError.passwordRequired) {
+            _ = try await f.org.requestToJoin(invite: Self.invite, displayName: "Alice", password: nil)
+        }
+        #expect(await f.backend.writes.isEmpty)
+    }
+
+    @Test func anUnreadablePinLeavesLoading() async throws {
+        let f = try await OrgFixture.make(stateError: .Store)
+        defer { f.cleanUp() }
+        #expect(f.org.phase == .unavailable)
+        #expect(f.org.refreshError != nil)
+        #expect(f.org.state == nil)
+    }
+
     @Test func onlyAnOwnerSetsOwners() async throws {
         let f = try await OrgFixture.make(roles: [.admin])
         defer { f.cleanUp() }
@@ -319,20 +354,20 @@ struct OrgWordsTests {
     init() { VaultKitStrings.pinSourceLanguage() }
 
     /// The words come from the core, which knows no language: the same under every catalog.
-    @Test func wordsAreTheSameWhateverTheLanguage() async throws {
-        let f = try await OrgFixture.make(biometrics: false)
-        defer { f.cleanUp() }
-        let expected = try orgFingerprintWords(fingerprint: OrgSessionTests.fingerprint)
-        var shown: [[[String]]] = []
+    @Test func wordsAreTheSameWhateverTheLanguage() throws {
+        let fingerprint = OrgSessionTests.fingerprint
+        let reference = try orgFingerprintWords(fingerprint: fingerprint)
+        var shown: [String: [[String]]] = [:]
         // No suspension point between the swap and the restore: no other main actor test sees it.
         let pinned = VaultKitStrings.bundle
         defer { VaultKitStrings.bundle = pinned }
         for language in ["en", "fr", "es", "it"] {
             let path = try #require(Bundle.module.path(forResource: language, ofType: "lproj"))
             VaultKitStrings.bundle = try #require(Bundle(path: path))
-            shown.append(try #require(f.org.state?.fingerprintWords))
+            #expect(VaultKitStrings.language == language)
+            shown[language] = try orgFingerprintWords(fingerprint: fingerprint)
         }
-        #expect(shown.allSatisfy { $0 == expected })
-        #expect(expected.count == 4 && expected.allSatisfy { $0.count == 5 })
+        #expect(shown.count == 4 && shown.values.allSatisfy { $0 == reference })
+        #expect(reference.count == 4 && reference.allSatisfy { $0.count == 5 })
     }
 }
