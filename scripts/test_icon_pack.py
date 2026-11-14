@@ -12,9 +12,15 @@ import os
 import struct
 import shutil
 import sys
+import functools
+import http.server
 import tempfile
+import threading
 import unittest
+import urllib.request
+import urllib.parse
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -319,6 +325,210 @@ class Collect(unittest.TestCase):
         offset, length, flags = index["icons"][index["domains"]["apple.com"]]
         self.assertEqual(blob[offset:offset + 4], b"RIFF")
         self.assertEqual(flags, icon_pack.FLAG_MONO)
+
+
+def png(size):
+    return icon_pack.png_from_rgba(size, size, [b"\x20\x40\xc0\xff" * size] * size)
+
+
+class DomainList(unittest.TestCase):
+    """Domains from a list: fetched from a local server (the fetcher maps https://<domain>/x to
+    http://127.0.0.1:<port>/<domain>/x), never the network, never Google's copy."""
+
+    def setUp(self):
+        Collect.setUp(self)  # the three upstream folders in self.roots, self.tmp
+        self.web = self.tmp / "web"
+        self.web.mkdir()
+        self.redirects = {}
+        redirects = self.redirects
+
+        class Handler(http.server.SimpleHTTPRequestHandler):
+            def do_GET(self):
+                if self.path in redirects:
+                    self.send_response(302)
+                    self.send_header("Location", redirects[self.path])
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                super().do_GET()
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Handler, directory=str(self.web)))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.port = self.server.server_address[1]
+        self.log = []
+        self.none = icon_pack.Blocklist()
+
+    def fetcher(self, url, limit):
+        parts = urllib.parse.urlsplit(url)
+        local = f"http://127.0.0.1:{self.port}/{parts.netloc}{parts.path}"
+        with urllib.request.urlopen(local, timeout=10) as response:
+            final = urllib.parse.urlsplit(response.geturl())
+            data = response.read(limit + 1)
+        host, _, rest = final.path.lstrip("/").partition("/")
+        return data, f"https://{host}/{rest}"
+
+    def site(self, domain, pixels):
+        write(self.web / domain / "index.html", '<html><link rel="apple-touch-icon" href="icon.png"></html>')
+        write(self.web / domain / "icon.png", png(pixels))
+
+    def fetch(self, domains, blocklist=None, skip=()):
+        return icon_pack.fetch_domains(domains, set(skip), blocklist or self.none, self.tmp / "sites",
+                                       lambda k, w: self.log.append((k, w)), fetcher=self.fetcher, google=False, jobs=2)
+
+    def build(self, listfile, extra=(), curated=None, flags=None):
+        sources = self.tmp / "sources.json"
+        sources.write_text("{}")
+        curated_path = self.tmp / "curated.json"
+        curated_path.write_text(json.dumps(curated or {"brands": []}))
+        sizes = {}
+
+        def fake(candidate, size, resvg, cwebp, work):
+            sizes[candidate.name] = size
+            return b"RIFF" + candidate.name.encode()
+
+        out = self.tmp / "out"
+        with mock.patch.object(icon_pack, "render", side_effect=fake):
+            code = icon_pack.main(["build", "--simple-icons", str(self.roots[0]), "--logos", str(self.roots[1]),
+                                   "--twofa", str(self.roots[2]), "--sources", str(sources), "--version", "7",
+                                   "--out", str(out), "--curated", str(curated_path), "--sites", str(self.tmp / "sites"),
+                                   "--domains", str(listfile), "--blocklist", str(self.tmp / "block.txt"), *extra])
+        self.assertEqual(code, 0)
+        manifest = json.loads((out / "icon-pack-manifest.json").read_text())
+        index, _ = icon_pack.read_pack((out / manifest["pack"]["file"]).read_bytes())
+        report = json.loads((out / "report.json").read_text())
+        return manifest, index, report, sizes
+
+    def test_lists_plain_csv_and_comments(self):
+        a, b = self.tmp / "a.txt", self.tmp / "b.csv"
+        write(a, "# banks\nWww.Plain.test\n\nhttps://sub.shop.test/path  # inline\nplain.test\nco.uk\n")
+        write(b, "1,google.com\n2,mail.plain.test\n3,github.io\nrank,domain\n")
+        listed, tranco = icon_pack.read_domain_lists([a])
+        self.assertEqual((listed, tranco), (["plain.test", "shop.test"], False))
+        listed, tranco = icon_pack.read_domain_lists([a, b])
+        self.assertEqual((listed, tranco), (["plain.test", "shop.test", "google.com"], True))
+
+    def test_blocklist_exact_and_suffix(self):
+        write(self.tmp / "b.txt", "# header\nbad.test  # why\n\n*.adult\n*.Evil.example\n")
+        block = icon_pack.load_blocklist(self.tmp / "b.txt")
+        for host in ["bad.test", "www.bad.test", "x.adult", "adult", "evil.example", "a.b.evil.example"]:
+            self.assertTrue(block.blocks(host), host)
+        for host in ["sub.bad.test", "notbad.test", "good.example", "", None]:
+            self.assertFalse(block.blocks(host), host)
+        shipped = icon_pack.load_blocklist(ROOT / "scripts" / "icon-pack-blocklist.txt")
+        self.assertTrue(shipped.suffixes)
+        self.assertLess(len((ROOT / "scripts" / "icon-pack-blocklist.txt").read_text().splitlines()), 60)
+
+    def test_shipped_french_list(self):
+        listed, tranco = icon_pack.read_domain_lists([ROOT / "scripts" / "icon-pack-domains-fr.txt"])
+        text = (ROOT / "scripts" / "icon-pack-domains-fr.txt").read_text()
+        self.assertFalse(tranco)
+        self.assertGreater(len(listed), 250)
+        self.assertEqual(len(listed), len(set(listed)))
+        self.assertNotIn("\u2014", text)
+        shipped = icon_pack.load_blocklist(ROOT / "scripts" / "icon-pack-blocklist.txt")
+        self.assertEqual([d for d in listed if shipped.blocks(d)], [])
+
+    def test_domains_icon_kept_at_128_with_flag(self):
+        self.site("plain.test", 200)
+        record, blocked = self.fetch(["plain.test"])
+        self.assertEqual((sorted(record), blocked), (["plain.test"], []))
+        self.assertEqual(record["plain.test"]["pixels"], 200)
+        write(self.tmp / "list.csv", "1,plain.test\n")
+        write(self.tmp / "block.txt", "# none\n")
+        manifest, index, report, sizes = self.build(self.tmp / "list.csv", ["--tranco-id", "ZZ9XY", "--tranco-date", "2026-11-01"])
+        self.assertEqual(sizes["domain:plain.test"], 128)
+        offset, length, flags = index["icons"][index["domains"]["plain.test"]]
+        self.assertEqual(flags, icon_pack.FLAG_DOMAIN_LIST)
+        self.assertEqual(flags, 2)
+        self.assertEqual((report["domains_fetched"], report["domains_kept"], report["domains_blocked"]), (1, 1, 0))
+        self.assertEqual(manifest["tranco"], {"id": "ZZ9XY", "date": "2026-11-01"})
+
+    def test_tranco_csv_needs_its_id(self):
+        self.site("plain.test", 200)
+        self.fetch(["plain.test"])
+        write(self.tmp / "list.csv", "1,plain.test\n")
+        write(self.tmp / "block.txt", "")
+        write(self.tmp / "s.json", "{}")
+        with mock.patch.object(icon_pack, "render", return_value=b"RIFF"):
+            code = icon_pack.main(["build", "--simple-icons", str(self.roots[0]), "--logos", str(self.roots[1]),
+                                   "--twofa", str(self.roots[2]), "--sources", str(self.tmp / "s.json"),
+                                   "--version", "7", "--out", str(self.tmp / "out"), "--curated", "",
+                                   "--sites", str(self.tmp / "sites"), "--domains", str(self.tmp / "list.csv"),
+                                   "--blocklist", str(self.tmp / "block.txt")])
+        self.assertEqual(code, 1)
+
+    def test_redirect_keyed_to_listed_domain(self):
+        self.site("new.test", 200)
+        self.redirects["/old.test/"] = "/new.test/"
+        record, blocked = self.fetch(["old.test"])
+        self.assertEqual((sorted(record), blocked), (["old.test"], []))
+        self.assertEqual(record["old.test"]["final_host"], "new.test")
+        self.assertTrue((self.tmp / "sites" / "domains" / "old.test").is_file())
+        self.assertFalse((self.tmp / "sites" / "domains" / "new.test").exists())
+        write(self.tmp / "list.txt", "old.test\n")
+        write(self.tmp / "block.txt", "")
+        _, index, _, _ = self.build(self.tmp / "list.txt")
+        self.assertIn("old.test", index["domains"])
+        self.assertNotIn("new.test", index["domains"])
+
+    def test_blocklisted_final_host_dropped(self):
+        self.site("bad.test", 200)
+        self.site("fine.test", 200)
+        self.site("listed.test", 200)
+        self.redirects["/front.test/"] = "/bad.test/"
+        block = icon_pack.Blocklist(["bad.test", "listed.test"])
+        record, blocked = self.fetch(["front.test", "fine.test", "listed.test"], block)
+        self.assertEqual(sorted(record), ["fine.test"])
+        self.assertEqual(blocked, ["front.test", "listed.test"])
+        self.assertFalse((self.tmp / "sites" / "domains" / "front.test").exists())
+        # The build checks again, from the recorded final host (a blocklist may grow after `sites`).
+        self.site("later.test", 200)
+        self.redirects["/shop.test/"] = "/later.test/"
+        self.fetch(["shop.test", "fine.test"])
+        write(self.tmp / "list.txt", "shop.test\nfine.test\n")
+        write(self.tmp / "block.txt", "later.test\n")
+        _, index, report, _ = self.build(self.tmp / "list.txt")
+        self.assertIn("fine.test", index["domains"])
+        self.assertNotIn("shop.test", index["domains"])
+        self.assertEqual((report["domains_fetched"], report["domains_kept"], report["domains_blocked"]), (2, 1, 1))
+
+    def test_small_source_dropped(self):
+        self.site("tiny.test", 100)
+        record, _ = self.fetch(["tiny.test"])
+        self.assertEqual(record, {})
+        self.assertEqual(self.log[0][0], "domain")
+        # A small file already in the sites folder is dropped by the build as well.
+        write(self.tmp / "sites" / "domains" / "tiny.test", png(100))
+        out, stats = icon_pack.domain_candidates(["tiny.test"], set(), self.none, self.tmp / "sites",
+                                                 lambda k, w: self.log.append((k, w)))
+        self.assertEqual((out, stats["fetched"]), ({}, 1))
+        self.assertEqual(self.log[-1][0], "domain-small")
+
+    def test_curated_icon_stays_256(self):
+        self.site("plain.test", 200)
+        self.site("apple.com", 200)
+        self.fetch(["plain.test", "apple.com"])
+        write(self.tmp / "list.txt", "apple.com\nplain.test\n")
+        write(self.tmp / "block.txt", "")
+        curated = {"brands": [{"name": "Apple", "domains": ["apple.com"], "use": "simple-icons:apple"}]}
+        _, index, report, sizes = self.build(self.tmp / "list.txt", curated=curated)
+        self.assertEqual(sizes["simple-icons:apple"], 256)
+        self.assertEqual(sizes["domain:plain.test"], 128)
+        self.assertNotIn("domain:apple.com", sizes)
+        self.assertEqual(index["icons"][index["domains"]["apple.com"]][2], icon_pack.FLAG_MONO)
+        self.assertEqual(index["icons"][index["domains"]["plain.test"]][2], icon_pack.FLAG_DOMAIN_LIST)
+        self.assertEqual((report["domains_fetched"], report["domains_kept"]), (1, 1))
+
+    def test_curated_domains_are_skipped_when_fetching(self):
+        self.site("plain.test", 200)
+        record, _ = self.fetch(["plain.test", "apple.com"], skip=["apple.com"])
+        self.assertEqual(sorted(record), ["plain.test"])
+        self.assertEqual(icon_pack.curated_domains({"brands": [{"domains": ["WWW.Apple.com"], "use": "none"}]}), {"apple.com"})
 
 
 @unittest.skipUnless(has_openssl(), "needs OpenSSL 3")

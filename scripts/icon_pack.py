@@ -2,13 +2,18 @@
 """OnePass site icon pack: brand icons from open sets, keyed by domain, in one signed file.
 
     icon_pack.py build --simple-icons DIR --logos DIR --twofa DIR --sources FILE
-                       --version N --out DIR [--size 256] [--jobs N] [--domains FILE]
+                       --version N --out DIR [--size 256] [--jobs N] [--sites DIR]
+                       [--domains FILE]... [--blocklist FILE] [--tranco-id ID --tranco-date DATE]
                        [--resvg PATH] [--cwebp PATH]
         Reads the three upstream checkouts (untrusted data: SVG text is checked before it is
         drawn, nothing in them runs), rasterizes each kept icon to a square WebP at --size
         pixels, and writes DIR/onepass-icons-<N>.bin (the pack), DIR/icon-pack-manifest.json
         (version, size and SHA-256 of the pack, the upstream commits) and DIR/report.json.
         --sources is a JSON object {"simple-icons": {"commit": ..., "archive_sha256": ...}, ...}.
+    icon_pack.py sites [--curated FILE] [--domains FILE]... [--blocklist FILE] --out DIR
+        Fetches, at build time only, the icon of every curated brand that uses its site and, with
+        --domains, of every popular domain listed (plain text, one per line, or a Tranco CSV
+        `rank,domain`), at least 128 px, into DIR (domains in DIR/domains and DIR/domains.json).
     icon_pack.py sign --manifest FILE
         Writes FILE.sig: the Ed25519 signature (base64) of the manifest's exact bytes, with the
         key in ICON_PACK_ED_PRIVATE_KEY (a 32-byte seed, base64; never generated here).
@@ -27,7 +32,9 @@ Pack format 1 (all integers big-endian):
     index = {"format": 1, "version": N, "size": px,
              "icons": [[offset, length, flags], ...],   offsets into the icon bytes
              "domains": {"withings.com": icon number, ...}}
-    flags: bit 0 = one color mark (drawn in the text color by the app).
+    flags: bit 0 = one color mark (drawn in the text color by the app);
+           bit 1 (value 2) = a 128 px icon from a popular-domain list (--domains), the others
+           being `size` px.
 
 Sources and licenses (docs/icon-pack.md): Simple Icons (CC0-1.0, icons carrying another
 license are kept only when it is permissive and needs no attribution in the UI), gilbarbara/logos
@@ -60,6 +67,10 @@ import appcast  # noqa: E402  (Ed25519 through OpenSSL, the same code as the sig
 MAGIC = b"OPIP"
 FORMAT = 1
 FLAG_MONO = 1
+FLAG_DOMAIN_LIST = 2
+# Icons from a popular-domain list are smaller than the hand-picked and open-set ones.
+DOMAIN_SIZE = 128
+MIN_DOMAIN_PIXELS = 128
 MAX_SVG_BYTES = 512 * 1024
 # Marks within this width to height ratio fit a square tile; wider ones are wordmarks.
 SQUARE = (0.6, 1.6)
@@ -106,6 +117,7 @@ RANK_TWOFA_COLOR = 1
 RANK_SIMPLE = 2
 RANK_LOGOS_SQUARE = 3
 RANK_TWOFA_MONO = 4
+RANK_DOMAIN_LIST = 9
 
 UNSAFE_SVG = re.compile(
     rb"<!doctype|<!entity|<script|<foreignobject|<image|<text|<iframe|<embed|<object|<use[^>]*href\s*=\s*[\"'][^#]"
@@ -336,6 +348,8 @@ class Candidate:
         self.brand, self.tile, self.curated = brand, tile, curated
         # wordmark: a hand-picked brand whose whole name is its mark ("Aēsop"), kept wider than a tile.
         self.wordmark = False
+        # size: pixels this candidate is drawn at (None: the build's --size); flags: extra index flags.
+        self.size, self.flags = None, 0
 
 
 def twofa_entries(root):
@@ -678,32 +692,48 @@ def icon_links(html, base):
     return found, manifest
 
 
-def fetch(url, limit):
+def fetch_url(url, limit):
+    """(bytes, final URL after redirects), https only."""
     import urllib.request
     if not url.startswith("https://"):
         raise IconPackError("not https")
     request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
     with urllib.request.urlopen(request, timeout=20) as response:
-        if not response.geturl().startswith("https://"):
+        final = response.geturl()
+        if not final.startswith("https://"):
             raise IconPackError("redirected off https")
         data = response.read(limit + 1)
     if len(data) > limit:
         raise IconPackError("too large")
-    return data
+    return data, final
 
 
-def site_icon(page):
-    """The largest icon of a brand's own site: PNG, JPEG or WebP of at least MIN_SITE_PIXELS, or a
-    safe square SVG. Returns (url, bytes, pixels) or raises."""
+def fetch(url, limit):
+    return fetch_url(url, limit)[0]
+
+
+def site_icon(page, fetcher=None, google=True, min_pixels=MIN_SITE_PIXELS, hosts=None):
+    """The largest icon of a brand's own site: PNG, JPEG or WebP of at least `min_pixels`, or a
+    safe square SVG. Returns (url, bytes, pixels) or raises. `fetcher(url, limit)` returns
+    (bytes, final URL) (default fetch_url; tests point it at a local server); `google` allows the
+    copy Google keeps; `hosts`, a set, collects the host the page itself ended on after redirects."""
     import urllib.parse
-    candidates = []
+    fetcher = fetcher or fetch_url
+
+    def get(url, limit):
+        return fetcher(url, limit)[0]
+
+    candidates, final = [], page
     try:
-        html = fetch(page, 3 * 1024 * 1024).decode("utf-8", "replace")
-        links, manifest = icon_links(html, page)
+        data, final = fetcher(page, 3 * 1024 * 1024)
+        if hosts is not None:
+            hosts.add(urllib.parse.urlsplit(final).hostname or "")
+        html = data.decode("utf-8", "replace")
+        links, manifest = icon_links(html, final)
         candidates += links
         if manifest:
             try:
-                data = json.loads(fetch(manifest, 512 * 1024))
+                data = json.loads(get(manifest, 512 * 1024))
                 for icon in data.get("icons") or []:
                     sizes = [int(n) for n in re.findall(r"(\d+)x\d+", str(icon.get("sizes", "")))]
                     if icon.get("src") and "monochrome" not in str(icon.get("purpose", "")):
@@ -712,21 +742,22 @@ def site_icon(page):
                 pass
     except (OSError, ValueError, IconPackError):
         pass
-    parts = urllib.parse.urlsplit(page)
+    parts = urllib.parse.urlsplit(final)
     root = f"{parts.scheme}://{parts.netloc}/"
     candidates += [(root + "apple-touch-icon.png", 180), (root + "apple-touch-icon-precomposed.png", 180),
                    (root + "favicon.ico", 1)]
     # Google's copy of the site's own icon (at build time only, never from the app): many sites
     # turn scripts away (403, 429) or list only a small favicon in their markup. It returns the
     # icon at its own size, never scaled up, so the size check below still holds.
-    candidates.append(("https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL"
-                       f"&url={urllib.parse.quote(root, safe='')}&size=256", 2))
+    if google:
+        candidates.append(("https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL"
+                           f"&url={urllib.parse.quote(root, safe='')}&size=256", 2))
     best = None
     for url, declared in sorted(set(candidates), key=lambda c: -c[1]):
         if best and declared and declared < best[2]:
             continue
         try:
-            data = fetch(url, 2 * 1024 * 1024)
+            data = get(url, 2 * 1024 * 1024)
         except (OSError, ValueError, IconPackError):
             continue
         if data[:4] == b"\x00\x00\x01\x00":
@@ -737,12 +768,12 @@ def site_icon(page):
                 return url, data, 10000
             continue
         size = raster_size(data) if raster_mime(data) else None
-        if not size or min(size) < MIN_SITE_PIXELS or not 0.9 <= size[0] / size[1] <= 1.1:
+        if not size or min(size) < min_pixels or not 0.9 <= size[0] / size[1] <= 1.1:
             continue
         if not best or min(size) > best[2]:
             best = (url, data, min(size))
     if not best:
-        raise IconPackError(f"no icon of {MIN_SITE_PIXELS} px or more on {page}")
+        raise IconPackError(f"no icon of {min_pixels} px or more on {page}")
     return best
 
 
@@ -839,6 +870,142 @@ def fetch_sites(curated, out, log):
         print(f"{key}: {url} ({pixels} px)")
     (out / "sites.json").write_text(json.dumps(record, indent=1, sort_keys=True) + "\n")
     return record
+
+
+# --- Popular domains (a list, fetched at build time only) ------------------
+
+DEFAULT_BLOCKLIST = Path(__file__).resolve().parent / "icon-pack-blocklist.txt"
+
+
+def read_domain_lists(paths):
+    """([domain, ...], is_tranco) from list files. A file is plain text (one domain per line, `#`
+    comments) or a Tranco CSV (`rank,domain`, told by its comma). Each entry becomes its registrable
+    domain (the app finds a subdomain's icon through its parent), once, in list order."""
+    seen, out, tranco = set(), [], False
+    for path in paths:
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if "," in line:
+                tranco = True
+                line = line.rsplit(",", 1)[1]
+            host = normalized_domain(line)
+            domain = registrable(host) if host else None
+            if domain and domain not in seen:
+                seen.add(domain)
+                out.append(domain)
+    return out, tranco
+
+
+class Blocklist:
+    """Domains that never get an icon. A line is an exact domain (`bad.example`, `www.` ignored) or
+    `*.suffix` (the suffix itself and every host under it, so `*.xxx` is a whole top-level domain)."""
+
+    def __init__(self, exact=(), suffixes=()):
+        self.exact, self.suffixes = frozenset(exact), tuple(suffixes)
+
+    @staticmethod
+    def _host(text):
+        host = text.strip().lower().rstrip(".")
+        return host[4:] if host.startswith("www.") else host
+
+    def blocks(self, host):
+        host = self._host(host or "")
+        if not host:
+            return False
+        if host in self.exact:
+            return True
+        return any(host == s or host.endswith("." + s) for s in self.suffixes)
+
+
+def load_blocklist(path):
+    exact, suffixes = set(), set()
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip().lower()
+        if not line:
+            continue
+        if line.startswith("*."):
+            suffixes.add(line[2:])
+        else:
+            exact.add(Blocklist._host(line))
+    return Blocklist(exact, suffixes)
+
+
+def curated_domains(curated):
+    """Every domain the hand-picked list names, `use: none` included (curated always wins)."""
+    return {d for entry in curated.get("brands", []) for d in (normalized_domain(x) for x in entry.get("domains", [])) if d}
+
+
+def fetch_domains(domains, skip, blocklist, out, log, fetcher=None, google=True, jobs=8):
+    """Fetches each listed domain's own icon (at least MIN_DOMAIN_PIXELS) into out/domains/<domain>
+    and out/domains.json. The icon belongs to the domain as listed, whatever the site redirects to.
+    A listed domain, or the host its page ends on, that the blocklist names is dropped. Returns
+    (record, blocked domains)."""
+    (out / "domains").mkdir(parents=True, exist_ok=True)
+
+    def one(domain):
+        hosts = set()
+        try:
+            url, data, pixels = site_icon(f"https://{domain}/", fetcher, google, MIN_DOMAIN_PIXELS, hosts)
+        except (IconPackError, OSError, ValueError) as error:
+            return domain, None, str(error), hosts
+        return domain, (url, data, pixels), None, hosts
+
+    todo, blocked = [], []
+    for domain in domains:
+        if domain in skip:
+            continue
+        (blocked if blocklist.blocks(domain) else todo).append(domain)
+    record = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        for domain, got, error, hosts in pool.map(one, todo):
+            if any(blocklist.blocks(h) for h in hosts):
+                blocked.append(domain)
+                continue
+            if not got:
+                log("domain", f"{domain}: {error}")
+                continue
+            url, data, pixels = got
+            (out / "domains" / domain).write_bytes(data)
+            record[domain] = {"url": url, "sha256": hashlib.sha256(data).hexdigest(), "pixels": pixels,
+                              "final_host": sorted(hosts)[0] if hosts else "",
+                              "fetched": datetime.date.today().isoformat()}
+    (out / "domains.json").write_text(json.dumps({"fetched": record, "blocked": sorted(blocked)}, indent=1, sort_keys=True) + "\n")
+    return record, sorted(blocked)
+
+
+def domain_candidates(listed, skip, blocklist, sites, log):
+    """({domain: Candidate}, stats) for the listed domains `sites` fetched: icons drawn at DOMAIN_SIZE
+    with FLAG_DOMAIN_LIST. Skipped: curated domains, blocklisted ones (listed domain or recorded final
+    host), sources under MIN_DOMAIN_PIXELS."""
+    path = sites / "domains.json"
+    recorded = json.loads(path.read_text(encoding="utf-8")).get("fetched", {}) if path.is_file() else {}
+    out, stats = {}, {"fetched": 0, "kept": 0, "blocked": 0}
+    for domain in listed:
+        file = sites / "domains" / domain
+        if domain in skip or not file.is_file():
+            continue
+        stats["fetched"] += 1
+        if blocklist.blocks(domain) or blocklist.blocks(recorded.get(domain, {}).get("final_host", "")):
+            stats["blocked"] += 1
+            log("domain-blocked", domain)
+            continue
+        data = file.read_bytes()
+        if is_safe_svg(data):
+            svg = data
+        elif raster_mime(data) and raster_size(data):
+            if min(raster_size(data)) < MIN_DOMAIN_PIXELS:
+                log("domain-small", f"{domain}: source under {MIN_DOMAIN_PIXELS} px")
+                continue
+            svg = raster_svg(data)
+        else:
+            log("domain", f"{domain}: neither a safe SVG nor an image")
+            continue
+        candidate = Candidate(RANK_DOMAIN_LIST, "domain-list", svg, name=f"domain:{domain}")
+        candidate.size, candidate.flags = DOMAIN_SIZE, FLAG_DOMAIN_LIST
+        out[domain] = candidate
+    return out, stats
 
 
 # --- Rendering ------------------------------------------------------------
@@ -973,16 +1140,26 @@ def build(args):
     for domain, candidate in curated_candidates(curated, roots, sites, log).items():
         found.setdefault(domain, []).append(candidate)
     fetched = json.loads((sites / "sites.json").read_text(encoding="utf-8")) if sites and (sites / "sites.json").is_file() else {}
+    stats, tranco = {"fetched": 0, "kept": 0, "blocked": 0}, None
     if args.domains:
-        keep = {d for d in (normalized_domain(x) for x in Path(args.domains).read_text().split()) if d}
-        found = {d: c for d, c in found.items() if d in keep}
+        if not sites:
+            raise IconPackError("--domains needs --sites (the folder `sites --domains` wrote)")
+        listed, is_tranco = read_domain_lists(args.domains)
+        if is_tranco:
+            if not args.tranco_id or not args.tranco_date:
+                raise IconPackError("a Tranco CSV needs --tranco-id and --tranco-date (recorded in the manifest)")
+            tranco = {"id": args.tranco_id, "date": args.tranco_date}
+        extra, stats = domain_candidates(listed, curated_domains(curated), load_blocklist(args.blocklist), sites, log)
+        for domain, candidate in extra.items():
+            found.setdefault(domain, []).append(candidate)
     # Each domain's best candidate is drawn; a domain whose candidate fails moves to its next one.
     queues = {d: sorted(c, key=lambda c: (c.rank, c.name)) for d, c in found.items()}
     results = {}  # (svg sha, fill) -> (webp bytes, flags) or None
     icons, numbers, domains, chosen, picked = [], {}, {}, {}, {}
 
     def key_of(candidate):
-        return (hashlib.sha256(candidate.svg).hexdigest(), candidate.fill, candidate.tile, candidate.curated)
+        return (hashlib.sha256(candidate.svg).hexdigest(), candidate.fill, candidate.tile, candidate.curated,
+                candidate.size)
 
     with tempfile.TemporaryDirectory() as tmp:
         local = threading.local()
@@ -991,7 +1168,7 @@ def build(args):
             if not hasattr(local, "work"):
                 local.work = Path(tempfile.mkdtemp(dir=tmp))
             try:
-                return render(candidate, args.size, args.resvg, args.cwebp, local.work), None
+                return render(candidate, candidate.size or args.size, args.resvg, args.cwebp, local.work), None
             except (IconPackError, subprocess.TimeoutExpired) as error:
                 return None, f"{candidate.name}: {error}"
 
@@ -1003,7 +1180,7 @@ def build(args):
                     if k not in results:
                         wanted.setdefault(k, queue[0])
                 for k, (data, error) in zip(wanted, pool.map(draw, wanted.values())):
-                    results[k] = (data, FLAG_MONO if wanted[k].mono else 0) if data else None
+                    results[k] = (data, (FLAG_MONO if wanted[k].mono else 0) | wanted[k].flags) if data else None
                     if error:
                         log("render", error)
                 for domain in sorted(queues):
@@ -1021,6 +1198,7 @@ def build(args):
                     chosen[domain] = queue[0].name
                     picked[domain] = queue[0]
                     del queues[domain]
+    stats["kept"] = sum(1 for c in picked.values() if c.rank == RANK_DOMAIN_LIST)
     names = brand_names(picked, domains)
     tenants = sorted(d for d in (normalized_domain(x) for x in curated.get("tenants", [])) if d in domains)
     pack = pack_bytes(args.version, args.size, icons, domains, names=names, tenants=tenants)
@@ -1029,6 +1207,10 @@ def build(args):
         # Where each brand icon in the pack came from (URL, hash, size, date): the per-icon record.
         sources = dict(sources, **{"brand-sites": {
             "license": LICENSES["brand"], "icons": {k: v for k, v in sorted(fetched.items()) if k in used}}})
+    if stats["kept"]:
+        sources = dict(sources, **{"domain-list": {
+            "license": LICENSES["brand"], "icons": stats["kept"], "pixels": DOMAIN_SIZE,
+            "lists": [Path(x).name for x in args.domains]}})
     read_pack(pack)
     name = f"onepass-icons-{args.version}.bin"
     (out / name).write_bytes(pack)
@@ -1042,9 +1224,12 @@ def build(args):
         "pixels": args.size,
         "sources": sources,
     }
+    if tranco:
+        manifest["tranco"] = tranco
     (out / "icon-pack-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     licenses = {d: LICENSES.get(c.source, "") for d, c in sorted(picked.items())}
     report = {"chosen": dict(sorted(chosen.items())), "licenses": licenses, "names": len(names),
+              "domains_fetched": stats["fetched"], "domains_kept": stats["kept"], "domains_blocked": stats["blocked"],
               "skipped": {k: sorted(v) for k, v in skipped.items()}}
     (out / "report.json").write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
     print(f"{len(domains)} domains, {len(icons)} icons, {len(pack)} bytes -> {out / name}")
@@ -1091,13 +1276,22 @@ def main(argv=None):
     b.add_argument("--resvg", default="resvg")
     b.add_argument("--cwebp", default="cwebp")
     b.add_argument("--jobs", type=int, default=os.cpu_count() or 2)
-    b.add_argument("--domains", help="a file of domains: build only those (previews)")
+    b.add_argument("--domains", action="append",
+                   help="a popular-domain list (plain text or Tranco CSV; repeatable): its icons, fetched by "
+                        "`sites --domains`, are drawn at 128 px with index flag 2")
+    b.add_argument("--blocklist", default=str(DEFAULT_BLOCKLIST),
+                   help="domains and *.suffix lines that never get an icon (default scripts/icon-pack-blocklist.txt)")
+    b.add_argument("--tranco-id", help="id of the Tranco list (recorded in the manifest when --domains is a Tranco CSV)")
+    b.add_argument("--tranco-date", help="date of the Tranco list, YYYY-MM-DD")
     b.add_argument("--curated", default=str(Path(__file__).resolve().parent / "icon-pack-curated.json"),
                    help="hand-picked brands (default scripts/icon-pack-curated.json; empty string for none)")
     b.add_argument("--sites", help="the folder `sites` wrote (brand icons fetched at build time)")
     st = sub.add_parser("sites")
     st.add_argument("--curated", default=str(Path(__file__).resolve().parent / "icon-pack-curated.json"))
     st.add_argument("--out", required=True)
+    st.add_argument("--domains", action="append", help="a popular-domain list (plain text or Tranco CSV; repeatable)")
+    st.add_argument("--blocklist", default=str(DEFAULT_BLOCKLIST))
+    st.add_argument("--jobs", type=int, default=8)
     s = sub.add_parser("sign")
     s.add_argument("--manifest", required=True)
     v = sub.add_parser("verify")
@@ -1114,7 +1308,13 @@ def main(argv=None):
         if args.command == "sites":
             curated = json.loads(Path(args.curated).read_text(encoding="utf-8"))
             failed = []
-            fetch_sites(curated, Path(args.out), lambda kind, what: failed.append(what))
+            out = Path(args.out)
+            fetch_sites(curated, out, lambda kind, what: failed.append(what))
+            if args.domains:
+                listed, _ = read_domain_lists(args.domains)
+                record, blocked = fetch_domains(listed, curated_domains(curated), load_blocklist(args.blocklist), out,
+                                                lambda kind, what: failed.append(what), jobs=args.jobs)
+                print(f"{len(record)} domain icons, {len(blocked)} blocked")
             for line in failed:
                 print(f"icon_pack: {line}", file=sys.stderr)
             return 0

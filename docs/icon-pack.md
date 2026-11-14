@@ -12,6 +12,8 @@ Les icônes de marques que l'app affiche pour les éléments viennent d'un pack 
 | [Wikimedia Commons](https://commons.wikimedia.org) (liste choisie à la main) | domaine public (logo fait de texte, [PD-textlogo](https://commons.wikimedia.org/wiki/Template:PD-textlogo)), marque de son propriétaire | le mot-marque vectoriel d'une marque dont le nom est le logo (Aēsop), fichier épinglé par son SHA-1 | `scripts/icon-pack-curated.json` |
 | Icône propre de la marque (liste choisie à la main) | marque de son propriétaire, montrée comme un navigateur montre une favicon | l'icône de son app iOS (App Store, 256 px, vendeur vérifié), sinon l'icône de son site (apple-touch-icon, manifeste, favicon.ico ou la copie qu'en garde Google), 180 px au moins | `scripts/icon-pack-curated.json` |
 
+| Domaines populaires (`--domains`, voir plus bas) | marque de son propriétaire, montrée comme un navigateur montre une favicon | l'icône du site lui-même (apple-touch-icon, manifeste, favicon.ico), 128 px au moins | le domaine tel qu'il est listé |
+
 Écartés : les icônes de Simple Icons qui portent une autre licence que CC0, MIT, Apache-2.0, BSD, ISC ou Unlicense (CC-BY-SA, NC, ND, GPL, licences maison) ; aegis-icons (licences mêlées icône par icône, dont GPL et CC-BY) ; dashboard-icons (applications auto-hébergées, peu de sites grand public). Une licence copyleft ou à attribution par icône ne convient ni à l'AGPL distribuée sur l'App Store ni à la licence commerciale.
 
 Les logos restent des marques de leurs propriétaires. Ils servent ici à reconnaître un compte, comme une favicon ; leur présence ne signifie aucune affiliation. Une marque qui demande le retrait de son icône l'obtient en amont (Simple Icons, 2FA Directory) ou par une exclusion dans `scripts/icon_pack.py`. Mentions : [`NOTICE`](../NOTICE).
@@ -24,11 +26,28 @@ La même liste nomme les plateformes qui hébergent d'autres marques (`tenants` 
 
 L'index du pack porte aussi `names` : le nom de chaque marque (lettres et chiffres, sans accents) vers son icône, pour un élément sans adresse dont le titre est le nom de la marque. Un nom que deux icônes réclament n'y entre pas, sauf si la liste choisie ou un domaine au nom de la marque tranche.
 
+## Domaines populaires
+
+`--domains FILE` (sur `sites` et sur `build`, répétable) ajoute au pack l'icône des sites d'une liste de domaines populaires, pour que l'app n'ait presque jamais à demander une icône à un site. Un fichier est un texte simple (un domaine par ligne, `#` pour un commentaire) ou un CSV Tranco `rank,domain` (reconnu à sa virgule). Chaque entrée devient son domaine enregistrable, une seule fois, dans l'ordre de la liste. `scripts/icon-pack-domains-fr.txt` est une liste faite à la main de services français (banques, assurances, énergie, opérateurs, administrations, transports, commerces, santé).
+
+Tout se passe **à la construction**, jamais dans l'app :
+
+1. `icon_pack.py sites --domains LISTE --out DIR` va chercher l'icône de chaque domaine (même chercheur que les marques de la liste choisie : page, apple-touch-icon, manifeste, favicon.ico, copie de Google), 128 px au moins, dans `DIR/domains/` et `DIR/domains.json` (URL, SHA-256, taille, hôte final).
+2. `icon_pack.py build ... --sites DIR --domains LISTE` les dessine en carrés de **128 px** avec le drapeau **2** (bit 2) dans l'entrée de l'index ; les icônes choisies à la main et celles des jeux ouverts restent à 256 px (drapeau 1 pour une marque d'une couleur). Un domaine de la liste choisie à la main est ignoré (la liste choisie gagne). Une source de moins de 128 px est écartée, et les contrôles habituels s'appliquent (SVG sûr, icône presque vide).
+
+Le domaine est pris tel qu'il est listé : l'icône est rangée sous ce domaine même quand le site redirige ailleurs, jamais sous la cible de la redirection.
+
+Le pack lui-même ne dit pas qui a fourni la liste : pour un CSV Tranco, `build` demande `--tranco-id` (l'identifiant de la liste sur tranco-list.eu) et `--tranco-date`, et le manifeste les consigne (`tranco`, `id` et `date`) ; le rapport `report.json` ajoute `domains_fetched`, `domains_kept` et `domains_blocked`.
+
+### Liste d'exclusion
+
+`scripts/icon-pack-blocklist.txt` (`--blocklist`, par défaut ce fichier) : une ligne est un domaine exact (`www.` ignoré) ou `*.suffixe` (le suffixe et tout hôte en dessous, donc `*.xxx` couvre une extension entière), `#` pour un commentaire. Un domaine listé qui y figure n'est même pas contacté par `sites` ; un domaine dont la page finit, après redirections, sur un hôte de la liste est écarté, et `build` refait les deux contrôles (une liste d'exclusion peut grandir entre `sites` et `build`). Le fichier livré est un point de départ (extensions et sites adultes ou de jeux d'argent, DNS dynamique gratuit souvent détourné) que le fondateur complète avant toute vraie construction.
+
 ## Construction
 
 `scripts/icon_pack.py build` lit les trois dépôts (données non fiables : chaque archive est dépaquetée dans son propre dossier vide, rien n'y est exécuté, Python tourne avec `-I`), garde pour chaque domaine la meilleure icône (logos `-icon` en couleurs, puis 2FA Directory en couleurs, puis Simple Icons, puis les autres carrées), refuse tout SVG qui lirait autre chose que lui-même (DOCTYPE, entité, script, image, `href` externe, `url()` externe, `@import`, texte), le dessine avec [resvg](https://github.com/linebender/resvg) en carré de 256 px (dossier de ressources vide, polices système ignorées) et l'encode en WebP sans perte (`cwebp -lossless`). Une icône presque vide est écartée et le domaine passe à la suivante.
 
-Format 1 du pack (`onepass-icons-<version>.bin`, entiers big-endian) : `OPIP`, octet de format, longueur de l'index (u32), index JSON (`version`, `size`, `icons` en `[offset, longueur, drapeaux]`, `domains` en domaine vers numéro d'icône, et en option `names` et `tenants`, qu'un lecteur plus ancien ignore), puis les icônes. Drapeau 1 : marque d'une couleur. Le manifeste `icon-pack-manifest.json` donne la version, la taille et le SHA-256 du pack et les commits amont ; `icon-pack-manifest.json.sig` est la signature Ed25519 (base64) de ses octets exacts.
+Format 1 du pack (`onepass-icons-<version>.bin`, entiers big-endian) : `OPIP`, octet de format, longueur de l'index (u32), index JSON (`version`, `size`, `icons` en `[offset, longueur, drapeaux]`, `domains` en domaine vers numéro d'icône, et en option `names` et `tenants`, qu'un lecteur plus ancien ignore), puis les icônes. Drapeau 1 : marque d'une couleur. Drapeau 2 : icône de 128 px issue d'une liste de domaines (les autres font `size` px). Le manifeste `icon-pack-manifest.json` donne la version, la taille et le SHA-256 du pack et les commits amont ; `icon-pack-manifest.json.sig` est la signature Ed25519 (base64) de ses octets exacts.
 
 Tests : `python3 -I scripts/test_icon_pack.py` (rendu de bout en bout si `resvg` et `cwebp` sont là, signature si OpenSSL 3 est là) et la suite `IconPack` de VaultKit.
 
