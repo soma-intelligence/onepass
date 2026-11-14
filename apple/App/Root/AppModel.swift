@@ -1591,6 +1591,15 @@ final class AppModel {
         }
     }
 
+    /// A secret handed out that is no use of the item for its counter (a reveal, a copy of a secret
+    /// other than the password): the item's key-use log only. `field`: the field's stored label.
+    func noteItemKeyUse(_ ref: ItemRef, action: FfiKeyUseAction, field: String) {
+        let session = session
+        Task {
+            try? await session.recordAppKeyUse(vaultID: ref.vaultID, itemID: ref.itemID, action: action, field: field)
+        }
+    }
+
     /// Folds this device's key uses queued an hour ago or more into their items (at unlock and each
     /// scene foreground). Best effort: an error leaves them queued for the next try.
     private func flushKeyUses() {

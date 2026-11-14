@@ -329,6 +329,30 @@ impl Session {
         })
     }
 
+    /// Record a key use inside the app that is no use of the item for its
+    /// counter (a reveal, a copy of a secret other than the password):
+    /// the "recently used" and "frequently used" lists do not move. Hourly
+    /// coalescing applies; `true` when the item was written.
+    pub fn record_app_key_use(
+        &self,
+        vault_id: String,
+        item_id: String,
+        action: FfiKeyUseAction,
+        field: String,
+    ) -> Result<bool, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            Ok(repo.record_app_key_use(
+                &vault,
+                item_id,
+                action.into(),
+                &field,
+                time::OffsetDateTime::now_utc(),
+            )?)
+        })
+    }
+
     pub fn item(&self, vault_id: String, item_id: String) -> Result<FfiItem, OnePassError> {
         let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
         self.with(|repo| {

@@ -1452,6 +1452,20 @@ public final class VaultSession {
         try await read { try $0.itemKeyUses(vaultId: vaultID, itemId: itemID) }
     }
 
+    /// Records a key use inside the app that is no use of the item for Récemment utilisés and
+    /// Fréquemment utilisés (a reveal, a copy of a secret other than the password): the summary does
+    /// not move. Fire and forget: nothing when locked; the sync layer is told when the item was
+    /// written (hourly coalescing).
+    public func recordAppKeyUse(
+        vaultID: String, itemID: String, action: FfiKeyUseAction, field: String
+    ) async throws {
+        guard session != nil else { return }
+        let written = try await readUnmapped {
+            try $0.recordAppKeyUse(vaultId: vaultID, itemId: itemID, action: action, field: field)
+        }
+        if written { notifySync { await $0.localChangesWritten() } }
+    }
+
     /// Empties the item's key-use log on every device once synced ("Clear log"); its
     /// `updated_at` is unchanged. The sync layer is told.
     public func clearKeyUses(vaultID: String, itemID: String) async throws {

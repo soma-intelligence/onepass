@@ -123,8 +123,8 @@ struct FieldValueView: View {
         let session = session
         let onReveal: ((Bool) -> Void)? = secret ? { shown in
             session.noteActivity()
-            // Unmasked (or shown large): a key use, as a copy is.
-            if shown { noteUse(.revealed) }
+            // Unmasked (or shown large): a key use, never a use of the item (viewing is none).
+            if shown { noteKeyUse(.revealed) }
         } : nil
         return ValueRow(
             label: label ?? self.label, value: value, isSecret: secret, monospaced: monospaced,
@@ -134,7 +134,8 @@ struct FieldValueView: View {
             concealToken: session.concealGeneration, captured: captured, hiddenText: hiddenText,
             onCopy: {
                 copy(value, concealed: secret)
-                if secret { noteUse(.copied) }
+                // The password copy counts as a use, as before; another secret only as a key use.
+                if field.kind == .password { noteUse(.copied) } else if secret { noteKeyUse(.copied) }
             },
             onReveal: onReveal,
             accessory: accessory)
@@ -164,11 +165,16 @@ struct FieldValueView: View {
         onCopied(String(localized: "app.copiedClearedIn90"))
     }
 
-    /// A secret copied or revealed, a one-time code copied, a website opened: the item was used.
+    /// A password or one-time code copied, a website opened: the item was used.
     /// `action` names the key use of a secret handed out (with the field's stored label); nil for
     /// the website, which hands out none.
     private func noteUse(_ action: FfiKeyUseAction?) {
         if let itemUseRef { model.noteItemUse(itemUseRef, action: action, field: action == nil ? "" : field.label) }
+    }
+
+    /// A secret handed out that is no use of the item for its counter: the key-use log only.
+    private func noteKeyUse(_ action: FfiKeyUseAction) {
+        if let itemUseRef { model.noteItemKeyUse(itemUseRef, action: action, field: field.label) }
     }
 
     private func urlRow(url: String) -> some View {

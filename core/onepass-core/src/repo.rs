@@ -1635,6 +1635,24 @@ impl<S: RecordStore> Repository<S> {
         Ok(item)
     }
 
+    /// Record a key use inside the app (App, `action`, the `field` label,
+    /// client "OnePass") that is no use of the item for its counter: a
+    /// reveal, or a copy the counter never counted. Through
+    /// `record_key_use` (hourly coalescing, the queue); the item's use
+    /// count and last use stay as they are. Returns `true` when the item
+    /// was written.
+    pub fn record_app_key_use(
+        &mut self,
+        vault: &Vault,
+        item_id: Id,
+        action: KeyUseAction,
+        field: &str,
+        now: OffsetDateTime,
+    ) -> Result<bool> {
+        let u = self.this_device_key_use(KeyUseChannel::App, action, APP_CLIENT, field);
+        self.record_key_use(vault, item_id, u, now)
+    }
+
     /// Forget `site` in every item of every vault this device opens (spec
     /// 7, erase by site), leaving a tombstone in each so other devices'
     /// copies do not bring it back. The vaults come from `vaults` (epoch and
@@ -2544,6 +2562,40 @@ mod tests {
         );
         // Each app use is saved anyway: both counted, inside the hour.
         assert_eq!((e.count, e.first_at, e.last_at), (2, t0, t1));
+        assert_eq!(stored.updated_at, a.updated_at);
+    }
+
+    #[test]
+    fn key_use_of_a_reveal_leaves_the_use_counter() {
+        use crate::model::key_use::{KeyUseAction, KeyUseChannel};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let a = login(&v, "alice");
+        repo.save_item(&v, a.clone()).unwrap();
+        let t0 = OffsetDateTime::now_utc();
+        repo.record_app_use(&v, a.id, t0, None).unwrap();
+        let t1 = t0 + time::Duration::seconds(5);
+        assert!(
+            repo.record_app_key_use(&v, a.id, KeyUseAction::Revealed, "password", t1)
+                .unwrap()
+        );
+        let stored = repo.items(&v).unwrap().remove(0);
+        assert_eq!((stored.use_count(), stored.last_used_at()), (1, Some(t0)));
+        let log = stored.key_use_trailer().entries;
+        assert_eq!(log.len(), 1, "{log:?}");
+        assert_eq!(
+            (
+                log[0].channel,
+                log[0].action,
+                log[0].client.as_str(),
+                log[0].field.as_str()
+            ),
+            (
+                KeyUseChannel::App,
+                KeyUseAction::Revealed,
+                "OnePass",
+                "password"
+            )
+        );
         assert_eq!(stored.updated_at, a.updated_at);
     }
 

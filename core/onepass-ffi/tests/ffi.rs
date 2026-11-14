@@ -2594,6 +2594,34 @@ mod key_use {
     }
 
     #[test]
+    fn app_key_use_of_a_reveal_leaves_the_use_counter() {
+        let fx = fixture();
+        let item = saved_login(&fx, "Motdepasse-tres-long-42");
+        let before = fx.session.item_summaries().unwrap().remove(0);
+        assert!(
+            fx.session
+                .record_app_key_use(
+                    item.vault_id.clone(),
+                    item.id.clone(),
+                    FfiKeyUseAction::Revealed,
+                    "password".into(),
+                )
+                .unwrap()
+        );
+        let after = fx.session.item_summaries().unwrap().remove(0);
+        assert_eq!(
+            (after.uses, after.last_use_at),
+            (before.uses, before.last_use_at)
+        );
+        let log = uses(&fx, &item);
+        assert_eq!(log.len(), 1, "{log:?}");
+        assert_eq!(
+            (log[0].channel, log[0].action, log[0].field.as_str()),
+            (FfiKeyUseChannel::App, FfiKeyUseAction::Revealed, "password")
+        );
+    }
+
+    #[test]
     fn autofill_fill_records_filled() {
         let fx = fixture();
         let mut item = saved_login(&fx, "Motdepasse-tres-long-42");
