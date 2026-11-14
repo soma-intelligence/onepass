@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Fingerprint or face unlock (BiometricPrompt). -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
     <!-- No backup of any kind: the vault and the device secrets stay on
          this device (plan X4, global constraints). -->
     <application

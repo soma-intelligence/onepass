@@ -27,6 +27,7 @@ import me.somalabs.onepass.core.resetStore
 import me.somalabs.onepass.core.setDeviceRngSeed
 import me.somalabs.onepass.core.storeState
 import me.somalabs.onepass.core.unlockWithPassword
+import me.somalabs.onepass.core.verifyPassword
 
 /**
  * This device's vault (spec 2026-10-30 sections 6.1 and 6.2).
@@ -104,6 +105,32 @@ class DeviceVault private constructor(private val context: Context) {
             val unlocked = unlockWithPassword(dbPath, String(password), secrets.secretKey)
             unlocked.auk.fill(0)
             opened(unlocked.session)
+            biometrics.notePasswordUnlock()
+        } finally {
+            secrets.wipe()
+        }
+    }
+
+    /** Fingerprint or face unlock (see [BiometricUnlock]). */
+    val biometrics = BiometricUnlock(context)
+
+    /** Opens with the Account Unlock Key unwrapped by a biometric check; wipes it. */
+    fun unlockWithAuk(auk: ByteArray) {
+        val secrets = read() ?: error("no device file")
+        try {
+            setDeviceRngSeed(secrets.seed)
+            opened(me.somalabs.onepass.core.unlockWithAuk(dbPath, auk))
+        } finally {
+            auk.fill(0)
+            secrets.wipe()
+        }
+    }
+
+    /** The Account Unlock Key for this password, without opening a session (biometric enrollment). */
+    fun accountUnlockKey(password: CharArray): ByteArray {
+        val secrets = read() ?: error("no device file")
+        try {
+            return verifyPassword(dbPath, String(password), secrets.secretKey)
         } finally {
             secrets.wipe()
         }
@@ -115,6 +142,8 @@ class DeviceVault private constructor(private val context: Context) {
         val secrets = read() ?: error("no device file")
         try {
             s.changePassword(String(current), secrets.secretKey, String(new)).fill(0)
+            // The wrapped key is the old one: biometric unlock is turned on again from Settings.
+            biometrics.disable()
         } finally {
             secrets.wipe()
         }

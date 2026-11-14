@@ -237,6 +237,11 @@ class AccessScreens(private val a: MainActivity) {
         full(next, 16)
     }
 
+    private fun showKeyboard(e: EditText) {
+        e.requestFocus()
+        a.getSystemService(android.view.inputmethod.InputMethodManager::class.java).showSoftInput(e, 0)
+    }
+
     // ---- lock ------------------------------------------------------------------------------------------------
 
     fun lock(): View {
@@ -275,6 +280,56 @@ class AccessScreens(private val a: MainActivity) {
         box.addView(go, LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply { marginEnd = ui.dp(4) })
         pw.imeOptions = EditorInfo.IME_ACTION_GO or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         pw.setOnEditorActionListener { _, _, _ -> submit(); true }
+
+        // Fingerprint or face first, when it is on: the system sheet comes up by itself once,
+        // the button beside the field asks again.
+        val bio = a.vault.biometrics
+        var bioButton: View? = null
+        val canBio = bio.enrolled && bio.availability() == me.somalabs.onepass.vault.BiometricUnlock.Availability.AVAILABLE
+        var bioRunning = false
+        fun biometric() {
+            if (bioRunning) return
+            bioRunning = true
+            err.text = ""
+            bio.unlock(a, a.t("Déverrouille OnePass", "Unlock OnePass"), a.profileName.ifEmpty { a.t("Compte OnePass", "OnePass Account") },
+                a.t("Utiliser le mot de passe maître", "Use the master password")) { outcome ->
+                bioRunning = false
+                when (outcome) {
+                    is me.somalabs.onepass.vault.BiometricUnlock.Outcome.Unlocked -> {
+                        busy.text = a.t("Déverrouillage...", "Unlocking...")
+                        val auk = outcome.auk
+                        a.background({ a.vault.unlockWithAuk(auk) }) { r ->
+                            busy.text = ""
+                            r.onSuccess {
+                                pw.announceForAccessibility(a.t("OnePass déverrouillé", "OnePass unlocked"))
+                                a.openTabs()
+                            }.onFailure { err.text = a.message(it) }
+                        }
+                    }
+                    is me.somalabs.onepass.vault.BiometricUnlock.Outcome.Cancelled -> showKeyboard(pw)
+                    is me.somalabs.onepass.vault.BiometricUnlock.Outcome.PasswordRequired -> {
+                        err.text = when (outcome.message) {
+                            me.somalabs.onepass.vault.BiometricUnlock.Reason.REBOOTED -> a.t("Le mot de passe maître est demandé après un redémarrage.", "Your master password is required after a restart.")
+                            me.somalabs.onepass.vault.BiometricUnlock.Reason.EXPIRED -> a.t("Le mot de passe maître est demandé régulièrement.", "Your master password is required from time to time.")
+                            me.somalabs.onepass.vault.BiometricUnlock.Reason.INVALIDATED -> a.t("La biométrie a changé : saisis ton mot de passe maître.", "Biometrics changed. Enter your master password.")
+                            me.somalabs.onepass.vault.BiometricUnlock.Reason.LOCKED_OUT -> a.t("La biométrie est temporairement bloquée : saisis ton mot de passe maître.", "Biometrics are temporarily locked. Enter your master password.")
+                            else -> ""
+                        }
+                        if (!bio.enrolled) bioButton?.visibility = View.GONE
+                        showKeyboard(pw)
+                    }
+                }
+            }
+        }
+        if (canBio) {
+            bioButton = a.barIcon(R.drawable.ic_fingerprint, a.t("Déverrouiller avec la biométrie", "Unlock with Biometrics")) { biometric() }
+            box.addView(bioButton, box.childCount - 2)
+            pw.addTextChangedListener(object : android.text.TextWatcher {
+                override fun afterTextChanged(e: android.text.Editable?) { bioButton?.visibility = if (e.isNullOrEmpty() && bio.enrolled) View.VISIBLE else View.GONE }
+                override fun beforeTextChanged(s: CharSequence?, x: Int, y: Int, z: Int) {}
+                override fun onTextChanged(s: CharSequence?, x: Int, y: Int, z: Int) {}
+            })
+        }
         val v = page {
             gravity = Gravity.CENTER
             addView(View(a), LinearLayout.LayoutParams(1, ui.dp(60)))
@@ -295,8 +350,13 @@ class AccessScreens(private val a: MainActivity) {
             val protection = ui.text("", 13f, ui.tertiary).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(24), 0, 0) }
             full(protection)
             a.background({ a.vault.protection }) { r -> protection.text = a.t("Clés de l'appareil protégées par ", "Device keys protected by ") + r.getOrDefault("Android Keystore") }
+            if (canBio) bio.passwordDueAt()?.let { due ->
+                val days = maxOf(1L, Math.ceil((due - System.currentTimeMillis()) / 86_400_000.0).toLong())
+                full(ui.text(if (days == 1L) a.t("Mot de passe maître redemandé dans 1 jour, puis tous les 14 jours.", "Master password required again in 1 day, then every 14 days.")
+                    else a.t("Mot de passe maître redemandé dans $days jours, puis tous les 14 jours.", "Master password required again in $days days, then every 14 days."), 13f, ui.tertiary).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(8), 0, 0) })
+            }
         }
-        pw.requestFocus()
+        if (canBio) v.postDelayed({ if (v.isAttachedToWindow) biometric() }, 350) else pw.requestFocus()
         return v
     }
 }

@@ -160,6 +160,22 @@ class SettingsScreens(private val a: MainActivity) {
         ), top = Ios.Space.S))
         val info = ui.footnote("")
         addView(info)
+        // Unlock with fingerprint or face (iPhone: "Déverrouiller avec Face ID").
+        val bio = a.vault.biometrics
+        val avail = bio.availability()
+        addView(ui.sectionHeader(a.t("Déverrouillage", "Unlock")))
+        lateinit var bioRow: LinearLayout
+        bioRow = ui.toggleRow(a.t("Déverrouiller avec la biométrie", "Unlock with Biometrics"), on = bio.enrolled && avail == me.somalabs.onepass.vault.BiometricUnlock.Availability.AVAILABLE) { on ->
+            if (on && !bio.enrolled) enableBiometrics(bioRow.getChildAt(bioRow.childCount - 1) as android.widget.Switch) else if (!on) bio.disable()
+        }
+        val sw = bioRow.getChildAt(bioRow.childCount - 1)
+        if (avail != me.somalabs.onepass.vault.BiometricUnlock.Availability.AVAILABLE) { sw.isEnabled = false; bioRow.alpha = 0.5f }
+        bioRow.contentDescription = a.t("Déverrouiller avec la biométrie", "Unlock with Biometrics")
+        addView(ui.inset(ui.card(bioRow)))
+        addView(ui.footnote(if (avail == me.somalabs.onepass.vault.BiometricUnlock.Availability.AVAILABLE)
+            a.t("La clé reste dans le Keystore Android. Le mot de passe maître est redemandé tous les 14 jours, après un redémarrage et quand les empreintes ou le visage enregistrés changent.",
+                "The key stays in the Android Keystore. Your master password is asked for again every 14 days, after a restart and when the enrolled fingerprints or face change.")
+        else a.t("La biométrie n'est pas configurée sur cet appareil. Le mot de passe maître déverrouille OnePass.", "Biometrics aren't set up on this device. Your master password unlocks OnePass.")))
         a.background({ a.vault.protection }) { r ->
             info.text = a.t("Les clés de cet appareil sont scellées par ", "This device's keys are sealed by ") + r.getOrDefault("Android Keystore") +
                 a.t(". Les captures d'écran sont bloquées dans OnePass.", ". Screenshots are blocked in OnePass.") +
@@ -168,6 +184,42 @@ class SettingsScreens(private val a: MainActivity) {
         addView(ui.sectionHeader(a.t("Presse-papiers", "Clipboard")))
         addView(ui.inset(ui.card(ui.row(title = a.t("Effacer après", "Clear After"), value = "90 s", chevron = false))))
         addView(ui.footnote(a.t("Un secret copié est marqué sensible et effacé s'il est toujours dans le presse-papiers.", "A copied secret is marked sensitive and cleared if it is still on the clipboard.")))
+    }
+
+    /** "Activer la biométrie": the master password, then one fingerprint or face check. */
+    private fun enableBiometrics(sw: android.widget.Switch) {
+        val bio = a.vault.biometrics
+        val pw = ui.field(a.t("Mot de passe maître", "Master Password"), password = true)
+        val err = ui.footnote("", ui.red)
+        var proceeding = false
+        val d = a.sheet(a.t("Activer la biométrie", "Turn On Biometrics"), a.t("Annuler", "Cancel"), a.t("Activer", "Turn On") to { d ->
+            val chars = pw.text.toString().toCharArray()
+            if (chars.isEmpty()) return@to
+            pw.text.clear()
+            err.text = ""
+            a.background({ a.vault.accountUnlockKey(chars) }) { r ->
+                chars.fill(' ')
+                r.onSuccess { auk ->
+                    proceeding = true
+                    d.dismiss()
+                    bio.enroll(a, a.t("Activer la biométrie", "Turn On Biometrics"), a.t("Confirme pour déverrouiller OnePass ainsi.", "Confirm to unlock OnePass this way."), a.t("Annuler", "Cancel"), auk) { ok, e ->
+                        sw.isChecked = ok
+                        if (ok) a.toast(a.t("La prochaine fois, la biométrie suffit pour ouvrir OnePass.", "Next time, biometrics are all it takes to open OnePass."))
+                        else if (e != null) a.toast(e.toString())
+                    }
+                }.onFailure { err.text = if (it is me.somalabs.onepass.core.OnePassException.WrongPassword) a.t("Mot de passe incorrect.", "Incorrect password.") else a.message(it) }
+            }
+        }) { _ ->
+            LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, ui.dp(8), 0, ui.dp(40))
+                addView(ui.footnote(a.t("Saisis ton mot de passe maître, puis confirme avec la biométrie.", "Enter your master password, then confirm with biometrics.")))
+                addView(ui.inset(ui.card(pw), top = Ios.Space.S))
+                addView(err)
+            }
+        }
+        d.setOnDismissListener { if (!proceeding && !bio.enrolled) sw.isChecked = false }
+        pw.requestFocus()
     }
 
     private fun changePassword() {
