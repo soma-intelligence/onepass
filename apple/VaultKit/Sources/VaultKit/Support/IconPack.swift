@@ -13,7 +13,9 @@ import Synchronization
 /// `format`, `version`, `size`, `icons` as `[offset, length, flags]` into the bytes that follow,
 /// `domains` as domain to icon number; optional `names`, a brand name squashed to lowercase letters
 /// and digits to icon number, and `tenants`, domains whose icon is not inherited by their
-/// subdomains), then the icons (square lossless WebP, `size` pixels).
+/// subdomains), then the icons (square lossless WebP, `size` pixels unless flagged 128). Flags are
+/// bits: 1 = a one color mark (monochrome), 2 = this icon is 128 pixels, not `size`; both can be
+/// set (flags 3).
 public struct IconPack: Sendable {
     public static let magic = Data("OPIP".utf8)
     public static let format: UInt8 = 1
@@ -22,10 +24,12 @@ public struct IconPack: Sendable {
     static let maxIndexBytes = 8 * 1024 * 1024
 
     public struct Icon: Equatable, Sendable {
-        /// Square WebP, `IconPack.pixels` on a side.
+        /// Square WebP, `pixels` on a side.
         public let data: Data
         /// A one color mark (drawn in the text color, like a template image).
         public let monochrome: Bool
+        /// The side in pixels: 128 for an icon flagged so (flag bit 2), else the pack's `size`.
+        public let pixels: Int
     }
 
     public let version: Int
@@ -224,7 +228,8 @@ public struct IconPack: Sendable {
         let entry = icons[number]
         let start = iconsStart + entry.offset
         // A copy of the icon's bytes alone: a slice would keep its offsets into the whole pack.
-        return Icon(data: Data(data[start..<(start + entry.length)]), monochrome: entry.flags & 1 != 0)
+        return Icon(data: Data(data[start..<(start + entry.length)]), monochrome: entry.flags & 1 != 0,
+            pixels: entry.flags & 2 != 0 ? 128 : pixels)
     }
 }
 

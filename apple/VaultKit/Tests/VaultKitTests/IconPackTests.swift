@@ -64,7 +64,7 @@ struct IconPackTests {
         #expect(pack.icon(forHost: "withings.com")?.data == red)
         #expect(pack.icon(forHost: "WWW.Withings.com.")?.data == red)
         #expect(pack.icon(forHost: "account.withings.com")?.data == red)
-        #expect(pack.icon(forHost: "appleid.apple.com") == IconPack.Icon(data: mark, monochrome: true))
+        #expect(pack.icon(forHost: "appleid.apple.com") == IconPack.Icon(data: mark, monochrome: true, pixels: 256))
         #expect(pack.icon(forHost: "accounts.firefox.com")?.monochrome == false)
         #expect(pack.icon(forHost: "withings.fr") == nil)
         #expect(pack.icon(forHost: "com") == nil)
@@ -215,6 +215,25 @@ struct IconPackTests {
         let pack = try IconPack(data: makeIconPack(version: 1, icons: [(red, 0), (mark, 1)], domains: ["a.com": 1]))
         let icon = try #require(pack.icon(forHost: "a.com"))
         #expect(icon.data == mark && icon.data.startIndex == 0 && icon.monochrome)
+    }
+
+    @Test func flagTwoMarksA128PixelIcon() throws {
+        let small = Data("small-webp".utf8)
+        let both = Data("both-webp".utf8)
+        let pack = try IconPack(data: makeIconPack(
+            version: 1, icons: [(red, 0), (small, 2), (both, 3)], domains: ["a.com": 0, "b.com": 1, "c.com": 2]))
+        #expect(pack.icon(forHost: "a.com")?.pixels == 256)
+        #expect(pack.icon(forHost: "a.com")?.monochrome == false)
+        #expect(pack.icon(forHost: "b.com")?.pixels == 128)
+        #expect(pack.icon(forHost: "b.com")?.monochrome == false)
+        #expect(pack.icon(forHost: "b.com")?.data == small)
+        #expect(pack.icon(forHost: "c.com")?.pixels == 128)
+        #expect(pack.icon(forHost: "c.com")?.monochrome == true)
+        #expect(pack.icon(number: 1)?.pixels == 128)
+        // A pack of another size gives its own size to unflagged icons.
+        let other = try IconPack(data: makeIconPack(version: 1, icons: [(red, 0), (small, 2)], domains: ["a.com": 0], size: 192))
+        #expect(other.icon(number: 0)?.pixels == 192)
+        #expect(other.icon(number: 1)?.pixels == 128)
     }
 }
 
