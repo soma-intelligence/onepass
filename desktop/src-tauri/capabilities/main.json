@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
   "description": "The one window with capabilities: the app's own commands and event listening, nothing else (no fs, shell, http or opener plugin).",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
@@ -21,6 +23,21 @@
     "allow-reveal-field",
     "allow-copy-field",
     "allow-totp",
-    "allow-generate-password"
+    "allow-generate-password",
+    "allow-watchtower",
+    "allow-set-archived",
+    "allow-restore-item",
+    "allow-delete-item",
+    "allow-move-item",
+    "allow-duplicate-item",
+    "allow-password-history",
+    "allow-history-value",
+    "allow-save-vault",
+    "allow-delete-vault",
+    "allow-change-password",
+    "allow-account",
+    "allow-set-profile-name",
+    "allow-strength",
+    "allow-copy-secret"
   ]
 }

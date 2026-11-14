@@ -19,4 +19,6 @@ await build({
 
 cpSync("src/index.html", "dist/index.html");
 cpSync("src/styles.css", "dist/styles.css");
+// The drawn tiles of the Apple app (categories, settings, app icon).
+cpSync("src/assets", "dist/assets", { recursive: true });
 console.log("built dist/");

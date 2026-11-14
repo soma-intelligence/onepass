@@ -96,3 +96,28 @@ impl AppState {
         false
     }
 }
+
+/// "fr" when the Windows display language is French, "en" otherwise. A debug
+/// build honours ONEPASS_LANG (the end-to-end test runs in French).
+pub fn language() -> &'static str {
+    if let (true, Ok(l)) = (cfg!(debug_assertions), std::env::var("ONEPASS_LANG")) {
+        return if l.starts_with("fr") { "fr" } else { "en" };
+    }
+    #[cfg(windows)]
+    {
+        // SAFETY: no argument, returns the LANGID of the user's UI language.
+        let id = unsafe { windows_sys::Win32::Globalization::GetUserDefaultUILanguage() };
+        // The primary language is the low 10 bits; LANG_FRENCH is 0x0c.
+        if id & 0x3ff == 0x0c {
+            return "fr";
+        }
+        "en"
+    }
+    #[cfg(not(windows))]
+    {
+        match std::env::var("LANG") {
+            Ok(l) if l.starts_with("fr") => "fr",
+            _ => "en",
+        }
+    }
+}

@@ -85,7 +85,9 @@ pub struct SummaryView {
     pub primary_url: Option<String>,
     pub archived: bool,
     pub trashed: bool,
+    pub trashed_at: Option<i64>,
     pub updated_at: i64,
+    pub tags: Vec<String>,
 }
 
 impl From<FfiItemSummary> for SummaryView {
@@ -100,7 +102,9 @@ impl From<FfiItemSummary> for SummaryView {
             primary_url: s.primary_url,
             archived: s.archived,
             trashed: s.trashed_at.is_some(),
+            trashed_at: s.trashed_at,
             updated_at: s.updated_at,
+            tags: s.tags,
         }
     }
 }
@@ -115,6 +119,9 @@ pub struct FieldView {
     pub value: Option<String>,
     pub secret: bool,
     pub has_value: bool,
+    /// For a password: its strength level, 0 (too short) to 4 (excellent).
+    /// The level only, never the value.
+    pub strength: Option<u8>,
 }
 
 #[derive(Serialize)]
@@ -147,6 +154,16 @@ pub struct ItemView {
     pub created_at: i64,
     pub updated_at: i64,
     pub trashed: bool,
+    pub archived: bool,
+    pub password_history_count: u32,
+}
+
+/// The iPhone strength meter's levels: thresholds at 40, 60, 80 and 100 bits.
+pub fn strength_level(bits: f64) -> u8 {
+    [40.0, 60.0, 80.0, 100.0]
+        .iter()
+        .filter(|t| bits >= **t)
+        .count() as u8
 }
 
 impl From<&FfiItem> for ItemView {
@@ -186,6 +203,14 @@ impl From<&FfiItem> for ItemView {
                                 value: if secret { None } else { display(&f.value) },
                                 secret,
                                 has_value,
+                                strength: match &f.value {
+                                    FfiFieldValue::Password { value } if !value.is_empty() => {
+                                        Some(strength_level(onepass_ffi::password_strength_bits(
+                                            value.clone(),
+                                        )))
+                                    }
+                                    _ => None,
+                                },
                             }
                         })
                         .collect(),
@@ -194,6 +219,8 @@ impl From<&FfiItem> for ItemView {
             created_at: i.created_at,
             updated_at: i.updated_at,
             trashed: i.trashed_at.is_some(),
+            archived: i.archived,
+            password_history_count: i.password_history_count,
         }
     }
 }

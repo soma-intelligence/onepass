@@ -71,6 +71,21 @@ fn main() {
             commands::copy_field,
             commands::totp,
             commands::generate_password,
+            commands::watchtower,
+            commands::set_archived,
+            commands::restore_item,
+            commands::delete_item,
+            commands::move_item,
+            commands::duplicate_item,
+            commands::password_history,
+            commands::history_value,
+            commands::save_vault,
+            commands::delete_vault,
+            commands::change_password,
+            commands::account,
+            commands::set_profile_name,
+            commands::strength,
+            commands::copy_secret,
         ])
         .run(tauri::generate_context!())
         .expect("OnePass failed to start");

@@ -36,6 +36,9 @@ pub struct Status {
     /// How `device.bin` is sealed ("dpapi" for now, "tpm" later).
     pub protection: &'static str,
     pub auto_lock_minutes: i64,
+    /// "fr" or "en": the Windows display language, as the iPhone app
+    /// follows the system's.
+    pub language: &'static str,
 }
 
 #[tauri::command]
@@ -48,6 +51,7 @@ pub fn status(state: State<'_, AppState>) -> UiResult<Status> {
         account_id,
         protection,
         auto_lock_minutes,
+        language: crate::state::language(),
     };
     Ok(match store {
         FfiStoreState::Empty => mk("empty", None),
@@ -226,6 +230,9 @@ pub struct ItemEdit {
     /// New text values by field id. Absent fields keep their value, so an
     /// unrevealed secret is never overwritten by an empty one.
     pub fields: HashMap<String, Zeroizing<String>>,
+    /// The tags, when the editor sends them.
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
     /// Set for an item `new_item` made and nothing stored yet: its type.
     #[serde(default)]
     pub new_type: Option<String>,
@@ -234,6 +241,9 @@ pub struct ItemEdit {
 fn apply_edit(item: &mut FfiItem, edit: ItemEdit) -> UiResult<()> {
     item.title = edit.title;
     item.notes = edit.notes;
+    if let Some(tags) = edit.tags {
+        item.tags = tags;
+    }
     if let Some(url) = edit.url {
         item.urls.retain(|u| !u.primary);
         if !url.trim().is_empty() {
@@ -358,6 +368,28 @@ pub fn copy_field(
     Ok(CLIPBOARD_CLEAR_SECS)
 }
 
+/// Copies a generated or past password (not a field of an item): same
+/// rules as `copy_field` (out of the clipboard history, cleared after 90 s).
+#[tauri::command]
+pub fn copy_secret(text: String) -> UiResult<u64> {
+    let text = Zeroizing::new(text);
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard: {e}"))?;
+    set_clipboard(&mut clipboard, &text)?;
+    let copied = text.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(CLIPBOARD_CLEAR_SECS));
+        let Ok(mut c) = arboard::Clipboard::new() else {
+            return;
+        };
+        if c.get_text()
+            .is_ok_and(|t| Zeroizing::new(t).as_str() == copied.as_str())
+        {
+            let _ = c.clear();
+        }
+    });
+    Ok(CLIPBOARD_CLEAR_SECS)
+}
+
 #[cfg(windows)]
 fn set_clipboard(c: &mut arboard::Clipboard, text: &str) -> UiResult<()> {
     use arboard::SetExtWindows;
@@ -413,7 +445,16 @@ pub enum Recipe {
     Words {
         count: u32,
         french: bool,
+        #[serde(default = "yes")]
+        capitalize: bool,
     },
+    Pin {
+        length: u32,
+    },
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Serialize)]
@@ -436,15 +477,297 @@ pub fn generate_password(recipe: Recipe) -> UiResult<Generated> {
             symbols,
             avoid_ambiguous: false,
         },
-        Recipe::Words { count, french } => FfiPasswordRecipe::Words {
+        Recipe::Words {
+            count,
+            french,
+            capitalize,
+        } => FfiPasswordRecipe::Words {
             count,
             separator: "-".into(),
             french,
-            capitalize: true,
+            capitalize,
         },
+        Recipe::Pin { length } => FfiPasswordRecipe::Pin { length },
     };
     Ok(Generated {
         bits: onepass_ffi::password_entropy_bits(r.clone()),
         password: onepass_ffi::generate_password(r)?,
     })
+}
+
+// ---- iPhone parity: Watchtower, archive, trash, vaults, history, account ----------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckView {
+    pub check: String,
+    pub item_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchtowerView {
+    pub score: u8,
+    pub items_analyzed: u32,
+    pub checks: Vec<CheckView>,
+    /// Counts by strength level, 0 (too short) to 4 (excellent).
+    pub strength: Vec<u32>,
+    /// "checked", "partial", "unavailable" or "disabled".
+    pub pwned: &'static str,
+    pub sites_checked: bool,
+}
+
+/// The local Watchtower report: no network lookup on Windows yet (breaches
+/// off, no 2FA or passkey catalog), item ids only, never a value.
+#[tauri::command]
+pub fn watchtower(state: State<'_, AppState>) -> UiResult<WatchtowerView> {
+    let r = session(&state)?.watchtower_report(onepass_ffi::watchtower::FfiWatchtowerOptions {
+        expiry_warning_days: 30,
+        old_password_days: 365,
+        ranges: None,
+        twofa_directory: None,
+        passkeys_directory: None,
+        excluded_vault_ids: vec![],
+        breach_catalog: None,
+    })?;
+    Ok(WatchtowerView {
+        score: r.score,
+        items_analyzed: r.items_analyzed,
+        checks: r
+            .checks
+            .into_iter()
+            .map(|c| CheckView {
+                check: c.check,
+                item_ids: c.item_ids,
+            })
+            .collect(),
+        strength: r.strength,
+        pwned: match r.pwned {
+            onepass_ffi::watchtower::FfiPwnedStatus::Checked => "checked",
+            onepass_ffi::watchtower::FfiPwnedStatus::Partial { .. } => "partial",
+            onepass_ffi::watchtower::FfiPwnedStatus::Unavailable => "unavailable",
+            onepass_ffi::watchtower::FfiPwnedStatus::Disabled => "disabled",
+        },
+        sites_checked: r.sites_checked,
+    })
+}
+
+#[tauri::command]
+pub fn set_archived(
+    state: State<'_, AppState>,
+    vault_id: String,
+    item_id: String,
+    archived: bool,
+) -> UiResult<()> {
+    let s = session(&state)?;
+    if archived {
+        s.archive_item(vault_id, item_id)?;
+    } else {
+        s.unarchive_item(vault_id, item_id)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restore_item(state: State<'_, AppState>, vault_id: String, item_id: String) -> UiResult<()> {
+    Ok(session(&state)?.restore_item(vault_id, item_id)?)
+}
+
+/// Deletes an item for good (from Supprimés récemment).
+#[tauri::command]
+pub fn delete_item(state: State<'_, AppState>, vault_id: String, item_id: String) -> UiResult<()> {
+    Ok(session(&state)?.delete_item(vault_id, item_id)?)
+}
+
+#[tauri::command]
+pub fn move_item(
+    state: State<'_, AppState>,
+    item_id: String,
+    from_vault: String,
+    to_vault: String,
+) -> UiResult<()> {
+    Ok(session(&state)?.move_item(item_id, from_vault, to_vault)?)
+}
+
+/// A copy of an item in the same vault, its title followed by `suffix`.
+#[tauri::command]
+pub fn duplicate_item(
+    state: State<'_, AppState>,
+    vault_id: String,
+    item_id: String,
+    suffix: String,
+) -> UiResult<ItemView> {
+    let s = session(&state)?;
+    let item = s.item(vault_id.clone(), item_id)?;
+    let fresh = s.new_item(vault_id, item.item_type, format!("{}{suffix}", item.title))?;
+    let copy = FfiItem {
+        id: fresh.id,
+        title: fresh.title,
+        favorite: false,
+        archived: false,
+        trashed_at: None,
+        created_at: fresh.created_at,
+        updated_at: fresh.updated_at,
+        password_history_count: 0,
+        attachment_count: 0,
+        attachments: vec![],
+        ..item
+    };
+    Ok(ItemView::from(&s.save_item(copy)?))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryView {
+    pub index: usize,
+    pub replaced_at: i64,
+}
+
+/// The dates of the passwords an item replaced; a value comes through
+/// `history_value`, one at a time, when asked.
+#[tauri::command]
+pub fn password_history(
+    state: State<'_, AppState>,
+    vault_id: String,
+    item_id: String,
+) -> UiResult<Vec<HistoryView>> {
+    Ok(session(&state)?
+        .password_history(vault_id, item_id)?
+        .into_iter()
+        .enumerate()
+        .map(|(index, e)| HistoryView {
+            index,
+            replaced_at: e.replaced_at,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn history_value(
+    state: State<'_, AppState>,
+    vault_id: String,
+    item_id: String,
+    index: usize,
+) -> UiResult<String> {
+    let all = session(&state)?.password_history(vault_id, item_id)?;
+    Ok(all
+        .into_iter()
+        .nth(index)
+        .ok_or(OnePassError::NotFound)?
+        .value)
+}
+
+#[tauri::command]
+pub fn save_vault(
+    state: State<'_, AppState>,
+    vault_id: Option<String>,
+    name: String,
+    color: String,
+) -> UiResult<VaultView> {
+    let s = session(&state)?;
+    let name = name.trim().to_owned();
+    if name.is_empty() {
+        return Err("a vault needs a name".into());
+    }
+    let v = match vault_id {
+        Some(id) => {
+            let current = s
+                .vaults()?
+                .into_iter()
+                .find(|v| v.id == id)
+                .ok_or(OnePassError::NotFound)?;
+            s.update_vault(
+                id,
+                onepass_ffi::FfiVaultMeta {
+                    name,
+                    color,
+                    ..current.meta
+                },
+            )?
+        }
+        None => s.create_vault(onepass_ffi::FfiVaultMeta {
+            name,
+            icon: "lock".into(),
+            color,
+            travel_safe: false,
+            mcp_access: false,
+        })?,
+    };
+    Ok(VaultView::from(v))
+}
+
+#[tauri::command]
+pub fn delete_vault(state: State<'_, AppState>, vault_id: String) -> UiResult<()> {
+    Ok(session(&state)?.delete_vault(vault_id)?)
+}
+
+/// A new master password; the Secret Key stays (read from device.bin).
+#[tauri::command]
+pub fn change_password(state: State<'_, AppState>, current: String, new: String) -> UiResult<()> {
+    let current = Zeroizing::new(current);
+    let new = Zeroizing::new(new);
+    if new.chars().count() < 10 || onepass_ffi::password_strength_bits(new.to_string()) < 60.0 {
+        return Err(view::UiError {
+            code: "WeakPassword".into(),
+            detail: "not strong enough".into(),
+        });
+    }
+    let s = session(&state)?;
+    let secrets = state
+        .load_secrets()?
+        .ok_or("this PC has no device file for the account")?;
+    let auk = s.change_password(
+        current.to_string(),
+        secrets.secret_key.to_string(),
+        new.to_string(),
+    )?;
+    drop(Zeroizing::new(auk));
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountView {
+    pub account_id: String,
+    pub name: String,
+    pub devices: Vec<DeviceView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceView {
+    pub name: String,
+    pub added_at: i64,
+    pub this_device: bool,
+}
+
+#[tauri::command]
+pub fn account(state: State<'_, AppState>) -> UiResult<AccountView> {
+    let s = session(&state)?;
+    let me = s.this_device_id();
+    Ok(AccountView {
+        account_id: s.account_id(),
+        name: s.profile()?.map(|p| p.name).unwrap_or_default(),
+        devices: s
+            .devices()?
+            .into_iter()
+            .map(|d| DeviceView {
+                this_device: me.as_deref() == Some(d.id.as_str()),
+                name: d.name,
+                added_at: d.added_at,
+            })
+            .collect(),
+    })
+}
+
+#[tauri::command]
+pub fn set_profile_name(state: State<'_, AppState>, name: String) -> UiResult<()> {
+    session(&state)?.set_profile(name.trim().to_owned(), vec![])?;
+    Ok(())
+}
+
+/// Strength of a password being typed (onboarding, editor), in bits.
+#[tauri::command]
+pub fn strength(password: String) -> f64 {
+    onepass_ffi::password_strength_bits(Zeroizing::new(password).to_string())
 }

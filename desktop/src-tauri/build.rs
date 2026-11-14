@@ -17,6 +17,21 @@ const COMMANDS: &[&str] = &[
     "copy_field",
     "totp",
     "generate_password",
+    "watchtower",
+    "set_archived",
+    "restore_item",
+    "delete_item",
+    "move_item",
+    "duplicate_item",
+    "password_history",
+    "history_value",
+    "save_vault",
+    "delete_vault",
+    "change_password",
+    "account",
+    "set_profile_name",
+    "strength",
+    "copy_secret",
 ];
 
 fn main() {

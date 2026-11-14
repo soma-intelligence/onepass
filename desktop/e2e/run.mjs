@@ -25,7 +25,7 @@ mkdirSync(data, { recursive: true });
 mkdirSync(shots, { recursive: true });
 
 const driver = spawn(join(homedir(), ".cargo", "bin", "tauri-driver"), ["--native-driver", edgedriver], {
-  env: { ...process.env, ONEPASS_DATA_DIR: data },
+  env: { ...process.env, ONEPASS_DATA_DIR: data, ONEPASS_LANG: "fr" },
   stdio: "ignore",
 });
 process.on("exit", () => driver.kill());
@@ -39,7 +39,7 @@ for (let i = 0; ; i++) {
   }
 }
 
-const PASSWORD = "Correct-Cheval-42";
+const PASSWORD = "Correct-Cheval-42-Agrafe-Lune";
 
 async function wd(method, path, body) {
   const r = await fetch(DRIVER + path, {
@@ -114,142 +114,198 @@ function check(name, ok, detail = "") {
 }
 const button = (label) => `//button[normalize-space(.)='${label}']`;
 const input = (label) => `//label[normalize-space(.)='${label}']/following-sibling::input[1]`;
+// Fields of the editor: the input under a field label.
+const editField = (label) => `//dialog//label[.//span[@class='field-label' and normalize-space(.)='${label}']]//input`;
+const sheetAction = (label) => `//dialog[@open]//div[@class='sheet-bar']//button[normalize-space(.)='${label}']`;
+const nav = (label) => `//nav//button[.//span[@class='nav-label' and normalize-space(.)='${label}']]`;
+const row = (title) => `//div[contains(@class,'list')]//button[contains(@class,'item-row')][.//span[@class='row-title' and normalize-space(.)='${title}']]`;
+const menuItem = (label) => `//div[@class='menu']//button[.//span[normalize-space(.)='${label}']]`;
+const clear = async (xpath) => wd("POST", `${S}/element/${await find(xpath)}/clear`, {});
 
 try {
-  await wd("POST", `${S}/window/rect`, { width: 1180, height: 760 });
+  await wd("POST", `${S}/window/rect`, { width: 1280, height: 800 });
 
-  // Welcome
-  await find("//h1[contains(., 'Bienvenue')]");
-  await shot("01-bienvenue");
+  // Intro, welcome
+  await find("//h1[contains(., 'Tous tes mots de passe')]");
+  await shot("01-intro");
+  await click(button("Continuer"));
+  await click(button("Continuer"));
+  await click(button("Commencer"));
+  await find("//h1[normalize-space(.)='Bienvenue dans OnePass']");
+  await shot("02-bienvenue");
+  await click("//button[.//span[normalize-space(.)='Créer un coffre']]");
+
+  // Master password
+  await type("//input[@id='name']", "Camille");
   await type("//input[@id='pw']", "court");
   await type("//input[@id='pw2']", "court");
-  await click(button("Créer mon coffre"));
-  check("a short password is refused", (await textOf("//div[@class='error']")).includes("10 caractères"));
-  await shot("02-mot-de-passe-trop-court");
-  await wd("POST", `${S}/element/${await find("//input[@id='pw']")}/clear`, {});
-  await wd("POST", `${S}/element/${await find("//input[@id='pw2']")}/clear`, {});
+  await click("//form//button[@type='submit']");
+  check("a weak password is refused", (await waitText("//div[contains(@class,'error')]", (t) => t.length > 0)).includes("solide"));
+  await shot("03-mot-de-passe-faible");
+  await clear("//input[@id='pw']");
+  await clear("//input[@id='pw2']");
   await type("//input[@id='pw']", PASSWORD);
   await type("//input[@id='pw2']", PASSWORD);
-  await click(button("Créer mon coffre"));
+  await sleep(500);
+  await shot("04-mot-de-passe");
+  await click("//form//button[@type='submit']");
 
   // Secret Key (Argon2id at 256 MiB and the identity keys: slow in a debug build)
   await find("//div[@class='secret-key']", 120000);
   const key = await textOf("//div[@class='secret-key']");
   check("the Secret Key is shown once", /^[A-Z0-9]+(-[A-Z0-9]+){5,}$/.test(key.replace(/\s/g, "")), key.slice(0, 7) + "…");
-  await shot("03-secret-key");
+  await shot("05-emergency-kit");
   await click("//input[@id='ok']");
   await click(button("Continuer"));
 
-  // Empty vault
-  await find("//nav[contains(@class,'sidebar')]//span[normalize-space(.)='Personnel']");
-  check("the Personnel vault exists", true);
-  await shot("04-coffre-vide");
+  // Accueil, empty
+  await find("//h1[normalize-space(.)='Bonjour Camille']");
+  check("Accueil greets by first name", true);
+  check("the Personnel vault exists", await exists(nav("Personnel")));
+  await shot("06-accueil-vide");
 
-  // New login
-  await click(button("+ Nouvel élément"));
-  await type("//input[@id='n-title']", "GitHub");
-  await shot("05-nouvel-element");
-  await click(button("Créer"));
-  await find("//dialog//h2[normalize-space(.)='Nouvel élément']");
+  // New login: type picker, editor, generator
+  await click("//button[normalize-space(.)='Créer ton premier élément']");
+  await find("//h1[normalize-space(.)='Que veux-tu ajouter ?']");
+  await shot("07-type");
+  await click("//button[contains(@class,'picker-cell')][.//span[normalize-space(.)='Connexion']]");
+  await type("//input[@id='f-title']", "GitHub");
   await type("//input[@id='f-url']", "https://github.com");
-  await type(input("Identifiant"), "alice@example.com");
-  await click(`//label[normalize-space(.)='Mot de passe']/following-sibling::button`);
-  await type(input("TOTP"), "JBSWY3DPEHPK3PXP");
-  await shot("06-edition");
-  await click(button("Enregistrer"));
+  await type(editField("Identifiant"), "alice@example.com");
+  await click("//dialog//button[@title='Générer un mot de passe']");
+  const gen = await waitText("//dialog[@open]//div[@class='generated']", (t) => t.length === 20);
+  check("the generator makes a 20-character password", gen.length === 20, `${gen.length}`);
+  await shot("08-generateur");
+  await click(sheetAction("Utiliser"));
+  await type(editField("TOTP"), "JBSWY3DPEHPK3PXP");
+  await shot("09-edition");
+  await click(sheetAction("Enregistrer"));
 
-  // Detail
+  // Item
   await find("//main//h2[normalize-space(.)='GitHub']");
   check("the new login is saved", true);
-  check("its password is masked", await exists("//main//div[contains(@class,'value') and normalize-space(.)='••••••••••']"));
-  const otp = await textOf("//main//div[contains(@class,'otp')]");
-  check("a live TOTP code shows", /^\d{3} \d{3} {2}· {2}\d+s$/.test(otp), otp);
-  await shot("07-detail");
-  await click("(//main//button[normalize-space(.)='Afficher'])[1]");
-  const shown = await waitText("(//main//div[contains(@class,'value') and contains(@class,'mono')])[1]", (t) => !t.includes("•"));
-  check("Afficher reveals the generated password", shown.length === 20, `${shown.length} characters`);
-  await shot("08-mot-de-passe-affiche");
-  await click("(//main//button[normalize-space(.)='Copier'])[3]");
-  check("Copier confirms and announces the 90 s clear", (await textOf("//div[@id='toast']")).includes("90 s"));
-  await shot("09-copie");
+  check("its password is masked", await exists("//main//span[contains(@class,'field-value') and normalize-space(.)='••••••••••']"));
+  check("its strength shows", (await textOf("//main//span[@class='meter-label']")).length > 0);
+  const otp = await waitText("//main//span[contains(@class,'otp')]", (t) => /\d/.test(t));
+  check("a live TOTP code shows", /^\d{3} • \d{3}$/.test(otp), otp);
+  await shot("10-element");
+  await wd("POST", `${S}/execute/sync`, { script: "document.querySelectorAll('.more').forEach(e => e.style.opacity = 1)", args: [] });
+  await click("(//main//span[contains(@class,'more')])[2]");
+  await shot("11-menu-champ");
+  await click(menuItem("Révéler"));
+  const shown = await waitText("(//main//span[contains(@class,'field-value') and contains(@class,'mono')])[1]", (t) => !t.includes("•"));
+  check("Révéler shows the generated password", shown.length === 20, `${shown.length} characters`);
+  await shot("12-mot-de-passe-revele");
+  await click("(//main//button[contains(@class,'field-row')])[2]");
+  check("a copy announces the 90 s clear", (await waitText("//div[@id='toast']", (t) => t.includes("90"))).includes("90 s"));
   await click("//main//button[@title='Ajouter aux favoris']");
   await find("//main//button[@title='Retirer des favoris']");
   check("favorite", true);
 
   // Second item: a Wi-Fi router
-  await click(button("+ Nouvel élément"));
-  await wd("POST", `${S}/execute/sync`, {
-    script: "const s=document.getElementById('n-type'); s.value='router'; s.dispatchEvent(new Event('change'));",
-    args: [],
-  });
-  await type("//input[@id='n-title']", "Box maison");
-  await click(button("Créer"));
-  await type(input("SSID"), "Maison-5G");
-  await type(input("Mot de passe Wi-Fi"), "un-mot-de-passe-wifi");
-  await click(button("Enregistrer"));
+  await click("//button[@title='Nouvel élément']");
+  await click("//button[contains(@class,'picker-cell')][.//span[normalize-space(.)='Routeur Wi-Fi']]");
+  await type("//input[@id='f-title']", "Box maison");
+  await type(editField("SSID"), "Maison-5G");
+  await type(editField("Mot de passe Wi-Fi"), "un-mot-de-passe-wifi");
+  await click(sheetAction("Enregistrer"));
   await find("//main//h2[normalize-space(.)='Box maison']");
   check("a Wi-Fi router is saved", true);
-  await shot("10-routeur");
 
-  // List, search, favorites
-  check("the list shows both items", (await exists("//button[contains(@class,'row')]//div[contains(.,'GitHub')]")) && (await exists("//button[contains(@class,'row')]//div[contains(.,'Box maison')]")));
+  // Lists, search, favorites, categories
+  check("the list shows both items", (await exists(row("GitHub"))) && (await exists(row("Box maison"))));
   await type("//input[@type='search']", "git");
   await sleep(300);
-  check("search narrows the list", !(await exists("//button[contains(@class,'row')]//div[contains(.,'Box maison')]")));
-  await shot("11-recherche");
-  await wd("POST", `${S}/element/${await find("//input[@type='search']")}/clear`, {});
-  await wd("POST", `${S}/execute/sync`, { script: "document.querySelector('input[type=search]').dispatchEvent(new Event('input'))", args: [] });
-  await click("//nav//button[.//span[normalize-space(.)='Favoris']]");
-  check("favorites list GitHub only", !(await exists("//button[contains(@class,'row')]//div[contains(.,'Box maison')]")));
-  await shot("12-favoris");
-  await click("//nav//button[.//span[normalize-space(.)='Tous les éléments']]");
+  check("search narrows the list", !(await exists(row("Box maison"))));
+  await shot("13-recherche");
+  await click(nav("Favoris"));
+  check("Favoris lists GitHub only", (await exists(row("GitHub"))) && !(await exists(row("Box maison"))));
+  await click(nav("Routeurs Wi-Fi"));
+  check("a category lists its items", (await exists(row("Box maison"))) && !(await exists(row("GitHub"))));
+  await click(nav("Accueil"));
+  await find("//h1[normalize-space(.)='Bonjour Camille']");
+  await sleep(800);
+  await shot("14-accueil");
 
-  // Generator
-  await click(button("Générateur"));
-  const gen = await textOf("//dialog//div[@class='generated']");
-  check("the generator makes a 20-character password", gen.length === 20);
-  await shot("13-generateur");
-  await click("//input[@id='g-words']");
-  await sleep(300);
-  check("passphrase mode uses words", (await textOf("//dialog//div[@class='generated']")).includes("-"));
-  await shot("14-generateur-mots");
-  await click(button("Fermer"));
+  // Watchtower
+  await click(nav("Watchtower"));
+  await find("//*[local-name()='svg' and @class='dial']");
+  await sleep(800);
+  check("Watchtower shows a score", /\d/.test(await textOf("//*[local-name()='text' and @class='dial-figure']")));
+  check("Watchtower shows its check cards", (await wd("POST", `${S}/elements`, { using: "xpath", value: "//div[contains(@class,'wt-card')]" })).length === 15);
+  await shot("15-watchtower");
 
-  // Edit
-  await click("//button[contains(@class,'row')]//div[contains(.,'GitHub')]");
-  await click(button("Modifier"));
-  const title = await find("//input[@id='f-title']");
-  await wd("POST", `${S}/element/${title}/clear`, {});
-  await wd("POST", `${S}/element/${title}/value`, { text: "GitHub perso" });
-  await click(button("Enregistrer"));
+  // Generator modes
+  await click("//button[@title='Compte']");
+  await shot("16-menu-compte");
+  await click(menuItem("Générateur"));
+  await click("//div[@class='segmented']//button[normalize-space(.)='Mots']");
+  check("Mots makes a passphrase", (await waitText("//dialog[@open]//div[@class='generated']", (t) => t.includes("-"))).includes("-"));
+  await click("//div[@class='segmented']//button[normalize-space(.)='PIN']");
+  check("PIN makes digits", /^\d{6}$/.test(await waitText("//dialog[@open]//div[@class='generated']", (t) => /^\d+$/.test(t))));
+  await shot("17-generateur-pin");
+  await click(sheetAction("Fermer") + " | //dialog[@open]//div[@class='sheet-bar']/button[1]");
+
+  // Edit, archive
+  await click(nav("Tous les éléments"));
+  await click(row("GitHub"));
+  await click("//main//button[normalize-space(.)='Modifier']");
+  await clear("//input[@id='f-title']");
+  await type("//input[@id='f-title']", "GitHub perso");
+  await click(sheetAction("Enregistrer"));
   await find("//main//h2[normalize-space(.)='GitHub perso']");
   check("editing the title saves", true);
-  await shot("15-modifie");
+  await click(row("Box maison"));
+  await click("//main//button[@title='Actions']");
+  await shot("18-actions");
+  await click(menuItem("Archiver"));
+  await sleep(800);
+  await click(nav("Archive"));
+  check("Archiver moves the router to Archive", !!(await find(row("Box maison"), 5000).catch(() => null)));
+
+  // Vault, settings
+  await click("//nav//button[.//span[normalize-space(.)='Nouveau coffre']]");
+  await type("//input[@id='v-name']", "Travail");
+  await click("//dialog[@open]//button[@title='orange']");
+  await click(sheetAction("Enregistrer"));
+  await find(nav("Travail"));
+  check("a new vault appears in the sidebar", true);
+  await click("//button[@title='Compte']");
+  await click(menuItem("Réglages"));
+  await find("//h2[normalize-space(.)='Général']");
+  await shot("19-reglages");
+  await click("//div[@class='settings-side']//button[.//span[normalize-space(.)='Sécurité']]");
+  await find("//h2[normalize-space(.)='Sécurité']");
+  await shot("20-securite");
+  await click("//dialog[@open]//div[@class='sheet-bar']/button[1]");
 
   // Lock, wrong password, unlock
-  await click(button("Verrouiller"));
-  await find("//h1[contains(., 'verrouillé')]");
+  await click("//button[@title='Compte']");
+  await click(menuItem("Verrouiller"));
+  await find("//h1[normalize-space(.)='Déverrouille OnePass']");
   check("Verrouiller locks", true);
-  await shot("16-verrouille");
+  await shot("21-verrouille");
   await type("//input[@id='pw']", "mauvais-mot-de-passe");
-  await click(button("Déverrouiller"));
-  await find("//div[@class='error' and contains(., 'incorrect')]", 60000);
+  await click("//button[@title='Déverrouiller']");
+  await find("//div[contains(@class,'error') and contains(., 'incorrect')]", 60000);
   check("a wrong password is refused", true);
-  await shot("17-mauvais-mot-de-passe");
-  await wd("POST", `${S}/element/${await find("//input[@id='pw']")}/clear`, {});
+  await shot("22-mauvais-mot-de-passe");
+  await clear("//input[@id='pw']");
   await type("//input[@id='pw']", PASSWORD);
-  await click(button("Déverrouiller"));
-  await find("//button[contains(@class,'row')]//div[contains(.,'GitHub perso')]", 60000);
-  check("the right password unlocks, items are still there", true);
-  await shot("18-deverrouille");
+  await click("//button[@title='Déverrouiller']");
+  await find("//h1[normalize-space(.)='Bonjour Camille']", 60000);
+  check("the right password unlocks", true);
 
   // Trash
-  await click("//button[contains(@class,'row')]//div[contains(.,'Box maison')]");
-  await wd("POST", `${S}/execute/sync`, { script: "window.confirm = () => true", args: [] });
-  await click(button("Corbeille"));
-  await click("//nav//button[.//span[normalize-space(.)='Corbeille']]");
-  check("trash holds the router", await exists("//button[contains(@class,'row')]//div[contains(.,'Box maison')]"));
-  await shot("19-corbeille");
+  await click(nav("Tous les éléments"));
+  await click(row("GitHub perso"));
+  await click("//main//button[@title='Actions']");
+  await click(menuItem("Supprimer"));
+  await click(sheetAction("Supprimer"));
+  await sleep(800);
+  await click(nav("Supprimés récemment"));
+  check("Supprimés récemment holds the login", !!(await find(row("GitHub perso"), 5000).catch(() => null)));
+  await shot("23-supprimes");
 } catch (e) {
   check("run", false, String(e.message ?? e));
   await shot("zz-failure").catch(() => {});
