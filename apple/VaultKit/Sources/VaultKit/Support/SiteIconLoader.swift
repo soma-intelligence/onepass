@@ -123,6 +123,9 @@ public actor SiteIconLoader {
     /// cached host at once.
     private var brandQueue: [String] = []
     private var brandRunning = 0
+    /// Callers waiting for a queued or running parent brand search, by host: each resumed once,
+    /// when that search ends (a cancelled caller too: it is never left hanging nor resumed twice).
+    private var brandWaiters: [String: [CheckedContinuation<Data?, Never>]] = [:]
     /// Most parent brand re-searches seen running at once (tests).
     private(set) var brandRunningPeak = 0
     /// Icons already read or fetched, by host: a row shows its icon on its first frame, never the
@@ -150,15 +153,19 @@ public actor SiteIconLoader {
     public func icon(for url: String) async -> Data? {
         guard enabled(), let host = Self.fetchableHost(of: url) else { return nil }
         if let cached = cachedIcon(host: host) {
+            // A parent brand of an older pack (or none yet): searched again, a few hosts at a
+            // time, and awaited, so the caller reads the new parent brand in the same task.
+            if let age = iconAge(host: host), age <= Self.refreshAge, brandOutdated(host: host) {
+                return await awaitBrandSearch(host: host) ?? cached
+            }
             refreshIfStale(host: host)
             return cached
         }
         // A failure is not asked again before its time, unless the parent brand found with it
-        // belongs to an older pack (or was never looked for).
+        // belongs to an older pack (or was never looked for): then searched again the same way.
         if let age = markerAge(host: host), age < Self.failureLifetime {
-            // Searched again in the background, a few hosts at a time.
-            if brandOutdated(host: host) { queueBrandSearch(host: host) }
-            return nil
+            guard brandOutdated(host: host) else { return nil }
+            return await awaitBrandSearch(host: host)
         }
 
         if let task = inFlight[host] { return await task.value }
@@ -215,6 +222,22 @@ public actor SiteIconLoader {
         }
     }
 
+    /// The icon after a parent brand search of `host`: joins the search under way for that host,
+    /// else waits in the queue (`queueBrandSearch`).
+    private func awaitBrandSearch(host: String) async -> Data? {
+        if let task = inFlight[host] { return await task.value ?? cachedIcon(host: host) }
+        return await withCheckedContinuation { continuation in
+            brandWaiters[host, default: []].append(continuation)
+            queueBrandSearch(host: host)
+        }
+    }
+
+    /// Resumes every caller waiting on `host`, once.
+    private func resumeBrandWaiters(host: String, icon: Data?) {
+        guard let waiters = brandWaiters.removeValue(forKey: host) else { return }
+        for waiter in waiters { waiter.resume(returning: icon) }
+    }
+
     /// Queues a background search of `host` for its parent brand (once per host).
     private func queueBrandSearch(host: String) {
         guard inFlight[host] == nil, !brandQueue.contains(host) else { return }
@@ -225,7 +248,14 @@ public actor SiteIconLoader {
     private func startBrandSearches() {
         while brandRunning < Self.prefetchWidth, !brandQueue.isEmpty {
             let host = brandQueue.removeFirst()
-            guard inFlight[host] == nil else { continue }
+            if let other = inFlight[host] {
+                // Another search of this host started meanwhile: its waiters get its result.
+                Task {
+                    let icon = await other.value
+                    self.resumeBrandWaiters(host: host, icon: icon ?? self.cachedIcon(host: host))
+                }
+                continue
+            }
             brandRunning += 1
             brandRunningPeak = max(brandRunningPeak, brandRunning)
             let task = Task { await self.fetchAndStore(host: host, refreshing: true) }
@@ -241,6 +271,7 @@ public actor SiteIconLoader {
         inFlight[host] = nil
         if let fresh { memory.withLock { $0[host] = fresh } }
         brandRunning -= 1
+        resumeBrandWaiters(host: host, icon: fresh ?? cachedIcon(host: host))
         startBrandSearches()
     }
 

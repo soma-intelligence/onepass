@@ -231,6 +231,55 @@ import Testing
         }
     }
 
+    /// A host that failed recently, with a parent brand of an older pack: the row's own task gets
+    /// the new parent brand, the queued search awaited.
+    @Test func failedHostAwaitsTheQueuedSearch() async throws {
+        let cache = SiteIconLoaderTests.tempDirectory()
+        let host = "members.failed-brand-test.com"
+        let url = "https://" + host
+        // First pack: the page names no brand and the site has no icon.
+        Self.serve(host, html: "<title>Members</title>", favicon: nil)
+        let old = try Self.make(version: 7, cache: cache)
+        #expect(await old.icon(for: url, title: "") == nil)
+        #expect(old.site.cachedParentBrand(for: url)?.byName == nil)
+        // The page now names Bay Club and a newer pack arrives: the failure is still fresh.
+        Self.serve(host, html: #"<meta property="og:site_name" content="Bay Club Connect">"#, favicon: nil)
+        let newer = try Self.make(version: 8, cache: cache)
+        #expect(newer.cachedIcon(for: url, title: "") == nil)
+        #expect(await newer.icon(for: url, title: "") == Self.bay)
+        #expect(newer.cachedIcon(for: url, title: "") == Self.bay)
+    }
+
+    /// More such hosts than `prefetchWidth` asked at once: every caller returns, at most four
+    /// searches run together.
+    @Test func manyWaitingHostsAllReturn() async throws {
+        let cache = SiteIconLoaderTests.tempDirectory()
+        let hosts = (1...10).map { "gym\($0).waiting-test.com" }
+        for host in hosts { Self.serve(host, html: "<title>Members</title>", favicon: nil) }
+        let old = try Self.make(version: 7, cache: cache)
+        for host in hosts { _ = await old.icon(for: "https://" + host, title: "") }
+        for host in hosts {
+            Self.serve(host, html: #"<meta property="og:site_name" content="Acme Portal">"#, favicon: nil)
+        }
+        let newer = try Self.make(version: 8, cache: cache)
+        let shown = await withTaskGroup(of: Data?.self) { group in
+            for host in hosts + hosts {
+                group.addTask { await newer.icon(for: "https://" + host, title: "") }
+            }
+            var all: [Data?] = []
+            for await icon in group { all.append(icon) }
+            return all
+        }
+        #expect(shown.count == 20)
+        #expect(shown.allSatisfy { $0 == Self.acme })
+        #expect(await newer.site.brandRunningPeak <= SiteIconLoader.prefetchWidth)
+        for host in hosts {
+            let homes = StubProtocol.requests(host: host).filter { ["", "/"].contains($0.url?.path) }
+            // Counted since the second `serve` (which resets the count): one search per host.
+            #expect(homes.count == 1, "\(host)")
+        }
+    }
+
     /// A parent brand found in another pack version is not used; the site is searched again.
     @Test func newPackVersionLooksForTheParentBrandAgain() async throws {
         let cache = SiteIconLoaderTests.tempDirectory()
