@@ -136,6 +136,14 @@ describe("setup card", () => {
     expect(s.selected).toBe("it_q");
   });
 
+  it("sizes the card's frame in the very document it was shown in", async () => {
+    const h = setup({ items: [item("it_a", "alex@atlas.dev")] });
+    const token = await h.open();
+    expect(await h.cards.resize(token, UI, 180)).toEqual({});
+    expect(h.sent("resize_frame")).toEqual([{ tabId: TAB, message: { type: "resize_frame", kind: "setup", height: 180 }, options: { documentId: "doc-1" } }]);
+    await expect(h.cards.resize("x".repeat(22), UI, 180)).rejects.toThrow();
+  });
+
   it("sets mismatch when the account differs from the selected username", async () => {
     const h = setup({ items: [item("it_a", "sam@atlas.dev")] });
     const s = await h.cards.init(await h.open(), UI);

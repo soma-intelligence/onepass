@@ -569,6 +569,8 @@ export function parseUiToBg(m: unknown): UiToBg | null {
         return { type: o.type, token: token(o.token), key: str(o.key, MAX_SETUP_KEY, 1) };
       case "popup_scan_qr":
         return { type: o.type };
+      case "setup_resize":
+        return { type: o.type, token: token(o.token), height: height(o.height) };
       case "ghost_pill":
         return { type: o.type, token: token(o.token), rect: pillRect(o.rect), over: bool(o.over) };
       case "menu_profile": {

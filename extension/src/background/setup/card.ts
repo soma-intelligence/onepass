@@ -19,7 +19,7 @@ import type { PageAnalyses } from "../analyses";
 import type { BgExt, StorageArea } from "../ext";
 import type { Filler } from "../fill";
 import type { CsContext, UiContext } from "../frames";
-import { removeFrame } from "../overlay";
+import { removeFrame, resizeFrame } from "../overlay";
 import { BgError, type Session, toBgError } from "../session";
 import { type BoundRecord, FrameTokens } from "../tokens";
 
@@ -425,6 +425,13 @@ export class SetupCards {
     rec.spent = true;
     await this.tokens.update(token, rec);
     return { status: "saved" };
+  }
+
+  /** The card's content height: the frame in the page takes it. */
+  async resize(token: string, ui: UiContext, height: number): Promise<object> {
+    const rec = await this.record(token, ui);
+    await resizeFrame(this.deps.ext.tabs, rec, "setup", height);
+    return {};
   }
 
   async close(token: string, ui: UiContext): Promise<object> {

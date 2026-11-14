@@ -882,19 +882,20 @@ export function createFrames(opts: FramesOptions): Frames {
         // inside scrolls (an open length panel must not hang below the viewport).
         else if (kind === "menu" && top + height > vh - EDGE) height = Math.max(FRAME_MIN_HEIGHT, vh - EDGE - top);
       }
-    } else if (kind === "save" && touch) {
+    } else if ((kind === "save" || kind === "setup") && touch) {
       // Touch (iPhone, iPad): centered at the top of what the user sees. Safari's own bars and
       // the keyboard leave the visual viewport, never the layout one; no other manager's box
       // stacks in a corner there.
       const v = visible();
       left = Math.max(EDGE, Math.round((w - width) / 2));
       top = Math.max(0, Math.round(v.top)) + EDGE;
-    } else if (kind === "save" && opts.occupants) {
+    } else if ((kind === "save" || kind === "setup") && opts.occupants) {
       // Another manager's prompt in the corner: below it, or to its left.
       const taken = opts.occupants();
       if (taken.length > 0) ({ left, top } = stackInCorner({ left, top }, { width, height }, taken, { w, h: vh }, CARD_GAP, EDGE));
     }
-    iframe.classList.toggle("quiet", kind === "save");
+    // The setup card sits where the save card does and looks like it.
+    iframe.classList.toggle("quiet", kind === "save" || kind === "setup");
     iframe.classList.toggle("top-center", kind === "overlay");
     iframe.classList.toggle("bare", kind === "overlay");
     iframe.classList.toggle("sheet", asSheet);

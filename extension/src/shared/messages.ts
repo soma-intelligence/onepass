@@ -721,6 +721,8 @@ export type UiToBg =
   /** The setup key typed or pasted in the card when no QR was read. */
   | { type: "setup_paste"; token: string; key: string }
   | { type: "setup_codes_save"; token: string }
+  /** The card's content height: the frame takes it (clamped by the content script). */
+  | { type: "setup_resize"; token: string; height: number }
   | { type: "setup_close"; token: string };
 
 /** A login of the page the setup card offers as the target of the seed (no secret). */

@@ -1544,6 +1544,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       setup_paste: async (m, from) => setupCards.paste(m.token, from, m.key),
       setup_codes_save: async (m, from) => setupCards.codesSave(m.token, from),
       setup_close: async (m, from) => setupCards.close(m.token, from),
+      setup_resize: async (m, from) => setupCards.resize(m.token, from, m.height),
       ...popup.handlers(),
       popup_scan_qr: async () => setupScan.scan(),
       popup_pending: async () => ({ pending: await savePrompts.pendingList() }),

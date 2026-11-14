@@ -331,5 +331,26 @@
   "popup.signInPillHelp": "Compare da sola su una pagina di accesso o di registrazione. Non si compila nulla finché non fai clic.",
   "popup.pillNeverSites": "Mai su questi siti",
   "popup.removeSite": "Rimuovi {site}",
-  "setup.previousCode": "Codice precedente"
+  "setup.previousCode": "Codice precedente",
+  "popup.scanQr": "Scansiona codice QR 2FA",
+  "popup.scanQrNone": "Niente da scansionare in questa pagina",
+  "setup.title": "Aggiungere il codice 2FA a {item}?",
+  "setup.from": "{issuer}, {account}",
+  "setup.mismatch": "Il codice è per {account}. Questo login è {username}.",
+  "setup.add": "Aggiungi",
+  "setup.replaceTitle": "{item} ha già un codice 2FA. Sostituirlo?",
+  "setup.replaceNote": "Il vecchio codice resta sul login.",
+  "setup.replace": "Sostituisci",
+  "setup.cancel": "Annulla",
+  "setup.newLogin": "Nuovo login",
+  "setup.pasteTitle": "Nessun codice QR trovato. Incolla la chiave di configurazione.",
+  "setup.unlock": "Sblocca OnePass",
+  "setup.saved": "Salvato. Premi il pulsante del sito per confermare.",
+  "setup.code": "Il tuo codice",
+  "setup.codesTitle": {
+    "one": "Salvare {count} codice di recupero su {item}?",
+    "other": "Salvare {count} codici di recupero su {item}?"
+  },
+  "setup.codesSave": "Salva",
+  "setup.recoveryLabel": "Codici di recupero"
 }

@@ -331,5 +331,26 @@
   "popup.signInPillHelp": "Aparece sola en una página de inicio de sesión o de registro. No se rellena nada hasta que hagas clic.",
   "popup.pillNeverSites": "Nunca en estos sitios",
   "popup.removeSite": "Quitar {site}",
-  "setup.previousCode": "Código anterior"
+  "setup.previousCode": "Código anterior",
+  "popup.scanQr": "Escanear código QR de 2FA",
+  "popup.scanQrNone": "No hay nada que escanear en esta página",
+  "setup.title": "¿Añadir el código 2FA a {item}?",
+  "setup.from": "{issuer}, {account}",
+  "setup.mismatch": "El código es para {account}. Este inicio de sesión es {username}.",
+  "setup.add": "Añadir",
+  "setup.replaceTitle": "{item} ya tiene un código 2FA. ¿Reemplazarlo?",
+  "setup.replaceNote": "El código anterior se queda en el inicio de sesión.",
+  "setup.replace": "Reemplazar",
+  "setup.cancel": "Cancelar",
+  "setup.newLogin": "Nuevo inicio de sesión",
+  "setup.pasteTitle": "No se encontró ningún código QR. Pega la clave de configuración.",
+  "setup.unlock": "Desbloquear OnePass",
+  "setup.saved": "Guardado. Pulsa el botón del sitio para confirmar.",
+  "setup.code": "Tu código",
+  "setup.codesTitle": {
+    "one": "¿Guardar {count} código de recuperación en {item}?",
+    "other": "¿Guardar {count} códigos de recuperación en {item}?"
+  },
+  "setup.codesSave": "Guardar",
+  "setup.recoveryLabel": "Códigos de recuperación"
 }
