@@ -144,7 +144,7 @@ struct ProfileView: View {
 
     private var securityCard: some View {
         let report = model.watchtower.report
-        let issues = ProfileFacts.topIssues(report, among: WatchtowerCard.all.flatMap(\.checks))
+        let issues = ProfileFacts.topIssues(report, among: ProfileFacts.problemChecks)
         let watchtowerText: String = if report == nil {
             String(localized: "profile.security.analyzing")
         } else if issues.isEmpty {

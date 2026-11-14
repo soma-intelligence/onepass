@@ -79,4 +79,11 @@ struct ProfileFactsTests {
         #expect(personal != ProfileFacts.kindLabel(.business))
         #expect(ProfileFacts.kindLabel(.managed(serverUrl: "https://x", orgId: "ab")) != personal)
     }
+
+    /// Suggestions (a passkey or 2FA a site offers) are not problems: the Profil never lists them.
+    @Test func problemChecksLeaveOutSuggestions() {
+        #expect(!ProfileFacts.problemChecks.contains("passkey_available"))
+        #expect(!ProfileFacts.problemChecks.contains("missing_2fa"))
+        #expect(ProfileFacts.problemChecks.starts(with: ["compromised", "breached_site", "provider_exposed", "reused", "weak"]))
+    }
 }
