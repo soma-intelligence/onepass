@@ -299,3 +299,45 @@ path = "fuzz_targets/recovery_message.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "org_record"
+path = "fuzz_targets/org_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "org_roster"
+path = "fuzz_targets/org_roster.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "org_keyset"
+path = "fuzz_targets/org_keyset.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "org_join"
+path = "fuzz_targets/org_join.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "org_pin"
+path = "fuzz_targets/org_pin.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "org_dns_txt"
+path = "fuzz_targets/org_dns_txt.rs"
+test = false
+doc = false
+bench = false
