@@ -230,6 +230,7 @@
 		E62C0A437934476CA1395891 /* DemoData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FFB44CC51A27D430FC17378 /* DemoData.swift */; };
 		E6FE63D3C82773BAC6D19424 /* FoldLayoutUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42BE6F635EE865D00B34DB84 /* FoldLayoutUITests.swift */; };
 		E77957147DC095431387EEE3 /* SettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03A96E28FD859133D56AB58 /* SettingsUITests.swift */; };
+		A6C0DE0A11E0000000000001 /* TravelTripUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C0DE0A11E0000000000002 /* TravelTripUITests.swift */; };
 		E8122ACC00023E338E4E02A4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 782CA900B64928632D2B1890 /* Assets.xcassets */; };
 		E942ADD634FAABA304BA92FC /* WatchSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568C27B38A48EE4F4ABCA00E /* WatchSettings.swift */; };
 		EA06C844DB1A8420671BC449 /* SafariRelay in Frameworks */ = {isa = PBXBuildFile; productRef = AD1A61B5663FF933B99BD1FF /* SafariRelay */; };
@@ -550,6 +551,7 @@
 		BD6C7960D7F5CAED7D23ADD7 /* OtpRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtpRow.swift; sourceTree = "<group>"; };
 		BDAB87F87FD619AB9A9A1DCE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		C03A96E28FD859133D56AB58 /* SettingsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsUITests.swift; sourceTree = "<group>"; };
+		A6C0DE0A11E0000000000002 /* TravelTripUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelTripUITests.swift; sourceTree = "<group>"; };
 		C09CB3FCA94E45F15C4C5C10 /* CategoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryListView.swift; sourceTree = "<group>"; };
 		C12E0E8286297CA68D0517E2 /* DeveloperSettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsPage.swift; sourceTree = "<group>"; };
 		C1B99E34B1CA7214163402DD /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
@@ -905,6 +907,7 @@
 				52A4C3E0C0617CEAB04F1977 /* SaveSheetWatch.swift */,
 				9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */,
 				C03A96E28FD859133D56AB58 /* SettingsUITests.swift */,
+				A6C0DE0A11E0000000000002 /* TravelTripUITests.swift */,
 				CEB25B0FC46CD5AF0BE37BC2 /* SharingUITests.swift */,
 			);
 			path = AppUITests;
@@ -1895,6 +1898,7 @@
 				EA6C3BE88D8E24B9C48CDC9F /* SaveSheetWatch.swift in Sources */,
 				67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */,
 				E77957147DC095431387EEE3 /* SettingsUITests.swift in Sources */,
+				A6C0DE0A11E0000000000001 /* TravelTripUITests.swift in Sources */,
 				640095EA49580D71EAE656DB /* SharingUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
