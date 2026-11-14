@@ -34,8 +34,8 @@ use std::fmt;
 
 use aws_lc_rs::digest::{Context, SHA256};
 use onepass_mailbox_proto::{
-    Body, CommitOp, CommitResponse, ORG_INVITE_USES, Op, PAGE_MAX_RECORDS, ServerRecord,
-    blob_sha256,
+    Body, CommitOp, CommitResponse, INLINE_MAX, ORG_INVITE_USES, Op, PAGE_MAX_BYTES,
+    PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
 };
 
 use crate::{ChangeFeed, MailboxApi, MailboxError, blobs};
@@ -56,10 +56,28 @@ pub const ORG_READ_MAX: usize = 1024;
 /// A join request as `join_requests` lists it: the account, its bytes.
 pub type JoinRequest = ([u8; 16], Vec<u8>);
 
-/// Most pages `join_requests` reads before it calls the server hostile: the
-/// plan `org` holds at most 200 000 records (`max_records`), so an honest
-/// feed ends within that many records, `PAGE_MAX_RECORDS` a page, plus one.
-pub const ORG_FEED_PAGES_MAX: usize = 200_000 / PAGE_MAX_RECORDS as usize + 1;
+/// Records the plan `org` allows (`max_records` of `org_plan`).
+const ORG_MAX_RECORDS: usize = 200_000;
+
+/// What the server charges a record against the page byte limit beyond its
+/// body. Local copy: the constant lives in the server's edge function and
+/// in `testing/fake.rs` (`RECORD_OVERHEAD`), the proto crate has none.
+const PAGE_RECORD_OVERHEAD: usize = 96;
+
+/// Most pages `join_requests` reads before it calls the server hostile. A
+/// page ends at `PAGE_MAX_RECORDS` records or `PAGE_MAX_BYTES`, whichever
+/// comes first, so an honest feed of `ORG_MAX_RECORDS` records of inline
+/// bodies up to `INLINE_MAX` needs the larger of the two page counts
+/// (about 786 by bytes, 200 by records), plus one for the closing page.
+pub const ORG_FEED_PAGES_MAX: usize = {
+    let by_records = ORG_MAX_RECORDS.div_ceil(PAGE_MAX_RECORDS as usize);
+    let by_bytes = (ORG_MAX_RECORDS * (INLINE_MAX + PAGE_RECORD_OVERHEAD)).div_ceil(PAGE_MAX_BYTES);
+    (if by_records > by_bytes {
+        by_records
+    } else {
+        by_bytes
+    }) + 1
+};
 
 /// Attempts of a keyset or join request rewrite before `Contended`.
 const REWRITE_ATTEMPTS: usize = 4;
