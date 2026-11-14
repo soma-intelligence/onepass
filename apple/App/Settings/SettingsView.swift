@@ -182,18 +182,29 @@ struct SettingsView: View {
             .settingsPage("Réglages")
             .navigationDestination(for: SettingsPage.self) { page in
                 page.content
+                    // "OK" on every page: opened straight on one (Profil), it still closes the sheet.
+                    .toolbar { doneItem }
             }
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("OK") { dismiss() }
-                        .accessibilityIdentifier("settings.done")
-                }
-            }
+            .toolbar { doneItem }
         }
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
         .onChange(of: path) { model.session.noteActivity() }
-        .onAppear { SettingsTiming.mark("shown") }
+        .onAppear {
+            SettingsTiming.mark("shown")
+            // A page asked by another screen (Profil > Synchronisation, Sécurité): opened on top.
+            if let request = model.settingsPageRequest {
+                model.settingsPageRequest = nil
+                path = [request]
+            }
+        }
+    }
+
+    private var doneItem: some ToolbarContent {
+        ToolbarItem(placement: .confirmationAction) {
+            Button("OK") { dismiss() }
+                .accessibilityIdentifier("settings.done")
+        }
     }
 
     #if os(iOS)

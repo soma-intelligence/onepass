@@ -430,6 +430,7 @@ struct AccountHeader: View {
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
             .accessibilityLabel(Text("browse.account \(model.settings.displayName)"))
+            .accessibilityAddTraits(model.page == .profile ? .isSelected : [])
             .accessibilityIdentifier("account.menu")
         } else {
             systemMenu
@@ -455,9 +456,16 @@ struct AccountHeader: View {
         .padding(5)
         .padding(.trailing, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(hovering || open ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
+        .background(accountRowFill(highlighted: hovering || open),
             in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
         .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
+    }
+
+    /// The account row's fill: selected while the Profil page shows (no sidebar row stands for
+    /// it), the hover fill otherwise.
+    private func accountRowFill(highlighted: Bool) -> AnyShapeStyle {
+        if model.page == .profile { return AnyShapeStyle(.fill.secondary) }
+        return highlighted ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear)
     }
 
     /// iPad and visionOS: the system menu.
@@ -507,7 +515,7 @@ struct AccountHeader: View {
             .padding(5)
             .padding(.trailing, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
+            .background(accountRowFill(highlighted: hovering),
                 in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
             .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
         }
@@ -518,6 +526,7 @@ struct AccountHeader: View {
         .animation(.easeOut(duration: 0.12), value: hovering)
         .visionHoverEffect()
         .accessibilityLabel(Text("browse.account \(model.settings.displayName)"))
+        .accessibilityAddTraits(model.page == .profile ? .isSelected : [])
         .accessibilityIdentifier("account.menu")
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }

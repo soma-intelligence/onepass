@@ -7,6 +7,10 @@ import Testing
 /// and the account kind (spec 2026-11-14-profile-account-security, sections 3.2 and 3.3).
 @Suite("Profile facts")
 struct ProfileFactsTests {
+    /// Other suites pin the French strings while these run: pin them here too, so both sides of a
+    /// comparison are read in the same language.
+    init() { VaultKitStrings.pinSourceLanguage() }
+
     private func check(_ id: String, _ findings: UInt32) -> FfiWatchtowerCheck {
         FfiWatchtowerCheck(check: id, findings: findings, itemIds: [])
     }
@@ -71,6 +75,19 @@ struct ProfileFactsTests {
 
     @Test func topIssuesOfNilReportIsEmpty() {
         #expect(ProfileFacts.topIssues(nil, among: ["weak"]).isEmpty)
+    }
+
+    /// No report and a failed run: "indisponible", never "Analyse…" for ever.
+    @Test func watchtowerStatusWithoutReport() {
+        #expect(ProfileFacts.watchtowerStatus(nil, failed: false, among: ["weak"]) == .analyzing)
+        #expect(ProfileFacts.watchtowerStatus(nil, failed: true, among: ["weak"]) == .unavailable)
+    }
+
+    /// A report wins over a later failure: the last one stays shown.
+    @Test func watchtowerStatusWithReport() {
+        #expect(ProfileFacts.watchtowerStatus(report([check("weak", 0)]), failed: true, among: ["weak"]) == .clear)
+        #expect(ProfileFacts.watchtowerStatus(report([check("weak", 2)]), failed: false, among: ["weak"])
+            == .issues([.init(check: "weak", findings: 2)]))
     }
 
     @Test func kindLabelFollowsKind() {

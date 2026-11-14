@@ -34,40 +34,47 @@ struct SecuritySettings: View {
     private var availability: BiometricAvailability { session.environment.biometrics.availability }
     private var hardwareAvailable: Bool { availability == .available }
 
+    /// Scroll target of the device mode section (Profil > Mode d'appareil).
+    static let deviceModeAnchor = "settings.security.deviceMode"
+
     var body: some View {
         // Read so the page redraws when a setting changes.
         let _ = model.settingsRevision
-        Form {
-            unlockSection
-            autofillReuseSection
-            Section {
-                Button("settings.security.changePassword", systemImage: "key") { changingPassword = true }
-                    .accessibilityIdentifier("settings.changePassword")
-            } footer: {
-                Text("settings.security.changePassword.footer")
-            }
-            deviceModeSection
-            Section {
-                Button("settings.lockNow", systemImage: "lock") {
-                    // The discard confirmation of an edited draft belongs to the main screen.
-                    model.showSettings = false
-                    model.perform(.lock)
-                }
-                    .accessibilityIdentifier("settings.lockNow")
-            }
-            Section {
-                Button("settings.deleteAccount", systemImage: "trash", role: .destructive) { confirmingDelete = true }
-                    .accessibilityIdentifier("settings.deleteAccount")
-            } footer: {
-                Text("settings.deleteAccount.footer")
-            }
-            if let errorMessage {
+        ScrollViewReader { proxy in
+            Form {
+                unlockSection
+                autofillReuseSection
                 Section {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("settings.security.error")
+                    Button("settings.security.changePassword", systemImage: "key") { changingPassword = true }
+                        .accessibilityIdentifier("settings.changePassword")
+                } footer: {
+                    Text("settings.security.changePassword.footer")
+                }
+                deviceModeSection
+                Section {
+                    Button("settings.lockNow", systemImage: "lock") {
+                        // The discard confirmation of an edited draft belongs to the main screen.
+                        model.showSettings = false
+                        model.perform(.lock)
+                    }
+                        .accessibilityIdentifier("settings.lockNow")
+                }
+                Section {
+                    Button("settings.deleteAccount", systemImage: "trash", role: .destructive) { confirmingDelete = true }
+                        .accessibilityIdentifier("settings.deleteAccount")
+                } footer: {
+                    Text("settings.deleteAccount.footer")
+                }
+                if let errorMessage {
+                    Section {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("settings.security.error")
+                    }
                 }
             }
+            .onAppear { focus(proxy) }
+            .onChange(of: model.settingsFocusRequest) { focus(proxy) }
         }
         .settingsPage("Sécurité")
         .sheet(isPresented: $changingPassword) { ChangePasswordSheet() }
@@ -216,6 +223,17 @@ struct SecuritySettings: View {
         model.settingsChanged()
     }
 
+    /// Scrolls to the section another screen asked for (Profil > Mode d'appareil), once.
+    private func focus(_ proxy: ScrollViewProxy) {
+        guard let target = model.settingsFocusRequest else { return }
+        model.settingsFocusRequest = nil
+        Task {
+            // After the page is laid out: a scroll asked on appear is otherwise lost.
+            try? await Task.sleep(for: .milliseconds(350))
+            withAnimation { proxy.scrollTo(target, anchor: .center) }
+        }
+    }
+
     // MARK: - Mode d'appareil
 
     private var deviceModeSection: some View {
@@ -230,6 +248,7 @@ struct SecuritySettings: View {
                 Text("Partagé").tag(DeviceMode.shared)
             }
             .accessibilityIdentifier("settings.deviceMode")
+            .id(Self.deviceModeAnchor)
             if settings.deviceMode == .shared {
                 NavigationLink {
                     VisibleVaultsView()

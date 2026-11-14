@@ -34073,6 +34073,36 @@
         }
       }
     },
+    "profile.security.unavailable" : {
+      "comment" : "Profile, Security card: Watchtower could not run; tap opens Watchtower to retry",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unavailable, tap to retry"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No disponible, toca para reintentar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indisponible, touche pour réessayer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non disponibile, tocca per riprovare"
+          }
+        }
+      }
+    },
     "profile.security.unlock" : {
       "comment" : "Profile, Security card: unlock method and auto-lock (label)",
       "extractionState" : "manual",

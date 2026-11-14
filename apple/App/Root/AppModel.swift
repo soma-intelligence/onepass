@@ -131,6 +131,8 @@ final class AppModel {
     var showSettings = false
     /// The settings page to show next time the settings open (Développeur page cards).
     var settingsPageRequest: SettingsPage?
+    /// The section of that page to scroll to (Profil > Mode d'appareil), taken by the page.
+    var settingsFocusRequest: String?
     /// Bumped on every settings change made through `updateSettings`, so views that show a setting
     /// (stored in `UserDefaults`, not observable) redraw.
     private(set) var settingsRevision = 0

@@ -363,7 +363,6 @@ struct FoldSplitView: View {
     @State private var appeared = false
     @State private var dragging: ItemRef?
     @State private var dragToken = 0
-    /// Profil from the account panel: no tab stack here to push it on, so a sheet.
 
     var body: some View {
         GeometryReader { proxy in

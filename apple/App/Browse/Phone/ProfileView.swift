@@ -28,6 +28,8 @@ struct ProfileView: View {
     @State private var identity: FfiItem?
     @State private var card: FfiItem?
     @State private var picking: ProfileKind?
+    /// The ID row says "copié" a moment after a tap (the toast can be under a sheet).
+    @State private var idCopied = false
 
     private var session: VaultSession { model.session }
 
@@ -123,9 +125,18 @@ struct ProfileView: View {
             if let profile {
                 ProfileRow(label: "profile.account.kind", value: ProfileFacts.kindLabel(profile.kind))
                 if let short = ProfileFacts.shortID(profile.accountID), let full = profile.accountID {
-                    ProfileNavRow(label: "profile.account.id", value: short, accessory: "doc.on.doc", id: "profile.account.id") {
+                    ProfileNavRow(
+                        label: "profile.account.id",
+                        value: idCopied ? String(localized: "profile.account.idCopied") : short,
+                        accessory: idCopied ? "checkmark" : "doc.on.doc", id: "profile.account.id"
+                    ) {
                         session.copy(full, concealed: false)
                         model.showToast(String(localized: "profile.account.idCopied"))
+                        idCopied = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            idCopied = false
+                        }
                     }
                 }
                 ProfileRow(label: "profile.account.workDomains", value: profile.workDomains.joined(separator: ", "))
@@ -147,12 +158,14 @@ struct ProfileView: View {
 
     private var securityCard: some View {
         let report = model.watchtower.report
-        let issues = ProfileFacts.topIssues(report, among: ProfileFacts.problemChecks)
-        let watchtowerText: String = if report == nil {
-            String(localized: "profile.security.analyzing")
-        } else if issues.isEmpty {
-            String(localized: "profile.security.noIssues")
-        } else {
+        let failed = if case .failed = model.watchtower.phase { true } else { false }
+        let watchtowerText: String = switch ProfileFacts.watchtowerStatus(
+            report, failed: failed, among: ProfileFacts.problemChecks)
+        {
+        case .analyzing: String(localized: "profile.security.analyzing")
+        case .unavailable: String(localized: "profile.security.unavailable")
+        case .clear: String(localized: "profile.security.noIssues")
+        case .issues(let issues):
             issues.map { issue in
                 let title = WatchtowerCard.all.first { $0.checks.contains(issue.check) }?.title ?? issue.check
                 return "\(issue.findings) \(title)"
@@ -181,7 +194,7 @@ struct ProfileView: View {
                 openSettings(.security)
             }
             ProfileNavRow(label: "profile.security.device", value: deviceText, id: "profile.security.device") {
-                openSettings(.security)
+                openSettings(.security, focus: SecuritySettings.deviceModeAnchor)
             }
             ProfileNavRow(
                 label: "profile.security.password", value: String(localized: "profile.security.change"),
@@ -204,9 +217,11 @@ struct ProfileView: View {
         .accessibilityIdentifier("profile.security")
     }
 
-    /// A Réglages page: the Settings window on the Mac, the settings sheet elsewhere.
-    private func openSettings(_ page: SettingsPage) {
+    /// A Réglages page, scrolled to `focus` if given: the Settings window on the Mac, the settings
+    /// sheet elsewhere.
+    private func openSettings(_ page: SettingsPage, focus: String? = nil) {
         model.settingsPageRequest = page
+        model.settingsFocusRequest = focus
         #if os(macOS)
         NSApp.activate()
         openSettingsWindow()

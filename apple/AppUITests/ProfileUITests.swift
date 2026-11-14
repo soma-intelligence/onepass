@@ -13,12 +13,32 @@ final class ProfileUITests: XCTestCase {
 
     override func setUp() async throws {
         continueAfterFailure = false
+        // The second-account test launches with its own arguments.
+        if name.contains("SecondAccount") { return }
+        launch()
+    }
+
+    private func launch(_ extra: [String] = []) {
         app = XCUIApplication()
         app.launchArguments += [
             "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO", "-OnePassDemoCrypto", "NO",
-        ]
+        ] + extra
         app.launch()
         XCTAssertTrue(element("account.menu").waitForExistence(timeout: Self.seedTimeout), "demo vault not shown")
+    }
+
+    /// iPhone: the account panel's account row opens the Profil.
+    private func openProfile() {
+        element("account.menu").tap()
+        element("account.current").tap()
+        XCTAssertTrue(element("profile.account").waitForExistence(timeout: Self.uiTimeout), "Profil not opened")
+    }
+
+    private func closeSettings() {
+        let done = element("settings.done")
+        XCTAssertTrue(done.waitForExistence(timeout: Self.uiTimeout))
+        done.tap()
+        XCTAssertTrue(done.waitForNonExistence(timeout: Self.uiTimeout))
     }
 
     private func element(_ id: String) -> XCUIElement {
@@ -70,6 +90,50 @@ final class ProfileUITests: XCTestCase {
         // Passkeys: the filtered list, pushed over the Profil.
         reveal("profile.security.passkeys").tap()
         XCTAssertTrue(element("profile.account").waitForNonExistence(timeout: Self.uiTimeout), "passkeys list not pushed")
+    }
+
+    /// Synchronisation and Mode d'appareil open Réglages on their page, the device mode in view.
+    func testSyncAndDeviceRowsOpenTheirSettingsPage() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPhone only")
+        openProfile()
+        element("profile.account.sync").tap()
+        XCTAssertTrue(element("settings.syncNow").waitForExistence(timeout: 90), "Sync page not opened")
+        closeSettings()
+
+        reveal("profile.security.device").tap()
+        let picker = element("settings.deviceMode")
+        XCTAssertTrue(picker.waitForExistence(timeout: 90), "Security page not opened")
+        let shown = NSPredicate(format: "isHittable == true")
+        expectation(for: shown, evaluatedWith: picker)
+        waitForExpectations(timeout: Self.uiTimeout)
+        closeSettings()
+    }
+
+    /// Watchtower switches to its tab; the ID row says it was copied.
+    func testWatchtowerRowAndIDCopy() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPhone only")
+        openProfile()
+        let id = element("profile.account.id")
+        XCTAssertTrue(id.exists)
+        let before = id.label
+        id.tap()
+        let changed = NSPredicate(format: "label != %@", before)
+        expectation(for: changed, evaluatedWith: id)
+        waitForExpectations(timeout: Self.uiTimeout)
+
+        reveal("profile.security.watchtower").tap()
+        XCTAssertTrue(element("page.watchtower").waitForExistence(timeout: Self.uiTimeout), "Watchtower not opened")
+    }
+
+    /// Two accounts: the panel lists both, and its Profil row opens the Profil.
+    func testSecondAccountPanelHasProfilRow() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPhone only")
+        launch(["-OnePassDemoSecondAccount", "YES"])
+        element("account.menu").tap()
+        let row = element("account.profile")
+        XCTAssertTrue(row.waitForExistence(timeout: Self.uiTimeout), "panel without its Profil row")
+        row.tap()
+        XCTAssertTrue(element("profile.account").waitForExistence(timeout: Self.uiTimeout), "Profil not opened")
     }
 
     /// iPad (regular width, split view): the sidebar's account menu has Profil, and the Profil's rows
