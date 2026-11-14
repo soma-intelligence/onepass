@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use onepass_ffi::{
-    FfiDeviceKind, FfiDeviceMode, FfiFieldType, FfiItem, FfiMatchRule,
-    FfiPasswordRecipe, FfiStoreState, FfiUrl, OnePassError, Session,
+    FfiDeviceKind, FfiDeviceMode, FfiFieldType, FfiItem, FfiMatchRule, FfiPasswordRecipe,
+    FfiStoreState, FfiUrl, OnePassError, Session,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -311,7 +311,9 @@ pub fn reveal_field(
     item_id: String,
     field_id: String,
 ) -> UiResult<String> {
-    Ok(field_value(&state, vault_id, item_id, &field_id)?.1.to_string())
+    Ok(field_value(&state, vault_id, item_id, &field_id)?
+        .1
+        .to_string())
 }
 
 /// Copies a field without its value crossing the IPC; an OTP field copies
@@ -337,7 +339,9 @@ pub fn copy_field(
         std::thread::sleep(Duration::from_secs(CLIPBOARD_CLEAR_SECS));
         if let Ok(mut c) = arboard::Clipboard::new() {
             // Only our own value is cleared: a later copy by the user stays.
-            if c.get_text().is_ok_and(|t| Zeroizing::new(t).as_str() == copied.as_str()) {
+            if c.get_text()
+                .is_ok_and(|t| Zeroizing::new(t).as_str() == copied.as_str())
+            {
                 let _ = c.clear();
             }
         }
@@ -358,7 +362,8 @@ fn set_clipboard(c: &mut arboard::Clipboard, text: &str) -> UiResult<()> {
 
 #[cfg(not(windows))]
 fn set_clipboard(c: &mut arboard::Clipboard, text: &str) -> UiResult<()> {
-    c.set_text(text).map_err(|e| format!("clipboard: {e}").into())
+    c.set_text(text)
+        .map_err(|e| format!("clipboard: {e}").into())
 }
 
 #[derive(Serialize)]

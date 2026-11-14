@@ -42,9 +42,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use onepass_bridge::agent::AgentHub;
 use onepass_bridge::audit::{AuditEvent, AuditSink};
+use onepass_bridge::host::{Approval, Approver, Journal, PairingStore};
 #[cfg(unix)]
 use onepass_bridge::host::{Conn, Limits, spawn_reader};
-use onepass_bridge::host::{Approval, Approver, Journal, PairingStore};
 use onepass_bridge::pairing::PairingRecord;
 use onepass_bridge::service::{AccountTag, VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};

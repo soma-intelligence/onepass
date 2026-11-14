@@ -97,7 +97,9 @@ pub fn load(sealer: &dyn Sealer, path: &Path) -> Result<Option<DeviceSecrets>, S
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(format!("read: {e}")),
     };
-    let rest = bytes.strip_prefix(MAGIC.as_slice()).ok_or("device file format")?;
+    let rest = bytes
+        .strip_prefix(MAGIC.as_slice())
+        .ok_or("device file format")?;
     let (len, rest) = rest.split_at_checked(2).ok_or("device file format")?;
     let len = usize::from(u16::from_le_bytes([len[0], len[1]]));
     let (id, sealed) = rest.split_at_checked(len).ok_or("device file format")?;
@@ -190,7 +192,10 @@ mod windows {
                 )
             };
             if ok == 0 {
-                return Err(format!("DPAPI seal failed ({})", std::io::Error::last_os_error()));
+                return Err(format!(
+                    "DPAPI seal failed ({})",
+                    std::io::Error::last_os_error()
+                ));
             }
             // SAFETY: success, so `out` is DPAPI's.
             Ok(unsafe { take(out) }.to_vec())
@@ -268,7 +273,8 @@ mod tests {
 
     #[test]
     fn truncated_file_is_refused() {
-        let dir = std::env::temp_dir().join(format!("onepass-desktop-trunc-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("onepass-desktop-trunc-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("device.bin");
         fs::write(&path, b"OPDSK\x00\x00\x01\x20").unwrap();

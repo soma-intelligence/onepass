@@ -224,7 +224,11 @@ pub fn display(v: &FfiFieldValue) -> Option<String> {
         V::Money {
             minor_units,
             currency,
-        } => format!("{}.{:02} {currency}", minor_units / 100, (minor_units % 100).abs()),
+        } => format!(
+            "{}.{:02} {currency}",
+            minor_units / 100,
+            (minor_units % 100).abs()
+        ),
         V::Address { value } => [
             value.line1.as_str(),
             value.line2.as_str(),

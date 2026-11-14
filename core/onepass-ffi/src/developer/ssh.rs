@@ -18,11 +18,11 @@ use onepass_core::model::{FieldValue, Item, ItemType, SshKeyValue, new_item};
 #[cfg(unix)]
 use onepass_guard::{AuditLog, SignedAuditSink};
 use onepass_ssh_agent::keys::{AgentKey, KeyError, KeyType, is_encrypted};
-use onepass_ssh_agent::{KeyInfo, ssh_keys_of};
 #[cfg(unix)]
 use onepass_ssh_agent::{
     Agent, AgentConfig, AgentGuards, KeySource, bind_socket, load_key_of, serve_with_stack,
 };
+use onepass_ssh_agent::{KeyInfo, ssh_keys_of};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 

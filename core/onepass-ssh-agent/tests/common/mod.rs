@@ -18,11 +18,11 @@ use onepass_guard::{
 };
 use onepass_peer::{ClientIdentity, CodeIdentity};
 use onepass_ssh_agent::keys::{AgentKey, KeyType};
+#[cfg(unix)]
+use onepass_ssh_agent::peer_info;
 use onepass_ssh_agent::wire::{
     SSH_AGENTC_REQUEST_IDENTITIES, SSH_AGENTC_SIGN_REQUEST, SshReader, SshWriter,
 };
-#[cfg(unix)]
-use onepass_ssh_agent::peer_info;
 use onepass_ssh_agent::{AgentGuards, KeyInfo, KeySource, PeerInfo, ssh_client_record};
 use tempfile::TempDir;
 use zeroize::Zeroizing;

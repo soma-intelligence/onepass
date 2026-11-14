@@ -141,9 +141,8 @@ pub fn resolve_program(
     #[cfg(not(unix))]
     let executable = |p: &Path| {
         std::fs::metadata(p).is_ok_and(|m| m.is_file())
-            && p.extension().is_some_and(|e| {
-                e.eq_ignore_ascii_case("exe") || e.eq_ignore_ascii_case("com")
-            })
+            && p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("exe") || e.eq_ignore_ascii_case("com"))
     };
     let base = |p: &Path| match cwd {
         Some(c) if p.is_relative() => c.join(p),
@@ -330,8 +329,8 @@ fn secret_dir(files: &[(String, Zeroizing<String>)]) -> io::Result<tempfile::Tem
         {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "bad file name"));
         }
-        let mut f = private(OpenOptions::new().write(true).create_new(true))
-            .open(dir.path().join(name))?;
+        let mut f =
+            private(OpenOptions::new().write(true).create_new(true)).open(dir.path().join(name))?;
         f.write_all(value.as_bytes())?;
     }
     Ok(dir)

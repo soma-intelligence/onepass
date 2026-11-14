@@ -302,10 +302,11 @@ mod tests {
         };
         let e = LocalWorkspace.run(&req).unwrap_err();
         // Windows refuses every run before looking for the program.
-        let kind = if cfg!(unix) { "entity not found" } else { "unsupported" };
-        assert_eq!(
-            e.message(),
-            format!("command could not be started: {kind}")
-        );
+        let kind = if cfg!(unix) {
+            "entity not found"
+        } else {
+            "unsupported"
+        };
+        assert_eq!(e.message(), format!("command could not be started: {kind}"));
     }
 }

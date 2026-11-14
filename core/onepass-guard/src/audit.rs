@@ -19,13 +19,13 @@
 //! an old log together with its old authentic head is not detected.
 
 use crate::approval::Surface;
+use crate::private::{private, read_exact_at, set_private, sync_dir};
 use crate::{GuardError, LocalSigner, open_config, seal_config};
 use aws_lc_rs::digest;
 use data_encoding::HEXLOWER;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use crate::private::{private, read_exact_at, set_private, sync_dir};
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -381,8 +381,8 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = PathBuf::from(tmp);
-    let mut f: File = private(OpenOptions::new().write(true).create(true).truncate(true))
-        .open(&tmp)?;
+    let mut f: File =
+        private(OpenOptions::new().write(true).create(true).truncate(true)).open(&tmp)?;
     f.write_all(data)?;
     f.sync_all()?;
     drop(f);

@@ -35,7 +35,9 @@ impl FfiPqDeviceHalf for SoftwareHalf {
     }
 
     fn mldsa_sign(&self, message: Vec<u8>) -> Result<Vec<u8>, OnePassError> {
-        self.0.mldsa_sign(&message).map_err(|_| OnePassError::Crypto)
+        self.0
+            .mldsa_sign(&message)
+            .map_err(|_| OnePassError::Crypto)
     }
 
     fn mlkem_decapsulate(&self, ciphertext: Vec<u8>) -> Result<Vec<u8>, OnePassError> {

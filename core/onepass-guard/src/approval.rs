@@ -15,9 +15,9 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::sync::Mutex;
+use std::time::Duration;
 #[cfg(unix)]
 use std::time::Instant;
-use std::time::Duration;
 
 /// Which front end asks.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
