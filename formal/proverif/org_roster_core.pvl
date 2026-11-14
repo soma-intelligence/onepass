@@ -44,7 +44,7 @@
    - Le roster épinglé est la table pinned_roles(clé d'appareil, compte,
      rôle), une ligne par rôle, remplie par la configuration de confiance
      (l'épingle déjà acceptée). Une clé qui n'y est pas n'a aucun droit
-     (resolve_signer). Écart au brief : la table porte aussi le compte,
+     dans le modèle. Écart au brief : la table porte aussi le compte,
      pour l'autorité Owner par compte et par appareil (X8, X11).
    - L'autorité Owner vaut seulement pour un appareil listé dans la tête
      de lignée courante pour ce compte (table head_owner, X8, X11). La
@@ -78,6 +78,19 @@
      état Removed terminal, rebase (X13) : non modélisés.
    - Une seule signature d'appareil invalide fait tomber l'enregistrement
      de lignée dans le code ; le modèle ne lit que deux signatures.
+   - Voie X11 de resolve_signer (rules.rs) : un appareil absent du roster
+     épinglé mais listé par la tête de lignée pour un Owner Active signe
+     avec les rôles de cette entrée. Non modélisée ; ici les appareils de
+     g1 sont honnêtes, donc la voie n'ouvrirait aucune attaque nouvelle.
+   - Un ancien propriétaire perd Owner mais garde ses autres rôles (X8) ;
+     O3 ne détient que Owner, ce chemin n'est pas exercé.
+   - fpr est un constructeur libre : pas de collision d'empreinte
+     (hypothèse sur SHA-256). La signature de genèse n'ajoute rien à
+     l'épingle dans ce scénario, puisque skI fuit avec O3.
+   - R6 (personne ne donne Provisioner) est vraie aussi parce qu'aucun
+     signataire honnête ne donne ce rôle ; la mutation qui retire la
+     règle de l'ensemble englobant rend R6 fausse (vérifiée à la revue),
+     ce qui montre que la règle porte la requête.
    - La signature d'identité n'apporte rien dans ce scénario (l'identité
      fuit avec O3) : la requête de lignée repose sur le quorum seul. Son
      rôle propre (lier la lignée à l'organisation épinglée) n'est montré

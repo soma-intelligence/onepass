@@ -376,7 +376,7 @@ org_roster.pv | not event(GrantAccepted(d_4,mallory[],role_admin)) | true
 org_roster.pv | not event(AddAcceptedFrom(d_4,mallory[],role_prov)) | true
 # R5 : Admin donné seulement par un détenteur de rôle honnête.
 org_roster.pv | event(GrantAccepted(d_4,m_38,role_admin)) ==> event(RoleHolderSigned(grant(m_38,role_admin))) | true
-# R6 : ensemble englobant, le UserManager ne donne pas un rôle qu'il ne détient pas.
+# R6 : ensemble englobant, personne ne donne Provisioner (le UserManager compromis ne le détient pas).
 org_roster.pv | not event(GrantAccepted(d_4,m_38,role_prov)) | true
 # R7 : le bit Owner n'est jamais donné par un roster (il suit la lignée).
 org_roster.pv | not event(GrantAccepted(d_4,m_38,role_owner)) | true
