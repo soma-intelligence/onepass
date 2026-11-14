@@ -118,6 +118,62 @@ impl<S: RecordStore> Repository<S> {
         Ok(DuplicateScan { items, groups })
     }
 
+    /// The items `members` as one group the user picked (the Mac list's
+    /// "Fusionner"), for the same review and merge as a found group:
+    /// `items` holds only them, `groups` the one group
+    /// (`duplicates::picked`), `primary` first when it is writable.
+    ///
+    /// Refused (`Validation("members", ..)`) under two distinct items, for
+    /// items of different types, for an archived, trashed, pending or
+    /// profile item, and when no copy is writable.
+    pub fn duplicate_pick(
+        &mut self,
+        members: &[ItemKey],
+        primary: Option<ItemKey>,
+    ) -> Result<DuplicateScan> {
+        let vaults = self.vaults()?;
+        let mut items: Vec<ScannedItem> = Vec::new();
+        for k in members {
+            if items.iter().any(|s| s.item.id == k.item_id) {
+                continue;
+            }
+            let v = vault_of(&vaults, k.vault_id)?;
+            let item = self.listed(v, k.item_id)?;
+            if !duplicates::mergeable(&item) {
+                return Err(refused("members", "not live"));
+            }
+            items.push(ScannedItem {
+                item,
+                vault_id: v.id,
+                vault_name: v.meta.name.clone(),
+                writable: self.can_write_vault(v)?,
+            });
+        }
+        if items.len() < 2 {
+            return Err(refused("members", "two items or more"));
+        }
+        if items
+            .iter()
+            .any(|s| s.item.item_type != items[0].item.item_type)
+        {
+            return Err(refused("members", "same type"));
+        }
+        let cands: Vec<Candidate<'_>> = items
+            .iter()
+            .map(|s| Candidate {
+                item: &s.item,
+                writable: s.writable,
+            })
+            .collect();
+        let first = primary.and_then(|p| items.iter().position(|s| s.item.id == p.item_id));
+        let group =
+            duplicates::picked(&cands, first).ok_or_else(|| refused("members", "read only"))?;
+        Ok(DuplicateScan {
+            items,
+            groups: vec![group],
+        })
+    }
+
     fn listed(&mut self, vault: &Vault, id: Id) -> Result<Item> {
         self.items(vault)?
             .into_iter()

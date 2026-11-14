@@ -43,6 +43,8 @@ struct ItemListColumn: View {
     /// the detail column: that one lives in `model.selectedItem`.
     @State private var multiSelection: Set<ItemRef> = []
     @State private var selectAllMonitor: Any?
+    /// "Fusionner…" on two picked rows: the merge sheet's pair.
+    @State private var mergePick: MergePickRequest?
     #endif
 
     private var session: VaultSession { model.session }
@@ -167,6 +169,9 @@ struct ItemListColumn: View {
         }
         .onAppear { installSelectAllMonitor() }
         .onDisappear { removeSelectAllMonitor() }
+        .sheet(item: $mergePick) { pick in
+            MergePickSheet(refs: pick.refs) { multiSelection = [] }
+        }
         #endif
         .overlay {
             if items.isEmpty { emptyState }
@@ -419,7 +424,19 @@ struct ItemListColumn: View {
         return vaults.count == 1 ? vaults.first ?? "" : ""
     }
 
+    /// The picked rows' summaries, in list order.
+    private var batchSummaries: [FfiItemSummary] {
+        listedItems.filter { multiSelection.contains(ItemRef(vaultID: $0.vaultId, itemID: $0.id)) }
+    }
+
     @ViewBuilder private var batchActions: some View {
+        if !model.isEditing, MergePickRule.offers(batchSummaries) {
+            Button("browse.merge", systemImage: "arrow.triangle.merge") {
+                mergePick = MergePickRequest(refs: batch)
+            }
+            .accessibilityIdentifier("list.batch.merge")
+            Divider()
+        }
         MoveToVaultMenu(currentVaultID: batchVaultID) { moveBatch(to: $0) }
         Divider()
         Button("browse.moveToTrash", systemImage: "trash", role: .destructive) { trashBatch() }
@@ -471,6 +488,12 @@ struct ItemListColumn: View {
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
         .background(.bar)
+    }
+
+    /// The two rows the merge sheet works on.
+    struct MergePickRequest: Identifiable {
+        let refs: [ItemRef]
+        var id: [ItemRef] { refs }
     }
 
     /// Each picked item not already there goes to `vault`, one after the other; a failure stops

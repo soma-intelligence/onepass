@@ -123,6 +123,12 @@ pub fn mark_distinct(item: &mut Item, others: impl IntoIterator<Item = Id>) -> b
 
 /// Takes part in detection: live, not pending, not the account profile.
 fn eligible(item: &Item) -> bool {
+    mergeable(item)
+}
+
+/// A live item the duplicates flows may group and merge: not archived,
+/// trashed, pending or a profile.
+pub fn mergeable(item: &Item) -> bool {
     !item.archived && item.trashed_at.is_none() && !item.is_pending() && !item.is_profile()
 }
 
@@ -331,6 +337,45 @@ pub fn suggested_primary(cands: &[Candidate<'_>], members: &[usize]) -> Option<u
         })
 }
 
+/// Stable id of a group: hex of a hash of its items' ids, in any order.
+fn group_id(ids: &[Id]) -> String {
+    let mut ids = ids.to_vec();
+    ids.sort();
+    let mut all: Vec<&[u8]> = vec![b"onepass/dup-group"];
+    all.extend(ids.iter().map(|id| id.0.as_slice()));
+    HEXLOWER.encode(&crate::share::sha256(&all)[..16])
+}
+
+/// A group of every candidate, picked by the user rather than found (the
+/// Mac list's "Fusionner"): no signal, `primary` first when it is given
+/// and writable, else the suggested primary, then the rest by last edit.
+/// `None` under two distinct items, or when none is writable.
+pub fn picked(cands: &[Candidate<'_>], primary: Option<usize>) -> Option<Group> {
+    let mut members: Vec<usize> = Vec::new();
+    for (i, c) in cands.iter().enumerate() {
+        if !members.iter().any(|&m| cands[m].item.id == c.item.id) {
+            members.push(i);
+        }
+    }
+    if members.len() < 2 {
+        return None;
+    }
+    let first = primary
+        .filter(|&p| members.contains(&p) && cands[p].writable)
+        .or_else(|| suggested_primary(cands, &members))?;
+    let mut rest: Vec<usize> = members.into_iter().filter(|&m| m != first).collect();
+    rest.sort_by(|&a, &b| cands[b].item.updated_at.cmp(&cands[a].item.updated_at));
+    let mut ordered = vec![first];
+    ordered.extend(rest);
+    let ids: Vec<Id> = ordered.iter().map(|&i| cands[i].item.id).collect();
+    Some(Group {
+        id: group_id(&ids),
+        signals: Vec::new(),
+        domain: None,
+        members: ordered,
+    })
+}
+
 /// The groups of possible duplicates among `cands`, sorted by the title of
 /// their primary. A group always has two members or more and at least one
 /// writable one (nothing to do otherwise).
@@ -389,14 +434,9 @@ pub fn find(cands: &[Candidate<'_>]) -> Vec<Group> {
             let mut rest: Vec<usize> = members.into_iter().filter(|&m| m != primary).collect();
             rest.sort_by(|&a, &b| cands[b].item.updated_at.cmp(&cands[a].item.updated_at));
             ordered.extend(rest);
-            let mut ids: Vec<Id> = ordered.iter().map(|&i| cands[i].item.id).collect();
-            ids.sort();
-            let parts: Vec<&[u8]> = ids.iter().map(|id| id.0.as_slice()).collect();
-            let mut all: Vec<&[u8]> = vec![b"onepass/dup-group"];
-            all.extend(parts);
-            let id = HEXLOWER.encode(&crate::share::sha256(&all)[..16]);
+            let ids: Vec<Id> = ordered.iter().map(|&i| cands[i].item.id).collect();
             Some(Group {
-                id,
+                id: group_id(&ids),
                 signals: signals.into_iter().collect(),
                 domain: domains.into_iter().next(),
                 members: ordered,
@@ -1259,6 +1299,62 @@ mod tests {
         let g1 = groups(&[a.clone(), b.clone()]);
         let g2 = groups(&[b, a]);
         assert_eq!(g1[0].id, g2[0].id);
+    }
+
+    #[test]
+    fn picked_group_needs_two_items_and_honours_the_primary() {
+        let a = login("Reddit", "camille", "x", "https://reddit.com");
+        let b = login("Apple", "camille@icloud.com", "y", "https://apple.com");
+        let items = [a, b];
+        let cands: Vec<Candidate<'_>> = items
+            .iter()
+            .map(|item| Candidate {
+                item,
+                writable: true,
+            })
+            .collect();
+        // Nothing in common: `find` sees no group, the user's pick still makes one.
+        assert!(find(&cands).is_empty());
+        let g = picked(&cands, Some(1)).unwrap();
+        assert_eq!(g.members, vec![1, 0]);
+        assert!(g.signals.is_empty());
+        let g0 = picked(&cands, Some(0)).unwrap();
+        assert_eq!(g0.members, vec![0, 1]);
+        // Same set of items: same id, whichever is kept.
+        assert_eq!(g.id, g0.id);
+        // One item twice is not a pair.
+        assert!(picked(&cands[..1], None).is_none());
+        let twice = [cands[0], cands[0]];
+        assert!(picked(&twice, None).is_none());
+    }
+
+    #[test]
+    fn picked_group_never_keeps_a_read_only_copy() {
+        let a = login("A", "alice", "x", "https://example.com");
+        let b = login("B", "bob", "y", "https://example.org");
+        let items = [a, b];
+        let cands = vec![
+            Candidate {
+                item: &items[0],
+                writable: false,
+            },
+            Candidate {
+                item: &items[1],
+                writable: true,
+            },
+        ];
+        assert_eq!(picked(&cands, Some(0)).unwrap().members, vec![1, 0]);
+        let none = [
+            Candidate {
+                item: &items[0],
+                writable: false,
+            },
+            Candidate {
+                item: &items[1],
+                writable: false,
+            },
+        ];
+        assert!(picked(&none, None).is_none());
     }
 
     #[test]

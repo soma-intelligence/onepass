@@ -15,10 +15,10 @@
 )]
 
 use onepass_core::duplicates::{
-    Aspect, Choice, Confidence, Row, RowKind, Signal, differences, review,
+    Aspect, Choice, Confidence, Group, Row, RowKind, Signal, differences, review,
 };
 use onepass_core::model::FieldValue;
-use onepass_core::repo::duplicates::ItemKey;
+use onepass_core::repo::duplicates::{DuplicateScan, ItemKey};
 
 use crate::convert::{item_to_ffi, parse_id, summary, value_to_ffi};
 use crate::error::OnePassError;
@@ -223,6 +223,54 @@ fn keys(list: &[FfiItemKey]) -> Result<Vec<ItemKey>, OnePassError> {
     list.iter().map(key).collect()
 }
 
+/// One group of `scan` over the surface; `None` when it has no member.
+fn group_to_ffi(scan: &DuplicateScan, g: &Group) -> Option<FfiDuplicateGroup> {
+    let members: Vec<_> = g
+        .members
+        .iter()
+        .filter_map(|&i| scan.items.get(i))
+        .collect();
+    let primary = members.first()?;
+    let copies = members
+        .iter()
+        .map(|m| {
+            let fields: Vec<_> = m
+                .item
+                .sections
+                .iter()
+                .flat_map(|s| s.fields.iter())
+                .filter(|f| !matches!(f.value, FieldValue::Empty))
+                .collect();
+            FfiDuplicateCopy {
+                summary: summary(&m.item),
+                vault_name: m.vault_name.clone(),
+                writable: m.writable,
+                differences: differences(&primary.item, &m.item)
+                    .into_iter()
+                    .map(aspect)
+                    .collect(),
+                has_totp: fields.iter().any(|f| matches!(f.value, FieldValue::Otp(_))),
+                attachment_count: count(m.item.attachments.len()),
+                field_count: count(fields.len()),
+                reprompt: m.item.reprompt,
+            }
+        })
+        .collect();
+    let items: Vec<_> = members.iter().map(|m| &m.item).collect();
+    let r = review(&items);
+    Some(FfiDuplicateGroup {
+        id: g.id.clone(),
+        signals: g.signals.iter().copied().map(signal).collect(),
+        domain: g.domain.clone(),
+        copies,
+        confidence: match r.confidence {
+            Confidence::Sure => FfiDuplicateConfidence::Sure,
+            Confidence::Review => FfiDuplicateConfidence::Review,
+        },
+        rows: r.rows.iter().map(row_to_ffi).collect(),
+    })
+}
+
 #[uniffi::export]
 impl Session {
     /// The groups of possible duplicates of this account, the vaults
@@ -236,56 +284,30 @@ impl Session {
             .map(|s| parse_id(s))
             .collect::<Result<Vec<_>, _>>()?;
         let scan = self.with(|repo| Ok(repo.duplicate_scan(&excluded)?))?;
-        let mut out = Vec::with_capacity(scan.groups.len());
-        for g in &scan.groups {
-            let members: Vec<_> = g
-                .members
-                .iter()
-                .filter_map(|&i| scan.items.get(i))
-                .collect();
-            let Some(primary) = members.first() else {
-                continue;
-            };
-            let copies = members
-                .iter()
-                .map(|m| {
-                    let fields: Vec<_> = m
-                        .item
-                        .sections
-                        .iter()
-                        .flat_map(|s| s.fields.iter())
-                        .filter(|f| !matches!(f.value, FieldValue::Empty))
-                        .collect();
-                    FfiDuplicateCopy {
-                        summary: summary(&m.item),
-                        vault_name: m.vault_name.clone(),
-                        writable: m.writable,
-                        differences: differences(&primary.item, &m.item)
-                            .into_iter()
-                            .map(aspect)
-                            .collect(),
-                        has_totp: fields.iter().any(|f| matches!(f.value, FieldValue::Otp(_))),
-                        attachment_count: count(m.item.attachments.len()),
-                        field_count: count(fields.len()),
-                        reprompt: m.item.reprompt,
-                    }
-                })
-                .collect();
-            let items: Vec<_> = members.iter().map(|m| &m.item).collect();
-            let r = review(&items);
-            out.push(FfiDuplicateGroup {
-                id: g.id.clone(),
-                signals: g.signals.iter().copied().map(signal).collect(),
-                domain: g.domain.clone(),
-                copies,
-                confidence: match r.confidence {
-                    Confidence::Sure => FfiDuplicateConfidence::Sure,
-                    Confidence::Review => FfiDuplicateConfidence::Review,
-                },
-                rows: r.rows.iter().map(row_to_ffi).collect(),
-            });
-        }
-        Ok(out)
+        Ok(scan
+            .groups
+            .iter()
+            .filter_map(|g| group_to_ffi(&scan, g))
+            .collect())
+    }
+
+    /// The items `members` as one group the user picked (the Mac list's
+    /// "Fusionner"): the same review and merge as a found group, without
+    /// any signal. `primary` comes first when given and writable, else the
+    /// suggested one. Refused for fewer than two items, two types, an
+    /// archived or trashed item, or no writable copy.
+    pub fn duplicate_group_for(
+        &self,
+        members: Vec<FfiItemKey>,
+        primary: Option<FfiItemKey>,
+    ) -> Result<FfiDuplicateGroup, OnePassError> {
+        let m = keys(&members)?;
+        let p = primary.as_ref().map(key).transpose()?;
+        let scan = self.with(|repo| Ok(repo.duplicate_pick(&m, p)?))?;
+        scan.groups
+            .first()
+            .and_then(|g| group_to_ffi(&scan, g))
+            .ok_or(OnePassError::NotFound)
     }
 
     /// What merging `others` into `primary` would save. Writes nothing.

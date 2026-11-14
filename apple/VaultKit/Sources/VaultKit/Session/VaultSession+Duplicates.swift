@@ -11,6 +11,15 @@ extension VaultSession {
         return try await read { try $0.duplicateGroups(excludedVaultIds: hidden) }
     }
 
+    /// The items `members` as one group the user picked (the Mac list's "Fusionner"), for the
+    /// review page's table and merge: `primary` first when given and writable, else the core's
+    /// suggestion. The core refuses two types, an archived or trashed item, or no writable copy.
+    public func duplicateGroup(for members: [FfiItemKey], primary: FfiItemKey? = nil) async throws
+        -> FfiDuplicateGroup
+    {
+        try await read { try $0.duplicateGroupFor(members: members, primary: primary) }
+    }
+
     /// What merging `others` into `primary` would save. Writes nothing.
     public func duplicateMergePreview(primary: FfiItemKey, others: [FfiItemKey]) async throws -> FfiMergePreview {
         try await read { try $0.mergeDuplicatesPreview(primary: primary, others: others) }
@@ -77,6 +86,16 @@ extension VaultSession {
 extension FfiDuplicateCopy {
     /// The copy's vault and id, as the duplicate calls take them.
     public var key: FfiItemKey { FfiItemKey(vaultId: summary.vaultId, itemId: summary.id) }
+}
+
+/// When the Mac list offers "Fusionner": exactly two rows picked, of the same type, both live
+/// (neither archived nor in the trash). The core checks again before it groups or writes.
+public enum MergePickRule {
+    public static func offers(_ picked: [FfiItemSummary]) -> Bool {
+        guard picked.count == 2, Set(picked.map(\.id)).count == 2 else { return false }
+        guard picked.allSatisfy({ !$0.archived && $0.trashedAt == nil }) else { return false }
+        return picked[0].itemType == picked[1].itemType
+    }
 }
 
 /// The home banner's rule: shown while at least one group was not there when the user closed it.
