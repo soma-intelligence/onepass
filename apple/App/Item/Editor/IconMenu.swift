@@ -3,13 +3,26 @@ import SwiftUI
 import VaultKit
 
 /// The icon's chevron: site icon or category artwork, and a badge color (the account colors, or
-/// none) drawn as the category tile's background. A site icon is never tinted.
+/// none) drawn as the category tile's background. A site icon is never tinted. "Choisir une
+/// icône…" opens the icon library (`IconLibrarySheet`); "Réinitialiser l'icône" shows while the item
+/// has a chosen icon.
 struct IconMenu<Label: View>: View {
     @Binding var item: FfiItem
+    var hasCustomIcon = false
+    var onChoose: () -> Void = {}
+    var onReset: () -> Void = {}
     @ViewBuilder let label: Label
 
     var body: some View {
         Menu {
+            Section {
+                Button("editor.icon.choose", systemImage: "square.grid.2x2", action: onChoose)
+                    .accessibilityIdentifier("editor.icon.choose")
+                if hasCustomIcon {
+                    Button("editor.icon.reset", systemImage: "arrow.counterclockwise", action: onReset)
+                        .accessibilityIdentifier("editor.icon.reset")
+                }
+            }
             Picker("editor.icon", selection: $item.iconCategory) {
                 Text("editor.icon.site").tag(false)
                 Text("editor.icon.category").tag(true)

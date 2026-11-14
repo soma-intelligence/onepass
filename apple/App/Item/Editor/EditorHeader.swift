@@ -10,6 +10,8 @@ struct EditorHeader: View {
     var titleFocused: FocusState<Bool>.Binding
     /// The site's icon, as on the item's page: editing keeps the same picture.
     @State private var siteIcon: Data?
+    /// "Choisir une icône…": the icon library sheet.
+    @State private var choosingIcon = false
 
     #if os(iOS)
     private static let titleHairline = Color.primary.opacity(0.06)
@@ -19,15 +21,20 @@ struct EditorHeader: View {
 
     private var item: FfiItem { editor.draft.item }
     private var primaryURL: String? { (item.urls.first(where: \.primary) ?? item.urls.first)?.url }
+    /// The stored chosen icon, unless this edit picked another one or reset it.
+    private var customKey: CustomIconKey? { editor.pendingCustomIcon == nil ? CustomIconKey(item) : nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             HStack(alignment: .center, spacing: Theme.Space.l) {
-                IconMenu(item: $editor.draft.item) {
+                IconMenu(
+                    item: $editor.draft.item, hasCustomIcon: editor.hasCustomIcon,
+                    onChoose: { choosingIcon = true }, onReset: { editor.resetIcon() }
+                ) {
                     ItemIcon(
                         type: item.itemType, title: item.title,
-                        siteIcon: siteIcon
-                            ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title, custom: CustomIconKey(item)),
+                        siteIcon: editor.pendingIconBytes ?? siteIcon
+                            ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title, custom: customKey),
                         size: 64, brand: item.cardBrandName, useCategory: item.iconCategory,
                         tint: ItemTint.color(named: item.color),
                         domain: ItemIconResolver.registrableDomain(primaryURL))
@@ -35,10 +42,29 @@ struct EditorHeader: View {
                 }
                 // Follows the website being typed: a new address loads its icon. A chosen icon
                 // comes first, a new one is a new key.
-                .task(id: ItemIconTaskID(url: primaryURL, custom: CustomIconKey(item))) {
+                .task(id: ItemIconTaskID(url: primaryURL, custom: customKey)) {
                     siteIcon = await model.iconLoader.icon(
-                        for: primaryURL, title: item.title, custom: CustomIconKey(item))
+                        for: primaryURL, title: item.title, custom: customKey)
                 }
+                // A reset shows the automatic icon, never the chosen one still in `siteIcon`.
+                .onChange(of: editor.pendingCustomIcon) { siteIcon = nil }
+                .sheet(isPresented: $choosingIcon) {
+                    IconLibrarySheet(
+                        title: item.title, domain: ItemIconResolver.registrableDomain(primaryURL),
+                        initialTab: Self.debugLibraryTab, initialQuery: Self.debugLibraryQuery
+                    ) { mime, bytes in
+                        editor.chooseIcon(mime: mime, bytes: bytes)
+                    }
+                }
+                #if DEBUG
+                // `-OnePassDebugIconLibrary logos|icons|image [-OnePassDebugIconQuery <text>]`: the
+                // editor opens on the icon library (screenshots).
+                .task {
+                    guard UserDefaults.standard.string(forKey: "OnePassDebugIconLibrary") != nil else { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    choosingIcon = true
+                }
+                #endif
                 titleField
             }
             if let message = editor.titleMessage {
@@ -53,6 +79,20 @@ struct EditorHeader: View {
         .padding(.bottom, Theme.Space.s)
         .id(ItemEditorModel.titleAnchor)
     }
+
+    #if DEBUG
+    private static var debugLibraryTab: IconLibrarySheet.Tab {
+        switch UserDefaults.standard.string(forKey: "OnePassDebugIconLibrary") {
+        case "icons": .icons
+        case "image": .image
+        default: .logos
+        }
+    }
+    private static var debugLibraryQuery: String { UserDefaults.standard.string(forKey: "OnePassDebugIconQuery") ?? "" }
+    #else
+    private static let debugLibraryTab = IconLibrarySheet.Tab.logos
+    private static let debugLibraryQuery = ""
+    #endif
 
     private var titleField: some View {
         let focused = titleFocused.wrappedValue

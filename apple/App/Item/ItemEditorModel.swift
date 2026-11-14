@@ -2,6 +2,14 @@ import Foundation
 import Observation
 import VaultKit
 
+/// The icon the person chose in the editor's icon menu, applied only when the item is saved
+/// ("Annuler" drops it): a new picture (`mime` image/png or image/webp, at most 64 KB), or back to
+/// the automatic icon.
+enum PendingIcon: Equatable {
+    case set(mime: String, bytes: Data)
+    case clear
+}
+
 /// View state of the editor around `ItemDraft` (VaultKit, tested there): the vault chosen,
 /// the validation error shown under its field, the save in flight.
 @MainActor
@@ -32,6 +40,8 @@ final class ItemEditorModel {
     var showAllFields = false
     /// Where the websites card sits among the movable cards, per device (`EditorLayout`).
     private(set) var websitesSlot: Int
+    /// The icon chosen in this edit (`IconLibrarySheet`) or reset, applied after the save.
+    var pendingCustomIcon: PendingIcon?
 
     init(draft: ItemDraft, isNew: Bool, defaults: UserDefaults = .standard) {
         self.draft = draft
@@ -202,7 +212,33 @@ final class ItemEditorModel {
         urlKeys.remove(at: index)
     }
 
-    var isDirty: Bool { draft.isDirty || targetVaultID != draft.item.vaultId }
+    var isDirty: Bool { draft.isDirty || targetVaultID != draft.item.vaultId || pendingCustomIcon != nil }
+
+    /// The picture the header shows for a pending choice; nil when none is pending.
+    var pendingIconBytes: Data? {
+        if case .set(_, let bytes) = pendingCustomIcon { bytes } else { nil }
+    }
+
+    /// The item has a chosen icon once saved: the stored one unless reset, or a new one.
+    var hasCustomIcon: Bool {
+        switch pendingCustomIcon {
+        case .set: true
+        case .clear: false
+        case nil: draft.item.customIconId?.isEmpty == false
+        }
+    }
+
+    /// "Choisir une icône…": the picture replaces the automatic icon, and the category artwork
+    /// choice, which would hide it.
+    func chooseIcon(mime: String, bytes: Data) {
+        pendingCustomIcon = .set(mime: mime, bytes: bytes)
+        draft.item.iconCategory = false
+    }
+
+    /// "Réinitialiser l'icône": back to the automatic icon (nothing to do for an icon only pending).
+    func resetIcon() {
+        pendingCustomIcon = draft.item.customIconId?.isEmpty == false ? .clear : nil
+    }
 
     /// Scroll anchor of a field: its section and index (several fields share an id when repeated).
     static func anchor(sectionID: String, fieldIndex: Int) -> String { "\(sectionID)#\(fieldIndex)" }
@@ -247,6 +283,12 @@ final class ItemEditorModel {
                 try await session.move(itemID: saved.id, from: saved.vaultId, to: targetVaultID)
                 saved.vaultId = targetVaultID
             }
+            // After the move: the icon is written in the vault the item now lives in. A new item
+            // gets its icon right after it is created.
+            if let pending = pendingCustomIcon {
+                saved = await apply(pending, to: saved, with: session)
+                pendingCustomIcon = nil
+            }
             return saved
         } catch let error as VaultError {
             if case .validation(let field, let reason) = error {
@@ -258,6 +300,23 @@ final class ItemEditorModel {
         } catch {
             generalError = VaultError(error).localizedMessage
             return nil
+        }
+    }
+
+    /// Writes the pending icon. The item itself is already stored: a refused icon (the sheet
+    /// checks size and type first, so this is rare) leaves the item as saved, with its previous
+    /// icon, rather than keeping the editor open on a save that would run twice.
+    private func apply(_ pending: PendingIcon, to saved: FfiItem, with session: VaultSession) async -> FfiItem {
+        do {
+            switch pending {
+            case .set(let mime, let bytes):
+                return try await session.setCustomIcon(itemID: saved.id, vaultID: saved.vaultId, mime: mime, bytes: bytes)
+            case .clear:
+                guard saved.customIconId != nil else { return saved }
+                return try await session.clearCustomIcon(itemID: saved.id, vaultID: saved.vaultId)
+            }
+        } catch {
+            return saved
         }
     }
 

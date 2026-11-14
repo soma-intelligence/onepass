@@ -33,6 +33,15 @@ struct ItemListRow: View {
         model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
     }
 
+    /// The row draws the icon the person chose (loaded from the vault): its accessibility value
+    /// says "custom", which UI tests read.
+    private var showsCustomIcon: Bool {
+        guard !summary.iconCategory, let key = CustomIconKey(summary), let store = model.iconLoader.custom,
+            let chosen = store.cached(key)
+        else { return false }
+        return (siteIcon ?? cachedIcon) == chosen
+    }
+
     /// The site icon tile: 36 pt on iPhone and iPad, 40 pt on the Mac.
     #if os(iOS)
     static let iconSize: CGFloat = 36
@@ -70,6 +79,7 @@ struct ItemListRow: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .accessibilityValue(showsCustomIcon ? Text(verbatim: "custom") : Text(verbatim: ""))
         .accessibilityIdentifier("list.row.\(summary.title)")
         .task(id: ItemIconTaskID(url: summary.primaryUrl, custom: CustomIconKey(summary))) {
             siteIcon = await model.iconLoader.icon(
