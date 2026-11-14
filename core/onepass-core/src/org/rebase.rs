@@ -146,7 +146,9 @@ fn check_list(list: &[OrgMember]) -> Result<()> {
 /// and unique; more than `MAX_ROSTER_MEMBERS` accounts in all is
 /// `InvalidFormat("org roster size")`; a result that breaks a roster shape
 /// rule (a removed entry with roles, a device held twice, too many devices)
-/// is the `InvalidFormat` of `RosterBody::check`.
+/// is the `InvalidFormat` of `RosterBody::check`. That holds even when the
+/// three inputs are equal: members that fail the roster shape are an
+/// `Err`, never passed through.
 pub fn merge_members(
     base: &[OrgMember],
     mine: &[OrgMember],
@@ -195,10 +197,11 @@ fn not_siblings() -> Error {
     })
 }
 
-/// `mine` rebased over `theirs`, both written after `base` (same seq
-/// `base.seq + 1`, both `prev_hash == base.hash()`, else
+/// `mine` rebased over `theirs`, both written after `base` (same org id,
+/// same seq `base.seq + 1`, both `prev_hash == base.hash()`, else
 /// `Validation("not siblings")`): `theirs.next()` with the merged members
-/// and the newer (by lineage generation) of the two org heads, accepted by
+/// (every member theirs has as Removed kept as theirs wrote it, R8a) and
+/// the newer (by lineage generation) of the two org heads, accepted by
 /// `check_transition(lineage, theirs, out, signer)` (else its error,
 /// `OrgRoleDenied` for a change `signer` may not sign). An org head the
 /// lineage does not know is `NotFound`.
@@ -210,7 +213,9 @@ pub fn rebase_roster(
     signer: &DevicePublic,
 ) -> Result<RosterBody> {
     let parent = base.hash();
-    if mine.seq != theirs.seq
+    if mine.org_id != base.org_id
+        || theirs.org_id != base.org_id
+        || mine.seq != theirs.seq
         || base.seq.checked_add(1) != Some(mine.seq)
         || mine.prev_hash != parent
         || theirs.prev_hash != parent
@@ -229,6 +234,18 @@ pub fn rebase_roster(
     };
     let mut out = theirs.next()?;
     out.members = merge_members(&base.members, &mine.members, &theirs.members)?;
+    // R8a: a removal theirs already landed is terminal; when both sides
+    // removed a member, keep theirs' entry even if mine's `(at, by)` is
+    // smaller (the merge itself stays symmetric).
+    for t in &theirs.members {
+        if matches!(t.state, MemberState::Removed { .. })
+            && let Ok(i) = out
+                .members
+                .binary_search_by(|m| m.account_id.cmp(&t.account_id))
+        {
+            out.members[i] = t.clone();
+        }
+    }
     out.org_head = org_head;
     check_transition(lineage, theirs, &out, signer)?;
     Ok(out)

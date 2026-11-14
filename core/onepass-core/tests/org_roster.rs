@@ -1808,6 +1808,21 @@ fn rebase_removal_wins() {
     let merged = merge_members(&base.members, &early.members, &late.members).unwrap();
     let m = merged.iter().find(|e| e.account_id == acct(M)).unwrap();
     assert_eq!(m, member(&early, M));
+    // R8a: the rebase keeps the removal that landed (theirs), in both
+    // orders, even when mine's (at, by) is the smaller one.
+    let out = rebase(base, &early, &late, A).unwrap();
+    assert_eq!(member(&out, M), member(&late, M));
+    assert!(accept(&late, out, A).is_ok());
+    let early_landed = landed(base, A, |b| removed_by(b, M, A));
+    let late_mine = edit(base, |b| {
+        removed_by(b, M, O);
+        if let MemberState::Removed { at, .. } = &mut entry(b, M).state {
+            *at += 10;
+        }
+    });
+    let out = rebase(base, &late_mine, &early_landed, O).unwrap();
+    assert_eq!(member(&out, M), member(&early_landed, M));
+    assert!(accept(&early_landed, out, O).is_ok());
 }
 
 #[test]
@@ -1909,6 +1924,12 @@ fn rebase_needs_siblings() {
     let mut forked = theirs.clone();
     forked.prev_hash = r(4).hash();
     not_siblings(rebase(base, &mine, &forked, A), "theirs prev_hash");
+    let mut other_org = mine.clone();
+    other_org.org_id = OrgId([8; 16]);
+    not_siblings(rebase(base, &other_org, &theirs, A), "mine org id");
+    let mut other_org = theirs.clone();
+    other_org.org_id = OrgId([8; 16]);
+    not_siblings(rebase(base, &mine, &other_org, A), "theirs org id");
 }
 
 #[test]
