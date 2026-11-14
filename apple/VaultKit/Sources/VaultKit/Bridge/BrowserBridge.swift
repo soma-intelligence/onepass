@@ -157,6 +157,8 @@ public final class BrowserBridge {
         server.setBlockedAuto(extensionIds: store.blockedAuto())
         // Pages are routed to the account that claims their domain, as system AutoFill does.
         server.setRoutingFolder(folder: accounts?.store.folder.path)
+        // Open and sign in: the pending sign-ins the item screen records (`OpenAndSignIn`).
+        server.setPendingDir(dir: OpenAndSignIn.pendingFolder(container).path)
         self.server = server
         // "Disponible dans les navigateurs" turned on or off: told in the same turn.
         accounts?.browserAvailabilityChanged = { [weak self] in self?.publish() }

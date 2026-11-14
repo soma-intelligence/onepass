@@ -217,6 +217,13 @@ pub trait VaultAccess {
         let _ = (site, client, now);
         Ok(BTreeMap::new())
     }
+    /// Open and sign in (`crate::pending`): take the pending sign-in of
+    /// page `origin` (top frame `top_origin`) at `now`, once. A host without
+    /// a pending store has none.
+    fn take_pending_sign_in(&mut self, origin: &str, top_origin: &str, now: u64) -> Option<Id> {
+        let _ = (origin, top_origin, now);
+        None
+    }
 }
 
 type OpResult<T> = std::result::Result<T, AppErrorCode>;
@@ -738,6 +745,13 @@ impl<V: VaultAccess> Service<V> {
                     .map_err(app_code)?;
                 return Ok(Response::Unlock { locked: !unlocked });
             }
+            // Only an item id, never a value: served locked too, so the
+            // extension can ask for the unlock that the sign-in needs.
+            Request::TakeSignIn {
+                origin: o,
+                top_origin,
+                ..
+            } => return self.take_sign_in(o, top_origin, now),
             // Not a vault value: served locked too.
             Request::FillSalt { .. } => {
                 return Ok(Response::Salt {
@@ -806,7 +820,8 @@ impl<V: VaultAccess> Service<V> {
             | Request::FillSalt { .. }
             | Request::AgentWait { .. }
             | Request::AgentProbeResult { .. }
-            | Request::AgentFillResult { .. } => Err(AppErrorCode::Internal),
+            | Request::AgentFillResult { .. }
+            | Request::TakeSignIn { .. } => Err(AppErrorCode::Internal),
             Request::Vaults { origin: o, .. } => self.vaults(o.as_deref()),
             Request::ListForOrigin { origin: o, .. } => self.list_for_origin(o),
             Request::Search { ctx, query, .. } => self.search(*ctx, query),
@@ -1263,6 +1278,30 @@ impl<V: VaultAccess> Service<V> {
             .redeem_ticket(request, item_id, o, kind)
             .ok_or(AppErrorCode::NotAllowed)?;
         Ok(ticket.totp)
+    }
+
+    /// `take_sign_in`: same `https` origin in the frame and the top frame,
+    /// else `cross_site_frame` (nothing is taken). Unlocked, an item that
+    /// is no longer an eligible Login is not given.
+    fn take_sign_in(&mut self, o: &str, top: &str, now: u64) -> OpResult<Response> {
+        let page = origin(o)?;
+        let top_page = origin(top)?;
+        if page.origin_string() != top_page.origin_string() {
+            return Err(AppErrorCode::CrossSiteFrame);
+        }
+        let Some(id) = self.vault.take_pending_sign_in(o, top, now) else {
+            return Ok(Response::SignIn { item_id: None });
+        };
+        if !self.vault.status().locked {
+            match self.eligible_item(&id.to_string()) {
+                Ok((_, item)) if item.item_type == ItemType::Login => {}
+                _ => return Ok(Response::SignIn { item_id: None }),
+            }
+        }
+        self.record("take_sign_in", id, Some(o), Ctx::Chain, now);
+        Ok(Response::SignIn {
+            item_id: Some(id.to_string()),
+        })
     }
 
     fn fill_login(

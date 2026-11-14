@@ -18,6 +18,7 @@ import UIKit
 struct ItemDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let ref: ItemRef
     /// Shown in its own window ("Ouvrir dans une nouvelle fenêtre"): read only, "Modifier" goes back
@@ -332,7 +333,7 @@ struct ItemDetailView: View {
             EditorCard {
                 ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
                     if index > 0 { CardDivider() }
-                    WebsiteRow(url: url, index: index) { showToast($0) }
+                    WebsiteRow(url: url, index: index, signInItemID: signInItemID(item)) { showToast($0) }
                         .padding(.vertical, Theme.Space.s)
                 }
             }
@@ -647,6 +648,13 @@ struct ItemDetailView: View {
                 Divider()
             }
             #endif
+            if let itemID = signInItemID(item), let site = signInURL(item) {
+                Button("item.openAndSignIn", systemImage: "person.badge.key") {
+                    WebsiteRow.openAndSignIn(itemID: itemID, rawURL: site, openURL: openURL) { showToast($0) }
+                }
+                .accessibilityIdentifier("item.openAndSignIn")
+                Divider()
+            }
             Button(
                 item.favorite ? "Retirer des favoris" : "Ajouter aux favoris",
                 systemImage: item.favorite ? "star.slash" : "star"
@@ -847,6 +855,18 @@ struct ItemDetailView: View {
 
     private func showToast(_ text: String) {
         model.showToast(text)
+    }
+
+    /// Open and sign in applies to a login in use (not in the trash), by its id.
+    private func signInItemID(_ item: FfiItem) -> String? {
+        item.itemType == .login && item.trashedAt == nil ? item.id : nil
+    }
+
+    /// The website "Ouvrir et se connecter" opens from the actions menu: the primary one, else the
+    /// first that is a web page.
+    private func signInURL(_ item: FfiItem) -> String? {
+        let pages = item.urls.filter { FieldValueView.openable($0.url) != nil }
+        return (pages.first(where: \.primary) ?? pages.first)?.url
     }
 }
 

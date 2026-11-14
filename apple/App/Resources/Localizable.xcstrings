@@ -27434,6 +27434,35 @@
         }
       }
     },
+    "item.openAndSignIn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open and Sign In"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir e iniciar sesión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir et se connecter"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri e accedi"
+          }
+        }
+      }
+    },
     "item.openInBrowser" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28938,6 +28967,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "mostrato"
+          }
+        }
+      }
+    },
+    "item.signInHintSafari" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on the OnePass Safari extension to sign in automatically."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa la extensión de Safari de OnePass para iniciar sesión automáticamente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active l'extension Safari de OnePass pour te connecter automatiquement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva l'estensione Safari di OnePass per accedere automaticamente."
           }
         }
       }

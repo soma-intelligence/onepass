@@ -416,6 +416,13 @@ interface Ops {
     };
     res: PasskeyRegistration;
   };
+  /**
+   * Open and sign in: the login the user asked to sign in with from the app, for this page's
+   * site, taken once (the host's pending entry lives 60 s). `origin` and `top_origin`: the
+   * browser's origins of the frame and its top frame, the same https origin. Served locked too;
+   * `item_id` null when nothing is pending. A host that predates it answers `invalid`.
+   */
+  take_sign_in: { req: { origin: string; top_origin: string }; res: { item_id: string | null } };
 }
 
 export type Op = keyof Ops;

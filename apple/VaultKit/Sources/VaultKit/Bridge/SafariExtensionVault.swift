@@ -85,6 +85,8 @@ public final class SafariExtensionVault {
             auditPath: environment.databaseURL.deletingLastPathComponent()
                 .appendingPathComponent("bridge-audit.jsonl").path)
         server.setBlockedAuto(extensionIds: store.blockedAuto())
+        // Open and sign in: the app records pending sign-ins next to the store (`OpenAndSignIn`).
+        server.setPendingDir(dir: environment.databaseURL.deletingLastPathComponent().path)
         self.server = server
         delegate.owner = self
         let account = environment.settings.displayName

@@ -4505,3 +4505,96 @@ fn vaults_marks_shared() {
         }
     }
 }
+
+// ---- Open and sign in (`take_sign_in`, pending.rs) ----
+
+fn pending_dir(tag: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "onepass-take-sign-in-{tag}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ))
+}
+
+fn take(origin: &str, top: &str) -> Value {
+    json!({"op": "take_sign_in", "origin": origin, "top_origin": top})
+}
+
+fn with_pending(tag: &str, item: impl Fn(&Ids) -> Id, url: &str) -> H {
+    let mut h = H::new();
+    let store = onepass_bridge::pending::PendingStore::new(pending_dir(tag));
+    store.record(item(&h.ids), url, NOW).unwrap();
+    h.svc.vault_mut().pending = Some(store);
+    h
+}
+
+#[test]
+fn take_sign_in_gives_the_item_once() {
+    let mut h = with_pending("once", |i| i.atlas, ATLAS);
+    let page = "https://www.atlas-cloud.test";
+    let r = h.call_at(take(page, page), NOW + 2);
+    assert_eq!(ok(&r)["item_id"], json!(id(h.ids.atlas)));
+    let r = h.call_at(take(page, page), NOW + 3);
+    assert_eq!(ok(&r)["item_id"], Value::Null);
+    let events = h.audit.events();
+    assert!(events.iter().any(|e| e.op == "take_sign_in"));
+}
+
+#[test]
+fn take_sign_in_locked_still_gives_the_id() {
+    let mut h = with_pending("locked", |i| i.atlas, ATLAS);
+    h.svc.vault_mut().locked = true;
+    let r = h.call_at(take(ATLAS, ATLAS), NOW + 1);
+    assert_eq!(ok(&r)["item_id"], json!(id(h.ids.atlas)));
+    // The values still need the unlock.
+    let r = h.call_at(fill(h.ids.atlas, ATLAS), NOW + 1);
+    assert_eq!(err(&r), "locked");
+}
+
+#[test]
+fn take_sign_in_wrong_host_expired_http_frame() {
+    let mut h = with_pending("rules", |i| i.atlas, ATLAS);
+    let evil = "https://evil.test";
+    assert_eq!(
+        ok(&h.call_at(take(evil, evil), NOW + 1))["item_id"],
+        Value::Null
+    );
+    assert_eq!(
+        err(&h.call_at(
+            take("http://atlas-cloud.test", "http://atlas-cloud.test"),
+            NOW + 1
+        )),
+        "insecure_origin"
+    );
+    assert_eq!(
+        err(&h.call_at(take(ATLAS, evil), NOW + 1)),
+        "cross_site_frame"
+    );
+    // Still there after all of those, gone once expired.
+    let late = NOW + onepass_bridge::pending::PENDING_TTL;
+    assert_eq!(
+        ok(&h.call_at(take(ATLAS, ATLAS), late))["item_id"],
+        Value::Null
+    );
+    assert_eq!(
+        ok(&h.call_at(take(ATLAS, ATLAS), NOW + 1))["item_id"],
+        Value::Null
+    );
+}
+
+#[test]
+fn take_sign_in_never_gives_a_non_login() {
+    let mut h = with_pending("wallet", |i| i.wallet, ATLAS);
+    let r = h.call_at(take(ATLAS, ATLAS), NOW + 1);
+    assert_eq!(ok(&r)["item_id"], Value::Null);
+}
+
+#[test]
+fn take_sign_in_without_store_is_nothing() {
+    let mut h = H::new();
+    let r = h.call(take(ATLAS, ATLAS));
+    assert_eq!(ok(&r)["item_id"], Value::Null);
+}

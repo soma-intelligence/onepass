@@ -704,13 +704,18 @@ private struct BarcodeRow: View {
 }
 
 /// A website of the item, under the fields card: label ("site web" by default) and the link, which
-/// opens in the browser. Copier on hover (Mac) or as an icon (elsewhere).
+/// opens in the browser. Copier on hover (Mac) or as an icon (elsewhere). On a login
+/// (`signInItemID`), a tap opens the site and signs in (`OpenAndSignIn`, "Ouvrir et se
+/// connecter"); the row's menu also has a plain "Ouvrir" and "Copier".
 struct WebsiteRow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     @Environment(\.itemUseRef) private var itemUseRef
     let url: FfiUrl
     let index: Int
+    /// The login whose website this is (hex id), or nil: then a tap only opens the page.
+    var signInItemID: String? = nil
+    /// Shows a toast (copied, or the iPhone hint about the Safari extension).
     let onCopied: (String) -> Void
     @State private var hovered = false
     #if os(iOS)
@@ -725,7 +730,12 @@ struct WebsiteRow: View {
                 EditorLabel(url.label.isEmpty ? String(localized: "app.website") : url.label.detailLabelCase)
                 if let target = FieldValueView.openable(url.url) {
                     Button {
-                        openURL(target)
+                        if let signInItemID {
+                            Self.openAndSignIn(
+                                itemID: signInItemID, rawURL: url.url, openURL: openURL, toast: onCopied)
+                        } else {
+                            openURL(target)
+                        }
                         if let itemUseRef { model.noteItemUse(itemUseRef) }
                     } label: {
                         Text(url.url)
@@ -738,7 +748,7 @@ struct WebsiteRow: View {
                     #if os(macOS)
                     .pointerStyle(.link)
                     #endif
-                    .accessibilityHint(Text("common.open"))
+                    .accessibilityHint(Text(signInItemID == nil ? "common.open" : "item.openAndSignIn"))
                     .accessibilityIdentifier("item.url.open.\(index)")
                 } else {
                     Text(url.url).lineLimit(1).truncationMode(.middle)
@@ -777,11 +787,51 @@ struct WebsiteRow: View {
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
         .contentShape(.rect)
+        .contextMenu {
+            if let target = FieldValueView.openable(url.url) {
+                if let signInItemID {
+                    Button("item.openAndSignIn", systemImage: "person.badge.key") {
+                        Self.openAndSignIn(
+                            itemID: signInItemID, rawURL: url.url, openURL: openURL, toast: onCopied)
+                    }
+                    .accessibilityIdentifier("item.url.signIn.\(index)")
+                }
+                Button("common.open", systemImage: "safari") {
+                    OpenAndSignIn.cancel()
+                    openURL(target)
+                }
+                .accessibilityIdentifier("item.url.openOnly.\(index)")
+            }
+            Button("Copier", systemImage: "doc.on.doc", action: copy)
+        }
         #if os(macOS)
         .onHover { inside in
             withAnimation(.easeOut(duration: 0.12)) { hovered = inside }
         }
         #endif
+    }
+
+    /// "Ouvrir et se connecter": record the pending sign-in, then open the page in the browser.
+    /// An `http` site opens without sign in. On iPhone and iPad, before the Safari extension ever
+    /// ran, a one-line hint says that turning it on signs in by itself; nothing is copied.
+    static func openAndSignIn(
+        itemID: String, rawURL: String, openURL: OpenURLAction, toast: (String) -> Void
+    ) {
+        switch OpenAndSignIn.prepare(itemID: itemID, rawURL: rawURL) {
+        case .signIn(let target):
+            openURL(target) { opened in
+                if !opened { OpenAndSignIn.cancel() }
+            }
+            #if os(iOS)
+            if !OpenAndSignIn.safariExtensionPaired() {
+                toast(String(localized: "item.signInHintSafari"))
+            }
+            #endif
+        case .openOnly(let target):
+            openURL(target)
+        case nil:
+            break
+        }
     }
 
     private func copy() {
