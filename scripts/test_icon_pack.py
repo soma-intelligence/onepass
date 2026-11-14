@@ -597,5 +597,20 @@ class Signing(unittest.TestCase):
             icon_pack.verify_files(manifest, tmp / "onepass-icons-9.bin", public)
 
 
+class DHash(unittest.TestCase):
+    def test_shared_vectors(self):
+        vectors = json.loads((ROOT / "scripts" / "testdata" / "dhash-vectors.json").read_text())
+        self.assertEqual(len(vectors), 10)
+        for v in vectors:
+            png = base64.b64decode(v["png"])
+            self.assertEqual("%016x" % icon_pack.dhash(png), v["hash"], v["name"])
+
+    def test_distinguishes_images(self):
+        vectors = {v["name"]: icon_pack.dhash(base64.b64decode(v["png"]))
+                   for v in json.loads((ROOT / "scripts" / "testdata" / "dhash-vectors.json").read_text())}
+        self.assertEqual(vectors["solid-white"], vectors["solid-black"])
+        self.assertGreater(bin(vectors["checkerboard"] ^ vectors["noise-256"]).count("1"), 8)
+
+
 if __name__ == "__main__":
     unittest.main()

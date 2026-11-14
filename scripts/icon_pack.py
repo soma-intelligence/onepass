@@ -318,6 +318,48 @@ def png_rgba(data):
     return width, height, bytes(out)
 
 
+def dhash(rgba_png):
+    """64-bit difference hash of a PNG, identical to VaultKit's IconHash.dHash.
+
+    Composite over white (straight alpha), gray = 0.299 R + 0.587 G + 0.114 B, area-average to
+    9 columns x 8 rows (each cell averages the source pixels it overlaps, weighted by overlap),
+    then bit = cell[row][x] > cell[row][x + 1] + 1e-9 (the margin keeps flat images at 0 despite rounding noise), row by row, first bit most significant."""
+    width, height, px = png_rgba(rgba_png)
+    gray = []
+    for i in range(0, width * height * 4, 4):
+        a = float(px[i + 3])
+        r, g, b = (float(px[i + k]) * a / 255.0 + 255.0 * (1.0 - a / 255.0) for k in range(3))
+        gray.append(0.299 * r + 0.587 * g + 0.114 * b)
+
+    def spans(count, cells):
+        out = []
+        for c in range(cells):
+            lo, hi = float(c * count) / float(cells), float((c + 1) * count) / float(cells)
+            first, last = int(lo), min(count - 1, int(hi))
+            out.append((lo, hi, [(i, min(float(i + 1), hi) - max(float(i), lo)) for i in range(first, last + 1)
+                                  if min(float(i + 1), hi) - max(float(i), lo) > 0.0]))
+        return out
+
+    cols, rows = spans(width, 9), spans(height, 8)
+    cells = []
+    for ylo, yhi, ys in rows:
+        line = []
+        for xlo, xhi, xs in cols:
+            total = 0.0
+            for y, wy in ys:
+                acc = 0.0
+                for x, wx in xs:
+                    acc += gray[y * width + x] * wx
+                total += acc * wy
+            line.append(total / ((xhi - xlo) * (yhi - ylo)))
+        cells.append(line)
+    bits = 0
+    for line in cells:
+        for x in range(8):
+            bits = (bits << 1) | (1 if line[x] > line[x + 1] + 1e-9 else 0)
+    return bits
+
+
 def coverage(width, height, pixels):
     """Share of the square with ink (alpha over 50%)."""
     opaque = sum(1 for i in range(3, len(pixels), 4 * 3) if pixels[i] > 127)
