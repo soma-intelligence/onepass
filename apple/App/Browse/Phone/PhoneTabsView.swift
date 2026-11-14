@@ -349,6 +349,8 @@ struct FoldSplitView: View {
     @State private var appeared = false
     @State private var dragging: ItemRef?
     @State private var dragToken = 0
+    /// Profil from the account panel: no tab stack here to push it on, so a sheet.
+    @State private var showsProfile = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -363,6 +365,12 @@ struct FoldSplitView: View {
                             ToolbarItem(placement: .topBarLeading) { AccountMenu() }
                                 .sharedBackgroundVisibility(.hidden)
                         }
+                }
+                .environment(\.pushPhoneRoute) { route in
+                    if case .profile = route { showsProfile = true }
+                }
+                .sheet(isPresented: $showsProfile) {
+                    NavigationStack { ProfileView() }
                 }
                 .frame(width: half)
                 DetailColumn()

@@ -6,6 +6,7 @@ import SwiftUI
 /// small chevron, as the Mac account header. It opens the account panel.
 struct AccountMenu: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.pushPhoneRoute) private var push
     @State private var isOpen = false
     /// What the panel asked for: run once the popover is gone, so a sheet never fights it.
     /// "Gone" is the panel's `onDisappear`, at the end of the popover's dismissal: run as soon as
@@ -69,6 +70,7 @@ struct AccountMenu: View {
         case .settings:
             SettingsTiming.mark("popover closed")
             model.showSettings = true
+        case .profile: push(.profile)
         case .newVault: creatingVault = true
         case .importItems: model.showImport = true
         case .scanCode: model.showOtpScanner = true
@@ -84,6 +86,9 @@ struct AccountMenu: View {
 /// What a row of the account panel does.
 enum AccountPanelAction {
     case settings, newVault, importItems, scanCode, setUpDevice, lock
+    /// Profil (spec 2026-11-14-profile-account-security): the account row, or its own row with several
+    /// accounts.
+    case profile
     /// The accounts section: switch, add, search all, lock all (multi-account spec 7).
     case account(AccountsPanelAction)
 }
@@ -105,6 +110,12 @@ struct AccountPanel: View {
                 .padding(.top, Theme.Space.l)
                 .padding(.bottom, Theme.Space.m)
             AccountPanelGroup {
+                if model.accounts.hasSeveralAccounts {
+                    AccountPanelRow(title: "Profil", symbol: "person.crop.circle.fill", color: AccountPanelTint.accounts) {
+                        perform(.profile)
+                    }
+                    .accessibilityIdentifier("account.profile")
+                }
                 AccountPanelRow(title: "accounts.add", symbol: "person.badge.plus", color: AccountPanelTint.accounts) {
                     perform(.account(.add))
                 }
@@ -175,7 +186,16 @@ struct AccountPanel: View {
         }
     }
 
+    /// The account and its kind of device: opens the Profil.
     private var currentAccount: some View {
+        Button { perform(.profile) } label: {
+            currentAccountLabel
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("account.current")
+    }
+
+    private var currentAccountLabel: some View {
         HStack(spacing: Theme.Space.m) {
             AccountBadgeAvatar(
                 initials: model.initials, photo: model.profileImage, color: model.accountTint,
@@ -190,9 +210,13 @@ struct AccountPanel: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("account.current")
     }
 
     private var name: String {
