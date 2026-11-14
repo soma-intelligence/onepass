@@ -2754,6 +2754,354 @@
         }
       }
     },
+    "org.error.conflict" : {
+      "comment" : "Org error: another admin changed the member list at the same time.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Someone else changed the members at the same time. Try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otra persona cambió los miembros al mismo tiempo. Inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quelqu'un d'autre a modifié les membres en même temps. Réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qualcun altro ha modificato i membri nello stesso momento. Riprova."
+          }
+        }
+      }
+    },
+    "org.error.fork" : {
+      "comment" : "Org refusal: the server showed two conflicting member lists.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server showed two different member lists. Contact your administrator."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor mostró dos listas de miembros distintas. Contacta con tu administrador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a montré deux listes de membres différentes. Contacte ton administrateur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server ha mostrato due elenchi di membri diversi. Contatta il tuo amministratore."
+          }
+        }
+      }
+    },
+    "org.error.keysUnavailable" : {
+      "comment" : "Org error: this device's signing keys can't be read.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device's keys aren't available right now"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las claves de este dispositivo no están disponibles ahora mismo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les clés de cet appareil ne sont pas disponibles pour le moment"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chiavi di questo dispositivo non sono disponibili al momento"
+          }
+        }
+      }
+    },
+    "org.error.mdmInvalid" : {
+      "comment" : "Org refusal: the device management profile for the organisation is not valid.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device's management profile for the organisation isn't valid. Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de gestión de este dispositivo para la organización no es válido. No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil de gestion de cet appareil pour l'organisation n'est pas valide. Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo di gestione di questo dispositivo per l'organizzazione non è valido. Non è stato modificato nulla."
+          }
+        }
+      }
+    },
+    "org.error.notAllowed" : {
+      "comment" : "Org error: this account's roles don't allow the change.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your role can't make this change"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu rol no permite este cambio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton rôle ne permet pas cette modification"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il tuo ruolo non consente questa modifica"
+          }
+        }
+      }
+    },
+    "org.error.ownersKeepSelf" : {
+      "comment" : "Org error: the new owners must include this account.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You need to stay one of the owners to make this change"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tienes que seguir siendo propietario para hacer este cambio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu dois rester parmi les propriétaires pour faire ce changement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devi restare tra i proprietari per fare questa modifica"
+          }
+        }
+      }
+    },
+    "org.error.ownersPending" : {
+      "comment" : "Org error: an earlier change of owners is still being completed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A change of owners is already in progress. Finish it before making another."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya hay un cambio de propietarios en curso. Termínalo antes de hacer otro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un changement de propriétaires est déjà en cours. Termine-le avant d'en faire un autre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È già in corso un cambio di proprietari. Completalo prima di farne un altro."
+          }
+        }
+      }
+    },
+    "org.error.pinMismatch" : {
+      "comment" : "Org refusal: the server's organisation fingerprint differs from the pinned one.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This server shows a different organisation than the one you pinned. Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor muestra una organización distinta de la que fijaste. No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce serveur montre une autre organisation que celle que tu as épinglée. Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo server mostra un'organizzazione diversa da quella che hai fissato. Non è stato modificato nulla."
+          }
+        }
+      }
+    },
+    "org.error.quorum" : {
+      "comment" : "Org refusal: the change needs another owner's approval, not supported yet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another owner needs to approve this. That comes in a later version."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro propietario tiene que aprobarlo. Llegará en una versión posterior."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un autre propriétaire doit approuver ce changement. Ce sera possible dans une prochaine version."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un altro proprietario deve approvarlo. Arriverà in una versione successiva."
+          }
+        }
+      }
+    },
+    "org.error.rollback" : {
+      "comment" : "Org refusal: the server replayed an older member list.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server showed an older member list. Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor mostró una lista de miembros antigua. No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a montré une ancienne liste de membres. Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server ha mostrato un elenco di membri precedente. Non è stato modificato nulla."
+          }
+        }
+      }
+    },
+    "org.error.unreadable" : {
+      "comment" : "Org refusal: the server's organisation data does not verify.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server sent organisation data that doesn't check out. Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de la organización enviados por el servidor no son válidos. No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données de l'organisation envoyées par le serveur ne sont pas valides. Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dati dell'organizzazione inviati dal server non sono validi. Non è stato modificato nulla."
+          }
+        }
+      }
+    },
+    "org.presence.prompt" : {
+      "comment" : "Biometric prompt before signing a change to the organisation's members.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign this change to your organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma este cambio en tu organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signe cette modification de ton organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma questa modifica alla tua organizzazione"
+          }
+        }
+      }
+    },
     "otpLink.codeCanOnlyAdded" : {
       "extractionState" : "manual",
       "localizations" : {
