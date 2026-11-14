@@ -5,13 +5,13 @@
 //! [`POLICY_DOMAIN`], signed by the account's local key: an agent with a
 //! shell can write the data directory but cannot grant itself a scope.
 
+use onepass_guard::private::{set_private, sync_dir};
 use onepass_guard::{ClientRecord, GuardError, LocalSigner, open_config, seal_config};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs::{self, File};
+use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -262,12 +262,11 @@ pub fn save_policy(path: &Path, signer: &dyn LocalSigner, p: &Policy) -> Result<
     // A fresh, randomly named file created with O_EXCL: a planted file or
     // symlink cannot redirect the write.
     let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
-    tmp.as_file()
-        .set_permissions(fs::Permissions::from_mode(0o600))?;
+    set_private(tmp.as_file())?;
     tmp.write_all(sealed.as_bytes())?;
     tmp.as_file().sync_all()?;
     tmp.persist(path).map_err(|e| PolicyError::from(e.error))?;
-    File::open(dir)?.sync_all()?;
+    sync_dir(dir)?;
     Ok(())
 }
 
@@ -422,8 +421,12 @@ mod tests {
         let path = dir.path().join("mcp-policy.json");
         let s = TestSigner([3; 32]);
         save_policy(&path, &s, &sample()).unwrap();
-        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
         assert_eq!(load_policy(&path, &s, ACCOUNT).unwrap(), sample());
         // Saving again replaces the file.
         let mut p = sample();
@@ -478,6 +481,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn save_does_not_follow_a_planted_temp_symlink() {
         let dir = tempfile::tempdir().unwrap();

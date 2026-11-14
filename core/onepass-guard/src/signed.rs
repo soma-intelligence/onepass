@@ -1,11 +1,11 @@
 //! Signed configuration envelope: `{"payload":"<text>","signature":"<base64>"}`.
 
+use crate::private::{no_follow, private, set_private, sync_dir};
 use crate::{GuardError, LocalSigner};
 use data_encoding::BASE64;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File, OpenOptions, TryLockError};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{ErrorKind, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -70,12 +70,11 @@ pub(crate) fn write_private_atomic(path: &Path, data: &[u8]) -> Result<(), Guard
         _ => Path::new("."),
     };
     let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
-    tmp.as_file()
-        .set_permissions(fs::Permissions::from_mode(0o600))?;
+    set_private(tmp.as_file())?;
     tmp.write_all(data)?;
     tmp.as_file().sync_all()?;
     tmp.persist(path).map_err(|e| GuardError::from(e.error))?;
-    File::open(dir)?.sync_all()?;
+    sync_dir(dir)?;
     Ok(())
 }
 
@@ -91,14 +90,11 @@ pub(crate) fn lock_path(path: &Path) -> PathBuf {
 /// still held after that gives `GuardError::Io(TimedOut)`. The lock is
 /// released when the returned file is dropped.
 pub(crate) fn lock_sibling(path: &Path, exclusive: bool) -> Result<File, GuardError> {
-    let f = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(lock_path(path))?;
-    f.set_permissions(fs::Permissions::from_mode(0o600))?;
+    let f = no_follow(private(
+        OpenOptions::new().read(true).write(true).create(true),
+    ))
+    .open(lock_path(path))?;
+    set_private(&f)?;
     let deadline = Instant::now() + LOCK_WAIT;
     loop {
         let r = if exclusive {

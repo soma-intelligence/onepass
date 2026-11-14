@@ -1,8 +1,11 @@
 //! `onepass-mcp install` and `uninstall` against a temporary home, for the
 //! four clients. Nothing here touches the real home: every command gets
 //! `--home <tempdir>` and a `HOME` that points into the tempdir too.
+// Helpers of the Unix-only tests below are unused on Windows.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
 use serde_json::Value;
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -146,6 +149,9 @@ fn has_other(path: &Path, c: &Client) -> bool {
 }
 
 #[test]
+// Unix only: compares the default socket, a path in the Mac app's
+// container written with forward slashes.
+#[cfg(unix)]
 fn install_creates_file() {
     for c in &CLIENTS {
         let h = home();
@@ -338,6 +344,9 @@ fn existing_other_path_needs_force() {
 }
 
 #[test]
+// Unix only: compares the default socket, a path in the Mac app's
+// container written with forward slashes.
+#[cfg(unix)]
 fn dry_run_writes_nothing_and_prints_diff() {
     for c in &CLIENTS {
         let h = home();
@@ -419,6 +428,7 @@ fn with_docs_writes_skill() {
 }
 
 #[test]
+#[cfg(unix)]
 fn write_is_atomic() {
     for c in &CLIENTS {
         let h = home();

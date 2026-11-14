@@ -1,6 +1,10 @@
 //! The production bridge over a real unlocked session: the extension role
 //! played in Rust with `onepass-bridge`, the app's delegate scripted.
 //! Run with `--features dev-fast-kdf`.
+//!
+//! Unix only: these tests drive the socket hosts (SSH agent, MCP, bridge),
+//! whose Windows named pipes come with milestone X3.
+#![cfg(unix)]
 
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{Receiver, Sender, channel};

@@ -1,6 +1,8 @@
 //! Hardening (spec 2026-10-26 sections 3.3, 4 and 7): paired clients,
 //! client scopes, revocable grants, strong authentication, rate limits and
 //! the approval fatigue guard.
+// Helpers of the Unix-only tests below are unused on Windows.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
 
 mod common;
 
@@ -316,6 +318,9 @@ fn unpaired_client_is_refused_everywhere() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn client_scopes_restrict_policy() {
     let mut h = build(Setup {
         policy: Box::new(open_policy),
@@ -439,6 +444,9 @@ fn vault_outside_client_scopes_reads_like_not_found() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn grant_survives_across_tool_calls_until_expiry() {
     let mut h = build(Setup {
         answers: vec![Decision::AllowFor(Duration::from_secs(300))],
@@ -484,6 +492,9 @@ fn grant_survives_across_tool_calls_until_expiry() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn expired_grant_replay_prompts_again() {
     let mut h = build(Setup {
         answers: vec![
@@ -513,6 +524,9 @@ fn expired_grant_replay_prompts_again() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn revoked_grant_prompts_again() {
     let mut h = build(Setup {
         answers: vec![
@@ -549,6 +563,9 @@ fn revoked_grant_prompts_again() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn grant_from_other_client_not_used() {
     let mut h = build(Setup {
         answers: vec![Decision::AllowFor(Duration::from_secs(300))],
@@ -612,6 +629,9 @@ fn grant_from_other_client_not_used() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn reveal_requires_strong_auth() {
     for denied in [StrongOutcome::Denied, StrongOutcome::Unavailable] {
         let mut h = build(Setup {
@@ -752,6 +772,9 @@ fn add_mail_h(h: &H) {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn seventh_prompt_in_a_minute_refused_without_prompt() {
     let mut h = build(Setup {
         answers: vec![Decision::AllowOnce; 8],
@@ -786,6 +809,9 @@ fn seventh_prompt_in_a_minute_refused_without_prompt() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn secret_requests_are_rate_limited_even_with_a_grant() {
     let mut limits = Limits::mcp();
     limits.secret_per_min = 3;
@@ -804,6 +830,9 @@ fn secret_requests_are_rate_limited_even_with_a_grant() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn three_denials_block_client() {
     let mut h = build(Setup {
         answers: vec![
@@ -905,6 +934,9 @@ fn lost_control_channel_refuses_every_call() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn audit_entries_name_the_client() {
     let mut h = build(Setup {
         answers: vec![Decision::AllowOnce],

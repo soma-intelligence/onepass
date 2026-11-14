@@ -1,5 +1,6 @@
 //! Unix socket server: socket creation and modes, the accept loop over a
 //! real socket, and peer credentials.
+#![cfg(unix)]
 
 mod common;
 
