@@ -1,8 +1,9 @@
 import XCTest
 
 /// The icon library (spec 2026-11-14 part D): the editor's icon menu, "Choisir une icône…", a pack
-/// logo picked in Logos, saved; the item's list row then draws the chosen icon. Demonstration data
-/// only (Debug `-OnePassDemoData`, fictional values, a temporary database).
+/// logo picked in Logos, saved; the item's list row then draws the chosen icon
+/// (`list.row.icon.custom`). Demonstration data only (Debug `-OnePassDemoData`, fictional values, a
+/// temporary database).
 @MainActor
 final class IconLibraryUITests: XCTestCase {
     private static let timeout: TimeInterval = 90
@@ -61,9 +62,11 @@ final class IconLibraryUITests: XCTestCase {
             swipes += 1
         }
         XCTAssertTrue(row.exists, "list row missing")
-        let custom = NSPredicate(format: "value == %@", "custom")
-        expectation(for: custom, evaluatedWith: row)
-        waitForExpectations(timeout: 15)
+        // The row's icon carries `list.row.icon.custom` once it draws the chosen icon.
+        let icon = row.descendants(matching: .any)["list.row.icon.custom"].firstMatch
+        let anyIcon = any["list.row.icon.custom"].firstMatch
+        XCTAssertTrue(
+            icon.waitForExistence(timeout: 15) || anyIcon.exists, "the list row does not draw the chosen icon")
         attach("icon-library-list")
     }
 

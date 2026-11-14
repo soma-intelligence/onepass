@@ -16,7 +16,9 @@ enum PendingIcon: Equatable {
 @Observable
 final class ItemEditorModel {
     var draft: ItemDraft
-    let isNew: Bool
+    /// True until the item exists in the vault: a save whose icon failed turns it false, so the
+    /// next save updates that item instead of creating another one.
+    private(set) var isNew: Bool
     /// The vault picker. A change is applied after the save, by a move (keys re-wrapped by the core).
     var targetVaultID: String
     /// Field id (or `title`) whose error is shown, and the French message.
@@ -49,6 +51,13 @@ final class ItemEditorModel {
         targetVaultID = draft.item.vaultId
         websitesSlot = defaults.object(forKey: EditorLayout.websitesSlotKey) as? Int ?? 0
         self.defaults = defaults
+        makeRowKeys()
+    }
+
+    /// Fresh row identities for the draft's fields and websites; filled rows pinned.
+    private func makeRowKeys() {
+        fieldKeys = [:]
+        pinnedKeys = []
         for section in draft.item.sections {
             let keys = section.fields.map { _ in UUID() }
             fieldKeys[section.id] = keys
@@ -228,14 +237,14 @@ final class ItemEditorModel {
         }
     }
 
-    /// "Choisir une icône…": the picture replaces the automatic icon, and the category artwork
-    /// choice, which would hide it.
+    /// "Choisir une icône…": the picture comes before the automatic icon and the category artwork,
+    /// whose choice stays as it was.
     func chooseIcon(mime: String, bytes: Data) {
         pendingCustomIcon = .set(mime: mime, bytes: bytes)
-        draft.item.iconCategory = false
     }
 
-    /// "Réinitialiser l'icône": back to the automatic icon (nothing to do for an icon only pending).
+    /// "Réinitialiser l'icône": back to the automatic icon, or the category artwork when the item
+    /// chose it (nothing to do for an icon only pending).
     func resetIcon() {
         pendingCustomIcon = draft.item.customIconId?.isEmpty == false ? .clear : nil
     }
@@ -278,7 +287,9 @@ final class ItemEditorModel {
         saving = true
         defer { saving = false }
         do {
-            var saved = try await session.save(draft.preparedForSave())
+            // Only the icon changed (or its write failed last time): the item itself is not saved
+            // again.
+            var saved = isNew || draft.isDirty ? try await session.save(draft.preparedForSave()) : draft.original
             if targetVaultID != saved.vaultId {
                 try await session.move(itemID: saved.id, from: saved.vaultId, to: targetVaultID)
                 saved.vaultId = targetVaultID
@@ -286,7 +297,16 @@ final class ItemEditorModel {
             // After the move: the icon is written in the vault the item now lives in. A new item
             // gets its icon right after it is created.
             if let pending = pendingCustomIcon {
-                saved = await apply(pending, to: saved, with: session)
+                do {
+                    saved = try await apply(pending, to: saved, with: session)
+                } catch {
+                    // The item is stored, its icon is not: the editor stays open on the stored item
+                    // (a new one becomes that item), the icon still pending, so Enregistrer tries
+                    // the icon again without writing the item twice.
+                    rebase(on: saved)
+                    generalError = String(localized: "editor.iconNotSaved")
+                    return nil
+                }
                 pendingCustomIcon = nil
             }
             return saved
@@ -303,21 +323,23 @@ final class ItemEditorModel {
         }
     }
 
-    /// Writes the pending icon. The item itself is already stored: a refused icon (the sheet
-    /// checks size and type first, so this is rare) leaves the item as saved, with its previous
-    /// icon, rather than keeping the editor open on a save that would run twice.
-    private func apply(_ pending: PendingIcon, to saved: FfiItem, with session: VaultSession) async -> FfiItem {
-        do {
-            switch pending {
-            case .set(let mime, let bytes):
-                return try await session.setCustomIcon(itemID: saved.id, vaultID: saved.vaultId, mime: mime, bytes: bytes)
-            case .clear:
-                guard saved.customIconId != nil else { return saved }
-                return try await session.clearCustomIcon(itemID: saved.id, vaultID: saved.vaultId)
-            }
-        } catch {
-            return saved
+    /// Writes the pending icon on the stored item.
+    private func apply(_ pending: PendingIcon, to saved: FfiItem, with session: VaultSession) async throws -> FfiItem {
+        switch pending {
+        case .set(let mime, let bytes):
+            return try await session.setCustomIcon(itemID: saved.id, vaultID: saved.vaultId, mime: mime, bytes: bytes)
+        case .clear:
+            guard saved.customIconId != nil else { return saved }
+            return try await session.clearCustomIcon(itemID: saved.id, vaultID: saved.vaultId)
         }
+    }
+
+    /// Edits the stored item from now on (its id, version and vault), the pending icon kept.
+    func rebase(on saved: FfiItem) {
+        draft = ItemDraft(item: saved)
+        targetVaultID = saved.vaultId
+        isNew = false
+        makeRowKeys()
     }
 
     private func show(field: String, reason: String) {

@@ -35,7 +35,7 @@ struct EditorHeader: View {
                         type: item.itemType, title: item.title,
                         siteIcon: editor.pendingIconBytes ?? siteIcon
                             ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title, custom: customKey),
-                        size: 64, brand: item.cardBrandName, useCategory: item.iconCategory,
+                        size: 64, brand: item.cardBrandName, useCategory: item.iconCategory && !editor.hasCustomIcon,
                         tint: ItemTint.color(named: item.color),
                         domain: ItemIconResolver.registrableDomain(primaryURL))
                         .favoriteBadge(item.favorite, iconSize: 64)

@@ -14559,6 +14559,35 @@
         }
       }
     },
+    "editor.iconNotSaved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The item is saved, but not its icon. Try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El elemento se ha guardado, pero no su icono. Vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'élément est enregistré, mais pas son icône. Réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'elemento è stato salvato, ma non la sua icona. Riprova."
+          }
+        }
+      }
+    },
     "home.frequentlyUsed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14710,25 +14739,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A centered 256 px square, without its metadata."
+            "value" : "A centered square of up to 256 px, without its metadata."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un cuadrado centrado de 256 px, sin sus metadatos."
+            "value" : "Un cuadrado centrado de hasta 256 px, sin sus metadatos."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un carré centré de 256 px, sans ses métadonnées."
+            "value" : "Un carré centré de 256 px au plus, sans ses métadonnées."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un quadrato centrato di 256 px, senza i suoi metadati."
+            "value" : "Un quadrato centrato fino a 256 px, senza i suoi metadati."
           }
         }
       }
@@ -30301,6 +30330,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anno"
+          }
+        }
+      }
+    },
+    "list.row.customIcon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom icon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icono personalizado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icône personnalisée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icona personalizzata"
           }
         }
       }

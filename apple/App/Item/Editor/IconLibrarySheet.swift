@@ -13,8 +13,9 @@ import VaultKit
 ///   in dark mode too.
 /// - Icônes: a house icon (`HouseIcons`) on a tile of one of the 12 palette colors, rendered to a
 ///   256 px PNG with the light palette (the same picture on every device and appearance).
-/// - Image: a photo (PhotosPicker on iOS, a file on the Mac), a centered square of 256 px encoded
-///   as PNG from the pixels alone (no EXIF, no GPS). Over 64 KB it is refused.
+/// - Image: a photo (PhotosPicker on iOS, a file on the Mac), a centered square encoded as PNG
+///   from the pixels alone (no EXIF, no GPS), at 256 px, else 192 or 128 px to fit 64 KB; refused
+///   only when 128 px still does not fit. Pack logos over 64 KB are not offered.
 ///
 /// `onPick` gets the bytes and their type; the editor applies them on save.
 struct IconLibrarySheet: View {
@@ -157,7 +158,11 @@ struct IconLibrarySheet: View {
                 results = []
                 return
             }
-            let found = await Task.detached(priority: .userInitiated) { pack.search(text, limit: 60) }.value
+            // A logo the core would refuse (over 64 KB) is left out of the grid.
+            let limit = Self.maxBytes
+            let found = await Task.detached(priority: .userInitiated) {
+                pack.search(text, limit: 60).filter { (pack.icon(number: $0.icon)?.data.count ?? .max) <= limit }
+            }.value
             guard !Task.isCancelled else { return }
             results = found
         }
@@ -319,37 +324,76 @@ struct IconLibrarySheet: View {
         #endif
     }
 
+    /// Decodes and encodes off the main actor, then shows the result.
     private func use(_ data: Data) {
-        guard let png = CustomIconImage.png(from: data) else {
-            imageProblem = "iconLibrary.image.unreadable"
-            return
+        let limit = Self.maxBytes
+        Task {
+            let outcome = await Task.detached(priority: .userInitiated) {
+                CustomIconImage.fitting(data, maxBytes: limit)
+            }.value
+            switch outcome {
+            case .png(let png):
+                imageProblem = nil
+                pick("image/png", png)
+            case .unreadable: imageProblem = "iconLibrary.image.unreadable"
+            case .tooLarge: imageProblem = "iconLibrary.image.tooLarge"
+            }
         }
-        guard png.count <= Self.maxBytes else {
-            imageProblem = "iconLibrary.image.tooLarge"
-            return
-        }
-        imageProblem = nil
-        pick("image/png", png)
     }
 }
 
-/// Turns any image into a chosen icon: a centered square of 256 px, as a PNG written from the
-/// pixels alone (EXIF, GPS and other metadata stay behind), transparency kept.
-enum CustomIconImage {
-    static let side = 256
+/// Turns any image into a chosen icon: a centered square encoded as PNG from the pixels alone
+/// (EXIF, GPS and other metadata stay behind), transparency kept. `fitting` tries 256, 192 then
+/// 128 px and keeps the first that fits the core's cap.
+enum CustomIconImage: Sendable {
+    static let sides = [256, 192, 128]
+    /// Longest side decoded, whatever the source (a long panorama stays in memory bounds).
+    static let maxDecodedSide = 2048
 
-    static func png(from data: Data) -> Data? {
+    enum Outcome: Sendable, Equatable {
+        case png(Data)
+        case unreadable
+        case tooLarge
+    }
+
+    static func fitting(_ data: Data, maxBytes: Int) -> Outcome {
+        guard let square = square(from: data) else { return .unreadable }
+        for side in sides {
+            guard let png = png(from: square, side: side) else { return .unreadable }
+            if png.count <= maxBytes { return .png(png) }
+        }
+        return .tooLarge
+    }
+
+    /// The image decoded (oriented) with its short side at least `sides[0]` when the source has
+    /// it, then cropped to its centered square.
+    static func square(from data: Data) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-            let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: side * 3,
-            ] as CFDictionary)
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            width > 0, height > 0
+        else { return nil }
+        let long = max(width, height), short = min(width, height)
+        // Long side so that the short side reaches 256 px: a panorama is not blurred by a small
+        // thumbnail. Never more than the source, never more than `maxDecodedSide`.
+        let wanted = Int((Double(sides[0]) * Double(long) / Double(short)).rounded(.up))
+        let maxSide = min(long, min(maxDecodedSide, max(sides[0], wanted)))
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxSide,
+        ] as CFDictionary)
         else { return nil }
         let edge = min(image.width, image.height)
+        guard edge > 0 else { return nil }
         let crop = CGRect(x: (image.width - edge) / 2, y: (image.height - edge) / 2, width: edge, height: edge)
-        guard edge > 0, let square = image.cropping(to: crop),
-            let space = CGColorSpace(name: CGColorSpace.sRGB),
+        return image.cropping(to: crop)
+    }
+
+    /// `square` scaled to `side` px and encoded as PNG.
+    static func png(from square: CGImage, side: Int) -> Data? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
             let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
                 space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }

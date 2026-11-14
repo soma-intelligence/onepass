@@ -52,7 +52,7 @@ struct ItemHeader: View {
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Space.l) {
             ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: Self.iconSize, brand: item.cardBrandName,
-                useCategory: item.iconCategory, tint: ItemTint.color(named: item.color),
+                useCategory: item.usesCategoryIcon, tint: ItemTint.color(named: item.color),
                 domain: ItemIconResolver.registrableDomain(primaryURL))
                 .favoriteBadge(item.favorite, iconSize: Self.iconSize)
             VStack(alignment: .leading, spacing: Theme.Space.s) {

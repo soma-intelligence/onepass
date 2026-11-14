@@ -33,10 +33,10 @@ struct ItemListRow: View {
         model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
     }
 
-    /// The row draws the icon the person chose (loaded from the vault): its accessibility value
-    /// says "custom", which UI tests read.
+    /// The row draws the icon the person chose (loaded from the vault): the row's accessibility
+    /// value says so, and the icon carries `list.row.icon.custom` (UI tests).
     private var showsCustomIcon: Bool {
-        guard !summary.iconCategory, let key = CustomIconKey(summary), let store = model.iconLoader.custom,
+        guard let key = CustomIconKey(summary), let store = model.iconLoader.custom,
             let chosen = store.cached(key)
         else { return false }
         return (siteIcon ?? cachedIcon) == chosen
@@ -54,8 +54,9 @@ struct ItemListRow: View {
     var body: some View {
         HStack(spacing: Self.iconSpacing) {
             ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: Self.iconSize, brand: summary.cardBrand,
-                useCategory: summary.iconCategory, tint: ItemTint.color(named: summary.color),
+                useCategory: summary.usesCategoryIcon, tint: ItemTint.color(named: summary.color),
                 domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
+                .accessibilityIdentifier(showsCustomIcon ? "list.row.icon.custom" : "")
                 .favoriteBadge(summary.favorite, iconSize: Self.iconSize)
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)
@@ -79,13 +80,23 @@ struct ItemListRow: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityValue(showsCustomIcon ? Text(verbatim: "custom") : Text(verbatim: ""))
+        .accessibilityValue(showsCustomIcon ? Text("list.row.customIcon") : Text(verbatim: ""))
         .accessibilityIdentifier("list.row.\(summary.title)")
         .task(id: ItemIconTaskID(url: summary.primaryUrl, custom: CustomIconKey(summary))) {
             siteIcon = await model.iconLoader.icon(
                 for: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
         }
     }
+}
+
+/// "Icône de la catégorie" draws the category artwork, unless the person chose an icon: a chosen
+/// icon comes first (spec 2026-11-14 part D). "Réinitialiser l'icône" brings the category back.
+extension FfiItemSummary {
+    var usesCategoryIcon: Bool { iconCategory && CustomIconKey(self) == nil }
+}
+
+extension FfiItem {
+    var usesCategoryIcon: Bool { iconCategory && CustomIconKey(self) == nil }
 }
 
 /// What an icon task follows: the item's address and its chosen icon (a new one is a new key).

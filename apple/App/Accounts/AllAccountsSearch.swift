@@ -79,7 +79,7 @@ struct AllAccountsSearch: View {
         HStack(spacing: 12) {
             ItemIconSource(summary) { icon in
                 ItemIcon(type: summary.itemType, title: summary.title, siteIcon: icon, size: 32,
-                    useCategory: summary.iconCategory, tint: ItemTint.color(named: summary.color),
+                    useCategory: summary.usesCategoryIcon, tint: ItemTint.color(named: summary.color),
                     domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
             }
             VStack(alignment: .leading, spacing: 1) {
