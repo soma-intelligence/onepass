@@ -124,6 +124,9 @@ interface Report {
   strength: number[];
   pwned: "checked" | "partial" | "unavailable" | "disabled";
   sitesChecked: boolean;
+  breachCatalog: boolean;
+  checkBreaches: boolean;
+  missingPrefixes: number;
 }
 interface Account {
   accountId: string;
@@ -415,17 +418,31 @@ async function reload(): Promise<void> {
 }
 
 let reportLoading = false;
+/** True while the breach lookups run (the online pass). */
+let checkingBreaches = false;
+
+/** The offline report at once, then, with "Vérifier les fuites" on, the one
+ * with the catalogs and the Have I Been Pwned ranges (as on the iPhone). */
 async function loadReport(): Promise<void> {
   if (reportLoading) return;
   reportLoading = true;
-  try {
-    ui.report = await call<Report>("watchtower");
+  const redraw = () => {
     if (ui.page.kind !== "list") renderMain();
     renderSidebar();
+  };
+  try {
+    ui.report = await call<Report>("watchtower", { online: false });
+    if (ui.report.checkBreaches) {
+      checkingBreaches = true;
+      redraw();
+      ui.report = await call<Report>("watchtower", { online: true });
+    }
   } catch {
     /* the page says "Analyse…" */
   } finally {
+    checkingBreaches = false;
     reportLoading = false;
+    if (ui.report) redraw();
   }
 }
 
@@ -1964,11 +1981,19 @@ function dial(score: number | undefined): SVGSVGElement {
 function unavailable(card: WatchCard, r: Report): string | null {
   switch (card.source) {
     case "breaches":
-      return r.pwned === "checked" || r.pwned === "partial" ? null : t("Vérification des fuites désactivée.", "Breach check turned off.");
+      if (r.pwned === "checked" || r.pwned === "partial") return null;
+      if (!r.checkBreaches || r.pwned === "disabled") return t("Vérification des fuites désactivée.", "Breach check turned off.");
+      return checkingBreaches ? t("Vérification des fuites…", "Checking for breaches…") : t("En attente du réseau.", "Waiting for the network.");
     case "sites":
-      return r.sitesChecked ? null : t("Active « Vérifier les fuites » pour télécharger le catalogue des sites.", "Turn on “Check for breaches” to download the site catalog.");
+      if (r.sitesChecked) return null;
+      return r.checkBreaches
+        ? t("Catalogue des sites pas encore téléchargé.", "Site catalog not downloaded yet.")
+        : t("Active « Vérifier les fuites » pour télécharger le catalogue des sites.", "Turn on “Check for breaches” to download the site catalog.");
     case "breachCatalog":
-      return t("Active « Vérifier les fuites » pour télécharger le catalogue des sites piratés.", "Turn on “Check for breaches” to download the list of breached sites.");
+      if (r.breachCatalog) return null;
+      return r.checkBreaches
+        ? t("Catalogue des fuites pas encore téléchargé.", "Breach list not downloaded yet.")
+        : t("Active « Vérifier les fuites » pour télécharger le catalogue des sites piratés.", "Turn on “Check for breaches” to download the list of breached sites.");
     default:
       return null;
   }
@@ -2022,8 +2047,32 @@ function watchtowerPage(): HTMLElement {
           "Watchtower finds passwords to change and sites where you can make your accounts more secure.")),
         r ? h("p", { class: "tertiary" }, plural(r.itemsAnalyzed, t("1 élément analysé", "1 item analyzed"), t("%d éléments analysés", "%d items analyzed"))) : null)),
     strength,
+    r ? breachSetting(r) : null,
     h("div", { class: "wt-grid" }, ...cards),
   );
+}
+
+/** "Vérifier les fuites", with what is sent (the iPhone's BreachSettingCard). */
+function breachSetting(r: Report): HTMLElement {
+  const toggle = h("input", { type: "checkbox", class: "switch", id: "check-breaches", checked: r.checkBreaches, "aria-label": t("Vérifier les fuites", "Check for Breaches") });
+  toggle.addEventListener("change", async () => {
+    try {
+      await call("set_check_breaches", { on: toggle.checked });
+      ui.report = null;
+      renderMain();
+      void loadReport();
+    } catch (e) {
+      toast(message(e));
+    }
+  });
+  const sent = h("p", { class: "footnote", hidden: true }, t("Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. Les catalogues de 2fa.directory et la liste des sites piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune requête réseau.",
+    "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The 2fa.directory catalogs and the list of breached sites are downloaded whole and kept for a week. When off, no network request."));
+  const info = h("button", { class: "bar-text small-link", type: "button", onclick: () => (sent.hidden = !sent.hidden) }, t("Ce qui est envoyé", "What is sent"));
+  return h("div", { class: "card list-card breach-card" },
+    h("label", { class: "toggle-row", for: "check-breaches" }, tile("compromised", "var(--red)", 30),
+      h("span", { class: "row-text" }, h("span", { class: "bold" }, t("Vérifier les fuites", "Check for Breaches")), h("span", { class: "row-sub" }, t("Tes mots de passe ne quittent jamais l'appareil.", "Your passwords never leave this device."))), toggle),
+    h("div", { class: "breach-info" }, info, checkingBreaches ? h("span", { class: "row-sub" }, t("Vérification des fuites…", "Checking for breaches…")) : null),
+    sent);
 }
 
 // ---- settings --------------------------------------------------------------------------------------
@@ -2069,7 +2118,16 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
       const status = await call<Status>("status");
       return [head, h("div", { class: "card list-card" }, row(t("Verrouillage automatique", "Auto-Lock"), t(`${status.autoLockMinutes} minutes`, `${status.autoLockMinutes} minutes`)),
         row(t("Langue", "Language"), t("Français (système)", "English (system)"))),
-        h("p", { class: "footnote" }, t("OnePass se verrouille aussi quand la session Windows se verrouille.", "OnePass also locks when the Windows session locks."))];
+        h("p", { class: "footnote" }, t("OnePass se verrouille aussi quand la session Windows se verrouille.", "OnePass also locks when the Windows session locks.")),
+        h("div", { class: "caps" }, t("Importer", "Import")),
+        h("div", { class: "card list-card" }, h("button", { class: "row", id: "open-import", onclick: () => importSheet() }, tile("import", "var(--blue)", 28),
+          h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Importer…", "Import…")), h("span", { class: "row-sub" }, t("Apple, 1Password, Bitwarden, navigateurs et 8 autres.", "Apple, 1Password, Bitwarden, browsers and 8 more."))), icon("chevron_right", 18, "chev"))),
+        h("div", { class: "caps" }, t("Sauvegarde", "Backup")),
+        h("div", { class: "card list-card" },
+          h("button", { class: "row", id: "open-backup", onclick: () => backupSheet() }, tile("lock", "var(--accent)", 28), h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Sauvegarde chiffrée…", "Encrypted Backup…"))), icon("chevron_right", 18, "chev")),
+          h("button", { class: "row", id: "open-restore", onclick: () => restoreSheet() }, tile("restore", "var(--green)", 28), h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Restaurer…", "Restore…"))), icon("chevron_right", 18, "chev")),
+          h("button", { class: "row", id: "open-csv", onclick: () => csvSheet() }, tile("description", "var(--red)", 28), h("span", { class: "row-text" }, h("span", { class: "row-title destructive" }, t("Export CSV non chiffré…", "Unencrypted CSV Export…"))), icon("chevron_right", 18, "chev"))),
+        h("p", { class: "footnote" }, t("Restaurer n'écrase rien. Le CSV sert seulement à changer de gestionnaire.", "Restoring overwrites nothing. Use the CSV only to switch managers."))];
     }
     case "security": {
       const status = await call<Status>("status");
@@ -2148,6 +2206,641 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
     default:
       return note(t("Les agents (serveur MCP, agent SSH) demandent un canal de contrôle que la version Windows n'ouvre pas encore.", "Agents (MCP server, SSH agent) need a control channel the Windows version does not open yet."));
   }
+}
+
+// ---- backup, restore, import, plaintext export ---------------------------------------------
+
+/** The children worth appending (a condition may leave null). */
+const keep = (...xs: (Node | null | undefined | false)[]): Node[] => xs.filter((x): x is Node => !!x);
+
+interface Saved {
+  saved: boolean;
+  cloud: boolean;
+  fileName: string;
+}
+interface ArchiveInfo {
+  fileName: string;
+  kind: "backup" | "export";
+  createdAt: number;
+  newerVersion: boolean;
+  hasPassphrase: boolean;
+  signed: boolean;
+  forThisAccount: boolean;
+}
+interface TypeCount {
+  itemType: string;
+  count: number;
+}
+interface RestoreSummary {
+  kind: "backup" | "export";
+  createdAt: number;
+  vaultsCreated: number;
+  items: number;
+  byType: TypeCount[];
+  skipped: number;
+  signatureVerified: boolean;
+  epochMissing: boolean;
+}
+interface ImportDuplicate {
+  index: number;
+  incoming: Summary;
+  existing: Summary;
+  differences: string[];
+  exact: boolean;
+  suggested: "merge" | "skip" | "import";
+}
+interface ImportSummary {
+  format: string;
+  items: number;
+  byType: TypeCount[];
+  warnings: { code: string; count: number }[];
+  skipped: number;
+  updated: number;
+  added: number;
+  fixed: number;
+  converted: number;
+  archivedDuplicates: number;
+  unchanged: number;
+  duplicates: ImportDuplicate[];
+  merged: number;
+  skippedDuplicates: number;
+  separate: number;
+}
+
+/** Saved, or held back because the folder syncs to a cloud (the Apple apps' warning). */
+async function afterSave(r: Saved, done: string, cloudBody: string, onSaved: () => void): Promise<void> {
+  if (r.saved) {
+    toast(done);
+    onSaved();
+    return;
+  }
+  if (!r.cloud) return;
+  const s = sheet("", {
+    action: t("Enregistrer quand même", "Save Anyway"),
+    onAction: async (sh) => {
+      sh.close();
+      try {
+        if (await call<boolean>("save_pending")) {
+          toast(done);
+          onSaved();
+        }
+      } catch (e) {
+        toast(message(e));
+      }
+    },
+  });
+  s.dialog.classList.add("alert");
+  s.dialog.addEventListener("close", () => void call("discard_pending").catch(() => {}));
+  s.body.append(h("p", { class: "alert-title" }, t("Cet emplacement est synchronisé dans le cloud", "This location syncs to the cloud")), h("p", { class: "alert-text" }, cloudBody));
+}
+
+function backupError(e: unknown): string {
+  const err = e as UiError;
+  if (err?.code === "Validation" && err.detail.startsWith("passphrase")) return t("Trop facile à deviner : allonge-la ou ajoute des mots.", "Too easy to guess: make it longer or add words.");
+  if (err?.code === "InvalidInput" && err.detail.includes("passphrase")) return t("Phrase de passe illisible.", "Unreadable passphrase.");
+  return message(e);
+}
+
+/** Sauvegarde chiffrée: master password, passphrase twice, then where to save. */
+function backupSheet(): void {
+  const pw = secretInput("bk-pw", t("Mot de passe maître", "Master Password"), "current-password");
+  const a = secretInput("bk-pass", t("Phrase de passe de la sauvegarde", "Backup Passphrase"), "new-password");
+  const b = secretInput("bk-pass2", t("Confirmer la phrase de passe", "Confirm the passphrase"), "new-password");
+  const advice = t("Choisis une phrase longue que tu n'utilises nulle part ailleurs, par exemple plusieurs mots. OnePass refuse une phrase trop facile à deviner.",
+    "Choose a long passphrase you don't use anywhere else, several words for example. OnePass refuses a passphrase that is too easy to guess.");
+  const foot = h("p", { class: "footnote" }, advice);
+  const err = h("div", { class: "error", role: "alert" });
+  const check = () => {
+    const mismatch = !!b.input.value && a.input.value !== b.input.value;
+    foot.textContent = mismatch ? t("Les deux phrases de passe ne correspondent pas.", "The two passphrases don't match.") : advice;
+    foot.classList.toggle("error-text", mismatch);
+    action.disabled = !pw.input.value || !a.input.value || a.input.value !== b.input.value;
+  };
+  const s = sheet(t("Sauvegarde chiffrée", "Encrypted Backup"), {
+    action: t("Exporter", "Export"),
+    onAction: async (sh) => {
+      err.textContent = "";
+      action.disabled = true;
+      action.textContent = "…";
+      try {
+        const r = await call<Saved>("export_backup", { password: pw.input.value, passphrase: a.input.value });
+        if (r.saved || r.cloud) {
+          pw.input.value = a.input.value = b.input.value = "";
+          sh.close();
+        }
+        await afterSave(r, t("Sauvegarde enregistrée.", "Backup saved."),
+          t("Le fichier sera copié sur les serveurs de ce service et sur tes autres appareils. Il reste chiffré, mais sa sécurité ne tient plus qu'à ta phrase de passe.",
+            "The file will be copied to this service's servers and to your other devices. It stays encrypted, but its security then rests on your passphrase alone."), () => {});
+      } catch (e) {
+        err.textContent = backupError(e);
+      } finally {
+        action.textContent = t("Exporter", "Export");
+        check();
+      }
+    },
+  });
+  const action = s.dialog.querySelector(".bar-text.bold") as HTMLButtonElement;
+  for (const x of [pw, a, b]) x.input.addEventListener("input", check);
+  check();
+  s.body.append(
+    h("p", { class: "secondary sheet-intro" }, t("Une archive OnePass chiffrée de tout ce que cet appareil contient, coffres et éléments à la corbeille compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte.",
+      "An encrypted OnePass archive of everything this device holds, vaults and items in the trash included. It opens with the passphrase chosen here or with your account.")),
+    pw.box, a.box, b.box, foot, err,
+    h("p", { class: "footnote" }, t("Garde aussi ta phrase de passe : sans elle ni ton compte, la sauvegarde ne s'ouvre pas.", "Keep your passphrase too: without it or your account, the backup won't open.")),
+    h("p", { class: "footnote" }, t("Choisis un emplacement hors ligne, par exemple une clé USB.", "Choose an offline location, such as a USB drive.")),
+  );
+  pw.input.focus();
+}
+
+/** "12 connexions · 3 cartes bancaires": counts by type, most common first. */
+function countsLine(byType: TypeCount[]): HTMLElement {
+  return h("div", { class: "count-tiles" }, ...byType.map((c) => {
+    const cat = category(c.itemType);
+    return h("div", { class: "count-tile card" }, art(c.itemType, 30), h("span", { class: "figure small" }, String(c.count)), h("span", { class: "row-sub" }, c.count === 1 ? cat.singular : cat.plural));
+  }));
+}
+
+function restoreError(e: unknown): string {
+  const err = e as UiError;
+  const d = err?.detail ?? "";
+  if (err?.code === "Integrity") return t("Cette sauvegarde a été modifiée ou abîmée : sa signature ou son contenu ne correspond pas. Rien n'a été restauré.", "This backup was changed or damaged: its signature or its content does not match. Nothing was restored.");
+  if (err?.code === "WrongPassword" || (err?.code === "InvalidInput" && /"passphrase"/.test(d))) return t("Phrase de passe incorrecte.", "Wrong passphrase.");
+  if (d.includes("archive passphrase")) return t("Cette sauvegarde vient d'un autre compte : saisis sa phrase de passe.", "This backup comes from another account: enter its passphrase.");
+  if (d.includes("archive of another account")) return t("Cette sauvegarde appartient à un autre compte et n'a pas de phrase de passe : elle ne s'ouvre qu'avec ce compte.", "This backup belongs to another account and has no passphrase: it opens only with that account.");
+  if (d.includes("newer version")) return t("Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie.", "This backup comes from a newer version of OnePass. Update the app, then try again.");
+  if (err?.code === "InvalidInput") return t("Ce fichier n'est pas une sauvegarde OnePass.", "This file is not a OnePass backup.");
+  if (err?.code === "TooLarge" || err?.code === "Unreadable") return t("Ce fichier n'a pas pu être lu, ou il est trop gros.", "This file could not be read, or it is too large.");
+  return message(e);
+}
+
+/** Restaurer une sauvegarde: choose the .onepass file, check its header, preview, restore. */
+function restoreSheet(preloaded?: ArchiveInfo): void {
+  const content = h("div", {});
+  const err = h("div", { class: "error", role: "alert" });
+  let info: ArchiveInfo | null = null;
+  let passphrase: string | undefined;
+  let preview: RestoreSummary | null = null;
+  const s = sheet(t("Restaurer une sauvegarde", "Restore a Backup"), {
+    action: t("Restaurer", "Restore"),
+    wide: true,
+    onAction: async (sh) => {
+      if (!preview || preview.items === 0) return;
+      err.textContent = "";
+      action.disabled = true;
+      try {
+        const done = await call<RestoreSummary>("restore_backup", { passphrase: passphrase ?? null });
+        await refresh(undefined);
+        showDone(done, sh);
+      } catch (e) {
+        err.textContent = restoreError(e);
+        action.disabled = false;
+      }
+    },
+  });
+  s.dialog.addEventListener("close", () => void call("forget_file").catch(() => {}));
+  const action = s.dialog.querySelector(".bar-text.bold") as HTMLButtonElement;
+  action.disabled = true;
+  const signatureLine = (i: ArchiveInfo): string =>
+    preview?.signatureVerified
+      ? t("Signature de ton compte vérifiée", "Your account's signature verified")
+      : i.forThisAccount
+        ? t("Signée par ton compte : la signature est vérifiée à l'ouverture", "Signed by your account: the signature is checked when it opens")
+        : i.signed
+          ? t("Signée par un autre compte : seule la phrase de passe protège ce fichier", "Signed by another account: only the passphrase protects this file")
+          : t("Non signée : seule la phrase de passe protège ce fichier", "Not signed: only the passphrase protects this file");
+  const draw = () => {
+    if (!info) {
+      content.replaceChildren(
+        h("p", { class: "secondary sheet-intro" }, t("Choisis un fichier .onepass : une sauvegarde chiffrée de ce compte, ou une sauvegarde d'un autre compte avec sa phrase de passe. Rien de ce qui est déjà dans OnePass n'est remplacé.",
+          "Choose a .onepass file: an encrypted backup of this account, or another account's backup with its passphrase. Nothing already in OnePass is replaced.")),
+        h("button", { class: "capsule prominent", type: "button", id: "pick-backup", onclick: () => void pick() }, t("Choisir une sauvegarde…", "Choose a Backup…")),
+      );
+      return;
+    }
+    const i = info;
+    const file = h("div", { class: "card list-card" },
+      h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Fichier", "File"))), h("span", { class: "secondary" }, i.fileName)),
+      h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, "Type")), h("span", { class: "secondary" }, i.kind === "backup" ? t("Sauvegarde du compte", "Account backup") : t("Export OnePass", "OnePass export"))),
+      h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Créée le", "Created"))), h("span", { class: "secondary" }, dateTime(i.createdAt))),
+      h("div", { class: "row static" }, icon(i.forThisAccount || preview?.signatureVerified ? "shield_check" : "warning", 20, i.forThisAccount ? "green" : "orange"), h("span", { class: "row-text" }, h("span", { class: "row-sub" }, signatureLine(i)))));
+    const parts: (Node | null)[] = [h("div", { class: "caps" }, t("Fichier", "File")), file];
+    if (!i.forThisAccount && !preview) {
+      const pass = secretInput("rs-pass", t("Phrase de passe de la sauvegarde", "Backup Passphrase"), "off");
+      const open = h("button", { class: "capsule", type: "button", onclick: async () => {
+        passphrase = pass.input.value;
+        await load();
+      } }, t("Ouvrir", "Open"));
+      pass.input.addEventListener("keydown", (e) => e.key === "Enter" && open.click());
+      parts.push(h("div", { class: "caps" }, t("Phrase de passe", "Passphrase")), pass.box, h("div", { class: "buttons-row" }, open),
+        h("p", { class: "footnote" }, t("Cette sauvegarde n'est pas pour ce compte : elle s'ouvre avec la phrase de passe choisie à l'export.", "This backup is not for this account: it opens with the passphrase chosen when it was exported.")));
+      queueMicrotask(() => pass.input.focus());
+    }
+    if (preview) {
+      const p = preview;
+      parts.push(h("div", { class: "caps" }, t("Contenu", "Contents")),
+        p.items === 0 ? h("p", { class: "secondary" }, t("Tout ce que contient cette sauvegarde est déjà dans OnePass.", "Everything in this backup is already in OnePass.")) : countsLine(p.byType),
+        p.vaultsCreated ? h("p", { class: "secondary" }, plural(p.vaultsCreated, t("1 coffre sera créé", "1 vault will be created"), t("%d coffres seront créés", "%d vaults will be created"))) : null,
+        p.skipped ? h("p", { class: "secondary" }, plural(p.skipped, t("1 élément déjà présent, laissé tel quel", "1 item already here, left as it is"), t("%d éléments déjà présents, laissés tels quels", "%d items already here, left as they are"))) : null,
+        h("p", { class: "footnote" }, t("Les éléments gardent leur identifiant, ceux de la corbeille et les archivés compris. Une restauration signée par ton compte est enregistrée pour tes autres appareils.",
+          "Items keep their identifier, deleted and archived ones included. A restore signed by your account is recorded for your other devices.")));
+    }
+    content.replaceChildren(...keep(...parts));
+    action.disabled = !preview || preview.items === 0;
+  };
+  const load = async () => {
+    err.textContent = "";
+    try {
+      preview = await call<RestoreSummary>("preview_restore", { passphrase: passphrase ?? null });
+    } catch (e) {
+      err.textContent = restoreError(e);
+      preview = null;
+    }
+    draw();
+  };
+  const accept = async (i: ArchiveInfo) => {
+    info = i;
+    preview = null;
+    passphrase = undefined;
+    err.textContent = "";
+    if (i.newerVersion) err.textContent = t("Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie.", "This backup comes from a newer version of OnePass. Update the app, then try again.");
+    else if (!i.forThisAccount && !i.hasPassphrase) err.textContent = t("Cette sauvegarde appartient à un autre compte et n'a pas de phrase de passe : elle ne s'ouvre qu'avec ce compte.", "This backup belongs to another account and has no passphrase: it opens only with that account.");
+    else if (i.forThisAccount) return load();
+    draw();
+  };
+  const pick = async () => {
+    try {
+      const i = await call<ArchiveInfo | null>("pick_backup");
+      if (i) await accept(i);
+    } catch (e) {
+      err.textContent = restoreError(e);
+    }
+  };
+  const showDone = (d: RestoreSummary, sh: Sheet) => {
+    action.hidden = true;
+    (sh.dialog.querySelector(".sheet-bar .bar-text") as HTMLElement).textContent = t("Terminé", "Done");
+    content.replaceChildren(...keep(
+      h("div", { class: "done-head" }, icon("check_circle", 44, "green"), h("h2", {}, plural(d.items, t("1 élément restauré", "1 item restored"), t("%d éléments restaurés", "%d items restored")))),
+      countsLine(d.byType),
+      d.skipped ? h("p", { class: "secondary" }, plural(d.skipped, t("1 élément était déjà là.", "1 item was already here."), t("%d éléments étaient déjà là.", "%d items were already here."))) : null,
+      d.epochMissing ? h("p", { class: "warning-text" }, t("Les éléments sont restaurés, mais la restauration n'a pas pu être enregistrée pour tes autres appareils. Synchronise, puis restaure à nouveau ce fichier.",
+        "The items are restored, but the restore could not be recorded for your other devices. Sync, then restore this file again.")) : null,
+    ));
+    err.textContent = "";
+  };
+  s.body.append(content, err);
+  if (preloaded) void accept(preloaded);
+  else draw();
+}
+
+/** Export CSV non chiffré: warnings, "Je comprends…", the vaults, the master password. */
+function csvSheet(): void {
+  const understood = h("input", { type: "checkbox", class: "switch", id: "csv-ok", "aria-label": t("Je comprends que ce fichier n'est pas chiffré", "I understand this file is not encrypted") });
+  const chosen = new Set(ui.vaults.map((v) => v.id));
+  const pw = secretInput("csv-pw", t("Mot de passe maître", "Master Password"), "current-password");
+  const err = h("div", { class: "error", role: "alert" });
+  const check = () => (action.disabled = !understood.checked || !pw.input.value || chosen.size === 0);
+  const s = sheet(t("Export non chiffré", "Unencrypted Export"), {
+    action: t("Exporter", "Export"),
+    onAction: async (sh) => {
+      err.textContent = "";
+      action.disabled = true;
+      try {
+        const all = chosen.size === ui.vaults.length;
+        const r = await call<Saved>("export_csv", { password: pw.input.value, vaultIds: all ? [] : [...chosen] });
+        if (r.saved || r.cloud) {
+          pw.input.value = "";
+          sh.close();
+        }
+        await afterSave(r, t("Fichier enregistré.", "File saved."), t("Le fichier, en clair, sera copié sur les serveurs de ce service et sur tes autres appareils.", "The file, unencrypted, will be copied to this service's servers and to your other devices."),
+          () => toast(t("Supprime le fichier dès que tu n'en as plus besoin, corbeille comprise.", "Delete the file as soon as you no longer need it, and empty the Trash.")));
+      } catch (e) {
+        err.textContent = message(e);
+      } finally {
+        check();
+      }
+    },
+  });
+  const action = s.dialog.querySelector(".bar-text.bold") as HTMLButtonElement;
+  action.classList.add("destructive");
+  understood.addEventListener("change", check);
+  pw.input.addEventListener("input", check);
+  check();
+  s.body.append(
+    h("div", { class: "card pad warning-card" }, icon("warning", 26, "red"),
+      h("div", {}, h("p", { class: "bold red-text" }, t("Ce fichier n'est pas chiffré. Toute personne ou app qui y accède lit tous tes mots de passe, codes et notes. Un tableur peut exécuter une cellule qui commence par « = ». Les passkeys et les lieux n'y figurent pas.",
+        "This file is not encrypted. Anyone or any app that can open it reads all your passwords, codes and notes. A spreadsheet may run a cell that starts with \"=\". Passkeys and locations are not in it.")),
+        h("p", { class: "secondary" }, t("Pour une copie de sécurité, préfère la sauvegarde chiffrée. N'utilise ce fichier que pour passer à un autre gestionnaire, puis supprime-le.",
+          "For a safety copy, use the encrypted backup. Use this file only to move to another password manager, then delete it.")))),
+    h("div", { class: "card list-card spaced" }, h("label", { class: "toggle-row", for: "csv-ok" }, h("span", {}, t("Je comprends que ce fichier n'est pas chiffré", "I understand this file is not encrypted")), understood)),
+    h("div", { class: "caps" }, t("Coffres", "Vaults")),
+    h("div", { class: "card list-card" }, ...ui.vaults.map((v) => {
+      const box = h("input", { type: "checkbox", class: "switch", checked: true, "aria-label": v.name });
+      box.addEventListener("change", () => (box.checked ? chosen.add(v.id) : chosen.delete(v.id), check()));
+      return h("label", { class: "toggle-row" }, h("span", { class: "row-text" }, h("span", {}, v.name)), box);
+    })),
+    h("div", { class: "caps" }, t("Mot de passe maître", "Master Password")), pw.box,
+    h("p", { class: "footnote" }, t("Les éléments de la corbeille ne sont pas exportés.", "Items in Recently Deleted are not exported.")),
+    err,
+  );
+}
+
+interface ImportSource {
+  id: string;
+  name: string;
+  formats: string[];
+  hint: string;
+  group: 0 | 1 | 2;
+}
+const importSources = (): ImportSource[] => [
+  { id: "apple", name: t("Mots de passe d'Apple", "Apple Passwords"), formats: ["safari-csv"], group: 0, hint: t("App Mots de passe : Fichier > Exporter tous les mots de passe vers un fichier.", "Passwords app: File > Export All Passwords to File.") },
+  { id: "1password", name: "1Password", formats: ["1pux", "1password-csv"], group: 0, hint: t("Fichier > Exporter, puis le format 1PUX (ou CSV).", "File > Export, then the 1PUX format (or CSV).") },
+  { id: "bitwarden", name: "Bitwarden", formats: ["bitwarden-json", "bitwarden-csv"], group: 0, hint: t("Outils > Exporter le coffre, en .json non chiffré ou en .csv.", "Tools > Export Vault, as unencrypted .json or .csv.") },
+  { id: "nordpass", name: "NordPass", formats: ["nordpass-csv"], group: 0, hint: t("Réglages > Importer et exporter > Exporter les éléments (.csv).", "Settings > Import and Export > Export Items (.csv).") },
+  { id: "dashlane", name: "Dashlane", formats: ["dashlane-zip", "dashlane-csv"], group: 0, hint: t("Réglages > Exporter les données > CSV (le .zip ou un des fichiers .csv).", "Settings > Export Data > CSV (the .zip or one of the .csv files).") },
+  { id: "lastpass", name: "LastPass", formats: ["lastpass-csv"], group: 0, hint: t("Options avancées > Exporter > fichier CSV LastPass.", "Advanced Options > Export > LastPass CSV File.") },
+  { id: "protonpass", name: "Proton Pass", formats: ["protonpass-csv"], group: 0, hint: t("Réglages > Exporter, au format CSV.", "Settings > Export, as CSV.") },
+  { id: "keeper", name: "Keeper", formats: ["keeper-csv"], group: 0, hint: t("Réglages > Exporter > fichier .csv.", "Settings > Export > .csv file.") },
+  { id: "enpass", name: "Enpass", formats: ["enpass-json"], group: 0, hint: t("Fichier > Exporter, au format .json.", "File > Export, as .json.") },
+  { id: "roboform", name: "RoboForm", formats: ["roboform-csv"], group: 0, hint: t("Options > Exporter les identifiants et les notes (.csv).", "Options > Export logins and notes (.csv).") },
+  { id: "keepass", name: "KeePass, KeePassXC", formats: ["keepass-xml"], group: 0, hint: t("Fichier > Exporter en XML KeePass 2 (le .kdbx ne se lit pas directement).", "File > Export as KeePass 2 XML (a .kdbx file can't be read directly).") },
+  { id: "chrome", name: "Google Chrome", formats: ["chrome-csv"], group: 1, hint: t("Gestionnaire de mots de passe Google > Paramètres > Exporter les mots de passe.", "Google Password Manager > Settings > Export passwords.") },
+  { id: "edge", name: "Microsoft Edge", formats: ["chrome-csv"], group: 1, hint: t("Paramètres > Mots de passe > ⋯ > Exporter les mots de passe.", "Settings > Passwords > ⋯ > Export passwords.") },
+  { id: "brave", name: "Brave", formats: ["chrome-csv"], group: 1, hint: t("brave://password-manager/settings > Exporter les mots de passe.", "brave://password-manager/settings > Export passwords.") },
+  { id: "opera", name: "Opera", formats: ["chrome-csv"], group: 1, hint: t("Réglages > Mots de passe > ⋯ > Exporter les mots de passe.", "Settings > Passwords > ⋯ > Export Passwords.") },
+  { id: "arc", name: "Arc", formats: ["chrome-csv"], group: 1, hint: t("arc://password-manager/settings > Exporter les mots de passe.", "arc://password-manager/settings > Export passwords.") },
+  { id: "vivaldi", name: "Vivaldi", formats: ["chrome-csv"], group: 1, hint: t("Réglages > Confidentialité > Mots de passe > Exporter.", "Settings > Privacy > Passwords > Export.") },
+  { id: "firefox", name: "Firefox", formats: ["firefox-csv"], group: 1, hint: t("about:logins > ⋯ > Exporter les identifiants.", "about:logins > ⋯ > Export Logins.") },
+  { id: "safari", name: "Safari", formats: ["safari-csv"], group: 1, hint: t("Fichier > Exporter les données de navigation, avec les mots de passe (.zip ou .csv).", "File > Export Browsing Data, with passwords (.zip or .csv).") },
+  { id: "cxf", name: t("Autre gestionnaire (Credential Exchange)", "Other Password Manager (Credential Exchange)"), formats: ["cxf"], group: 2, hint: t("Fichier .json au format d'échange d'identifiants (CXF).", "A .json file in Credential Exchange Format (CXF).") },
+  { id: "otpauth", name: t("Codes à usage unique", "One-Time Codes"), formats: ["otpauth"], group: 2, hint: t("Liens otpauth:// (Google Authenticator et autres), un par ligne.", "otpauth:// links (Google Authenticator and others), one per line.") },
+  { id: "wifi", name: t("Réseaux Wi-Fi (codes QR)", "Wi-Fi Networks (QR Codes)"), formats: ["wifi-qr"], group: 2, hint: t("Texte des codes QR Wi-Fi (WIFI:S:...), un par ligne.", "Wi-Fi QR code text (WIFI:S:...), one per line.") },
+  { id: "onepass-csv", name: t("OnePass (export CSV)", "OnePass (CSV Export)"), formats: ["onepass-csv"], group: 2, hint: t("Le fichier CSV en clair exporté par OnePass.", "The plain-text CSV file exported by OnePass.") },
+];
+
+function formatName(format: string): string {
+  const names: Record<string, string> = {
+    "1pux": "1Password (1PUX)",
+    "1password-csv": "1Password (CSV)",
+    "bitwarden-json": "Bitwarden (JSON)",
+    "bitwarden-csv": "Bitwarden (CSV)",
+    "chrome-csv": t("Chrome et navigateurs Chromium (CSV)", "Chrome and Chromium Browsers (CSV)"),
+    "safari-csv": t("Mots de passe d'Apple, Safari (CSV)", "Apple Passwords, Safari (CSV)"),
+    "firefox-csv": "Firefox (CSV)",
+    "lastpass-csv": "LastPass (CSV)",
+    "dashlane-csv": "Dashlane (CSV)",
+    "dashlane-zip": "Dashlane (ZIP)",
+    "protonpass-csv": "Proton Pass (CSV)",
+    "keepass-xml": "KeePass (XML)",
+    "cxf": "Credential Exchange",
+    "otpauth": t("Codes à usage unique", "One-Time Codes"),
+    "wifi-qr": t("Réseaux Wi-Fi (codes QR)", "Wi-Fi Networks (QR Codes)"),
+    "onepass-csv": t("OnePass (export CSV)", "OnePass (CSV Export)"),
+    "nordpass-csv": "NordPass (CSV)",
+    "keeper-csv": "Keeper (CSV)",
+    "enpass-json": "Enpass (JSON)",
+    "roboform-csv": "RoboForm (CSV)",
+  };
+  return names[format] ?? format;
+}
+
+function importError(e: unknown): string {
+  const err = e as UiError;
+  const what = (/what: "([^"]*)"/.exec(err?.detail ?? "")?.[1] ?? err?.detail ?? "").toLowerCase();
+  if (err?.code === "TooLarge") return t("Ce fichier est trop gros pour être importé.", "This file is too large to import.");
+  if (err?.code === "Unreadable") return t("Impossible de lire ce fichier.", "Can't read this file.");
+  if (err?.code !== "InvalidInput") return message(e);
+  if (what.startsWith("encrypted bitwarden")) return t("Cet export Bitwarden est chiffré. Refais l'export en JSON non chiffré (ou en CSV), puis réessaie.", "This Bitwarden export is encrypted. Export again as unencrypted JSON (or CSV), then try again.");
+  if (what.startsWith("encrypted dashlane")) return t("Cet export Dashlane est chiffré. Refais l'export en CSV, puis réessaie.", "This Dashlane export is encrypted. Export again as CSV, then try again.");
+  if (what.startsWith("keepass kdbx")) return t("Les bases KeePass (.kdbx) ne se lisent pas directement. Exporte-la en XML KeePass 2, puis réessaie.", "KeePass databases (.kdbx) can't be read directly. Export it as KeePass 2 XML, then try again.");
+  if (what.startsWith("onepass archive")) return t("C'est une archive OnePass chiffrée : elle ne s'importe pas ici.", "This is an encrypted OnePass archive. It can't be imported here.");
+  if (what === "import format") return t("Format d'import inconnu.", "Unknown import format.");
+  if (what === "import file too large" || what.startsWith("too many") || what.endsWith("too large")) return t("Ce fichier est trop gros pour être importé.", "This file is too large to import.");
+  return t("Ce fichier ne correspond pas au format choisi, ou il est abîmé.", "This file doesn't match the chosen format, or it's damaged.");
+}
+
+function warningLine(code: string, n: number): string {
+  const p = (one: string, many: string) => plural(n, one.replace("%d", "1"), many);
+  switch (code) {
+    case "field_moved":
+      return p(t("%d valeur rangée dans la section Importé", "%d value placed in the Imported section"), t("%d valeurs rangées dans la section Importé", "%d values placed in the Imported section"));
+    case "login_to_password":
+      return p(t("%d identifiant sans nom d'utilisateur, gardé comme mot de passe", "%d login without a username, kept as a password"), t("%d identifiants sans nom d'utilisateur, gardés comme mots de passe", "%d logins without a username, kept as passwords"));
+    case "to_secure_note":
+      return p(t("%d élément gardé comme note sécurisée", "%d item kept as a secure note"), t("%d éléments gardés comme notes sécurisées", "%d items kept as secure notes"));
+    case "totp_moved":
+      return p(t("%d code à usage unique rangé dans la section Importé", "%d one-time code placed in the Imported section"), t("%d codes à usage unique rangés dans la section Importé", "%d one-time codes placed in the Imported section"));
+    case "attachment_skipped":
+      return p(t("%d pièce jointe non importée", "%d attachment not imported"), t("%d pièces jointes non importées", "%d attachments not imported"));
+    case "unsupported_entry":
+      return p(t("%d entrée d'un type non pris en charge, ignorée", "%d entry of an unsupported type, skipped"), t("%d entrées d'un type non pris en charge, ignorées", "%d entries of an unsupported type, skipped"));
+    case "bad_date":
+      return p(t("%d date illisible, gardée en texte", "%d unreadable date, kept as text"), t("%d dates illisibles, gardées en texte", "%d unreadable dates, kept as text"));
+    case "passkey_needs_cxf":
+      return p(t("%d clé d'accès absente du fichier : importe-la depuis 1Password avec l'échange d'identifiants", "%d passkey not in the file: import it from 1Password with Credential Exchange"),
+        t("%d clés d'accès absentes du fichier : importe-les depuis 1Password avec l'échange d'identifiants", "%d passkeys not in the file: import them from 1Password with Credential Exchange"));
+    case "skipped":
+      return p(t("%d ligne vide, dossier ou élément supprimé ignoré", "%d empty row, folder or deleted item skipped"), t("%d lignes vides, dossiers ou éléments supprimés ignorés", "%d empty rows, folders or deleted items skipped"));
+    default:
+      return p(t("%d élément importé avec une remarque", "%d item imported with a note"), t("%d éléments importés avec une remarque", "%d items imported with a note"));
+  }
+}
+
+const aspectWord = (a: string): string =>
+  ({
+    title: t("titre", "title"), username: t("identifiant", "username"), password: t("mot de passe", "password"), websites: t("sites", "websites"), totp: t("code de vérification", "verification code"),
+    passkeys: "passkeys", notes: "notes", fields: t("champs", "fields"), attachments: t("pièces jointes", "attachments"), tags: "tags",
+  })[a] ?? a;
+
+/** Importer: choose the file (or the source first), check the preview, choose the vault, import. */
+function importSheet(): void {
+  const content = h("div", {});
+  const err = h("div", { class: "error", role: "alert" });
+  let source: ImportSource | null = null;
+  let fileName = "";
+  let format = "";
+  let vaultId = (ui.page.kind === "list" && ui.page.filter.kind === "vault" ? ui.page.filter.id : ui.vaults[0]?.id) ?? "";
+  let preview: ImportSummary | null = null;
+  const choices = new Map<number, "merge" | "skip" | "import">();
+  let query = "";
+  const s = sheet(t("Importer", "Import"), {
+    action: t("Importer", "Import"),
+    wide: true,
+    onAction: async (sh) => {
+      if (!preview || preview.items === 0 || !vaultId) return;
+      err.textContent = "";
+      action.disabled = true;
+      action.textContent = t("Import en cours…", "Importing…");
+      try {
+        const decisions = [...choices].map(([index, choice]) => ({ index, choice }));
+        const done = await call<ImportSummary>("import_items", { format, vaultId, decisions });
+        await refresh(undefined);
+        showDone(done, sh);
+      } catch (e) {
+        err.textContent = importError(e);
+        action.disabled = false;
+      } finally {
+        action.textContent = t("Importer", "Import");
+      }
+    },
+  });
+  s.dialog.classList.add("import-sheet");
+  s.dialog.addEventListener("close", () => void call("forget_file").catch(() => {}));
+  const action = s.dialog.querySelector(".bar-text.bold") as HTMLButtonElement;
+  action.title = t("Importer (Ctrl+Entrée)", "Import (Ctrl+Enter)");
+  const sync = () => (action.disabled = !preview || preview.items === 0 || !vaultId);
+  sync();
+
+  const pick = async () => {
+    err.textContent = "";
+    try {
+      const picked = await call<{ fileName: string; format: string | null } | null>("pick_import");
+      if (!picked) return;
+      if (picked.format === "onepass") {
+        const info = await call<ArchiveInfo>("pending_archive");
+        s.close();
+        restoreSheet(info);
+        return;
+      }
+      if (picked.format === "pdf-text") {
+        err.textContent = t("Les PDF d'identifiants ne s'importent pas encore sur Windows : exporte un CSV depuis l'app d'origine.", "Credentials PDFs can't be imported on Windows yet: export a CSV from the original app.");
+        return;
+      }
+      const chosen = source && picked.format && source.formats.includes(picked.format) ? picked.format : source ? source.formats[0]! : picked.format;
+      if (!chosen) {
+        err.textContent = t("Format non reconnu. Choisis la source de l'export dans la liste.", "Unrecognized format. Choose where the export came from in the list.");
+        return;
+      }
+      fileName = picked.fileName;
+      format = chosen;
+      choices.clear();
+      await load();
+    } catch (e) {
+      err.textContent = importError(e);
+    }
+  };
+  const load = async () => {
+    err.textContent = "";
+    try {
+      preview = await call<ImportSummary>("preview_import", { format, vaultId });
+      for (const d of preview.duplicates) if (!choices.has(d.index)) choices.set(d.index, d.suggested);
+    } catch (e) {
+      preview = null;
+      err.textContent = importError(e);
+    }
+    draw();
+  };
+  const drawSources = (): Node[] => {
+    const grid = h("div", { class: "source-groups" });
+    const fill = () => {
+      const q = query.trim().toLowerCase();
+      const groups = [t("Gestionnaires de mots de passe", "Password Managers"), t("Navigateurs", "Browsers"), t("Autres formats", "Other Formats")];
+      grid.replaceChildren(...groups.flatMap((g, gi) => {
+        const list = importSources().filter((x) => x.group === gi && (!q || x.name.toLowerCase().includes(q)));
+        if (!list.length) return [];
+        return [h("div", { class: "caps" }, g), h("div", { class: "source-grid" }, ...list.map((x) =>
+          h("button", { class: "source-tile card" + (source?.id === x.id ? " on" : ""), type: "button", onclick: () => ((source = source?.id === x.id ? null : x), draw()) },
+            monogram(x.name.slice(0, 1).toUpperCase(), "var(--accent)", 30, true), h("span", {}, x.name))))];
+      }));
+    };
+    const search = h("input", { class: "search-input", type: "search", value: query, placeholder: t("Rechercher une source", "Search Sources"), "aria-label": t("Rechercher une source", "Search Sources") });
+    search.addEventListener("input", () => ((query = search.value), fill()));
+    fill();
+    const steps = source
+      ? h("div", { class: "card pad source-hint" }, h("div", { class: "bold" }, t(`Exporte depuis ${source.name}`, `Export from ${source.name}`)),
+          h("ol", {}, ...source.hint.split(" > ").map((step) => h("li", {}, step))),
+          h("button", { class: "capsule prominent", type: "button", onclick: () => void pick() }, t("Choisir le fichier", "Choose File")))
+      : null;
+    return keep(
+      h("button", { class: "drop-zone", type: "button", id: "pick-import", onclick: () => void pick() }, icon("import", 34, "accent"),
+        h("span", { class: "bold" }, t("Choisis ton export", "Choose Your Export")), h("span", { class: "secondary" }, t("OnePass reconnaît le format d'après le contenu du fichier.", "OnePass recognizes the format from the file's contents."))),
+      h("div", { class: "caps" }, t("Ou choisis la source", "Or Choose the Source")),
+      h("label", { class: "search" }, icon("search", 18, "secondary"), search),
+      steps,
+      grid,
+      h("p", { class: "footnote" }, t("Le fichier est lu sur cet appareil, jamais envoyé ni gardé. Supprime l'export une fois l'import fait : il contient tes mots de passe en clair.",
+        "The file is read on this device, never sent or kept. Delete the export once the import is done, because it contains your passwords in plain text.")),
+    );
+  };
+  const drawPreview = (p: ImportSummary): Node[] => {
+    const vault = h("select", { id: "import-vault", "aria-label": t("Coffre", "Vault") }, ...ui.vaults.map((v) => h("option", { value: v.id }, v.name)));
+    vault.value = vaultId;
+    vault.addEventListener("change", () => {
+      vaultId = vault.value;
+      void load();
+    });
+    const nodes: Node[] = [
+      h("p", { class: "secondary sheet-intro" }, t("Vérifie ce que contient le fichier avant de l'importer", "Check What's in the File Before Importing")),
+      h("div", { class: "card list-card" }, h("div", { class: "row static" }, icon("description", 26, "accent"), h("span", { class: "row-text" }, h("span", { class: "row-title" }, fileName), h("span", { class: "row-sub" }, formatName(format))), icon("shield_check", 20, "green"))),
+      h("div", { class: "caps" }, t("Contenu", "Contents")),
+      p.items === 0 ? h("p", { class: "secondary" }, t("Aucun élément à importer dans ce fichier.", "There's nothing to import in this file.")) : countsLine(p.byType),
+    ];
+    const notes = [...p.warnings.map((w) => warningLine(w.code, w.count)), ...(p.skipped ? [warningLine("skipped", p.skipped)] : [])];
+    if (notes.length) nodes.push(h("div", { class: "card pad" }, ...notes.map((n) => h("div", { class: "warning-line" }, icon("info", 16, "secondary"), n))));
+    nodes.push(h("p", { class: "footnote" }, t("Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.",
+      "Each item is added with a new ID, so nothing already in OnePass is replaced. The original folder becomes a tag.")));
+    nodes.push(h("div", { class: "caps" }, t("Destination", "Destination")), h("div", { class: "card list-card" }, h("label", { class: "row static", for: "import-vault" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Coffre", "Vault"))), vault)));
+    nodes.push(h("p", { class: "footnote" }, t(`${p.updated} mis à jour, ${p.added} créés, ${p.converted} convertis depuis une note, ${p.archivedDuplicates} doublons exacts archivés, ${p.unchanged} inchangés`,
+      `${p.updated} updated, ${p.added} created, ${p.converted} converted from a note, ${p.archivedDuplicates} exact duplicates archived, ${p.unchanged} unchanged`)));
+    if (p.duplicates.length) {
+      const n = p.duplicates.length;
+      const plan = h("p", { class: "footnote" });
+      const drawPlan = () => {
+        const c = [...choices.values()];
+        plan.textContent = t(`${c.filter((x) => x === "merge").length} à fusionner, ${c.filter((x) => x === "skip").length} à ignorer, ${c.filter((x) => x === "import").length} gardés à part`,
+          `${c.filter((x) => x === "merge").length} to merge, ${c.filter((x) => x === "skip").length} to skip, ${c.filter((x) => x === "import").length} kept as separate items`);
+      };
+      const rows = h("div", { class: "card list-card" });
+      const drawRows = () => {
+        rows.replaceChildren(...p.duplicates.map((d) => {
+          const seg = h("div", { class: "segmented small", role: "radiogroup", "aria-label": t("Choix", "Choice") }, ...(["merge", "skip", "import"] as const).map((c) =>
+            h("button", { type: "button", class: choices.get(d.index) === c ? "on" : "", role: "radio", "aria-checked": String(choices.get(d.index) === c),
+              onclick: () => (choices.set(d.index, c), drawRows(), drawPlan()) }, c === "merge" ? t("Fusionner", "Merge") : c === "skip" ? t("Ignorer", "Skip") : t("Importer", "Import"))));
+          return h("div", { class: "row static dup-row" }, art(d.incoming.itemType, 32),
+            h("span", { class: "row-text" }, h("span", { class: "row-title" }, d.incoming.title), h("span", { class: "row-sub" }, t(`Dans le coffre : ${d.existing.title}`, `In the vault: ${d.existing.title}`)),
+              h("span", { class: "row-sub" }, d.exact ? t("Copie exacte", "Exact copy") : t(`Diffère : ${d.differences.map(aspectWord).join(", ")}`, `Differs: ${d.differences.map(aspectWord).join(", ")}`))), seg);
+        }));
+      };
+      drawRows();
+      drawPlan();
+      const all = (c: "merge" | "skip" | null) => {
+        for (const d of p.duplicates) choices.set(d.index, c ?? d.suggested);
+        drawRows();
+        drawPlan();
+      };
+      nodes.push(
+        h("div", { class: "caps" }, plural(n, t("1 doublon possible", "1 possible duplicate"), t("%d doublons possibles", "%d possible duplicates"))),
+        h("p", { class: "footnote" }, t("Ces éléments du fichier ressemblent à des éléments déjà dans ce coffre. Les copies exactes sont ignorées et les autres fusionnées, sauf si tu choisis autrement.",
+          "These items of the file look like items already in this vault. Exact copies are skipped and the others merged, unless you choose otherwise.")),
+        h("div", { class: "buttons-row left" },
+          h("button", { class: "capsule", type: "button", onclick: () => all("merge") }, t("Tout fusionner", "Merge all")),
+          h("button", { class: "capsule", type: "button", onclick: () => all("skip") }, t("Tout ignorer", "Skip all")),
+          h("button", { class: "capsule", type: "button", onclick: () => all(null) }, t("Suggestions", "Suggested"))),
+        rows, plan);
+    }
+    nodes.push(h("div", { class: "buttons-row left" }, h("button", { class: "bar-text", type: "button", onclick: () => ((preview = null), (fileName = ""), draw()) }, t("Choisir un autre fichier", "Choose Another File"))));
+    return nodes;
+  };
+  const draw = () => {
+    content.replaceChildren(...(preview && fileName ? drawPreview(preview) : drawSources()));
+    sync();
+  };
+  const showDone = (d: ImportSummary, sh: Sheet) => {
+    action.hidden = true;
+    (sh.dialog.querySelector(".sheet-bar .bar-text") as HTMLElement).textContent = t("Terminé", "Done");
+    const vaultName = ui.vaults.find((v) => v.id === vaultId)?.name ?? "";
+    content.replaceChildren(...keep(
+      h("div", { class: "done-head" }, icon("check_circle", 44, "green"), h("h2", {}, t("Import terminé", "Import complete"))),
+      h("p", { class: "secondary center-text" }, d.items === 1 ? t(`1 élément importé dans « ${vaultName} »`, `1 item imported into “${vaultName}”`) : t(`${d.items} éléments importés dans « ${vaultName} »`, `${d.items} items imported into “${vaultName}”`)),
+      d.duplicates.length || d.merged || d.skippedDuplicates
+        ? h("p", { class: "secondary center-text" }, t(`Doublons possibles : ${d.merged} fusionnés, ${d.skippedDuplicates} ignorés, ${d.separate} gardés à part`, `Possible duplicates: ${d.merged} merged, ${d.skippedDuplicates} skipped, ${d.separate} kept as separate items`))
+        : null,
+      countsLine(d.byType),
+      h("p", { class: "footnote" }, t("Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément.", "Values stored differently from the source are in each item's \"Imported\" section.")),
+    ));
+    toast(d.items === 1 ? t(`1 élément importé dans « ${vaultName} »`, `1 item imported into “${vaultName}”`) : t(`${d.items} éléments importés dans « ${vaultName} »`, `${d.items} items imported into “${vaultName}”`));
+  };
+  s.body.append(content, err);
+  draw();
 }
 
 /** "Activer Windows Hello": the master password, then Windows Hello confirms. */

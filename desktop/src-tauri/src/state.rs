@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use onepass_ffi::Session;
+use zeroize::Zeroizing;
 
 use crate::secrets::{self, DeviceSecrets, Sealer};
 
@@ -22,6 +23,12 @@ pub struct AppState {
     prefs: Mutex<crate::prefs::Prefs>,
     /// Why the last Windows Hello attempt fell back to the password.
     pub hello_dropped: Mutex<Option<crate::hello::Dropped>>,
+    /// An export waiting for "Enregistrer quand même" (cloud folder).
+    pub pending_export: Mutex<Option<(PathBuf, Zeroizing<Vec<u8>>)>>,
+    /// The file read for a restore or an import, until it is done.
+    pub pending_import: Mutex<Option<(String, Zeroizing<Vec<u8>>)>>,
+    /// Have I Been Pwned ranges fetched this session (breach.rs).
+    pub ranges: Arc<crate::breach::RangeCache>,
 }
 
 pub fn now() -> i64 {
@@ -34,6 +41,9 @@ impl AppState {
         let state = AppState {
             prefs,
             hello_dropped: Mutex::new(None),
+            pending_export: Mutex::new(None),
+            pending_import: Mutex::new(None),
+            ranges: Arc::default(),
             dir,
             sealer: secrets::sealer(),
             session: Mutex::new(None),
@@ -49,6 +59,10 @@ impl AppState {
 
     pub fn db_path(&self) -> String {
         self.dir.join("vault.db").to_string_lossy().into_owned()
+    }
+
+    pub fn data_dir(&self) -> PathBuf {
+        self.dir.clone()
     }
 
     pub fn hello_path(&self) -> PathBuf {
@@ -97,6 +111,15 @@ impl AppState {
     /// Drops the keys: every later call needs an unlock.
     pub fn lock(&self) {
         purge_opened();
+        self.ranges.clear();
+        self.pending_export
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        self.pending_import
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
         if let Some(s) = self
             .session
             .lock()

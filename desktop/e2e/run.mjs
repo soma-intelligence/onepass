@@ -358,6 +358,7 @@ try {
   await find("//main//h2[normalize-space(.)='GitHub perso']");
   check("editing the title saves", true);
   await click(row("Box maison"));
+  await find("//main//h2[normalize-space(.)='Box maison']");
   await click("//main//button[@title='Actions']");
   await shot("18-actions");
   await click(menuItem("Archiver"));
@@ -419,9 +420,103 @@ try {
   await find("//h1[normalize-space(.)='Bonjour Camille']", 30000);
   check("Windows Hello unlocks without the password", true);
 
+  // Encrypted backup, restore, import from another manager, plaintext CSV
+  const settingsPage = async (name) => {
+    await click("//button[@title='Compte']");
+    await click(menuItem("Réglages"));
+    await click(`//div[@class='settings-side']//button[.//span[normalize-space(.)='${name}']]`);
+  };
+  const closeSheet = () => click("(//dialog[@open])[last()]//div[@class='sheet-bar']/button[1]");
+  const backupFile = join(files, "sauvegarde.onepass");
+  await settingsPage("Général");
+  await click("//button[@id='open-backup']");
+  await type("//input[@id='bk-pw']", PASSWORD);
+  await type("//input[@id='bk-pass']", "tapis-orage-girafe-violon-nuage-42");
+  await type("//input[@id='bk-pass2']", "tapis-orage-girafe-violon-nuage-42");
+  await shot("31-sauvegarde-chiffree");
+  answerDialog(backupFile);
+  await click(sheetAction("Exporter"));
+  check("an encrypted backup is saved", (await waitText("//div[@id='toast']", (t) => t.includes("Sauvegarde"), 120000)).includes("enregistrée") && existsSync(backupFile));
+  await closeSheet();
+  // Delete an item for good, then bring it back from the backup.
+  await click(nav("Tous les éléments"));
+  await click(row("Visa"));
+  await find("//main//h2[normalize-space(.)='Visa']");
+  await click("//main//button[@title='Actions']");
+  await click(menuItem("Supprimer"));
+  await click(sheetAction("Supprimer"));
+  await sleep(600);
+  await click(nav("Supprimés récemment"));
+  await click(row("Visa"));
+  await find("//main//h2[normalize-space(.)='Visa']");
+  await click("//main//button[@title='Actions']");
+  await click(menuItem("Supprimer définitivement"));
+  await click(sheetAction("Supprimer"));
+  await sleep(600);
+  await settingsPage("Général");
+  await click("//button[@id='open-restore']");
+  answerDialog(backupFile);
+  await click("//button[@id='pick-backup']");
+  await find("//dialog[@open]//span[contains(., 'ton compte')]", 60000);
+  await sleep(500);
+  await shot("32-restaurer-apercu");
+  await click(sheetAction("Restaurer"));
+  check("a backup restores the deleted item", (await textOf("//dialog[@open]//div[@class='done-head']//h2")).includes("1 élément restauré"));
+  await shot("33-restaure");
+  await closeSheet();
+  await closeSheet().catch(() => {});
+  await click(nav("Tous les éléments"));
+  check("the restored item is back", await exists(row("Visa")));
+
+  // Import a Chrome export
+  const chromeCsv = join(files, "Chrome Passwords.csv");
+  writeFileSync(chromeCsv, "name,url,username,password,note\nExemple,https://exemple.fr/login,bob@example.com,password123,\n");
+  await settingsPage("Général");
+  await click("//button[@id='open-import']");
+  await shot("34-importer");
+  answerDialog(chromeCsv);
+  await click("//button[@id='pick-import']");
+  await find("//dialog[@open]//span[contains(., 'Chrome et navigateurs Chromium')]", 30000);
+  check("an import detects the Chrome format", true);
+  await shot("35-importer-apercu");
+  await click(sheetAction("Importer"));
+  check("an import adds the items to the vault", (await waitText("//dialog[@open]//p[contains(@class,'center-text')]", (t) => t.length > 0, 30000)).includes("1 élément importé dans « Personnel »"));
+  await closeSheet();
+  await closeSheet().catch(() => {});
+  await click(nav("Tous les éléments"));
+  check("the imported login is listed", await exists(row("Exemple")));
+
+  // Watchtower with "Vérifier les fuites" (on by default): HIBP ranges
+  await click(nav("Watchtower"));
+  const compromised = "//div[contains(@class,'wt-card')][.//div[normalize-space(.)='Mots de passe compromis']]//span[contains(@class,'wt-figure')]";
+  const pwned = await waitText(compromised, (t) => /^[1-9]/.test(t), 60000);
+  check("Watchtower finds a breached password through Have I Been Pwned", /^[1-9]/.test(pwned), pwned);
+  check("the breach setting shows on Watchtower", await exists("//input[@id='check-breaches']"));
+  await shot("37-watchtower-fuites");
+  await click("//label[@for='check-breaches']");
+  const off = await waitText("//div[contains(@class,'wt-card')][.//div[normalize-space(.)='Mots de passe compromis']]//p", (t) => t.includes("désactivée"), 30000);
+  check("turning breach checks off stops them", off.includes("désactivée"), off);
+  await click("//label[@for='check-breaches']");
+
+  // Plaintext CSV export
+  const csvFile = join(files, "export.csv");
+  await settingsPage("Général");
+  await click("//button[@id='open-csv']");
+  await click("//label[@for='csv-ok']");
+  await type("//input[@id='csv-pw']", PASSWORD);
+  await shot("36-export-csv");
+  answerDialog(csvFile);
+  await click(sheetAction("Exporter"));
+  await waitText("//div[@id='toast']", (t) => t.includes("Fichier enregistré") || t.includes("Supprime"), 120000);
+  const csv = existsSync(csvFile) ? readFileSync(csvFile, "utf8") : "";
+  check("a plaintext CSV export holds the items", csv.startsWith("title,type,vault") && csv.includes("Exemple"), csv.split("\n")[0]);
+  answerDialog("");
+  await closeSheet().catch(() => {});
+
   // Trash
   await click(nav("Tous les éléments"));
   await click(row("GitHub perso"));
+  await find("//main//h2[normalize-space(.)='GitHub perso']");
   await click("//main//button[@title='Actions']");
   await click(menuItem("Supprimer"));
   await click(sheetAction("Supprimer"));

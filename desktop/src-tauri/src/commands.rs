@@ -740,21 +740,49 @@ pub struct WatchtowerView {
     /// "checked", "partial", "unavailable" or "disabled".
     pub pwned: &'static str,
     pub sites_checked: bool,
+    /// The list of breached sites was at hand.
+    pub breach_catalog: bool,
+    /// "Vérifier les fuites" is on.
+    pub check_breaches: bool,
+    /// Ranges still missing (not downloaded, or offline pass).
+    pub missing_prefixes: u32,
 }
 
-/// The local Watchtower report: no network lookup on Windows yet (breaches
-/// off, no 2FA or passkey catalog), item ids only, never a value.
+/// The Watchtower report, item ids only, never a value. With breach checks
+/// on, the offline pass (`online` false) uses what is already held; the
+/// online pass downloads the catalogs and the HIBP ranges the core asks for
+/// (5-character prefixes only), then runs again with them.
 #[tauri::command]
-pub fn watchtower(state: State<'_, AppState>) -> UiResult<WatchtowerView> {
-    let r = session(&state)?.watchtower_report(onepass_ffi::watchtower::FfiWatchtowerOptions {
+pub async fn watchtower(state: State<'_, AppState>, online: bool) -> UiResult<WatchtowerView> {
+    let s = session(&state)?;
+    let on = state.prefs().check_breaches;
+    let data = state.data_dir();
+    let network = on && online;
+    let catalogs = blocking(move || crate::breach::catalogs(&data, network)).await?;
+    let has_catalog = catalogs.breaches.is_some();
+    let options = |ranges| onepass_ffi::watchtower::FfiWatchtowerOptions {
         expiry_warning_days: 30,
         old_password_days: 365,
-        ranges: None,
-        twofa_directory: None,
-        passkeys_directory: None,
+        ranges,
+        twofa_directory: catalogs.twofa.clone(),
+        passkeys_directory: catalogs.passkeys.clone(),
         excluded_vault_ids: vec![],
-        breach_catalog: None,
-    })?;
+        breach_catalog: catalogs.breaches.clone(),
+    };
+    let first_options = options(on.then(|| state.ranges.held()));
+    let s1 = s.clone();
+    let mut r = blocking(move || s1.watchtower_report(first_options)).await??;
+    if network && !r.missing_prefixes.is_empty() {
+        let missing = r.missing_prefixes.clone();
+        let ranges = state.ranges.clone();
+        let held = blocking(move || {
+            ranges.fetch(&missing);
+            ranges.held()
+        })
+        .await?;
+        let second_options = options(Some(held));
+        r = blocking(move || s.watchtower_report(second_options)).await??;
+    }
     Ok(WatchtowerView {
         score: r.score,
         items_analyzed: r.items_analyzed,
@@ -774,7 +802,19 @@ pub fn watchtower(state: State<'_, AppState>) -> UiResult<WatchtowerView> {
             onepass_ffi::watchtower::FfiPwnedStatus::Disabled => "disabled",
         },
         sites_checked: r.sites_checked,
+        breach_catalog: has_catalog,
+        check_breaches: on,
+        missing_prefixes: u32::try_from(r.missing_prefixes.len()).unwrap_or(u32::MAX),
     })
+}
+
+/// "Vérifier les fuites" on or off.
+#[tauri::command]
+pub fn set_check_breaches(state: State<'_, AppState>, on: bool) -> UiResult<()> {
+    if !on {
+        state.ranges.clear();
+    }
+    Ok(state.update_prefs(|p| p.check_breaches = on)?)
 }
 
 #[tauri::command]
@@ -1299,4 +1339,534 @@ pub async fn unlock_with_hello(
         }
         Err(e) => Err(e.into()),
     }
+}
+
+// ---- backup, restore, import, plaintext export ----------------------------------------
+
+/// The largest file read for a restore or an import (the Apple apps' limit).
+const MAX_IMPORT: u64 = 256 * 1024 * 1024;
+
+/// Checks the master password without opening a session (Argon2id, off the
+/// event loop's thread). `WrongPassword` when it is not the right one.
+async fn confirm_password(state: &AppState, password: Zeroizing<String>) -> UiResult<()> {
+    session(state)?;
+    let secrets = state
+        .load_secrets()?
+        .ok_or("this PC has no device file for the account")?;
+    let db = state.db_path();
+    let key = secrets.secret_key.clone();
+    let auk =
+        blocking(move || onepass_ffi::verify_password(db, password.to_string(), key.to_string()))
+            .await??;
+    drop(Zeroizing::new(auk));
+    Ok(())
+}
+
+fn today() -> String {
+    let d = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    format!("{:04}-{:02}-{:02}", d.year(), u8::from(d.month()), d.day())
+}
+
+/// A folder another service copies to its servers (OneDrive, Dropbox,
+/// Google Drive, iCloud Drive): the Apple apps warn before saving there.
+fn synced_folder(path: &std::path::Path) -> bool {
+    let p = path.to_string_lossy().to_lowercase();
+    let roots = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
+        .iter()
+        .filter_map(|v| std::env::var(v).ok())
+        .map(|r| r.to_lowercase());
+    roots
+        .into_iter()
+        .any(|r| !r.is_empty() && p.starts_with(&r))
+        || [
+            "\\dropbox\\",
+            "\\google drive\\",
+            "\\icloud drive\\",
+            "\\iclouddrive\\",
+        ]
+        .iter()
+        .any(|m| p.contains(m))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Saved {
+    /// False when the user cancelled the save dialog.
+    pub saved: bool,
+    /// The chosen folder syncs to a cloud: nothing written yet, the file
+    /// waits for `save_pending` (or `discard_pending`).
+    pub cloud: bool,
+    pub file_name: String,
+}
+
+/// Asks where to save `bytes`; writes them unless the folder syncs to a
+/// cloud, in which case they wait in memory for the user's answer.
+async fn save_export(
+    window: &tauri::WebviewWindow,
+    state: &AppState,
+    title: &str,
+    name: &str,
+    filter: crate::dialog::Filter<'_>,
+    bytes: Zeroizing<Vec<u8>>,
+) -> UiResult<Saved> {
+    let Some(path) = crate::dialog::save_file(window, title, name, &[filter]).await else {
+        return Ok(Saved {
+            saved: false,
+            cloud: false,
+            file_name: String::new(),
+        });
+    };
+    let file_name = crate::dialog::file_name(&path);
+    if synced_folder(&path) {
+        *state
+            .pending_export
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((path, bytes));
+        return Ok(Saved {
+            saved: false,
+            cloud: true,
+            file_name,
+        });
+    }
+    std::fs::write(&path, bytes.as_slice()).map_err(|e| format!("write: {e}"))?;
+    Ok(Saved {
+        saved: true,
+        cloud: false,
+        file_name,
+    })
+}
+
+/// "Enregistrer quand même" after the cloud warning.
+#[tauri::command]
+pub fn save_pending(state: State<'_, AppState>) -> UiResult<bool> {
+    let pending = state
+        .pending_export
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    let Some((path, bytes)) = pending else {
+        return Ok(false);
+    };
+    std::fs::write(&path, bytes.as_slice()).map_err(|e| format!("write: {e}"))?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn discard_pending(state: State<'_, AppState>) {
+    state
+        .pending_export
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+}
+
+/// "Sauvegarde chiffrée": the master password, a passphrase, then where to
+/// save the `.onepass` archive (every vault, trash and archive included).
+#[tauri::command]
+pub async fn export_backup(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    password: String,
+    passphrase: String,
+) -> UiResult<Saved> {
+    let passphrase = Zeroizing::new(passphrase.into_bytes());
+    confirm_password(&state, Zeroizing::new(password)).await?;
+    let s = session(&state)?;
+    let bytes =
+        Zeroizing::new(blocking(move || s.export_encrypted_backup(passphrase.to_vec())).await??);
+    let name = if fr() {
+        format!("OnePass sauvegarde {}.onepass", today())
+    } else {
+        format!("OnePass backup {}.onepass", today())
+    };
+    let title = if fr() {
+        "Sauvegarde chiffrée"
+    } else {
+        "Encrypted Backup"
+    };
+    save_export(
+        &window,
+        &state,
+        title,
+        &name,
+        ("OnePass", &["onepass"]),
+        bytes,
+    )
+    .await
+}
+
+/// "Export CSV non chiffré": the master password, the vaults (none: all).
+#[tauri::command]
+pub async fn export_csv(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    password: String,
+    vault_ids: Vec<String>,
+) -> UiResult<Saved> {
+    confirm_password(&state, Zeroizing::new(password)).await?;
+    let s = session(&state)?;
+    let bytes = Zeroizing::new(s.export_plaintext_csv(vault_ids)?);
+    let name = if fr() {
+        format!("OnePass export non chiffré {}.csv", today())
+    } else {
+        format!("OnePass unencrypted export {}.csv", today())
+    };
+    let title = if fr() {
+        "Export non chiffré"
+    } else {
+        "Unencrypted Export"
+    };
+    save_export(&window, &state, title, &name, ("CSV", &["csv"]), bytes).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveView {
+    pub file_name: String,
+    /// "backup" (signed by its account) or "export" (passphrase only).
+    pub kind: &'static str,
+    pub created_at: i64,
+    pub newer_version: bool,
+    pub has_passphrase: bool,
+    pub signed: bool,
+    pub for_this_account: bool,
+}
+
+fn kind_key(k: onepass_ffi::FfiArchiveKind) -> &'static str {
+    match k {
+        onepass_ffi::FfiArchiveKind::Backup => "backup",
+        onepass_ffi::FfiArchiveKind::Export => "export",
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeCount {
+    pub item_type: &'static str,
+    pub count: u32,
+}
+
+fn counts(v: Vec<onepass_ffi::FfiImportTypeCount>) -> Vec<TypeCount> {
+    v.into_iter()
+        .map(|c| TypeCount {
+            item_type: view::type_key(c.item_type),
+            count: c.count,
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreView {
+    pub kind: &'static str,
+    pub created_at: i64,
+    pub vaults_created: u32,
+    pub items: u32,
+    pub by_type: Vec<TypeCount>,
+    pub skipped: u32,
+    pub signature_verified: bool,
+    /// Restored, but the restore epoch could not be recorded.
+    pub epoch_missing: bool,
+}
+
+impl From<onepass_ffi::FfiRestoreSummary> for RestoreView {
+    fn from(r: onepass_ffi::FfiRestoreSummary) -> Self {
+        RestoreView {
+            kind: kind_key(r.kind),
+            created_at: r.created_at,
+            vaults_created: r.vaults_created,
+            items: r.items,
+            by_type: counts(r.by_type),
+            skipped: r.skipped,
+            signature_verified: r.signature_verified,
+            epoch_missing: r.epoch.is_none(),
+        }
+    }
+}
+
+/// Asks for a file and keeps its bytes here (never sent to the web view).
+async fn pick_into_pending(
+    window: &tauri::WebviewWindow,
+    state: &AppState,
+    title: &str,
+    filters: &[crate::dialog::Filter<'_>],
+) -> UiResult<Option<String>> {
+    let Some(path) = crate::dialog::pick_file(window, title, filters).await else {
+        return Ok(None);
+    };
+    let bytes = Zeroizing::new(crate::dialog::read_limited(&path, MAX_IMPORT)?);
+    let name = crate::dialog::file_name(&path);
+    *state
+        .pending_import
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((name.clone(), bytes));
+    Ok(Some(name))
+}
+
+fn pending_bytes(state: &AppState) -> UiResult<(String, Zeroizing<Vec<u8>>)> {
+    state
+        .pending_import
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .map(|(n, b)| (n.clone(), b.clone()))
+        .ok_or_else(|| "choose a file first".into())
+}
+
+fn archive_view(state: &AppState) -> UiResult<ArchiveView> {
+    let (file_name, bytes) = pending_bytes(state)?;
+    let info = session(state)?.archive_info(bytes.to_vec())?;
+    Ok(ArchiveView {
+        file_name,
+        kind: kind_key(info.kind),
+        created_at: info.created_at,
+        newer_version: info.newer_version,
+        has_passphrase: info.has_passphrase,
+        signed: info.signed,
+        for_this_account: info.for_this_account,
+    })
+}
+
+/// "Choisir une sauvegarde…": reads a `.onepass` file and its clear header.
+#[tauri::command]
+pub async fn pick_backup(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> UiResult<Option<ArchiveView>> {
+    session(&state)?;
+    let title = if fr() {
+        "Restaurer une sauvegarde"
+    } else {
+        "Restore a Backup"
+    };
+    if pick_into_pending(&window, &state, title, &[("OnePass", &["onepass"])])
+        .await?
+        .is_none()
+    {
+        return Ok(None);
+    }
+    Ok(Some(archive_view(&state)?))
+}
+
+/// The header of the file `pick_import` read when it turned out to be a
+/// OnePass archive.
+#[tauri::command]
+pub fn pending_archive(state: State<'_, AppState>) -> UiResult<ArchiveView> {
+    archive_view(&state)
+}
+
+#[tauri::command]
+pub async fn preview_restore(
+    state: State<'_, AppState>,
+    passphrase: Option<String>,
+) -> UiResult<RestoreView> {
+    let (_, bytes) = pending_bytes(&state)?;
+    let s = session(&state)?;
+    let p = passphrase.map(|p| Zeroizing::new(p.into_bytes()));
+    let r = blocking(move || s.preview_restore(bytes.to_vec(), p.map(|p| p.to_vec()))).await??;
+    Ok(r.into())
+}
+
+#[tauri::command]
+pub async fn restore_backup(
+    state: State<'_, AppState>,
+    passphrase: Option<String>,
+) -> UiResult<RestoreView> {
+    let (_, bytes) = pending_bytes(&state)?;
+    let s = session(&state)?;
+    let p = passphrase.map(|p| Zeroizing::new(p.into_bytes()));
+    let r = blocking(move || s.restore_archive(bytes.to_vec(), p.map(|p| p.to_vec()))).await??;
+    clear_pending(&state);
+    Ok(r.into())
+}
+
+fn clear_pending(state: &AppState) {
+    state
+        .pending_import
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+}
+
+/// Forgets the file read for a restore or an import.
+#[tauri::command]
+pub fn forget_file(state: State<'_, AppState>) {
+    clear_pending(&state);
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedImport {
+    pub file_name: String,
+    /// The format the content looks like (`detect_import_format`), if any.
+    pub format: Option<String>,
+}
+
+/// "Importer…": reads a file exported by another manager or a browser.
+#[tauri::command]
+pub async fn pick_import(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> UiResult<Option<PickedImport>> {
+    session(&state)?;
+    let title = if fr() { "Importer" } else { "Import" };
+    let Some(file_name) = pick_into_pending(&window, &state, title, &[]).await? else {
+        return Ok(None);
+    };
+    let (_, bytes) = pending_bytes(&state)?;
+    let format = onepass_ffi::detect_import_format(file_name.clone(), bytes.to_vec());
+    Ok(Some(PickedImport { file_name, format }))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WarningCount {
+    pub code: String,
+    pub count: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateView {
+    pub index: u32,
+    pub incoming: SummaryView,
+    pub existing: SummaryView,
+    pub differences: Vec<&'static str>,
+    pub exact: bool,
+    /// "merge", "skip" or "import".
+    pub suggested: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportView {
+    pub format: String,
+    pub items: u32,
+    pub by_type: Vec<TypeCount>,
+    pub warnings: Vec<WarningCount>,
+    pub skipped: u32,
+    pub updated: u32,
+    pub added: u32,
+    pub fixed: u32,
+    pub converted: u32,
+    pub archived_duplicates: u32,
+    pub unchanged: u32,
+    pub duplicates: Vec<DuplicateView>,
+    pub merged: u32,
+    pub skipped_duplicates: u32,
+    pub separate: u32,
+}
+
+pub fn aspect_key(a: onepass_ffi::FfiDuplicateAspect) -> &'static str {
+    use onepass_ffi::FfiDuplicateAspect as A;
+    match a {
+        A::Title => "title",
+        A::Username => "username",
+        A::Password => "password",
+        A::Websites => "websites",
+        A::Totp => "totp",
+        A::Passkeys => "passkeys",
+        A::Notes => "notes",
+        A::Fields => "fields",
+        A::Attachments => "attachments",
+        A::Tags => "tags",
+    }
+}
+
+fn choice_key(c: onepass_ffi::FfiImportChoice) -> &'static str {
+    match c {
+        onepass_ffi::FfiImportChoice::Merge => "merge",
+        onepass_ffi::FfiImportChoice::Skip => "skip",
+        onepass_ffi::FfiImportChoice::Import => "import",
+    }
+}
+
+impl From<onepass_ffi::FfiImportSummary> for ImportView {
+    fn from(s: onepass_ffi::FfiImportSummary) -> Self {
+        ImportView {
+            format: s.format,
+            items: s.items,
+            by_type: counts(s.by_type),
+            warnings: s
+                .warnings
+                .into_iter()
+                .map(|w| WarningCount {
+                    code: w.code,
+                    count: w.count,
+                })
+                .collect(),
+            skipped: s.skipped,
+            updated: s.updated,
+            added: s.added,
+            fixed: s.fixed,
+            converted: s.converted,
+            archived_duplicates: s.archived_duplicates,
+            unchanged: s.unchanged,
+            duplicates: s
+                .duplicates
+                .into_iter()
+                .map(|d| DuplicateView {
+                    index: d.index,
+                    incoming: SummaryView::from(d.incoming),
+                    existing: SummaryView::from(d.existing),
+                    differences: d.differences.into_iter().map(aspect_key).collect(),
+                    exact: d.exact,
+                    suggested: choice_key(d.suggested),
+                })
+                .collect(),
+            merged: s.merged,
+            skipped_duplicates: s.skipped_duplicates,
+            separate: s.separate,
+        }
+    }
+}
+
+/// What the file would bring into `vault_id`, nothing written.
+#[tauri::command]
+pub async fn preview_import(
+    state: State<'_, AppState>,
+    format: String,
+    vault_id: String,
+) -> UiResult<ImportView> {
+    let (_, bytes) = pending_bytes(&state)?;
+    let s = session(&state)?;
+    let r = blocking(move || s.preview_import_into(format, bytes.to_vec(), vault_id)).await??;
+    Ok(r.into())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Decision {
+    pub index: u32,
+    /// "merge", "skip" or "import".
+    pub choice: String,
+}
+
+#[tauri::command]
+pub async fn import_items(
+    state: State<'_, AppState>,
+    format: String,
+    vault_id: String,
+    decisions: Vec<Decision>,
+) -> UiResult<ImportView> {
+    let (_, bytes) = pending_bytes(&state)?;
+    let s = session(&state)?;
+    let decisions = decisions
+        .into_iter()
+        .map(|d| {
+            let choice = match d.choice.as_str() {
+                "merge" => onepass_ffi::FfiImportChoice::Merge,
+                "skip" => onepass_ffi::FfiImportChoice::Skip,
+                "import" => onepass_ffi::FfiImportChoice::Import,
+                _ => return Err(view::UiError::from("unknown choice")),
+            };
+            Ok(onepass_ffi::FfiImportDecision {
+                index: d.index,
+                choice,
+            })
+        })
+        .collect::<UiResult<Vec<_>>>()?;
+    let r = blocking(move || s.import_items(format, bytes.to_vec(), vault_id, decisions)).await??;
+    clear_pending(&state);
+    Ok(r.into())
 }

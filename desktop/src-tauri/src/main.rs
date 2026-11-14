@@ -5,6 +5,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod breach;
 mod commands;
 mod device;
 mod dialog;
@@ -100,6 +101,19 @@ fn main() {
             commands::enable_hello,
             commands::disable_hello,
             commands::unlock_with_hello,
+            commands::save_pending,
+            commands::discard_pending,
+            commands::export_backup,
+            commands::export_csv,
+            commands::pick_backup,
+            commands::pending_archive,
+            commands::preview_restore,
+            commands::restore_backup,
+            commands::forget_file,
+            commands::pick_import,
+            commands::preview_import,
+            commands::import_items,
+            commands::set_check_breaches,
         ])
         .run(tauri::generate_context!())
         .expect("OnePass failed to start");

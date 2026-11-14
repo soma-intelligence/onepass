@@ -47,6 +47,19 @@
     "allow-hello-status",
     "allow-enable-hello",
     "allow-disable-hello",
-    "allow-unlock-with-hello"
+    "allow-unlock-with-hello",
+    "allow-save-pending",
+    "allow-discard-pending",
+    "allow-export-backup",
+    "allow-export-csv",
+    "allow-pick-backup",
+    "allow-pending-archive",
+    "allow-preview-restore",
+    "allow-restore-backup",
+    "allow-forget-file",
+    "allow-pick-import",
+    "allow-preview-import",
+    "allow-import-items",
+    "allow-set-check-breaches"
   ]
 }

@@ -29,7 +29,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 postcard = { version = "1", default-features = false, features = ["alloc", "use-std"] }
 zeroize = { version = "1.9", features = ["derive", "serde"] }
-time = { version = "0.3", default-features = false, features = ["std"] }
+time = { version = "0.3", default-features = false, features = ["std", "local-offset"] }
 # Copy without the secret crossing the IPC (section 3.2), kept out of the
 # Windows clipboard history and cloud clipboard.
 arboard = { version = "3", default-features = false }
@@ -38,6 +38,8 @@ url = "2"
 # The native open and save dialogs (dialog.rs): a path chosen there never
 # crosses the IPC, the backend reads or writes the file itself.
 rfd = { version = "0.15", default-features = false }
+# Watchtower's downloads (breach.rs): HIBP ranges and the site catalogs.
+ureq = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

@@ -1563,3 +1563,163 @@ input.tag-input:focus {
 .attachment-row .glyph {
   flex: none;
 }
+
+/* ---- backup, restore, import --------------------------------------------------------------- */
+.green {
+  color: var(--green);
+}
+.orange {
+  color: var(--orange);
+}
+.red,
+.red-text {
+  color: var(--red);
+}
+.error-text {
+  color: var(--red);
+}
+.warning-text {
+  color: var(--orange);
+  font-size: 14px;
+}
+.sheet-intro {
+  margin: 4px 4px 16px;
+}
+.sheet-body > .secret-box {
+  margin-bottom: 10px;
+}
+.alert-title {
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  margin: 4px 4px 6px;
+}
+.warning-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.warning-card p {
+  margin: 0 0 8px;
+}
+.count-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 4px 0 8px;
+}
+.count-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+}
+.figure.small {
+  font-size: 20px;
+}
+.done-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 6px;
+}
+.done-head h2 {
+  margin: 0;
+}
+.center-text {
+  text-align: center;
+}
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 26px 16px;
+  border: 1.5px dashed var(--separator);
+  border-radius: 18px;
+  background: var(--card);
+}
+.drop-zone:hover {
+  border-color: var(--readable-accent);
+}
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+}
+.source-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 14px;
+}
+.source-tile:hover {
+  background: var(--raised);
+}
+.source-tile.on {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.source-hint {
+  margin: 12px 0 4px;
+}
+.source-hint ol {
+  margin: 8px 0 12px;
+  padding-left: 22px;
+  color: var(--secondary);
+}
+.warning-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  padding: 3px 0;
+}
+.dup-row {
+  gap: 12px;
+}
+.segmented.small button {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+.buttons-row.left > * {
+  flex: none;
+}
+.row.static select {
+  font-size: 15px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fill);
+  padding: 5px 8px;
+  color-scheme: light dark;
+}
+
+/* ---- Watchtower: breach check setting ------------------------------------------------------ */
+.breach-card {
+  margin: 16px 0;
+}
+.breach-card .toggle-row {
+  gap: 12px;
+  justify-content: flex-start;
+}
+.breach-card .toggle-row .row-text {
+  flex: 1;
+}
+.breach-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 10px 58px;
+}
+.bar-text.small-link {
+  font-size: 13px;
+  padding: 2px 0;
+  color: var(--readable-accent);
+}
+.breach-card > .footnote {
+  margin: 0 16px 12px 58px;
+}

@@ -41,6 +41,19 @@ const COMMANDS: &[&str] = &[
     "enable_hello",
     "disable_hello",
     "unlock_with_hello",
+    "save_pending",
+    "discard_pending",
+    "export_backup",
+    "export_csv",
+    "pick_backup",
+    "pending_archive",
+    "preview_restore",
+    "restore_backup",
+    "forget_file",
+    "pick_import",
+    "preview_import",
+    "import_items",
+    "set_check_breaches",
 ];
 
 fn main() {
