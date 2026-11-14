@@ -91,14 +91,33 @@ private func store(_ counter: LoadCounter, clock: TestClock = TestClock(), capac
         }
         let icons = store(counter)
         async let first: Void = icons.prefetch(key())
+        // The load has started and is held: the second prefetch finds it in flight.
+        await gate.entered()
         async let second: Void = icons.prefetch(key())
-        // Both prefetches are waiting on the one load before it answers.
-        while counter.count(key()) == 0 { await Task.yield() }
-        try? await Task.sleep(for: .milliseconds(20))
         await gate.open()
         _ = await (first, second)
         #expect(counter.count(key()) == 1)
         #expect(icons.cached(key()) == Data("icon".utf8))
+    }
+
+    /// Account switch or lock while a load is pending: its answer (here NotFound, read against the
+    /// other account) neither fills the cache nor marks the key failed.
+    @Test func removeAllWhileLoadingDiscardsItsResult() async {
+        let gate = AsyncGate()
+        let counter = LoadCounter { _ in
+            await gate.wait()
+            throw VaultError.notFound
+        }
+        let icons = store(counter)
+        async let pending: Void = icons.prefetch(key())
+        await gate.entered()
+        icons.removeAll()
+        await gate.open()
+        await pending
+        #expect(icons.cached(key()) == nil)
+        // Not marked failed: the next prefetch asks the vault again.
+        await icons.prefetch(key())
+        #expect(counter.count(key()) == 2)
     }
 
     @Test func boundedLeastRecentlyUsedLeavesFirst() async {
@@ -207,14 +226,24 @@ private func store(_ counter: LoadCounter, clock: TestClock = TestClock(), capac
     }
 }
 
-/// Holds loads until the test opens it.
+/// Holds loads until the test opens it; `entered()` returns once a load is held.
 private actor AsyncGate {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var held = 0
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
 
     func wait() async {
         if isOpen { return }
+        held += 1
+        enteredWaiters.forEach { $0.resume() }
+        enteredWaiters = []
         await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func entered() async {
+        if held > 0 { return }
+        await withCheckedContinuation { enteredWaiters.append($0) }
     }
 
     func open() {

@@ -34,8 +34,8 @@ public struct CustomIconKey: Hashable, Sendable {
 ///   rows show the automatic icon meanwhile and nothing asks the vault again in a loop. A load that
 ///   throws `CancellationError` ("not now": the vault is locked) is not a failure.
 /// - Two prefetches of one key while it loads share the same load.
-/// - `removeAll()` (the vault locked) forgets every icon and failure; a load still running then
-///   keeps nothing.
+/// - `removeAll()` (the vault locked, another account shown, the app in the background) forgets
+///   every icon and failure; a load still running then keeps nothing and marks nothing failed.
 public final class CustomIconStore: Sendable {
     public static let capacity = 256
     public static let retryDelay: Duration = .seconds(600)
@@ -141,9 +141,12 @@ public final class CustomIconStore: Sendable {
 
 extension CustomIconStore {
     /// The store of an app or extension: icons read from the vault `session()` returns now (the
-    /// account shown). A locked vault is "not now", never a failure.
-    public static func vault(_ session: @escaping @MainActor () -> VaultSession) -> CustomIconStore {
-        CustomIconStore { @MainActor key in
+    /// account shown). A locked vault is "not now", never a failure. An extension, with its
+    /// tighter memory, passes a smaller `capacity`.
+    public static func vault(
+        _ session: @escaping @MainActor () -> VaultSession, capacity: Int = CustomIconStore.capacity
+    ) -> CustomIconStore {
+        CustomIconStore(capacity: capacity) { @MainActor key in
             do {
                 return try await session().customIconData(itemID: key.itemID, vaultID: key.vaultID)
             } catch VaultError.passwordRequired {

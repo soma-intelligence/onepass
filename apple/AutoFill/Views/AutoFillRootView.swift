@@ -29,7 +29,7 @@ struct AutoFillRootView: View {
         self.accounts = accounts
         self.switchAccount = switchAccount
         let settings = session.environment.settings
-        _icons = State(initialValue: ItemIconResolver.live(settings: settings, custom: .vault { session }))
+        _icons = State(initialValue: ItemIconResolver.live(settings: settings, custom: .vault({ session }, capacity: 32)))
     }
 
     var body: some View {
