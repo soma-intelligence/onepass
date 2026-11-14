@@ -117,6 +117,18 @@ fn check_owner_mirror(body: &RosterBody, owners: &[MemberRef]) -> Result<()> {
     Ok(())
 }
 
+/// R7d: an Owner entry whose identity, KEM hash and devices are those of
+/// its lineage `MemberRef`.
+fn follows_lineage(owners: &[MemberRef], e: &OrgMember) -> bool {
+    e.roles.contains(Role::Owner)
+        && owners.iter().any(|r| {
+            r.account_id == e.account_id
+                && e.account_identity_pub.as_ref() == Some(&r.account_identity_pub)
+                && e.account_kem_hash == member_kem_hash(&r.account_kem_pub)
+                && e.devices == r.devices
+        })
+}
+
 /// The allowed state moves (an unchanged state included).
 fn transition_allowed(p: &MemberState, e: &MemberState) -> bool {
     use MemberState::*;
@@ -268,9 +280,14 @@ fn check_entry(
                 return Err(denied());
             }
             // R7a: identity and KEM hash are set once, on Invited -> Active.
-            if (e.account_identity_pub != p.account_identity_pub
-                || e.account_kem_hash != p.account_kem_hash)
+            // R7d, the single exception: an Owner entry's keys and devices
+            // follow its lineage MemberRef, synced by an effective Owner.
+            let keys_changed = e.account_identity_pub != p.account_identity_pub
+                || e.account_kem_hash != p.account_kem_hash;
+            let owner_devices_changed = e.roles.contains(Role::Owner) && e.devices != p.devices;
+            if (keys_changed || owner_devices_changed)
                 && !activation
+                && !(s.roles.contains(Role::Owner) && follows_lineage(owners, e))
             {
                 return Err(denied());
             }

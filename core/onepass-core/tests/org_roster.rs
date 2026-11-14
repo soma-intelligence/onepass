@@ -500,8 +500,11 @@ struct Org {
     p: TestDevice,
     m: TestDevice,
     /// Generations 0, 1, 2, then `lineages[3]`: generation 0 followed by
-    /// an OwnersChanged {M} that drops O.
-    lineages: [OrgLineage; 4],
+    /// an OwnersChanged {M} that drops O; `lineages[4]`: generation 2
+    /// followed by an OwnersChanged {O, M'} where M rotated its identity,
+    /// KEM key and device (`m_rotated`).
+    lineages: [OrgLineage; 5],
+    m_rotated: TestDevice,
     chain: Vec<SignedRoster>,
 }
 
@@ -612,6 +615,26 @@ fn org() -> &'static Org {
             },
         );
 
+        let m_rotated = device(0x66);
+        let rotated = {
+            let body = OrgChangeBody {
+                format: 1,
+                org_id: ORG,
+                generation: 3,
+                parent: l2.head().hash,
+                kind: OrgChangeKind::OwnersChanged {
+                    owners: vec![member_ref(O, &[&o]), rotated_m(&m_rotated)],
+                },
+                issued_at: 1_700_000_200,
+            };
+            let rec = sign_org_change(
+                body,
+                &secrets.identity,
+                &[(&o.public, &o.keys), (&m.public, &m.keys)],
+            )
+            .unwrap();
+            l2.apply(&rec).unwrap()
+        };
         let sign =
             |body: RosterBody, d: &TestDevice| sign_roster(body, &d.public, &d.keys).unwrap();
         let r1 = founding_roster(&l0).unwrap();
@@ -645,10 +668,21 @@ fn org() -> &'static Org {
             u,
             p,
             m,
-            lineages: [l0, l1, l2, dropped],
+            lineages: [l0, l1, l2, dropped, rotated],
+            m_rotated,
             chain,
         }
     })
+}
+
+/// M after an account rotation: another identity and KEM key, one new
+/// device.
+fn rotated_m(d: &TestDevice) -> MemberRef {
+    MemberRef {
+        account_identity_pub: identity_pool(0).1.clone(),
+        account_kem_pub: kem_pool(0).1.clone(),
+        ..member_ref(M, &[d])
+    }
 }
 
 fn l0() -> &'static OrgLineage {
@@ -758,7 +792,7 @@ fn founding_roster_signed_by_owner_accepted() {
         "founding roster by O"
     );
     // The whole fixture chain from seq 1, under every lineage generation.
-    for l in &org.lineages[..3] {
+    for l in [0, 1, 2, 4].map(|i| &org.lineages[i]) {
         assert_eq!(&accept_first_roster(l, &org.chain).unwrap(), r(7));
     }
     // founding_roster follows the lineage head: owners {O, M} at gen 2.
@@ -1416,4 +1450,64 @@ fn owner_devices_mirror_lineage() {
     denied(accept_in(l2, &pinned, n, O), "O adds a device to owner M");
     let n = edit(&pinned, |b| replace_devices(b, M, 0x65));
     denied(accept_in(l2, &pinned, n, O), "O replaces owner M's devices");
+}
+
+// Fix round 2 (ruling R7d).
+
+#[test]
+fn owner_key_rotation_follows_lineage() {
+    let org = org();
+    let l4 = &org.lineages[4];
+    let gen3 = l4.head().hash;
+    let new_ref = rotated_m(&org.m_rotated);
+    assert_ne!(
+        Some(&new_ref.account_identity_pub),
+        base()
+            .member(acct(M))
+            .unwrap()
+            .account_identity_pub
+            .as_ref()
+    );
+    // M became an owner at generation 2.
+    let promoted = edit(base(), |b| {
+        b.org_head = org.lineages[2].head().hash;
+        add_role(b, M, Role::Owner);
+    });
+    let pinned = accept_in(l4, base(), promoted, O).unwrap();
+    let sync = |b: &mut RosterBody| {
+        b.org_head = gen3;
+        let e = entry(b, M);
+        e.account_identity_pub = Some(new_ref.account_identity_pub.clone());
+        e.account_kem_hash = member_kem_hash(&new_ref.account_kem_pub);
+        e.devices = new_ref.devices.clone();
+    };
+    let n = edit(&pinned, sync);
+    assert_eq!(
+        accept_in(l4, &pinned, n.clone(), O).unwrap(),
+        n,
+        "O syncs M"
+    );
+    denied(accept_in(l4, &pinned, n, A), "A syncs M");
+    // Values other than the lineage's.
+    let n = edit(&pinned, |b| {
+        sync(b);
+        entry(b, M).account_kem_hash = [1; 32];
+    });
+    denied(accept_in(l4, &pinned, n, O), "KEM hash not the lineage's");
+    let n = edit(&pinned, |b| {
+        sync(b);
+        replace_devices(b, M, 0x67);
+    });
+    denied(accept_in(l4, &pinned, n, O), "devices not the lineage's");
+    let n = edit(&pinned, |b| {
+        sync(b);
+        entry(b, M).account_identity_pub = Some(identity_pool(1).1.clone());
+    });
+    denied(accept_in(l4, &pinned, n, O), "identity not the lineage's");
+    // A non-owner's keys stay frozen even for an owner.
+    let n = edit(&pinned, |b| {
+        sync(b);
+        entry(b, U).account_kem_hash = member_kem_hash(&kem_pool(1).1);
+    });
+    denied(accept_in(l4, &pinned, n, O), "U's keys");
 }
