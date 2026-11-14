@@ -3,6 +3,8 @@
 
     <!-- Fingerprint or face unlock (BiometricPrompt). -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Watchtower "Vérifier les fuites": HIBP ranges (5-hex prefixes) and public catalogs, HTTPS only. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- No backup of any kind: the vault and the device secrets stay on
          this device (plan X4, global constraints). -->

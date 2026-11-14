@@ -89,10 +89,14 @@ class WatchtowerScreen(private val a: MainActivity) {
     /** Why a card has no figure: its source did not run (no network check on Android yet). */
     private fun Card.unavailable(r: FfiWatchtowerReport): String? = when (source) {
         Source.LOCAL -> null
-        Source.BREACHES -> if (r.pwned is FfiPwnedStatus.Checked || r.pwned is FfiPwnedStatus.Partial) null
-            else a.t("Vérification des fuites désactivée.", "Breach check turned off.")
-        Source.SITES -> if (r.sitesChecked) null else a.t("Active « Vérifier les fuites » pour télécharger le catalogue des sites.", "Turn on “Check for breaches” to download the site catalog.")
-        Source.BREACH_CATALOG -> a.t("Active « Vérifier les fuites » pour télécharger le catalogue des sites piratés.", "Turn on “Check for breaches” to download the list of breached sites.")
+        Source.BREACHES -> when (r.pwned) {
+            is FfiPwnedStatus.Checked, is FfiPwnedStatus.Partial -> null
+            is FfiPwnedStatus.Unavailable -> if (checking) a.t("Vérification des fuites…", "Checking for breaches…") else a.t("Fuites non vérifiées (pas de réseau).", "Breaches not checked (no network).")
+            is FfiPwnedStatus.Disabled -> a.t("Vérification des fuites désactivée.", "Breach check turned off.")
+        }
+        Source.SITES -> if (r.sitesChecked) null else if (checking) a.t("Vérification des fuites…", "Checking for breaches…") else a.t("Active « Vérifier les fuites » pour télécharger le catalogue des sites.", "Turn on “Check for breaches” to download the site catalog.")
+        Source.BREACH_CATALOG -> if (!a.watchFetcher.checkBreaches) a.t("Active « Vérifier les fuites » pour télécharger le catalogue des sites piratés.", "Turn on “Check for breaches” to download the list of breached sites.")
+            else if (checking) a.t("Vérification des fuites…", "Checking for breaches…") else null
     }
 
     private fun fill(c: Card): Int = if (c.alert()) Color.rgb(199, 41, 41) else when (c.id) {
@@ -105,16 +109,68 @@ class WatchtowerScreen(private val a: MainActivity) {
     /** Computes the report if needed, then redraws (when still on Watchtower or Home). */
     private var computing = false
 
+    /** "Vérification des fuites" while the ranges download. */
+    private var checking = false
+
+    /**
+     * Two passes as on iPhone: offline first (local checks, the catalogs on disk,
+     * the SHA-1 prefixes to fetch), then, with "Vérifier les fuites" on, the HIBP
+     * ranges and the catalogs are downloaded on their own thread and the report
+     * computed again.
+     */
     fun ensureReport() {
         if (a.report != null || computing) return
         val s = a.vault.session ?: return
         computing = true
-        a.background({
-            s.watchtowerReport(FfiWatchtowerOptions(30u, 365u, null, null, null, emptyList(), null))
-        }) { r ->
-            computing = false
-            r.onSuccess { a.report = it; a.renderIfRoot() }.onFailure { a.toast(a.message(it)) }
+        val fetcher = a.watchFetcher
+        val breaches = fetcher.checkBreaches
+        fun options(ranges: List<me.somalabs.onepass.core.FfiRangeResponse>?, d: me.somalabs.onepass.vault.WatchtowerFetcher.Directories) =
+            FfiWatchtowerOptions(30u, 365u, ranges, d.twofa, d.passkeys, emptyList(), d.breaches)
+        a.background({ s.watchtowerReport(options(if (breaches) emptyList() else null, fetcher.directories(false))) }) { r ->
+            r.onFailure { computing = false; a.toast(a.message(it)) }
+            val first = r.getOrNull() ?: return@background
+            a.report = first
+            if (!breaches) { computing = false; a.renderIfRoot(); return@background }
+            checking = true
+            a.renderIfRoot()
+            Thread {
+                val second = runCatching {
+                    val dirs = fetcher.directories(true)
+                    val ranges = fetcher.ranges(first.missingPrefixes)
+                    if (a.vault.session !== s) null else s.watchtowerReport(options(ranges, dirs))
+                }.getOrNull()
+                a.main.post {
+                    computing = false
+                    checking = false
+                    if (second != null && a.report === first && a.vault.session === s) a.report = second
+                    a.renderIfRoot()
+                }
+            }.start()
         }
+    }
+
+    private fun pwnedText(r: FfiWatchtowerReport): String = if (checking) a.t(" · vérification des fuites…", " · checking for breaches…") else when (val p = r.pwned) {
+        is FfiPwnedStatus.Checked -> a.t(" · fuites vérifiées", " · breaches checked")
+        is FfiPwnedStatus.Partial -> a.t(" · fuites vérifiées en partie (${p.failedPrefixes} requêtes en échec)", " · breaches partly checked (${p.failedPrefixes} requests failed)")
+        is FfiPwnedStatus.Unavailable -> a.t(" · fuites non vérifiées (pas de réseau)", " · breaches not checked (no network)")
+        is FfiPwnedStatus.Disabled -> a.t(" · vérification des fuites désactivée", " · breach check turned off")
+    }
+
+    /** "Vérifier les fuites" at the bottom of Watchtower, with what is sent. */
+    private fun breachSetting(): View {
+        val f = a.watchFetcher
+        val row = ui.toggleRow(a.t("Vérifier les fuites", "Check for Breaches"), a.t("Tes mots de passe ne quittent jamais l'appareil.", "Your passwords never leave this device."), f.checkBreaches) { on ->
+            f.checkBreaches = on
+            a.report = null
+            a.renderIfRoot()
+        }
+        row.addView(a.barIcon(R.drawable.ic_info, a.t("Ce qui est envoyé", "What is sent")) {
+            android.app.AlertDialog.Builder(a).setTitle(a.t("Ce qui est envoyé", "What is sent"))
+                .setMessage(a.t("Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. Les catalogues de 2fa.directory et la liste des sites piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune requête réseau.",
+                    "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The 2fa.directory catalogs and the list of breached sites are downloaded whole and kept for a week. When off, no network request."))
+                .setPositiveButton("OK", null).show()
+        }, row.childCount - 1)
+        return ui.card(row)
     }
 
     fun screen(): View {
@@ -137,12 +193,13 @@ class WatchtowerScreen(private val a: MainActivity) {
                 return@rootPage
             }
             val n = report.itemsAnalyzed.toInt()
-            addView(ui.text(if (n == 1) a.t("1 élément analysé", "1 item analyzed") else a.t("$n éléments analysés", "$n items analyzed"), 13f, ui.tertiary).apply { setPadding(ui.dp(20), 0, ui.dp(20), 0) })
+            addView(ui.text((if (n == 1) a.t("1 élément analysé", "1 item analyzed") else a.t("$n éléments analysés", "$n items analyzed")) + pwnedText(report), 13f, ui.tertiary).apply { setPadding(ui.dp(20), 0, ui.dp(20), 0) })
             addView(ui.inset(strength(report.strength.map { it.toInt() }), top = Ios.Space.L))
             val flagged = cards.filter { it.ids(report).isNotEmpty() }
             flagged.forEach { addView(ui.inset(flaggedCard(it, report), top = Ios.Space.L)) }
             val clear = cards.filter { it.ids(report).isEmpty() }
             if (clear.isNotEmpty()) addView(ui.inset(clearCard(clear, report), top = Ios.Space.L))
+            addView(ui.inset(breachSetting(), top = Ios.Space.L))
         }
     }
 
