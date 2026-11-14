@@ -9,51 +9,65 @@ plugins {
 // the build script, which the configuration cache refuses to serialize.
 val androidRoot: Directory = rootProject.layout.projectDirectory
 val coreRoot: Directory = androidRoot.dir("../core")
-val hostLibDir: Provider<Directory> = run {
+val cargoTarget: Provider<Directory> = run {
     val root = androidRoot
     val defaultTarget = coreRoot.dir("target")
     providers.environmentVariable("CARGO_TARGET_DIR")
         .map { root.dir(it) }
         .orElse(defaultTarget)
-        .map { it.dir("debug") }
 }
-val hostLib: Provider<RegularFile> = run {
+// The host library file name: cargo names a cdylib without the lib prefix
+// on Windows.
+val hostLibName: String = run {
     val os = System.getProperty("os.name")
-    val name = when {
+    when {
         os.startsWith("Mac") -> "libonepass_ffi.dylib"
-        // cargo names a cdylib without the lib prefix on Windows.
         os.startsWith("Windows") -> "onepass_ffi.dll"
         else -> "libonepass_ffi.so"
     }
-    hostLibDir.map { it.file(name) }
 }
 
-// One feature set for the host library and the bindgen binary: cargo then
-// builds onepass-ffi once, and `cargo run` below does not relink the host
-// library without dev-fast-kdf (the JVM tests need the dev KDF floor).
+// Two host builds of onepass-ffi, in two target directories so neither
+// relinks the other:
+// - the JVM unit tests load one with dev-fast-kdf (the dev KDF floor);
+// - the Kotlin bindings are generated from one without it. dev-fast-kdf
+//   exports test functions (test_contact_zone_offer...) that the APK's
+//   library never has: bindings that named them made the app fail at
+//   launch (UnsatisfiedLinkError on their checksum) while every JVM test
+//   passed. The bindings now describe exactly the API that ships.
 // RUSTFLAGS is left alone (android/scripts/common.sh refuses it).
-val hostFeatures = "bindgen,dev-fast-kdf"
+val hostLibDir: Provider<Directory> = cargoTarget.map { it.dir("debug") }
+val bindgenTarget: Provider<Directory> = cargoTarget.map { it.dir("bindgen") }
+val bindgenFeatures = "bindgen"
 
-// The host build of onepass-ffi: the JVM unit tests load it through JNA, and
-// the Kotlin bindings are generated from its metadata.
 val buildHostCore = tasks.register<Exec>("buildHostCore") {
     group = "onepass"
-    description = "Builds the host libonepass_ffi (dev-fast-kdf) and uniffi-bindgen."
+    description = "Builds the host libonepass_ffi with dev-fast-kdf, for the JVM tests."
     workingDir = coreRoot.asFile
+    commandLine("cargo", "build", "-p", "onepass-ffi", "--features", "dev-fast-kdf", "--lib")
+}
+
+val buildBindgenCore = tasks.register<Exec>("buildBindgenCore") {
+    group = "onepass"
+    description = "Builds the host libonepass_ffi without test features, and uniffi-bindgen."
+    workingDir = coreRoot.asFile
+    val dir = bindgenTarget
     commandLine(
-        "cargo", "build", "-p", "onepass-ffi", "--features", hostFeatures,
+        "cargo", "build", "-p", "onepass-ffi", "--features", bindgenFeatures,
         "--lib", "--bin", "uniffi-bindgen",
+        "--target-dir", dir.get().asFile.absolutePath,
     )
 }
 
 val generateUniffiBindings = tasks.register<GenerateUniffiBindings>("generateUniffiBindings") {
     group = "onepass"
     description = "Generates the Kotlin bindings of onepass-ffi into build/generated/uniffi."
-    dependsOn(buildHostCore)
-    library.set(hostLib)
+    dependsOn(buildBindgenCore)
+    library.set(bindgenTarget.map { it.dir("debug").file(hostLibName) })
     config.set(coreRoot.file("onepass-ffi/uniffi.toml"))
     coreDir.set(coreRoot)
-    features.set(hostFeatures)
+    targetDir.set(bindgenTarget)
+    features.set(bindgenFeatures)
     outputDir.set(layout.buildDirectory.dir("generated/uniffi"))
 }
 

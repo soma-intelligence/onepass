@@ -41,6 +41,10 @@ public abstract class GenerateUniffiBindings extends DefaultTask {
     @Input
     public abstract Property<String> getFeatures();
 
+    /** The cargo target directory of that host build. */
+    @Internal
+    public abstract DirectoryProperty getTargetDir();
+
     @OutputDirectory
     public abstract DirectoryProperty getOutputDir();
 
@@ -62,6 +66,7 @@ public abstract class GenerateUniffiBindings extends DefaultTask {
             spec.commandLine(List.of(
                     "cargo", "run", "-q", "-p", "onepass-ffi",
                     "--features", getFeatures().get(),
+                    "--target-dir", getTargetDir().get().getAsFile().getAbsolutePath(),
                     "--bin", "uniffi-bindgen", "--",
                     "generate", "--library", getLibrary().get().getAsFile().getAbsolutePath(),
                     "--language", "kotlin", "--no-format",
