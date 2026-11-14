@@ -824,9 +824,19 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     ...(opts.now ? { now: opts.now } : {}),
   });
 
+  /**
+   * The identities that have an e-mail, for a lone e-mail step of a sign-up: the e-mail is the
+   * row's subtitle (display only; the pick fills it through `fill_identity`).
+   */
+  const signupEmails = async (origin: string): Promise<Summary[]> => {
+    const r = await session.request({ op: "list_fillable", ctx: "menu", origin, kind: "identity" });
+    return r.items.filter((x) => x.kind === "identity" && x.email).map((x) => ({ ...x, subtitle: x.email ?? x.subtitle }));
+  };
+
   /** The menu would list something for this form on `origin` (locked, unpaired: no). */
-  const offersAnything = async (origin: string, formKind: string): Promise<boolean> => {
+  const offersAnything = async (origin: string, formKind: string, signupStep = false): Promise<boolean> => {
     try {
+      if (signupStep && (await signupEmails(origin)).length > 0) return true;
       if (formKind === "card" || formKind === "identity" || formKind === "address") {
         const kind = formKind === "card" ? "card" : "identity";
         return (await session.request({ op: "list_fillable", ctx: "menu", origin, kind })).items.length > 0;
@@ -955,10 +965,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       open_menu: async (m, from) => {
         if (!isPage(from.origin)) throw new BgError("insecure_origin");
         // A click into the field opens the menu only when it has something to offer there.
-        if (m.auto && !NEW_PASSWORD_FORMS.has(m.formKind) && !(await offersAnything(from.origin, m.formKind))) throw new BgError("not_found");
+        if (m.auto && !NEW_PASSWORD_FORMS.has(m.formKind) && !(await offersAnything(from.origin, m.formKind, m.signupStep === true))) throw new BgError("not_found");
         // One surface: the menu replaces an offered overlay; a running chain keeps the page.
         if (await overlays.yieldTo(from.tabId)) throw new BgError("not_allowed");
         const field: MenuField = { formRef: m.formRef, fieldRef: m.fieldRef, formKind: m.formKind };
+        if (m.signupStep && m.formKind === "login") field.signupStep = true;
         // Right after a plan of this very document answered "menu": its alternatives first.
         const key = `${from.tabId}:${from.frameId}`;
         const left = m.auto ? undefined : planMenus.get(key);
@@ -1163,6 +1174,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           items = (await session.request({ op: "list_fillable", ctx: "menu", origin: rec.origin, kind })).items;
         } else {
           items = (await session.request({ op: "list_for_origin", ctx: "menu", origin: rec.origin })).items;
+          // A lone e-mail step of a sign-up: the identities' e-mails first (shown as the row's
+          // subtitle), the site's logins below. A pick fills the e-mail only, nothing is sent.
+          if (rec.signupStep) items = [...(await signupEmails(rec.origin)), ...items];
         }
         // The gesture that opened this menu asked the app to unlock, and the vault is open by its
         // first look (a fast Touch ID): the gesture's own fill resumes now, there is no row to pick.

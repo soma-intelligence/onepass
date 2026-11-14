@@ -221,6 +221,8 @@ export interface FormInfo {
   kind: FormKind;
   fields: FieldInfo[];
   submitRef?: string;
+  /** A lone e-mail step (kind "login") that starts a sign-up: the menu offers the identities' e-mails. */
+  signupStep?: true;
 }
 
 export interface PageAnalysis {
@@ -461,7 +463,7 @@ export const UNCERTAIN_MS = 1500;
 export type CsToBg =
   | { type: "page_analysis"; analysis: PageAnalysis }
   /** `auto`: a click into the field, not the icon or a key; opened only when there is something to offer. */
-  | { type: "open_menu"; fieldRef: string; formRef: string; formKind: FormKind; auto?: boolean }
+  | { type: "open_menu"; fieldRef: string; formRef: string; formKind: FormKind; auto?: boolean; signupStep?: true }
   | { type: "close_menu" }
   | {
       type: "submitted_credentials";

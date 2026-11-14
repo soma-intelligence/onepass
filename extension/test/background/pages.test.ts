@@ -80,6 +80,15 @@ const answer: Answer = (r) => {
           ...(planFor ? [summary("it_03", { title: "Atlas Team", subtitle: "team@atlas.dev" })] : []),
         ],
       };
+    case "list_fillable":
+      return r.kind === "identity"
+        ? {
+            items: [
+              summary("id_01", { kind: "identity", title: "Alex Martin", subtitle: "Alex Martin", email: "alex@atlas.dev", has_password: false, match: null }),
+              summary("id_02", { kind: "identity", title: "Sans e-mail", subtitle: "Sam Doe", has_password: false, match: null }),
+            ],
+          }
+        : { items: [] };
     case "vaults":
       if (vaultsFor) return vaultsFor(r);
       return { vaults: [{ id: "v1", name: "Personnel", color: null }, { id: "v2", name: "Projet Atlas", color: "#0E7490" }] };
@@ -200,6 +209,34 @@ describe("menu extras", () => {
     expect(client.requests.some((r) => r.op === "fill_login")).toBe(false);
     expect(ext.sentToTabs.filter((x) => (x.message as { type: string }).type === "remove_frame").at(-1)?.message).toEqual({ type: "remove_frame", kind: "menu" });
     expect(await ext.send({ type: "menu_init", token }, ui)).toEqual({ err: "invalid" });
+  });
+
+  it("an email-only sign-up step lists the identities' e-mails first, and a pick fills the e-mail only", async () => {
+    const { ext, chain, client } = await setup();
+    const open = async (signupStep: boolean) => {
+      const r = (await ext.send(
+        { type: "open_menu", fieldRef: "e1", formRef: "f1", formKind: "login", ...(signupStep ? { signupStep: true } : {}) },
+        csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }),
+      )) as { ok: { url: string } };
+      const token = hashOf(r.ok.url);
+      const ui = uiSender(`menu.html#${token}`, 7);
+      const init = (await ext.send({ type: "menu_init", token }, ui)) as { ok: { items: { item_id: string; subtitle: string }[] } };
+      return { token, ui, items: init.ok.items };
+    };
+    // A plain sign-in step: the site's logins only.
+    expect((await open(false)).items.map((x) => x.item_id)).toEqual(["it_01", "it_02"]);
+    // The sign-up step: identities with an e-mail first (the e-mail as subtitle), then the logins.
+    const { token, ui, items } = await open(true);
+    expect(items.map((x) => [x.item_id, x.subtitle])).toEqual([
+      ["id_01", "alex@atlas.dev"],
+      ["it_01", "alex@atlas.dev"],
+      ["it_02", "alex@atlas.dev"],
+    ]);
+    expect(await ext.send({ type: "menu_pick", token, itemId: "id_01" }, ui)).toEqual({ ok: {} });
+    // An identity fill: no chain, no sign-in, nothing sent.
+    expect(chain.calls).toEqual([]);
+    expect(client.requests.filter((r) => r.op === "fill_identity").map((r) => r.item_id)).toEqual(["id_01"]);
+    expect(client.requests.some((r) => r.op === "fill_login")).toBe(false);
   });
 
   it("menu_pick on a password change form only fills (no chain)", async () => {

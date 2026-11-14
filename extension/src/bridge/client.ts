@@ -69,6 +69,8 @@ export interface Summary {
   associated?: true;
   /** Label of the item's account, sent only when items of several accounts answer. */
   account?: string;
+  /** An identity's e-mail address (host 0.3.x and later); left out otherwise. */
+  email?: string;
 }
 
 /** `smart` profile: Strong (default), Readable (words) or Custom (`length` and `symbols`). */
