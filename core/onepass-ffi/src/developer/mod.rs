@@ -406,6 +406,7 @@ mod tests {
         assert_eq!(origin_of(Some(format!("phone:{}", "a".repeat(65)))), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn long_socket_paths_are_refused() {
         assert!(socket_path("/tmp/a.sock").is_ok());

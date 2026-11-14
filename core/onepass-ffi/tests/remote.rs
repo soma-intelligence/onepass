@@ -3,6 +3,10 @@
 //! in step by a fake sync (pending rows of one into the base of the other,
 //! as the server would), the transport played by passing the blobs.
 //! Synthetic data only. Run with `--features dev-fast-kdf`.
+//!
+//! Unix only: these tests drive the socket hosts (SSH agent, MCP, bridge),
+//! whose Windows named pipes come with milestone X3.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
