@@ -33,6 +33,9 @@ enum SettingsTiming {
 /// iPhone and iPad, tabs in the Mac `Settings` window.
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general, security, autofill, sync, accounts, vaults, contacts, family, devices, travel, crypto, developer, about
+    #if DEBUG
+    case iconCheck
+    #endif
 
     var id: String { rawValue }
 
@@ -51,6 +54,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .crypto: "crypto.title"
         case .developer: "Développeur"
         case .about: "À propos"
+        #if DEBUG
+        case .iconCheck: "Icônes à vérifier"
+        #endif
         }
     }
 
@@ -69,6 +75,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .crypto: "bitcoinsign.circle"
         case .developer: "chevron.left.forwardslash.chevron.right"
         case .about: "info.circle"
+        #if DEBUG
+        case .iconCheck: "photo.badge.checkmark"
+        #endif
         }
     }
 
@@ -87,12 +96,18 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .crypto: Color(red: 0.95, green: 0.58, blue: 0.10)
         case .developer: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
         case .about: Theme.accent
+        #if DEBUG
+        case .iconCheck: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
+        #endif
         }
     }
 
     /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab.
     var artwork: String? {
-        "settings-\(rawValue)"
+        #if DEBUG
+        if self == .iconCheck { return nil }
+        #endif
+        return "settings-\(rawValue)"
     }
 
     /// The page's content, without its own navigation container.
@@ -116,6 +131,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             EmptyView()
             #endif
         case .about: AboutSettings()
+        #if DEBUG
+        case .iconCheck: IconCheckSettings()
+        #endif
         }
     }
 }
@@ -173,6 +191,9 @@ struct SettingsView: View {
                 }
                 Section {
                     row(.about)
+                    #if DEBUG
+                    row(.iconCheck)
+                    #endif
                 } footer: {
                     Text("settings.onepassOpenSourceAgpl")
                         .frame(maxWidth: .infinity)
@@ -342,6 +363,9 @@ struct MacSettingsView: View {
                         }
                         Section {
                             row(.about)
+                            #if DEBUG
+                            row(.iconCheck)
+                            #endif
                         }
                     }
                     .listStyle(.sidebar)

@@ -78,14 +78,28 @@ public final class ItemIconResolver: Sendable {
 
     /// Same, with the item's title for the pack's brand names (an item without a web address too).
     public func cachedIcon(for url: String?, title: String, chosen: Data? = nil) -> Data? {
-        if let chosen { return chosen }
-        guard enabled() else { return nil }
-        if let url, let packed = packIcon(for: url) { return packed }
-        if let named = pack?.icon(forTitle: title)?.data { return named }
-        guard let url else { return nil }
-        if let parent = parentBrandIcon(for: url, byName: true) { return parent }
-        return Self.pick(chosen: nil, pack: nil, site: notRejected(site.cachedIcon(for: url), url: url))
-            ?? parentBrandIcon(for: url, byName: false)
+        cachedSource(for: url, title: title, chosen: chosen).data
+    }
+
+    /// The icon `cachedIcon(for:title:chosen:)` gives and the step of the order that won, for the
+    /// Debug report of icons to check (`IconSourceReport`). Cache only: never a request.
+    public func cachedSource(for url: String?, title: String, chosen: Data? = nil) -> (data: Data?, source: IconSource) {
+        if let chosen { return (chosen, .chosen) }
+        guard enabled() else { return (nil, .monogram) }
+        if let url, let packed = packIcon(for: url) { return (packed, .pack) }
+        if let named = pack?.icon(forTitle: title)?.data { return (named, .pack) }
+        guard let url else { return (nil, .monogram) }
+        if let parent = parentBrandIcon(for: url, byName: true) { return (parent, .parentBrand) }
+        if let shown = Self.pick(chosen: nil, pack: nil, site: notRejected(site.cachedIcon(for: url), url: url)) {
+            return (shown, .site)
+        }
+        if let parent = parentBrandIcon(for: url, byName: false) { return (parent, .parentBrand) }
+        return (nil, .monogram)
+    }
+
+    /// Same, for an item's chosen icon key (read from memory).
+    public func cachedSource(for url: String?, title: String, custom key: CustomIconKey?) -> (data: Data?, source: IconSource) {
+        cachedSource(for: url, title: title, chosen: chosenIcon(key))
     }
 
     /// Same, the chosen icon first when it is in memory. A row shows this on its first frame and
