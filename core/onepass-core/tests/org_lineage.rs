@@ -16,9 +16,9 @@ use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::generator::Wordlist;
 use onepass_core::org::{
     MAX_ORG_RECORD_BYTES, MemberRef, ORG_CHANGE_DOMAIN, ORG_GENESIS_DOMAIN, OrgChangeBody,
-    OrgChangeKind, OrgGenesisBody, OrgId, OrgIdentityPublic, OrgKeyset, OrgLineage, OrgRecordBody,
-    SealedOrgKeyset, SignedOrgRecord, add_owner_signature, fingerprint_words, open_org_keyset,
-    org_fingerprint, quorum, seal_org_keyset, sign_org_change, sign_org_genesis, verify_org_chain,
+    OrgChangeKind, OrgGenesisBody, OrgId, OrgKeyset, OrgLineage, OrgRecordBody, SealedOrgKeyset,
+    SignedOrgRecord, add_owner_signature, fingerprint_words, open_org_keyset, org_fingerprint,
+    quorum, seal_org_keyset, sign_org_change, sign_org_genesis, verify_org_chain,
     verify_org_genesis,
 };
 use onepass_core::{Error, Id, IntegrityError};
@@ -94,16 +94,37 @@ fn joined(words: &[[String; 5]; 4]) -> String {
 }
 
 #[test]
-fn fingerprint_is_prefixed_hash() {
-    let p = org_secrets().public(OrgId([1; 16])).unwrap();
+fn fingerprint_is_prefixed_genesis_hash() {
+    let w = world();
+    let OrgRecordBody::Genesis(g) = &w.genesis.body else {
+        panic!("genesis expected")
+    };
+    let genesis_hash = sha256(&[
+        b"onepass/org-genesis/v1",
+        &postcard::to_allocvec(g).unwrap(),
+    ]);
+    assert_eq!(genesis_hash, w.genesis.hash());
     assert_eq!(
-        org_fingerprint(&p),
-        sha256(&[b"onepass/org-fpr/v1", &postcard::to_allocvec(&p).unwrap()])
+        org_fingerprint(g),
+        sha256(&[b"onepass/org-fingerprint/v1", &genesis_hash])
     );
-    assert_ne!(
-        org_fingerprint(&p),
-        org_fingerprint(&org_secrets().public(OrgId([2; 16])).unwrap())
-    );
+    // X16: every genesis field counts, the owners included.
+    let mut variants = Vec::new();
+    let mut v = g.clone();
+    v.org_id = OrgId([2; 16]);
+    variants.push(v);
+    let mut v = g.clone();
+    v.name = "Acme bis".to_string();
+    variants.push(v);
+    let mut v = g.clone();
+    v.owners[0].devices.push([0xEE; 32]);
+    variants.push(v);
+    let mut v = g.clone();
+    v.created_at += 1;
+    variants.push(v);
+    for v in &variants {
+        assert_ne!(org_fingerprint(v), org_fingerprint(g));
+    }
 }
 
 #[test]
@@ -318,14 +339,14 @@ fn quorum_counts() {
 fn genesis_signed_by_identity_and_owner_verifies() {
     let w = world();
     let l = verify_org_genesis(&w.genesis).unwrap();
-    let public = OrgIdentityPublic {
-        org_id: ORG,
-        identity_pub: identity().verifying_key(),
-        audit_kem_pub: org_secrets().audit.public().unwrap(),
-    };
     assert_eq!(l.org_id, ORG);
     assert_eq!(l.name, "Acme");
-    assert_eq!(l.fingerprint, org_fingerprint(&public));
+    assert_eq!(
+        l.fingerprint,
+        sha256(&[b"onepass/org-fingerprint/v1", &w.genesis.hash()])
+    );
+    assert_eq!(l.identity_pub, identity().verifying_key());
+    assert_eq!(l.audit_kem_pub, org_secrets().audit.public().unwrap());
     assert_eq!(l.heads.len(), 1);
     assert_eq!(l.head().generation, 0);
     assert_eq!(l.head().hash, w.genesis.hash());

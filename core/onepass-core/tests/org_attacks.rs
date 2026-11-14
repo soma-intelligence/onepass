@@ -661,6 +661,57 @@ fn fake_genesis(org_id: OrgId) -> SignedOrgRecord {
     .unwrap()
 }
 
+/// X16 (final review C1): a holder of the org identity secret (any owner,
+/// or an owner removed later) signs a twin genesis with the real org id,
+/// identity and audit key, naming itself sole owner. The twin verifies on
+/// its own, but its fingerprint is another one, so MDM and DNS pins of
+/// the real org refuse it and a TOFU pin shows another fingerprint.
+#[test]
+fn twin_genesis_same_identity_refused() {
+    let s = std_org();
+    let real_fpr = s.lineage.fingerprint;
+    let secrets = org_secrets();
+    let sd = server_device();
+    let twin = sign_org_genesis(
+        OrgGenesisBody {
+            format: 1,
+            org_id: STD_ORG,
+            name: "Acme".to_string(),
+            org_identity_pub: secrets.identity.verifying_key(),
+            audit_kem_pub: secrets.audit.public().unwrap(),
+            owners: vec![member_ref(SERVER, &[sd])],
+            created_at: 1_700_000_000,
+        },
+        &secrets.identity,
+        &[(&sd.public, &sd.keys)],
+    )
+    .unwrap();
+    let twin_lineage = verify_org_genesis(&twin).unwrap();
+    assert_eq!(twin_lineage.identity_pub, s.lineage.identity_pub);
+    assert_eq!(twin_lineage.audit_kem_pub, s.lineage.audit_kem_pub);
+    assert_ne!(twin_lineage.fingerprint, real_fpr);
+    for source in [PinSource::Mdm, PinSource::Dns] {
+        integrity(
+            pin_org(source, Some(real_fpr), &twin.encode()),
+            IntegrityError::OrgPinMismatch,
+            "twin genesis under a pin of the real org",
+        );
+    }
+    let tofu = pin_org(PinSource::Tofu { verified: false }, None, &twin.encode()).unwrap();
+    integrity(
+        tofu.confirm_tofu(&real_fpr),
+        IntegrityError::OrgPinMismatch,
+        "TOFU on the twin, confirmed against the real fingerprint",
+    );
+    // A device already pinned on the real org refuses the twin as well.
+    let pinned = pin_org(PinSource::Dns, Some(real_fpr), &s.genesis.encode()).unwrap();
+    integrity(
+        pinned.check_served_genesis(&twin.encode()),
+        IntegrityError::OrgPinMismatch,
+        "twin served to a pinned device",
+    );
+}
+
 #[test]
 fn a6_server_swaps_org_at_join() {
     let s = std_org();

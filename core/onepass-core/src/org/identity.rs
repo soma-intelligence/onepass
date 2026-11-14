@@ -1,12 +1,14 @@
 //! The org identity: the org's own SLH-DSA identity key and its audit KEM
-//! key, the public half members pin, its fingerprint and the 20 words a
-//! human compares out of band.
+//! key, its public half, the org fingerprint members pin (over the whole
+//! genesis) and the 20 words a human compares out of band.
 
 use serde::{Deserialize, Serialize};
 use sha3::Shake256;
 use sha3::digest::{ExtendableOutput, Update, XofReader};
 
-use super::{ORG_FPR_PREFIX, ORG_WORDS_PREFIX, OrgId, sha256};
+use super::{
+    ORG_FINGERPRINT_PREFIX, ORG_GENESIS_DOMAIN, ORG_WORDS_PREFIX, OrgGenesisBody, OrgId, sha256,
+};
 use crate::Result;
 use crate::crypto::{HybridKemPublic, HybridKemSecret, IdentityKey, IdentityVerifyingKey};
 use crate::generator::{Wordlist, words_of};
@@ -36,7 +38,8 @@ impl OrgSecrets {
     }
 }
 
-/// What members pin about their org.
+/// The org's public keys (the fingerprint covers them through the
+/// genesis, `org_fingerprint`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrgIdentityPublic {
     pub org_id: OrgId,
@@ -44,10 +47,17 @@ pub struct OrgIdentityPublic {
     pub audit_kem_pub: HybridKemPublic,
 }
 
-/// `SHA-256("onepass/org-fpr/v1" || postcard(p))`.
-pub fn org_fingerprint(p: &OrgIdentityPublic) -> [u8; 32] {
-    let enc = postcard::to_allocvec(p).expect("org identity public encodes");
-    sha256(&[ORG_FPR_PREFIX, &enc])
+/// The org fingerprint (X16): `SHA-256("onepass/org-fingerprint/v1" ||
+/// genesis hash)`, where the genesis hash is
+/// `SHA-256(ORG_GENESIS_DOMAIN || postcard(genesis))`
+/// (`SignedOrgRecord::hash`). It commits to the org id, the identity key,
+/// the audit key, the name, the owners and the creation time, so a twin
+/// genesis signed by a holder of the identity secret under other owners
+/// has another fingerprint.
+pub fn org_fingerprint(genesis: &OrgGenesisBody) -> [u8; 32] {
+    let enc = postcard::to_allocvec(genesis).expect("org genesis body encodes");
+    let genesis_hash = sha256(&[ORG_GENESIS_DOMAIN, &enc]);
+    sha256(&[ORG_FINGERPRINT_PREFIX, &genesis_hash])
 }
 
 /// Words per group and groups of `fingerprint_words`.

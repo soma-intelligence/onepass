@@ -19,9 +19,9 @@ use onepass_core::org::{
     OrgPin, OrgSecrets, PinSource, Role, RoleSet, RosterBody, SignedJoinRequest, SignedOrgRecord,
     SignedRoster, accept_next_roster, activate_member, dns_fingerprint, dns_txt_value,
     fingerprint_base32, fingerprint_words, founding_roster, invite_commit, invite_member,
-    join_code, join_code_of, member_kem_hash, org_fingerprint, parse_dns_txt, pin_org,
-    scim_id_hash, sign_join_request, sign_org_change, sign_org_genesis, sign_roster,
-    verify_join_request, verify_org_genesis,
+    join_code, join_code_of, member_kem_hash, parse_dns_txt, pin_org, scim_id_hash,
+    sign_join_request, sign_org_change, sign_org_genesis, sign_roster, verify_join_request,
+    verify_org_genesis,
 };
 use onepass_core::repo::ManagedGenesis;
 use onepass_core::{Error, Id, IntegrityError};
@@ -65,7 +65,7 @@ fn fx() -> &'static Fx {
         )
         .unwrap();
         let lineage = verify_org_genesis(&genesis).unwrap();
-        let org_fpr = org_fingerprint(&secrets.public(ORG).unwrap());
+        let org_fpr = sha256(&[b"onepass/org-fingerprint/v1", &genesis.hash()]);
         let r1 = founding_roster(&lineage).unwrap();
         let mut r2 = r1.next().unwrap();
         let u_id = Id([U; 16]);

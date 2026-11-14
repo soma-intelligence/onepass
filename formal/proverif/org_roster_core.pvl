@@ -12,12 +12,15 @@
      grantable, accept_next_roster ; décisions X7 à X11 du registre
      d'exécution du plan ;
    - core/onepass-core/src/org/pin.rs : pin_org, advance_lineage (une
-     empreinte différente est OrgPinMismatch, jamais suivie).
+     empreinte différente est OrgPinMismatch, jamais suivie) ;
+   - core/onepass-core/src/org/identity.rs : org_fingerprint, empreinte
+     de la genèse entière (X16).
 
    Distribution (spec 15, A11, T-ADM) :
-   - identité de l'organisation skI : sa clé publique est épinglée par son
-     empreinte (MDM ou DNS). Les propriétaires peuvent ouvrir l'identité
-     (D4) : elle fuit avec O3.
+   - identité de l'organisation skI : la genèse qui la nomme est épinglée
+     par son empreinte (MDM ou DNS), calculée sur la genèse entière (clé
+     d'identité et propriétaires, X16). Les propriétaires peuvent ouvrir
+     l'identité (D4) : elle fuit avec O3.
    - O1 : propriétaire, appareil dO1 honnête, plus un ancien appareil
      dO1old que le roster épinglé liste encore mais qu'aucune tête de
      lignée ne nomme (X11), perdu : sa clé est à l'attaquant.
@@ -63,9 +66,13 @@
      (n = 2), les seules générations du modèle ; les autres n ne sont pas
      modélisés (testés par one_owner_of_two_is_refused,
      two_owners_of_three_pass).
-   - L'épingle est la comparaison de l'empreinte fpr(clé d'identité) avec
-     la valeur épinglée ; la provenance de la valeur (MDM, DNS, TOFU) est
-     hors modèle.
+   - L'épingle est la comparaison de l'empreinte fpr(genèse) avec la
+     valeur épinglée, où la genèse genesis(clé d'identité, propriétaires)
+     porte la clé et l'ensemble des propriétaires (X16) ; la provenance de
+     la valeur (MDM, DNS, TOFU) est hors modèle. Le client lignée reçoit
+     la clé d'identité de la genèse épinglée (lineage.identity_pub). Les
+     signatures des propriétaires sur la genèse (D5) ne sont pas
+     modélisées : l'attaquant tient déjà les appareils de O3.
 
    Limites documentées (propriétés que ces abstractions ne capturent pas) :
    - Chaîne du roster (seq, prev_hash, fourche, retour en arrière, trou
@@ -86,7 +93,9 @@
      O3 ne détient que Owner, ce chemin n'est pas exercé.
    - fpr est un constructeur libre : pas de collision d'empreinte
      (hypothèse sur SHA-256). La signature de genèse n'ajoute rien à
-     l'épingle dans ce scénario, puisque skI fuit avec O3.
+     l'épingle dans ce scénario, puisque skI fuit avec O3 : c'est
+     l'empreinte de la genèse entière qui refuse une genèse jumelle (même
+     identité, autres propriétaires, requête de la genèse jumelle).
    - R6 (personne ne donne Provisioner) est vraie aussi parce qu'aucun
      signataire honnête ne donne ce rôle ; la mutation qui retire la
      règle de l'ensemble englobant rend R6 fausse (vérifiée à la revue),
@@ -142,10 +151,11 @@ const dev2: bitstring.
 fun add(bitstring): bitstring [data].
 fun grant(bitstring, bitstring): bitstring [data].
 fun owners_changed(bitstring, bitstring): bitstring [data].
-fun genesis(bitstring): bitstring [data].
+fun genesis(pkey, bitstring): bitstring [data].
 
-(* Empreinte de la clé d'identité (pin.rs, SHA-256 sur la genèse). *)
-fun fpr(pkey): bitstring.
+(* Empreinte de l'organisation (identity.rs, org_fingerprint, X16) :
+   SHA-256 sur le hash de la genèse entière. *)
+fun fpr(bitstring): bitstring.
 
 (* Roster épinglé : clé d'appareil, compte, rôle. *)
 table pinned_roles(pkey, bitstring, bitstring).
@@ -159,7 +169,8 @@ event AddAcceptedFrom(bitstring, bitstring, bitstring).
 event MemberAccepted(bitstring, bitstring).
 event GrantAccepted(bitstring, bitstring, bitstring).
 event ChangeAcceptedBy(bitstring, bitstring, bitstring).
-event GenesisPinned(bitstring, pkey).
+event GenesisPinned(bitstring, pkey, bitstring).
+event GenesisCandidate(bitstring, pkey, bitstring).
 event QuorumCandidate(bitstring, bitstring, bitstring, bitstring).
 event LineageAccepted(bitstring, bitstring).
 
@@ -215,21 +226,26 @@ let RosterClient(d: bitstring, check_roles: bool) =
   else
     Accept(d, sm, r, b).
 
-(* Client qui épingle la genèse servie (pin_org) : l'empreinte doit être
-   celle épinglée, sinon OrgPinMismatch, jamais suivie. *)
+(* Client qui épingle la genèse servie (pin_org) : l'empreinte de la
+   genèse entière doit être celle épinglée, sinon OrgPinMismatch, jamais
+   suivie. La signature est vérifiée d'abord (pin_org vérifie la genèse
+   avant de comparer) : GenesisCandidate marque une genèse signée qui
+   arrive à la comparaison. *)
 let PinClient(d: bitstring, pinned: bitstring) =
-  in(c, (vkG: pkey, gb: bitstring, sG: bitstring));
-  if fpr(vkG) = pinned then
+  in(c, (gb: bitstring, sG: bitstring));
+  let genesis(vkG, ow) = gb in
   if verify_dom(vkG, dom_org_genesis, gb, sG) then
-  event GenesisPinned(d, vkG).
+  event GenesisCandidate(d, vkG, ow);
+  if fpr(gb) = pinned then
+  event GenesisPinned(d, vkG, ow).
 
 (* Client qui applique un changement de lignée (OrgLineage::apply,
    verify_signatures) : identité épinglée, deux appareils de deux comptes
    distincts de la génération parente. *)
-let LineageClient(d: bitstring, pinned: bitstring) =
+let LineageClient(d: bitstring, pinned_identity: pkey) =
   in(c, (vkI: pkey, par: bitstring, nh: bitstring, sI: bitstring,
          vk1: pkey, s1: bitstring, vk2: pkey, s2: bitstring));
-  if fpr(vkI) = pinned then
+  if vkI = pinned_identity then
   let b = owners_changed(par, nh) in
   if verify_dom(vkI, dom_org_change, b, sI) then
   if verify_dom(vk1, dom_org_change, b, s1) then
@@ -271,7 +287,7 @@ let System(check_roles: bool) =
   insert pinned_roles(pk(dU), acct_um, role_aud);
   insert pinned_roles(pk(dP), acct_prov, role_prov);
   (* Genèse et changement g0 -> g1 signés par l'identité. *)
-  out(c, (pk(skI), genesis(g0), sign_dom(skI, dom_org_genesis, genesis(g0))));
+  out(c, (genesis(pk(skI), g0), sign_dom(skI, dom_org_genesis, genesis(pk(skI), g0))));
   out(c, sign_dom(skI, dom_org_change, owners_changed(g0, g1)));
   ( HonestSigner(dA, add(bob))
   | HonestSigner(dO1, grant(bob, role_admin))
@@ -279,5 +295,5 @@ let System(check_roles: bool) =
   | HonestOwnerApprove(dO2, owners_changed(g0, g1))
   | !RosterClient(dev1, check_roles)
   | !RosterClient(dev2, check_roles)
-  | !PinClient(dev1, fpr(pk(skI)))
-  | !LineageClient(dev1, fpr(pk(skI))) ).
+  | !PinClient(dev1, fpr(genesis(pk(skI), g0)))
+  | !LineageClient(dev1, pk(skI)) ).

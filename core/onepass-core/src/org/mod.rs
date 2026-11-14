@@ -51,7 +51,8 @@ impl OrgId {
 }
 
 pub const ORG_FORMAT: u8 = 1;
-pub const ORG_FPR_PREFIX: &[u8] = b"onepass/org-fpr/v1";
+/// X16: the fingerprint commits to the whole genesis.
+pub const ORG_FINGERPRINT_PREFIX: &[u8] = b"onepass/org-fingerprint/v1";
 pub const ORG_GENESIS_DOMAIN: &[u8] = b"onepass/org-genesis/v1";
 pub const ORG_CHANGE_DOMAIN: &[u8] = b"onepass/org-change/v1";
 pub const ORG_ROSTER_DOMAIN: &[u8] = b"onepass/org-roster/v1";
@@ -96,7 +97,7 @@ mod tests {
 
     #[test]
     fn labels_are_exact() {
-        assert_eq!(ORG_FPR_PREFIX, b"onepass/org-fpr/v1");
+        assert_eq!(ORG_FINGERPRINT_PREFIX, b"onepass/org-fingerprint/v1");
         assert_eq!(ORG_GENESIS_DOMAIN, b"onepass/org-genesis/v1");
         assert_eq!(ORG_CHANGE_DOMAIN, b"onepass/org-change/v1");
         assert_eq!(ORG_ROSTER_DOMAIN, b"onepass/org-roster/v1");

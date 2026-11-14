@@ -15,8 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     DeviceFpr, MAX_MEMBER_DEVICES, MAX_ORG_NAME_CHARS, MAX_ORG_OWNERS, MAX_ORG_RECORD_BYTES,
-    ORG_CHANGE_DOMAIN, ORG_FORMAT, ORG_GENESIS_DOMAIN, OrgId, OrgIdentityPublic, org_fingerprint,
-    sha256,
+    ORG_CHANGE_DOMAIN, ORG_FORMAT, ORG_GENESIS_DOMAIN, OrgId, org_fingerprint, sha256,
 };
 use crate::crypto::sign::{MLDSA_PUBLIC_LEN, SLH_PUBLIC_LEN};
 use crate::crypto::{
@@ -452,11 +451,7 @@ pub fn verify_org_genesis(rec: &SignedOrgRecord) -> Result<OrgLineage> {
         return Err(bad("org genesis expected"));
     };
     verify_signatures(rec, &g.org_identity_pub, &g.owners)?;
-    let fingerprint = org_fingerprint(&OrgIdentityPublic {
-        org_id: g.org_id,
-        identity_pub: g.org_identity_pub.clone(),
-        audit_kem_pub: g.audit_kem_pub.clone(),
-    });
+    let fingerprint = org_fingerprint(g);
     Ok(OrgLineage {
         org_id: g.org_id,
         fingerprint,

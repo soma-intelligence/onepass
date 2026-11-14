@@ -27,9 +27,8 @@ use serde::{Deserialize, Serialize};
 
 use super::lineage::{check_identity_pub, check_kem, check_name, check_owners};
 use super::{
-    ORG_PIN_VERSION, OrgHeadInfo, OrgIdentityPublic, OrgLineage, OrgRecordBody, RosterBody,
-    SignedOrgRecord, SignedRoster, accept_first_roster, accept_roster_chain, org_fingerprint,
-    verify_org_genesis,
+    ORG_PIN_VERSION, OrgHeadInfo, OrgLineage, OrgRecordBody, RosterBody, SignedOrgRecord,
+    SignedRoster, accept_first_roster, accept_roster_chain, org_fingerprint, verify_org_genesis,
 };
 use crate::lineage::decode_strict_with;
 use crate::{Error, IntegrityError, Result, ValidationError};
@@ -155,11 +154,7 @@ fn genesis_fingerprint(rec: &SignedOrgRecord) -> Option<[u8; 32]> {
     let OrgRecordBody::Genesis(g) = &rec.body else {
         return None;
     };
-    Some(org_fingerprint(&OrgIdentityPublic {
-        org_id: g.org_id,
-        identity_pub: g.org_identity_pub.clone(),
-        audit_kem_pub: g.audit_kem_pub.clone(),
-    }))
+    Some(org_fingerprint(g))
 }
 
 /// Pins the org whose genesis the server served. MDM and DNS need the

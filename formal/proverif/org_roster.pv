@@ -32,7 +32,14 @@ query d: bitstring, b: bitstring; event(ChangeAcceptedBy(d, o3, b)).
    signe rien au nom de O1. *)
 query d: bitstring; event(ChangeAcceptedBy(d, o1, add(mallory))).
 (* Épingle : une genèse épinglée porte l'identité de l'organisation. *)
-query d: bitstring, vk: pkey; event(GenesisPinned(d, vk)) ==> event(OrgIdentity(vk)).
+query d: bitstring, vk: pkey, ow: bitstring;
+  event(GenesisPinned(d, vk, ow)) ==> event(OrgIdentity(vk)).
+(* Épingle (X16) : une genèse jumelle, signée avec l'identité qui fuit
+   avec O3 mais qui nomme d'autres propriétaires, n'est jamais épinglée. *)
+query d: bitstring, vk: pkey; event(GenesisPinned(d, vk, g_evil)).
+(* Épingle (X16) : la genèse épinglée nomme les propriétaires de g0. *)
+query d: bitstring, vk: pkey, ow: bitstring;
+  event(GenesisPinned(d, vk, ow)) ==> ow = g0.
 (* Lignée : quorum de deux comptes distincts, O3 et l'identité compromis. *)
 query d: bitstring, b: bitstring;
   event(LineageAccepted(d, b)) ==> event(HonestOwnerSigned(b)).
@@ -44,11 +51,14 @@ query d: bitstring; event(GrantAccepted(d, bob, role_admin)).
 (* Sanité : U donne Auditor, qu'il détient, à Mallory. *)
 query d: bitstring; event(GrantAccepted(d, mallory, role_aud)).
 (* Sanité : la genèse honnête est épinglée. *)
-query d: bitstring, vk: pkey; event(GenesisPinned(d, vk)).
+query d: bitstring, vk: pkey, ow: bitstring; event(GenesisPinned(d, vk, ow)).
 (* Sanité : le changement g0 -> g1 de O1 et O2 est accepté. *)
 query d: bitstring; event(LineageAccepted(d, owners_changed(g0, g1))).
 (* Témoin : deux appareils de O3 sur un corps choisi par l'attaquant
    arrivent au test des comptes distincts, qui seul les arrête. *)
 query d: bitstring; event(QuorumCandidate(d, owners_changed(g0, g_evil), o3, o3)).
+(* Témoin (X16) : une genèse jumelle signée avec l'identité qui fuit
+   arrive à la comparaison d'empreinte, qui seule l'arrête. *)
+query d: bitstring, vk: pkey; event(GenesisCandidate(d, vk, g_evil)).
 
 process System(true)
