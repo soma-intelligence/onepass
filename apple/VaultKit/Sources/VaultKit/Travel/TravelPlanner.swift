@@ -8,6 +8,7 @@ public enum TravelReason: Equatable, Sendable {
     case tripStarting(UUID)
     /// A flight found in the calendar (produced by phase B, never by `decide`).
     case flightFound(eventID: String, start: Date, end: Date)
+    /// The device is at an airport (a place signal, no trip planned for it).
     case atAirport
     /// The device clock moved to a time zone the owner is not used to.
     case newTimeZone
@@ -49,6 +50,8 @@ public struct TravelSignals: Sendable {
 public enum TravelPlannerError: Error, Equatable, Sendable {
     case endBeforeStart
     case tooManyTrips
+    /// The trip is already over: nothing to plan.
+    case alreadyEnded
 }
 
 /// Pure rules that pick the prompt from the trips, the time zone and the place (spec 2026-11-14,
@@ -70,9 +73,8 @@ public enum TravelPlanner {
         prune(&places, now: s.now)
 
         if s.travelling {
-            let finished = places.trips.contains {
-                $0.end <= s.now && $0.id != places.welcomeTripDismissed
-            }
+            // Only the most recent finished trip counts: an older one never brings the card back.
+            let finished = finishedTrip(places, now: s.now).map { $0.id != places.welcomeTripDismissed } ?? false
             return finished || s.place == .welcomeBack ? .welcomeBack : .none
         }
 
@@ -133,12 +135,30 @@ public enum TravelPlanner {
 
     /// The trip whose window (`start - leadTime ..< end`) holds `now`.
     public static func activeTrip(_ places: TravelPlaces, now: Date) -> TravelTrip? {
-        places.trips.first { now >= $0.start.addingTimeInterval(-leadTime) && now < $0.end }
+        // Overlapping trips: the one that starts first.
+        places.trips.filter { now >= $0.start.addingTimeInterval(-leadTime) && now < $0.end }
+            .min { $0.start < $1.start }
+    }
+
+    /// The most recent trip that is over (largest `end` not after `now`).
+    public static func finishedTrip(_ places: TravelPlaces, now: Date) -> TravelTrip? {
+        places.trips.filter { $0.end <= now }.max { $0.end < $1.end }
+    }
+
+    /// Travel Mode just turned on: a trip already over must not bring "back home?" later.
+    public static func entered(_ places: inout TravelPlaces, now: Date) {
+        if let id = finishedTrip(places, now: now)?.id { places.welcomeTripDismissed = id }
+    }
+
+    /// The "back home?" card was dismissed.
+    public static func dismissWelcome(_ places: inout TravelPlaces, now: Date) {
+        if let id = finishedTrip(places, now: now)?.id { places.welcomeTripDismissed = id }
     }
 
     /// Create the trip, or replace the one with the same `id`.
     public static func save(_ places: inout TravelPlaces, trip: TravelTrip, now: Date) throws {
         guard trip.end > trip.start else { throw TravelPlannerError.endBeforeStart }
+        guard trip.end > now else { throw TravelPlannerError.alreadyEnded }
         if let index = places.trips.firstIndex(where: { $0.id == trip.id }) {
             places.trips[index] = trip
             return

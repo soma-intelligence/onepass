@@ -186,4 +186,81 @@ struct TravelPlannerTests {
         #expect(TravelPlanner.decide(&places, Self.signals(place: nil)) == .none)
         #expect(!places.tripSnoozed)
     }
+
+    static func finished(endedAgo: TimeInterval) -> TravelTrip {
+        let end = now.addingTimeInterval(-endedAgo)
+        return TravelTrip(start: end.addingTimeInterval(-3 * 86_400), end: end)
+    }
+
+    @Test func twoFinishedTripsOnlyLatestCounts() {
+        var places = TravelPlaces()
+        let older = Self.finished(endedAgo: 5 * 86_400)
+        let latest = Self.finished(endedAgo: 86_400)
+        places.trips = [older, latest]
+        places.welcomeTripDismissed = latest.id
+        let s = Self.signals(travelling: true, timeZone: Self.tokyo)
+        #expect(TravelPlanner.decide(&places, s) == .none)
+        TravelPlanner.dismissWelcome(&places, now: Self.now)
+        #expect(places.welcomeTripDismissed == latest.id)
+    }
+
+    @Test func enteringAfterPastTripShowsNoWelcome() {
+        var places = TravelPlaces()
+        places.trips = [Self.finished(endedAgo: 3 * 86_400)]
+        TravelPlanner.entered(&places, now: Self.now)
+        let s = Self.signals(travelling: true, timeZone: Self.tokyo)
+        #expect(TravelPlanner.decide(&places, s) == .none)
+        let later = Self.now.addingTimeInterval(2 * 86_400)
+        let t = TravelTrip(start: Self.now, end: Self.now.addingTimeInterval(86_400))
+        places.trips.append(t)
+        #expect(
+            TravelPlanner.decide(&places, Self.signals(travelling: true, timeZone: Self.tokyo, now: later))
+                == .welcomeBack)
+    }
+
+    @Test func overlappingTripsEarliestStartWins() {
+        var places = TravelPlaces()
+        let late = Self.trip(startIn: 3600)
+        let early = Self.trip(startIn: -3600)
+        places.trips = [late, early]
+        #expect(TravelPlanner.activeTrip(places, now: Self.now)?.id == early.id)
+    }
+
+    @Test func snoozeSuppressesNewTimeZone() {
+        var places = Self.parisSeen(3)
+        places.tripSnoozed = true
+        #expect(TravelPlanner.decide(&places, Self.signals(timeZone: Self.tokyo)) == .none)
+    }
+
+    @Test func welcomeBackFromPlace() {
+        var places = TravelPlaces()
+        let s = Self.signals(travelling: true, place: .welcomeBack)
+        #expect(TravelPlanner.decide(&places, s) == .welcomeBack)
+    }
+
+    @Test func observeDropsDaysOlderThanSixtyDays() {
+        var places = TravelPlaces()
+        TravelPlanner.observe(&places, timeZone: Self.paris, at: Self.now, day: 100)
+        TravelPlanner.observe(&places, timeZone: Self.paris, at: Self.now, day: 160)
+        let days = places.usualOffsets.values.flatMap { $0 }
+        #expect(days == [160])
+    }
+
+    @Test func daysCountAcrossSeveralKeys() {
+        var places = TravelPlaces()
+        let today = Int(Self.now.timeIntervalSince1970 / 86_400)
+        TravelPlanner.observe(&places, timeZone: Self.paris, at: Self.now, day: today)
+        TravelPlanner.observe(&places, timeZone: Self.tokyo, at: Self.now, day: today - 1)
+        TravelPlanner.observe(&places, timeZone: Self.tokyo, at: Self.now, day: today - 2)
+        let ny = TimeZone(identifier: "America/New_York")!
+        #expect(TravelPlanner.decide(&places, Self.signals(timeZone: ny)) == .suggest(.newTimeZone, notify: false))
+    }
+
+    @Test func saveRejectsAnEndedTrip() {
+        var places = TravelPlaces()
+        let t = Self.finished(endedAgo: 1)
+        #expect(throws: TravelPlannerError.alreadyEnded) {
+            try TravelPlanner.save(&places, trip: t, now: Self.now)
+        }
+    }
 }
