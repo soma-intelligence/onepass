@@ -2,7 +2,9 @@
 //! member joins with a managed genesis (format 2) bound to the invitation's
 //! org and account, signed by the genesis creator device; the admin
 //! verifies it against the pinned roster and org fingerprint, then
-//! activates the member.
+//! activates the member. Then pinning (Task 10): MDM, DNS TXT or TOFU,
+//! and `OrgPin::advance`; a pinned fingerprint is never followed when it
+//! changes.
 
 mod org_common;
 
@@ -17,11 +19,13 @@ use onepass_core::lineage::{
 };
 use onepass_core::org::{
     Invitation, JoinRequestBody, MAX_ORG_RECORD_BYTES, MemberState, ORG_JOIN_CODE_PREFIX,
-    ORG_JOIN_DOMAIN, OrgGenesisBody, OrgId, OrgLineage, OrgMember, Role, RoleSet, RosterBody,
-    SignedJoinRequest, accept_next_roster, activate_member, fingerprint_words, founding_roster,
-    invite_commit, invite_member, join_code, join_code_of, member_kem_hash, org_fingerprint,
-    scim_id_hash, sign_join_request, sign_org_genesis, sign_roster, verify_join_request,
-    verify_org_genesis,
+    ORG_JOIN_DOMAIN, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgId, OrgLineage, OrgMember,
+    OrgPin, OrgSecrets, PinSource, Role, RoleSet, RosterBody, SignedJoinRequest, SignedOrgRecord,
+    SignedRoster, accept_next_roster, activate_member, dns_fingerprint, dns_txt_value,
+    fingerprint_base32, fingerprint_words, founding_roster, invite_commit, invite_member,
+    join_code, join_code_of, member_kem_hash, org_fingerprint, parse_dns_txt, pin_org,
+    scim_id_hash, sign_join_request, sign_org_change, sign_org_genesis, sign_roster,
+    verify_join_request, verify_org_genesis,
 };
 use onepass_core::repo::{ManagedGenesis, Repository};
 use onepass_core::store::{RecordKind, RecordStore, SqliteStore};
@@ -675,4 +679,575 @@ fn invite_member_is_fresh() {
     assert_eq!(m.account_kem_hash, [0; 32]);
     // A RecoveryOfficer invitation is refused (D8).
     assert!(invite_member(&f.r3, [0; 32], RoleSet::of(&[Role::RecoveryOfficer])).is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Pinning (plan B Task 10): MDM, DNS TXT, TOFU, and `OrgPin::advance`.
+// ---------------------------------------------------------------------------
+
+/// The pinning fixture org: owner P (one device), genesis g0, g1 (audit
+/// key rotated, same owners), rosters 1..=3 signed by P's device (r1 the
+/// founding roster under g0, r2 and r3 under g1), and `rogue`: the genesis
+/// of a new org identity under the same org id and owner.
+struct PinFx {
+    p: TestDevice,
+    fpr: [u8; 32],
+    g0: Vec<u8>,
+    g1: Vec<u8>,
+    rosters: Vec<Vec<u8>>,
+    rogue: Vec<u8>,
+}
+
+const P: u8 = 2;
+
+fn pin_fx() -> &'static PinFx {
+    static CELL: OnceLock<PinFx> = OnceLock::new();
+    CELL.get_or_init(|| {
+        let p = device(0x20);
+        let genesis_body = |secrets: &OrgSecrets| OrgGenesisBody {
+            format: 1,
+            org_id: ORG,
+            name: "Acme".to_string(),
+            org_identity_pub: secrets.identity.verifying_key(),
+            audit_kem_pub: secrets.audit.public().unwrap(),
+            owners: vec![member_ref(P, &[&p])],
+            created_at: 1_700_000_000,
+        };
+        let secrets = org_secrets();
+        let g0 = sign_org_genesis(
+            genesis_body(secrets),
+            &secrets.identity,
+            &[(&p.public, &p.keys)],
+        )
+        .unwrap();
+        let l0 = verify_org_genesis(&g0).unwrap();
+        let g1 = sign_org_change(
+            OrgChangeBody {
+                format: 1,
+                org_id: ORG,
+                generation: 1,
+                parent: g0.hash(),
+                kind: OrgChangeKind::AuditKeyRotated {
+                    audit_kem_pub: kem_pool(2).1.clone(),
+                },
+                issued_at: 1_700_000_100,
+            },
+            &secrets.identity,
+            &[(&p.public, &p.keys)],
+        )
+        .unwrap();
+        let l1 = l0.apply(&g1).unwrap();
+        let r1 = founding_roster(&l0).unwrap();
+        let mut r2 = r1.next().unwrap();
+        r2.org_head = l1.head().hash;
+        let r3 = r2.next().unwrap();
+        let rosters = [r1, r2, r3]
+            .into_iter()
+            .map(|b| sign_roster(b, &p.public, &p.keys).unwrap().encode())
+            .collect();
+        let other = OrgSecrets::generate().unwrap();
+        let rogue = sign_org_genesis(
+            genesis_body(&other),
+            &other.identity,
+            &[(&p.public, &p.keys)],
+        )
+        .unwrap();
+        PinFx {
+            fpr: l0.fingerprint,
+            g0: g0.encode(),
+            g1: g1.encode(),
+            rosters,
+            rogue: rogue.encode(),
+            p,
+        }
+    })
+}
+
+fn mdm_pin() -> OrgPin {
+    let f = pin_fx();
+    pin_org(PinSource::Mdm, Some(f.fpr), &f.g0).unwrap()
+}
+
+/// `(seq, bytes)` of the fixture rosters `seqs`.
+fn rosters(seqs: &[u64]) -> Vec<(u64, Vec<u8>)> {
+    seqs.iter()
+        .map(|s| (*s, pin_fx().rosters[*s as usize - 1].clone()))
+        .collect()
+}
+
+fn lineage_list(gens: &[u64]) -> Vec<(u64, Vec<u8>)> {
+    let f = pin_fx();
+    gens.iter()
+        .map(|g| (*g, if *g == 0 { f.g0.clone() } else { f.g1.clone() }))
+        .collect()
+}
+
+fn invalid_format<T: std::fmt::Debug>(r: onepass_core::Result<T>, what: &str) {
+    match r {
+        Err(Error::InvalidFormat(_)) => {}
+        other => panic!("{what}: expected InvalidFormat, got {other:?}"),
+    }
+}
+
+fn validation<T: std::fmt::Debug>(r: onepass_core::Result<T>, what: &str) {
+    match r {
+        Err(Error::Validation(_)) => {}
+        other => panic!("{what}: expected Validation, got {other:?}"),
+    }
+}
+
+const F: [u8; 32] = [
+    0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
+];
+
+#[test]
+fn dns_txt_round_trip() {
+    let b32 = fingerprint_base32(&F);
+    assert_eq!(b32.len(), 52);
+    assert!(
+        b32.chars()
+            .all(|c| c.is_ascii_uppercase() || ('2'..='7').contains(&c))
+    );
+    assert_eq!(dns_txt_value(&F), format!("v=op1; org={b32}"));
+    assert_eq!(parse_dns_txt(&dns_txt_value(&F)).unwrap(), F);
+    let g = [0xA5; 32];
+    assert_eq!(parse_dns_txt(&dns_txt_value(&g)).unwrap(), g);
+}
+
+#[test]
+fn dns_txt_tolerant_forms() {
+    let b32 = fingerprint_base32(&F);
+    let lower = b32.to_ascii_lowercase();
+    assert_eq!(parse_dns_txt(&format!(" v=op1 ;org={lower} ")).unwrap(), F);
+    assert_eq!(parse_dns_txt(&format!("v=op1; org={b32}; x=1")).unwrap(), F);
+    assert_eq!(parse_dns_txt(&format!("v=op1; x=1; org={b32}")).unwrap(), F);
+    assert_eq!(parse_dns_txt(&format!("v = op1 ; org = {b32}")).unwrap(), F);
+    assert_eq!(parse_dns_txt(&format!("v=op1;\torg={b32};")).unwrap(), F);
+}
+
+#[test]
+fn dns_txt_refused_forms() {
+    let b32 = fingerprint_base32(&F);
+    let refused = [
+        ("missing v", format!("org={b32}")),
+        ("v=op2", format!("v=op2; org={b32}")),
+        ("v not first", format!("org={b32}; v=op1")),
+        ("org twice", format!("v=op1; org={b32}; org={b32}")),
+        ("v twice", format!("v=op1; v=op1; org={b32}")),
+        ("x twice", format!("v=op1; x=1; x=2; org={b32}")),
+        ("no org", "v=op1; x=1".to_string()),
+        ("51 chars", format!("v=op1; org={}", &b32[..51])),
+        ("53 chars", format!("v=op1; org={b32}A")),
+        ("padding", format!("v=op1; org={b32}====")),
+        ("non-base32 char", format!("v=op1; org={}1", &b32[..51])),
+        ("no equal sign", format!("v=op1; org {b32}")),
+        ("empty", String::new()),
+        (
+            "over 255 bytes",
+            format!("v=op1; org={b32}; x={}", "a".repeat(200)),
+        ),
+    ];
+    for (what, txt) in refused {
+        invalid_format(parse_dns_txt(&txt), what);
+    }
+    // 255 bytes exactly still parses.
+    let base = format!("v=op1; org={b32}; x=");
+    let exact = format!("{base}{}", "a".repeat(255 - base.len()));
+    assert_eq!(exact.len(), 255);
+    assert_eq!(parse_dns_txt(&exact).unwrap(), F);
+}
+
+#[test]
+fn dns_records_mixed_and_cased() {
+    let lowered = dns_txt_value(&F).to_ascii_lowercase();
+    assert_eq!(
+        dns_fingerprint(&["v=spf1 -all", &lowered]).unwrap(),
+        F,
+        "other TXT records are skipped, case does not matter"
+    );
+    assert_eq!(
+        dns_fingerprint(&["google-site-verification=abc", &dns_txt_value(&F), &lowered]).unwrap(),
+        F,
+        "two records naming the same org agree"
+    );
+    // A record of another version is not ours.
+    let v2 = format!("v=op2; org={}", fingerprint_base32(&[1; 32]));
+    assert_eq!(dns_fingerprint(&[&v2, &dns_txt_value(&F)]).unwrap(), F);
+    // A malformed v=op1 record is refused, not skipped.
+    let broken = format!("v=op1; org={}", &fingerprint_base32(&F)[..51]);
+    invalid_format(
+        dns_fingerprint(&[&dns_txt_value(&F), &broken]),
+        "malformed op1",
+    );
+}
+
+#[test]
+fn dns_records_disagree() {
+    let a = dns_txt_value(&F);
+    let b = dns_txt_value(&[0x42; 32]);
+    integrity(
+        dns_fingerprint(&[&a, &b]),
+        IntegrityError::OrgPinMismatch,
+        "two v=op1 records",
+    );
+    integrity(
+        dns_fingerprint(&[&b, "v=spf1 -all", &a]),
+        IntegrityError::OrgPinMismatch,
+        "two v=op1 records, any order",
+    );
+    assert!(matches!(dns_fingerprint(&[]), Err(Error::NotFound)));
+    assert!(matches!(
+        dns_fingerprint(&["v=spf1 -all", "hello"]),
+        Err(Error::NotFound)
+    ));
+}
+
+#[test]
+fn pin_mdm_and_dns_check_fingerprint() {
+    let f = pin_fx();
+    for source in [PinSource::Mdm, PinSource::Dns] {
+        let pin = pin_org(source, Some(f.fpr), &f.g0).unwrap();
+        assert_eq!(pin.source(), source);
+        assert_eq!(pin.fingerprint(), f.fpr);
+        integrity(
+            pin_org(source, Some([0x42; 32]), &f.g0),
+            IntegrityError::OrgPinMismatch,
+            "expected differs",
+        );
+        integrity(
+            pin_org(source, Some(f.fpr), &f.rogue),
+            IntegrityError::OrgPinMismatch,
+            "served genesis of another identity",
+        );
+        validation(pin_org(source, None, &f.g0), "no expected fingerprint");
+    }
+    // Not a genesis: never pinned.
+    assert!(pin_org(PinSource::Mdm, Some(f.fpr), &f.g1).is_err());
+    invalid_format(
+        pin_org(PinSource::Mdm, Some(f.fpr), &[0; 10]),
+        "garbage genesis",
+    );
+}
+
+#[test]
+fn pin_tofu_starts_unverified() {
+    let f = pin_fx();
+    let pin = pin_org(PinSource::Tofu { verified: false }, None, &f.g0).unwrap();
+    assert_eq!(pin.source(), PinSource::Tofu { verified: false });
+    assert_eq!(pin.fingerprint(), f.fpr);
+    validation(
+        pin_org(PinSource::Tofu { verified: true }, None, &f.g0),
+        "verified at pin time",
+    );
+    validation(
+        pin_org(PinSource::Tofu { verified: false }, Some(f.fpr), &f.g0),
+        "tofu with an expected fingerprint",
+    );
+    validation(
+        pin_org(PinSource::Tofu { verified: true }, Some(f.fpr), &f.g0),
+        "verified tofu with an expected fingerprint",
+    );
+}
+
+#[test]
+fn confirm_tofu() {
+    let f = pin_fx();
+    let pin = pin_org(PinSource::Tofu { verified: false }, None, &f.g0).unwrap();
+    let before = pin.clone();
+    integrity(
+        pin.confirm_tofu(&[0x42; 32]),
+        IntegrityError::OrgPinMismatch,
+        "wrong admin fingerprint",
+    );
+    assert_eq!(pin, before, "pin unchanged");
+    let ok = pin.confirm_tofu(&f.fpr).unwrap();
+    assert_eq!(ok.source(), PinSource::Tofu { verified: true });
+    assert_eq!(ok.lineage(), pin.lineage());
+    assert_eq!(ok.fingerprint(), pin.fingerprint());
+    // Confirming again changes nothing; an MDM pin has nothing to confirm.
+    assert_eq!(ok.confirm_tofu(&f.fpr).unwrap(), ok);
+    validation(mdm_pin().confirm_tofu(&f.fpr), "mdm pin");
+}
+
+#[test]
+fn fingerprint_change_never_followed() {
+    let f = pin_fx();
+    for pin in [
+        mdm_pin(),
+        pin_org(PinSource::Tofu { verified: false }, None, &f.g0).unwrap(),
+    ] {
+        pin.check_served_genesis(&f.g0).unwrap();
+        integrity(
+            pin.check_served_genesis(&f.rogue),
+            IntegrityError::OrgPinMismatch,
+            "check new identity",
+        );
+        integrity(
+            pin.advance(&[(0, f.rogue.clone())], &[]),
+            IntegrityError::OrgPinMismatch,
+            "advance onto new identity",
+        );
+        integrity(
+            pin.advance(&[(0, f.rogue.clone()), (1, f.g1.clone())], &rosters(&[1])),
+            IntegrityError::OrgPinMismatch,
+            "advance onto new identity with more records",
+        );
+        // Still the same after advancing for real.
+        let moved = pin
+            .advance(&lineage_list(&[0, 1]), &rosters(&[1, 2]))
+            .unwrap();
+        assert_eq!(moved.fingerprint(), f.fpr);
+        assert_eq!(moved.source(), pin.source());
+        integrity(
+            moved.check_served_genesis(&f.rogue),
+            IntegrityError::OrgPinMismatch,
+            "check after advance",
+        );
+        moved.check_served_genesis(&f.g0).unwrap();
+    }
+}
+
+#[test]
+fn advance_lineage_then_roster() {
+    let f = pin_fx();
+    let pin = mdm_pin();
+    let g1_hash = SignedOrgRecord::decode(&f.g1).unwrap().hash();
+    let moved = pin
+        .advance(&lineage_list(&[0, 1]), &rosters(&[1, 2]))
+        .unwrap();
+    assert_eq!(moved.head().generation, 1);
+    assert_eq!(moved.head().hash, g1_hash);
+    assert_eq!(moved.lineage().audit_kem_pub, kem_pool(2).1);
+    assert_eq!(moved.roster_seq(), Some(2));
+    assert_eq!(moved.roster().unwrap().org_head, g1_hash);
+    // The old pin is untouched.
+    assert_eq!(pin.head().generation, 0);
+    assert_eq!(pin.roster(), None);
+    // Next sync: the lineage from the pinned head, the roster from the
+    // pinned seq (the pinned roster again changes nothing).
+    let next = moved
+        .advance(&lineage_list(&[1]), &rosters(&[2, 3]))
+        .unwrap();
+    assert_eq!(next.roster_seq(), Some(3));
+    assert_eq!(next.head().generation, 1);
+    // Older rosters that chain to the pinned one are ignored.
+    let same = next
+        .advance(&lineage_list(&[1]), &rosters(&[1, 2, 3]))
+        .unwrap();
+    assert_eq!(same, next);
+    // An empty roster list keeps the roster.
+    assert_eq!(moved.advance(&lineage_list(&[1]), &[]).unwrap(), moved);
+    // A wrong key in the list is refused.
+    invalid_format(
+        moved.advance(&lineage_list(&[1]), &[(5, f.rosters[2].clone())]),
+        "roster key mismatch",
+    );
+    invalid_format(
+        pin.advance(&[(1, f.g0.clone())], &[]),
+        "lineage key mismatch",
+    );
+    // A roster seq 2 of another body: fork.
+    let other = {
+        let mut b = SignedRoster::decode(&f.rosters[1]).unwrap().body;
+        b.org_head = SignedOrgRecord::decode(&f.g0).unwrap().hash();
+        sign_roster(b, &f.p.public, &f.p.keys).unwrap().encode()
+    };
+    integrity(
+        next.advance(
+            &lineage_list(&[1]),
+            &[(2, other), (3, f.rosters[2].clone())],
+        ),
+        IntegrityError::OrgRosterFork,
+        "forked older roster",
+    );
+}
+
+#[test]
+fn advance_requires_pinned_head() {
+    let f = pin_fx();
+    let pin = mdm_pin();
+    integrity(
+        pin.advance(&[], &[]),
+        IntegrityError::OrgLineageRollback,
+        "empty lineage list",
+    );
+    integrity(
+        pin.advance(&lineage_list(&[1]), &[]),
+        IntegrityError::OrgLineageRollback,
+        "starting above the pinned generation",
+    );
+    let at1 = pin.advance(&lineage_list(&[0, 1]), &[]).unwrap();
+    integrity(
+        at1.advance(&lineage_list(&[0, 1]), &[]),
+        IntegrityError::OrgLineageRollback,
+        "starting below the pinned generation",
+    );
+    integrity(
+        at1.advance(&[], &[]),
+        IntegrityError::OrgLineageRollback,
+        "empty lineage list at g1",
+    );
+    // The pinned head with another hash: a fork.
+    let g1_other = {
+        let secrets = org_secrets();
+        let g0 = SignedOrgRecord::decode(&f.g0).unwrap();
+        sign_org_change(
+            OrgChangeBody {
+                format: 1,
+                org_id: ORG,
+                generation: 1,
+                parent: g0.hash(),
+                kind: OrgChangeKind::AuditKeyRotated {
+                    audit_kem_pub: kem_pool(1).1.clone(),
+                },
+                issued_at: 1_700_000_200,
+            },
+            &secrets.identity,
+            &[(&f.p.public, &f.p.keys)],
+        )
+        .unwrap()
+        .encode()
+    };
+    integrity(
+        at1.advance(&[(1, g1_other)], &[]),
+        IntegrityError::OrgLineageFork,
+        "pinned generation, other hash",
+    );
+    // A record repeated after the head: a rollback.
+    integrity(
+        pin.advance(&lineage_list(&[0, 1, 1]), &[]),
+        IntegrityError::OrgLineageRollback,
+        "repeated record",
+    );
+}
+
+#[test]
+fn advance_replayed_roster() {
+    let pin = mdm_pin()
+        .advance(&lineage_list(&[0, 1]), &rosters(&[1, 2, 3]))
+        .unwrap();
+    assert_eq!(pin.roster_seq(), Some(3));
+    integrity(
+        pin.advance(&lineage_list(&[1]), &rosters(&[2])),
+        IntegrityError::OrgRosterRollback,
+        "only seq 2 offered",
+    );
+    integrity(
+        pin.advance(&lineage_list(&[1]), &rosters(&[1, 2])),
+        IntegrityError::OrgRosterRollback,
+        "seq 1 and 2 offered",
+    );
+    // A replayed roster after a newer one in the list.
+    let at2 = mdm_pin()
+        .advance(&lineage_list(&[0, 1]), &rosters(&[1, 2]))
+        .unwrap();
+    integrity(
+        at2.advance(
+            &lineage_list(&[1]),
+            &[
+                (3, pin_fx().rosters[2].clone()),
+                (2, pin_fx().rosters[1].clone()),
+            ],
+        ),
+        IntegrityError::OrgRosterRollback,
+        "out of order list",
+    );
+}
+
+#[test]
+fn pin_round_trips() {
+    let pins = [
+        mdm_pin(),
+        pin_org(PinSource::Tofu { verified: false }, None, &pin_fx().g0).unwrap(),
+        mdm_pin()
+            .advance(&lineage_list(&[0, 1]), &rosters(&[1, 2]))
+            .unwrap(),
+    ];
+    for pin in &pins {
+        let b = pin.encode();
+        assert_eq!(b[0], 1);
+        assert_eq!(&OrgPin::decode(&b).unwrap(), pin);
+        let mut v2 = b.clone();
+        v2[0] = 2;
+        assert!(matches!(
+            OrgPin::decode(&v2),
+            Err(Error::InvalidFormat("org pin version"))
+        ));
+        let mut trailing = b.clone();
+        trailing.push(0);
+        invalid_format(OrgPin::decode(&trailing), "trailing byte");
+        invalid_format(OrgPin::decode(&b[..b.len() - 1]), "truncated");
+    }
+    invalid_format(OrgPin::decode(&[]), "empty");
+
+    // Corrupted local state never panics and is refused.
+    let pin = &pins[2];
+    let state = |lineage: &OrgLineage, roster: Option<&RosterBody>| {
+        let mut out = vec![1u8];
+        out.extend(postcard::to_allocvec(&(pin.source(), lineage, roster)).unwrap());
+        out
+    };
+    let good = state(pin.lineage(), pin.roster());
+    assert_eq!(good, pin.encode());
+    let mut no_heads = pin.lineage().clone();
+    no_heads.heads.clear();
+    invalid_format(OrgPin::decode(&state(&no_heads, None)), "no heads");
+    let mut gap = pin.lineage().clone();
+    gap.heads[1].generation = 2;
+    invalid_format(OrgPin::decode(&state(&gap, None)), "generation gap");
+    let mut no_genesis = pin.lineage().clone();
+    no_genesis.heads.remove(0);
+    invalid_format(OrgPin::decode(&state(&no_genesis, None)), "no genesis");
+    let mut no_owner = pin.lineage().clone();
+    no_owner.heads[1].owners.clear();
+    invalid_format(OrgPin::decode(&state(&no_owner, None)), "no owner");
+    let mut bad_name = pin.lineage().clone();
+    bad_name.name = String::new();
+    invalid_format(OrgPin::decode(&state(&bad_name, None)), "empty name");
+    let mut zero_fpr = pin.lineage().clone();
+    zero_fpr.fingerprint = [0; 32];
+    invalid_format(OrgPin::decode(&state(&zero_fpr, None)), "zero fingerprint");
+    let mut unknown_head = pin.roster().unwrap().clone();
+    unknown_head.org_head = [9; 32];
+    invalid_format(
+        OrgPin::decode(&state(pin.lineage(), Some(&unknown_head))),
+        "roster under an unknown head",
+    );
+    let mut other_org = pin.roster().unwrap().clone();
+    other_org.org_id = OrgId([8; 16]);
+    invalid_format(
+        OrgPin::decode(&state(pin.lineage(), Some(&other_org))),
+        "roster of another org",
+    );
+    let mut bad_roster = pin.roster().unwrap().clone();
+    bad_roster.seq = 0;
+    invalid_format(
+        OrgPin::decode(&state(pin.lineage(), Some(&bad_roster))),
+        "roster shape",
+    );
+    // An unknown source variant.
+    let mut bad_source = good.clone();
+    bad_source[1] = 9;
+    invalid_format(OrgPin::decode(&bad_source), "unknown source");
+}
+
+#[test]
+fn pin_accessors() {
+    let f = pin_fx();
+    let pin = mdm_pin();
+    assert_eq!(pin.fingerprint(), f.fpr);
+    assert_eq!(pin.source(), PinSource::Mdm);
+    assert_eq!(pin.head().generation, 0);
+    assert_eq!(pin.lineage().org_id, ORG);
+    assert_eq!(pin.lineage().fingerprint, f.fpr);
+    assert_eq!(pin.roster_seq(), None);
+    assert_eq!(pin.roster(), None);
+    let moved = pin
+        .advance(&lineage_list(&[0, 1]), &rosters(&[1, 2]))
+        .unwrap();
+    assert_eq!(moved.roster_seq(), Some(2));
+    assert_eq!(moved.head().generation, 1);
+    assert_eq!(moved.fingerprint(), f.fpr);
+    assert_eq!(moved.source(), PinSource::Mdm);
 }

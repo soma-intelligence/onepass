@@ -146,12 +146,12 @@ fn bad(what: &'static str) -> Error {
     Error::InvalidFormat(what)
 }
 
-fn check_kem(k: &HybridKemPublic, what: &'static str) -> Result<()> {
+pub(crate) fn check_kem(k: &HybridKemPublic, what: &'static str) -> Result<()> {
     HybridKemPublic::from_bytes(&k.to_bytes()).map_err(|_| bad(what))?;
     Ok(())
 }
 
-fn check_identity_pub(k: &IdentityVerifyingKey, what: &'static str) -> Result<()> {
+pub(crate) fn check_identity_pub(k: &IdentityVerifyingKey, what: &'static str) -> Result<()> {
     if k.as_bytes().len() != SLH_PUBLIC_LEN {
         return Err(bad(what));
     }
@@ -174,7 +174,7 @@ fn check_member_ref(m: &MemberRef) -> Result<()> {
 
 /// `1..=MAX_ORG_OWNERS` owners sorted by account id, unique, no device
 /// fingerprint named by two owners.
-fn check_owners(owners: &[MemberRef]) -> Result<()> {
+pub(crate) fn check_owners(owners: &[MemberRef]) -> Result<()> {
     if owners.is_empty() || owners.len() > MAX_ORG_OWNERS {
         return Err(bad("org owner count"));
     }
@@ -193,7 +193,7 @@ fn check_owners(owners: &[MemberRef]) -> Result<()> {
     Ok(())
 }
 
-fn check_name(name: &str) -> Result<()> {
+pub(crate) fn check_name(name: &str) -> Result<()> {
     let n = name.chars().count();
     if n == 0 || n > MAX_ORG_NAME_CHARS || name.chars().any(char::is_control) {
         return Err(bad("org name"));

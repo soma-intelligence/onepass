@@ -10,6 +10,7 @@ mod identity;
 mod join;
 mod keyset;
 mod lineage;
+mod pin;
 mod rebase;
 mod roster;
 mod rules;
@@ -25,6 +26,9 @@ pub use lineage::{
     MemberRef, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgHeadInfo, OrgLineage,
     OrgRecordBody, SignedOrgRecord, add_owner_signature, quorum, sign_org_change, sign_org_genesis,
     verify_org_chain, verify_org_genesis,
+};
+pub use pin::{
+    OrgPin, PinSource, dns_fingerprint, dns_txt_value, fingerprint_base32, parse_dns_txt, pin_org,
 };
 pub use rebase::{merge_members, rebase_roster};
 pub use roster::{
