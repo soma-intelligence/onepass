@@ -37,6 +37,12 @@ public enum ProfileFacts {
         return "\(biometry) \u{00B7} \(delay.label)"
     }
 
+    /// The Watchtower checks that are problems, most serious first: what the Security card lists.
+    /// A site offering a passkey or 2FA (`passkey_available`, `missing_2fa`) is a suggestion, left out.
+    public static let problemChecks = [
+        "compromised", "breached_site", "provider_exposed", "reused", "weak", "insecure_url",
+    ]
+
     /// The checks of `among` with findings, most findings first, ties in the order of `among`.
     public static func topIssues(_ report: FfiWatchtowerReport?, among checks: [String], limit: Int = 2) -> [Issue] {
         guard let report else { return [] }
