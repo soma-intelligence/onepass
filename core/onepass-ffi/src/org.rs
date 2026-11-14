@@ -21,9 +21,9 @@ use onepass_core::org::{
     OrgChangeKind, OrgGenesisBody, OrgHeadInfo, OrgId, OrgKeyset, OrgMember, OrgPin, OrgSecrets,
     PinSource, Role, RoleSet, RosterBody, RosterCheckpoint, SealedOrgKeyset, VerifiedJoin,
     activate_member, check_transition, dns_txt_value, fingerprint_words, founding_roster,
-    invite_member, join_code_of, member_kem_hash, open_org_keyset, parse_dns_txt, pin_org,
-    rebase_roster, seal_org_keyset, sign_join_request, sign_org_change, sign_org_genesis,
-    sign_roster, verify_org_genesis,
+    invite_member, join_code_of, open_org_keyset, parse_dns_txt, pin_org, rebase_roster,
+    seal_org_keyset, sign_join_request, sign_org_change, sign_org_genesis, sign_roster,
+    verify_org_genesis,
 };
 use onepass_core::repo::ManagedGenesis;
 use onepass_core::store::{RecordKind, RecordStore};
@@ -1662,9 +1662,13 @@ impl OrgClient {
     /// mirrors the new owners (X9, X10). New owners' credentials get
     /// `Manage`, best effort. The pin is refreshed first; a failure after
     /// the lineage write leaves it written, and calling `set_owners` again
-    /// (with the same set) completes it: when this device is a head owner
-    /// and the pinned roster does not mirror the head, that roster and the
-    /// grants are written and nothing else. `NotFound` before `pin`.
+    /// (with the same set) completes it: when this device is a head owner,
+    /// the pinned roster names an older org head and its `Owner` bits are
+    /// not on the head's owners, that roster and the grants are written and
+    /// nothing else; then a set other than the head's owners is
+    /// `Validation { owners, "pending change" }` (the mirror stays written).
+    /// The head's own owner set again changes nothing (no quorum needed).
+    /// `NotFound` before `pin`.
     pub fn set_owners(
         &self,
         session: Arc<Session>,
@@ -1693,9 +1697,19 @@ impl OrgClient {
             .iter()
             .any(|o| o.account_id == signer.account && o.devices.contains(&fpr));
         let roster = pin.roster().ok_or(OnePassError::NotFound)?;
-        if owner_here && !mirrors(roster, &head) {
+        let current: Vec<Id> = head.owners.iter().map(|o| o.account_id).collect();
+        if owner_here && unmirrored(roster, &head) {
             let _ = self.poll_joins(&mut **store);
             let pin = self.mirror_and_grant(&mut **store, &signer, &head)?;
+            if wanted != current {
+                // The earlier change is completed; another one waits for a
+                // new call (with the quorum the new head needs).
+                return Err(validation("owners", "pending change"));
+            }
+            return Ok(self.show(&pin));
+        }
+        if wanted == current {
+            // No change: nothing to sign.
             return Ok(self.show(&pin));
         }
         let sole = match head.owners.as_slice() {
@@ -1732,9 +1746,6 @@ impl OrgClient {
             refs.push(r.clone());
             added.push((r, joined));
         }
-        if refs == head.owners {
-            return Ok(self.show(&pin));
-        }
         let keyset = self
             .open_keyset(&mut **store, &session, &pin, signer.account)?
             .ok_or(OnePassError::NotFound)?;
@@ -1770,24 +1781,22 @@ impl OrgClient {
     }
 }
 
-/// `roster` mirrors `head`: it names that org head, and the members
-/// holding `Owner` are exactly its owners, each Active with the
-/// `MemberRef`'s identity, KEM hash and devices (X9, X10).
-fn mirrors(roster: &RosterBody, head: &OrgHeadInfo) -> bool {
+/// What a failed `set_owners` leaves (the one state its resume cures): the
+/// roster still names an older org head and the `Owner` bits are not on
+/// exactly the head's owners. Only what `mirror_owners` writes is compared,
+/// so any roster it wrote, or a head that moved without an owner change,
+/// is not "unmirrored".
+fn unmirrored(roster: &RosterBody, head: &OrgHeadInfo) -> bool {
     let owns = |a: Id| head.owners.iter().any(|o| o.account_id == a);
-    roster.org_head == head.hash
-        && roster
-            .members
+    let bits_follow = roster
+        .members
+        .iter()
+        .all(|m| m.roles.contains(Role::Owner) == owns(m.account_id))
+        && head
+            .owners
             .iter()
-            .all(|m| m.roles.contains(Role::Owner) == owns(m.account_id))
-        && head.owners.iter().all(|o| {
-            roster.member(o.account_id).is_some_and(|m| {
-                m.state == MemberState::Active
-                    && m.account_identity_pub.as_ref() == Some(&o.account_identity_pub)
-                    && m.account_kem_hash == member_kem_hash(&o.account_kem_pub)
-                    && m.devices == o.devices
-            })
-        })
+            .all(|o| roster.member(o.account_id).is_some());
+    roster.org_head != head.hash && !bits_follow
 }
 
 impl OrgClient {

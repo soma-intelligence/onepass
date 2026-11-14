@@ -2260,7 +2260,20 @@ mod lifecycle {
         assert_eq!(org.latest_seq(), seq);
         let own = b.own_client(&org);
         assert!(!b.keyset_available(&own));
-        // Called again with the same set: the roster and the grants follow.
+        // Called again with another set: the earlier change is completed
+        // first, the new one refused.
+        let carl = org.accepted("Carl", vec![]);
+        let seq = org.latest_seq();
+        let mut more = owners.clone();
+        more.push(carl.account());
+        assert_eq!(
+            org.set_owners(more),
+            Err(OnePassError::Validation {
+                field: "owners".into(),
+                reason: "pending change".into(),
+            })
+        );
+        // The same set again: already mirrored, nothing more written.
         let s = org.set_owners(owners.clone()).unwrap();
         assert_eq!(s.lineage_generation, 1);
         assert_eq!(s.owners, owners);
@@ -2270,7 +2283,6 @@ mod lifecycle {
         own.refresh().unwrap();
         assert!(b.keyset_available(&own));
         // Manage: the new owner writes the roster.
-        let carl = org.accepted("Carl", vec![]);
         own.refresh().unwrap();
         b.edit(
             &own,
@@ -2279,11 +2291,18 @@ mod lifecycle {
             },
         )
         .unwrap();
-        // Mirrored now: a third call is the quorum refusal again.
-        assert!(matches!(
-            org.set_owners(owners),
-            Err(OnePassError::Validation { ref reason, .. }) if reason == "quorum"
-        ));
+        // Mirrored now: any other set is the quorum refusal (two owners),
+        // and no roster is written.
+        let seq = org.latest_seq();
+        let mut more = owners.clone();
+        more.push(carl.account());
+        for set in [more, vec![org.account()]] {
+            assert!(matches!(
+                org.set_owners(set),
+                Err(OnePassError::Validation { ref reason, .. }) if reason == "quorum"
+            ));
+        }
+        assert_eq!(org.latest_seq(), seq);
     }
 
     #[test]
