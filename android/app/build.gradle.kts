@@ -44,4 +44,6 @@ android {
 dependencies {
     implementation(project(":vaultkit-android"))
     implementation(project(":wifi"))
+    implementation(project(":autofill"))
+    implementation(project(":credentials"))
 }

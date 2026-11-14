@@ -71,7 +71,66 @@ class SettingsScreens(private val a: MainActivity) {
         "accounts" -> accounts()
         "devices" -> devices()
         "about" -> about()
+        "autofill" -> autofill()
         else -> notYet(p)
+    }
+
+    // ---- Remplissage automatique ------------------------------------------------------------------
+
+    private fun autofillOn(): Boolean? = runCatching {
+        a.getSystemService(android.view.autofill.AutofillManager::class.java)?.hasEnabledAutofillServices()
+    }.getOrNull()
+
+    /** As on iPhone: OnePass as the system's AutoFill provider, then what it learns from the user's choices. */
+    private fun autofill(): View = a.pushedPage(a.t("Remplissage automatique", "AutoFill"), largeTitle = true) {
+        val on = autofillOn()
+        addView(ui.footnote(a.t("Identifiants, codes et passkeys, dans les apps et les navigateurs.", "Logins, codes and passkeys, in apps and browsers.")))
+        val rows = mutableListOf<View>(ui.row(icon = a.itemIconArt(R.mipmap.ic_launcher, 30), title = "OnePass",
+            value = when (on) { true -> a.t("Activé", "On"); false -> a.t("Désactivé", "Off"); null -> "" }, chevron = false))
+        rows += ui.row(title = if (on == true) a.t("Gérer dans les réglages du système", "Manage in System Settings") else a.t("Activer OnePass", "Turn On OnePass"),
+            titleColor = ui.readableAccent, chevron = false) {
+            val i = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, Uri.parse("package:" + a.packageName))
+            a.launch(i) { _, _ -> a.render() }
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 34) rows += ui.row(icon = ui.symbolTile(R.drawable.ic_passkey, ui.accent), title = a.t("Passkeys et mots de passe", "Passkeys and Passwords"),
+            subtitle = a.t("Gestionnaire d'identifiants Android", "Android Credential Manager")) {
+            runCatching { a.startActivity(Intent("android.settings.CREDENTIAL_PROVIDER", Uri.parse("package:" + a.packageName))) }
+                .onFailure { runCatching { a.startActivity(Intent(Settings.ACTION_SETTINGS)) } }
+        }
+        addView(ui.inset(ui.card(*rows.toTypedArray()), top = Ios.Space.S))
+        addView(ui.footnote(if (on == true) a.t("Touche un champ d'identifiant : OnePass propose tes comptes.", "Tap a username field: OnePass offers your accounts.")
+        else a.t("Sinon : Réglages du système > Mots de passe et saisie automatique.", "Otherwise: System Settings > Passwords & autofill.")))
+
+        val s = a.vault.session ?: return@pushedPage
+        // Learn from my choices, and the sites remembered.
+        val history = runCatching { s.autofillHistoryEnabled() }.getOrDefault(true)
+        addView(ui.inset(ui.card(
+            ui.toggleRow(a.t("Apprendre de mes choix", "Learn from my choices"), on = history) { v -> a.background({ s.setAutofillHistoryEnabled(v) }) { } },
+            ui.row(title = a.t("Effacer l'historique de remplissage", "Clear autofill history"), titleColor = ui.red, chevron = false) {
+                a.confirm(a.t("Effacer l'historique de remplissage de cet appareil ?", "Clear this device's autofill history?"), a.t("Effacer", "Erase")) {
+                    a.background({ s.clearAutofillHistory() }) { a.toast(a.t("Historique effacé", "History cleared")) }
+                }
+            },
+        ), top = Ios.Space.XL))
+        addView(ui.footnote(a.t("OnePass retient quel compte tu choisis sur chaque site ou app, pour le proposer en premier. Cet historique reste chiffré sur cet appareil : il n'est jamais synchronisé ni envoyé. Désactivé, il est effacé.",
+            "OnePass remembers which account you pick on each site or app, to offer it first. This history stays encrypted on this device: it is never synced or sent. Turned off, it is erased.")))
+        addView(ui.inset(ui.card(ui.row(title = a.t("Comptes retenus par site", "Remembered Accounts")) { a.push { remembered() } }), top = Ios.Space.L))
+        addView(ui.footnote(a.t("Le compte choisi sur un site est proposé en premier.", "The account you pick on a site comes first next time.")))
+    }
+
+    private fun remembered(): View = a.pushedPage(a.t("Comptes retenus", "Remembered Accounts"), largeTitle = true) {
+        val s = a.vault.session ?: return@pushedPage
+        val sites = runCatching { s.knownUsageSites(emptyList()) }.getOrDefault(emptyList())
+        if (sites.isEmpty()) addView(ui.footnote(a.t("Aucun site retenu pour l'instant.", "No site remembered yet.")))
+        else addView(ui.inset(ui.card(*sites.map { site ->
+            ui.row(title = site.removePrefix("app:"), subtitle = if (site.startsWith("app:")) a.t("app", "App") else null, chevron = false,
+                trailing = ui.text(a.t("Oublier", "Forget"), 17f, ui.red).apply { setPadding(ui.dp(8), 0, ui.dp(4), 0) }) {
+                a.confirm(a.t("Oublier $site ?", "Forget $site?"), a.t("Oublier", "Forget")) {
+                    a.background({ s.forgetSiteUsage(site, emptyList()) }) { a.render() }
+                }
+            }
+        }.toTypedArray()), top = Ios.Space.S))
+        addView(ui.footnote(a.t("Oublier un site efface son choix sur tous tes appareils. Tes Logins ne changent pas.", "Forgetting a site clears its choice on all your devices. Your Logins stay.")))
     }
 
     private fun notYet(p: Page): View {
