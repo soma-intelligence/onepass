@@ -1,12 +1,13 @@
 //! Roster acceptance (spec 5.5, plan B Task 7): who may sign which roster
 //! change. The signer is looked up by device fingerprint in the PINNED
-//! (previous) roster, never in the roster it signs (D23); its roles there
-//! decide what it may change (D7, D9); the `Owner` bits follow the org
-//! lineage (5.4); members never disappear and a `Removed` entry never
-//! changes again (D10); a gap or an unknown lineage head is `NotFound`
-//! (D13); the first pin may start at any roster an owner of its lineage
-//! generation signed (D12). Any change the table below does not allow is
-//! `Integrity(OrgRoleDenied)`.
+//! (previous) roster, never in the roster it signs (D23), or vouched by
+//! the lineage head for an owner (R7f); its roles there decide what it
+//! may change (D7, D9), Owner authority only for a device of a head
+//! owner; the `Owner` bits follow the org lineage (5.4); members never
+//! disappear and a `Removed` entry never changes again (D10); a gap or an
+//! unknown lineage head is `NotFound` (D13); the first pin may start at
+//! any roster a device of a head owner signed (D12, R7f). Any change the
+//! table below does not allow is `Integrity(OrgRoleDenied)`.
 
 use super::{
     DeviceFpr, MemberRef, MemberState, ORG_ROSTER_DOMAIN, OrgHeadInfo, OrgId, OrgLineage,
@@ -141,8 +142,15 @@ fn transition_allowed(p: &MemberState, e: &MemberState) -> bool {
     }
 }
 
-fn is_head_owner(lineage: &OrgLineage, a: Id) -> bool {
-    lineage.head().owners.iter().any(|r| r.account_id == a)
+/// The `MemberRef` devices of account `a` among the owners of
+/// `lineage.head()`, if `a` is one.
+fn head_owner_devices(lineage: &OrgLineage, a: Id) -> Option<&[DeviceFpr]> {
+    lineage
+        .head()
+        .owners
+        .iter()
+        .find(|r| r.account_id == a)
+        .map(|r| r.devices.as_slice())
 }
 
 /// The signer as the previous roster lists it.
@@ -151,16 +159,49 @@ struct Signer {
     roles: RoleSet,
 }
 
-/// The holder of `fpr` in `prev`; it must be Active.
-fn signer_in(prev: &RosterBody, fpr: &DeviceFpr) -> Result<Signer> {
-    let m = prev.device_holder(fpr).ok_or_else(denied)?;
-    if m.state != MemberState::Active {
-        return Err(denied());
+/// R7f: the signer of a roster after `prev`, with its effective roles.
+/// The fingerprint is looked up in `prev` first (its holder must be
+/// Active). If absent, a device listed in the head `MemberRef` of an
+/// owner account that is Active with `Owner` in `prev` signs as that
+/// account with that entry's roles (a lineage-vouched device, R7e).
+/// Owner authority is device-level: it holds only for a device in the
+/// head `MemberRef` of its account. A listed Owner whose account is still
+/// a head owner but whose device the head dropped has no authority at all;
+/// an account no longer a head owner loses `Owner` and keeps its other
+/// roles (R7b).
+fn resolve_signer(lineage: &OrgLineage, prev: &RosterBody, fpr: &DeviceFpr) -> Result<Signer> {
+    if let Some(m) = prev.device_holder(fpr) {
+        if m.state != MemberState::Active {
+            return Err(denied());
+        }
+        let mut roles = m.roles;
+        if roles.contains(Role::Owner) {
+            match head_owner_devices(lineage, m.account_id) {
+                Some(devices) if devices.contains(fpr) => {}
+                Some(_) => return Err(denied()),
+                None => roles = roles.without(Role::Owner),
+            }
+        }
+        return Ok(Signer {
+            account: m.account_id,
+            roles,
+        });
     }
-    Ok(Signer {
-        account: m.account_id,
-        roles: m.roles,
-    })
+    for r in &lineage.head().owners {
+        if !r.devices.contains(fpr) {
+            continue;
+        }
+        if let Some(m) = find(prev, r.account_id)
+            && m.state == MemberState::Active
+            && m.roles.contains(Role::Owner)
+        {
+            return Ok(Signer {
+                account: m.account_id,
+                roles: m.roles,
+            });
+        }
+    }
+    Err(denied())
 }
 
 /// A Provisioner without Owner, Admin or UserManager (D7): only suspends
@@ -221,7 +262,8 @@ fn check_entry(
         // included: a lineage promotion of the signer is mirrored by
         // another signer). R7e: an effective Owner may also sync its own
         // identity, KEM hash and devices to its lineage MemberRef (a sole
-        // owner's rotation), signed by a device of the pinned roster.
+        // owner's rotation), signed by its new device (vouched by the
+        // lineage head) or by an old device the head still lists (R7f).
         let p = p.ok_or_else(denied)?;
         let lineage_sync = s.roles.contains(Role::Owner) && follows_lineage(owners, e);
         let same_but_roles = OrgMember {
@@ -346,12 +388,9 @@ pub fn check_transition(
     if prev.org_id != lineage.org_id || next.org_id != lineage.org_id {
         return Err(IntegrityError::WrongContext.into());
     }
-    let mut s = signer_in(prev, &signer.fingerprint())?;
-    // R7b: Owner authority only for an owner of the newest verified
-    // generation, whatever org head the rosters still name.
-    if !is_head_owner(lineage, s.account) {
-        s.roles = s.roles.without(Role::Owner);
-    }
+    // R7b, R7f: Owner authority only for a device of an owner of the
+    // newest verified generation, whatever org head the rosters still name.
+    let s = resolve_signer(lineage, prev, &signer.fingerprint())?;
     let head = lineage.find(&next.org_head).ok_or(Error::NotFound)?;
     let prev_head = lineage.find(&prev.org_head).ok_or(Error::NotFound)?;
     if head.generation < prev_head.generation {
@@ -389,7 +428,8 @@ fn verify_roster_sig(rec: &SignedRoster) -> Result<()> {
 /// The roster after `pinned`. Order: shape, org id (`WrongContext`), seq
 /// (the pinned roster again is a no-op, another body at its seq a fork, an
 /// older seq a rollback, a gap `NotFound`, a wrong `prev_hash` a fork),
-/// the signer's fingerprint in `pinned` (`OrgRoleDenied`), the signature,
+/// the signer resolved from `pinned` and the lineage head (`resolve_signer`,
+/// else `OrgRoleDenied`), the signature,
 /// then `check_transition`.
 pub fn accept_next_roster(
     lineage: &OrgLineage,
@@ -419,7 +459,7 @@ pub fn accept_next_roster(
     }
     // Before the signature check (an unlisted key costs no verification);
     // `check_transition` looks it up again as a standalone entry point.
-    signer_in(pinned, &next.signer.fingerprint())?;
+    resolve_signer(lineage, pinned, &next.signer.fingerprint())?;
     verify_roster_sig(next)?;
     check_transition(lineage, pinned, body, &next.signer)?;
     Ok(body.clone())
@@ -444,11 +484,11 @@ pub fn accept_roster_chain(
 }
 
 /// The first pin (D12): `chain[0]` is the founding roster of its lineage
-/// generation signed by one of that generation's owners, or any later
-/// roster signed by a device of an owner of its `org_head` generation who
-/// is Active with `Owner` in it (the owner mirror holds) and who is still
-/// an owner of `lineage.head()` (R7b); the rest goes
-/// through `accept_roster_chain`. An empty chain is `NotFound`.
+/// generation, or any later roster, signed by a device listed in the
+/// `MemberRef` of an owner of `lineage.head()` (R7f) whose account is
+/// Active with `Owner` in it, the owner mirror of its `org_head`
+/// generation holding; the rest goes through `accept_roster_chain`. An
+/// empty chain is `NotFound`.
 pub fn accept_first_roster(lineage: &OrgLineage, chain: &[SignedRoster]) -> Result<RosterBody> {
     let (first, rest) = chain.split_first().ok_or(Error::NotFound)?;
     let body = &first.body;
@@ -458,17 +498,14 @@ pub fn accept_first_roster(lineage: &OrgLineage, chain: &[SignedRoster]) -> Resu
     }
     let head = lineage.find(&body.org_head).ok_or(Error::NotFound)?;
     let fpr = first.signer.fingerprint();
-    let owner = head
+    let owner = lineage
+        .head()
         .owners
         .iter()
         .find(|r| r.devices.contains(&fpr))
         .ok_or_else(denied)?;
-    if !is_head_owner(lineage, owner.account_id) {
-        return Err(denied());
-    }
     let m = find(body, owner.account_id).ok_or_else(denied)?;
-    if m.state != MemberState::Active || !m.roles.contains(Role::Owner) || !m.devices.contains(&fpr)
-    {
+    if m.state != MemberState::Active || !m.roles.contains(Role::Owner) {
         return Err(denied());
     }
     check_owner_mirror(body, &head.owners)?;

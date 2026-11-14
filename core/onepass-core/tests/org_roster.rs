@@ -504,10 +504,14 @@ struct Org {
     /// followed by an OwnersChanged {O, M'} where M rotated its identity,
     /// KEM key and device (`m_rotated`); `lineages[5]`: generation 0
     /// followed by an OwnersChanged {O'} where the sole owner O rotated
-    /// (`o_rotated`).
-    lineages: [OrgLineage; 6],
+    /// (`o_rotated`); `lineages[6]`: generation 0 followed by an
+    /// OwnersChanged {O with devices o and `o_second`}; `lineages[7]`:
+    /// `lineages[6]` followed by an OwnersChanged {O with `o_second` only}
+    /// that drops O's device o.
+    lineages: [OrgLineage; 8],
     m_rotated: TestDevice,
     o_rotated: TestDevice,
+    o_second: TestDevice,
     chain: Vec<SignedRoster>,
 }
 
@@ -645,6 +649,19 @@ fn org() -> &'static Org {
                 owners: vec![rotated_o(&o_rotated)],
             },
         );
+        let o_second = device(0x6A);
+        let two_devices = change(
+            &l0,
+            OrgChangeKind::OwnersChanged {
+                owners: vec![member_ref(O, &[&o, &o_second])],
+            },
+        );
+        let device_dropped = change(
+            &two_devices,
+            OrgChangeKind::OwnersChanged {
+                owners: vec![member_ref(O, &[&o_second])],
+            },
+        );
         let sign =
             |body: RosterBody, d: &TestDevice| sign_roster(body, &d.public, &d.keys).unwrap();
         let r1 = founding_roster(&l0).unwrap();
@@ -678,9 +695,19 @@ fn org() -> &'static Org {
             u,
             p,
             m,
-            lineages: [l0, l1, l2, dropped, rotated, sole_rotated],
+            lineages: [
+                l0,
+                l1,
+                l2,
+                dropped,
+                rotated,
+                sole_rotated,
+                two_devices,
+                device_dropped,
+            ],
             m_rotated,
             o_rotated,
+            o_second,
             chain,
         }
     })
@@ -1548,11 +1575,18 @@ fn sole_owner_syncs_own_rotation() {
         e.account_kem_hash = member_kem_hash(&new_ref.account_kem_pub);
         e.devices = new_ref.devices.clone();
     };
-    // O's old device (listed in the pinned roster) signs.
+    // R7f: O's old device, listed in the pinned roster but dropped by the
+    // head, has no authority; the rotated device, vouched by the head
+    // MemberRef, signs the sync.
     let n = edit(base(), sync);
-    let synced = accept_in(l5, base(), n.clone(), O).unwrap();
+    denied(accept_in(l5, base(), n.clone(), O), "old device signs");
+    let by_new = |n: RosterBody| {
+        let rec = sign_roster(n, &org.o_rotated.public, &org.o_rotated.keys).unwrap();
+        accept_next_roster(l5, base(), &rec)
+    };
+    let synced = by_new(n.clone()).unwrap();
     assert_eq!(synced, n);
-    // The rotated device signs from then on.
+    // The rotated device, now in the roster, signs from then on.
     let rec = sign_roster(
         synced.next().unwrap(),
         &org.o_rotated.public,
@@ -1565,25 +1599,114 @@ fn sole_owner_syncs_own_rotation() {
         sync(b);
         entry(b, O).account_kem_hash = [1; 32];
     });
-    denied(
-        accept_in(l5, base(), n, O),
-        "own KEM hash not the lineage's",
-    );
+    denied(by_new(n), "own KEM hash not the lineage's");
     let n = edit(base(), |b| {
         sync(b);
         replace_devices(b, O, 0x69);
     });
-    denied(accept_in(l5, base(), n, O), "own devices not the lineage's");
+    denied(by_new(n), "own devices not the lineage's");
     // Roles still only shrink on its own entry.
     let n = edit(base(), |b| {
         sync(b);
         add_role(b, O, Role::Admin);
     });
-    denied(accept_in(l5, base(), n, O), "own role added with the sync");
+    denied(by_new(n), "own role added with the sync");
     // Before the lineage has the rotation, a self key edit is refused.
     let n = edit(base(), |b| {
         let e = entry(b, O);
         e.account_kem_hash = member_kem_hash(&new_ref.account_kem_pub);
     });
     denied(accept(base(), n, O), "own KEM hash without lineage");
+}
+
+// Fix round 4 (ruling R7f).
+
+/// The pinned roster for R7f: r3 moved to `lineages[6]`'s head, O's entry
+/// synced to its two devices, signed by O's device o under that lineage.
+fn two_device_roster() -> RosterBody {
+    let org = org();
+    let l6 = &org.lineages[6];
+    let r = member_ref(O, &[&org.o, &org.o_second]);
+    let n = edit(base(), |b| {
+        b.org_head = l6.head().hash;
+        entry(b, O).devices = r.devices.clone();
+    });
+    accept_in(l6, base(), n, O).unwrap()
+}
+
+#[test]
+fn dropped_owner_device_has_no_authority() {
+    let org = org();
+    let (l6, l7) = (&org.lineages[6], &org.lineages[7]);
+    let pinned = two_device_roster();
+    let n = edit(&pinned, |b| upsert(b, invite(X, RoleSet::EMPTY)));
+    assert!(
+        accept_in(l6, &pinned, n.clone(), O).is_ok(),
+        "d0 while the head lists it"
+    );
+    // The head dropped d0: no authority at all, at the old org_head.
+    denied(accept_in(l7, &pinned, n.clone(), O), "dropped d0 invites");
+    let empty = edit(&pinned, |_| {});
+    denied(accept_in(l7, &pinned, empty, O), "dropped d0, no change");
+    let d1 = &org.o_second;
+    let rec = sign_roster(n.clone(), &d1.public, &d1.keys).unwrap();
+    assert_eq!(
+        accept_next_roster(l7, &pinned, &rec).unwrap(),
+        n,
+        "d1 invites"
+    );
+    // check_transition resolves the signer the same way.
+    denied(
+        check_transition(l7, &pinned, &n, &org.o.public),
+        "check_transition, dropped d0",
+    );
+    assert!(check_transition(l7, &pinned, &n, &d1.public).is_ok());
+}
+
+#[test]
+fn dropped_owner_device_cannot_first_pin() {
+    let org = org();
+    let (l6, l7) = (&org.lineages[6], &org.lineages[7]);
+    let pinned = two_device_roster();
+    let by_d0 = sign_roster(pinned.clone(), &org.o.public, &org.o.keys).unwrap();
+    assert_eq!(
+        accept_first_roster(l6, std::slice::from_ref(&by_d0)).unwrap(),
+        pinned,
+        "d0 while the head lists it"
+    );
+    denied(accept_first_roster(l7, &[by_d0]), "first pin by dropped d0");
+    let d1 = &org.o_second;
+    let by_d1 = sign_roster(pinned.clone(), &d1.public, &d1.keys).unwrap();
+    assert_eq!(accept_first_roster(l7, &[by_d1]).unwrap(), pinned);
+}
+
+#[test]
+fn rotated_owner_new_device_signs_sync() {
+    let org = org();
+    let l5 = &org.lineages[5];
+    let new_ref = rotated_o(&org.o_rotated);
+    let n = edit(base(), |b| {
+        b.org_head = l5.head().hash;
+        let e = entry(b, O);
+        e.account_identity_pub = Some(new_ref.account_identity_pub.clone());
+        e.account_kem_hash = member_kem_hash(&new_ref.account_kem_pub);
+        e.devices = new_ref.devices.clone();
+    });
+    // The new device is listed only in the head MemberRef.
+    assert!(
+        base()
+            .device_holder(&org.o_rotated.public.fingerprint())
+            .is_none()
+    );
+    let rec = sign_roster(n.clone(), &org.o_rotated.public, &org.o_rotated.keys).unwrap();
+    assert_eq!(accept_next_roster(l5, base(), &rec).unwrap(), n);
+    assert!(check_transition(l5, base(), &n, &org.o_rotated.public).is_ok());
+    // A device in no MemberRef and not in the roster.
+    let stranger = device(0x6B);
+    let rec = sign_roster(n.clone(), &stranger.public, &stranger.keys).unwrap();
+    denied(accept_next_roster(l5, base(), &rec), "random device");
+    denied(
+        check_transition(l5, base(), &n, &stranger.public),
+        "check_transition, random device",
+    );
 }
