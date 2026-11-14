@@ -1,9 +1,8 @@
-#if os(iOS)
 import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Accueil > Profil: the account (photo and name), then two cards. Identité shows the main identity
+/// Accueil > Profil (iPhone, iPad), the Profil page of the sidebar (Mac): the account (photo and name), then two cards. Identité shows the main identity
 /// (name, address on one line, phone, email); Carte de paiement the main card (holder, number as its
 /// first and last four digits, expiry). Each card edits its item, or changes which item is the
 /// main one ("Automatique" falls back to the first). Without an identity or a card, the card offers
@@ -11,7 +10,9 @@ import VaultKit
 /// Travel Mode guard shows its title only, its fields stay in its detail.
 struct ProfileView: View {
     @Environment(AppModel.self) private var model
+    #if os(iOS)
     @Environment(\.pushPhoneRoute) private var push
+    #endif
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var identity: FfiItem?
     @State private var card: FfiItem?
@@ -31,9 +32,11 @@ struct ProfileView: View {
             .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
             .padding(.bottom, Theme.Space.xl)
         }
+        #if os(iOS)
         .background(PhoneBackground())
-        .navigationTitle("Profil")
         .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .navigationTitle("Profil")
         .task(id: LoadKey(identity: mainIdentity?.id, card: mainCard?.id, revision: session.summariesRevision)) {
             identity = await load(mainIdentity)
             card = await load(mainCard)
@@ -138,11 +141,16 @@ struct ProfileView: View {
         .accessibilityIdentifier("profile.card")
     }
 
-    /// The item's detail, pushed, opening straight in its editor (after its reprompt, if any).
+    /// The item's detail, opening straight in its editor (after its reprompt, if any): pushed on
+    /// the iPhone, revealed in the item list on the Mac.
     private func edit(_ summary: FfiItemSummary) {
         let ref = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
         model.editOnOpen = ref
+        #if os(iOS)
         push(.item(ref))
+        #else
+        model.perform(.reveal(ref))
+        #endif
     }
 
     // MARK: - Field reading (template ids of the core: identity and credit_card)
@@ -345,7 +353,11 @@ private struct ProfilePicker: View {
                 }
             }
             .navigationTitle(kind == .identity ? "profile.chooseIdentity" : "profile.chooseCard")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #else
+            .frame(minWidth: 420, minHeight: 480)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") { dismiss() }
@@ -371,4 +383,3 @@ private struct ProfilePicker: View {
         }
     }
 }
-#endif

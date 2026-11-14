@@ -1,7 +1,7 @@
-#if os(iOS)
 import DesignKit
-import MapKit
 import SwiftUI
+#if os(iOS)
+import MapKit
 import VaultKit
 
 /// Accueil (spec 6.2, mockup `PhoneHome`): an inline title, the account name as a large secondary
@@ -579,6 +579,9 @@ struct PhoneItemRows: View {
     }
 }
 
+#endif
+
+// The card surface is shared with the Mac Profil page (spec 2026-11-14-profile-account-security).
 /// The surface of the iPhone cards: the grouped list's cell color, a hairline, rounded as the Mac
 /// cards.
 enum PhoneCard {
@@ -633,6 +636,7 @@ private struct LightCardShadow: ViewModifier {
     }
 }
 
+#if os(iOS)
 /// The screen behind the iPhone cards: the grouped background, plain. The cards and the glass bars
 /// carry the depth; a tinted wash on top read as decoration.
 struct PhoneBackground: View {
