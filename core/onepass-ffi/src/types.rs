@@ -314,6 +314,10 @@ pub struct FfiItem {
     /// `onepass:travel-guard`, never listed in `tags`).
     #[uniffi(default = false)]
     pub travel_guard: bool,
+    /// Drawn with its category artwork rather than its site's favicon (the
+    /// reserved tag `onepass:icon-category`, never listed in `tags`).
+    #[uniffi(default = false)]
+    pub icon_category: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -394,6 +398,12 @@ pub struct FfiItemSummary {
     /// See `FfiItem::travel_guard`.
     #[uniffi(default = false)]
     pub travel_guard: bool,
+    /// See `FfiItem::icon_category`.
+    #[uniffi(default = false)]
+    pub icon_category: bool,
+    /// The item's badge color (`FfiItem::color`), so a list draws the same icon.
+    #[uniffi(default = None)]
+    pub color: Option<String>,
     /// How many times the item was used: fills and uses inside the app
     /// (`Session::note_app_use`), a forgotten site no longer counted. Named
     /// so the Swift side keeps `useCount` (an `Int`) for its own extension.

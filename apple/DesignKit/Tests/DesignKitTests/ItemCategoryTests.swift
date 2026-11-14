@@ -24,6 +24,36 @@ import VaultKit
         #expect(ItemCategory.all.allSatisfy { $0.hex <= 0xFFFFFF })
     }
 
+    /// A 64 px opaque square as PNG data, a stand-in site icon.
+    static func pngIcon() throws -> Data {
+        let context = try #require(CGContext(
+            data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        let image = try #require(context.makeImage())
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return data as Data
+    }
+
+    @Test func categoryChoiceIgnoresSiteIcon() throws {
+        let png = try Self.pngIcon()
+        #expect(ItemIcon(type: .login, title: "Atlas", siteIcon: png).showsSiteIcon)
+        #expect(!ItemIcon(type: .login, title: "Atlas", siteIcon: png, useCategory: true).showsSiteIcon)
+    }
+
+    @Test func tintNames() {
+        for name in ["blue", "green", "orange", "purple", "pink", "teal", "indigo", "graphite"] {
+            #expect(ItemTint.color(named: name) != nil)
+        }
+        #expect(ItemTint.color(named: "nope") == nil)
+        #expect(ItemTint.color(named: nil) == nil)
+        #expect(ItemTint.names.count == 8)
+    }
+
     @Test func orderMatchesCore() {
         #expect(ItemCategory.all.map(\.type) == itemTypes().map(\.itemType))
     }

@@ -5,9 +5,9 @@ use std::collections::{HashMap, HashSet};
 
 use onepass_core::Id;
 use onepass_core::model::{
-    Address, AttachmentRef, BarcodeFormat, Field, FieldType, FieldValue, Item, ItemType, ItemUrl,
-    Location, LoginMethod, MatchRule, PasskeyCredential, PasswordHistoryEntry, Provider, Section,
-    SshKeyValue, TRAVEL_GUARD_TAG, TRAVEL_HIDDEN_TAG,
+    Address, AttachmentRef, BarcodeFormat, Field, FieldType, FieldValue, ICON_CATEGORY_TAG, Item,
+    ItemType, ItemUrl, Location, LoginMethod, MatchRule, PasskeyCredential, PasswordHistoryEntry,
+    Provider, Section, SshKeyValue, TRAVEL_GUARD_TAG, TRAVEL_HIDDEN_TAG,
 };
 use onepass_core::vault::{Vault, VaultMeta};
 use time::{Date, Month, OffsetDateTime};
@@ -568,6 +568,7 @@ fn visible_tags(tags: &[String]) -> Vec<String> {
         .filter(|t| {
             *t != TRAVEL_HIDDEN_TAG
                 && *t != TRAVEL_GUARD_TAG
+                && *t != ICON_CATEGORY_TAG
                 && !onepass_core::duplicates::is_distinct_tag(t)
                 && !onepass_core::import::is_source_tag(t)
         })
@@ -614,6 +615,7 @@ pub(crate) fn item_to_ffi(i: &Item) -> FfiItem {
         attachments: i.attachments.iter().map(attachment_to_ffi).collect(),
         travel_hidden: i.travel_hidden(),
         travel_guard: i.travel_guarded(),
+        icon_category: i.icon_category(),
     }
 }
 
@@ -653,6 +655,8 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
         has_places: has_places(i),
         travel_hidden: i.travel_hidden(),
         travel_guard: i.travel_guarded(),
+        icon_category: i.icon_category(),
+        color: i.color.clone(),
         uses: i.use_count(),
         last_use_at: i.last_used_at().map(ts),
     }
@@ -773,6 +777,7 @@ pub(crate) fn item_to_core(
     };
     item.set_travel_hidden(f.travel_hidden);
     item.set_travel_guarded(f.travel_guard);
+    item.set_icon_category(f.icon_category);
     if let Some(s) = stored {
         item.tags.extend(
             s.tags
@@ -834,6 +839,102 @@ pub(crate) fn vault_to_ffi(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ffi_item(sections: Vec<FfiSection>, urls: Vec<FfiUrl>) -> FfiItem {
+        FfiItem {
+            id: "00112233445566778899aabbccddeeff".into(),
+            vault_id: "ffeeddccbbaa99887766554433221100".into(),
+            item_type: FfiItemType::Login,
+            title: "Projet Atlas".into(),
+            tags: vec!["travail".into()],
+            favorite: false,
+            color: Some("teal".into()),
+            notes: String::new(),
+            urls,
+            apps: vec![],
+            locations: vec![],
+            login_methods: vec![],
+            sections,
+            expires: None,
+            rotate_every_days: None,
+            reprompt: false,
+            hide_from_autofill: false,
+            watchtower_exclusions: vec![],
+            on_watch: false,
+            archived: false,
+            trashed_at: None,
+            created_at: 1_790_000_000,
+            updated_at: 1_790_000_000,
+            password_history_count: 0,
+            attachment_count: 0,
+            attachments: vec![],
+            travel_hidden: false,
+            travel_guard: false,
+            icon_category: true,
+        }
+    }
+
+    fn url(u: &str, primary: bool) -> FfiUrl {
+        FfiUrl {
+            label: String::new(),
+            url: u.into(),
+            rule: FfiMatchRule::Domain,
+            primary,
+        }
+    }
+
+    fn section(id: &str) -> FfiSection {
+        FfiSection {
+            id: id.into(),
+            label: id.into(),
+            fields: vec![],
+        }
+    }
+
+    #[test]
+    fn icon_category_round_trip_hidden_from_tags() {
+        let now = OffsetDateTime::from_unix_timestamp(1_790_000_100).unwrap();
+        let core = item_to_core(
+            &ffi_item(vec![section("main")], vec![]),
+            &Kept::new(None, true),
+            now,
+        )
+        .unwrap();
+        assert!(core.icon_category());
+        let back = item_to_ffi(&core);
+        assert!(back.icon_category);
+        assert_eq!(back.tags, vec!["travail".to_string()]);
+        let s = summary(&core);
+        assert!(s.icon_category);
+        assert_eq!(s.color.as_deref(), Some("teal"));
+        assert_eq!(s.tags, vec!["travail".to_string()]);
+    }
+
+    #[test]
+    fn sections_and_urls_keep_order() {
+        let now = OffsetDateTime::from_unix_timestamp(1_790_000_100).unwrap();
+        let f = ffi_item(
+            vec![section("main"), section("section_2"), section("imported")],
+            vec![
+                url("https://c.exemple.fr", false),
+                url("https://a.exemple.fr", true),
+                url("https://b.exemple.fr", false),
+            ],
+        );
+        let back = item_to_ffi(&item_to_core(&f, &Kept::new(None, true), now).unwrap());
+        let ids: Vec<_> = back.sections.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["main", "section_2", "imported"]);
+        let urls: Vec<_> = back.urls.iter().map(|u| u.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            [
+                "https://c.exemple.fr",
+                "https://a.exemple.fr",
+                "https://b.exemple.fr"
+            ]
+        );
+        assert!(back.urls[1].primary);
+    }
 
     #[test]
     fn id_hex_roundtrips_without_hyphens() {

@@ -17,14 +17,22 @@ public struct ItemIcon: View {
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
     private let brand: String?
+    private let tint: Color?
 
     /// `brand`: a credit card's network ("visa", "mastercard", "amex"...): the card shows that
     /// network's mark on its color instead of the generic card artwork.
-    public init(type: FfiItemType, title: String, siteIcon: Data?, size: CGFloat = 38, brand: String? = nil) {
+    /// `useCategory`: the item's choice of its category artwork over its site's icon
+    /// (`FfiItem.iconCategory`). `tint`: the item's badge color (`ItemTint`): a tile of that color
+    /// behind the category glyph (a login's title letter). A site icon is never tinted.
+    public init(
+        type: FfiItemType, title: String, siteIcon: Data?, size: CGFloat = 38, brand: String? = nil,
+        useCategory: Bool = false, tint: Color? = nil
+    ) {
         self.type = type
         self.title = title
         self.size = size
-        let prepared = siteIcon.flatMap(Self.prepared)
+        self.tint = tint
+        let prepared = useCategory ? nil : siteIcon.flatMap(Self.prepared)
         self.image = prepared?.image
         self.treatment = prepared?.treatment ?? .fullBleed
         self.brand = type == .creditCard ? brand : nil
@@ -261,9 +269,42 @@ public struct ItemIcon: View {
     private var corner: CGFloat { size * 9 / 38 }
     private var side: CGFloat { size * min(scale, 1.6) }
 
+    /// A login's title letter, for the tinted tile.
+    private var monogram: String? {
+        guard type == .login else { return nil }
+        return title.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() }
+    }
+
+    /// The site's icon is drawn (not the category artwork).
+    var showsSiteIcon: Bool { image != nil }
+
     public var body: some View {
+        content
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: "\(category.singular), \(title)"))
+    }
+
+    @ViewBuilder private var content: some View {
         Group {
-            if image == nil, let brand, let color = Self.brandColor(brand) {
+            if image == nil, let tint {
+                // A tinted tile with the category's glyph, white.
+                // Inset like the category artwork's own tile, so both read the same size in a list.
+                RoundedRectangle(cornerRadius: corner * 0.8, style: .continuous)
+                    .fill(tint.gradient)
+                    .frame(width: side * 0.8, height: side * 0.8)
+                    .frame(width: side, height: side)
+                    .overlay {
+                        if let letter = monogram {
+                            Text(verbatim: letter)
+                                .font(.system(size: side * 0.42, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                        } else {
+                            Image(systemName: category.symbol)
+                                .font(.system(size: side * 0.38, weight: .medium))
+                                .foregroundStyle(.white)
+                        }
+                    }
+            } else if image == nil, let brand, let color = Self.brandColor(brand) {
                 BrandCard(brand: brand, color: color, width: side)
                     .frame(width: side, height: side)
             } else if let image, case .mark(let monochrome, let pale, let darkShare) = treatment,
@@ -315,8 +356,25 @@ public struct ItemIcon: View {
                 CategoryArtwork(type: type, size: side, monogram: type == .login ? title : nil)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(category.singular), \(title)"))
+    }
+}
+
+/// The badge colors an item may carry (`FfiItem.color`), by name: the account colors.
+public enum ItemTint {
+    public static let names = ["blue", "green", "orange", "purple", "pink", "teal", "indigo", "graphite"]
+
+    public static func color(named name: String?) -> Color? {
+        switch name {
+        case "blue": .blue
+        case "green": .green
+        case "orange": .orange
+        case "purple": .purple
+        case "pink": .pink
+        case "teal": .teal
+        case "indigo": .indigo
+        case "graphite": .gray
+        default: nil
+        }
     }
 }
 

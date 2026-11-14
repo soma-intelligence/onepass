@@ -43,7 +43,8 @@ struct ItemListRow: View {
 
     var body: some View {
         HStack(spacing: Self.iconSpacing) {
-            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: Self.iconSize, brand: summary.cardBrand)
+            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: Self.iconSize, brand: summary.cardBrand,
+                useCategory: summary.iconCategory, tint: ItemTint.color(named: summary.color))
                 .favoriteBadge(summary.favorite, iconSize: Self.iconSize)
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.title)

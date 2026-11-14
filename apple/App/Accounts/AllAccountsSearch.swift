@@ -77,7 +77,8 @@ struct AllAccountsSearch: View {
 
     private func resultRow(_ summary: FfiItemSummary) -> some View {
         HStack(spacing: 12) {
-            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 32)
+            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 32,
+                useCategory: summary.iconCategory, tint: ItemTint.color(named: summary.color))
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: summary.title).foregroundStyle(.primary).lineLimit(1)
                 if !summary.listSubtitle.isEmpty {

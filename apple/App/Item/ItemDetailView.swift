@@ -141,14 +141,15 @@ struct ItemDetailView: View {
             category: ItemCategory.of(item.itemType).color)
     }
 
-    /// A 30% tall wash from the top edge (status bar included). Flat fallback is no wash at all.
+    /// Two soft glows from the top corners (status bar included), in a box 58% of the screen tall.
+    /// Flat fallback is no wash at all.
     private func identityWash(_ item: FfiItem) -> some View {
         let color = identity.flatMap { $0.id == item.id ? $0.color : nil } ?? identityColor(item, icon: nil)
+        let glows = Theme.Wash.identityGlows(color, dark: colorScheme == .dark)
         return Color.clear
-            .containerRelativeFrame(.vertical) { height, _ in height * 0.30 }
-            .washBackground(
-                Theme.Wash.identity(color, dark: colorScheme == .dark), flat: .clear, in: Rectangle()
-            )
+            .containerRelativeFrame(.vertical) { height, _ in height * 0.58 }
+            .washBackground(glows.trailing, flat: .clear, in: Rectangle())
+            .washBackground(glows.leading, flat: .clear, in: Rectangle())
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -269,6 +270,61 @@ struct ItemDetailView: View {
             .padding(.horizontal, Theme.Space.l)
     }
 
+    /// One section's card: its small capitals label and its filled fields (a login's first card
+    /// also carries its sign-in account and "Ajouter une passkey").
+    @ViewBuilder private func sectionCard(
+        _ section: FfiSection, item: FfiItem, loginCardID: String?, signIn: (provider: String, accountItemID: String)?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            if !section.label.isEmpty {
+                // Small bold capitals above each card ("IDENTIFICATION", "ADRESSE").
+                Text(section.displayLabel(itemType: item.itemType).uppercased())
+                    .font(.caption.weight(.bold))
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, Theme.Space.l)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            EditorCard {
+                // A Document's files have their own preview card at the top.
+                let isLoginCard = section.id == loginCardID
+                // A login that signs in through a provider shows that account in place of its username.
+                let fields = section.fields.filter {
+                    !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file)
+                        && !(isLoginCard && signIn != nil && $0.id == "username")
+                }
+                if isLoginCard, let signIn {
+                    SignInWithRow(provider: signIn.provider, accountItemID: signIn.accountItemID)
+                }
+                ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+                    if index > 0 || (isLoginCard && signIn != nil) { CardDivider() }
+                    FieldValueView(field: field, itemType: item.itemType) { showToast($0) }
+                }
+                // Only for a site known to accept passkeys: elsewhere the row would open a site
+                // with nothing to enroll. The editor keeps the row for every login.
+                if isLoginCard, item.trashedAt == nil, !item.archived,
+                    PasskeySupport.siteAccepts(item, report: model.watchtower.report)
+                {
+                    if signIn != nil || !fields.isEmpty { CardDivider() }
+                    AddPasskeyRow(item: item) { showToast(String(localized: "item.addWebsiteFirst")) }
+                }
+            }
+        }
+    }
+
+    /// The websites, in a card like the fields and the notes around it, rows split by hairlines.
+    @ViewBuilder private func websitesCard(_ item: FfiItem) -> some View {
+        if !item.urls.isEmpty {
+            EditorCard {
+                ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
+                    if index > 0 { CardDivider() }
+                    WebsiteRow(url: url, index: index) { showToast($0) }
+                        .padding(.vertical, Theme.Space.s)
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func content(_ item: FfiItem) -> some View {
         // A login's first card always shows: its sign-in account (and "Ajouter une passkey" when the
         // site accepts passkeys) live there.
@@ -278,42 +334,11 @@ struct ItemDetailView: View {
             $0.id == loginCardID
                 || $0.fields.contains { !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file) }
         }
-        ForEach(sections, id: \.id) { section in
-            VStack(alignment: .leading, spacing: Theme.Space.s) {
-                if !section.label.isEmpty {
-                    // Small bold capitals above each card ("IDENTIFICATION", "ADRESSE").
-                    Text(section.displayLabel(itemType: item.itemType).uppercased())
-                        .font(.caption.weight(.bold))
-                        .tracking(0.6)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, Theme.Space.l)
-                        .accessibilityAddTraits(.isHeader)
-                }
-                EditorCard {
-                    // A Document's files have their own preview card at the top.
-                    let isLoginCard = section.id == loginCardID
-                    // A login that signs in through a provider shows that account in place of its username.
-                    let fields = section.fields.filter {
-                        !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file)
-                            && !(isLoginCard && signIn != nil && $0.id == "username")
-                    }
-                    if isLoginCard, let signIn {
-                        SignInWithRow(provider: signIn.provider, accountItemID: signIn.accountItemID)
-                    }
-                    ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-                        if index > 0 || (isLoginCard && signIn != nil) { CardDivider() }
-                        FieldValueView(field: field, itemType: item.itemType) { showToast($0) }
-                    }
-                    // Only for a site known to accept passkeys: elsewhere the row would open a site
-                    // with nothing to enroll. The editor keeps the row for every login.
-                    if isLoginCard, item.trashedAt == nil, !item.archived,
-                        PasskeySupport.siteAccepts(item, report: model.watchtower.report)
-                    {
-                        if signIn != nil || !fields.isEmpty { CardDivider() }
-                        AddPasskeyRow(item: item) { showToast(String(localized: "item.addWebsiteFirst")) }
-                    }
-                }
-            }
+        // Template sections first; the websites card and the free sections follow in the editor's
+        // order (spec 2026-11-13: the websites card's place is a per-device preference).
+        let free = Set(ItemDraft(item: item).freeSectionIDs)
+        ForEach(sections.filter { !free.contains($0.id) }, id: \.id) { section in
+            sectionCard(section, item: item, loginCardID: loginCardID, signIn: signIn)
         }
         // The join code sits right under the network's fields, before websites, notes and tags.
         if item.itemType == .router, let payload = WifiQR.payload(for: item) {
@@ -327,13 +352,15 @@ struct ItemDetailView: View {
         if item.itemType == .cryptoWallet, !standalone {
             CryptoWalletWatchCard(item: item) { self.item = $0 }
         }
-        if !item.urls.isEmpty {
-            // A card like the fields and the notes around it, rows split by hairlines.
-            EditorCard {
-                ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
-                    if index > 0 { CardDivider() }
-                    WebsiteRow(url: url, index: index) { showToast($0) }
-                        .padding(.vertical, Theme.Space.s)
+        let slots = EditorLayout.movableSlots(
+            freeSectionIDs: sections.map(\.id).filter(free.contains),
+            websitesSlot: UserDefaults.standard.integer(forKey: EditorLayout.websitesSlotKey))
+        ForEach(slots, id: \.self) { slot in
+            switch slot {
+            case .websites: websitesCard(item)
+            case .section(let id):
+                if let section = sections.first(where: { $0.id == id }) {
+                    sectionCard(section, item: item, loginCardID: loginCardID, signIn: signIn)
                 }
             }
         }

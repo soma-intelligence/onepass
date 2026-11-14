@@ -15,8 +15,8 @@ pub use field::{
     PasswordHistoryEntry, Section, SshKeyValue,
 };
 pub use item::{
-    Item, ItemUrl, Location, LoginMethod, MatchRule, PENDING_TAG, PROFILE_TAG, Provider,
-    TRAVEL_GUARD_TAG, TRAVEL_HIDDEN_TAG, WEAK_BY_SITE_TAG,
+    ICON_CATEGORY_TAG, Item, ItemUrl, Location, LoginMethod, MatchRule, PENDING_TAG, PROFILE_TAG,
+    Provider, TRAVEL_GUARD_TAG, TRAVEL_HIDDEN_TAG, WEAK_BY_SITE_TAG,
 };
 pub use menus::menu_options;
 pub use templates::{ItemType, new_item, template};

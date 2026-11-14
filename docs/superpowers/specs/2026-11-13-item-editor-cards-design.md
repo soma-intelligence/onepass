@@ -103,8 +103,8 @@ item exactly as edited on the other device. Existing tests stay green.
 - "Icône du site": the favicon of the primary website (current behavior). Default.
 - "Icône de la catégorie": the item type's artwork (`ItemIcon` without a site icon).
 - "Couleur": a row of the existing account colors plus "Aucune"; stored in `FfiItem.color` by
-  its name, drawn as the tile's background behind the category glyph and as a thin ring around a
-  favicon.
+  its name, drawn as the tile's background behind the category glyph (a login's title letter). A
+  site icon is never tinted (owner, 2026-11-14: no ring around brand marks).
 - Storage of the icon choice: a reserved tag `onepass:icon-category`, built like
   `onepass:travel-hidden`: never listed in `tags`, exposed as `FfiItem.icon_category: bool` with
   `#[uniffi(default = false)]`. An older client sees a plain tag and keeps it, so nothing is lost

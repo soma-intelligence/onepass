@@ -78,6 +78,9 @@ pub const TRAVEL_HIDDEN_TAG: &str = "onepass:travel-hidden";
 /// Tag of an item behind extra protection in Travel Mode: password and
 /// biometrics in the app, offered nowhere else (spec 2026-11-02).
 pub const TRAVEL_GUARD_TAG: &str = "onepass:travel-guard";
+/// Tag of an item whose icon is its category artwork rather than its site's
+/// favicon (spec 2026-11-13, item editor in cards).
+pub const ICON_CATEGORY_TAG: &str = "onepass:icon-category";
 
 /// Add `tag` once when `on`, remove every copy otherwise.
 fn set_tag(tags: &mut Vec<String>, tag: &str, on: bool) {
@@ -157,6 +160,16 @@ impl Item {
     /// Add or remove `TRAVEL_GUARD_TAG` (never twice).
     pub fn set_travel_guarded(&mut self, on: bool) {
         set_tag(&mut self.tags, TRAVEL_GUARD_TAG, on);
+    }
+
+    /// Carries `ICON_CATEGORY_TAG`: drawn with its category artwork.
+    pub fn icon_category(&self) -> bool {
+        self.tags.iter().any(|t| t == ICON_CATEGORY_TAG)
+    }
+
+    /// Add or remove `ICON_CATEGORY_TAG` (never twice).
+    pub fn set_icon_category(&mut self, on: bool) {
+        set_tag(&mut self.tags, ICON_CATEGORY_TAG, on);
     }
 
     /// First field with this id, searching sections in order.
@@ -282,6 +295,22 @@ mod tests {
             usage: vec![],
             usage_forgotten: vec![],
         }
+    }
+
+    #[test]
+    fn icon_category_tag_toggles_once() {
+        let mut item = sample_login();
+        assert!(!item.icon_category());
+        item.set_icon_category(true);
+        item.set_icon_category(true);
+        assert!(item.icon_category());
+        assert_eq!(
+            item.tags.iter().filter(|t| *t == ICON_CATEGORY_TAG).count(),
+            1
+        );
+        item.set_icon_category(false);
+        assert!(!item.icon_category());
+        assert!(!item.tags.iter().any(|t| t == ICON_CATEGORY_TAG));
     }
 
     #[test]

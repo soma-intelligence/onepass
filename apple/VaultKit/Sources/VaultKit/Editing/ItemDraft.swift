@@ -2,8 +2,9 @@ import Foundation
 
 /// The editing model of an item (spec 6.4), kept free of SwiftUI so it is tested by `swift test`.
 ///
-/// Template fields stay in place: only repeated copies of a repeatable field and custom fields
-/// (section `custom`, "Champs perso") can be removed. A cleared text value goes back to `.empty`,
+/// Template fields stay in place: only repeated copies of a repeatable field and the fields of a
+/// free section (any section the type's template does not have: `custom`, an importer's
+/// `imported`, `section_<n>` added in the editor) can be removed. A cleared text value goes back to `.empty`,
 /// so typing then erasing leaves the draft clean. Validation is the core's `validateItem`.
 public struct ItemDraft: Equatable, Sendable {
     public var item: FfiItem
@@ -13,6 +14,12 @@ public struct ItemDraft: Equatable, Sendable {
     public static let customSectionID = "custom"
     public static let customSectionLabel = "Champs perso"
     static let customPrefix = "custom_"
+    public static let sectionPrefix = "section_"
+
+    /// Label of a new free section, and of one left without a name at save.
+    public static func defaultSectionLabel() -> String {
+        String(localized: "editing.newSection", bundle: VaultKitStrings.bundle)
+    }
 
     public init(item: FfiItem) {
         self.item = item
@@ -53,12 +60,12 @@ public struct ItemDraft: Equatable, Sendable {
         item.sections[s].fields.insert(copy, at: last + 1)
     }
 
-    /// True for a custom field and for a repeated copy (not the first occurrence of its id).
+    /// True for a field of a free section and for a repeated copy (not the first occurrence of its id).
     public func isRemovable(sectionID: String, fieldIndex: Int) -> Bool {
         guard let s = sectionIndex(sectionID), item.sections[s].fields.indices.contains(fieldIndex) else {
             return false
         }
-        if sectionID == Self.customSectionID { return true }
+        if isFreeSection(sectionID) { return true }
         let id = item.sections[s].fields[fieldIndex].id
         return item.sections[s].fields[..<fieldIndex].contains { $0.id == id }
     }
@@ -78,11 +85,15 @@ public struct ItemDraft: Equatable, Sendable {
         item.sections[s].fields.remove(at: fieldIndex)
     }
 
-    /// Appends a field to the `custom` section ("Champs perso"), created when missing.
-    /// Ids are `custom_<n>`, never reused within the item.
-    public mutating func addCustomField(kind: FfiFieldType, label: String) {
+    /// Appends a field to a free section, or to the `custom` section ("Champs perso", created when
+    /// missing) when `sectionID` is nil. A template section is refused. Ids are `custom_<n>`, never
+    /// reused within the item.
+    public mutating func addCustomField(kind: FfiFieldType, label: String, sectionID: String? = nil) {
         let s: Int
-        if let existing = sectionIndex(Self.customSectionID) {
+        if let sectionID {
+            guard isFreeSection(sectionID), let existing = sectionIndex(sectionID) else { return }
+            s = existing
+        } else if let existing = sectionIndex(Self.customSectionID) {
             s = existing
         } else {
             item.sections.append(FfiSection(id: Self.customSectionID, label: Self.customSectionLabel, fields: []))
@@ -120,7 +131,82 @@ public struct ItemDraft: Equatable, Sendable {
         }
     }
 
+    // MARK: - Free sections
+
+    private var templateSectionIDs: Set<String> { Set(template(itemType: item.itemType).map(\.id)) }
+
+    /// A section the type's template does not have: renamable, movable and removable.
+    public func isFreeSection(_ sectionID: String) -> Bool { !templateSectionIDs.contains(sectionID) }
+
+    /// The free sections, in the item's order.
+    public var freeSectionIDs: [String] { item.sections.map(\.id).filter(isFreeSection) }
+
+    /// Moves a free section among the free ones (indices into `freeSectionIDs`, the target
+    /// clamped). Template sections stay first, in their order.
+    public mutating func moveFreeSection(from: Int, to: Int) {
+        let templates = Set(templateSectionIDs)
+        var free = item.sections.filter { !templates.contains($0.id) }
+        guard free.indices.contains(from) else { return }
+        let moving = free.remove(at: from)
+        free.insert(moving, at: min(max(to, 0), free.count))
+        item.sections = item.sections.filter { templates.contains($0.id) } + free
+    }
+
+    /// Moves a field within a free section; a template section is left alone.
+    public mutating func moveField(sectionID: String, from: Int, to: Int) {
+        guard isFreeSection(sectionID), let s = sectionIndex(sectionID),
+            item.sections[s].fields.indices.contains(from)
+        else { return }
+        let field = item.sections[s].fields.remove(at: from)
+        item.sections[s].fields.insert(field, at: min(max(to, 0), item.sections[s].fields.count))
+    }
+
+    /// Appends an empty free section and returns its id, `section_<n>`, never reused within the item.
+    /// A blank label stays blank while editing (the name field prompts the default); the save fills it.
+    @discardableResult
+    public mutating func addSection(label: String? = nil) -> String {
+        let next = max(Self.highestSectionNumber(in: item), Self.highestSectionNumber(in: original)) + 1
+        let id = Self.sectionPrefix + String(next)
+        let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        item.sections.append(FfiSection(id: id, label: trimmed, fields: []))
+        return id
+    }
+
+    private static func highestSectionNumber(in item: FfiItem) -> Int {
+        item.sections.compactMap { section -> Int? in
+            guard section.id.hasPrefix(sectionPrefix) else { return nil }
+            return Int(section.id.dropFirst(sectionPrefix.count))
+        }.max() ?? 0
+    }
+
+    public mutating func renameSection(id: String, label: String) {
+        guard isFreeSection(id), let s = sectionIndex(id) else { return }
+        item.sections[s].label = label
+    }
+
+    public mutating func removeSection(id: String) {
+        guard isFreeSection(id) else { return }
+        item.sections.removeAll { $0.id == id }
+    }
+
+    // MARK: - Sign-in provider
+
+    /// Drops the "sign in with" provider; the username stays as typed and is required again.
+    public mutating func clearSignInProvider() {
+        item.loginMethods.removeAll {
+            if case .provider = $0 { return true }
+            return false
+        }
+    }
+
     // MARK: - URLs and tags
+
+    /// Reorders the websites; the primary flag stays on its website. The target is clamped.
+    public mutating func moveURL(from: Int, to: Int) {
+        guard item.urls.indices.contains(from) else { return }
+        let url = item.urls.remove(at: from)
+        item.urls.insert(url, at: min(max(to, 0), item.urls.count))
+    }
 
     public mutating func addURL() {
         item.urls.append(FfiUrl(label: "", url: "", rule: .domain, primary: item.urls.isEmpty))
@@ -151,10 +237,14 @@ public struct ItemDraft: Equatable, Sendable {
     }
 
     /// The item to hand to `VaultSession.save`: blank URLs dropped, URLs trimmed, one primary URL,
-    /// custom fields left without a label get their default one back.
+    /// free sections left without a field dropped, free sections and their fields left without a
+    /// label get their default one back.
     public func preparedForSave() -> FfiItem {
         var out = item
-        if let s = out.sections.firstIndex(where: { $0.id == Self.customSectionID }) {
+        out.sections.removeAll { isFreeSection($0.id) && $0.fields.isEmpty }
+        for s in out.sections.indices where isFreeSection(out.sections[s].id) {
+            let name = out.sections[s].label.trimmingCharacters(in: .whitespacesAndNewlines)
+            out.sections[s].label = name.isEmpty ? Self.defaultSectionLabel() : name
             for f in out.sections[s].fields.indices {
                 let label = out.sections[s].fields[f].label.trimmingCharacters(in: .whitespacesAndNewlines)
                 out.sections[s].fields[f].label = label.isEmpty ? Self.defaultLabel(out.sections[s].fields[f].kind) : label

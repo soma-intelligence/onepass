@@ -25,15 +25,112 @@ final class ItemEditorModel {
     /// ones that add or remove rows.
     private(set) var fieldKeys: [String: [UUID]] = [:]
     private(set) var urlKeys: [UUID] = []
+    /// Rows shown whatever their value: filled at opening or added during this edit. A row emptied
+    /// while editing stays until the editor closes; its (−) hides it (`hideField`).
+    var pinnedKeys: Set<UUID> = []
+    /// "Tout afficher": every template field left empty shows.
+    var showAllFields = false
+    /// Where the websites card sits among the movable cards, per device (`EditorLayout`).
+    private(set) var websitesSlot: Int
 
-    init(draft: ItemDraft, isNew: Bool) {
+    init(draft: ItemDraft, isNew: Bool, defaults: UserDefaults = .standard) {
         self.draft = draft
         self.isNew = isNew
         targetVaultID = draft.item.vaultId
+        websitesSlot = defaults.object(forKey: EditorLayout.websitesSlotKey) as? Int ?? 0
+        self.defaults = defaults
         for section in draft.item.sections {
-            fieldKeys[section.id] = section.fields.map { _ in UUID() }
+            let keys = section.fields.map { _ in UUID() }
+            fieldKeys[section.id] = keys
+            for (key, field) in zip(keys, section.fields) where !field.value.isBlank { pinnedKeys.insert(key) }
         }
         urlKeys = draft.item.urls.map { _ in UUID() }
+    }
+
+    private let defaults: UserDefaults
+
+    // MARK: - Cards
+
+    /// The movable cards in order: websites and free sections.
+    var slots: [EditorSlot] {
+        EditorLayout.movableSlots(freeSectionIDs: draft.freeSectionIDs, websitesSlot: websitesSlot)
+    }
+
+    /// Moves a movable card; the websites card's place is stored on this device only.
+    func moveSlot(from: Int, to: Int) {
+        var slots = slots
+        guard slots.indices.contains(from) else { return }
+        let moving = slots.remove(at: from)
+        slots.insert(moving, at: min(max(to, 0), slots.count))
+        let order = slots.compactMap { if case .section(let id) = $0 { id } else { nil } }
+        for (target, id) in order.enumerated() {
+            if let current = draft.freeSectionIDs.firstIndex(of: id), current != target {
+                draft.moveFreeSection(from: current, to: target)
+            }
+        }
+        websitesSlot = EditorLayout.websitesSlot(after: slots)
+        defaults.set(websitesSlot, forKey: EditorLayout.websitesSlotKey)
+    }
+
+    /// The rows of a section shown now, as (index in the section, stable key).
+    func shownRows(_ section: FfiSection) -> [(position: Int, key: UUID)] {
+        let keys = keys(sectionID: section.id)
+        if showAllFields || draft.isFreeSection(section.id) {
+            return keys.enumerated().map { ($0.offset, $0.element) }
+        }
+        let pinned = Set(zip(keys, section.fields).compactMap { pinnedKeys.contains($0) ? $1.id : nil })
+        let isMain = section.id == draft.item.sections.first?.id
+        var shown = EditorLayout.shownFieldIndices(
+            section: section, isLogin: draft.item.itemType == .login, isMain: isMain, pinned: pinned,
+            errorFieldID: errorFieldID, waivedUsername: draft.item.signInProvider != nil)
+        // An empty passkey row says nothing until a site creates one; a file is shown elsewhere.
+        shown.removeAll { section.fields[$0].kind == .passkey && section.fields[$0].value.isBlank }
+        let order = isMain && draft.item.itemType == .login ? EditorLayout.mainCardOrder(section) : Array(section.fields.indices)
+        let set = Set(shown)
+        return order.filter { set.contains($0) && keys.indices.contains($0) }.map { ($0, keys[$0]) }
+    }
+
+    /// The (−) of a template row: empties it and folds it away.
+    func hideField(sectionID: String, key: UUID) {
+        guard let i = index(of: key, sectionID: sectionID) else { return }
+        draft.setValue(.empty, sectionID: sectionID, fieldIndex: i)
+        pinnedKeys.remove(key)
+    }
+
+    func pin(_ key: UUID) { pinnedKeys.insert(key) }
+
+    func clearSignInProvider() { draft.clearSignInProvider() }
+
+    // MARK: - Free sections
+
+    @discardableResult
+    func addSection() -> String {
+        let id = draft.addSection()
+        fieldKeys[id] = []
+        return id
+    }
+
+    func renameSection(id: String, label: String) { draft.renameSection(id: id, label: label) }
+
+    func removeSection(id: String) {
+        guard draft.isFreeSection(id) else { return }
+        draft.removeSection(id: id)
+        fieldKeys[id] = nil
+    }
+
+    func moveField(sectionID: String, from: Int, to: Int) {
+        guard draft.isFreeSection(sectionID), var keys = fieldKeys[sectionID], keys.indices.contains(from) else { return }
+        draft.moveField(sectionID: sectionID, from: from, to: to)
+        let key = keys.remove(at: from)
+        keys.insert(key, at: min(max(to, 0), keys.count))
+        fieldKeys[sectionID] = keys
+    }
+
+    func moveURL(from: Int, to: Int) {
+        guard urlKeys.indices.contains(from) else { return }
+        draft.moveURL(from: from, to: to)
+        let key = urlKeys.remove(at: from)
+        urlKeys.insert(key, at: min(max(to, 0), urlKeys.count))
     }
 
     // MARK: - Rows
@@ -51,7 +148,9 @@ final class ItemEditorModel {
         let before = fields.count
         draft.addRepeat(of: fieldID, in: sectionID)
         if draft.item.sections.first(where: { $0.id == sectionID })?.fields.count == before + 1 {
-            fieldKeys[sectionID, default: []].insert(UUID(), at: last + 1)
+            let key = UUID()
+            fieldKeys[sectionID, default: []].insert(key, at: last + 1)
+            pinnedKeys.insert(key)
         }
     }
 
@@ -81,9 +180,15 @@ final class ItemEditorModel {
         }
     }
 
-    func addCustomField(kind: FfiFieldType) {
-        draft.addCustomField(kind: kind, label: ItemDraft.defaultLabel(kind))
-        fieldKeys[ItemDraft.customSectionID, default: []].append(UUID())
+    /// Adds a custom field to a free section, or to "Champs perso" when `sectionID` is nil.
+    func addCustomField(kind: FfiFieldType, sectionID: String? = nil) {
+        let target = sectionID ?? ItemDraft.customSectionID
+        let before = draft.item.sections.first { $0.id == target }?.fields.count ?? 0
+        draft.addCustomField(kind: kind, label: ItemDraft.defaultLabel(kind), sectionID: sectionID)
+        guard (draft.item.sections.first { $0.id == target }?.fields.count ?? 0) == before + 1 else { return }
+        let key = UUID()
+        fieldKeys[target, default: []].append(key)
+        pinnedKeys.insert(key)
     }
 
     func addURL() {
