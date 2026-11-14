@@ -59748,25 +59748,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "At the first unlock within 3 hours before departure, after Face ID."
+            "value" : "At the first unlock from 3 hours before departure, once you confirm it's you."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En el primer desbloqueo dentro de las 3 horas previas a la salida, tras Face ID."
+            "value" : "En el primer desbloqueo a partir de 3 horas antes de la salida, tras confirmar tu identidad."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Au premier déverrouillage dans les 3 heures avant le départ, après Face ID."
+            "value" : "Au premier déverrouillage à partir de 3 heures avant le départ, après confirmation de ton identité."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Al primo sblocco nelle 3 ore prima della partenza, dopo Face ID."
+            "value" : "Al primo sblocco a partire da 3 ore prima della partenza, dopo aver confermato la tua identità."
           }
         }
       }
@@ -59857,6 +59857,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Al massimo 16 viaggi."
+          }
+        }
+      }
+    },
+    "trip.error.unreadable" : {
+      "comment" : "Trip editor error: the trips file cannot be read yet (device locked).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your trips can't be read right now. Unlock the device and try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus viajes no se pueden leer ahora mismo. Desbloquea el dispositivo y vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tes voyages ne sont pas lisibles pour l'instant. Déverrouille l'appareil et réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I tuoi viaggi non si possono leggere ora. Sblocca il dispositivo e riprova."
           }
         }
       }

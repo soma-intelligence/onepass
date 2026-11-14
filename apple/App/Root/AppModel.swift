@@ -1204,6 +1204,8 @@ final class AppModel {
     /// The session state changed (root view): records the unlock time, runs a waiting route,
     /// refreshes the widgets.
     func sessionStateChanged(_ state: VaultSession.State, from old: VaultSession.State? = nil) {
+        let slot = accounts.activeSlot
+        defer { travelUnlockSeen = (slot, state) }
         // A real lock (never a refused unlock: that one comes from `.unlocking`) begins a new lock
         // presentation, with its one automatic biometric try (`BiometricAutoPrompt`).
         if old == .unlocked, state != .unlocked, state != .unlocking { biometricAutoPrompt.vaultLocked() }
@@ -1223,7 +1225,11 @@ final class AppModel {
             #if os(macOS)
             returnToBrowserIfAsked()
             #endif
-            enterTravelForTripIfDue()
+            // Only a real unlock of the account shown: never an account switch to one already
+            // unlocked, nor the second report of the same unlock.
+            let previous: VaultSession.State? =
+                if let seen = travelUnlockSeen { seen.slot == slot ? seen.state : nil } else { old }
+            if let previous, previous != .unlocked { enterTravelForTripIfDue() }
         } else {
             resetNavigation()
             // Decrypted chosen icons never outlive the unlock; failures marked while locked go too.
@@ -1232,13 +1238,19 @@ final class AppModel {
         companion.sessionChanged()
     }
 
+    /// The last session state seen by `sessionStateChanged`, with its account: an unlock is a change
+    /// of the same account to `.unlocked`.
+    @ObservationIgnored private var travelUnlockSeen: (slot: String, state: VaultSession.State)?
+
     /// A trip marked automatic starts (spec 2026-11-14): its one attempt runs at this unlock. A
     /// failure shows the trip's card with the reason instead.
     private func enterTravelForTripIfDue() {
-        guard let id = travel.unlocked(travelling: session.isTravelling) else { return }
+        // Claimed before the Task starts: the card's Oui cannot slip in a second entry meanwhile.
+        guard let id = travel.unlocked(travelling: session.isTravelling), travel.beginEntry() else { return }
         Task {
+            defer { travel.endEntry() }
             do {
-                try await enterTravel(reason: String(localized: "settings.turnOnTravelMode"))
+                try await performEnterTravel(reason: String(localized: "settings.turnOnTravelMode"))
             } catch is CancellationError {
                 travel.autoEnterFailed(id: id, message: nil)
             } catch {
@@ -1251,8 +1263,17 @@ final class AppModel {
     /// or the passcode; a device without any owner authentication has nothing to check, hiding vaults
     /// is never a risk in itself), then every write of the leaving vaults goes to iCloud first (the
     /// core refuses otherwise). A refused confirmation throws `CancellationError`.
+    /// A second call while an entry runs (the card under the automatic entry's Face ID prompt, a
+    /// double unlock report) throws `CancellationError` at once: the first one carries on.
     @discardableResult
     func enterTravel(reason: String) async throws -> FfiTravelStatus {
+        guard travel.beginEntry() else { throw CancellationError() }
+        defer { travel.endEntry() }
+        return try await performEnterTravel(reason: reason)
+    }
+
+    @discardableResult
+    private func performEnterTravel(reason: String) async throws -> FfiTravelStatus {
         if LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) {
             guard await SystemPresenceChecker().confirm(prompt: reason) else { throw CancellationError() }
         }
