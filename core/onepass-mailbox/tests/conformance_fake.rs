@@ -315,3 +315,97 @@ fn drop_expires_72_hours_after_first_write() {
         Err(MailboxError::Malformed("drop slot"))
     );
 }
+
+fn put_kind(kind: u8, n: u8, expected: Option<u64>, data: &[u8]) -> CommitOp {
+    CommitOp {
+        kind,
+        id: [n; 16],
+        version: 1,
+        op: Op::Put {
+            expected,
+            body: Body::Inline(data.to_vec()),
+        },
+    }
+}
+
+fn delete_kind(kind: u8, n: u8) -> CommitOp {
+    CommitOp {
+        kind,
+        id: [n; 16],
+        version: 2,
+        op: Op::Delete,
+    }
+}
+
+fn created() -> onepass_mailbox::testing::FakeMailboxClient {
+    let fake = FakeMailbox::new();
+    let mut c = fake.client(Credential::generate().unwrap());
+    c.create(None, b"").unwrap();
+    c
+}
+
+#[test]
+fn fake_org_put_on_existing_key_conflicts() {
+    let c = created();
+    assert_eq!(
+        c.commit(vec![put_kind(29, 1, None, b"a")]).unwrap(),
+        CommitResponse::Applied {
+            seqs: vec![Some(1)]
+        }
+    );
+    match c.commit(vec![put_kind(29, 1, Some(1), b"b")]).unwrap() {
+        CommitResponse::Conflict { current } => {
+            let s = current[0].server.as_ref().expect("server row");
+            assert_eq!((s.seq, &s.body), (1, &Some(Body::Inline(b"a".to_vec()))));
+        }
+        other => panic!("expected Conflict, got {other:?}"),
+    }
+    c.commit(vec![put_kind(30, 1, None, b"a")]).unwrap();
+    assert!(matches!(
+        c.commit(vec![put_kind(30, 1, None, b"a")]).unwrap(),
+        CommitResponse::Conflict { .. }
+    ));
+    let r = c.record(29, [1; 16]).unwrap().unwrap();
+    assert_eq!(
+        (r.seq, r.version, r.body),
+        (1, 1, Some(Body::Inline(b"a".to_vec())))
+    );
+}
+
+#[test]
+fn fake_org_delete_is_forbidden() {
+    let c = created();
+    c.commit(vec![put_kind(29, 1, None, b"a")]).unwrap();
+    assert_eq!(
+        c.commit(vec![delete_kind(29, 1)]).unwrap_err(),
+        MailboxError::Forbidden
+    );
+    assert_eq!(
+        c.commit(vec![delete_kind(30, 9)]).unwrap_err(),
+        MailboxError::Forbidden
+    );
+    assert_eq!(
+        c.commit(vec![put_kind(5, 2, None, b"x"), delete_kind(29, 1)])
+            .unwrap_err(),
+        MailboxError::Forbidden
+    );
+    assert_eq!(c.record(5, [2; 16]).unwrap(), None);
+}
+
+#[test]
+fn fake_mutable_org_kinds_update() {
+    let c = created();
+    for kind in [31, 32] {
+        c.commit(vec![put_kind(kind, 1, None, b"a")]).unwrap();
+    }
+    for (kind, seq) in [(31, 1), (32, 2)] {
+        assert!(matches!(
+            c.commit(vec![put_kind(kind, 1, Some(seq), b"b")]).unwrap(),
+            CommitResponse::Applied { .. }
+        ));
+    }
+    match c.commit(vec![delete_kind(32, 1)]).unwrap() {
+        CommitResponse::Applied { seqs } => assert!(seqs[0].is_some()),
+        other => panic!("expected Applied, got {other:?}"),
+    }
+}

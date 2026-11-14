@@ -45,6 +45,7 @@ export const FUNCTIONS = [
   "api_set_locator",
   "api_delete_mailbox",
   "api_create_child",
+  "api_org_invite",
   "locate",
   "api_changes",
   "api_commit",

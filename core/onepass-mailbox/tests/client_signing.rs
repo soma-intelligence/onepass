@@ -16,10 +16,10 @@ use onepass_mailbox_proto::{
     BlobAnnounce, BlobLookup, BlobUrls, Body, COMMIT_BODY_MAX, ChangesPage, ChangesQuery,
     ChildKind, CommitOp, CommitRequest, CommitResponse, ConflictEntry, CreateChild, CreateMailbox,
     CredentialRole, Enroll, ErrorBody, ErrorCode, GrantCredential, INLINE_MAX, Limits,
-    LocateRequest, Located, MailboxCreated, MailboxInfo, Op, PushKind, RECORD_MAX, ServerConfig,
-    ServerRecord, SetCredentialRole, SetLocator, SetPush, Usage, blob_sha256, check_skew,
-    content_digest, credential_id, decode, encode, hex, parse_signature_headers, signature_base,
-    ticket_signed_bytes,
+    LocateRequest, Located, MailboxCreated, MailboxInfo, Op, OrgInviteCreated, PushKind,
+    RECORD_MAX, ServerConfig, ServerRecord, SetCredentialRole, SetLocator, SetPush, Usage,
+    blob_sha256, check_skew, content_digest, credential_id, decode, encode, hex,
+    parse_signature_headers, signature_base, ticket_signed_bytes,
 };
 
 const PREFIX: &str = "/functions/v1/mailbox";
@@ -293,6 +293,13 @@ fn api(req: &Req, origin: &str, blobs: &Mutex<BTreeMap<String, Vec<u8>>>) -> Res
                 wake_topic: [4; 16],
             }))
         }
+        ("POST", r) if r == format!("{m}/org-invites") => {
+            let c = decode::<onepass_mailbox_proto::CreateOrgInvite>(&req.body).unwrap();
+            assert_eq!((c.uses, c.ttl_hours), (1, 24));
+            ok(encode(&OrgInviteCreated {
+                token: vec![0x0e; 32],
+            }))
+        }
         ("POST", "/v1/locate") => {
             if decode::<LocateRequest>(&req.body).unwrap().locator == LOCATOR {
                 ok(encode(&Located {
@@ -457,6 +464,12 @@ fn every_request_is_signed() {
         Err(MailboxError::TooLarge),
         "a long label is refused before sending"
     );
+    assert_eq!(a.create_org_invite(1, 24).unwrap(), vec![0x0e; 32]);
+    assert_eq!(
+        a.create_org_invite(2, 24),
+        Err(MailboxError::Malformed("request")),
+        "an invite of several uses is refused before sending"
+    );
     let big = vec![5u8; INLINE_MAX + 1];
     let body = a.body_for(&big).unwrap();
     a.upload_blobs(&[&big]).unwrap();
@@ -540,6 +553,7 @@ fn every_request_is_signed() {
         ("PUT", format!("{m}/push")),
         ("PUT", format!("{m}/locator")),
         ("POST", format!("{m}/children")),
+        ("POST", format!("{m}/org-invites")),
         ("DELETE", m.clone()),
         ("POST", format!("{m}/blobs/uploads")),
         ("POST", format!("{m}/blobs/downloads")),
@@ -1014,6 +1028,36 @@ fn enroll_checks_the_ticket_is_for_this_key_and_server() {
             .requests()
             .iter()
             .all(|r| !r.path.ends_with("/credentials"))
+    );
+}
+
+/// An org invite answer is read strictly: a token of another length, or a
+/// refusal, never reaches the caller as a token.
+#[test]
+fn org_invite_answers_are_checked() {
+    for (len, want) in [
+        (31, MailboxError::Malformed("response")),
+        (33, MailboxError::Malformed("response")),
+    ] {
+        let server = Server::start(move |_, _| {
+            Resp::postcard(
+                200,
+                encode(&OrgInviteCreated {
+                    token: vec![1; len],
+                }),
+            )
+        });
+        let (c, _) = client(&server);
+        assert_eq!(c.create_org_invite(1, 24), Err(want), "{len} bytes");
+    }
+    let server = Server::start(|_, _| Resp::error(ErrorCode::Forbidden, 403, None));
+    let (c, _) = client(&server);
+    assert_eq!(c.create_org_invite(1, 24), Err(MailboxError::Forbidden));
+    let server = Server::start(|_, _| Resp::error(ErrorCode::RateLimited, 429, Some(3600)));
+    let (c, _) = client(&server);
+    assert_eq!(
+        c.create_org_invite(1, 24),
+        Err(MailboxError::Retry { after: Some(3600) })
     );
 }
 

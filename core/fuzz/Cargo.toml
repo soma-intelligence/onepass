@@ -13,6 +13,7 @@ libfuzzer-sys = "0.4"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde_bytes = "0.11"
 onepass-core = { path = "../onepass-core", features = ["dev-fast-kdf"] }
+onepass-mailbox = { path = "../onepass-mailbox" }
 onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 onepass-mcp = { path = "../onepass-mcp" }
 onepass-ssh-agent = { path = "../onepass-ssh-agent" }
@@ -338,6 +339,13 @@ bench = false
 [[bin]]
 name = "org_dns_txt"
 path = "fuzz_targets/org_dns_txt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "org_join_frame"
+path = "fuzz_targets/org_join_frame.rs"
 test = false
 doc = false
 bench = false
