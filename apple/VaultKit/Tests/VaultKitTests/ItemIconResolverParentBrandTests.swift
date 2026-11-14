@@ -12,13 +12,34 @@ import Testing
     static let social = Data("facebook-icon".utf8)
     static let login = Data("login-icon".utf8)
 
-    /// A pack of five icons: bayclub, acme and "login" by name, brandclub.com and facebook.com by
-    /// domain.
+    static let daxko = Data("daxko-icon".utf8)
+    static let desk = Data("zendesk-icon".utf8)
+
+    /// A pack of seven icons: bayclub, acme, "login" and daxko by name, brandclub.com, facebook.com,
+    /// daxko.com (a platform) and zendesk.com (a tenant) by domain.
     static func packData(version: Int, rejects: [String]? = nil) -> Data {
-        makeIconPack(
-            version: version, icons: [(bay, 0), (acme, 0), (brand, 0), (social, 0), (login, 0)],
-            domains: ["brandclub.com": 2, "facebook.com": 3, "autre.fr": 1],
-            names: ["bayclub": 0, "acme": 1, "login": 4], rejects: rejects)
+        var body = makeIconPack(
+            version: version, icons: [(bay, 0), (acme, 0), (brand, 0), (social, 0), (login, 0), (daxko, 0), (desk, 0)],
+            domains: ["brandclub.com": 2, "facebook.com": 3, "autre.fr": 1, "daxko.com": 5, "zendeskclub.com": 6],
+            names: ["bayclub": 0, "acme": 1, "login": 4, "daxko": 5, "zendeskclub": 6], tenants: ["zendeskclub.com"],
+            rejects: rejects)
+        // The `platforms` key, as `scripts/icon_pack.py` writes it.
+        body = withPlatforms(body, [5])
+        return body
+    }
+
+    /// `data` with `"platforms": numbers` added to its index.
+    static func withPlatforms(_ data: Data, _ numbers: [Int]) -> Data {
+        let length = data[5..<9].reduce(0) { $0 << 8 | Int($1) }
+        var index = try! JSONSerialization.jsonObject(with: data[9..<(9 + length)]) as! [String: Any]
+        index["platforms"] = numbers
+        let json = try! JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
+        var out = Data("OPIP".utf8)
+        out.append(1)
+        out.append(contentsOf: withUnsafeBytes(of: UInt32(json.count).bigEndian, Array.init))
+        out.append(json)
+        out.append(data[(9 + length)...])
+        return out
     }
 
     static func make(version: Int = 7, rejects: [String]? = nil, cache: URL = SiteIconLoaderTests.tempDirectory())
@@ -66,7 +87,53 @@ import Testing
         #expect(IconPack.brandKeys("Abc Portal") == ["abcportal"])
         #expect(IconPack.brandKeys("Abcd").isEmpty == false)
         #expect(IconPack.brandKeys("Abc").isEmpty)
+        // Only generic words: no brand at all.
+        for name in ["My Portal", "Member Portal", "Mobile App", "My Account", "Members", "Web"] {
+            #expect(IconPack.brandKeys(name).isEmpty, "\(name)")
+        }
         #expect(IconPack.brandKeys(SiteIconLoader.decodeEntities("Bay Club &amp; Spa")).first == "bayclubandspa")
+    }
+
+    @Test func platformsKeyIsReadAndChecked() throws {
+        let pack = try IconPack(data: Self.packData(version: 1))
+        #expect(pack.platformIcons == [5])
+        #expect(!pack.mayBeParentBrand(5))
+        #expect(!pack.mayBeParentBrand(6))
+        #expect(pack.mayBeParentBrand(0))
+        // A pack's own domain still shows the platform's icon.
+        #expect(pack.icon(forHost: "daxko.com")?.data == Self.daxko)
+        let plain = try IconPack(data: makeIconPack(version: 1, icons: [(Self.bay, 0)], domains: ["a.fr": 0]))
+        #expect(plain.platformIcons.isEmpty)
+        #expect(throws: IconPack.Problem.outOfBounds) {
+            try IconPack(data: Self.withPlatforms(makeIconPack(version: 1, icons: [(Self.bay, 0)], domains: ["a.fr": 0]), [3]))
+        }
+    }
+
+    /// The pack names the platforms: a portal calling itself after its software, or pointing its
+    /// canonical address at it, gets no parent brand.
+    @Test func platformBrandIsNeverAParentBrand() throws {
+        let pack = try IconPack(data: Self.packData(version: 1))
+        let daxko = Data(#"<meta property="og:site_name" content="Daxko"><title>Daxko Connect</title>"#.utf8)
+        #expect(SiteIconLoader.parentBrand(page: daxko, manifest: nil, host: "members.gym-test.com", pack: pack)
+            == SiteIconLoader.ParentBrand(packVersion: 1, byName: nil, byLink: nil))
+        let canonical = Data(#"<link rel="canonical" href="https://www.daxko.com/members">"#.utf8)
+        #expect(SiteIconLoader.parentBrand(page: canonical, manifest: nil, host: "members.gym-test.com", pack: pack).byLink == nil)
+        let tenant = Data(#"<title>Zendesk Club</title><link rel="canonical" href="https://zendeskclub.com/">"#.utf8)
+        #expect(SiteIconLoader.parentBrand(page: tenant, manifest: nil, host: "help.gym-test.com", pack: pack).isEmpty)
+        let bay = Data(#"<meta property="og:site_name" content="Bay Club Connect">"#.utf8)
+        #expect(SiteIconLoader.parentBrand(page: bay, manifest: nil, host: "members.gym-test.com", pack: pack).byName == 0)
+    }
+
+    /// A rejected (platform) icon in the pack is never a parent brand either.
+    @Test func rejectedPackIconIsNeverAParentBrand() throws {
+        let platform = SiteIconLoaderTests.patternPNG(seed: 21)
+        let reject = String(format: "%016llx", try SiteIconLoaderTests.rejectHash(platform))
+        let png = try #require(SiteIconLoader.normalizedPNG(platform))
+        let pack = try IconPack(data: makeIconPack(
+            version: 1, icons: [(png, 0)], domains: ["vendor.com": 0], names: ["vendor": 0], rejects: [reject]))
+        #expect(!pack.mayBeParentBrand(0))
+        let page = Data(#"<meta property="og:site_name" content="Vendor">"#.utf8)
+        #expect(SiteIconLoader.parentBrand(page: page, manifest: nil, host: "club.vendor-test.com", pack: pack).isEmpty)
     }
 
     // MARK: Resolver order
@@ -138,6 +205,30 @@ import Testing
             """
         Self.serve("facebookfans-club-test.com", html: html, favicon: platform)
         #expect(await resolver.icon(for: "https://facebookfans-club-test.com", title: "") == nil)
+    }
+
+    /// A new pack re-searches cached hosts for their parent brand a few at a time, each once.
+    @Test func parentBrandReSearchesAreBounded() async throws {
+        let cache = SiteIconLoaderTests.tempDirectory()
+        let hosts = (1...12).map { "club\($0).burst-test.com" }
+        for host in hosts {
+            Self.serve(host, html: #"<meta property="og:site_name" content="Bay Club Connect">"#,
+                favicon: SiteIconLoaderTests.patternPNG(seed: 30))
+        }
+        let old = try Self.make(version: 7, cache: cache)
+        for host in hosts { _ = await old.icon(for: "https://" + host, title: "") }
+        let newer = try Self.make(version: 8, cache: cache)
+        for _ in 0..<2 {
+            for host in hosts { _ = await newer.site.icon(for: "https://" + host) }
+        }
+        await newer.site.settle()
+        #expect(await newer.site.brandRunningPeak <= SiteIconLoader.prefetchWidth)
+        #expect(await newer.site.brandRunningPeak >= 1)
+        for host in hosts {
+            #expect(newer.site.cachedParentBrand(for: "https://" + host)?.packVersion == 8)
+            let homes = StubProtocol.requests(host: host).filter { ["", "/"].contains($0.url?.path) }
+            #expect(homes.count == 2, "\(host)")
+        }
     }
 
     /// A parent brand found in another pack version is not used; the site is searched again.

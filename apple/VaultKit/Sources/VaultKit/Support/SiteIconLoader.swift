@@ -118,6 +118,13 @@ public actor SiteIconLoader {
     /// The icon pack in use, for the parent brand; nil: no parent brand is looked for.
     private let pack: @Sendable () -> IconPack?
     private var inFlight: [String: Task<Data?, Never>] = [:]
+    /// Hosts waiting for a parent brand re-search (a new pack), first in first out, and the number
+    /// of such searches running: at most `prefetchWidth` at once, so a new pack never sends every
+    /// cached host at once.
+    private var brandQueue: [String] = []
+    private var brandRunning = 0
+    /// Most parent brand re-searches seen running at once (tests).
+    private(set) var brandRunningPeak = 0
     /// Icons already read or fetched, by host: a row shows its icon on its first frame, never the
     /// placeholder first.
     private let memory = Mutex<[String: Data]>([:])
@@ -148,7 +155,11 @@ public actor SiteIconLoader {
         }
         // A failure is not asked again before its time, unless the parent brand found with it
         // belongs to an older pack (or was never looked for).
-        if let age = markerAge(host: host), age < Self.failureLifetime, !brandOutdated(host: host) { return nil }
+        if let age = markerAge(host: host), age < Self.failureLifetime {
+            // Searched again in the background, a few hosts at a time.
+            if brandOutdated(host: host) { queueBrandSearch(host: host) }
+            return nil
+        }
 
         if let task = inFlight[host] { return await task.value }
         let task = Task { await self.fetchAndStore(host: host) }
@@ -191,14 +202,46 @@ public actor SiteIconLoader {
     /// it replaces the old one. Not found (or offline): the old one stays, asked again after
     /// another `refreshAge`.
     private func refreshIfStale(host: String) {
-        guard inFlight[host] == nil, let age = iconAge(host: host), age > Self.refreshAge || brandOutdated(host: host)
-        else { return }
+        guard inFlight[host] == nil, let age = iconAge(host: host) else { return }
+        guard age > Self.refreshAge else {
+            if brandOutdated(host: host) { queueBrandSearch(host: host) }
+            return
+        }
         let task = Task { await self.fetchAndStore(host: host, refreshing: true) }
         inFlight[host] = task
         Task {
             let fresh = await task.value
             self.finishRefresh(host: host, fresh: fresh)
         }
+    }
+
+    /// Queues a background search of `host` for its parent brand (once per host).
+    private func queueBrandSearch(host: String) {
+        guard inFlight[host] == nil, !brandQueue.contains(host) else { return }
+        brandQueue.append(host)
+        startBrandSearches()
+    }
+
+    private func startBrandSearches() {
+        while brandRunning < Self.prefetchWidth, !brandQueue.isEmpty {
+            let host = brandQueue.removeFirst()
+            guard inFlight[host] == nil else { continue }
+            brandRunning += 1
+            brandRunningPeak = max(brandRunningPeak, brandRunning)
+            let task = Task { await self.fetchAndStore(host: host, refreshing: true) }
+            inFlight[host] = task
+            Task {
+                let fresh = await task.value
+                self.finishBrandSearch(host: host, fresh: fresh)
+            }
+        }
+    }
+
+    private func finishBrandSearch(host: String, fresh: Data?) {
+        inFlight[host] = nil
+        if let fresh { memory.withLock { $0[host] = fresh } }
+        brandRunning -= 1
+        startBrandSearches()
     }
 
     private func finishRefresh(host: String, fresh: Data?) {
@@ -664,7 +707,7 @@ public actor SiteIconLoader {
     /// (same host).
     static func pageLinks(in data: Data, base: URL, host: String) -> (icons: [IconCandidate], manifest: URL?) {
         let html = String(decoding: data, as: UTF8.self)
-        guard let tag = try? NSRegularExpression(pattern: "<link\\b[^>]*>", options: [.caseInsensitive])
+        guard let tag = try? NSRegularExpression(pattern: "<link\\b[^>]{0,4096}>", options: [.caseInsensitive])
         else { return ([], nil) }
         var icons: [IconCandidate] = []
         var manifest: URL?
@@ -750,8 +793,11 @@ public actor SiteIconLoader {
         if let hit = brands.withLock({ $0[host] }) { return hit }
         let read = (try? Data(contentsOf: cacheFile(host: host, ext: "brand")))
             .flatMap { try? JSONDecoder().decode(ParentBrand.self, from: $0) }
-        brands.withLock { $0[host] = .some(read) }
-        return read
+        // A record written meanwhile (a search that just ended) wins over this read.
+        return brands.withLock { memo -> ParentBrand? in
+            if memo[host] == nil { memo[host] = .some(read) }
+            return memo[host] ?? nil
+        }
     }
 
     /// Whether the host's parent brand must be looked for again: the pack changed since, or it was
@@ -768,11 +814,14 @@ public actor SiteIconLoader {
 
     /// `ParentBrand` of a home page (and its manifest) for `pack`: the first site name
     /// (`siteNames`) the pack knows as a brand (`IconPack.icon(forBrandName:)`), and the first linked
-    /// domain (`linkedDomains`) the pack has an icon for.
+    /// domain (`linkedDomains`) the pack has an icon for. Never a hosting platform's icon
+    /// (`IconPack.mayBeParentBrand`): a portal naming or linking to its software vendor ("Daxko") is
+    /// not that vendor's brand.
     static func parentBrand(page: Data, manifest: Data?, host: String, pack: IconPack) -> ParentBrand {
         let names = siteNames(in: page, manifest: manifest)
-        let byName = names.lazy.compactMap(pack.number(forBrandName:)).first
-        let byLink = linkedDomains(in: page, host: host, names: names).lazy.compactMap(pack.number(forLinkedDomain:)).first
+        let byName = names.lazy.compactMap(pack.number(forBrandName:)).first(where: pack.mayBeParentBrand)
+        let byLink = linkedDomains(in: page, host: host, names: names).lazy.compactMap(pack.number(forLinkedDomain:))
+            .first(where: pack.mayBeParentBrand)
         return ParentBrand(packVersion: pack.version, byName: byName, byLink: byLink)
     }
 
@@ -808,7 +857,7 @@ public actor SiteIconLoader {
             add(root["name"] as? String)
             add(root["short_name"] as? String)
         }
-        if let regex = try? NSRegularExpression(pattern: "<title\\b[^>]*>([^<]{1,512})", options: [.caseInsensitive]),
+        if let regex = try? NSRegularExpression(pattern: "<title\\b[^>]{0,4096}>([^<]{1,512})", options: [.caseInsensitive]),
             let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
             let range = Range(match.range(at: 1), in: html)
         {
@@ -868,10 +917,7 @@ public actor SiteIconLoader {
             if counts[registrable] == nil { order.append(registrable) }
             counts[registrable, default: 0] += 1
         }
-        var read = 0
-        for element in tags("a", in: html) {
-            guard read < maxLinksRead else { break }
-            read += 1
+        for element in tags("a", in: html, limit: maxLinksRead) {
             if let found = domain(attribute("href", in: element)) { count(found) }
         }
         for element in tags("link", in: html) {
@@ -904,16 +950,21 @@ public actor SiteIconLoader {
         return Array(ranked.map(\.element).filter(related).prefix(maxLinkedDomains))
     }
 
-    /// The opening tags `<name ...>` of a page.
-    private static func tags(_ name: String, in html: String) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: "<\(name)\\b[^>]*>", options: [.caseInsensitive]) else { return [] }
-        return regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).compactMap {
-            Range($0.range, in: html).map { String(html[$0]) }
+    /// The opening tags `<name ...>` of a page (each at most 4096 characters), the first `limit`.
+    private static func tags(_ name: String, in html: String, limit: Int = .max) -> [String] {
+        guard limit > 0,
+            let regex = try? NSRegularExpression(pattern: "<\(name)\\b[^>]{0,4096}>", options: [.caseInsensitive])
+        else { return [] }
+        var found: [String] = []
+        regex.enumerateMatches(in: html, range: NSRange(html.startIndex..., in: html)) { match, _, stop in
+            if let match, let range = Range(match.range, in: html) { found.append(String(html[range])) }
+            if found.count >= limit { stop.pointee = true }
         }
+        return found
     }
 
     /// `text` with its HTML character references decoded (`&amp;`, `&#39;`, `&#x2019;`...); an
-    /// unknown or malformed one is kept as written.
+    /// unknown named one is dropped, a malformed numeric one kept as written.
     static func decodeEntities(_ text: String) -> String {
         guard text.contains("&") else { return text }
         let named: [String: Character] = [
@@ -932,8 +983,12 @@ public actor SiteIconLoader {
                     let digits = body.dropFirst()
                     let value = digits.lowercased().hasPrefix("x") ? UInt32(digits.dropFirst(), radix: 16) : UInt32(digits)
                     if let value, value > 0, let scalar = Unicode.Scalar(value) { decoded = Character(scalar) }
-                } else {
-                    decoded = named[body.lowercased()]
+                } else if body.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }), !body.isEmpty {
+                    guard let known = named[body.lowercased()] else {
+                        index = text.index(after: end)
+                        continue
+                    }
+                    decoded = known
                 }
                 if let decoded {
                     out.append(decoded)

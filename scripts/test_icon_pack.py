@@ -689,6 +689,19 @@ class Platforms(unittest.TestCase):
         with self.assertRaises(icon_pack.IconPackError):
             icon_pack.read_pack(bad)
 
+    def test_platform_icons_in_the_index(self):
+        domains = {"daxko.com": 0, "members.daxko.com": 0, "login.okta.com": 1, "bayclubs.com": 2,
+                   "notdaxko.com": 3, "acme.com": 4}
+        self.assertEqual(icon_pack.platform_icons(domains, ["daxko.com", "okta.com", "wix.com"]), [0, 1])
+        icons = [(b"a", 0), (b"b", 0), (b"c", 0), (b"d", 0), (b"e", 0)]
+        data = icon_pack.pack_bytes(3, 256, icons, domains, platforms=[1, 0, 1])
+        index, _ = icon_pack.read_pack(data)
+        self.assertEqual(index["platforms"], [0, 1])
+        plain, _ = icon_pack.read_pack(icon_pack.pack_bytes(3, 256, icons, domains))
+        self.assertNotIn("platforms", plain)
+        with self.assertRaises(icon_pack.IconPackError):
+            icon_pack.read_pack(icon_pack.pack_bytes(3, 256, icons, domains, platforms=[9]))
+
     def test_shipped_platform_list(self):
         path = ROOT / "scripts" / "icon-pack-platforms.txt"
         listed, tranco = icon_pack.read_domain_lists([path])

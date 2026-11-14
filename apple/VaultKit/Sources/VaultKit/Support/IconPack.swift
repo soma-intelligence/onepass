@@ -42,6 +42,11 @@ public struct IconPack: Sendable {
     /// software's favicon, a shop on a site builder serving the builder's. A site icon within
     /// `rejectDistance` of one is never shown as the brand's logo. Empty for a pack without the key.
     public let rejects: [UInt64]
+    /// Icon numbers of hosting platforms (daxko.com, okta.com, wix.com...): shown for the platform's
+    /// own domain, never as another site's parent brand. Empty for a pack without the key.
+    public let platformIcons: Set<Int>
+    /// Icon numbers of tenant domains (`tenants`): platforms too.
+    let tenantIcons: Set<Int>
     /// The whole file (memory mapped when read from disk: never copied) and where the icons start.
     let data: Data
     let iconsStart: Int
@@ -67,6 +72,7 @@ public struct IconPack: Sendable {
         let names: [String: Int]?
         let tenants: [String]?
         let rejects: [String]?
+        let platforms: [Int]?
     }
 
     /// Parses a pack, every offset and every domain's icon number checked.
@@ -90,7 +96,7 @@ public struct IconPack: Sendable {
             guard offset >= 0, size > 0, offset <= blobCount - size else { throw .outOfBounds }
             icons.append((offset, size, flags))
         }
-        for number in Array(index.domains.values) + Array((index.names ?? [:]).values)
+        for number in Array(index.domains.values) + Array((index.names ?? [:]).values) + (index.platforms ?? [])
         where !(0..<icons.count).contains(number) {
             throw .outOfBounds
         }
@@ -108,6 +114,8 @@ public struct IconPack: Sendable {
         self.names = index.names ?? [:]
         self.tenants = Set(index.tenants ?? [])
         self.rejects = rejects
+        self.platformIcons = Set(index.platforms ?? [])
+        self.tenantIcons = Set((index.tenants ?? []).compactMap { index.domains[$0] })
         self.data = data
         self.iconsStart = iconsStart
     }
@@ -193,7 +201,10 @@ public struct IconPack: Sendable {
             for variant in variants where variant.count > dropped {
                 let tail = variant.suffix(dropped)
                 guard tail.allSatisfy(genericTrailingWords.contains) else { continue }
-                let key = variant.dropLast(dropped).joined()
+                let kept = variant.dropLast(dropped)
+                // "My Portal", "Member Portal", "Mobile App": no brand word at all.
+                guard !kept.allSatisfy(genericTrailingWords.contains) else { continue }
+                let key = kept.joined()
                 guard key.count >= minBrandNameLength, !genericPageNames.contains(key), !keys.contains(key) else { continue }
                 keys.append(key)
             }
@@ -210,6 +221,14 @@ public struct IconPack: Sendable {
         if tenants.contains(name) { return nil }
         if let registrable = SiteIconLoader.registrableDomain(of: name), tenants.contains(registrable) { return nil }
         return number
+    }
+
+    /// Whether icon `number` may stand for another site's parent brand: not a hosting platform's
+    /// (`platformIcons`), not a tenant domain's, and not an icon the pack's `rejects` refuse.
+    func mayBeParentBrand(_ number: Int) -> Bool {
+        guard icons.indices.contains(number), !platformIcons.contains(number), !tenantIcons.contains(number)
+        else { return false }
+        return !Self.isRejected(icon(number).data, by: rejects)
     }
 
     /// Largest Hamming distance between two dHashes of the same icon (`REJECT_DISTANCE` in

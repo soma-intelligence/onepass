@@ -43,7 +43,9 @@ Pack format 1 (all integers big-endian):
              "domains": {"withings.com": icon number, ...}}
     optional keys: "names", "tenants", and "rejects": dHashes (16 lowercase hex digits, sorted) of
     hosting-platform icons (a gym portal serving its software vendor's favicon), which the app
-    never shows as a site's icon.
+    never shows as a site's icon; "platforms": sorted icon numbers of hosting platforms (an icon
+    with a domain of --platforms, or a subdomain of one), which the app never shows as another
+    site's parent brand (its own domain still gets it).
     flags: bit 0 = one color mark (drawn in the text color by the app);
            bit 1 (value 2) = a 128 px icon from a popular-domain list (--domains), the others
            being `size` px.
@@ -1811,10 +1813,23 @@ def brand_names(picked, domains):
     return dict(sorted(out.items()))
 
 
-def pack_bytes(version, size, icons, domains, names=None, tenants=None, rejects=None):
+def platform_icons(domains, platforms):
+    """Sorted icon numbers of hosting platforms: every icon one of whose `domains` is a platform
+    domain (`platforms`) or a subdomain of one."""
+    listed = {p.lower().strip(".") for p in platforms if p}
+    out = set()
+    for domain, number in domains.items():
+        name = domain.lower().strip(".")
+        if any(name == p or name.endswith("." + p) for p in listed):
+            out.add(number)
+    return sorted(out)
+
+
+def pack_bytes(version, size, icons, domains, names=None, tenants=None, rejects=None, platforms=None):
     """icons: [(bytes, flags)], domains: {domain: index}, names: {squashed brand name: index},
     tenants: domains whose icon is not inherited by their subdomains (acme.zendesk.com is Acme's),
-    rejects: dHashes of platform icons (ints), written as 16 hex digits, sorted, once each."""
+    rejects: dHashes of platform icons (ints), written as 16 hex digits, sorted, once each,
+    platforms: icon numbers of hosting platforms (`platform_icons`), sorted, once each."""
     offsets, blob, position = [], bytearray(), 0
     for data, flags in icons:
         offsets.append([position, len(data), flags])
@@ -1827,6 +1842,8 @@ def pack_bytes(version, size, icons, domains, names=None, tenants=None, rejects=
         index["tenants"] = sorted(tenants)
     if rejects:
         index["rejects"] = sorted({"%016x" % r for r in rejects})
+    if platforms:
+        index["platforms"] = sorted(set(platforms))
     index = json.dumps(index, separators=(",", ":"), sort_keys=True).encode()
     return MAGIC + bytes([FORMAT]) + struct.pack(">I", len(index)) + index + bytes(blob)
 
@@ -1849,6 +1866,9 @@ def read_pack(data):
     for value in index.get("rejects", []):
         if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{16}", value):
             raise IconPackError("a reject is not 16 lowercase hex digits")
+    for number in index.get("platforms", []):
+        if not isinstance(number, int) or isinstance(number, bool) or not 0 <= number < len(index["icons"]):
+            raise IconPackError("a platform points past the icons")
     return index, blob
 
 
@@ -1948,7 +1968,11 @@ def build(args):
     stats["kept"] = sum(1 for c in picked.values() if c.rank == RANK_DOMAIN_LIST)
     names = brand_names(picked, domains)
     tenants = sorted(d for d in (normalized_domain(x) for x in curated.get("tenants", [])) if d in domains)
-    pack = pack_bytes(args.version, args.size, icons, domains, names=names, tenants=tenants, rejects=rejects)
+    # Icons of hosting platforms: never another site's parent brand in the app.
+    platform_list = read_domain_lists([args.platforms])[0] if args.platforms else []
+    platforms = platform_icons(domains, platform_list)
+    pack = pack_bytes(args.version, args.size, icons, domains, names=names, tenants=tenants, rejects=rejects,
+                      platforms=platforms)
     used = {name.partition(":")[2] for name in chosen.values() if name.startswith("brand:")}
     if used:
         # Where each brand icon in the pack came from (URL, hash, size, date): the per-icon record.

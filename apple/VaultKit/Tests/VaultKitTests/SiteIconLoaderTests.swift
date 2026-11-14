@@ -1172,7 +1172,9 @@ extension SiteIconLoaderTests {
             _ = SiteIconLoader.linkedDomains(in: Data(page.utf8), host: "acme-portal.com")
         }
         #expect(SiteIconLoader.siteNames(in: Data([0xFF, 0xFE, 0x3C])).isEmpty)
-        #expect(SiteIconLoader.decodeEntities("A &unknown; &#xZZ; &") == "A &unknown; &#xZZ; &")
+        // An unknown named reference is dropped; a malformed numeric one or a bare "&" is kept.
+        #expect(SiteIconLoader.decodeEntities("A &unknown; &#xZZ; &") == "A  &#xZZ; &")
+        #expect(SiteIconLoader.decodeEntities("Bay&shy;Club &amp; Spa") == "BayClub & Spa")
     }
 
     @Test func linkedDomainsKeepRelatedOnesMostFrequentFirst() {
