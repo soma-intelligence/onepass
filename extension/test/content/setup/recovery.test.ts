@@ -48,6 +48,18 @@ describe("findRecoveryCodes", () => {
     expect(findRecoveryCodes(r)).toBeNull();
   });
 
+  it("keeps a Discord-style list where one random code has no digit", () => {
+    const list = ["k3xq9vbn", "p7mzt2wa", "qwertyui", "h4jd8sle", "9cn2ruxo", "fz6tb1wq", "y8gk3mvd", "e2lr5npa", "u9xw4hcz", "b6vt7qjm"];
+    const r = root(`<h2>Backup codes</h2><ul>${list.map((c) => `<li>${c}</li>`).join("")}</ul>`);
+    expect(findRecoveryCodes(r)).toEqual(list);
+  });
+
+  it("returns null when fewer than half the tokens have a digit", () => {
+    const list = ["k3xq9vbn", "p7mzt2wa", "qwertyui", "asdfghjk", "zxcvbnml", "poiuytre"];
+    const r = root(`<h2>Backup codes</h2><ul>${list.map((c) => `<li>${c}</li>`).join("")}</ul>`);
+    expect(findRecoveryCodes(r)).toBeNull();
+  });
+
   it("returns null for four-letter navigation words", () => {
     const words = ["Home", "Shop", "Blog", "Help", "Docs", "News"];
     const r = root(`<h2>Recovery codes</h2><ul>${words.map((c) => `<li>${c}</li>`).join("")}</ul>`);

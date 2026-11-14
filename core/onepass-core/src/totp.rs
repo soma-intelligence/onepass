@@ -922,7 +922,87 @@ mod tests {
             repeatable: false,
             autofill: false,
         });
+        let before = item.clone();
         assert!(attach_otp(&mut item, OTHER, true, "Old code").is_err());
+        assert!(attach_otp(&mut item, "MFRGGZDFMZTWQ2LK", false, "Old code").is_err());
+        assert_eq!(item, before);
+    }
+
+    #[test]
+    fn attach_refuses_a_migration_uri() {
+        let mut item = login();
+        let before = item.clone();
+        for uri in [
+            "otpauth-migration://offline?data=CjEKCkhlbGxvId6tvu8SBFRlc3Q",
+            "OTPAUTH-MIGRATION://offline?data=CjEKCkhlbGxvId6tvu8SBFRlc3Q",
+        ] {
+            assert!(
+                attach_otp(&mut item, uri, false, "Old code").is_err(),
+                "{uri}"
+            );
+            assert!(
+                attach_otp(&mut item, uri, true, "Old code").is_err(),
+                "{uri}"
+            );
+        }
+        assert_eq!(item, before);
+    }
+
+    fn concealed_field(id: &str, value: &str) -> Field {
+        Field {
+            id: id.into(),
+            label: "Old code".into(),
+            kind: FieldType::Concealed,
+            value: FieldValue::Concealed(Zeroizing::new(value.into())),
+            required: false,
+            repeatable: false,
+            autofill: false,
+        }
+    }
+
+    #[test]
+    fn attach_replace_fills_the_smallest_unused_index() {
+        let mut item = login();
+        attach_otp(&mut item, SEED, false, "Old code").unwrap();
+        // `previous_otp_2` is there, `previous_otp_1` is not: 1 is taken.
+        item.sections.push(Section {
+            id: CUSTOM_SECTION_ID.into(),
+            label: CUSTOM_SECTION_LABEL.into(),
+            fields: vec![concealed_field("previous_otp_2", "MFRGGZDFMZTWQ2LK")],
+        });
+        attach_otp(&mut item, OTHER, true, "Old code").unwrap();
+        assert!(matches!(
+            &item.field("previous_otp_1").unwrap().value,
+            FieldValue::Concealed(v) if v.as_str() == SEED
+        ));
+        assert!(matches!(
+            &item.field("previous_otp_2").unwrap().value,
+            FieldValue::Concealed(v) if v.as_str() == "MFRGGZDFMZTWQ2LK"
+        ));
+        assert!(item.field("previous_otp_3").is_none());
+    }
+
+    #[test]
+    fn attach_replace_reuses_the_custom_section() {
+        let mut item = login();
+        attach_otp(&mut item, SEED, false, "Old code").unwrap();
+        item.sections.push(Section {
+            id: CUSTOM_SECTION_ID.into(),
+            label: "Mine".into(),
+            fields: vec![concealed_field("pin", "1234")],
+        });
+        let sections = item.sections.len();
+        attach_otp(&mut item, OTHER, true, "Old code").unwrap();
+        assert_eq!(item.sections.len(), sections, "no second custom section");
+        let custom: Vec<_> = item
+            .sections
+            .iter()
+            .filter(|s| s.id == CUSTOM_SECTION_ID)
+            .collect();
+        assert_eq!(custom.len(), 1);
+        assert_eq!(custom[0].label, "Mine");
+        let ids: Vec<&str> = custom[0].fields.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(ids, ["pin", "previous_otp_1"]);
     }
 
     #[test]

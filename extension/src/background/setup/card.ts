@@ -13,7 +13,18 @@
 // held in memory only, in a card of their own.
 import { parseOrigin } from "../../shared/domain";
 import { t } from "../../shared/i18n";
-import type { BgToCs, BgToScan, CsToBg, FormInfo, SetupCandidate, SetupCardState, SetupCodesResult, SetupSaveResult } from "../../shared/messages";
+import {
+  type BgToCs,
+  type BgToScan,
+  type CsToBg,
+  type FormInfo,
+  SETUP_REFUSALS,
+  type SetupCandidate,
+  type SetupCardState,
+  type SetupCodesResult,
+  type SetupRefusal,
+  type SetupSaveResult,
+} from "../../shared/messages";
 import { type OtpauthShallow, pastedSecret } from "../../setup/otpauth";
 import type { PageAnalyses } from "../analyses";
 import type { BgExt, StorageArea } from "../ext";
@@ -49,8 +60,8 @@ interface SetupRecord extends BoundRecord {
   codes?: string[];
   /** A final answer was given: only `init` and `close` remain. */
   spent: boolean;
-  /** The host answered `exists` for this card: only then may a save ask to replace. */
-  sawExists?: boolean;
+  /** The item the host answered `exists` for, in this card: only it may be replaced. */
+  existsItemId?: string;
   /** A `save_totp` or `save_recovery_codes` of this card is waiting for the host. */
   inFlight?: boolean;
 }
@@ -84,6 +95,14 @@ export interface OpenSetup {
 
 const norm = (s: string) => s.trim().toLowerCase();
 
+const REFUSALS: ReadonlySet<string> = new Set(SETUP_REFUSALS);
+
+/** Why the host (or the worker) refused a setup write, as the card says it. */
+function refusal(e: unknown): SetupRefusal {
+  const code = toBgError(e).code;
+  return REFUSALS.has(code) ? (code as SetupRefusal) : "internal";
+}
+
 /** Seconds per code of an `otpauth://` URI (30 unless it says otherwise, 1 to 300). */
 function periodOf(uri: string): number {
   const q = uri.indexOf("?");
@@ -94,7 +113,8 @@ function periodOf(uri: string): number {
 
 /**
  * The target preselected (spec section 1): the item whose username is the QR account; else the
- * one last used on this site; else the first. Never an associated item.
+ * one last used on this site; else the only one. Several and no hit: none, the user picks. Never
+ * an associated item.
  */
 export function preselect(candidates: readonly SetupCandidate[], account: string, lastUsed: string | null): string | null {
   const plain = candidates.filter((c) => !c.associated);
@@ -107,7 +127,7 @@ export function preselect(candidates: readonly SetupCandidate[], account: string
     const hit = plain.find((c) => c.itemId === lastUsed);
     if (hit) return hit.itemId;
   }
-  return plain[0]?.itemId ?? null;
+  return plain.length === 1 ? (plain[0]?.itemId ?? null) : null;
 }
 
 /** The form of the top analysis that takes a one-time code, if any. */
@@ -211,8 +231,9 @@ export class SetupCards {
   async init(token: string, ui: UiContext): Promise<SetupCardState> {
     const rec = await this.record(token, ui);
     const { items } = await this.deps.session.request({ op: "list_for_origin", ctx: "setup", origin: rec.origin });
+    // Only logins of the page itself (exact host or domain): the bridge refuses an associated one.
     rec.candidates = items
-      .filter((s) => s.kind === "login")
+      .filter((s) => s.kind === "login" && s.associated !== true)
       .map((s) => ({ itemId: s.item_id, title: s.title, username: s.subtitle, hasTotp: s.has_totp, associated: s.associated === true }));
     if (rec.mode === "codes") {
       // The login the seed just went to.
@@ -264,9 +285,9 @@ export class SetupCards {
     // Only an item the card offered.
     if (itemId !== null && !(rec.candidates ?? []).some((c) => c.itemId === itemId)) throw new BgError("invalid");
     // A second click while the host writes: nothing more is sent.
-    if (rec.inFlight) return { status: "refused" };
-    // Replace only answers an `exists` this very card was given.
-    if (replace === true && rec.sawExists !== true) return { status: "refused" };
+    if (rec.inFlight) return { status: "refused", reason: "invalid" };
+    // Replace only answers an `exists` this very card was given, for that very item.
+    if (replace === true && (itemId === null || rec.existsItemId !== itemId)) return { status: "refused", reason: "invalid" };
     const req: { op: "save_totp"; ctx: "setup"; origin: string; uri: string; item_id?: string; username?: string; replace?: boolean; previous_label: string } = {
       op: "save_totp",
       ctx: "setup",
@@ -291,11 +312,11 @@ export class SetupCards {
       this.wipe(rec);
       rec.spent = true;
       await this.tokens.update(token, rec);
-      return { status: "refused" };
+      return { status: "refused", reason: refusal(e) };
     }
     rec.inFlight = false;
     if (r.status === "exists") {
-      rec.sawExists = true;
+      if (itemId !== null) rec.existsItemId = itemId;
       return { status: "exists" };
     }
     const period = rec.period;
@@ -405,10 +426,17 @@ export class SetupCards {
   async codesSave(token: string, ui: UiContext): Promise<SetupCodesResult> {
     const rec = await this.record(token, ui);
     if (rec.spent || rec.mode !== "codes" || !rec.codes || rec.itemId === undefined) throw new BgError("invalid");
-    if (rec.inFlight) return { status: "refused" };
+    if (rec.inFlight) return { status: "refused", reason: "invalid" };
     rec.inFlight = true;
     try {
-      await this.deps.session.request({ op: "save_recovery_codes", ctx: "setup", origin: rec.origin, item_id: rec.itemId, codes: rec.codes.join("\n") });
+      await this.deps.session.request({
+        op: "save_recovery_codes",
+        ctx: "setup",
+        origin: rec.origin,
+        item_id: rec.itemId,
+        codes: rec.codes.join("\n"),
+        label: t("setup.recoveryLabel"),
+      });
     } catch (e) {
       rec.inFlight = false;
       if (toBgError(e).code === "locked") {
@@ -418,7 +446,7 @@ export class SetupCards {
       this.wipe(rec);
       rec.spent = true;
       await this.tokens.update(token, rec);
-      return { status: "refused" };
+      return { status: "refused", reason: refusal(e) };
     }
     rec.inFlight = false;
     this.wipe(rec);
@@ -434,8 +462,19 @@ export class SetupCards {
     return {};
   }
 
+  /**
+   * The card's Close. A token that no longer resolves (worker restart, expiry) still takes the
+   * card out of the top frame of the tab it is shown in.
+   */
   async close(token: string, ui: UiContext): Promise<object> {
-    const rec = await this.record(token, ui);
+    const rec = await this.tokens.resolve(token, ui).catch(() => null);
+    if (!rec) {
+      if (ui.tabId !== undefined) {
+        const msg: BgToCs = { type: "remove_frame", kind: "setup" };
+        await this.deps.ext.tabs.sendMessage(ui.tabId, msg, { frameId: 0 }).catch(() => undefined);
+      }
+      throw new BgError("invalid");
+    }
     await this.tokens.drop(token);
     await removeFrame(this.deps.ext.tabs, rec, "setup");
     return {};

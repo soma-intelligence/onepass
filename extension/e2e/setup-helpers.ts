@@ -11,7 +11,6 @@ export const ATLAS = "https://atlas-cloud.test";
 /** The card's words (the specs run with the browser in English). */
 export const L = {
   scan: "Scan 2FA QR code",
-  none: "Nothing to scan on this page",
   add: "Add",
   cancel: "Cancel",
   replace: "Replace",

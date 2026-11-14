@@ -13,7 +13,7 @@
 // SAVED_CLOSE_MS after "Saved" (with a code shown: once that code ran out, if later).
 import { ext } from "../shared/browser";
 import { t, tn } from "../shared/i18n";
-import type { SetupCandidate, SetupCardState, SetupSaveResult, UiToBg } from "../shared/messages";
+import type { SetupCandidate, SetupCardState, SetupRefusal, SetupSaveResult, UiToBg } from "../shared/messages";
 import { pastedSecret } from "../setup/otpauth";
 import {
   ClickGuard,
@@ -249,7 +249,7 @@ export function mountSetup(root: HTMLElement, deps: FrameDeps): SetupHandle {
         renderLocked(() => save(args, replace, errLine()));
         return;
       case "refused":
-        renderRefused();
+        renderRefused(v.reason);
         return;
     }
   }
@@ -275,10 +275,12 @@ export function mountSetup(root: HTMLElement, deps: FrameDeps): SetupHandle {
     focus(unlock);
   }
 
-  function renderRefused(): void {
+  /** Why the write was refused (spec error table), from the worker's stable code. */
+  function renderRefused(reason: SetupRefusal = "invalid"): void {
     stopTimers();
     const cancel = btn(t("common.close"), "btn-text sc-quiet", close);
-    show(card(errorText("invalid"), head(errorText("invalid"), st ? fromLine(st) : null), foot(cancel)));
+    const why = errorText(reason);
+    show(card(why, head(why, st ? fromLine(st) : null), foot(cancel)));
     focus(cancel);
   }
 
@@ -392,7 +394,7 @@ export function mountSetup(root: HTMLElement, deps: FrameDeps): SetupHandle {
     }
     if (r.value.status === "saved") close();
     else if (r.value.status === "locked") renderLocked(() => saveCodes(errLine()));
-    else renderRefused();
+    else renderRefused(r.value.reason);
   }
 
   // ---- load ----

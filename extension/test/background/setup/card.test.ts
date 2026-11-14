@@ -119,21 +119,32 @@ describe("setup card", () => {
     });
   });
 
-  it("never preselects an associated item", async () => {
+  it("never offers an associated item", async () => {
     const assoc = item("it_x", "alex@atlas.dev", { associated: true });
-    // Same username, and last used here: still never picked.
+    // Same username, and last used here: not even listed (the bridge refuses it).
     let h = setup({ items: [assoc], lastUsed: "it_x" });
-    let s = await h.cards.init(await h.open(), UI);
+    let token = await h.open();
+    let s = await h.cards.init(token, UI);
     expect(s.selected).toBeNull();
-    expect(s.candidates[0]).toMatchObject({ itemId: "it_x", associated: true });
-    // The last used one is associated: the first plain candidate instead.
+    expect(s.candidates).toEqual([]);
+    // A forged save naming it never reaches the host.
+    await expect(h.cards.save(token, UI, "it_x")).rejects.toMatchObject({ code: "invalid" });
+    expect(h.ops()).not.toContain("save_totp");
+    // The last used one is associated: the only plain candidate instead.
     h = setup({ items: [assoc, item("it_p", "pat@atlas.dev")], lastUsed: "it_x" });
     s = await h.cards.init(await h.open(shallowOtpauth(URI.replace("alex%40atlas.dev", "nobody"))), UI);
+    expect(s.candidates.map((c) => c.itemId)).toEqual(["it_p"]);
     expect(s.selected).toBe("it_p");
-    // The last used plain one wins over the first.
+    // The last used plain one is picked among several.
     h = setup({ items: [item("it_p", "pat@atlas.dev"), item("it_q", "quinn@atlas.dev")], lastUsed: "it_q" });
     s = await h.cards.init(await h.open(shallowOtpauth(URI.replace("alex%40atlas.dev", "nobody"))), UI);
     expect(s.selected).toBe("it_q");
+    // Several, and neither the account nor the last used one matches: none picked.
+    h = setup({ items: [item("it_p", "pat@atlas.dev"), item("it_q", "quinn@atlas.dev")], lastUsed: null });
+    token = await h.open(shallowOtpauth(URI.replace("alex%40atlas.dev", "nobody")));
+    s = await h.cards.init(token, UI);
+    expect(s.selected).toBeNull();
+    expect(s.mismatch).toBe(false);
   });
 
   it("sizes the card's frame in the very document it was shown in", async () => {
@@ -180,7 +191,7 @@ describe("setup card", () => {
     const token = await h.open();
     await h.cards.init(token, UI);
     // A forged first click with replace: refused, nothing written, the card stays usable.
-    expect(await h.cards.save(token, UI, "it_a", undefined, true)).toEqual({ status: "refused" });
+    expect(await h.cards.save(token, UI, "it_a", undefined, true)).toEqual({ status: "refused", reason: "invalid" });
     expect(h.ops()).not.toContain("save_totp");
     expect(await h.cards.save(token, UI, "it_a")).toEqual({ status: "exists" });
     expect((await h.cards.save(token, UI, "it_a", undefined, true)).status).toBe("replaced");
@@ -203,7 +214,7 @@ describe("setup card", () => {
     const first = h.cards.save(token, UI, "it_a");
     const second = h.cards.save(token, UI, "it_a");
     await vi.advanceTimersByTimeAsync(0);
-    expect(await second).toEqual({ status: "refused" });
+    expect(await second).toEqual({ status: "refused", reason: "invalid" });
     (release as unknown as () => void)();
     expect((await first).status).toBe("saved");
     expect(h.requests.filter((r) => r.op === "save_totp")).toHaveLength(1);
@@ -235,7 +246,7 @@ describe("setup card", () => {
     });
     const token = await h.open();
     await h.cards.init(token, UI);
-    expect(await h.cards.save(token, UI, "it_a")).toEqual({ status: "refused" });
+    expect(await h.cards.save(token, UI, "it_a")).toEqual({ status: "refused", reason: "origin_mismatch" });
     expect(h.ops()).not.toContain("fill_login");
     expect(h.sent("fill")).toHaveLength(0);
   });
@@ -405,9 +416,60 @@ describe("setup card", () => {
       origin: SITE,
       item_id: "it_a",
       codes: CODES.join("\n"),
+      label: "Codes de récupération",
     });
     // The watch reports once.
     expect(await h.ext.send(msg, csSender(`${SITE}/settings/codes`, TAB, 0))).toEqual({ err: "invalid" });
+  });
+
+  it("honours replace only for the item that answered exists", async () => {
+    const h = setup({
+      items: [item("it_a", "alex@atlas.dev", { has_totp: true }), item("it_b", "sam@atlas.dev", { has_totp: true })],
+      answer: (r) => (r.op === "save_totp" ? { status: r.replace === true ? "replaced" : "exists", item_id: r.item_id } : undefined),
+    });
+    const token = await h.open();
+    await h.cards.init(token, UI);
+    expect(await h.cards.save(token, UI, "it_a")).toEqual({ status: "exists" });
+    // Another item, or a new login, cannot ride on it_a's exists.
+    expect(await h.cards.save(token, UI, "it_b", undefined, true)).toEqual({ status: "refused", reason: "invalid" });
+    expect(await h.cards.save(token, UI, null, "new@atlas.dev", true)).toEqual({ status: "refused", reason: "invalid" });
+    expect(h.requests.filter((r) => r.op === "save_totp" && r.replace === true)).toHaveLength(0);
+    expect((await h.cards.save(token, UI, "it_a", undefined, true)).status).toBe("replaced");
+    expect(h.requests.filter((r) => r.op === "save_totp" && r.replace === true)).toEqual([expect.objectContaining({ item_id: "it_a" })]);
+  });
+
+  it("carries the host's refusal code, any other code as internal", async () => {
+    for (const [thrown, reason] of [
+      ["origin_mismatch", "origin_mismatch"],
+      ["reprompt_required", "reprompt_required"],
+      ["rate_limited", "rate_limited"],
+      ["invalid", "invalid"],
+      ["not_allowed", "not_allowed"],
+      ["bad_mac", "internal"],
+    ] as const) {
+      const h = setup({ items: [item("it_a", "alex@atlas.dev")], answer: (r) => (r.op === "save_totp" ? new BgError(thrown) : undefined) });
+      const token = await h.open();
+      await h.cards.init(token, UI);
+      expect(await h.cards.save(token, UI, "it_a")).toEqual({ status: "refused", reason });
+    }
+    // Recovery codes too.
+    const h = setup({ items: [item("it_a", "alex@atlas.dev")], answer: (r) => (r.op === "save_recovery_codes" ? new BgError("reprompt_required") : undefined) });
+    await h.cards.save(await h.open().then(async (t) => (await h.cards.init(t, UI), t)), UI, "it_a");
+    await h.cards.codesFound({ type: "setup_codes_found", codes: CODES }, { tabId: TAB, frameId: 0, origin: SITE, documentId: "doc-1" });
+    const codesToken = (h.sent("show_frame").at(-1)?.message as { url: string }).url.split("#")[1] as string;
+    expect(await h.cards.codesSave(codesToken, UI)).toEqual({ status: "refused", reason: "reprompt_required" });
+  });
+
+  it("takes the card out of its tab even when the token no longer resolves", async () => {
+    const h = setup({ items: [item("it_a", "alex@atlas.dev")] });
+    const token = await h.open();
+    // A worker restart: the memory-only record is gone.
+    const fresh = new SetupCards({ ext: h.ext, session: { request: async () => ({}) } as never, filler: { fillLogin: async () => 0 }, analyses: { top: async () => null } });
+    await expect(fresh.close(token, UI)).rejects.toMatchObject({ code: "invalid" });
+    expect(h.sent("remove_frame")).toEqual([{ tabId: TAB, message: { type: "remove_frame", kind: "setup" }, options: { frameId: 0 } }]);
+    // A live token: removed from its very document.
+    await h.cards.close(token, UI);
+    expect(h.sent("remove_frame").at(-1)).toEqual({ tabId: TAB, message: { type: "remove_frame", kind: "setup" }, options: { documentId: "doc-1" } });
   });
 
   it("refuses a second setup_save on a spent token", async () => {

@@ -58,8 +58,19 @@ export class SetupScan {
     if (!scripting) return null;
     const all = (await this.deps.ext.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? [];
     // The top frame and frames of exactly its origin only (the scanner checks it again in the page).
-    const ids = [0, ...all.filter((f) => f.frameId !== 0 && parseOrigin(f.url)?.origin === origin).map((f) => f.frameId).sort((a, b) => a - b)];
-    await scripting.executeScript({ target: { tabId, frameIds: ids }, files: [SCANNER_FILE] });
+    const others = all.filter((f) => f.frameId !== 0 && parseOrigin(f.url)?.origin === origin).map((f) => f.frameId).sort((a, b) => a - b);
+    // The top frame on its own first: it must hold the scanner (the capture is decoded there).
+    await scripting.executeScript({ target: { tabId, frameIds: [0] }, files: [SCANNER_FILE] });
+    // Then each other frame on its own: one closed meanwhile never fails the page scan.
+    const injected = await Promise.all(
+      others.map((id) =>
+        scripting.executeScript({ target: { tabId, frameIds: [id] }, files: [SCANNER_FILE] }).then(
+          () => id,
+          () => null,
+        ),
+      ),
+    );
+    const ids = [0, ...injected.filter((id): id is number => id !== null)];
     const answers = await Promise.all(ids.map((id) => this.ask(tabId, id, { type: "setup_scan_dom" })));
     for (const a of answers) if (a[0]) return a[0];
     return null;

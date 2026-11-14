@@ -63,7 +63,11 @@ describe("setup scan", () => {
       },
     });
     expect(await h.scan.scan()).toEqual({ status: "card" });
-    expect(h.ext.injections).toEqual([{ target: { tabId: TAB, frameIds: [0, 1] }, files: ["setup-scan.js"] }]);
+    // The top frame on its own first, then each same-origin frame on its own.
+    expect(h.ext.injections).toEqual([
+      { target: { tabId: TAB, frameIds: [0] }, files: ["setup-scan.js"] },
+      { target: { tabId: TAB, frameIds: [1] }, files: ["setup-scan.js"] },
+    ]);
     expect(h.sent("setup_scan_dom").map((s) => s.options.frameId).sort()).toEqual([0, 1]);
     expect(h.ext.captures).toHaveLength(0);
     expect(h.sent("setup_scan_capture")).toHaveLength(0);
@@ -71,6 +75,24 @@ describe("setup scan", () => {
     expect(await h.cards.init(h.token(), UI)).toMatchObject({ mode: "confirm", issuer: "Atlas", account: "alex@atlas.dev" });
     expect(h.sent("show_frame")[0]).toMatchObject({ message: { kind: "setup" }, options: { documentId: "doc-1" } });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the page scan when a child frame closed before its injection", async () => {
+    const h = setup({
+      reply: (frameId, m) => (m.type === "setup_scan_dom" && frameId === 0 ? { found: [{ uri: URI, issuer: "", account: "" }] } : undefined),
+    });
+    const inject = h.ext.scripting.executeScript;
+    h.ext.scripting.executeScript = async (injection) => {
+      await inject(injection);
+      if (injection.target.frameIds?.includes(1)) throw new Error("No frame with id 1");
+      return [];
+    };
+    expect(await h.scan.scan()).toEqual({ status: "card" });
+    expect(h.ext.injections.map((i) => i.target.frameIds)).toEqual([[0], [1]]);
+    // The closed frame is not asked; the top frame still had its scanner and answered.
+    expect(h.sent("setup_scan_dom").map((s) => s.options.frameId)).toEqual([0]);
+    expect(h.ext.captures).toHaveLength(0);
+    expect((await h.cards.init(h.token(), UI)).mode).toBe("confirm");
   });
 
   it("captures once when the page scan finds nothing", async () => {

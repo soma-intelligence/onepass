@@ -4672,22 +4672,30 @@ mod setup {
     }
 
     #[test]
-    fn save_totp_refuses_associated_without_pick() {
+    fn setup_writes_refuse_associated_even_after_a_pick() {
         let mut h = H::new();
         let old =
             h.svc
                 .vault_mut()
                 .add_login("Old host", "a@host.test", OLD_HOST, MatchRule::Domain);
         let before = h.vault().item(old).clone();
-        assert_eq!(
-            err(&h.call(save_totp(old, NEW_HOST, &uri(OTHER_SECRET)))),
-            "not_allowed"
-        );
+        let refuse = |h: &mut H| {
+            assert_eq!(
+                err(&h.call(save_totp(old, NEW_HOST, &uri(OTHER_SECRET)))),
+                "not_allowed"
+            );
+            assert_eq!(
+                err(&h.call(codes_req(old, NEW_HOST, "abcd-1234"))),
+                "not_allowed"
+            );
+        };
+        refuse(&mut h);
         assert_eq!(h.vault().item(old), &before);
-        // The user's pick in the menu, then the save goes through.
+        // The user's pick in the menu does not open a setup write: the
+        // seed only goes to a login of the page itself.
         ok(&h.call(fill(old, NEW_HOST)));
-        let v = h.call(save_totp(old, NEW_HOST, &uri(OTHER_SECRET)));
-        assert_eq!(ok(&v)["status"], "saved", "{v}");
+        refuse(&mut h);
+        assert_eq!(h.vault().item(old), &before);
     }
 
     #[test]
@@ -4849,6 +4857,39 @@ mod setup {
         let events = h.audit.events();
         assert!(events.iter().any(|e| e.op == "save_recovery_codes"));
         assert!(!format!("{events:?}").contains("zz99"));
+    }
+
+    #[test]
+    fn save_recovery_codes_blank_label_keeps_the_existing_one() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let mut req = codes_req(atlas, ATLAS, "abcd-1234");
+        req["label"] = json!("Backup codes");
+        ok(&h.call(req));
+        // A later write without a label (or a blank one) keeps it.
+        ok(&h.call(codes_req(atlas, ATLAS, "efgh-5678")));
+        let mut req = codes_req(atlas, ATLAS, "ijkl-9012");
+        req["label"] = json!("   ");
+        ok(&h.call(req));
+        let item = h.vault().item(atlas);
+        assert_eq!(item.field("recovery_codes").unwrap().label, "Backup codes");
+        assert_eq!(concealed(item, "recovery_codes"), "ijkl-9012");
+    }
+
+    #[test]
+    fn save_totp_new_login_title_is_bounded_like_a_label() {
+        let mut h = H::new();
+        let before = h.vault().items.len();
+        let new = |title: &str| {
+            json!({"op":"save_totp","ctx":"setup","origin":SIGNUP,
+                   "uri":uri(OTHER_SECRET),"username":"ada@atlas-cloud.test","title":title})
+        };
+        assert_eq!(err(&h.call(new(&"t".repeat(41)))), "invalid");
+        assert_eq!(err(&h.call(new("Atlas\nsignup"))), "invalid");
+        assert_eq!(err(&h.call(new("Atlas\u{7}"))), "invalid");
+        assert_eq!(h.vault().items.len(), before);
+        ok(&h.call(new(&"t".repeat(40))));
+        assert_eq!(h.vault().items.last().unwrap().title, "t".repeat(40));
     }
 
     #[test]

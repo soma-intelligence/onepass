@@ -9,10 +9,12 @@ import type {
   SetupCandidate,
   SetupCardState,
   SetupCodesResult,
+  SetupRefusal,
   SetupSaveResult,
   SetupScanResult,
   SuggestionPreview,
 } from "../shared/messages";
+import { SETUP_REFUSALS } from "../shared/messages";
 import {
   CHAIN_PHASES,
   CUSTOM_MAX_LENGTH,
@@ -529,10 +531,21 @@ export const parseSetupState = (v: unknown): SetupCardState | null =>
 /** `setup_paste` with a key the worker refused. */
 export const parsePasteRefused = (v: unknown): { error: "invalid" } | null => guard(() => ({ error: oneOf<"invalid">(obj(v).error, ["invalid"]) }));
 
+/** A refusal's reason: required with `refused`, never elsewhere; an unknown code fails the parse. */
+const setupReason = (status: string, v: unknown): SetupRefusal | undefined => {
+  if (status !== "refused") {
+    if (v !== undefined) throw new Bad();
+    return undefined;
+  }
+  return oneOf<SetupRefusal>(v, SETUP_REFUSALS);
+};
+
 export const parseSetupSave = (v: unknown): SetupSaveResult | null =>
   guard(() => {
     const o = obj(v);
     const out: SetupSaveResult = { status: oneOf<SetupSaveResult["status"]>(o.status, ["saved", "same", "exists", "replaced", "locked", "refused"]) };
+    const reason = setupReason(out.status, o.reason);
+    if (reason !== undefined) out.reason = reason;
     if (o.code !== undefined) {
       const code = str(o.code, 16);
       if (!/^\d{4,10}$/.test(code)) throw new Bad();
@@ -545,7 +558,13 @@ export const parseSetupSave = (v: unknown): SetupSaveResult | null =>
   });
 
 export const parseSetupCodes = (v: unknown): SetupCodesResult | null =>
-  guard(() => ({ status: oneOf<SetupCodesResult["status"]>(obj(v).status, ["saved", "locked", "refused"]) }));
+  guard(() => {
+    const o = obj(v);
+    const out: SetupCodesResult = { status: oneOf<SetupCodesResult["status"]>(o.status, ["saved", "locked", "refused"]) };
+    const reason = setupReason(out.status, o.reason);
+    if (reason !== undefined) out.reason = reason;
+    return out;
+  });
 
 export const parseSetupScan = (v: unknown): SetupScanResult | null =>
   guard(() => ({ status: oneOf<SetupScanResult["status"]>(obj(v).status, ["card", "none", "unavailable"]) }));

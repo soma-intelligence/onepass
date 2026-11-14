@@ -160,6 +160,8 @@ extension VaultSession {
         // The core owns the rule (same code, replaced code kept as `previous_otp_<n>`).
         let attached = try OnePassCore.attachOtp(
             item: item, value: account.uri, replace: true, previousLabel: OtpLink.previousCodeLabel())
+        // The very same code: nothing to write, the item stays as stored.
+        if attached.outcome == .same { return item }
         return try await save(attached.item)
     }
 

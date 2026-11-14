@@ -811,12 +811,14 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     toast(t("popup.fillingOnDomain", { domain: r.value.domain }));
   }
 
-  /** "Scan 2FA QR code": the worker scans the active tab; a card there, the popup leaves it the page. */
+  /**
+   * "Scan 2FA QR code": the worker scans the active tab. A card is then in the page (the code
+   * read, or `none`: the card asks for the setup key), so the popup leaves it the page.
+   */
   async function scanQr(): Promise<void> {
     const r = await call(deps.send, { type: "popup_scan_qr" }, parseSetupScan);
     if (!r.ok) return handleError(r.code);
-    if (r.value.status === "card") (deps.close ?? (() => globalThis.close()))();
-    else if (r.value.status === "none") toast(t("popup.scanQrNone"));
+    if (r.value.status === "card" || r.value.status === "none") (deps.close ?? (() => globalThis.close()))();
     else toast(errorText("not_allowed"), "error");
   }
 

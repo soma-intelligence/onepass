@@ -93,7 +93,8 @@ paired("without a capture, a QR the page cannot read leaves the paste card", asy
   const popup = await clickScan(ext, page);
   const card = await setupFrame(page);
   await expect(card.getByText(L.paste)).toBeVisible();
-  if (!popup.isClosed()) await expect(popup.getByText(L.none)).toBeVisible();
+  // Nothing read: the paste card is the answer, the popup leaves it the page.
+  await expect.poll(() => popup.isClosed()).toBe(true);
 });
 
 paired(
@@ -214,7 +215,8 @@ paired("no QR: the paste card saves a pasted key", async ({ ext }) => {
   const popup = await clickScan(ext, page);
   const card = await setupFrame(page);
   await expect(card.getByText(L.paste)).toBeVisible();
-  if (!popup.isClosed()) await expect(popup.getByText(L.none)).toBeVisible();
+  // Nothing read: the paste card is the answer, the popup leaves it the page.
+  await expect.poll(() => popup.isClosed()).toBe(true);
   const field = card.locator("input.sc-key");
   await expect(field).toBeFocused();
   await field.fill(key);
@@ -235,6 +237,10 @@ paired("decoy QR for another account: mismatch line, Cancel focused", async ({ e
   await expect(page.locator("onepass-root")).toHaveCount(1);
   await clickScan(ext, page);
   const card = await setupFrame(page);
+  // Several logins and none is pat's: none picked. The user picks one, then the line shows.
+  await expect(card.getByRole("listbox")).toBeVisible();
+  await ext.settle();
+  await card.getByRole("option", { name: new RegExp(OPS.replace(/[()]/g, "\\$&")) }).click();
   await expect(card.getByText(/^The code is for pat@atlas\.dev\. This login is /)).toBeVisible();
   expect(await focusedText(card)).toBe(L.cancel);
   await cardClick(ext, card, L.cancel);

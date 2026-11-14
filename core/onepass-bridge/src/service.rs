@@ -636,6 +636,17 @@ impl<V: VaultAccess> Service<V> {
         Ok(q)
     }
 
+    /// The match of a login a setup write (`save_totp`,
+    /// `save_recovery_codes`) may touch: the page's exact host or its
+    /// domain only. An associated match is refused outright, even after a
+    /// pick in this session (spec: the seed goes to a login of the page).
+    fn setup_match(item: &Item, page: &Origin) -> OpResult<MatchQuality> {
+        match item_match(item, page).ok_or(AppErrorCode::OriginMismatch)? {
+            MatchQuality::Associated => Err(AppErrorCode::NotAllowed),
+            q => Ok(q),
+        }
+    }
+
     /// A login was served on the user's pick while it was an associated
     /// match: remembered for the rest of the session (`picked`).
     fn note_pick(&mut self, item: &Item, page: &Origin, q: MatchQuality, ctx: Ctx) {
@@ -1883,7 +1894,7 @@ impl<V: VaultAccess> Service<V> {
         if item.item_type != ItemType::Login {
             return Err(AppErrorCode::NotFound);
         }
-        self.followed_match(&item, &page)?;
+        Self::setup_match(&item, &page)?;
         self.reprompt(&item, Some(&page))?;
         let status = match attach_otp(&mut item, uri, t.replace, &label)
             .map_err(|_| AppErrorCode::Invalid)?
@@ -1924,10 +1935,8 @@ impl<V: VaultAccess> Service<V> {
             return Err(AppErrorCode::Invalid);
         }
         let vault_id = self.known_vault(t.vault_id, page)?;
-        let title = match t.title.trim() {
-            "" => page.host().to_owned(),
-            title => title.to_owned(),
-        };
+        // Bounded like a field label: length and control characters.
+        let title = field_label(t.title, page.host())?;
         let mut item = new_item(ItemType::Login, vault_id, &title);
         set_value(&mut item, "username", FieldValue::Text(username.to_owned()))?;
         item.urls.push(ItemUrl {
@@ -1962,14 +1971,20 @@ impl<V: VaultAccess> Service<V> {
         setup_ctx(ctx)?;
         let page = origin(o)?;
         self.take_secret_slot(now)?;
+        let blank_label = label.trim().is_empty();
         let label = field_label(label, RECOVERY_CODES_LABEL)?;
         let value = recovery_codes(codes)?;
         let (_, mut item) = self.eligible_item(item_id)?;
         if item.item_type != ItemType::Login {
             return Err(AppErrorCode::NotFound);
         }
-        self.followed_match(&item, &page)?;
+        Self::setup_match(&item, &page)?;
         self.reprompt(&item, Some(&page))?;
+        // A blank label keeps the one an existing field already has.
+        let label = match item.field(RECOVERY_CODES_FIELD) {
+            Some(f) if blank_label => f.label.clone(),
+            _ => label,
+        };
         let field = Field {
             id: RECOVERY_CODES_FIELD.to_owned(),
             label,

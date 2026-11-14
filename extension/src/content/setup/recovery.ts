@@ -3,7 +3,7 @@
 
 const MIN_CODES = 6;
 const MAX_CODES = 32;
-const TOKEN = /^(?=.*\d)[A-Za-z0-9]{4,}(?:[- ][A-Za-z0-9]{4,})*$/; // at least one digit: nav words and names are not codes
+const TOKEN = /^[A-Za-z0-9]{4,}(?:[- ][A-Za-z0-9]{4,})*$/;
 const WORDING = /recovery|backup|secours|r[eé]cup[eé]ration|recuperaci[oó]n|respaldo|recupero/i;
 const HEADING = "h1,h2,h3,h4,h5,h6,legend,summary,[role=heading]";
 const MAX_ANCESTORS = 4;
@@ -61,6 +61,9 @@ export function findRecoveryCodes(root: ParentNode): string[] | null {
     const list = items(el);
     if (list.length < MIN_CODES || list.length > MAX_CODES) continue;
     if (!list.every((t) => TOKEN.test(t))) continue;
+    // Digits are counted on the list, not per code: a random code may have none (about 1 in 2
+    // lists of 10 Discord-style codes), nav words and names have none at all.
+    if (list.filter((t) => /\d/.test(t)).length * 2 < list.length) continue;
     const shape = shapeOf(list[0]!);
     if (!list.every((t) => shapeOf(t) === shape)) continue;
     if (!wordingNear(el)) continue;

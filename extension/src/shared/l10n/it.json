@@ -333,7 +333,6 @@
   "popup.removeSite": "Rimuovi {site}",
   "setup.previousCode": "Codice precedente",
   "popup.scanQr": "Scansiona codice QR 2FA",
-  "popup.scanQrNone": "Niente da scansionare in questa pagina",
   "setup.title": "Aggiungere il codice 2FA a {item}?",
   "setup.from": "{issuer}, {account}",
   "setup.mismatch": "Il codice è per {account}. Questo login è {username}.",

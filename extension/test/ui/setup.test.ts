@@ -5,6 +5,7 @@ import en from "../../src/shared/l10n/en.json";
 import es from "../../src/shared/l10n/es.json";
 import itCat from "../../src/shared/l10n/it.json";
 import type { SetupCandidate, SetupCardState, UiToBg } from "../../src/shared/messages";
+import { errorText } from "../../src/ui/components";
 import { SAVED_CLOSE_MS, mountSetup } from "../../src/ui/setup";
 import { mountPopup } from "../../src/ui/popup";
 import { Clock, FakeWorker, HASH, ManualTimers, type Reply, TOKEN, button, flush, login, root, text } from "./helpers";
@@ -252,6 +253,38 @@ describe("setup card", () => {
     expect(worker.sent.filter((m) => m.type === "setup_codes_save")).toEqual([{ type: "setup_codes_save", token: TOKEN }]);
   });
 
+  it("says why a write was refused, from the worker's reason", async () => {
+    const cases: [string, string][] = [
+      ["origin_mismatch", errorText("origin_mismatch")],
+      ["reprompt_required", errorText("reprompt_required")],
+      ["rate_limited", errorText("rate_limited")],
+      ["invalid", errorText("invalid")],
+    ];
+    for (const [reason, sentence] of cases) {
+      const { r, handle, click } = setup(state(), (m) => (m.type === "setup_save" ? { ok: { status: "refused", reason } } : null));
+      await handle.ready;
+      await click("Add");
+      expect(text(r)).toContain(sentence);
+    }
+    // The codes card too.
+    const codes = setup(state({ mode: "codes", codeCount: 6 }), (m) =>
+      m.type === "setup_codes_save" ? { ok: { status: "refused", reason: "reprompt_required" } } : null,
+    );
+    await codes.handle.ready;
+    await codes.click("Save");
+    expect(text(codes.r)).toContain(errorText("reprompt_required"));
+  });
+
+  it("fails closed on a refusal reason it does not know", async () => {
+    for (const reply of [{ status: "refused", reason: "page_said_so" }, { status: "refused" }, { status: "saved", reason: "invalid" }]) {
+      const { r, handle, click } = setup(state(), (m) => (m.type === "setup_save" ? { ok: reply } : null));
+      await handle.ready;
+      await click("Add");
+      expect(text(r)).toContain(errorText("internal"));
+      expect(text(r)).not.toContain("page_said_so");
+    }
+  });
+
   it("renders page text as text only", async () => {
     const evil = '<img src=x onerror="window.__pwned=1">';
     const { r, handle } = setup(state({ issuer: evil, account: evil, candidates: [{ ...ALEX, title: evil }, { ...SAM, username: evil }] }));
@@ -265,7 +298,7 @@ describe("setup card", () => {
   it("renders every setup.* key in the four languages", async () => {
     const catalogs = { fr, en, es, it: itCat } as Record<string, Record<string, unknown>>;
     const keys = Object.keys(en).filter((k) => k.startsWith("setup.") || k.startsWith("popup.scanQr"));
-    expect(keys).toEqual(expect.arrayContaining(["setup.title", "setup.codesTitle", "setup.recoveryLabel", "setup.previousCode", "popup.scanQr", "popup.scanQrNone"]));
+    expect(keys).toEqual(expect.arrayContaining(["setup.title", "setup.codesTitle", "setup.recoveryLabel", "setup.previousCode", "popup.scanQr"]));
     for (const l of LANGS) {
       for (const k of keys) {
         const v = catalogs[l]![k];
@@ -313,13 +346,12 @@ describe("popup scan button", () => {
     expect(p.closed()).toBe(1);
   });
 
-  it("says when there is nothing to scan", async () => {
+  it("closes the popup when nothing was read: the paste card is in the page", async () => {
     const p = popup({ ok: { status: "none" } });
     await p.handle.ready;
     button(p.r, "Scan 2FA QR code").click();
     await p.handle.settled();
-    expect(p.closed()).toBe(0);
-    expect(text(p.r)).toContain("Nothing to scan on this page");
+    expect(p.closed()).toBe(1);
   });
 
   it("is not offered while the vault is locked", async () => {

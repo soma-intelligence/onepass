@@ -34,7 +34,9 @@ endorsement.
 
 QR decoder of the browser extension (extension/src/setup/qr-decode.ts)
 
-- jsQR, https://github.com/cozmo/jsQR
+- jsQR 1.4.0, https://github.com/cozmo/jsQR
+  Copyright the jsQR authors, Cosmo Wolfe and Jefff Nelson (its LICENSE leaves the Apache
+  copyright line unfilled; the holders are the contributors its package.json names).
   Apache-2.0.
 
 Word lists used by the core keep their own licenses: core/onepass-core/data/LICENSES.md.

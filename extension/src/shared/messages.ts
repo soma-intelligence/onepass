@@ -753,16 +753,35 @@ export interface SetupScanResult {
   status: "card" | "none" | "unavailable";
 }
 
-/** What `setup_save` answers; `code` and `remaining` when no code field was filled. */
+/** Why a setup write was refused: the card says it with `errorText`. */
+export const SETUP_REFUSALS = [
+  "origin_mismatch",
+  "reprompt_required",
+  "rate_limited",
+  "invalid",
+  "not_allowed",
+  "not_found",
+  "host_missing",
+  "timeout",
+  "internal",
+] as const;
+export type SetupRefusal = (typeof SETUP_REFUSALS)[number];
+
+/**
+ * What `setup_save` answers; `code` and `remaining` when no code field was filled. A refusal
+ * carries its `reason`.
+ */
 export interface SetupSaveResult {
   status: "saved" | "same" | "exists" | "replaced" | "locked" | "refused";
   code?: string;
   remaining?: number;
+  reason?: SetupRefusal;
 }
 
-/** What `setup_codes_save` answers. */
+/** What `setup_codes_save` answers; a refusal carries its `reason`. */
 export interface SetupCodesResult {
   status: "saved" | "locked" | "refused";
+  reason?: SetupRefusal;
 }
 
 /** Worker to the on-demand setup scanner (`setup-scan.js`), by frame. */

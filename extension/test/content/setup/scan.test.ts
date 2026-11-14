@@ -115,7 +115,7 @@ describe("scan.ts", () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
-  it("a CSS background that is not data: or blob: is never loaded", async () => {
+  it("a CSS background that is not data: or blob: is never loaded, a data: one is", async () => {
     const srcs: string[] = [];
     class FakeImage {
       onload: (() => void) | null = null;
@@ -128,8 +128,9 @@ describe("scan.ts", () => {
       }
     }
     vi.stubGlobal("Image", FakeImage);
-    document.body.innerHTML = `<div id="a" style="background-image:url(/qr.png)"></div><div id="b" style="background-image:url(https://x.test/qr.png)"></div>`;
-    for (const id of ["a", "b"]) {
+    const inline = "data:image/png;base64,iVBORw0KGgo=";
+    document.body.innerHTML = `<div id="a" style="background-image:url(/qr.png)"></div><div id="b" style="background-image:url(https://x.test/qr.png)"></div><div id="c" style="background-image:url(${inline})"></div>`;
+    for (const id of ["a", "b", "c"]) {
       document.getElementById(id)!.getBoundingClientRect = () =>
         ({ x: 0, y: 0, left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, toJSON: () => ({}) }) as DOMRect;
     }
@@ -138,7 +139,8 @@ describe("scan.ts", () => {
     expect(l({ type: "setup_scan_dom" }, { id: "me" }, respond)).toBe(true);
     await vi.advanceTimersByTimeAsync(100);
     expect(respond).toHaveBeenCalledWith({ found: [] });
-    expect(srcs).toEqual([]);
+    // Only the inline one (the positive control: the background path does load images).
+    expect(srcs).toEqual([inline]);
   });
 
   it("a frame that cannot read the top origin does not answer setup_scan_dom", async () => {

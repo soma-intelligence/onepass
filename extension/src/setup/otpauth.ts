@@ -8,17 +8,18 @@ export interface OtpauthShallow {
   account: string;
 }
 
-/** The bridge refuses a longer URI. */
+/** The bridge refuses a longer URI, counted in UTF-8 bytes as it does. */
 const MAX_URI = 2048;
+const utf8 = new TextEncoder();
 const BASE32 = /^[A-Z2-7]{16,}$/;
 
 /**
- * null unless `otpauth://totp/` (scheme and type case-insensitive), at most 2048 chars,
+ * null unless `otpauth://totp/` (scheme and type case-insensitive), at most 2048 UTF-8 bytes,
  * with a `secret` of 16+ base32 chars (lowercase and `=` padding allowed).
  */
 export function shallowOtpauth(text: string): OtpauthShallow | null {
   const uri = text.trim();
-  if (uri.length === 0 || uri.length > MAX_URI) return null;
+  if (uri.length === 0 || uri.length > MAX_URI || utf8.encode(uri).length > MAX_URI) return null;
   const m = /^otpauth:\/\/totp\/([^?#]*)(?:\?([^#]*))?(?:#.*)?$/i.exec(uri);
   if (!m) return null;
   const params = new URLSearchParams(m[2] ?? "");

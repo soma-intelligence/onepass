@@ -32,7 +32,18 @@ describe("shallowOtpauth", () => {
     expect(shallowOtpauth("otpauth://totp/a:b?secret=GEZDGNBVGY3TQ")).toBeNull();
     const base = `otpauth://totp/a?secret=${SECRET}&issuer=`;
     expect(shallowOtpauth(base + "x".repeat(2048 - base.length))).not.toBeNull();
-    expect(shallowOtpauth(base + "x".repeat(2049 - base.length))).toBeNull();
+    expect(shallowOtpauth(base + "x".repeat(2049 - base.length))).toBeNull();  });
+
+  it("counts the 2048 limit in UTF-8 bytes, as the bridge does", () => {
+    // "é" is 2 bytes: 1030 of them make a URI under 2048 characters but over 2048 bytes.
+    const label = "é".repeat(1030);
+    const uri = `otpauth://totp/${label}?secret=${SECRET}`;
+    expect(uri.length).toBeLessThanOrEqual(2048);
+    expect(new TextEncoder().encode(uri).length).toBeGreaterThan(2048);
+    expect(shallowOtpauth(uri)).toBeNull();
+    // Just under in bytes: accepted, label decoded as is.
+    const fits = `otpauth://totp/Atlas:${"é".repeat(100)}?secret=${SECRET}`;
+    expect(shallowOtpauth(fits)?.account).toBe("é".repeat(100));
   });
 });
 
