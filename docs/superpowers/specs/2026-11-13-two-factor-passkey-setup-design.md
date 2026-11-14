@@ -88,10 +88,10 @@ Search order:
 
 1. In the page, top document and same-origin frames: `<img>`, `<canvas>`, inline SVG, CSS
    background images, `otpauth://` links. Candidates are visible, roughly square, at least 80 px
-   wide, twelve at most. A cross-origin image is fetched again by the service worker under the
-   host permissions the extension already has; a tainted canvas is skipped.
+   wide, twelve at most. A cross-origin image or a tainted canvas cannot be read there and is
+   left to step 2. The scan sends no network request.
 2. Nothing decoded: one capture of the visible tab (`tabs.captureVisibleTab`), which also covers
-   cross-origin frames and tainted canvases. The QR must be on screen.
+   cross-origin images and frames and tainted canvases. The QR must be on screen.
 3. Still nothing: the card offers a field to paste the setup key.
 
 Decoding is local, by a decoder bundled in the extension and loaded on demand only, never in
@@ -105,14 +105,16 @@ bridge answers. The extension still cannot read a stored secret.
 
 Bridge additions (`core/onepass-bridge/src/api.rs`, `service.rs`, `policy.rs`):
 
-- `save_totp { item_id | new_login, uri, origin, replace, token }`. Write only. Answers
-  `saved`, `exists { same }`, or an error (`locked`, `origin_mismatch`, `invalid_otpauth`,
-  `denied`). With `replace = false` on an item that holds another secret it answers
-  `exists { same: false }` and writes nothing.
-- `save_recovery_codes { item_id, codes, origin, token }`.
-- `ctx = setup`, accepted by these two ops and by the journey ops of section 3.
-- The host recomputes the origin match, takes a secret-request slot, and accepts a card token
-  once.
+- `save_totp { item_id | new login, uri, origin, replace }`. Write only. Answers `saved`,
+  `same`, `exists` or `replaced`, or an error (`locked`, `origin_mismatch`, `invalid`,
+  `not_allowed`, `reprompt_required`). With `replace = false` on an item that holds another
+  secret it answers `exists` and writes nothing.
+- `save_recovery_codes { item_id, codes, origin }`.
+- `ctx = setup`, accepted by these two ops, by `list_for_origin`, by `fill_login` limited to
+  the `totp` field, and by the journey ops of section 3.
+- The host recomputes the origin match and takes a secret-request slot. The card's token is
+  the extension's own frame token, as for the save card: bound to tab, document and origin,
+  single use, kept in memory only because its record holds the secret.
 
 Core additions:
 
