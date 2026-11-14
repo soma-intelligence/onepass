@@ -39,24 +39,27 @@ function hasBackgroundUrl(el: Element): boolean {
 
 /** Links first, then visible near-square images, largest first, 12 at most. */
 export function findCandidates(doc: Document): Candidate[] {
+  // Shadow roots are not walked: the tab capture covers what they show.
   const links: Candidate[] = [...doc.querySelectorAll('a[href^="otpauth:" i]')].map((el) => ({ kind: "link", el, area: 0 }));
   const shapes: Candidate[] = [];
-  const els = [...doc.querySelectorAll("*")].slice(0, MAX_SCAN);
-  for (const el of els) {
+  // Direct queries, no cap: a QR modal appended at the end of a heavy page is found.
+  for (const el of doc.querySelectorAll("img,canvas,svg")) {
     const tag = el.tagName.toLowerCase();
-    let kind: CandidateKind | null = null;
-    if (tag === "img") kind = "img";
-    else if (tag === "canvas") kind = "canvas";
-    else if (tag === "svg" && el.namespaceURI === "http://www.w3.org/2000/svg") kind = "svg";
-    if (kind === null && tag !== "svg") {
-      // Cheap size test first: a computed style per element is the costly part.
-      if (squareArea(el) === null || !hasBackgroundUrl(el)) continue;
-      kind = "background";
-    }
-    if (kind === null) continue;
+    if (tag === "svg" && el.namespaceURI !== "http://www.w3.org/2000/svg") continue;
     const area = squareArea(el);
     if (area === null || hidden(el)) continue;
-    shapes.push({ kind, el, area });
+    shapes.push({ kind: tag as CandidateKind, el, area });
+  }
+  // Only the walk for CSS backgrounds is capped.
+  let seen = 0;
+  for (const el of doc.querySelectorAll("*")) {
+    if (++seen > MAX_SCAN) break;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "img" || tag === "canvas" || tag === "svg") continue;
+    // Cheap size test first: a computed style per element is the costly part.
+    const area = squareArea(el);
+    if (area === null || !hasBackgroundUrl(el) || hidden(el)) continue;
+    shapes.push({ kind: "background", el, area });
   }
   shapes.sort((a, b) => b.area - a.area);
   return [...links, ...shapes].slice(0, MAX_CANDIDATES);

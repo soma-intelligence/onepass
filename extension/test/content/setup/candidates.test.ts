@@ -54,4 +54,13 @@ describe("findCandidates", () => {
     expect(out).toHaveLength(12);
     expect((out[0]!.el as HTMLElement).id).toBe("qr");
   });
+
+  it("finds a QR img placed after 7000 other elements", () => {
+    let html = "";
+    for (let i = 0; i < 7000; i++) html += "<span></span>";
+    html += `<img id="late">`;
+    const doc = page(html);
+    sized(doc.getElementById("late")!, 200, 200);
+    expect(findCandidates(doc).map((c) => (c.el as HTMLElement).id)).toEqual(["late"]);
+  });
 });

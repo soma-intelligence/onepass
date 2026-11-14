@@ -26,20 +26,22 @@ const MAX_PIXELS = 2_000_000;
 const FULL_CAPTURE_PIXELS = 4_000_000;
 const WATCH_DEBOUNCE_MS = 500;
 const MAX_WATCH_MS = 300_000;
+const IMAGE_TIMEOUT_MS = 3000;
+const WATCH_MAX_WAIT_MS = 2000;
 const GUARD = "__onepass_setup_scan__";
 
 type Pixels = { data: Uint8ClampedArray; width: number; height: number };
 type Drawable = HTMLImageElement | HTMLCanvasElement;
 
 /** The pixels of `src` drawn at `scale` (and never over 2 megapixels); null when tainted. */
-function readPixels(src: Drawable, sw: number, sh: number, scale = 1): Pixels | null {
+function readPixels(src: Drawable, sw: number, sh: number, scale = 1, cap = true): Pixels | null {
   if (sw <= 0 || sh <= 0) return null;
   let k = scale;
-  if (sw * k * sh * k > MAX_PIXELS) k = Math.sqrt(MAX_PIXELS / (sw * sh));
+  if (cap && sw * k * sh * k > MAX_PIXELS) k = Math.sqrt(MAX_PIXELS / (sw * sh));
   const width = Math.max(1, Math.floor(sw * k));
   const height = Math.max(1, Math.floor(sh * k));
+  const canvas = document.createElement("canvas");
   try {
-    const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -51,11 +53,14 @@ function readPixels(src: Drawable, sw: number, sh: number, scale = 1): Pixels | 
     return { data: d.data, width, height };
   } catch {
     return null; // SecurityError (tainted) or an undecodable image
+  } finally {
+    canvas.width = 0; // release the bitmap
+    canvas.height = 0;
   }
 }
 
-function decodeOne(src: Drawable, sw: number, sh: number, scale = 1): OtpauthShallow | null {
-  const px = readPixels(src, sw, sh, scale);
+function decodeOne(src: Drawable, sw: number, sh: number, scale = 1, cap = true): OtpauthShallow | null {
+  const px = readPixels(src, sw, sh, scale, cap);
   if (!px) return null;
   const text = decodeQr(px);
   return text === null ? null : shallowOtpauth(text);
@@ -64,19 +69,22 @@ function decodeOne(src: Drawable, sw: number, sh: number, scale = 1): OtpauthSha
 function loadImage(url: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
+    const timer = setTimeout(() => resolve(null), IMAGE_TIMEOUT_MS);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(null);
+    };
     img.src = url;
   });
 }
 
-function sameOriginOrData(url: string): boolean {
-  if (url.startsWith("data:")) return true;
-  try {
-    return new URL(url, location.href).origin === location.origin;
-  } catch {
-    return false;
-  }
+/** No network request: only inline images (data:, blob:) are loaded for a CSS background. */
+function inlineUrl(url: string): boolean {
+  return url.startsWith("data:") || url.startsWith("blob:");
 }
 
 function backgroundUrls(el: Element): string[] {
@@ -111,7 +119,7 @@ async function decodeCandidate(c: Candidate): Promise<OtpauthShallow | null> {
     return img ? decodeOne(img, Math.round(r.width), Math.round(r.height)) : null;
   }
   for (const url of backgroundUrls(c.el)) {
-    if (!sameOriginOrData(url)) continue;
+    if (!inlineUrl(url)) continue;
     const img = await loadImage(url);
     const hit = img && img.naturalWidth > 0 ? decodeOne(img, img.naturalWidth, img.naturalHeight) : null;
     if (hit) return hit;
@@ -151,7 +159,7 @@ async function scanCapture(dataUrl: string): Promise<OtpauthShallow[]> {
   const scales = w * h < FULL_CAPTURE_PIXELS ? [1, 1 / 2, 1 / 3] : [1 / 2, 1 / 3];
   const found: OtpauthShallow[] = [];
   for (const s of scales) {
-    addUnique(found, decodeOne(img, w, h, s));
+    addUnique(found, decodeOne(img, w, h, s, false)); // the 2 MP cap is for page images
     if (found.length > 0) break;
   }
   return found;
@@ -159,29 +167,40 @@ async function scanCapture(dataUrl: string): Promise<OtpauthShallow[]> {
 
 let stopWatch: (() => void) | null = null;
 
-/** One observer, 500 ms debounce, reports once, disconnects after `ms`. */
+/** One observer, 500 ms debounce (2 s at most on a page that never settles), reports once,
+ *  disconnects after `ms`. */
 function watchCodes(ms: number): void {
   stopWatch?.();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let maxTimer: ReturnType<typeof setTimeout> | undefined;
   let done = false;
   const finish = (): void => {
     done = true;
     clearTimeout(timer);
+    clearTimeout(maxTimer);
     clearTimeout(expiry);
     observer.disconnect();
     stopWatch = null;
   };
   const check = (): void => {
+    clearTimeout(timer);
+    clearTimeout(maxTimer);
+    maxTimer = undefined;
     if (done) return;
     const codes = findRecoveryCodes(document);
     if (!codes) return;
     finish();
     const msg: SetupCodesFound = { type: "setup_codes_found", codes };
-    void Promise.resolve(ext.runtime.sendMessage(msg)).catch(() => undefined);
+    try {
+      void Promise.resolve(ext.runtime.sendMessage(msg)).catch(() => undefined);
+    } catch {
+      // extension context invalidated
+    }
   };
   const observer = new MutationObserver(() => {
     clearTimeout(timer);
     timer = setTimeout(check, WATCH_DEBOUNCE_MS);
+    maxTimer ??= setTimeout(check, WATCH_MAX_WAIT_MS);
   });
   const expiry = setTimeout(finish, Math.min(Math.max(ms, 1), MAX_WATCH_MS));
   observer.observe(document, { childList: true, subtree: true, characterData: true });
@@ -194,6 +213,7 @@ function onMessage(message: unknown, sender: { id?: string }, sendResponse: (r: 
   const m = message as { type?: unknown; dataUrl?: unknown; ms?: unknown } | null;
   if (!m || typeof m !== "object") return undefined;
   if (m.type === "setup_scan_dom") {
+    if (!topReadable()) return false; // a frame that cannot read the top origin does not answer
     void scanDom().then((found) => sendResponse({ found }), () => sendResponse({ found: [] }));
     return true;
   }
@@ -211,6 +231,6 @@ function onMessage(message: unknown, sender: { id?: string }, sendResponse: (r: 
 
 // A second injection into the same document must not register a second listener.
 if (!Object.prototype.hasOwnProperty.call(window, GUARD)) {
-  Object.defineProperty(window, GUARD, { value: true, enumerable: false });
+  Object.defineProperty(window, GUARD, { value: true, enumerable: false, configurable: true });
   ext.runtime.onMessage.addListener(onMessage);
 }

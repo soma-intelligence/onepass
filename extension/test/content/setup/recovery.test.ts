@@ -41,4 +41,16 @@ describe("findRecoveryCodes", () => {
     const r = root(`<h2>Recovery codes</h2><ul>${list.map((c) => `<li>${c}</li>`).join("")}</ul>`);
     expect(findRecoveryCodes(r)).toBeNull();
   });
+
+  it("ignores wording that is only in the page title", () => {
+    const list = codes(6, (i) => `SKU${i}0-ABCD${i}`);
+    const r = root(`<h2>Products</h2><ul>${list.map((c) => `<li>${c}</li>`).join("")}</ul>`, "Backup generators");
+    expect(findRecoveryCodes(r)).toBeNull();
+  });
+
+  it("returns null for four-letter navigation words", () => {
+    const words = ["Home", "Shop", "Blog", "Help", "Docs", "News"];
+    const r = root(`<h2>Recovery codes</h2><ul>${words.map((c) => `<li>${c}</li>`).join("")}</ul>`);
+    expect(findRecoveryCodes(r)).toBeNull();
+  });
 });

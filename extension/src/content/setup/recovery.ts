@@ -3,7 +3,7 @@
 
 const MIN_CODES = 6;
 const MAX_CODES = 32;
-const TOKEN = /^[A-Za-z0-9]{4,}(?:[- ][A-Za-z0-9]{4,})*$/;
+const TOKEN = /^(?=.*\d)[A-Za-z0-9]{4,}(?:[- ][A-Za-z0-9]{4,})*$/; // at least one digit: nav words and names are not codes
 const WORDING = /recovery|backup|secours|r[eé]cup[eé]ration|recuperaci[oó]n|respaldo|recupero/i;
 const HEADING = "h1,h2,h3,h4,h5,h6,legend,summary,[role=heading]";
 const MAX_ANCESTORS = 4;
@@ -34,8 +34,7 @@ function isGrid(el: Element): boolean {
   }
 }
 
-function wordingNear(container: Element, title: string): boolean {
-  if (WORDING.test(title)) return true;
+function wordingNear(container: Element): boolean {
   if (WORDING.test(container.getAttribute("aria-label") ?? "")) return true;
   let level: Element | null = container;
   for (let i = 0; i <= MAX_ANCESTORS && level && level.tagName !== "BODY"; i++) {
@@ -45,7 +44,7 @@ function wordingNear(container: Element, title: string): boolean {
     }
     const parent: Element | null = level.parentElement;
     const head = parent?.querySelector(HEADING);
-    if (head && head !== level && !container.contains(head) && WORDING.test(head.textContent ?? "")) return true;
+    if (head && head !== level && !container.contains(head) && head.compareDocumentPosition(container) & Node.DOCUMENT_POSITION_FOLLOWING && WORDING.test(head.textContent ?? "")) return true;
     level = parent;
   }
   return false;
@@ -53,18 +52,18 @@ function wordingNear(container: Element, title: string): boolean {
 
 /** The codes of the first fitting container, or null. */
 export function findRecoveryCodes(root: ParentNode): string[] | null {
-  const doc: Document | null = root.nodeType === 9 ? (root as Document) : (root as Node).ownerDocument;
-  const title = doc?.title ?? "";
   const all = [...root.querySelectorAll("ul,ol,table,pre,div,section")].slice(0, MAX_SCAN);
   for (const el of all) {
     const tag = el.tagName.toLowerCase();
-    if ((tag === "div" || tag === "section") && !isGrid(el)) continue;
+    if (tag === "div" || tag === "section") {
+      if (el.children.length < MIN_CODES || el.children.length > MAX_CODES || !isGrid(el)) continue;
+    }
     const list = items(el);
     if (list.length < MIN_CODES || list.length > MAX_CODES) continue;
     if (!list.every((t) => TOKEN.test(t))) continue;
     const shape = shapeOf(list[0]!);
     if (!list.every((t) => shapeOf(t) === shape)) continue;
-    if (!wordingNear(el, title)) continue;
+    if (!wordingNear(el)) continue;
     return list;
   }
   return null;
