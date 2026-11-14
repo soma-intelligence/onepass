@@ -60,6 +60,19 @@
     "allow-pick-import",
     "allow-preview-import",
     "allow-import-items",
-    "allow-set-check-breaches"
+    "allow-set-check-breaches",
+    "allow-item-timeline",
+    "allow-travel-status",
+    "allow-set-vault-travel-safe",
+    "allow-enter-travel",
+    "allow-exit-travel",
+    "allow-duplicate-groups",
+    "allow-merge-duplicates",
+    "allow-merge-sure-duplicates",
+    "allow-resolve-duplicates",
+    "allow-wifi-qr",
+    "allow-site-icons",
+    "allow-icon-image",
+    "allow-set-site-icons"
   ]
 }

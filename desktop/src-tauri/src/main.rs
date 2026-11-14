@@ -10,6 +10,7 @@ mod commands;
 mod device;
 mod dialog;
 mod hello;
+mod iconpack;
 mod prefs;
 mod secrets;
 mod shell;
@@ -114,6 +115,19 @@ fn main() {
             commands::preview_import,
             commands::import_items,
             commands::set_check_breaches,
+            commands::item_timeline,
+            commands::travel_status,
+            commands::set_vault_travel_safe,
+            commands::enter_travel,
+            commands::exit_travel,
+            commands::duplicate_groups,
+            commands::merge_duplicates,
+            commands::merge_sure_duplicates,
+            commands::resolve_duplicates,
+            commands::wifi_qr,
+            commands::site_icons,
+            commands::icon_image,
+            commands::set_site_icons,
         ])
         .run(tauri::generate_context!())
         .expect("OnePass failed to start");

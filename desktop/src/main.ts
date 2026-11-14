@@ -42,6 +42,7 @@ interface Status {
   helloWanted: boolean;
   helloDropped: "expired" | "rebooted" | "invalidated" | null;
   helloDaysLeft: number | null;
+  siteIcons: boolean;
 }
 interface HelloStatus {
   availability: "available" | "notConfigured" | "unavailable";
@@ -391,7 +392,7 @@ type Filter =
   | { kind: "archive" }
   | { kind: "trash" }
   | { kind: "ids"; ids: string[] };
-type Page = { kind: "home" } | { kind: "watchtower" } | { kind: "list"; filter: Filter; title: string };
+type Page = { kind: "home" } | { kind: "watchtower" } | { kind: "duplicates" } | { kind: "list"; filter: Filter; title: string };
 
 const ui = {
   vaults: [] as Vault[],
@@ -404,6 +405,7 @@ const ui = {
   /** Opened this session (Accueil "Récents"): memory only, emptied on lock. */
   recents: [] as string[],
   folded: new Set<string>(),
+  duplicates: [] as DuplicateGroup[],
 };
 
 const active = (): Summary[] => ui.items.filter((i) => !i.trashed && !i.archived);
@@ -414,6 +416,8 @@ async function reload(): Promise<void> {
   ui.items = items;
   ui.name = account.name;
   ui.report = null;
+  ui.duplicates = await call<DuplicateGroup[]>("duplicate_groups").catch(() => []);
+  await loadSiteIcons();
   void loadReport();
 }
 
@@ -848,6 +852,7 @@ function renderSidebar(): void {
       nav(t("Tous les éléments", "All Items"), tile("grid", "var(--accent)", 22), live.length, { kind: "list", filter: { kind: "all" }, title: t("Tous les éléments", "All Items") }),
       nav(t("Favoris", "Favorites"), tile("star_fill", "var(--orange)", 22), live.filter((i) => i.favorite).length, { kind: "list", filter: { kind: "favorites" }, title: t("Favoris", "Favorites") }),
       nav("Watchtower", tile("watchtower", "#E14D3C", 22), score ?? null, { kind: "watchtower" }),
+      ui.duplicates.length || ui.page.kind === "duplicates" ? nav(t("Doublons possibles", "Possible Duplicates"), tile("duplicates", "var(--orange)", 22), ui.duplicates.length, { kind: "duplicates" }) : null,
       h("h3", {}, t("Coffres", "Vaults")),
       ...ui.vaults
         .slice()
@@ -870,6 +875,7 @@ function renderMain(): void {
   const p = ui.page;
   if (p.kind === "home") mainEl.replaceChildren(homePage());
   else if (p.kind === "watchtower") mainEl.replaceChildren(watchtowerPage());
+  else if (p.kind === "duplicates") mainEl.replaceChildren(duplicatesPage());
   else {
     mainEl.replaceChildren(h("div", { class: "split" }, listPane(p), detailEl));
     void renderDetail();
@@ -1003,7 +1009,7 @@ function itemRow(s: Summary, inCard = false): HTMLElement {
       role: inCard ? undefined : "option",
       "aria-selected": inCard ? undefined : String(ui.selected === s.id),
     },
-    art(s.itemType, 36, s.favorite),
+    itemArt(s, 36, s.favorite),
     h("span", { class: "row-text" }, h("span", { class: "row-title" }, s.title || t("Sans titre", "Untitled")), h("span", { class: "row-sub" }, [secondLine(s), vault].filter(Boolean).join(" · "))),
     inCard ? icon("chevron_right", 18, "chev") : null,
   );
@@ -1123,7 +1129,7 @@ async function renderDetail(): Promise<void> {
   detailEl.replaceChildren(
     toolbar,
     h("div", { class: "detail-scroll" },
-      h("header", { class: "item-head" }, art(item.itemType, 64),
+      h("header", { class: "item-head" }, itemArt(item, 64),
         h("div", {}, h("h2", {}, item.title || t("Sans titre", "Untitled")), h("div", { class: "secondary" }, [cat.singular, sel.subtitle].filter(Boolean).join(" · ")))),
       chips,
       ...sections.flatMap((s) => [h("div", { class: "caps" }, sectionLabel(s, cat.singular)), h("div", { class: "card" }, ...s.fields.map((f) => fieldRow(f, args)))]),
@@ -1135,9 +1141,10 @@ async function renderDetail(): Promise<void> {
       item.notes ? h("div", { class: "card notes" }, item.notes) : null,
       item.tags.length ? h("div", { class: "caps" }, "Tags") : null,
       item.tags.length ? h("div", { class: "chips" }, ...item.tags.map((x) => h("span", { class: "chip" }, x))) : null,
+      item.trashed ? null : wifiCard(item),
       item.trashed ? null : attachmentsSection(item),
       h("div", { class: "meta" },
-        h("div", {}, t("Modifié le ", "Modified ") + dateTime(item.updatedAt)),
+        timelineFooter(item),
         h("div", { class: "tertiary" }, t("Créé le ", "Created ") + dateTime(item.createdAt)),
         item.passwordHistoryCount > 0 ? h("button", { class: "bar-text", onclick: () => history(item) }, t("Historique des mots de passe", "Password History")) : null),
     ),
@@ -2117,7 +2124,8 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
     case "general": {
       const status = await call<Status>("status");
       return [head, h("div", { class: "card list-card" }, row(t("Verrouillage automatique", "Auto-Lock"), t(`${status.autoLockMinutes} minutes`, `${status.autoLockMinutes} minutes`)),
-        row(t("Langue", "Language"), t("Français (système)", "English (system)"))),
+        row(t("Langue", "Language"), t("Français (système)", "English (system)")),
+        iconsToggle(status.siteIcons, redraw)),
         h("p", { class: "footnote" }, t("OnePass se verrouille aussi quand la session Windows se verrouille.", "OnePass also locks when the Windows session locks.")),
         h("div", { class: "caps" }, t("Importer", "Import")),
         h("div", { class: "card list-card" }, h("button", { class: "row", id: "open-import", onclick: () => importSheet() }, tile("import", "var(--blue)", 28),
@@ -2200,7 +2208,7 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
     case "family":
       return note(t("Le partage avec tes contacts et ta famille demande la synchronisation, qui arrive sur Windows.", "Sharing with your contacts and family needs sync, which is coming to Windows."));
     case "travel":
-      return note(t("Travel Mode retire de l'appareil les coffres non sûrs pour un voyage. Il arrive sur Windows avec la synchronisation.", "Travel Mode removes the vaults not safe for travel from the device. It comes to Windows with sync."));
+      return travelPage(head, redraw);
     case "crypto":
       return note(t("Les portefeuilles crypto se rangent déjà comme éléments. Le suivi des soldes arrive sur Windows.", "Crypto wallets can already be stored as items. Balance tracking is coming to Windows."));
     default:
@@ -2951,20 +2959,464 @@ function vaultEditor(v: Vault | null, after?: () => void): void {
   name.focus();
 }
 
+// ---- site icons ---------------------------------------------------------------------------
+
+/** Item id → icon number in the bundled icon pack; icon number → image. */
+const siteIcons = new Map<string, number>();
+const iconImages = new Map<number, Promise<{ src: string; mono: boolean } | null>>();
+
+async function loadSiteIcons(): Promise<void> {
+  try {
+    const found = await call<Record<string, number>>("site_icons", { items: ui.items.map((i) => ({ id: i.id, url: i.primaryUrl, title: i.title })) });
+    siteIcons.clear();
+    for (const [id, n] of Object.entries(found)) siteIcons.set(id, n);
+  } catch {
+    siteIcons.clear();
+  }
+}
+
+function iconImage(n: number): Promise<{ src: string; mono: boolean } | null> {
+  let p = iconImages.get(n);
+  if (!p) {
+    p = call<{ src: string; mono: boolean }>("icon_image", { index: n }).catch(() => null);
+    iconImages.set(n, p);
+  }
+  return p;
+}
+
+/** The item's site icon when the pack has one, its category art otherwise. */
+function itemArt(s: { id: string; itemType: string }, size: number, favorite = false): HTMLElement {
+  const box = art(s.itemType, size, favorite);
+  const n = siteIcons.get(s.id);
+  if (n === undefined) return box;
+  void iconImage(n).then((img) => {
+    if (!img) return;
+    const el = box.querySelector("img")!;
+    el.src = img.src;
+    box.classList.add("site-icon");
+    box.classList.toggle("mono-icon", img.mono);
+  });
+  return box;
+}
+
+// ---- timeline ------------------------------------------------------------------------------
+
+interface TimelineEvent {
+  kind: string;
+  at: number;
+  detail: string;
+}
+
+function timelineText(e: TimelineEvent): string {
+  const d = e.detail;
+  switch (e.kind) {
+    case "created":
+      return t("Élément créé", "Item created");
+    case "imported":
+      return d ? t(`Importé depuis ${d}`, `Imported from ${d}`) : t("Importé", "Imported");
+    case "field_added":
+      return t(`Champ « ${d} » ajouté`, `Field “${d}” added`);
+    case "field_removed":
+      return t(`Champ « ${d} » supprimé`, `Field “${d}” removed`);
+    case "field_changed":
+      return d === "notes" ? t("Notes modifiées", "Notes changed") : d === "tags" ? t("Tags modifiés", "Tags changed") : t(`« ${d} » modifié`, `“${d}” changed`);
+    case "password_changed":
+      return t("Mot de passe modifié", "Password changed");
+    case "title_changed":
+      return t("Titre modifié", "Title changed");
+    case "website_added":
+      return t(`Site web ajouté : ${d}`, `Website added: ${d}`);
+    case "website_removed":
+      return t(`Site web retiré : ${d}`, `Website removed: ${d}`);
+    case "moved":
+      return t(`Déplacé vers ${d}`, `Moved to ${d}`);
+    case "favorited":
+      return t("Ajouté aux favoris", "Added to Favorites");
+    case "unfavorited":
+      return t("Retiré des favoris", "Removed from Favorites");
+    case "archived":
+      return t("Archivé", "Archived");
+    case "unarchived":
+      return t("Désarchivé", "Unarchived");
+    case "trashed":
+      return t("Mis dans Supprimés récemment", "Moved to Recently Deleted");
+    case "restored":
+      return t("Restauré", "Restored");
+    case "passkey_added":
+      return t(`Passkey ajoutée pour ${d}`, `Passkey added for ${d}`);
+    case "passkey_removed":
+      return t(`Passkey supprimée pour ${d}`, `Passkey removed for ${d}`);
+    case "attachment_added":
+      return t(`Pièce jointe ajoutée : ${d}`, `Attachment added: ${d}`);
+    default:
+      return t("Modifié", "Modified");
+  }
+}
+
+const timelineIcon = (kind: string): IconName =>
+  (({
+    created: "add_circle", imported: "import", field_added: "add_box", field_removed: "minus_box", password_changed: "key", title_changed: "title",
+    website_added: "globe", website_removed: "globe", moved: "folder", favorited: "star", unfavorited: "star", archived: "archive", unarchived: "archive",
+    trashed: "trash", restored: "restore", passkey_added: "passkey", passkey_removed: "passkey", attachment_added: "paperclip",
+  }) as Record<string, IconName>)[kind] ?? "edit";
+
+function relative(at: number): string {
+  const secs = Math.round(at - Date.now() / 1000);
+  const f = new Intl.RelativeTimeFormat(t("fr", "en"), { numeric: "auto" });
+  const abs = Math.abs(secs);
+  if (abs < 60) return f.format(0, "second");
+  if (abs < 3600) return f.format(Math.round(secs / 60), "minute");
+  if (abs < 86400) return f.format(Math.round(secs / 3600), "hour");
+  if (abs < 86400 * 30) return f.format(Math.round(secs / 86400), "day");
+  if (abs < 86400 * 365) return f.format(Math.round(secs / 86400 / 30), "month");
+  return f.format(Math.round(secs / 86400 / 365), "year");
+}
+
+/** The item's footer: "Modifié le …" opens what happened to it, as on the Mac. */
+function timelineFooter(item: Item): HTMLElement {
+  const list = h("div", { class: "timeline", hidden: true });
+  const chevron = icon("chevron_down", 16, "accent folded");
+  const head = h("button", { class: "bar-text timeline-head", "aria-expanded": "false" }, t("Modifié le ", "Modified ") + dateTime(item.updatedAt), chevron);
+  head.addEventListener("click", async () => {
+    const open = list.hidden;
+    list.hidden = !open;
+    head.setAttribute("aria-expanded", String(open));
+    chevron.classList.toggle("folded", !open);
+    if (!open || list.childElementCount) return;
+    try {
+      const events = await call<TimelineEvent[]>("item_timeline", { vaultId: item.vaultId, itemId: item.id });
+      list.replaceChildren(...events.map((e, i) =>
+        h("div", { class: "timeline-row" + (i === 0 ? " first" : "") }, h("span", { class: "timeline-dot" }), icon(timelineIcon(e.kind), 18, "secondary"),
+          h("span", { class: "timeline-text" }, timelineText(e)), h("span", { class: "tertiary timeline-when", title: dateTime(e.at) }, relative(e.at)))));
+    } catch (e) {
+      list.replaceChildren(h("p", { class: "secondary" }, message(e)));
+    }
+  });
+  return h("div", { class: "timeline-box" }, head, list);
+}
+
+// ---- Wi-Fi QR code -------------------------------------------------------------------------
+
+function qrSvg(modules: boolean[], width: number, size: number): SVGSVGElement {
+  const svg = document.createElementNS(SVG, "svg");
+  const quiet = 3;
+  const n = width + quiet * 2;
+  svg.setAttribute("viewBox", `0 0 ${n} ${n}`);
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("shape-rendering", "crispEdges");
+  svg.setAttribute("class", "qr");
+  const bg = document.createElementNS(SVG, "rect");
+  bg.setAttribute("width", String(n));
+  bg.setAttribute("height", String(n));
+  bg.setAttribute("fill", "#fff");
+  svg.append(bg);
+  let d = "";
+  modules.forEach((dark, i) => {
+    if (dark) d += `M${(i % width) + quiet} ${Math.floor(i / width) + quiet}h1v1h-1z`;
+  });
+  const p = document.createElementNS(SVG, "path");
+  p.setAttribute("d", d);
+  p.setAttribute("fill", "#121F45");
+  svg.append(p);
+  return svg;
+}
+
+/** The router's "join this network" code: hidden until touched, hidden again after 30 s. */
+function wifiCard(item: Item): HTMLElement | null {
+  const ssid = item.sections.flatMap((s) => s.fields).find((f) => f.id === "ssid")?.value;
+  if (item.itemType !== "router" || !ssid) return null;
+  const area = h("button", { class: "qr-area masked", type: "button", "aria-label": t(`Code QR du réseau ${ssid}`, `QR code for network ${ssid}`) });
+  const caption = h("p", { class: "secondary center-text" }, t("Touche le code pour l'afficher.", "Tap the code to show it."));
+  let timer: number | undefined;
+  let data: { modules: boolean[]; width: number } | null = null;
+  const mask = () => {
+    area.classList.add("masked");
+    area.replaceChildren(icon("qr_code", 120, "secondary"));
+    caption.textContent = t("Touche le code pour l'afficher.", "Tap the code to show it.");
+    data = null;
+  };
+  mask();
+  area.addEventListener("click", async () => {
+    if (data) return mask();
+    try {
+      data = await call<{ ssid: string; modules: boolean[]; width: number }>("wifi_qr", { vaultId: item.vaultId, itemId: item.id });
+      area.classList.remove("masked");
+      area.replaceChildren(qrSvg(data.modules, data.width, 220));
+      caption.textContent = t(`Scanne ce code pour rejoindre « ${ssid} ».`, `Scan this code to join “${ssid}”.`);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(mask, 30000);
+      timers.push(timer);
+    } catch (e) {
+      toast(message(e));
+    }
+  });
+  const large = h("button", { class: "bar-text", type: "button", onclick: async () => {
+    try {
+      const q = await call<{ modules: boolean[]; width: number }>("wifi_qr", { vaultId: item.vaultId, itemId: item.id });
+      const s = sheet(t("Afficher en grand", "Show Large"), { cancel: t("Fermer", "Close") });
+      s.body.append(h("div", { class: "qr-large" }, qrSvg(q.modules, q.width, 420)), h("p", { class: "secondary center-text" }, t(`Scanne ce code pour rejoindre « ${ssid} ».`, `Scan this code to join “${ssid}”.`)));
+      window.setTimeout(() => s.close(), 30000);
+    } catch (e) {
+      toast(message(e));
+    }
+  } }, t("Afficher en grand", "Show Large"));
+  return h("div", { class: "card pad qr-card spaced" }, area, caption, large);
+}
+
+// ---- duplicates -----------------------------------------------------------------------------
+
+interface DuplicateGroup {
+  id: string;
+  confidence: "sure" | "review";
+  signals: string[];
+  domain: string | null;
+  copies: { summary: Summary; vaultName: string; writable: boolean; differences: string[]; hasTotp: boolean; attachmentCount: number; fieldCount: number }[];
+  conflicts: string[];
+}
+
+function signalText(s: string, domain: string | null): string {
+  switch (s) {
+    case "sameTotp":
+      return t("Même code de vérification", "Same verification code");
+    case "sameCard":
+      return t("Même numéro de carte", "Same card number");
+    case "sameDocument":
+      return t("Même numéro de document", "Same document number");
+    case "sameLogin":
+      return t(`Même identifiant sur ${domain ?? ""}`, `Same username on ${domain ?? ""}`);
+    default:
+      return t("Même titre et même identifiant", "Same title and username");
+  }
+}
+
+/** Doublons possibles (a sidebar page under Watchtower, as on the Mac). */
+function duplicatesPage(): HTMLElement {
+  const groups = ui.duplicates;
+  const sure = groups.filter((g) => g.confidence === "sure");
+  const review = groups.filter((g) => g.confidence === "review");
+  const selected = new Set(sure.map((g) => g.id));
+  const run = async (cmd: string, args: Record<string, unknown>, done?: string) => {
+    try {
+      const r = await call<number | null>(cmd, args);
+      if (done) toast(done.replace("%d", String(r ?? 0)));
+      await refresh(undefined);
+    } catch (e) {
+      toast(message(e));
+    }
+  };
+  const groupMenu = (anchor: HTMLElement, g: DuplicateGroup) =>
+    menu(anchor, [
+      { label: t("Pas des doublons", "Not Duplicates"), icon: "close", action: () => void run("resolve_duplicates", { groupId: g.id, action: "dismiss" }) },
+      { label: t("Archiver les autres", "Archive Others"), icon: "archive", action: () => void run("resolve_duplicates", { groupId: g.id, action: "archive" }) },
+      "separator",
+      { label: t("Supprimer les autres", "Delete Others"), icon: "trash", destructive: true, action: () =>
+        confirmSheet(t("Supprimer les autres copies ? Elles vont dans Supprimés récemment, d'où tu peux les restaurer.", "Delete the other copies? They go to Recently Deleted, where you can restore them."), t("Supprimer les autres", "Delete Others"),
+          () => void run("resolve_duplicates", { groupId: g.id, action: "trash" })) },
+    ]);
+  const groupHead = (g: DuplicateGroup) => {
+    const first = g.copies[0]!.summary;
+    const vaults = [...new Set(g.copies.map((c) => c.vaultName))].join(", ");
+    return h("span", { class: "row-text" }, h("span", { class: "row-title bold" }, first.title),
+      h("span", { class: "row-sub" }, [first.subtitle, plural(g.copies.length, t("1 copie", "1 copy"), t("%d copies", "%d copies")), vaults].filter(Boolean).join(" · ")),
+      h("span", { class: "row-sub tertiary" }, g.signals.map((s) => signalText(s, g.domain)).join(" · ")));
+  };
+  const more = (g: DuplicateGroup) => {
+    const b = h("button", { class: "bar-icon", type: "button", title: t("Plus d'actions", "More Actions"), "aria-label": t("Plus d'actions", "More Actions") }, icon("more_circle", 22));
+    b.addEventListener("click", (e) => (e.stopPropagation(), groupMenu(b, g)));
+    return b;
+  };
+  const sureRows = sure.map((g) => {
+    const box = h("input", { type: "checkbox", class: "check-box", checked: true, "aria-label": t("Inclure dans la fusion", "Include in Merge") });
+    box.addEventListener("change", () => (box.checked ? selected.add(g.id) : selected.delete(g.id), (mergeAll.textContent = t(`Fusionner la sélection (${selected.size})`, `Merge Selected (${selected.size})`))));
+    return h("div", { class: "row static dup-group" }, box, itemArt(g.copies[0]!.summary, 36), groupHead(g), more(g));
+  });
+  const mergeAll = h("button", { class: "capsule prominent", type: "button", onclick: () => void run("merge_sure_duplicates", { groupIds: [...selected] }, t("%d groupe(s) fusionné(s)", "%d group(s) merged")) },
+    t(`Fusionner la sélection (${selected.size})`, `Merge Selected (${selected.size})`));
+  const reviewCards = review.map((g) =>
+    h("div", { class: "card pad dup-review" },
+      h("div", { class: "dup-review-head" }, itemArt(g.copies[0]!.summary, 36), groupHead(g), more(g)),
+      h("p", { class: "secondary" }, g.conflicts.length === 1
+        ? t(`« ${g.conflicts[0]} » diffère.`, `“${g.conflicts[0]}” differs.`)
+        : t(`Les copies diffèrent sur ${g.conflicts.length} points : ${g.conflicts.join(", ")}.`, `The copies differ on ${g.conflicts.length} points: ${g.conflicts.join(", ")}.`)),
+      h("div", { class: "dup-copies" }, ...g.copies.map((c, i) =>
+        h("button", { class: "dup-copy card", type: "button", onclick: () => openItem(c.summary) }, h("span", { class: "row-title" }, c.summary.title + (i === 0 ? t(" (gardé)", " (kept)") : "")),
+          h("span", { class: "row-sub" }, `${c.vaultName} · ${t("Modifié", "Edited")} ${relative(c.summary.updatedAt)}${c.writable ? "" : " · " + t("Lecture seule", "Read Only")}`),
+          c.differences.length ? h("span", { class: "row-sub tertiary" }, t(`Diffère : ${c.differences.map(aspectWord).join(", ")}`, `Differs: ${c.differences.map(aspectWord).join(", ")}`)) : null))),
+      h("div", { class: "buttons-row left" },
+        h("button", { class: "capsule prominent", type: "button", onclick: () => void run("merge_duplicates", { groupId: g.id }) }, t("Fusionner", "Merge")),
+        h("button", { class: "capsule", type: "button", onclick: () => void run("resolve_duplicates", { groupId: g.id, action: "dismiss" }) }, t("Ce ne sont pas des doublons", "These Aren't Duplicates"))),
+      h("p", { class: "footnote" }, t("Rien n'est perdu : l'autre mot de passe passe dans l'historique, les autres copies sont archivées intactes.", "Nothing is lost: the other password goes to the history, the other copies are archived intact."))));
+  return h("div", { class: "page" },
+    h("h1", { class: "large-title" }, t("Doublons possibles", "Possible Duplicates")),
+    h("p", { class: "secondary" }, t(`Sans risque : ${sure.length} · À vérifier : ${review.length}`, `Safe to merge: ${sure.length} · To check: ${review.length}`)),
+    ...(groups.length === 0
+      ? [h("div", { class: "empty-state" }, icon("duplicates", 48, "secondary"), h("h2", {}, t("Aucun doublon", "No Duplicates")),
+          h("p", { class: "secondary" }, t("Les éléments qui se ressemblent beaucoup apparaîtront ici.", "Items that look very much alike show up here.")))]
+      : []),
+    ...(sure.length
+      ? [h("div", { class: "caps" }, t("Fusion sûre", "Safe to Merge")),
+         h("p", { class: "footnote" }, t("Même élément : une copie ajoute seulement des infos. La fusion les garde toutes.", "Same item: one copy only adds details. The merge keeps them all.")),
+         h("div", { class: "card list-card" }, ...sureRows), h("div", { class: "buttons-row left" }, mergeAll)]
+      : []),
+    ...(review.length
+      ? [h("div", { class: "caps" }, t("À vérifier", "To Check")),
+         h("p", { class: "footnote" }, t("Les copies se contredisent. OnePass garde la copie la plus complète et met l'autre mot de passe dans l'historique.", "The copies disagree. OnePass keeps the most complete copy and puts the other password in the history.")),
+         ...reviewCards]
+      : []),
+  );
+}
+
+// ---- Travel Mode ------------------------------------------------------------------------------
+
+interface TravelView {
+  active: boolean;
+  exiting: boolean;
+  enteredAt: number | null;
+  hiddenCount: number;
+  hiddenItemCount: number;
+  vaults: { vaultId: string; name: string; leaves: boolean }[];
+  hidden: { itemId: string; title: string; vaultName: string }[];
+  guarded: { itemId: string; title: string; vaultName: string }[];
+}
+
+function travelError(e: unknown): string {
+  const d = (e as UiError)?.detail ?? "";
+  if (d.includes("unsynced changes")) return t("Synchronise d'abord : les coffres qui partent doivent être à jour sur le serveur pour revenir. La synchronisation arrive sur Windows ; d'ici là, rien ne quitte ce PC.",
+    "Sync first: the vaults that leave must be up to date on the server to come back. Sync is coming to Windows; until then, nothing leaves this PC.");
+  if (d.includes("nothing leaves")) return t("Rien ne quitterait cet appareil.", "Nothing would leave this device.");
+  return message(e);
+}
+
+async function travelPage(head: HTMLElement, redraw: () => void): Promise<Node[]> {
+  const v = await call<TravelView>("travel_status");
+  const err = h("div", { class: "error", role: "alert" });
+  const leaving = v.vaults.filter((x) => x.leaves).map((x) => x.name);
+  const status = v.active
+    ? h("div", { class: "row static" }, tile("airplane", "var(--blue)", 30), h("span", { class: "row-text" }, h("span", { class: "row-title bold" }, v.exiting ? t("Retour en cours", "Coming back") : t("Travel Mode activé", "Travel Mode on")),
+        v.enteredAt ? h("span", { class: "row-sub" }, t(`Depuis le ${dateTime(v.enteredAt)}, ${plural(v.hiddenCount, "1 coffre", "%d coffres")} hors de cet appareil`, `Since ${dateTime(v.enteredAt)}, ${plural(v.hiddenCount, "1 vault", "%d vaults")} off this device`)) : null))
+    : h("div", { class: "row static" }, tile("airplane", "#8E8E93", 30), h("span", { class: "row-text" }, h("span", { class: "row-title bold" }, t("Travel Mode désactivé", "Travel Mode off"))));
+  const button = v.active
+    ? h("button", { class: "capsule prominent", type: "button", onclick: async () => {
+        try {
+          await call("exit_travel");
+          toast(t("De retour sur cet appareil", "Back on This Device"));
+          redraw();
+        } catch (e) {
+          err.textContent = travelError(e);
+        }
+      } }, v.exiting ? t("Terminer le retour", "Finish Coming Back") : t("Désactiver le Travel Mode", "Turn Off Travel Mode"))
+    : h("button", { class: "capsule prominent", type: "button", onclick: () => {
+        const lines = [
+          leaving.length ? t(`Ces coffres quittent cet appareil jusqu'à ton retour : ${leaving.join(", ")}.`, `These vaults leave this device until you come back: ${leaving.join(", ")}.`) : "",
+          v.hidden.length ? plural(v.hidden.length, t("1 élément caché part aussi.", "1 hidden item leaves too."), t("%d éléments cachés partent aussi.", "%d hidden items leave too.")) : "",
+          v.guarded.length ? plural(v.guarded.length, t("1 élément reste, protégé par mot de passe maître et Windows Hello.", "1 item stays, protected by master password and Windows Hello."), t("%d éléments restent, protégés par mot de passe maître et Windows Hello.", "%d items stay, protected by master password and Windows Hello.")) : "",
+        ].filter(Boolean);
+        confirmSheet(t("Activer le Travel Mode ?", "Turn on Travel Mode?") + " " + (lines.join(" ") || t("Rien ne quitterait cet appareil.", "Nothing would leave this device.")), t("Activer", "Turn On"), async () => {
+          try {
+            await call("enter_travel");
+            redraw();
+          } catch (e) {
+            err.textContent = travelError(e);
+          }
+        });
+      } }, t("Activer le Travel Mode", "Turn On Travel Mode"));
+  const vaultRows = v.vaults.map((x) => {
+    const box = h("input", { type: "checkbox", class: "switch", checked: !x.leaves, disabled: v.active, "aria-label": t(`Sûr en voyage : ${x.name}`, `Safe for Travel: ${x.name}`) });
+    box.addEventListener("change", async () => {
+      try {
+        await call("set_vault_travel_safe", { vaultId: x.vaultId, safe: box.checked });
+        await refresh(undefined);
+        redraw();
+      } catch (e) {
+        err.textContent = message(e);
+      }
+    });
+    const vault = ui.vaults.find((u) => u.id === x.vaultId);
+    return h("label", { class: "toggle-row" }, monogram(x.name.slice(0, 1).toUpperCase(), vaultColor(vault?.color ?? "blue"), 28, true),
+      h("span", { class: "row-text grow" }, h("span", {}, x.name), h("span", { class: "row-sub" }, x.leaves ? t("Quitte l'appareil", "Leaves the device") : t("Reste sur l'appareil", "Stays on the device"))), box);
+  });
+  const itemRows = [
+    ...v.hidden.map((i) => h("div", { class: "row static" }, icon("eye_off", 20, "secondary"), h("span", { class: "row-text" }, h("span", { class: "row-title" }, i.title), h("span", { class: "row-sub" }, i.vaultName)))),
+    ...v.guarded.map((i) => h("div", { class: "row static" }, icon("shield_lock", 20, "secondary"), h("span", { class: "row-text" }, h("span", { class: "row-title" }, i.title), h("span", { class: "row-sub" }, i.vaultName)))),
+  ];
+  return [head,
+    h("div", { class: "card list-card" }, status), h("div", { class: "buttons-row left" }, button), err,
+    h("p", { class: "footnote" }, t("Les coffres retirés restent sur le serveur et sont vérifiés au retour. Sur Windows, le Travel Mode demande la synchronisation : sans elle, OnePass refuse de retirer un coffre qui ne pourrait pas revenir.",
+      "Removed vaults stay on the server and are checked on return. On Windows, Travel Mode needs sync: without it, OnePass refuses to remove a vault that could not come back.")),
+    h("div", { class: "caps" }, t("Éléments", "Items")),
+    itemRows.length ? h("div", { class: "card list-card" }, ...itemRows) : h("p", { class: "secondary" }, t("Aucun élément marqué.", "No marked items.")),
+    h("p", { class: "footnote" }, t("Se règle dans chaque élément : Caché en voyage, ou Protection renforcée en voyage.", "Set in each item: Hidden in Travel Mode, or Extra Protection in Travel Mode.")),
+    ...(v.active ? [] : [h("div", { class: "caps" }, t("Sûr en voyage", "Safe for Travel")), h("div", { class: "card list-card" }, ...vaultRows), h("p", { class: "footnote" }, t("Sur tous tes appareils.", "On all your devices."))]),
+  ];
+}
+
+function iconsToggle(on: boolean, redraw: () => void): HTMLElement {
+  const box = h("input", { type: "checkbox", class: "switch", id: "site-icons", checked: on, "aria-label": t("Icônes des sites", "Website Icons") });
+  box.addEventListener("change", async () => {
+    try {
+      await call("set_site_icons", { on: box.checked });
+
+      await refresh(undefined);
+      redraw();
+    } catch (e) {
+      toast(message(e));
+    }
+  });
+  return h("label", { class: "toggle-row", for: "site-icons" }, h("span", {}, t("Icônes des sites", "Website Icons")), box);
+}
+
+
 // ---- keyboard and start ------------------------------------------------------------------------------
 
+// The Mac app's shortcuts, Ctrl for Cmd: N new item, Shift+I import, F search,
+// E edit, S save (in the editor), Delete trash, L lock, comma settings,
+// Enter import (in the import sheet).
 document.addEventListener("keydown", (e) => {
-  if (!e.ctrlKey || !document.querySelector(".shell") || document.querySelector("dialog[open]")) return;
-  if (e.key === "n") {
+  if (!e.ctrlKey || e.altKey || !document.querySelector(".shell")) return;
+  const dialogs = document.querySelectorAll("dialog[open]");
+  const top = dialogs[dialogs.length - 1] as HTMLDialogElement | undefined;
+  const key = e.key.toLowerCase();
+  if (top) {
+    const action = top.querySelector(".sheet-bar .bar-text.bold") as HTMLButtonElement | null;
+    const saving = key === "s" && top.classList.contains("editor");
+    const importing = e.key === "Enter" && top.classList.contains("import-sheet");
+    if ((saving || importing) && action && !action.disabled && !action.hidden) {
+      e.preventDefault();
+      action.click();
+    }
+    return;
+  }
+  const selected = ui.page.kind === "list" ? ui.items.find((i) => i.id === ui.selected) : undefined;
+  if (key === "n" && !e.shiftKey) {
     e.preventDefault();
     newItem();
-  } else if (e.key === "l") {
+  } else if (key === "i" && e.shiftKey) {
+    e.preventDefault();
+    importSheet();
+  } else if (key === "l") {
     e.preventDefault();
     void lockNow();
-  } else if (e.key === "f") {
+  } else if (key === "f") {
     e.preventDefault();
     if (ui.page.kind !== "list") go({ kind: "list", filter: { kind: "all" }, title: t("Tous les éléments", "All Items") });
     (document.querySelector(".search-input") as HTMLInputElement | null)?.focus();
+  } else if (key === ",") {
+    e.preventDefault();
+    openSettings();
+  } else if (key === "e" && selected && !selected.trashed) {
+    e.preventDefault();
+    void call<Item>("item", { vaultId: selected.vaultId, itemId: selected.id }).then((it) => editItem(it, false)).catch((x) => toast(message(x)));
+  } else if ((e.key === "Delete" || e.key === "Backspace") && selected && !selected.trashed && !(document.activeElement instanceof HTMLInputElement)) {
+    e.preventDefault();
+    confirmSheet(t(`Mettre « ${selected.title} » dans Supprimés récemment ?`, `Move “${selected.title}” to Recently Deleted?`), t("Supprimer", "Delete"), async () => {
+      try {
+        await call("trash_item", { vaultId: selected.vaultId, itemId: selected.id });
+        await refresh(null);
+      } catch (x) {
+        toast(message(x));
+      }
+    });
   }
 });
 

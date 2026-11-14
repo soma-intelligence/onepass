@@ -48,6 +48,8 @@ pub struct Status {
     pub hello_dropped: Option<&'static str>,
     /// Days before the master password is asked again.
     pub hello_days_left: Option<i64>,
+    /// "Icônes des sites" is on.
+    pub site_icons: bool,
 }
 
 #[tauri::command]
@@ -68,6 +70,7 @@ pub fn status(state: State<'_, AppState>) -> UiResult<Status> {
         language: crate::state::language(),
         hello_enrolled: enrolled,
         hello_wanted: state.prefs().hello,
+        site_icons: state.prefs().site_icons,
         hello_dropped: dropped.map(crate::hello::Dropped::key),
         hello_days_left: if enrolled {
             crate::hello::days_left(state.sealer.as_ref(), &state.hello_path())
@@ -1869,4 +1872,443 @@ pub async fn import_items(
     let r = blocking(move || s.import_items(format, bytes.to_vec(), vault_id, decisions)).await??;
     clear_pending(&state);
     Ok(r.into())
+}
+
+// ---- timeline -----------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineEvent {
+    pub kind: String,
+    pub at: i64,
+    /// A field label, a website host, a vault name, a file name: never a value.
+    pub detail: String,
+}
+
+/// What happened to an item, newest first.
+#[tauri::command]
+pub fn item_timeline(
+    state: State<'_, AppState>,
+    vault_id: String,
+    item_id: String,
+) -> UiResult<Vec<TimelineEvent>> {
+    Ok(session(&state)?
+        .item_timeline(vault_id, item_id)?
+        .into_iter()
+        .map(|e| TimelineEvent {
+            kind: e.kind,
+            at: e.at,
+            detail: e.detail,
+        })
+        .collect())
+}
+
+// ---- Travel Mode -------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TravelVault {
+    pub vault_id: String,
+    pub name: String,
+    pub leaves: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TravelItem {
+    pub item_id: String,
+    pub title: String,
+    pub vault_name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TravelView {
+    pub active: bool,
+    pub exiting: bool,
+    pub entered_at: Option<i64>,
+    pub hidden_count: u32,
+    pub hidden_item_count: u32,
+    pub vaults: Vec<TravelVault>,
+    pub hidden: Vec<TravelItem>,
+    pub guarded: Vec<TravelItem>,
+}
+
+fn travel_view(s: &Session) -> UiResult<TravelView> {
+    let st = s.travel_status()?;
+    let items = |v: Vec<onepass_ffi::FfiTravelItemEntry>| {
+        v.into_iter()
+            .map(|e| TravelItem {
+                item_id: e.item_id,
+                title: e.title,
+                vault_name: e.vault_name,
+            })
+            .collect()
+    };
+    let plan = s.travel_item_plan()?;
+    Ok(TravelView {
+        active: st.active,
+        exiting: st.exiting,
+        entered_at: st.entered_at,
+        hidden_count: st.hidden_count,
+        hidden_item_count: st.hidden_item_count,
+        vaults: s
+            .travel_plan()?
+            .into_iter()
+            .map(|e| TravelVault {
+                vault_id: e.vault_id,
+                name: e.name,
+                leaves: e.leaves,
+            })
+            .collect(),
+        hidden: items(plan.hidden),
+        guarded: items(plan.guarded),
+    })
+}
+
+#[tauri::command]
+pub fn travel_status(state: State<'_, AppState>) -> UiResult<TravelView> {
+    travel_view(&*session(&state)?)
+}
+
+/// "Sûr en voyage" on a vault (it stays on the device in Travel Mode).
+#[tauri::command]
+pub fn set_vault_travel_safe(
+    state: State<'_, AppState>,
+    vault_id: String,
+    safe: bool,
+) -> UiResult<TravelView> {
+    let s = session(&state)?;
+    let current = s
+        .vaults()?
+        .into_iter()
+        .find(|v| v.id == vault_id)
+        .ok_or(OnePassError::NotFound)?;
+    s.update_vault(
+        vault_id,
+        onepass_ffi::FfiVaultMeta {
+            travel_safe: safe,
+            ..current.meta
+        },
+    )?;
+    travel_view(&s)
+}
+
+/// Takes the vaults that are not safe for travel off this device. The core
+/// refuses while a change of a leaving vault is not synced: the server copy
+/// is what comes back, so a vault never synced must not leave.
+#[tauri::command]
+pub fn enter_travel(state: State<'_, AppState>) -> UiResult<TravelView> {
+    let s = session(&state)?;
+    s.enter_travel()?;
+    travel_view(&s)
+}
+
+/// Brings the vaults back: the core checks what the sync fetched again.
+#[tauri::command]
+pub fn exit_travel(state: State<'_, AppState>) -> UiResult<TravelView> {
+    let s = session(&state)?;
+    if !s.travel_status()?.exiting {
+        s.begin_travel_exit()?;
+    }
+    s.finish_travel_exit()?;
+    travel_view(&s)
+}
+
+// ---- duplicates ---------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateCopy {
+    pub summary: SummaryView,
+    pub vault_name: String,
+    pub writable: bool,
+    pub differences: Vec<&'static str>,
+    pub has_totp: bool,
+    pub attachment_count: u32,
+    pub field_count: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateGroup {
+    pub id: String,
+    /// "sure" (one copy only adds details) or "review" (the copies disagree).
+    pub confidence: &'static str,
+    pub signals: Vec<&'static str>,
+    pub domain: Option<String>,
+    /// The suggested primary first.
+    pub copies: Vec<DuplicateCopy>,
+    /// The labels of the lines that differ (never a value).
+    pub conflicts: Vec<String>,
+}
+
+fn signal_key(s: onepass_ffi::FfiDuplicateSignal) -> &'static str {
+    use onepass_ffi::FfiDuplicateSignal as S;
+    match s {
+        S::SameTotp => "sameTotp",
+        S::SameCardNumber => "sameCard",
+        S::SameDocumentNumber => "sameDocument",
+        S::SameLogin => "sameLogin",
+        S::SameTitleAndUsername => "sameTitle",
+    }
+}
+
+#[tauri::command]
+pub fn duplicate_groups(state: State<'_, AppState>) -> UiResult<Vec<DuplicateGroup>> {
+    Ok(session(&state)?
+        .duplicate_groups(vec![])?
+        .into_iter()
+        .map(|g| DuplicateGroup {
+            id: g.id,
+            confidence: match g.confidence {
+                onepass_ffi::FfiDuplicateConfidence::Sure => "sure",
+                onepass_ffi::FfiDuplicateConfidence::Review => "review",
+            },
+            signals: g.signals.into_iter().map(signal_key).collect(),
+            domain: g.domain,
+            copies: g
+                .copies
+                .into_iter()
+                .map(|c| DuplicateCopy {
+                    summary: SummaryView::from(c.summary),
+                    vault_name: c.vault_name,
+                    writable: c.writable,
+                    differences: c.differences.into_iter().map(aspect_key).collect(),
+                    has_totp: c.has_totp,
+                    attachment_count: c.attachment_count,
+                    field_count: c.field_count,
+                })
+                .collect(),
+            conflicts: g
+                .rows
+                .into_iter()
+                .filter(|r| r.kind == onepass_ffi::FfiDuplicateRowKind::Conflict)
+                .map(|r| r.label)
+                .collect(),
+        })
+        .collect())
+}
+
+fn group_keys(
+    s: &Session,
+    group_id: &str,
+) -> UiResult<(FfiItemKeyPair, Vec<onepass_ffi::FfiItemKey>)> {
+    let g = s
+        .duplicate_groups(vec![])?
+        .into_iter()
+        .find(|g| g.id == group_id)
+        .ok_or(OnePassError::NotFound)?;
+    let mut copies = g.copies.into_iter();
+    let first = copies.next().ok_or(OnePassError::NotFound)?;
+    let primary = FfiItemKeyPair {
+        key: onepass_ffi::FfiItemKey {
+            vault_id: first.summary.vault_id.clone(),
+            item_id: first.summary.id.clone(),
+        },
+        title: first.summary.title,
+    };
+    let others = copies
+        .filter(|c| c.writable)
+        .map(|c| onepass_ffi::FfiItemKey {
+            vault_id: c.summary.vault_id,
+            item_id: c.summary.id,
+        })
+        .collect();
+    Ok((primary, others))
+}
+
+struct FfiItemKeyPair {
+    key: onepass_ffi::FfiItemKey,
+    title: String,
+}
+
+fn merged_note(title: &str) -> String {
+    if fr() {
+        format!("Fusionné dans « {title} »")
+    } else {
+        format!("Merged into \u{201c}{title}\u{201d}")
+    }
+}
+
+/// Merges a group into its suggested primary with the core's choices for
+/// each difference (the other password goes to the history); the other
+/// copies are archived intact.
+#[tauri::command]
+pub fn merge_duplicates(state: State<'_, AppState>, group_id: String) -> UiResult<()> {
+    let s = session(&state)?;
+    let (primary, others) = group_keys(&s, &group_id)?;
+    s.merge_duplicates(primary.key, others, merged_note(&primary.title))?;
+    Ok(())
+}
+
+/// "Fusionner la sélection": the sure groups chosen.
+#[tauri::command]
+pub fn merge_sure_duplicates(state: State<'_, AppState>, group_ids: Vec<String>) -> UiResult<u32> {
+    let s = session(&state)?;
+    let merged = s.merge_sure_duplicates(group_ids, vec![], merged_note("{title}"))?;
+    Ok(u32::try_from(merged.len()).unwrap_or(u32::MAX))
+}
+
+/// "Archiver les autres", "Supprimer les autres" (restorable) or "Pas des
+/// doublons" for a group.
+#[tauri::command]
+pub fn resolve_duplicates(
+    state: State<'_, AppState>,
+    group_id: String,
+    action: String,
+) -> UiResult<()> {
+    let s = session(&state)?;
+    let (primary, others) = group_keys(&s, &group_id)?;
+    match action.as_str() {
+        "archive" => s.archive_duplicates(others)?,
+        "trash" => s.trash_duplicates(others)?,
+        "dismiss" => {
+            let mut all = vec![primary.key];
+            all.extend(others);
+            s.dismiss_duplicates(all)?;
+        }
+        _ => return Err("unknown action".into()),
+    }
+    Ok(())
+}
+
+// ---- Wi-Fi --------------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QrView {
+    pub ssid: String,
+    /// Modules, row by row, `width` per row.
+    pub modules: Vec<bool>,
+    pub width: usize,
+}
+
+/// `\ ; , : "` are escaped in a WIFI: payload.
+fn wifi_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | ';' | ',' | ':' | '"') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// The "join this network" QR code of a Wi-Fi router item (the Mac's
+/// WifiQRCard). It holds the password: drawn only when the user shows it.
+#[tauri::command]
+pub fn wifi_qr(state: State<'_, AppState>, vault_id: String, item_id: String) -> UiResult<QrView> {
+    let item = session(&state)?.item(vault_id, item_id)?;
+    let text = |id: &str| -> Zeroizing<String> {
+        Zeroizing::new(
+            item.sections
+                .iter()
+                .flat_map(|s| s.fields.iter())
+                .find(|f| f.id == id)
+                .and_then(|f| view::display(&f.value))
+                .unwrap_or_default(),
+        )
+    };
+    let ssid = text("ssid");
+    if ssid.is_empty() {
+        return Err(OnePassError::NotFound.into());
+    }
+    let password = text("wifi_password");
+    let security = text("security").to_uppercase();
+    let hidden = matches!(
+        text("hidden").to_lowercase().as_str(),
+        "oui" | "yes" | "true"
+    );
+    let kind = if password.is_empty() || security.contains("OUVERT") || security.contains("OPEN") {
+        "nopass"
+    } else if security.contains("WEP") {
+        "WEP"
+    } else {
+        "WPA"
+    };
+    let mut payload = Zeroizing::new(format!("WIFI:T:{kind};S:{};", wifi_escape(&ssid)));
+    if kind != "nopass" {
+        payload.push_str(&format!("P:{};", wifi_escape(&password)));
+    }
+    if hidden {
+        payload.push_str("H:true;");
+    }
+    payload.push(';');
+    let code = qrcode::QrCode::with_error_correction_level(payload.as_bytes(), qrcode::EcLevel::H)
+        .map_err(|_| "this network does not fit a QR code")?;
+    let width = code.width();
+    let modules = code
+        .to_colors()
+        .into_iter()
+        .map(|c| c == qrcode::Color::Dark)
+        .collect();
+    Ok(QrView {
+        ssid: ssid.to_string(),
+        modules,
+        width,
+    })
+}
+
+// ---- site icons ---------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IconQuery {
+    pub id: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    pub title: String,
+}
+
+/// The icon pack's icon for each item (by website, then by title), when
+/// the "Icônes des sites" setting is on. Items without one are left out.
+#[tauri::command]
+pub fn site_icons(state: State<'_, AppState>, items: Vec<IconQuery>) -> HashMap<String, usize> {
+    let Some(pack) = crate::iconpack::pack().filter(|_| state.prefs().site_icons) else {
+        return HashMap::new();
+    };
+    items
+        .into_iter()
+        .filter_map(|q| {
+            let by_url = q
+                .url
+                .as_deref()
+                .and_then(crate::iconpack::host_of)
+                .and_then(|h| pack.for_host(&h));
+            by_url
+                .or_else(|| pack.for_title(&q.title))
+                .map(|i| (q.id, i))
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IconImage {
+    /// A data: URL of the WebP image (the CSP allows data: images).
+    pub src: String,
+    /// A mark to draw in the text color.
+    pub mono: bool,
+}
+
+#[tauri::command]
+pub fn icon_image(index: usize) -> UiResult<IconImage> {
+    use base64::Engine;
+    let (bytes, mono) = crate::iconpack::pack()
+        .and_then(|p| p.image(index))
+        .ok_or(OnePassError::NotFound)?;
+    Ok(IconImage {
+        src: format!(
+            "data:image/webp;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ),
+        mono,
+    })
+}
+
+#[tauri::command]
+pub fn set_site_icons(state: State<'_, AppState>, on: bool) -> UiResult<()> {
+    Ok(state.update_prefs(|p| p.site_icons = on)?)
 }

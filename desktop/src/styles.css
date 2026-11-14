@@ -1723,3 +1723,144 @@ input.tag-input:focus {
 .breach-card > .footnote {
   margin: 0 16px 12px 58px;
 }
+
+/* ---- site icons, timeline, Wi-Fi code, duplicates, Travel Mode -------------------------------- */
+.art.site-icon img {
+  background: #fff;
+  padding: 12%;
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  object-fit: contain;
+}
+.art.site-icon.mono-icon img {
+  background: var(--card);
+}
+@media (prefers-color-scheme: dark) {
+  .art.site-icon.mono-icon img {
+    filter: invert(1);
+    background: #fff;
+  }
+}
+.timeline-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(460px, 100%);
+}
+.timeline-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.timeline-head .glyph {
+  transition: transform 0.15s;
+}
+.timeline-head .glyph.folded {
+  transform: rotate(-90deg);
+}
+.timeline {
+  width: 100%;
+  margin: 6px 0 10px;
+  text-align: left;
+}
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 6px 6px;
+  position: relative;
+  font-size: 14px;
+  color: var(--label);
+}
+.timeline-row::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 0;
+  bottom: 0;
+  border-left: 1.5px solid var(--separator);
+}
+.timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--tertiary);
+  flex: none;
+  position: relative;
+}
+.timeline-row.first .timeline-dot {
+  background: var(--accent);
+}
+.timeline-text {
+  flex: 1;
+}
+.timeline-when {
+  font-size: 12px;
+}
+.qr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.qr-area {
+  display: grid;
+  place-items: center;
+  width: 244px;
+  height: 244px;
+  border-radius: 22px;
+  background: #fff;
+  padding: 0;
+}
+.qr-area.masked {
+  background: var(--fill);
+}
+.qr-area svg.qr,
+.qr-large svg.qr {
+  border-radius: 16px;
+}
+.qr-large {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+}
+.dup-group {
+  gap: 12px;
+}
+input.check-box {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+  flex: none;
+}
+.dup-review {
+  margin-bottom: 14px;
+}
+.dup-review-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dup-copies {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.dup-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--page);
+}
+.row-text.grow {
+  flex: 1;
+  margin-left: 10px;
+}
+.empty-state .glyph {
+  margin: 12px auto;
+}

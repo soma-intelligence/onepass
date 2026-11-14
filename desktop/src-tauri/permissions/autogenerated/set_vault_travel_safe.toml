@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-vault-travel-safe"
+description = "Enables the set_vault_travel_safe command without any pre-configured scope."
+commands.allow = ["set_vault_travel_safe"]
+
+[[permission]]
+identifier = "deny-set-vault-travel-safe"
+description = "Denies the set_vault_travel_safe command without any pre-configured scope."
+commands.deny = ["set_vault_travel_safe"]

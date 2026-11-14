@@ -197,6 +197,9 @@ try {
   // Item
   await find("//main//h2[normalize-space(.)='GitHub']");
   check("the new login is saved", true);
+  check("a site icon from the icon pack shows", !!(await find("//main//header//span[contains(@class,'site-icon')]", 5000).catch(() => null)));
+  await click("//main//button[contains(@class,'timeline-head')]");
+  check("the item timeline shows its creation", !!(await find("//main//div[contains(@class,'timeline-row')][contains(., 'Élément créé')]", 5000).catch(() => null)));
   check("its password is masked", await exists("//main//span[contains(@class,'field-value') and normalize-space(.)='••••••••••']"));
   check("its strength shows", (await textOf("//main//span[@class='meter-label']")).length > 0);
   const otp = await waitText("//main//span[contains(@class,'otp')]", (t) => /\d/.test(t));
@@ -227,6 +230,10 @@ try {
   await click(sheetAction("Enregistrer"));
   await find("//main//h2[normalize-space(.)='Box maison']");
   check("a Wi-Fi router is saved", true);
+  await click("//main//button[contains(@class,'qr-area')]");
+  await find("//main//*[local-name()='svg' and @class='qr']");
+  check("a Wi-Fi router shows its join QR code", (await textOf("//main//div[contains(@class,'qr-card')]/p")).includes("Maison-5G"));
+  await shot("38-wifi-qr");
 
   // Every field kind: menu, date, address, custom fields, tags (an identity)
   const js = (script, ...args) => wd("POST", `${S}/execute/sync`, { script, args });
@@ -512,6 +519,43 @@ try {
   check("a plaintext CSV export holds the items", csv.startsWith("title,type,vault") && csv.includes("Exemple"), csv.split("\n")[0]);
   answerDialog("");
   await closeSheet().catch(() => {});
+
+  // Possible duplicates: a copy of the imported login, merged back
+  await click(nav("Tous les éléments"));
+  await click(row("Exemple"));
+  await find("//main//h2[normalize-space(.)='Exemple']");
+  await click("//main//button[@title='Actions']");
+  await click(menuItem("Dupliquer"));
+  await click(nav("Doublons possibles"));
+  await find("//h1[normalize-space(.)='Doublons possibles']");
+  check("possible duplicates are listed", await exists("//div[contains(@class,'dup-group') or contains(@class,'dup-review')]"));
+  await shot("39-doublons");
+  const mergeButton = (await exists("//button[contains(., 'Fusionner la sélection')]")) ? "//button[contains(., 'Fusionner la sélection')]" : "//div[contains(@class,'dup-review')]//button[normalize-space(.)='Fusionner']";
+  await click(mergeButton);
+  await sleep(1200);
+  check("merging clears the duplicates", !(await exists("//div[contains(@class,'dup-group') or contains(@class,'dup-review')]")));
+
+  // Travel Mode: the plan, a vault safe for travel, and the refusal without sync
+  await settingsPage("Travel Mode");
+  await find("//dialog[@open]//span[normalize-space(.)='Travel Mode désactivé']");
+  await click("//dialog[@open]//label[.//span[normalize-space(.)='Travail']]");
+  await find("//dialog[@open]//label[.//span[normalize-space(.)='Travail']]//span[normalize-space(.)=\"Reste sur l'appareil\"]");
+  check("a vault becomes safe for travel", true);
+  await click("//dialog[@open]//button[normalize-space(.)='Activer le Travel Mode']");
+  await click(sheetAction("Activer"));
+  const travel = await waitText("(//dialog[@open])[last()]//div[contains(@class,'error')]", (t) => t.length > 0);
+  check("Travel Mode refuses to remove vaults that were never synced", travel.includes("Synchronise d'abord"), travel.slice(0, 60));
+  await shot("40-travel-mode");
+  await closeSheet();
+
+  // Keyboard shortcuts of the Mac app (Ctrl for Cmd)
+  const press = (key, shift = false) => js("document.dispatchEvent(new KeyboardEvent('keydown', { key: arguments[0], ctrlKey: true, shiftKey: arguments[1], bubbles: true }))", key, shift);
+  await press("I", true);
+  check("Ctrl+Shift+I opens Importer", !!(await find("//dialog[@open]//div[@class='sheet-title' and normalize-space(.)='Importer']", 5000).catch(() => null)));
+  await closeSheet();
+  await press(",");
+  check("Ctrl+, opens Réglages", !!(await find("//dialog[@open]//div[@class='sheet-title' and normalize-space(.)='Réglages']", 5000).catch(() => null)));
+  await closeSheet();
 
   // Trash
   await click(nav("Tous les éléments"));

@@ -40,6 +40,8 @@ url = "2"
 rfd = { version = "0.15", default-features = false }
 # Watchtower's downloads (breach.rs): HIBP ranges and the site catalogs.
 ureq = "3"
+qrcode = { version = "0.14", default-features = false }
+base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
