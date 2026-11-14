@@ -142,7 +142,6 @@ is logged at debug level and never fails the read, the injection or the signatur
 | MCP | `totp_code` | Totp | `clientInfo.name` |
 | MCP | `fill_in_browser` | Filled | `clientInfo.name` |
 | CLI | `read`, `item get --reveal` | Revealed | parent process name |
-| CLI | `exec` (run) | Injected | parent process name |
 | CLI | `totp` | Totp | parent process name |
 | SSH agent | `sign` | Signed | client code identity |
 | App | copy of a secret field, reveal | Copied / Revealed | app name |
@@ -189,7 +188,7 @@ entry per field.
   opens the item, enum indexes pinned.
 - Merge: union, max and min rules, `cleared_at` tombstone, remote edit wins over a log-only write.
 - Coalescing within the hour, cap of 200, TTL of 365 days, saturating count.
-- Best effort: a failing `record_key_use` never fails `reveal_secret`, `exec` or `sign`.
+- Best effort: a failing `record_key_use` never fails `reveal_secret`, `read` or `sign`.
 - Queue: read-only session queues, write session flushes, cap of 1000, Travel Mode erases.
 - MCP and CLI integration: each entry point of the table records the expected channel, action,
   client and field.

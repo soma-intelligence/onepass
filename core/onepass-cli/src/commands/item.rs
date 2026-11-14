@@ -16,7 +16,9 @@ use std::io::{BufRead, IsTerminal};
 
 use clap::Subcommand;
 use onepass_core::Id;
-use onepass_core::model::{FieldType, FieldValue, Item, ItemType, new_item};
+use onepass_core::model::{
+    FieldType, FieldValue, Item, ItemType, KeyUseAction, KeyUseChannel, new_item,
+};
 use onepass_core::repo::Repository;
 use onepass_core::store::SqliteStore;
 use onepass_core::vault::Vault;
@@ -329,7 +331,53 @@ fn get(
 ) -> Result<(), CliError> {
     let vaults = all(repo)?;
     let (vi, item) = find_item(repo, &vaults, vault, key)?;
-    let vault_name = &vaults[vi].meta.name;
+    show(ctx, &vaults[vi].meta.name, &item, reveal)?;
+    if reveal {
+        // After printing, one entry per secret field that was shown.
+        for f in item.sections.iter().flat_map(|s| s.fields.iter()) {
+            if hands_out_secret(&f.value) {
+                note_cli_use(repo, &vaults[vi], item.id, KeyUseAction::Revealed, &f.label);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether showing `value` unmasked hands out a secret (what
+/// [`display_value`] masks without `reveal`, when there is something to
+/// mask).
+fn hands_out_secret(value: &FieldValue) -> bool {
+    match value {
+        FieldValue::Concealed(s)
+        | FieldValue::Password(s)
+        | FieldValue::Otp(s)
+        | FieldValue::Mnemonic(s) => !s.is_empty(),
+        FieldValue::SshKey(_) => true,
+        _ => false,
+    }
+}
+
+/// Notes one use of an item's key by the CLI in its key-use log, once the
+/// secret was printed. Best effort: any error is dropped and never fails
+/// the command. The client is the program that started the CLI.
+pub fn note_cli_use(
+    repo: &mut Repository<SqliteStore>,
+    vault: &Vault,
+    item_id: Id,
+    action: KeyUseAction,
+    field: &str,
+) {
+    let u = repo.this_device_key_use(
+        KeyUseChannel::Cli,
+        action,
+        &crate::parent::parent_process_name(),
+        field,
+    );
+    let _ = repo.record_key_use(vault, item_id, u, OffsetDateTime::now_utc());
+}
+
+/// Prints one item, secrets masked unless `reveal`.
+fn show(ctx: &Ctx, vault_name: &str, item: &Item, reveal: bool) -> Result<(), CliError> {
     // Notes are free text and may hold secrets: masked like a secret field.
     let notes = if item.notes.is_empty() || reveal {
         item.notes.clone()
