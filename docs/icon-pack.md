@@ -110,8 +110,10 @@ Le binaire (environ 11 Mo) n'est remplacé qu'à une version de l'app, jamais ch
 1. Icône choisie par la personne pour l'élément. Le cœur la garde (`custom_icon`) mais aucun écran ne la règle et le pont ne l'expose pas encore : le paramètre `chosen` attend ce branchement.
 2. Pack : l'hôte de l'élément, puis ses noms parents jusqu'au domaine enregistrable (jamais le parent d'une plateforme `tenants`). Un hôte couvert par le pack n'est jamais demandé au site, même en préchargement.
 3. Pack, par le titre de l'élément quand c'est le nom d'une marque (« Reddit ») ou une adresse (« reddit.com ») : un élément sans adresse trouve aussi sa marque.
-4. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, la tuile monogramme. Jamais l'icône d'une plateforme d'hébergement (`rejects`, voir plus haut).
-5. Sinon `ItemIcon` dessine la tuile monogramme (un identifiant qui a un titre) ou l'illustration de la catégorie.
+4. Marque mère par le nom du site : la page d'accueil déjà lue pour l'icône du site donne son nom (`og:site_name`, `application-name`, le `name` du manifeste s'il a été lu, puis le `<title>` jusqu'au premier séparateur). Ce nom, sans un « my » initial ni au plus deux mots génériques finaux (connect, portal, member...), est cherché dans les `names` du pack : « Bay Club Connect » donne Bay Club. Aucune requête en plus.
+5. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, la tuile monogramme. Jamais l'icône d'une plateforme d'hébergement (`rejects`, voir plus haut).
+6. Marque mère par un domaine lié, seulement si le site n'a pas d'icône montrable (aucune, refusée comme plateforme, ou trop petite) : les domaines vers lesquels la page pointe (liens, `canonical`, `og:url`), au plus 5, hors réseaux sociaux, magasins d'apps, CDN, mesure d'audience, paiement et captcha, et seulement le domaine canonique ou un domaine dont le nom commence comme celui du site (4 caractères). Les numéros trouvés sont mis en cache par hôte avec la version du pack, et recherchés à nouveau quand le pack change.
+7. Sinon `ItemIcon` dessine la tuile monogramme (un identifiant qui a un titre) ou l'illustration de la catégorie.
 
 ## Rendu dans les listes
 

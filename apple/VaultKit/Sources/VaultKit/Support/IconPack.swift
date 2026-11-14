@@ -117,6 +117,11 @@ public struct IconPack: Sendable {
     /// domain (a platform that hosts other brands: `acme.zendesk.com` is Acme's help desk) gives its
     /// icon to itself only, never to its subdomains.
     public func icon(forHost host: String) -> Icon? {
+        number(forHost: host).map(icon)
+    }
+
+    /// The number of `icon(forHost:)`.
+    func number(forHost host: String) -> Int? {
         var name = host.lowercased()
         if name.hasSuffix(".") { name.removeLast() }
         if name.hasPrefix("www.") { name.removeFirst(4) }
@@ -126,7 +131,7 @@ public struct IconPack: Sendable {
         var first = true
         while labels.count >= floor {
             let candidate = labels.joined(separator: ".")
-            if let number = domains[candidate], first || !tenants.contains(candidate) { return icon(number) }
+            if let number = domains[candidate], first || !tenants.contains(candidate) { return number }
             labels.removeFirst()
             first = false
         }
@@ -147,6 +152,64 @@ public struct IconPack: Sendable {
         let key = Self.squash(trimmed)
         guard key.count >= 3, let number = names[key] else { return nil }
         return icon(number)
+    }
+
+    /// Words a site puts after its brand's name ("Bay Club Connect", "Acme Member Portal"): up to
+    /// two of them are dropped when the whole name is not a brand of the pack.
+    static let genericTrailingWords: Set<String> = [
+        "connect", "portal", "online", "app", "login", "account", "members", "member", "my", "client", "clients",
+        "mobile", "web",
+    ]
+    /// Names of a page, not of a brand: never matched.
+    static let genericPageNames: Set<String> = ["home", "login", "welcome", "signin", "accueil", "connexion"]
+    /// A shorter squashed name says too little to stand for a brand.
+    static let minBrandNameLength = 4
+
+    /// The icon of the brand a site names itself after (`og:site_name`, its title...): the name
+    /// squashed, then without a leading "my", then without one or two trailing generic words
+    /// (`genericTrailingWords`), each looked up exactly in the pack's names. "Bay Club Connect"
+    /// gives "bayclub". A name under `minBrandNameLength` characters or a page name ("Login",
+    /// "Home": `genericPageNames`) never matches.
+    public func icon(forBrandName name: String) -> Icon? {
+        number(forBrandName: name).map(icon)
+    }
+
+    /// The number of `icon(forBrandName:)`.
+    func number(forBrandName name: String) -> Int? {
+        for key in Self.brandKeys(name) {
+            if let number = names[key] { return number }
+        }
+        return nil
+    }
+
+    /// The squashed forms of a site name tried against the pack's names, best first.
+    static func brandKeys(_ name: String) -> [String] {
+        let words = name.split(whereSeparator: \.isWhitespace).map { squash(String($0)) }.filter { !$0.isEmpty }
+        guard !words.isEmpty, !genericPageNames.contains(words.joined()) else { return [] }
+        var variants = [words]
+        if words.count > 1, words[0] == "my" { variants.append(Array(words.dropFirst())) }
+        var keys: [String] = []
+        for dropped in 0...2 {
+            for variant in variants where variant.count > dropped {
+                let tail = variant.suffix(dropped)
+                guard tail.allSatisfy(genericTrailingWords.contains) else { continue }
+                let key = variant.dropLast(dropped).joined()
+                guard key.count >= minBrandNameLength, !genericPageNames.contains(key), !keys.contains(key) else { continue }
+                keys.append(key)
+            }
+        }
+        return keys
+    }
+
+    /// The icon number of a domain a site links to (`linkedDomains`): its own entry or a parent's,
+    /// never a tenant platform's (a portal linking to its help desk host is not that host's brand).
+    func number(forLinkedDomain domain: String) -> Int? {
+        guard let number = number(forHost: domain) else { return nil }
+        var name = domain.lowercased()
+        if name.hasPrefix("www.") { name.removeFirst(4) }
+        if tenants.contains(name) { return nil }
+        if let registrable = SiteIconLoader.registrableDomain(of: name), tenants.contains(registrable) { return nil }
+        return number
     }
 
     /// Largest Hamming distance between two dHashes of the same icon (`REJECT_DISTANCE` in

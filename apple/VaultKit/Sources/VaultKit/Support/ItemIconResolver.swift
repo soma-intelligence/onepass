@@ -10,11 +10,16 @@ import Synchronization
 ///    registrable domain. Read from a file on this device: no request at all.
 /// 3. The icon pack by the item's title, when it is a brand's name ("Reddit", "Burger King") or a
 ///    web address: an item with no address, or one the pack does not know, still finds its brand.
-/// 4. The site's own icon (`SiteIconLoader`, fetched from the item's site only), shown only when
+/// 4. The parent brand by the site's name (`SiteIconLoader.ParentBrand.byName`): the home page
+///    read for the site's icon names a brand of the pack ("Bay Club Connect" is Bay Club). Only
+///    when it belongs to the pack in use (same version).
+/// 5. The site's own icon (`SiteIconLoader`, fetched from the item's site only), shown only when
 ///    its source was at least 32 px on its longest side; a source of 32 to 63 px (stored at 64 to
 ///    127 px) is drawn bare by `ItemIcon`, never stretched. A smaller one is a blur. Never a hosting
 ///    platform's icon (the pack's `rejects`), not even one cached before the pack knew it.
-/// 5. Nothing: `ItemIcon` then draws the monogram tile (a login with a title) or the category
+/// 6. The parent brand by a domain the home page links to (`ParentBrand.byLink`), only when the
+///    site has no icon step 5 may show (none, refused as a platform's, or too small).
+/// 7. Nothing: `ItemIcon` then draws the monogram tile (a login with a title) or the category
 ///    artwork.
 ///
 /// A host the pack covers is never fetched from its site, not even to prefetch. With
@@ -56,7 +61,7 @@ public final class ItemIconResolver: Sendable {
             pack: pack,
             site: SiteIconLoader(
                 cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true), enabled: enabled,
-                rejects: { pack.pack()?.rejects ?? [] }),
+                rejects: { pack.pack()?.rejects ?? [] }, pack: { pack.pack() }),
             custom: custom, enabled: enabled)
     }
 
@@ -78,7 +83,9 @@ public final class ItemIconResolver: Sendable {
         if let url, let packed = packIcon(for: url) { return packed }
         if let named = pack?.icon(forTitle: title)?.data { return named }
         guard let url else { return nil }
+        if let parent = parentBrandIcon(for: url, byName: true) { return parent }
         return Self.pick(chosen: nil, pack: nil, site: notRejected(site.cachedIcon(for: url), url: url))
+            ?? parentBrandIcon(for: url, byName: false)
     }
 
     /// Same, the chosen icon first when it is in memory. A row shows this on its first frame and
@@ -99,14 +106,17 @@ public final class ItemIconResolver: Sendable {
         if let url, let packed = packIcon(for: url) { return packed }
         if let named = pack?.icon(forTitle: title)?.data { return named }
         guard let url else { return nil }
+        // The search also reads the parent brand from the site's home page.
         let fetched = await site.icon(for: url)
+        if let parent = parentBrandIcon(for: url, byName: true) { return parent }
+        var shown = Self.pick(chosen: nil, pack: nil, site: fetched)
         if fetched != nil, notRejected(fetched, url: url) == nil {
             // A platform's icon cached before the pack knew it: searched again at once, so the
             // site's next candidate is found without waiting for the cache to age.
             await site.forget(url)
-            return Self.pick(chosen: nil, pack: nil, site: notRejected(await site.icon(for: url), url: url))
+            shown = Self.pick(chosen: nil, pack: nil, site: notRejected(await site.icon(for: url), url: url))
         }
-        return Self.pick(chosen: nil, pack: nil, site: fetched)
+        return shown ?? parentBrandIcon(for: url, byName: false)
     }
 
     /// Same, loading the chosen icon from the vault first (`CustomIconStore.prefetch`): a chosen
@@ -153,6 +163,15 @@ public final class ItemIconResolver: Sendable {
             Task { await site.forget(url) }
         }
         return rejected ? nil : png
+    }
+
+    /// The pack icon of the parent brand cached for the host of `url` (`byName` or `byLink`), only
+    /// when it was found in the pack in use.
+    func parentBrandIcon(for url: String, byName: Bool) -> Data? {
+        guard let current = pack?.pack(), let brand = site.cachedParentBrand(for: url),
+            brand.packVersion == current.version, let number = byName ? brand.byName : brand.byLink
+        else { return nil }
+        return current.icon(number: number)?.data
     }
 
     private func packIcon(for url: String) -> Data? {

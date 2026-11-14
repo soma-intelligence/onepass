@@ -1143,3 +1143,94 @@ extension SiteIconLoaderTests {
         #expect(await plain.icon(for: "https://membres.salle-exemple.fr") != nil)
     }
 }
+
+// MARK: Parent brand
+
+extension SiteIconLoaderTests {
+    @Test func siteNamesComeInOrderWithEntitiesDecoded() {
+        let html = """
+            <html><head><title>Bay Club &amp; Spa | Member Portal</title>
+            <meta name="application-name" content="Bay Club App">
+            <meta property="og:site_name" content="Bay Club &amp; Spa"></head></html>
+            """
+        let manifest = Data(#"{"name": "Bay Club Connect", "short_name": "Bay Club"}"#.utf8)
+        #expect(SiteIconLoader.siteNames(in: Data(html.utf8), manifest: manifest)
+            == ["Bay Club & Spa", "Bay Club App", "Bay Club Connect", "Bay Club"])
+        #expect(SiteIconLoader.siteName(in: Data(html.utf8)) == "Bay Club & Spa")
+        #expect(SiteIconLoader.siteNames(in: Data("<title>\n Acme  -  Sign in</title>".utf8)) == ["Acme"])
+        #expect(SiteIconLoader.siteNames(in: Data("<title>Caf&eacute; &#39;Le Bon&#x27; : Accueil</title>".utf8))
+            == ["Caf\u{E9} 'Le Bon'"])
+    }
+
+    @Test func malformedPagesGiveNoNameAndNoCrash() {
+        let pages = [
+            "", "<title>", "<title></title>", "<meta property=\"og:site_name\">", "<a href=\"https://", "&#xFFFFFFFF; &#0; &",
+            "<title>&amp</title><a href='//'><a href=https://[::1]/>", String(repeating: "<a href=\"https://acme.com\">", count: 5000),
+        ]
+        for page in pages {
+            _ = SiteIconLoader.siteNames(in: Data(page.utf8), manifest: Data("not json".utf8))
+            _ = SiteIconLoader.linkedDomains(in: Data(page.utf8), host: "acme-portal.com")
+        }
+        #expect(SiteIconLoader.siteNames(in: Data([0xFF, 0xFE, 0x3C])).isEmpty)
+        #expect(SiteIconLoader.decodeEntities("A &unknown; &#xZZ; &") == "A &unknown; &#xZZ; &")
+    }
+
+    @Test func linkedDomainsKeepRelatedOnesMostFrequentFirst() {
+        let html = """
+            <link rel="canonical" href="https://www.example-brand.fr/home">
+            <a href="https://www.facebook.com/bayclub">f</a><a href="https://facebook.com/x">f</a>
+            <a href="https://apps.apple.com/app/1">a</a><a href="https://play.google.com/x">g</a>
+            <a href="https://checkout.stripe.com/x">s</a><a href="/local">l</a><a href="http://10.0.0.1/">ip</a>
+            <a href="https://bayclubs.com/">b</a><a href="https://www.bayclubs.com/clubs">b</a>
+            <a href="//shop.bayclubshop.com/">s</a><a href="https://unrelated.org/">u</a>
+            <a href="https://members.bayclubconnect.com/other">self</a>
+            """
+        let linked = SiteIconLoader.linkedDomains(in: Data(html.utf8), host: "members.bayclubconnect.com")
+        #expect(linked == ["bayclubs.com", "bayclubshop.com", "example-brand.fr"])
+        // The site's name makes a domain related too.
+        let named = SiteIconLoader.linkedDomains(
+            in: Data(#"<a href="https://acmefitness.com">x</a>"#.utf8), host: "portal.gymhost.com", names: ["Acme Fitness"])
+        #expect(named == ["acmefitness.com"])
+        #expect(SiteIconLoader.linkedDomains(in: Data(#"<a href="https://acmefitness.com">x</a>"#.utf8), host: "portal.gymhost.com").isEmpty)
+        // Excluded even as the canonical address.
+        let excluded = #"<link rel="canonical" href="https://www.facebook.com/club"><meta property="og:url" content="https://x.com/club">"#
+        #expect(SiteIconLoader.linkedDomains(in: Data(excluded.utf8), host: "club.exemple.fr").isEmpty)
+    }
+
+    @Test func linkedDomainsAreAtMostFive() {
+        let html = (1...8).map { "<a href=\"https://acme\($0).com\">\($0)</a>" }.joined()
+        let linked = SiteIconLoader.linkedDomains(in: Data(html.utf8), host: "acme-portal.com")
+        #expect(linked == ["acme1.com", "acme2.com", "acme3.com", "acme4.com", "acme5.com"])
+    }
+
+    /// The same home page fetch gives the icon and the parent brand: no request of its own, cached
+    /// beside the icon for the pack version it was found in.
+    @Test func parentBrandIsReadFromTheHomePageAndCached() async throws {
+        let (session, _) = Self.makeSession()
+        let html = #"<meta property="og:site_name" content="Bay Club Connect"><link rel="icon" href="/i.png" sizes="192x192">"#
+        StubProtocol.install(host: "portal.bayclub-host.fr") { request in
+            switch request.url?.path {
+            case "", "/": .init(body: Data(html.utf8))
+            case "/i.png": .init(body: Self.patternPNG(seed: 3))
+            default: .init(status: 404)
+            }
+        }
+        let pack = try IconPack(data: makeIconPack(
+            version: 3, icons: [(Data("bay".utf8), 0)], domains: ["autre.fr": 0], names: ["bayclub": 0]))
+        let directory = Self.tempDirectory()
+        let loader = SiteIconLoader(
+            cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true }, pack: { pack })
+        #expect(await loader.icon(for: "https://portal.bayclub-host.fr/login") != nil)
+        let homes = StubProtocol.requests(host: "portal.bayclub-host.fr").filter { ["", "/"].contains($0.url?.path) }
+        #expect(homes.count == 1)
+        #expect(loader.cachedParentBrand(for: "https://portal.bayclub-host.fr")
+            == SiteIconLoader.ParentBrand(packVersion: 3, byName: 0, byLink: nil))
+        // Another loader on the same cache reads it from disk, without a request.
+        let count = StubProtocol.requests(host: "portal.bayclub-host.fr").count
+        let again = SiteIconLoader(
+            cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true }, pack: { pack })
+        #expect(again.cachedParentBrand(for: "https://portal.bayclub-host.fr")?.byName == 0)
+        #expect(await again.icon(for: "https://portal.bayclub-host.fr") != nil)
+        #expect(StubProtocol.requests(host: "portal.bayclub-host.fr").count == count)
+    }
+}

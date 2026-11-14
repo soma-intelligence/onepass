@@ -76,6 +76,14 @@ extension URLSession {
 /// suffix (`www.notion.so` to `www.notion.com`, `exemple.fr` to `exemple.com`). The rest of that
 /// search then runs on the host it landed on.
 ///
+/// The parent brand (`ParentBrand`): when the icon pack is given (`pack`), the same home page (and
+/// the manifest, when it was fetched for its icons) also says which brand the site belongs to, with no
+/// request of its own. Its name (`siteNames`) looked up in the pack's names gives `byName` ("Bay Club
+/// Connect" is Bay Club); the domains it links to (`linkedDomains`) looked up in the pack's domains
+/// give `byLink`. The pack icon numbers found are cached per host beside the icon, with the pack
+/// version they belong to, and searched again on the same schedule as the icon, or at once when the
+/// pack version changes.
+///
 /// Known limit: the system resolves the name again when it connects. A DNS server that answers a
 /// public address to the check and a private one a moment later (DNS rebinding) still gets one
 /// request to the private address; it learns nothing back (HTTPS to the same host name, no cookies).
@@ -107,22 +115,28 @@ public actor SiteIconLoader {
     private let enabled: @Sendable () -> Bool
     /// The icon pack's `rejects` (read at each search: a refreshed pack may bring new ones).
     private let rejects: @Sendable () -> [UInt64]
+    /// The icon pack in use, for the parent brand; nil: no parent brand is looked for.
+    private let pack: @Sendable () -> IconPack?
     private var inFlight: [String: Task<Data?, Never>] = [:]
     /// Icons already read or fetched, by host: a row shows its icon on its first frame, never the
     /// placeholder first.
     private let memory = Mutex<[String: Data]>([:])
+    /// Parent brands already read, by host (nil: no record on disk).
+    private let brands = Mutex<[String: ParentBrand?]>([:])
 
     public init(
         cacheDirectory: URL, session: URLSession = .ephemeralNoCookies,
         resolver: any HostResolver = SystemHostResolver(),
         enabled: @escaping @Sendable () -> Bool,
-        rejects: @escaping @Sendable () -> [UInt64] = { [] }
+        rejects: @escaping @Sendable () -> [UInt64] = { [] },
+        pack: @escaping @Sendable () -> IconPack? = { nil }
     ) {
         self.cacheDirectory = cacheDirectory
         self.session = session
         self.resolver = resolver
         self.enabled = enabled
         self.rejects = rejects
+        self.pack = pack
     }
 
     /// PNG bytes of the site's icon, or nil (disabled, not HTTPS, no icon, recently failed).
@@ -132,7 +146,9 @@ public actor SiteIconLoader {
             refreshIfStale(host: host)
             return cached
         }
-        if let age = markerAge(host: host), age < Self.failureLifetime { return nil }
+        // A failure is not asked again before its time, unless the parent brand found with it
+        // belongs to an older pack (or was never looked for).
+        if let age = markerAge(host: host), age < Self.failureLifetime, !brandOutdated(host: host) { return nil }
 
         if let task = inFlight[host] { return await task.value }
         let task = Task { await self.fetchAndStore(host: host) }
@@ -175,7 +191,8 @@ public actor SiteIconLoader {
     /// it replaces the old one. Not found (or offline): the old one stays, asked again after
     /// another `refreshAge`.
     private func refreshIfStale(host: String) {
-        guard inFlight[host] == nil, let age = iconAge(host: host), age > Self.refreshAge else { return }
+        guard inFlight[host] == nil, let age = iconAge(host: host), age > Self.refreshAge || brandOutdated(host: host)
+        else { return }
         let task = Task { await self.fetchAndStore(host: host, refreshing: true) }
         inFlight[host] = task
         Task {
@@ -287,26 +304,42 @@ public actor SiteIconLoader {
     /// under the item's host. A failure is remembered only when every host was really asked.
     private func fetchAndStore(host: String, refreshing: Bool = false) async -> Data? {
         let hosts = Self.siteHosts(for: host)
+        let current = pack()
+        /// The parent brand of the first page read (or of a parent host's cache).
+        var brand: ParentBrand?
+        /// Recorded for the item's host whatever the icon search gives, unless offline with nothing.
+        func record(offline: Bool = false) {
+            guard let current else { return }
+            if let brand {
+                storeBrand(brand, host: host)
+            } else if !offline {
+                storeBrand(ParentBrand(packVersion: current.version, byName: nil, byLink: nil), host: host)
+            }
+        }
         for (index, site) in hosts.enumerated() {
-            switch await attempt(site, remember: index > 0, refreshing: refreshing) {
+            switch await attempt(site, remember: index > 0, refreshing: refreshing, pack: current, brand: &brand) {
             case .icon(let png):
                 if site != host { store(png, host: host) }
+                record()
                 return png
             case .miss:
                 continue
             case .offline:
                 // Says nothing about the site: not remembered, the next display asks again.
+                record(offline: true)
                 return nil
             case .refused:
                 // The item's own name points at a private address: no parent is asked.
                 if index == 0 {
                     if !refreshing { markFailure(host: host) }
+                    record()
                     return nil
                 }
             }
         }
         // A refresh that found nothing keeps the icon in hand (no marker over it).
         if !refreshing { markFailure(host: host) }
+        record()
         return nil
     }
 
@@ -321,12 +354,21 @@ public actor SiteIconLoader {
     /// One host searched. `remember`: its own cache and failure marker are used and written (a
     /// parent domain other items share); the item's host is written by the caller. `refreshing`: the
     /// parent's cache is not taken as the answer (it is as old as the icon being refreshed).
-    private func attempt(_ host: String, remember: Bool, refreshing: Bool = false) async -> Attempt {
+    ///
+    /// `pack` given: the parent brand of the first home page read is set in `brand` (a parent host
+    /// whose cached icon is used gives its cached parent brand).
+    private func attempt(
+        _ host: String, remember: Bool, refreshing: Bool = false, pack: IconPack? = nil,
+        brand: inout ParentBrand?
+    ) async -> Attempt {
         let rejects = self.rejects()
         if remember, !refreshing {
             if let cached = try? Data(contentsOf: cacheFile(host: host, ext: "png")), isImage(cached),
                 !IconPack.isRejected(cached, by: rejects)
             {
+                if brand?.isEmpty ?? true, let pack, let known = cachedBrand(host: host), known.packVersion == pack.version {
+                    brand = known
+                }
                 return .icon(cached)
             }
             if let age = markerAge(host: host), age < Self.failureLifetime { return .miss }
@@ -348,8 +390,16 @@ public actor SiteIconLoader {
             let base = page.url
             let links = Self.pageLinks(in: page.data, base: base, host: site)
             candidates += links.icons
+            var manifestData: Data?
             if let manifest = links.manifest, let json = await get(manifest, host: site, truncate: false, offline: &offline) {
                 candidates += Self.manifestIcons(in: json.data, base: json.url, host: site)
+                manifestData = json.data
+            }
+            // The parent brand, from what was just read: no request of its own.
+            if let pack, brand?.isEmpty ?? true {
+                let found = Self.parentBrand(page: page.data, manifest: manifestData, host: site, pack: pack)
+                brand = found
+                if remember { storeBrand(found, host: host) }
             }
         }
         candidates += Self.wellKnownCandidates(host: site)
@@ -645,7 +695,7 @@ public actor SiteIconLoader {
     }
 
     /// The value of one attribute of a tag, quoted or not.
-    private static func attribute(_ name: String, in element: String) -> String? {
+    static func attribute(_ name: String, in element: String) -> String? {
         guard let regex = try? NSRegularExpression(
             pattern: "\\s\(name)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'>]+))", options: [.caseInsensitive])
         else { return nil }
@@ -674,6 +724,227 @@ public actor SiteIconLoader {
                 vector: isSVG(type: entry["type"] as? String, url: url)))
         }
         return icons
+    }
+
+    // MARK: Parent brand
+
+    /// The brand a site belongs to, as icon numbers of one pack version: `byName` from the site's
+    /// name, `byLink` from the domains its home page links to. `ItemIconResolver` shows `byName`
+    /// before the site's own icon and `byLink` only when the site has no icon it may show.
+    public struct ParentBrand: Codable, Equatable, Sendable {
+        public let packVersion: Int
+        public let byName: Int?
+        public let byLink: Int?
+
+        var isEmpty: Bool { byName == nil && byLink == nil }
+    }
+
+    /// The parent brand of the cached host of `url`, without waiting and without any request; nil
+    /// when the host was never searched with a pack. Its `packVersion` may be an older pack's.
+    public nonisolated func cachedParentBrand(for url: String) -> ParentBrand? {
+        guard enabled(), let host = Self.fetchableHost(of: url) else { return nil }
+        return cachedBrand(host: host)
+    }
+
+    private nonisolated func cachedBrand(host: String) -> ParentBrand? {
+        if let hit = brands.withLock({ $0[host] }) { return hit }
+        let read = (try? Data(contentsOf: cacheFile(host: host, ext: "brand")))
+            .flatMap { try? JSONDecoder().decode(ParentBrand.self, from: $0) }
+        brands.withLock { $0[host] = .some(read) }
+        return read
+    }
+
+    /// Whether the host's parent brand must be looked for again: the pack changed since, or it was
+    /// never looked for. Never without a pack.
+    private func brandOutdated(host: String) -> Bool {
+        guard let current = pack() else { return false }
+        return cachedBrand(host: host)?.packVersion != current.version
+    }
+
+    private func storeBrand(_ brand: ParentBrand, host: String) {
+        brands.withLock { $0[host] = .some(brand) }
+        if let data = try? JSONEncoder().encode(brand) { write(data, to: cacheFile(host: host, ext: "brand")) }
+    }
+
+    /// `ParentBrand` of a home page (and its manifest) for `pack`: the first site name
+    /// (`siteNames`) the pack knows as a brand (`IconPack.icon(forBrandName:)`), and the first linked
+    /// domain (`linkedDomains`) the pack has an icon for.
+    static func parentBrand(page: Data, manifest: Data?, host: String, pack: IconPack) -> ParentBrand {
+        let names = siteNames(in: page, manifest: manifest)
+        let byName = names.lazy.compactMap(pack.number(forBrandName:)).first
+        let byLink = linkedDomains(in: page, host: host, names: names).lazy.compactMap(pack.number(forLinkedDomain:)).first
+        return ParentBrand(packVersion: pack.version, byName: byName, byLink: byLink)
+    }
+
+    /// Where a title's brand name ends ("Acme | Member Portal").
+    static let titleSeparators = [" | ", " - ", " : ", " \u{2013} ", " \u{2014} ", " \u{00B7} "]
+
+    /// Longest site name read, in characters.
+    static let maxNameLength = 120
+
+    /// The names a home page gives its site, best first: `og:site_name`, `application-name`, the
+    /// manifest's `name` and `short_name` (when it was fetched), then the `<title>` up to its first
+    /// separator (`titleSeparators`). HTML entities decoded, spaces collapsed, empty ones dropped.
+    static func siteNames(in data: Data, manifest: Data? = nil) -> [String] {
+        let html = String(decoding: data, as: UTF8.self)
+        var found: [String] = []
+        func add(_ raw: String?) {
+            guard let raw else { return }
+            let clean = decodeEntities(raw).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            guard !clean.isEmpty, clean.count <= maxNameLength * 4, !found.contains(clean) else { return }
+            found.append(String(clean.prefix(maxNameLength)))
+        }
+        var metas: [String: String] = [:]
+        for element in tags("meta", in: html) {
+            guard let key = (attribute("property", in: element) ?? attribute("name", in: element))?.lowercased(),
+                key == "og:site_name" || key == "application-name", metas[key] == nil,
+                let content = attribute("content", in: element)
+            else { continue }
+            metas[key] = content
+        }
+        add(metas["og:site_name"])
+        add(metas["application-name"])
+        if let manifest, let root = try? JSONSerialization.jsonObject(with: manifest) as? [String: Any] {
+            add(root["name"] as? String)
+            add(root["short_name"] as? String)
+        }
+        if let regex = try? NSRegularExpression(pattern: "<title\\b[^>]*>([^<]{1,512})", options: [.caseInsensitive]),
+            let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+            let range = Range(match.range(at: 1), in: html)
+        {
+            var title = decodeEntities(String(html[range])).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            for separator in titleSeparators {
+                if let cut = title.range(of: separator) { title = String(title[..<cut.lowerBound]) }
+            }
+            add(title)
+        }
+        return found
+    }
+
+    /// The first site name (`siteNames`).
+    static func siteName(in data: Data, manifest: Data? = nil) -> String? {
+        siteNames(in: data, manifest: manifest).first
+    }
+
+    /// Registrable domains a link to which says nothing about the site's brand: social networks,
+    /// app stores, analytics, CDNs, payment and captcha providers, standards bodies.
+    static let excludedLinkedDomains: Set<String> = [
+        "facebook.com", "instagram.com", "x.com", "twitter.com", "linkedin.com", "youtube.com", "tiktok.com",
+        "apple.com", "google.com", "googletagmanager.com", "google-analytics.com", "cloudflare.com",
+        "cloudfront.net", "akamaihd.net", "gstatic.com", "doubleclick.net", "w3.org", "schema.org", "stripe.com",
+        "paypal.com", "adyen.com", "recaptcha.net", "hcaptcha.com",
+    ]
+    /// Linked domains kept at most.
+    static let maxLinkedDomains = 5
+    /// Links read at most on one page.
+    static let maxLinksRead = 4000
+    /// Shortest common start of two names that makes them look like one brand.
+    static let sharedPrefixLength = 4
+
+    /// The registrable domains a home page links to (`<a href>`, `<link rel="canonical">`,
+    /// `og:url`), most frequent first, at most `maxLinkedDomains`. Kept: the page's canonical or
+    /// `og:url` domain, and a domain whose name starts like the host's own name or like one of the
+    /// site's `names` (`sharedPrefixLength` characters: `bayclubconnect.com` and `bayclubs.com`).
+    /// Never the site's own domain nor `excludedLinkedDomains`; HTTP(S) to public names only.
+    static func linkedDomains(in data: Data, host: String, names: [String] = []) -> [String] {
+        let html = String(decoding: data, as: UTF8.self)
+        let own = registrableDomain(of: host)
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        var canonical = Set<String>()
+        func domain(_ reference: String?) -> String? {
+            guard var text = reference.map({ decodeEntities($0).trimmingCharacters(in: .whitespacesAndNewlines) })
+            else { return nil }
+            if text.hasPrefix("//") { text = "https:" + text }
+            guard let components = URLComponents(string: text),
+                let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
+                let name = components.host?.lowercased(), isFetchableHost(name),
+                let registrable = registrableDomain(of: name), registrable != own,
+                !excludedLinkedDomains.contains(registrable)
+            else { return nil }
+            return registrable
+        }
+        func count(_ registrable: String) {
+            if counts[registrable] == nil { order.append(registrable) }
+            counts[registrable, default: 0] += 1
+        }
+        var read = 0
+        for element in tags("a", in: html) {
+            guard read < maxLinksRead else { break }
+            read += 1
+            if let found = domain(attribute("href", in: element)) { count(found) }
+        }
+        for element in tags("link", in: html) {
+            guard let rel = attribute("rel", in: element)?.lowercased(),
+                rel.split(whereSeparator: \.isWhitespace).contains("canonical"),
+                let found = domain(attribute("href", in: element))
+            else { continue }
+            canonical.insert(found)
+            count(found)
+        }
+        for element in tags("meta", in: html) {
+            guard (attribute("property", in: element) ?? attribute("name", in: element))?.lowercased() == "og:url",
+                let found = domain(attribute("content", in: element))
+            else { continue }
+            canonical.insert(found)
+            count(found)
+        }
+        let label = { (domain: String) in IconPack.squash(String(domain.split(separator: ".").first ?? "")) }
+        let anchors = ([own.map(label)].compactMap { $0 } + names.flatMap { IconPack.brandKeys($0) + [IconPack.squash($0)] })
+            .filter { $0.count >= sharedPrefixLength }
+        func related(_ registrable: String) -> Bool {
+            if canonical.contains(registrable) { return true }
+            let name = label(registrable)
+            return anchors.contains { zip($0, name).prefix(while: { $0.0 == $0.1 }).count >= sharedPrefixLength }
+        }
+        let ranked = order.enumerated().sorted { a, b in
+            let (left, right) = (counts[a.element] ?? 0, counts[b.element] ?? 0)
+            return left != right ? left > right : a.offset < b.offset
+        }
+        return Array(ranked.map(\.element).filter(related).prefix(maxLinkedDomains))
+    }
+
+    /// The opening tags `<name ...>` of a page.
+    private static func tags(_ name: String, in html: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: "<\(name)\\b[^>]*>", options: [.caseInsensitive]) else { return [] }
+        return regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).compactMap {
+            Range($0.range, in: html).map { String(html[$0]) }
+        }
+    }
+
+    /// `text` with its HTML character references decoded (`&amp;`, `&#39;`, `&#x2019;`...); an
+    /// unknown or malformed one is kept as written.
+    static func decodeEntities(_ text: String) -> String {
+        guard text.contains("&") else { return text }
+        let named: [String: Character] = [
+            "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": " ", "eacute": "\u{E9}",
+            "egrave": "\u{E8}", "agrave": "\u{E0}", "ccedil": "\u{E7}", "rsquo": "\u{2019}", "lsquo": "\u{2018}",
+            "ndash": "\u{2013}", "mdash": "\u{2014}", "middot": "\u{B7}", "reg": "\u{AE}", "trade": "\u{2122}",
+            "copy": "\u{A9}",
+        ]
+        var out = ""
+        var index = text.startIndex
+        while index < text.endIndex {
+            if text[index] == "&", let end = text[index...].prefix(12).firstIndex(of: ";") {
+                let body = text[text.index(after: index)..<end]
+                var decoded: Character?
+                if body.hasPrefix("#") {
+                    let digits = body.dropFirst()
+                    let value = digits.lowercased().hasPrefix("x") ? UInt32(digits.dropFirst(), radix: 16) : UInt32(digits)
+                    if let value, value > 0, let scalar = Unicode.Scalar(value) { decoded = Character(scalar) }
+                } else {
+                    decoded = named[body.lowercased()]
+                }
+                if let decoded {
+                    out.append(decoded)
+                    index = text.index(after: end)
+                    continue
+                }
+            }
+            out.append(text[index])
+            index = text.index(after: index)
+        }
+        return out
     }
 
     // MARK: Image
