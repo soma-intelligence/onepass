@@ -107,7 +107,9 @@ pub(crate) fn create(
 }
 
 /// Key rotation v2 (spec 6.2, 15 step 6): `create` with this device's
-/// keys, name, kind and mode, the genesis written with the account.
+/// keys, name, kind and mode, the genesis written with the account. `org`:
+/// a managed account (OnePass Business), its genesis naming the org.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_v2(
     db_path: &str,
     password: &str,
@@ -116,6 +118,7 @@ pub(crate) fn create_v2(
     name: &str,
     kind: onepass_core::devices::DeviceKind,
     mode: onepass_core::devices::DeviceMode,
+    org: Option<onepass_core::repo::ManagedGenesis>,
 ) -> Result<FfiCreatedAccount, OnePassError> {
     let store = open_store(db_path)?;
     match store.account_state()? {
@@ -124,7 +127,7 @@ pub(crate) fn create_v2(
         AccountState::PinnedButMissing => return Err(account_missing()),
     }
     let (mut repo, secret_key) =
-        Repository::create_account_v2(store, password, kdf, keys, name, kind, mode)?;
+        Repository::create_account_v2_with_org(store, password, kdf, keys, name, kind, mode, org)?;
     repo.persist_device_state()?;
     let session = Session::new(repo)?;
     Ok(FfiCreatedAccount {

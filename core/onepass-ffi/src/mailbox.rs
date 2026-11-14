@@ -35,7 +35,7 @@ use crate::session::{Session, identity_left};
 
 /// What the server sees of a device's label: none. The app names devices in
 /// the account's own (encrypted) device list.
-const LABEL: &[u8] = b"";
+pub(crate) const LABEL: &[u8] = b"";
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -58,7 +58,7 @@ impl From<MailboxError> for OnePassError {
     }
 }
 
-fn mailbox_id(hex: &str) -> Result<[u8; 16], OnePassError> {
+pub(crate) fn mailbox_id(hex: &str) -> Result<[u8; 16], OnePassError> {
     if hex.len() != 32 {
         return Err(invalid("mailbox id"));
     }
@@ -67,7 +67,7 @@ fn mailbox_id(hex: &str) -> Result<[u8; 16], OnePassError> {
         .ok_or_else(|| invalid("mailbox id"))
 }
 
-fn credential(seed: &[u8]) -> Result<Credential, OnePassError> {
+pub(crate) fn credential(seed: &[u8]) -> Result<Credential, OnePassError> {
     Credential::from_seed(seed).map_err(|_| invalid("credential seed"))
 }
 
@@ -307,7 +307,7 @@ pub fn mailbox_generate_credential() -> Result<FfiMailboxCredential, OnePassErro
 
 /// A new Ed25519 credential from a seed of the core's hedged generator
 /// (`fill_random`, security README section 17), never the OS one alone.
-fn fresh_credential() -> Result<Credential, OnePassError> {
+pub(crate) fn fresh_credential() -> Result<Credential, OnePassError> {
     let seed = Zeroizing::new(onepass_core::crypto::random_array::<32>()?);
     Credential::from_seed(&seed[..]).map_err(|_| invalid("credential seed"))
 }
