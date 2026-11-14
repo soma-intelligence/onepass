@@ -6,6 +6,8 @@
 mod invite;
 mod join;
 mod pinstore;
+#[cfg(feature = "dev-fast-kdf")]
+mod testing;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,17 +17,22 @@ use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::generator::Wordlist;
 use onepass_core::lineage::LineageRecord;
 use onepass_core::org::{
-    JoinRequestBody, MAX_DISPLAY_NAME_BYTES, MemberRef, MemberState, ORG_FORMAT, OrgGenesisBody,
-    OrgId, OrgKeyset, OrgPin, OrgSecrets, PinSource, Role, RoleSet, RosterBody, check_transition,
-    dns_txt_value, fingerprint_words, founding_roster, invite_member, join_code_of, parse_dns_txt,
-    pin_org, seal_org_keyset, sign_join_request, sign_org_genesis, sign_roster, verify_org_genesis,
+    JoinRequestBody, MAX_DISPLAY_NAME_BYTES, MemberRef, MemberState, ORG_FORMAT, OrgChangeBody,
+    OrgChangeKind, OrgGenesisBody, OrgHeadInfo, OrgId, OrgKeyset, OrgMember, OrgPin, OrgSecrets,
+    PinSource, Role, RoleSet, RosterBody, RosterCheckpoint, SealedOrgKeyset, VerifiedJoin,
+    activate_member, check_transition, dns_txt_value, fingerprint_words, founding_roster,
+    invite_member, join_code_of, open_org_keyset, parse_dns_txt, pin_org, rebase_roster,
+    seal_org_keyset, sign_join_request, sign_org_change, sign_org_genesis, sign_roster,
+    verify_org_genesis,
 };
 use onepass_core::repo::ManagedGenesis;
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::SyncStore;
 use onepass_core::{Id, IntegrityError};
 use onepass_mailbox::org::ORG_JOIN_KIND;
-use onepass_mailbox::{MailboxApi, MailboxClient, OrgStore, OrgStoreApi, OrgStoreError};
+use onepass_mailbox::{
+    CredentialKey, MailboxApi, MailboxClient, OrgStore, OrgStoreApi, OrgStoreError,
+};
 use onepass_mailbox_proto::{CredentialRole, put_kinds_of};
 use zeroize::Zeroizing;
 
@@ -40,6 +47,8 @@ use join::{JoinCache, Verdict};
 use pinstore::{LocalInvite, add_invite, load_invites, load_pin, pin_lock, save_pin};
 
 pub use invite::{org_invite_encode, org_invite_parse};
+#[cfg(feature = "dev-fast-kdf")]
+pub use testing::TestOrgServer;
 
 /// A role of an organization member (a member holds a set of them).
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -743,9 +752,10 @@ fn check_display_name(body: &JoinRequestBody) -> Result<(), OnePassError> {
     Ok(())
 }
 
-/// This device as a signer: its public half as the session's store trusts
-/// it, with the keys checked to match.
+/// This device as a signer: its account, its public half as the session's
+/// store trusts it, with the keys checked to match.
 struct Signer {
+    account: Id,
     me: DevicePublic,
     keys: DeviceKeys,
 }
@@ -757,21 +767,22 @@ impl Signer {
         pq: Arc<dyn FfiPqDeviceHalf>,
     ) -> Result<Signer, OnePassError> {
         let keys = device_keys(classical, pq)?;
-        let me = session.with(|repo| {
-            Ok(repo
+        let (account, me) = session.with(|repo| {
+            let me = repo
                 .store()
                 .trust_state()?
                 .ok_or_else(|| invalid("device keys"))?
-                .me)
+                .me;
+            Ok((repo.account().params.account_id, me))
         })?;
-        Signer::with_keys(keys, me)
+        Signer::with_keys(account, keys, me)
     }
 
-    fn with_keys(keys: DeviceKeys, me: DevicePublic) -> Result<Signer, OnePassError> {
+    fn with_keys(account: Id, keys: DeviceKeys, me: DevicePublic) -> Result<Signer, OnePassError> {
         if keys.public(me.device_id)? != me {
             return Err(invalid("device keys"));
         }
-        Ok(Signer { me, keys })
+        Ok(Signer { account, me, keys })
     }
 }
 
@@ -951,7 +962,7 @@ impl OrgClient {
         load_invites(&self.state_dir)?;
         let signer = Signer::of(&session, &classical, pq)?;
         let roles = role_set(&roles);
-        let (pin, invitation) = self.edit_roster(&mut **store, &signer, |prev| {
+        let (pin, invitation) = self.signed_edit(&mut **store, &signer, |prev| {
             Ok(invite_member(prev, [0; 32], roles)?)
         })?;
         let credential = fresh_credential()?;
@@ -1067,7 +1078,7 @@ impl OrgClient {
                 "join from the device that made the account",
             ));
         }
-        let signer = Signer::with_keys(device_keys(&classical, pq)?, me)?;
+        let signer = Signer::with_keys(account, device_keys(&classical, pq)?, me)?;
         let own = fresh_credential()?;
         let body = JoinRequestBody {
             format: ORG_FORMAT,
@@ -1254,32 +1265,525 @@ impl OrgClient {
     /// builds the candidate from the pinned roster; the core rules check it
     /// for this device (`Integrity { org_role_denied }`, nothing written);
     /// it is signed and put at seq + 1. A seq taken meanwhile (`Taken`, or
-    /// `Contended`): refresh, then build and put once more from the new
-    /// pin; a second loss is `Conflict`. The pin then moves through the
-    /// verified path, and `edit`'s output comes back with it.
-    fn edit_roster<T>(
+    /// `Contended`): refresh, then once more: the candidate rebased over the
+    /// roster that won the seq (core `rebase_roster`), or, when the new pin
+    /// is not that one sibling (nothing landed, or several rosters did),
+    /// `edit` again on the new pin. A second loss is `Conflict`. The pin then
+    /// moves through the verified path, and `edit`'s output comes back with
+    /// it.
+    fn signed_edit<T>(
         &self,
         store: &mut dyn OrgStoreApi,
         signer: &Signer,
         mut edit: impl FnMut(&RosterBody) -> Result<(RosterBody, T), OnePassError>,
     ) -> Result<(OrgPin, T), OnePassError> {
-        let mut pin = self.load()?.ok_or(OnePassError::NotFound)?;
-        let mut retried = false;
-        loop {
-            let prev = pin.roster().ok_or(OnePassError::NotFound)?;
-            let (next, out) = edit(prev)?;
-            check_transition(pin.lineage(), prev, &next, &signer.me)?;
-            let seq = next.seq;
-            let signed = sign_roster(next, &signer.me, &signer.keys)?;
-            match store.put_roster(seq, signed.encode()) {
-                Ok(()) => return Ok((self.refreshed(store, &pin)?, out)),
-                Err(OrgStoreError::Taken | OrgStoreError::Contended) if !retried => {
-                    retried = true;
-                    pin = self.refreshed(store, &pin)?;
-                }
-                Err(e) => return Err(e.into()),
+        let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        let base = pin.roster().ok_or(OnePassError::NotFound)?.clone();
+        let (mine, out) = edit(&base)?;
+        match put_edit(store, signer, &pin, &base, mine.clone())? {
+            Ok(()) => return Ok((self.refreshed(store, &pin)?, out)),
+            Err(OrgStoreError::Taken | OrgStoreError::Contended) => {}
+            Err(e) => return Err(e.into()),
+        }
+        let fresh = self.refreshed(store, &pin)?;
+        let theirs = fresh.roster().ok_or(OnePassError::NotFound)?;
+        let (next, out) = if theirs.seq == mine.seq {
+            let rebased = rebase_roster(fresh.lineage(), &base, &mine, theirs, &signer.me)?;
+            (rebased, out)
+        } else {
+            edit(theirs)?
+        };
+        put_edit(store, signer, &fresh, theirs, next)??;
+        Ok((self.refreshed(store, &fresh)?, out))
+    }
+}
+
+/// `next` checked by the core rules for `signer` against `prev` (the roster
+/// of `pin`), signed and put at its seq. The outer error is a refusal
+/// before any write; the inner one the store's answer.
+fn put_edit(
+    store: &mut dyn OrgStoreApi,
+    signer: &Signer,
+    pin: &OrgPin,
+    prev: &RosterBody,
+    next: RosterBody,
+) -> Result<Result<(), OrgStoreError>, OnePassError> {
+    check_transition(pin.lineage(), prev, &next, &signer.me)?;
+    let seq = next.seq;
+    let signed = sign_roster(next, &signer.me, &signer.keys)?;
+    Ok(store.put_roster(seq, signed.encode()))
+}
+
+// ---- roster edits, owners and the owner keyset -------------------------------------
+
+/// A signed roster change on one member (account id: 32 hex).
+#[derive(uniffi::Enum, Debug, Clone, PartialEq, Eq)]
+pub enum FfiRosterEdit {
+    /// An Invited member whose verified join request this client has read
+    /// becomes Active with `roles` (in place of the invitation's).
+    Accept {
+        account_id: String,
+        roles: Vec<FfiOrgRole>,
+    },
+    SetRoles {
+        account_id: String,
+        roles: Vec<FfiOrgRole>,
+    },
+    Suspend {
+        account_id: String,
+    },
+    Reactivate {
+        account_id: String,
+    },
+    /// Removed for good (kept in the roster). An Invited member: the
+    /// invitation is withdrawn.
+    Remove {
+        account_id: String,
+    },
+}
+
+impl FfiRosterEdit {
+    fn account_id(&self) -> &str {
+        match self {
+            FfiRosterEdit::Accept { account_id, .. }
+            | FfiRosterEdit::SetRoles { account_id, .. }
+            | FfiRosterEdit::Suspend { account_id }
+            | FfiRosterEdit::Reactivate { account_id }
+            | FfiRosterEdit::Remove { account_id } => account_id,
+        }
+    }
+}
+
+/// What an edit does to its member, read from the pinned roster before
+/// anything is signed.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiEditSummary {
+    /// The display name from the member's verified join request, else its
+    /// account id (32 hex).
+    pub member_name: String,
+    /// The member's devices once the edit is made.
+    pub device_count: u32,
+    pub roles_before: Vec<FfiOrgRole>,
+    pub roles_after: Vec<FfiOrgRole>,
+    /// `None` for a member not in the pinned roster (never for these edits).
+    pub state_before: Option<FfiMemberState>,
+    pub state_after: FfiMemberState,
+    /// The core rules let this device sign it.
+    pub allowed: bool,
+}
+
+/// What `edit_roster` returns: the pinned state after the edit, and
+/// whether the member's org mailbox access now follows the roster (R29).
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiEditOutcome {
+    pub state: FfiOrgState,
+    pub server_access_updated: bool,
+}
+
+/// Grant label of a member's own org mailbox credential.
+const MEMBER_CREDENTIAL_LABEL: &[u8] = b"org-member";
+
+/// Roles an edit may set: `Owner` and `RecoveryOfficer` change only
+/// through the org lineage.
+fn edit_roles(roles: &[FfiOrgRole]) -> Result<RoleSet, OnePassError> {
+    if roles.contains(&FfiOrgRole::Owner) {
+        return Err(validation("roles", "owner via lineage"));
+    }
+    if roles.contains(&FfiOrgRole::RecoveryOfficer) {
+        return Err(validation("roles", "recovery officer via lineage"));
+    }
+    Ok(role_set(roles))
+}
+
+/// The candidate roster of `edit` after `prev`, the one path of both the
+/// summary and the write (so they never disagree). `by`: the editing
+/// account (a removal names it). `joined`: the member's verified join
+/// request (`Accept` needs it, `NotFound` otherwise). A Removed member
+/// takes no edit (`Integrity { org_role_denied }`); the permission rules
+/// are otherwise `check_transition`'s.
+fn next_roster(
+    prev: &RosterBody,
+    edit: &FfiRosterEdit,
+    by: Id,
+    joined: Option<&VerifiedJoin>,
+    now: i64,
+) -> Result<RosterBody, OnePassError> {
+    let account = parse_id(edit.account_id())?;
+    let p = prev.member(account).ok_or(OnePassError::NotFound)?;
+    if matches!(p.state, MemberState::Removed { .. }) {
+        // Removed is for good: no candidate to show or sign.
+        return Err(integrity(IntegrityError::OrgRoleDenied));
+    }
+    let change = |f: &dyn Fn(&mut OrgMember)| -> Result<RosterBody, OnePassError> {
+        let mut next = prev.next()?;
+        if let Some(m) = next.members.iter_mut().find(|m| m.account_id == account) {
+            f(m);
+        }
+        Ok(next)
+    };
+    let next = match edit {
+        FfiRosterEdit::Accept { roles, .. } => {
+            let roles = edit_roles(roles)?;
+            let joined = joined
+                .filter(|j| j.account_id() == account)
+                .ok_or(OnePassError::NotFound)?;
+            let mut next = activate_member(prev, joined)?;
+            if let Some(m) = next.members.iter_mut().find(|m| m.account_id == account) {
+                m.roles = roles;
+            }
+            next
+        }
+        FfiRosterEdit::SetRoles { roles, .. } => {
+            let roles = edit_roles(roles)?;
+            if p.roles.contains(Role::Owner) {
+                return Err(validation("roles", "owner via lineage"));
+            }
+            change(&|m| m.roles = roles)?
+        }
+        FfiRosterEdit::Suspend { .. } => change(&|m| m.state = MemberState::Suspended)?,
+        FfiRosterEdit::Reactivate { .. } => change(&|m| m.state = MemberState::Active)?,
+        FfiRosterEdit::Remove { .. } => change(&|m| {
+            m.state = MemberState::Removed { at: now, by };
+            m.roles = RoleSet::EMPTY;
+            m.devices.clear();
+        })?,
+    };
+    next.check()?;
+    Ok(next)
+}
+
+/// The org mailbox access a roster entry gives (R29): `None` to revoke.
+fn access_of(m: &OrgMember) -> Option<(CredentialRole, Option<[u8; 32]>)> {
+    let manager = [Role::Owner, Role::Admin, Role::UserManager];
+    match m.state {
+        MemberState::Removed { .. } => None,
+        MemberState::Suspended => Some((CredentialRole::Read, None)),
+        MemberState::Active | MemberState::Invited
+            if manager.iter().any(|r| m.roles.contains(*r)) =>
+        {
+            Some((CredentialRole::Manage, None))
+        }
+        MemberState::Active | MemberState::Invited => {
+            Some((CredentialRole::Write, Some(put_kinds_of(&[ORG_JOIN_KIND]))))
+        }
+    }
+}
+
+/// Moves the member's own org mailbox credential (`joined`'s
+/// `mailbox_credential`) to what its entry `m` gives. `granted`: the
+/// credential was granted before (it is granted on acceptance only).
+/// True once the server holds that access; false on any failure.
+fn follow_access(
+    mailbox: &dyn MailboxApi,
+    m: &OrgMember,
+    joined: Option<&VerifiedJoin>,
+    granted: bool,
+) -> bool {
+    if m.state == MemberState::Invited || (!granted && m.state != MemberState::Active) {
+        // Never granted, nothing to follow (an invitation withdrawn).
+        return true;
+    }
+    let Some(key) = joined.map(|j| *j.mailbox_credential()) else {
+        return false;
+    };
+    let id = CredentialKey::from_bytes(key).id();
+    match access_of(m) {
+        None => mailbox.revoke(id).is_ok(),
+        Some((role, kinds)) if granted => mailbox.set_role(id, role, kinds).is_ok(),
+        Some((role, kinds)) => {
+            mailbox
+                .grant(key, role, kinds, MEMBER_CREDENTIAL_LABEL)
+                .is_ok()
+                || mailbox.set_role(id, role, kinds).is_ok()
+        }
+    }
+}
+
+/// Unix seconds now (the `at` a removal summary shows).
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+}
+
+/// `roster` after a lineage change: `head`'s org head, the `Owner` bit on
+/// exactly its owners (X9, X10); the owners' keys and devices are already
+/// the roster's (a promoted member is Active, its `MemberRef` built from
+/// its entry).
+fn mirror_owners(prev: &RosterBody, head: &OrgHeadInfo) -> Result<RosterBody, OnePassError> {
+    let mut next = prev.next()?;
+    next.org_head = head.hash;
+    for m in next.members.iter_mut() {
+        m.roles = if head.owners.iter().any(|o| o.account_id == m.account_id) {
+            m.roles.with(Role::Owner)
+        } else {
+            m.roles.without(Role::Owner)
+        };
+    }
+    Ok(next)
+}
+
+#[uniffi::export]
+impl OrgClient {
+    /// What `edit` would do, from the pinned roster and the join requests
+    /// already read only: no network, no signature (the keys only give
+    /// this device's public half). `allowed` is the core rules' answer for
+    /// this device on the same candidate `edit_roster` signs. Refusals
+    /// before the rules (`Validation { roles }`, `NotFound` for an unknown
+    /// member or an `Accept` without a verified request, `Integrity {
+    /// org_role_denied }` for a Removed member) are errors here too. A
+    /// removal shows the current time as its `at`.
+    pub fn summarize(
+        &self,
+        session: Arc<Session>,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+        edit: FfiRosterEdit,
+    ) -> Result<FfiEditSummary, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let signer = Signer::of(&session, &classical, pq)?;
+        let account = parse_id(edit.account_id())?;
+        let _store = lock(&self.store);
+        let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        let prev = pin.roster().ok_or(OnePassError::NotFound)?;
+        let joined = lock(&self.joins).verified(&pin, &account.0);
+        let next = next_roster(prev, &edit, signer.account, joined.as_ref(), now_secs())?;
+        let before = prev.member(account);
+        let after = next.member(account).ok_or(OnePassError::NotFound)?;
+        Ok(FfiEditSummary {
+            member_name: joined
+                .as_ref()
+                .map_or_else(|| id_hex(account), |j| j.display_name().to_owned()),
+            device_count: u32::try_from(after.devices.len()).unwrap_or(u32::MAX),
+            roles_before: before.map(|m| roles_of(m.roles)).unwrap_or_default(),
+            roles_after: roles_of(after.roles),
+            state_before: before.map(|m| (&m.state).into()),
+            state_after: (&after.state).into(),
+            allowed: check_transition(pin.lineage(), prev, &next, &signer.me).is_ok(),
+        })
+    }
+
+    /// Signs `edit` (the candidate `summarize` shows) and writes it at
+    /// roster seq + 1: refused by the core rules is `Integrity {
+    /// org_role_denied }` with nothing written; a seq taken meanwhile is
+    /// rebased once, then `Conflict`. The join feed is read first (an
+    /// `Accept` needs the member's verified request: `NotFound`).
+    ///
+    /// Then the member's own org mailbox credential (its join request's)
+    /// follows the roster (R29): `Manage` for Owner, Admin or UserManager,
+    /// else `Write` on join requests only; Suspended `Read`; Removed
+    /// revoked. Any failure there only clears `server_access_updated`. An
+    /// `Accept` or the `Remove` of an Invited member also revokes the
+    /// link's credential when this device issued the invitation (best
+    /// effort). `NotFound` before `pin`.
+    pub fn edit_roster(
+        &self,
+        session: Arc<Session>,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+        edit: FfiRosterEdit,
+        now: i64,
+    ) -> Result<FfiEditOutcome, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let signer = Signer::of(&session, &classical, pq)?;
+        let account = parse_id(edit.account_id())?;
+        let mut store = lock(&self.store);
+        let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        let was_invited = pin
+            .roster()
+            .and_then(|r| r.member(account))
+            .is_some_and(|m| m.state == MemberState::Invited);
+        // A feed read failure keeps the requests read so far.
+        let _ = self.poll_joins(&mut **store);
+        let joined = lock(&self.joins).verified(&pin, &account.0);
+        let (pin, ()) = self.signed_edit(&mut **store, &signer, |prev| {
+            Ok((
+                next_roster(prev, &edit, signer.account, joined.as_ref(), now)?,
+                (),
+            ))
+        })?;
+        let mailbox = store.mailbox();
+        let access = pin
+            .roster()
+            .and_then(|r| r.member(account))
+            .is_some_and(|m| follow_access(mailbox, m, joined.as_ref(), !was_invited));
+        if was_invited && let Ok(invites) = load_invites(&self.state_dir) {
+            for i in invites.iter().filter(|i| i.account_id == account.0) {
+                let _ = mailbox.revoke(i.credential_id);
             }
         }
+        Ok(FfiEditOutcome {
+            state: self.show(&pin),
+            server_access_updated: access,
+        })
+    }
+
+    /// The owner keyset sealed to this account opens with its KEM secret
+    /// and holds this org's identity and audit keys. False when this
+    /// account is no owner of the pinned head, or none is stored, or it
+    /// does not open. `NotFound` before `pin`.
+    pub fn owner_keyset_available(
+        &self,
+        session: Arc<Session>,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+    ) -> Result<bool, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let signer = Signer::of(&session, &classical, pq)?;
+        let mut store = lock(&self.store);
+        let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        if !pin
+            .head()
+            .owners
+            .iter()
+            .any(|o| o.account_id == signer.account)
+        {
+            return Ok(false);
+        }
+        Ok(self
+            .open_keyset(&mut **store, &session, &pin, signer.account)?
+            .is_some())
+    }
+
+    /// Changes the owners to `owners` (32 hex account ids). Quorum is
+    /// `n / 2 + 1` of the current owners (R10): this device alone meets it
+    /// only when the pinned head has one owner, this account, on this
+    /// device; else `Validation { field: "owners", reason: "quorum" }` and
+    /// nothing is written. `owners` keeps this account (`Validation {
+    /// owners }`): the follow-up roster is signed here as an owner. A new
+    /// owner must be an Active member whose verified join request this
+    /// client has read (its identity and full KEM key, checked against the
+    /// roster's hashes; `Validation { owners }` or `NotFound`).
+    ///
+    /// Writes, in order: the owner keyset sealed to each new owner, the
+    /// `OwnersChanged` lineage record (signed by the org identity and this
+    /// device, roster checkpoint = the pinned roster), then the roster that
+    /// mirrors the new owners (X9, X10). New owners' credentials get
+    /// `Manage`, best effort. A failure after the lineage write leaves it
+    /// written (a later call sees the new head). `NotFound` before `pin`.
+    pub fn set_owners(
+        &self,
+        session: Arc<Session>,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+        owners: Vec<String>,
+        now: i64,
+    ) -> Result<FfiOrgState, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let signer = Signer::of(&session, &classical, pq)?;
+        let mut wanted = owners
+            .iter()
+            .map(|o| parse_id(o))
+            .collect::<Result<Vec<_>, _>>()?;
+        wanted.sort();
+        wanted.dedup();
+        let mut store = lock(&self.store);
+        let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        let head = pin.head().clone();
+        let sole = match head.owners.as_slice() {
+            [o] => o.account_id == signer.account && o.devices.contains(&signer.me.fingerprint()),
+            _ => false,
+        };
+        if !sole {
+            return Err(validation("owners", "quorum"));
+        }
+        if !wanted.contains(&signer.account) {
+            return Err(validation("owners", "keeps this account"));
+        }
+        let roster = pin.roster().ok_or(OnePassError::NotFound)?;
+        let _ = self.poll_joins(&mut **store);
+        let mut refs = Vec::new();
+        let mut added = Vec::new();
+        for id in wanted {
+            if let Some(r) = head.owners.iter().find(|o| o.account_id == id) {
+                refs.push(r.clone());
+                continue;
+            }
+            let m = roster.member(id).ok_or(OnePassError::NotFound)?;
+            if m.state != MemberState::Active {
+                return Err(validation("owners", "not an active member"));
+            }
+            let joined = lock(&self.joins)
+                .verified(&pin, &id.0)
+                .ok_or(OnePassError::NotFound)?;
+            let r = MemberRef {
+                account_id: id,
+                account_identity_pub: joined.account_identity_pub().clone(),
+                account_kem_pub: joined.account_kem_pub().clone(),
+                devices: m.devices.clone(),
+            };
+            refs.push(r.clone());
+            added.push((r, joined));
+        }
+        if refs == head.owners {
+            return Ok(self.show(&pin));
+        }
+        let keyset = self
+            .open_keyset(&mut **store, &session, &pin, signer.account)?
+            .ok_or(OnePassError::NotFound)?;
+        let body = OrgChangeBody {
+            format: ORG_FORMAT,
+            org_id: OrgId(self.org_id),
+            generation: head.generation + 1,
+            parent: head.hash,
+            kind: OrgChangeKind::OwnersChanged {
+                owners: refs,
+                roster_checkpoint: RosterCheckpoint {
+                    seq: roster.seq,
+                    hash: roster.hash(),
+                },
+            },
+            issued_at: now,
+        };
+        let record = sign_org_change(
+            body,
+            &keyset.secrets.identity,
+            &[(&signer.me, &signer.keys)],
+        )?;
+        // The pinned lineage accepts it before anything is written.
+        let next_head = pin.lineage().apply(&record)?.head().clone();
+        for (r, _) in &added {
+            let sealed = seal_org_keyset(&keyset, r.account_id, &r.account_kem_pub)?;
+            store.put_owner_keyset(r.account_id.0, sealed.encode())?;
+        }
+        store.put_lineage(next_head.generation, record.encode())?;
+        self.refreshed(&mut **store, &pin)?;
+        let (pin, ()) = self.signed_edit(&mut **store, &signer, |prev| {
+            Ok((mirror_owners(prev, &next_head)?, ()))
+        })?;
+        if let Some(r) = pin.roster() {
+            for (o, joined) in &added {
+                if let Some(m) = r.member(o.account_id) {
+                    let _ = follow_access(store.mailbox(), m, Some(joined), true);
+                }
+            }
+        }
+        Ok(self.show(&pin))
+    }
+}
+
+impl OrgClient {
+    /// The owner keyset sealed to `account`, opened with the session's KEM
+    /// secret and checked against the pinned lineage; `None` when none is
+    /// stored or it does not open or match.
+    fn open_keyset(
+        &self,
+        store: &mut dyn OrgStoreApi,
+        session: &Session,
+        pin: &OrgPin,
+        account: Id,
+    ) -> Result<Option<OrgKeyset>, OnePassError> {
+        let Some(bytes) = store.owner_keyset(account.0)? else {
+            return Ok(None);
+        };
+        let Ok(sealed) = SealedOrgKeyset::decode(&bytes) else {
+            return Ok(None);
+        };
+        let org = OrgId(self.org_id);
+        let keyset = session.with(|repo| {
+            Ok(open_org_keyset(&sealed, org, account, &repo.account().keyset().kem).ok())
+        })?;
+        Ok(keyset.filter(|k| k.check_against(pin.lineage()).is_ok()))
     }
 }
 

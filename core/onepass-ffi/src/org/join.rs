@@ -80,18 +80,20 @@ impl JoinCache {
     /// Every live request with its verdict under `pin` (computed when the
     /// pinned roster changed since the last look).
     pub(super) fn verdicts(&mut self, pin: &OrgPin) -> Vec<Verdict> {
-        let seq = pin.roster_seq().unwrap_or(0);
         self.live
             .iter_mut()
-            .map(|(account, c)| match &c.verdict {
-                Some((at, v)) if *at == seq => v.clone(),
-                _ => {
-                    let v = judge(pin, account, &c.bytes);
-                    c.verdict = Some((seq, v.clone()));
-                    v
-                }
-            })
+            .map(|(account, c)| c.verdict(pin, account))
             .collect()
+    }
+
+    /// The verified request of `account` under `pin` (Invited, or past
+    /// Invited with the roster's identity and KEM hash), from the requests
+    /// read so far; `None` when there is none or it was dropped.
+    pub(super) fn verified(&mut self, pin: &OrgPin, account: &[u8; 16]) -> Option<VerifiedJoin> {
+        match self.live.get_mut(account)?.verdict(pin, account) {
+            Verdict::Invited { joined, .. } | Verdict::Member(joined) => Some(joined),
+            Verdict::Dropped => None,
+        }
     }
 
     /// Display names by account id from every verified request.
@@ -105,6 +107,21 @@ impl JoinCache {
                 Verdict::Dropped => None,
             })
             .collect()
+    }
+}
+
+impl Cached {
+    /// The verdict under `pin`, judged again once the pinned roster moved.
+    fn verdict(&mut self, pin: &OrgPin, account: &[u8; 16]) -> Verdict {
+        let seq = pin.roster_seq().unwrap_or(0);
+        match &self.verdict {
+            Some((at, v)) if *at == seq => v.clone(),
+            _ => {
+                let v = judge(pin, account, &self.bytes);
+                self.verdict = Some((seq, v.clone()));
+                v
+            }
+        }
     }
 }
 

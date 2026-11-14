@@ -959,6 +959,8 @@ mod lifecycle {
         fail_mint: bool,
         /// Runs once when `create_member_invite` is asked.
         on_mint: Option<Hook>,
+        /// The next `taken` roster puts answer `Taken` (nothing written).
+        taken: u32,
     }
 
     impl OrgStoreApi for Tweaked {
@@ -971,6 +973,10 @@ mod lifecycle {
         }
 
         fn put_roster(&mut self, seq: u64, bytes: Vec<u8>) -> Result<(), OrgStoreError> {
+            if self.taken > 0 {
+                self.taken -= 1;
+                return Err(OrgStoreError::Taken);
+            }
             self.inner.put_roster(seq, bytes)
         }
 
@@ -1049,6 +1055,7 @@ mod lifecycle {
                 feeds: Default::default(),
                 fail_mint: false,
                 on_mint: None,
+                taken: 0,
             })
         }
     }
@@ -1502,6 +1509,7 @@ mod lifecycle {
                 feeds: feeds.clone(),
                 fail_mint: false,
                 on_mint: None,
+                taken: 0,
             }),
             &org.creator_dir,
         );
@@ -1600,6 +1608,7 @@ mod lifecycle {
                 feeds: Default::default(),
                 fail_mint: true,
                 on_mint: None,
+                taken: 0,
             }),
             &org.creator_dir,
         );
@@ -1625,6 +1634,7 @@ mod lifecycle {
                 feeds: Default::default(),
                 fail_mint: false,
                 on_mint: Some(hook),
+                taken: 0,
             }),
             &org.creator_dir,
         );
@@ -1632,5 +1642,735 @@ mod lifecycle {
         let invite = org_invite_parse(link.link, false).unwrap();
         assert_eq!(invite.account_id, link.account_id);
         assert_eq!(org.store().latest_roster().unwrap().unwrap().0, 2);
+    }
+
+    // ---- roster edits, owners and the owner keyset (Task 4) --------------------------
+
+    use onepass_ffi::{FfiEditOutcome, FfiOrgMember, FfiOrgState, FfiRosterEdit, TestOrgServer};
+
+    /// An invited member that posted its join request.
+    struct Member {
+        invite: FfiOrgInvite,
+        joiner: Joiner,
+        posted: FfiJoinPosted,
+    }
+
+    impl Member {
+        fn account(&self) -> String {
+            self.invite.account_id.clone()
+        }
+
+        /// The org mailbox store with the member's own credential (R27).
+        fn own_store(&self, org: &Org) -> OrgStore<FakeMailboxClient> {
+            let mut c = org
+                .fake
+                .client(Credential::from_seed(&self.posted.credential_seed).unwrap());
+            c.open(unhex(&self.invite.mailbox_id));
+            OrgStore::new(c, org.org_id)
+        }
+
+        /// The member's org client reopened with its own credential, on the
+        /// pin the link's client made.
+        fn own_client(&self, org: &Org) -> Arc<OrgClient> {
+            self.own_client_over(org, Box::new(self.own_store(org)))
+        }
+
+        fn own_client_over(&self, org: &Org, store: Box<dyn OrgStoreApi + Send>) -> Arc<OrgClient> {
+            org.open(store, &self.joiner._dir.path().join("org"))
+        }
+
+        fn edit(
+            &self,
+            client: &OrgClient,
+            edit: FfiRosterEdit,
+        ) -> Result<FfiEditOutcome, OnePassError> {
+            let j = &self.joiner;
+            client.edit_roster(
+                j.session.clone(),
+                j.keys.classical.clone(),
+                j.keys.half(),
+                edit,
+                NOW,
+            )
+        }
+
+        fn summarize(&self, client: &OrgClient, edit: FfiRosterEdit) -> FfiEditSummary {
+            let j = &self.joiner;
+            client
+                .summarize(
+                    j.session.clone(),
+                    j.keys.classical.clone(),
+                    j.keys.half(),
+                    edit,
+                )
+                .unwrap()
+        }
+
+        fn keyset_available(&self, client: &OrgClient) -> bool {
+            let j = &self.joiner;
+            client
+                .owner_keyset_available(j.session.clone(), j.keys.classical.clone(), j.keys.half())
+                .unwrap()
+        }
+    }
+
+    use onepass_ffi::FfiEditSummary;
+
+    impl Org {
+        /// Invited by the owner's device with `roles`, joined and posted
+        /// as `name`.
+        fn member(&self, name: &str, roles: Vec<FfiOrgRole>) -> Member {
+            let (_, invite) = self.invite(name, roles);
+            let joiner = self.joiner(&invite);
+            let posted = joiner.post(&invite, name).unwrap();
+            Member {
+                invite,
+                joiner,
+                posted,
+            }
+        }
+
+        /// A member accepted by the owner with `roles`.
+        fn accepted(&self, name: &str, roles: Vec<FfiOrgRole>) -> Member {
+            let m = self.member(name, vec![]);
+            self.accept(&m, roles).unwrap();
+            m
+        }
+
+        fn accept(
+            &self,
+            m: &Member,
+            roles: Vec<FfiOrgRole>,
+        ) -> Result<FfiEditOutcome, OnePassError> {
+            self.edit(FfiRosterEdit::Accept {
+                account_id: m.account(),
+                roles,
+            })
+        }
+
+        /// An edit by the owner's device through its own client.
+        fn edit(&self, edit: FfiRosterEdit) -> Result<FfiEditOutcome, OnePassError> {
+            self.edit_by(&self.creator(), edit)
+        }
+
+        fn edit_by(
+            &self,
+            client: &OrgClient,
+            edit: FfiRosterEdit,
+        ) -> Result<FfiEditOutcome, OnePassError> {
+            client.edit_roster(
+                self.owner.session.clone(),
+                self.owner.keys.classical.clone(),
+                self.owner.keys.half(),
+                edit,
+                NOW,
+            )
+        }
+
+        fn summarize(&self, edit: FfiRosterEdit) -> Result<FfiEditSummary, OnePassError> {
+            self.creator().summarize(
+                self.owner.session.clone(),
+                self.owner.keys.classical.clone(),
+                self.owner.keys.half(),
+                edit,
+            )
+        }
+
+        fn set_owners(&self, owners: Vec<String>) -> Result<FfiOrgState, OnePassError> {
+            self.creator().set_owners(
+                self.owner.session.clone(),
+                self.owner.keys.classical.clone(),
+                self.owner.keys.half(),
+                owners,
+                NOW,
+            )
+        }
+
+        fn latest_seq(&self) -> u64 {
+            self.store().latest_roster().unwrap().unwrap().0
+        }
+
+        fn account(&self) -> String {
+            self.owner.session.account_id()
+        }
+    }
+
+    fn member_of<'a>(s: &'a FfiOrgState, account: &str) -> &'a FfiOrgMember {
+        s.members.iter().find(|m| m.account_id == account).unwrap()
+    }
+
+    fn roles_error(reason: &str) -> OnePassError {
+        OnePassError::Validation {
+            field: "roles".into(),
+            reason: reason.into(),
+        }
+    }
+
+    #[test]
+    fn admin_accepts_a_join_request() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.member(MARIE, vec![FfiOrgRole::Auditor]);
+        let out = org.accept(&m, vec![]).unwrap();
+        assert!(out.server_access_updated);
+        assert_eq!(out.state.roster_seq, 3);
+        let e = member_of(&out.state, &m.account());
+        assert_eq!(e.state, FfiMemberState::Active);
+        // The roles of the edit, not the invitation's.
+        assert!(e.roles.is_empty());
+        assert_eq!(e.devices.len(), 1);
+        assert_eq!(e.display_name.as_deref(), Some(MARIE));
+        // No longer waiting.
+        assert_eq!(org.creator().join_requests().unwrap(), vec![]);
+        // The inviting device revoked the link's credential; the member reads
+        // with its own and sees itself Active.
+        assert!(org.invite_store(&m.invite).roster(1).is_err());
+        let s = m.own_client(&org).refresh().unwrap();
+        assert_eq!(member_of(&s, &m.account()).state, FfiMemberState::Active);
+        assert_eq!(s.roster_seq, 3);
+    }
+
+    #[test]
+    fn accept_needs_a_verified_join_request() {
+        let org = publish(&FakeMailbox::org());
+        let (link, _) = org.invite("Marie", vec![]);
+        let accept = FfiRosterEdit::Accept {
+            account_id: link.account_id.clone(),
+            roles: vec![],
+        };
+        assert_eq!(org.summarize(accept.clone()), Err(OnePassError::NotFound));
+        assert_eq!(org.edit(accept), Err(OnePassError::NotFound));
+        assert_eq!(org.latest_seq(), 2);
+    }
+
+    #[test]
+    fn member_names_come_from_join_requests() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.accepted(MARIE, vec![]);
+        // A device that never listed the requests: a plain refresh names her.
+        let (_, second) = org.second_device();
+        let s = second.refresh().unwrap();
+        assert_eq!(
+            member_of(&s, &m.account()).display_name.as_deref(),
+            Some(MARIE)
+        );
+        assert_eq!(member_of(&s, &org.account()).display_name, None);
+    }
+
+    #[test]
+    fn accepted_member_moves_to_its_own_credential() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.member(MARIE, vec![]);
+        // Accepted by a device that did not issue the invitation: the link's
+        // credential stays for the member to drop.
+        let (_, second) = org.second_device();
+        let out = org
+            .edit_by(
+                &second,
+                FfiRosterEdit::Accept {
+                    account_id: m.account(),
+                    roles: vec![],
+                },
+            )
+            .unwrap();
+        assert!(out.server_access_updated);
+        let s = m.joiner.client.refresh().unwrap();
+        assert_eq!(member_of(&s, &m.account()).state, FfiMemberState::Active);
+        let own = m.own_client(&org);
+        assert_eq!(own.refresh().unwrap().roster_seq, 3);
+        m.joiner.client.revoke_own_credential().unwrap();
+        assert!(m.joiner.client.refresh().is_err());
+        assert!(own.refresh().is_ok());
+    }
+
+    #[test]
+    fn summary_comes_from_the_pinned_roster() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.accepted(MARIE, vec![]);
+        let (dir, second) = org.second_device();
+        assert_eq!(second.refresh().unwrap().roster_seq, 3);
+        let before = pin_bytes(&dir);
+        // The server now holds a newer roster with the member Removed.
+        org.edit(FfiRosterEdit::Remove {
+            account_id: m.account(),
+        })
+        .unwrap();
+        assert_eq!(org.latest_seq(), 4);
+        let summary = second
+            .summarize(
+                org.owner.session.clone(),
+                org.owner.keys.classical.clone(),
+                org.owner.keys.half(),
+                FfiRosterEdit::Suspend {
+                    account_id: m.account(),
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            summary,
+            FfiEditSummary {
+                member_name: MARIE.into(),
+                device_count: 1,
+                roles_before: vec![],
+                roles_after: vec![],
+                state_before: Some(FfiMemberState::Active),
+                state_after: FfiMemberState::Suspended,
+                allowed: true,
+            }
+        );
+        // Nothing read, nothing written.
+        assert_eq!(pin_bytes(&dir), before);
+        assert_eq!(org.latest_seq(), 4);
+    }
+
+    #[test]
+    fn user_manager_cannot_grant_admin() {
+        let org = publish(&FakeMailbox::org());
+        let b = org.accepted("Bea", vec![FfiOrgRole::UserManager]);
+        let c = org.accepted("Carl", vec![]);
+        let client = b.own_client(&org);
+        client.refresh().unwrap();
+        let seq = org.latest_seq();
+        let admin = FfiRosterEdit::SetRoles {
+            account_id: c.account(),
+            roles: vec![FfiOrgRole::Admin],
+        };
+        let summary = b.summarize(&client, admin.clone());
+        assert!(!summary.allowed);
+        assert_eq!(summary.roles_after, vec![FfiOrgRole::Admin]);
+        assert_eq!(b.edit(&client, admin), Err(integrity("org_role_denied")));
+        assert_eq!(org.latest_seq(), seq);
+        // A role it holds itself it may grant.
+        let um = FfiRosterEdit::SetRoles {
+            account_id: c.account(),
+            roles: vec![FfiOrgRole::UserManager],
+        };
+        assert!(b.summarize(&client, um.clone()).allowed);
+        assert!(b.edit(&client, um).unwrap().server_access_updated);
+        assert_eq!(org.latest_seq(), seq + 1);
+    }
+
+    #[test]
+    fn owner_changes_only_through_the_lineage() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.accepted(MARIE, vec![]);
+        let seq = org.latest_seq();
+        let owner_via_lineage = roles_error("owner via lineage");
+        for edit in [
+            FfiRosterEdit::SetRoles {
+                account_id: m.account(),
+                roles: vec![FfiOrgRole::Owner],
+            },
+            // Touching the Owner bit of an owner.
+            FfiRosterEdit::SetRoles {
+                account_id: org.account(),
+                roles: vec![FfiOrgRole::Admin],
+            },
+        ] {
+            assert_eq!(org.summarize(edit.clone()), Err(owner_via_lineage.clone()));
+            assert_eq!(org.edit(edit), Err(owner_via_lineage.clone()));
+        }
+        let officer = FfiRosterEdit::SetRoles {
+            account_id: m.account(),
+            roles: vec![FfiOrgRole::RecoveryOfficer],
+        };
+        assert_eq!(
+            org.edit(officer),
+            Err(roles_error("recovery officer via lineage"))
+        );
+        let (link, _) = org.invite("Paul", vec![]);
+        assert_eq!(
+            org.edit(FfiRosterEdit::Accept {
+                account_id: link.account_id,
+                roles: vec![FfiOrgRole::Owner],
+            }),
+            Err(owner_via_lineage)
+        );
+        assert_eq!(org.latest_seq(), seq + 1);
+    }
+
+    #[test]
+    fn concurrent_edit_rebases_once() {
+        let org = publish(&FakeMailbox::org());
+        let b = org.accepted("Bea", vec![FfiOrgRole::Admin]);
+        let x = org.accepted("Xavier", vec![]);
+        let (y, _) = org.invite("Yann", vec![]);
+        // A (the owner) and B both pinned at the same seq.
+        let client_b = b.own_client(&org);
+        let seq = client_b.refresh().unwrap().roster_seq;
+        assert_eq!(org.creator().refresh().unwrap().roster_seq, seq);
+        org.edit(FfiRosterEdit::Suspend {
+            account_id: x.account(),
+        })
+        .unwrap();
+        // B removes Y from its stale pin: its seq is taken, it rebases.
+        let out = b
+            .edit(
+                &client_b,
+                FfiRosterEdit::Remove {
+                    account_id: y.account_id.clone(),
+                },
+            )
+            .unwrap();
+        assert_eq!(out.state.roster_seq, seq + 2);
+        assert_eq!(
+            member_of(&out.state, &x.account()).state,
+            FfiMemberState::Suspended
+        );
+        assert_eq!(
+            member_of(&out.state, &y.account_id).state,
+            FfiMemberState::Removed {
+                at: NOW,
+                by: b.account()
+            }
+        );
+        // A store answering Taken twice: Conflict, the pin as it was.
+        let dir = b.joiner._dir.path().join("org");
+        let before = pin_bytes(&dir);
+        let taken = b.own_client_over(
+            &org,
+            Box::new(Tweaked {
+                inner: b.own_store(&org),
+                hide: None,
+                hook: None,
+                feeds: Default::default(),
+                fail_mint: false,
+                on_mint: None,
+                taken: 2,
+            }),
+        );
+        assert_eq!(
+            b.edit(
+                &taken,
+                FfiRosterEdit::Reactivate {
+                    account_id: x.account(),
+                }
+            )
+            .map(|o| o.state.roster_seq),
+            Err(OnePassError::Conflict)
+        );
+        assert_eq!(pin_bytes(&dir), before);
+        assert_eq!(org.latest_seq(), seq + 2);
+    }
+
+    #[test]
+    fn suspend_reactivate_remove_keep_the_member_listed() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.accepted(MARIE, vec![FfiOrgRole::Auditor]);
+        let count = org.creator().state().unwrap().unwrap().members.len();
+        let account: [u8; 16] = unhex(&m.account());
+        let request = org.raw_requests()[0].1.clone();
+        let account_id = m.account();
+
+        let out = org
+            .edit(FfiRosterEdit::Suspend {
+                account_id: account_id.clone(),
+            })
+            .unwrap();
+        assert!(out.server_access_updated);
+        let e = member_of(&out.state, &account_id);
+        assert_eq!(e.state, FfiMemberState::Suspended);
+        assert_eq!(e.roles, vec![FfiOrgRole::Auditor]);
+        assert_eq!(out.state.members.len(), count);
+        // Suspended: reads only.
+        assert!(m.own_client(&org).refresh().is_ok());
+        let put = m.own_store(&org).put_join_request(account, request.clone());
+        assert_eq!(
+            put.map_err(OnePassError::from),
+            Err(OnePassError::Forbidden)
+        );
+
+        let out = org
+            .edit(FfiRosterEdit::Reactivate {
+                account_id: account_id.clone(),
+            })
+            .unwrap();
+        assert!(out.server_access_updated);
+        assert_eq!(
+            member_of(&out.state, &account_id).state,
+            FfiMemberState::Active
+        );
+        m.own_store(&org)
+            .put_join_request(account, request)
+            .unwrap();
+
+        let out = org
+            .edit(FfiRosterEdit::Remove {
+                account_id: account_id.clone(),
+            })
+            .unwrap();
+        let e = member_of(&out.state, &account_id);
+        assert_eq!(
+            e.state,
+            FfiMemberState::Removed {
+                at: NOW,
+                by: org.account()
+            }
+        );
+        assert!(e.roles.is_empty());
+        assert!(e.devices.is_empty());
+        assert_eq!(out.state.members.len(), count);
+        // Removed is for good.
+        assert_eq!(
+            org.edit(FfiRosterEdit::Reactivate { account_id }),
+            Err(integrity("org_role_denied"))
+        );
+        assert_eq!(org.creator().refresh().unwrap().members.len(), count);
+    }
+
+    #[test]
+    fn removal_revokes_mailbox_access() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.accepted(MARIE, vec![FfiOrgRole::UserManager]);
+        let own = m.own_client(&org);
+        own.refresh().unwrap();
+        let out = org
+            .edit(FfiRosterEdit::Remove {
+                account_id: m.account(),
+            })
+            .unwrap();
+        assert!(out.server_access_updated);
+        assert!(matches!(
+            own.refresh(),
+            Err(OnePassError::MailboxUnavailable { .. } | OnePassError::Forbidden)
+        ));
+    }
+
+    #[test]
+    fn removing_an_invited_member_withdraws_the_invitation() {
+        let org = publish(&FakeMailbox::org());
+        let (link, invite) = org.invite("Marie", vec![]);
+        assert!(org.invite_store(&invite).roster(1).is_ok());
+        let out = org
+            .edit(FfiRosterEdit::Remove {
+                account_id: link.account_id.clone(),
+            })
+            .unwrap();
+        assert!(out.server_access_updated);
+        assert!(matches!(
+            member_of(&out.state, &link.account_id).state,
+            FfiMemberState::Removed { .. }
+        ));
+        assert!(org.invite_store(&invite).roster(1).is_err());
+    }
+
+    #[test]
+    fn promoted_admin_gets_manage_and_can_write_the_roster() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.accepted(MARIE, vec![]);
+        let own = m.own_client(&org);
+        own.refresh().unwrap();
+        let invite = |c: &OrgClient| {
+            let j = &m.joiner;
+            c.create_invite(
+                j.session.clone(),
+                j.keys.classical.clone(),
+                j.keys.half(),
+                "Paul".into(),
+                None,
+                vec![],
+                NOW,
+            )
+        };
+        assert_eq!(invite(&own), Err(integrity("org_role_denied")));
+        let out = org
+            .edit(FfiRosterEdit::SetRoles {
+                account_id: m.account(),
+                roles: vec![FfiOrgRole::Admin],
+            })
+            .unwrap();
+        assert!(out.server_access_updated);
+        assert_eq!(
+            member_of(&out.state, &m.account()).roles,
+            vec![FfiOrgRole::Admin]
+        );
+        let seq = org.latest_seq();
+        own.refresh().unwrap();
+        // A roster write and a credential grant: Manage.
+        invite(&own).unwrap();
+        assert_eq!(org.latest_seq(), seq + 1);
+    }
+
+    #[test]
+    fn single_owner_adds_a_second_owner() {
+        let org = publish(&FakeMailbox::org());
+        let b = org.accepted("Bea", vec![]);
+        let mut owners = vec![org.account(), b.account()];
+        owners.sort();
+        let seq = org.latest_seq();
+        let s = org.set_owners(owners.clone()).unwrap();
+        assert_eq!(s.lineage_generation, 1);
+        assert_eq!(s.owners, owners);
+        assert_eq!(s.roster_seq, seq + 1);
+        assert_eq!(member_of(&s, &b.account()).roles, vec![FfiOrgRole::Owner]);
+        let own = b.own_client(&org);
+        let seen = own.refresh().unwrap();
+        assert_eq!(seen.lineage_generation, 1);
+        assert_eq!(seen.owners, owners);
+        assert!(b.keyset_available(&own));
+        assert!(
+            org.creator()
+                .owner_keyset_available(
+                    org.owner.session.clone(),
+                    org.owner.keys.classical.clone(),
+                    org.owner.keys.half(),
+                )
+                .unwrap()
+        );
+        // The new owner holds Manage: it writes the roster.
+        let carl = org.accepted("Carl", vec![]);
+        own.refresh().unwrap();
+        b.edit(
+            &own,
+            FfiRosterEdit::Suspend {
+                account_id: carl.account(),
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn third_owner_needs_quorum() {
+        let org = publish(&FakeMailbox::org());
+        let b = org.accepted("Bea", vec![]);
+        org.set_owners(vec![org.account(), b.account()]).unwrap();
+        let c = org.accepted("Carl", vec![]);
+        let seq = org.latest_seq();
+        assert_eq!(
+            org.set_owners(vec![org.account(), b.account(), c.account()]),
+            Err(OnePassError::Validation {
+                field: "owners".into(),
+                reason: "quorum".into(),
+            })
+        );
+        assert_eq!(org.store().lineage_from(0).unwrap().len(), 2);
+        assert_eq!(org.latest_seq(), seq);
+        let mut store = org.store();
+        assert!(store.owner_keyset(unhex(&c.account())).unwrap().is_none());
+    }
+
+    #[test]
+    fn member_cannot_open_the_owner_keyset() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.accepted(MARIE, vec![FfiOrgRole::Admin]);
+        let own = m.own_client(&org);
+        own.refresh().unwrap();
+        assert!(!m.keyset_available(&own));
+        // Even with the creator's sealed keyset served under its own id.
+        let creator: [u8; 16] = unhex(&org.account());
+        let sealed = org.store().owner_keyset(creator).unwrap().unwrap();
+        org.store()
+            .put_owner_keyset(unhex(&m.account()), sealed)
+            .unwrap();
+        assert!(!m.keyset_available(&own));
+    }
+
+    #[test]
+    fn test_org_server_runs_a_join() {
+        let server = TestOrgServer::new();
+        let draft = OrgDraft::new().unwrap();
+        let owner = Owner::new(&draft.org_id());
+        let dirs = TempDir::new().unwrap();
+        let path = |name: &str| dirs.path().join(name).to_string_lossy().into_owned();
+        let created = server
+            .draft_publish(
+                draft.clone(),
+                owner.session.clone(),
+                owner.keys.classical.clone(),
+                owner.keys.half(),
+                ORG_NAME.into(),
+                path("admin"),
+                NOW,
+            )
+            .unwrap();
+        let admin = server
+            .client(
+                created.mailbox_id.clone(),
+                created.credential_seed.clone(),
+                draft.org_id(),
+                path("admin"),
+            )
+            .unwrap();
+        let link = admin
+            .create_invite(
+                owner.session.clone(),
+                owner.keys.classical.clone(),
+                owner.keys.half(),
+                "Marie".into(),
+                None,
+                vec![],
+                NOW,
+            )
+            .unwrap();
+        // The loopback test server: only with the test switch.
+        assert!(org_invite_parse(link.link.clone(), false).is_err());
+        let invite = org_invite_parse(link.link, true).unwrap();
+        let joiner = server
+            .client(
+                invite.mailbox_id.clone(),
+                invite.credential_seed.clone(),
+                invite.org_id.clone(),
+                path("joiner"),
+            )
+            .unwrap();
+        joiner
+            .pin(
+                FfiPinSource::Tofu { verified: false },
+                Some(invite.fingerprint.clone()),
+                NOW,
+            )
+            .unwrap();
+        let keys = Keys::new();
+        let account = create_managed_account(
+            db_path(&dirs.path().join("joiner")),
+            PASSWORD.as_bytes().to_vec(),
+            Some(FAST),
+            keys.classical.clone(),
+            keys.half(),
+            "iPhone".into(),
+            FfiDeviceKind::Phone,
+            FfiDeviceMode::Personal,
+            invite.org_id.clone(),
+            Some(invite.account_id.clone()),
+        )
+        .unwrap();
+        let posted = joiner
+            .post_join_request(
+                account.session.clone(),
+                keys.classical.clone(),
+                keys.half(),
+                invite.clone(),
+                MARIE.into(),
+                NOW,
+            )
+            .unwrap();
+        assert_eq!(
+            admin.join_requests().unwrap()[0].code_words,
+            posted.code_words
+        );
+        admin
+            .edit_roster(
+                owner.session.clone(),
+                owner.keys.classical.clone(),
+                owner.keys.half(),
+                FfiRosterEdit::Accept {
+                    account_id: invite.account_id.clone(),
+                    roles: vec![],
+                },
+                NOW,
+            )
+            .unwrap();
+        let own = server
+            .client(
+                invite.mailbox_id.clone(),
+                posted.credential_seed,
+                invite.org_id.clone(),
+                path("joiner"),
+            )
+            .unwrap();
+        let s = own.refresh().unwrap();
+        assert_eq!(
+            member_of(&s, &invite.account_id).state,
+            FfiMemberState::Active
+        );
     }
 }

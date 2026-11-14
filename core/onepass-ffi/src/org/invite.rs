@@ -12,7 +12,7 @@ use crate::error::{OnePassError, invalid};
 
 const LINK_MAX: usize = 2048;
 /// The only plain-http server a link may name, for the local test stack.
-const LOOPBACK_URL: &str = "http://127.0.0.1:54321/functions/v1/mailbox";
+pub(super) const LOOPBACK_URL: &str = "http://127.0.0.1:54321/functions/v1/mailbox";
 const KEYS: [&str; 10] = ["v", "s", "m", "o", "a", "f", "n", "c", "t", "d"];
 
 fn bad(what: &str) -> OnePassError {
