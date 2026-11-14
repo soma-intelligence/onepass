@@ -120,8 +120,23 @@ struct IdentityTintTests {
     }
 
     @Test func darkOpacityCap() {
-        // Review Focus 5: the wash never passes 22% so titles stay readable.
-        #expect(Theme.Wash.identityOpacity(dark: true) == 0.22)
+        // Review Focus 5: the glows never pass 28% so titles stay readable.
+        #expect(Theme.Wash.identityOpacity(dark: true) == 0.28)
         #expect(Theme.Wash.identityOpacity(dark: false) == 0.14)
+    }
+}
+
+@Suite struct IdentityGlowTests {
+    @Test func rotationTurnsHueAndKeepsGrays() {
+        // Red turned 120 degrees is green; a gray has no hue to turn and comes back as is.
+        let green = IdentityTint.rotated(Color(red: 1, green: 0, blue: 0), by: 120).resolve(in: EnvironmentValues())
+        #expect(abs(Double(green.red)) < 0.01 && abs(Double(green.green) - 1) < 0.01 && abs(Double(green.blue)) < 0.01)
+        let gray = IdentityTint.rotated(Color(red: 0.5, green: 0.5, blue: 0.5), by: 90).resolve(in: EnvironmentValues())
+        #expect(abs(Double(gray.red) - Double(gray.blue)) < 0.001)
+    }
+
+    @Test func trailingGlowIsTheWeakerOne() {
+        #expect(Theme.Wash.trailingStrength < 1)
+        #expect(Theme.Wash.leadingHueShift < 0 && Theme.Wash.trailingHueShift > 0)
     }
 }
