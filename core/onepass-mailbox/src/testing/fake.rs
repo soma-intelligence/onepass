@@ -14,7 +14,7 @@
 //! writer limited to `put_kinds` puts only those kinds and deletes nothing,
 //! only a manager grants, changes roles, approves tickets and revokes
 //! another credential, an owner is revoked only by itself and never
-//! demoted, a limited writer announces no blob, the last manager stays),
+//! demoted, the last manager stays; a limited writer announces blobs),
 //! locators (set by a manager, the two latest kept per mailbox, shared
 //! freely between mailboxes, looked up without a key: up to 8 live
 //! mailboxes, oldest registration first) and abandoning a mailbox (its
@@ -928,7 +928,9 @@ impl State {
         blobs: &[(Sha256, u32)],
     ) -> Result<Vec<(Sha256, bool, String)>, MailboxError> {
         let c = self.caller(caller);
-        if c.role == CredentialRole::Read || c.put_kinds.is_some() {
+        // A writer limited to some kinds may announce: its commit refuses any
+        // put of another kind, which is what binds the blob to an allowed one.
+        if c.role == CredentialRole::Read {
             return refused(ErrorCode::Forbidden);
         }
         let max_bytes = self.mailboxes[m].limits.max_bytes as i64;

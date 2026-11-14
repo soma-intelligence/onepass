@@ -231,7 +231,28 @@ select onepass_test.answers(
 select onepass_test.answers(
     $$select * from onepass_mailbox.api_blob_announce(onepass_test.cid('l'), onepass_test.n(), now(), onepass_test.mbx('A'),
         array[decode(repeat('ab', 32), 'hex')], array[20000])$$,
-    'forbidden', 'limited_writer_cannot_announce_blobs');
+    'ok', 'limited_writer_announces_blobs');
+-- The announce binds nothing: the commit's put_kinds check does. The limited
+-- writer ('l': kinds 14 to 17) commits the blob under an allowed kind, never
+-- under another one, and a Delete stays refused.
+reset role;
+insert into storage.objects (bucket_id, name, metadata)
+values ('onepass-mailbox',
+        encode(onepass_test.mbx('A'), 'hex') || '/' || repeat('ab', 32) || '.'
+            || (select gen from onepass_mailbox.blobs
+                where mailbox_id = onepass_test.mbx('A') and sha256 = decode(repeat('ab', 32), 'hex')),
+        '{"size": 20000, "mimetype": "application/octet-stream"}');
+set local role onepass_mailbox_api;
+select onepass_test.answers(
+    $$select * from onepass_mailbox.api_commit(onepass_test.cid('l'), onepass_test.n(), now(), onepass_test.mbx('A'),
+        array[5]::smallint[], array[onepass_test.rid(900)], array[1]::bigint[], array[1]::smallint[],
+        array[null]::bigint[], array[null]::bytea[], array[decode(repeat('ab', 32), 'hex')], array[20000])$$,
+    'forbidden', 'limited_writer_blob_under_other_kind_is_forbidden');
+select onepass_test.answers(
+    $$select * from onepass_mailbox.api_commit(onepass_test.cid('l'), onepass_test.n(), now(), onepass_test.mbx('A'),
+        array[14]::smallint[], array[onepass_test.rid(901)], array[1]::bigint[], array[1]::smallint[],
+        array[null]::bigint[], array[null]::bytea[], array[decode(repeat('ab', 32), 'hex')], array[20000])$$,
+    'ok', 'limited_writer_commits_blob_under_allowed_kind');
 select onepass_test.answers(
     $$select * from onepass_mailbox.api_blob_announce(onepass_test.cid('w'), onepass_test.n(), now(), onepass_test.mbx('A'),
         array[decode(repeat('ab', 32), 'hex')], array[20000])$$,
@@ -242,9 +263,9 @@ select onepass_test.answers(
     $$select * from onepass_mailbox.api_changes(onepass_test.cid('r'), onepass_test.n(), now(), onepass_test.mbx('A'), 0, 100, false)$$,
     'ok', 'read_role_reads_changes');
 select onepass_test.ok(
-    (select count(*) = 2 from onepass_mailbox.api_changes(onepass_test.cid('r'), onepass_test.n(), now(), onepass_test.mbx('A'), 0, 100, false)
+    (select count(*) = 3 from onepass_mailbox.api_changes(onepass_test.cid('r'), onepass_test.n(), now(), onepass_test.mbx('A'), 0, 100, false)
      where seq is not null),
-    'read_role_sees_every_change'); -- rid 1, and rid 2 put then deleted (one row)
+    'read_role_sees_every_change'); -- rid 1, rid 2 put then deleted (one row), and the blob record of 'l' (kind 14)
 select onepass_test.answers(
     $$select * from onepass_mailbox.api_record(onepass_test.cid('r'), onepass_test.n(), now(), onepass_test.mbx('A'), 5::smallint, onepass_test.rid(1))$$,
     'ok', 'read_role_reads_a_record');
@@ -265,7 +286,7 @@ select onepass_test.ok(onepass_test.del('l', 'A', 14, 10) = 'forbidden' and onep
     'limited_writer_cannot_delete');
 reset role;
 select onepass_test.ok(
-    onepass_test.next_seq('A') = (select s from t_seq) + 4
+    onepass_test.next_seq('A') = (select s from t_seq) + 5 -- four puts of 'l' and its blob commit
     and not exists (select 1 from onepass_mailbox.records r
                     where r.mailbox_id = onepass_test.mbx('A') and r.id in (onepass_test.rid(3), onepass_test.rid(20),
                         onepass_test.rid(21), onepass_test.rid(22), onepass_test.rid(23), onepass_test.rid(24)))

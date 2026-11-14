@@ -957,7 +957,7 @@ fn reader_commit_forbidden(t: &mut dyn ConformanceTarget) {
 }
 
 /// A writer limited to kinds 14 to 17 puts those, nothing else, deletes
-/// nothing and uploads no blob.
+/// nothing, and binds a blob only under one of them.
 fn limited_writer_kinds(t: &mut dyn ConformanceTarget) {
     let a = owner(t);
     let w = granted(
@@ -993,9 +993,30 @@ fn limited_writer_kinds(t: &mut dyn ConformanceTarget) {
         op: Op::Delete,
     };
     forbidden(w.commit(vec![gone]), "a delete of kind 14");
+    // It may announce and upload a blob: the commit binds it to a kind of
+    // the set, never to another one.
     let big = vec![3u8; 20 * 1024];
-    forbidden(w.upload_blobs(&[&big]), "a limited writer uploads");
-    assert_eq!(page(a.as_ref(), 0, 10, false).head, 4, "only the four puts");
+    w.upload_blobs(&[&big]).expect("a limited writer uploads");
+    let blob_at = |kind: u8, n: u32| CommitOp {
+        kind,
+        id: id(n),
+        version: 1,
+        op: Op::Put {
+            expected: None,
+            body: Body::Blob {
+                sha256: blob_sha256(&big),
+                size: big.len() as u32,
+            },
+        },
+    };
+    forbidden(w.commit(vec![blob_at(5, 9)]), "a blob of kind 5");
+    let s = applied(w.commit(vec![blob_at(14, 10)]), "a blob of kind 14");
+    assert_eq!(s, vec![Some(5)]);
+    assert_eq!(
+        page(a.as_ref(), 0, 10, false).head,
+        5,
+        "the four puts and the blob"
+    );
     applied(
         a.commit(vec![put(9, 1, None, b"owner")]),
         "the owner writes kind 5",

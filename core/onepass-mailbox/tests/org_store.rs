@@ -11,7 +11,7 @@ use onepass_mailbox::{Credential, MailboxApi, MailboxError, OrgStore, OrgStoreEr
 use onepass_mailbox_proto::{
     Body, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialId, CredentialRole,
     MailboxCreated, MailboxId, MailboxInfo, Op, PushKind, ServerConfig, ServerRecord,
-    SignedEnrollTicket,
+    SignedEnrollTicket, put_kinds_of,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -222,6 +222,49 @@ fn join_requests_list_and_delete() {
         s.join_requests().unwrap(),
         vec![(a2, b"r2".to_vec()), (a1, b"again".to_vec())]
     );
+}
+
+/// An invitee holds a Write credential limited to kind 32. Its join request
+/// is larger than INLINE_MAX (a genesis carries an SLH-DSA signature), so it
+/// travels as a blob; a manager reads it back. The limited writer still puts
+/// no other kind and deletes nothing.
+#[test]
+fn limited_writer_posts_a_blob_join_request() {
+    let (fake, owner) = setup();
+    let cred = Credential::generate().unwrap();
+    owner
+        .api()
+        .grant(
+            cred.public_key().to_bytes(),
+            CredentialRole::Write,
+            Some(put_kinds_of(&[ORG_JOIN_KIND])),
+            b"invitee",
+        )
+        .unwrap();
+    let mut c = fake.client(cred);
+    c.open(owner.api().mailbox().unwrap());
+    let mut invitee = OrgStore::new(c, ORG);
+    let account = [0x05; 16];
+    let request = bytes(40 * 1024, 9);
+    assert!(request.len() > onepass_mailbox_proto::INLINE_MAX);
+    invitee.put_join_request(account, request.clone()).unwrap();
+    // Replacing it (a retry, a new request) works the same way.
+    invitee.put_join_request(account, request.clone()).unwrap();
+    let mut manager = owner;
+    assert_eq!(
+        manager.join_requests().unwrap(),
+        vec![(account, request.clone())]
+    );
+    // The announce binds nothing: any other kind, and any delete, is refused.
+    assert!(matches!(
+        invitee.put_owner_keyset(account, bytes(20 * 1024, 1)),
+        Err(OrgStoreError::Mailbox(MailboxError::Forbidden))
+    ));
+    assert!(matches!(
+        invitee.delete_join_request(account),
+        Err(OrgStoreError::Mailbox(MailboxError::Forbidden))
+    ));
+    assert_eq!(manager.join_requests().unwrap(), vec![(account, request)]);
 }
 
 #[test]
