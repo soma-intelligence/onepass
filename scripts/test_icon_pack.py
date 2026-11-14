@@ -764,7 +764,8 @@ class Wikidata(unittest.TestCase):
                      "CC0", "CC0 1.0", "cc0-1.0", " <span>Public domain</span> "):
             self.assertTrue(icon_pack.kept_license(kept), kept)
         for dropped in ("CC BY-SA 4.0", "CC BY 3.0", "GFDL", "Copyrighted free use", "Attribution", "PDF", "",
-                        None, "Public domain; CC BY-SA", "pd-", "CC0 2.0 BY"):
+                        None, "Public domain; CC BY-SA", "pd-", "CC0 2.0 BY", "PD-textlogo and CC BY-SA 4.0",
+                        "PD-self cc-by-sa-4.0", "pd-  by-nc"):
             self.assertFalse(icon_pack.kept_license(dropped), dropped)
 
     def test_current_logo(self):
@@ -814,7 +815,7 @@ class Wikidata(unittest.TestCase):
         self.assertEqual(record["licenses"]["Public domain"], {"kept": 1, "dropped": 2})
         self.assertEqual(record["licenses"]["PD-shape"], {"kept": 1, "dropped": 0})
         self.assertEqual(record["queried"], "2026-11-14T09:30:00+00:00")
-        self.assertEqual(record["user_agent"], "OnePass icon pack builder")
+        self.assertEqual(record["user_agent"], icon_pack.WIKI_UA)
         # The rejected files never land in the folder; only SHA-1 named files do.
         names = sorted(p.name for p in (self.tmp / "wikidata" / "files").iterdir())
         self.assertEqual(len(names), 3)
@@ -881,14 +882,36 @@ class Wikidata(unittest.TestCase):
             self.assertEqual(icon_pack.wiki_get("https://query.wikidata.org/sparql?x", 10, "application/json",
                                                 sleep=waits.append), b"ok")
         self.assertEqual(waits, [7, 4])
-        self.assertEqual(attempts[0], {"User-Agent": "OnePass icon pack builder", "Accept": "application/json"})
+        self.assertEqual(icon_pack.WIKI_UA, "OnePass icon pack builder (https://github.com/soma-intelligence/onepass)")
+        self.assertEqual(attempts[0], {"User-Agent": icon_pack.WIKI_UA, "Accept": "application/json"})
+        # A dropped connection or a timeout is retried with the same bounded backoff.
+        import socket
+        errors = [urllib.error.URLError("reset"), socket.timeout("slow"), TimeoutError("slow")]
+
+        def shaky(url, limit, headers=None):
+            if errors:
+                raise errors.pop(0)
+            return b"fine", url
+        waits.clear()
+        with mock.patch.object(icon_pack, "fetch_url", side_effect=shaky):
+            self.assertEqual(icon_pack.wiki_get("https://query.wikidata.org/sparql", 10, sleep=waits.append), b"fine")
+        self.assertEqual(waits, [2, 4, 8])
+
+        def down(url, limit, headers=None):
+            raise urllib.error.URLError("no route")
+        waits.clear()
+        with mock.patch.object(icon_pack, "fetch_url", side_effect=down):
+            with self.assertRaises(urllib.error.URLError):
+                icon_pack.wiki_get("https://query.wikidata.org/sparql", 10, sleep=waits.append)
+        self.assertEqual(len(waits), icon_pack.RETRY_ATTEMPTS - 1)
+        waits.clear()
 
         def missing(url, limit, headers=None):
             raise urllib.error.HTTPError(url, 404, "gone", {}, None)
         with mock.patch.object(icon_pack, "fetch_url", side_effect=missing):
             with self.assertRaises(urllib.error.HTTPError):
                 icon_pack.wiki_get("https://commons.wikimedia.org/w/api.php", 10, sleep=waits.append)
-        self.assertEqual(waits, [7, 4])
+        self.assertEqual(waits, [])  # a 404 is not retried
         # fetch_url sends the caller's User-Agent and refuses plain http.
         captured = []
 
@@ -910,9 +933,78 @@ class Wikidata(unittest.TestCase):
             return Response()
         with mock.patch("urllib.request.urlopen", side_effect=urlopen):
             icon_pack.fetch_url("https://query.wikidata.org/sparql", 10, {"User-Agent": icon_pack.WIKI_UA})
-        self.assertEqual(captured[0].get_header("User-agent"), "OnePass icon pack builder")
+        self.assertEqual(captured[0].get_header("User-agent"), icon_pack.WIKI_UA)
         with self.assertRaises(icon_pack.IconPackError):
             icon_pack.fetch_url("http://query.wikidata.org/sparql", 10)
+
+    def test_paging_counts_distinct_items_not_new_ones(self):
+        def row(n, site="NormalRank"):
+            e = "http://www.wikidata.org/entity/"
+            return {"item": {"type": "uri", "value": f"{e}Q{n}"}, "site": {"type": "uri", "value": f"https://s{n}.test/"},
+                    "siteRank": {"type": "uri", "value": "http://wikiba.se/ontology#" + site}}
+        # Q2 comes back on page 2 (two rows for one item on page 1 too): the run goes on to page 3.
+        pages = [[row(1), row(1, "DeprecatedRank"), row(2)], [row(2), row(3)], [row(4)]]
+        seen = []
+
+        def fetcher(url, limit, accept="*/*"):
+            if url.startswith(icon_pack.WIKIDATA_SPARQL):
+                seen.append(url)
+                return json.dumps({"results": {"bindings": pages[len(seen) - 1]}}).encode()
+            return b'{"query": {"pages": []}}'
+        record = icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2)
+        self.assertEqual((len(seen), record["items"]), (3, 4))
+        # A full page that brings nothing new ends the run.
+        pages[:] = [[row(1), row(2)], [row(1), row(2)], [row(9)]]
+        seen.clear()
+        icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2)
+        self.assertEqual(len(seen), 2)
+
+    def test_cut_or_oversized_answers_become_page_errors(self):
+        good = json.dumps({"results": {"bindings": []}}).encode()
+        answers = [b'{"results": {"bindi', icon_pack.IconPackError("too large"), b"[1", b"[1"]
+        calls = []
+
+        def fetcher(url, limit, accept="*/*"):
+            calls.append(url)
+            answer = answers.pop(0) if answers else good
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        # Page 1: cut, then too large: an error. Page 2: cut twice: an error, two in a row, so the run
+        # stops and still writes its record.
+        record = icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(record["page_errors"], ["sparql offset 0: too large",
+                                                 "sparql offset 2: Expecting ',' delimiter: line 1 column 3 (char 2)"])
+        # One retry is enough when the second answer is whole.
+        answers[:] = [b'{"results": {"bindi', good]
+        calls.clear()
+        record = icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2)
+        self.assertEqual((len(calls), record["page_errors"]), (2, []))
+        self.assertTrue((self.tmp / "w" / "wikidata.json").is_file())
+
+    def test_subdomain_of_curated_dropped_and_open_set_parent_overridden(self):
+        self.query()
+        record = json.loads((self.tmp / "wikidata" / "wikidata.json").read_text())
+        acme = record["domains"]["acme.test"]
+        # store.withings.com: withings.com is curated. miles.aeroplan.com: aeroplan.com only has the open sets.
+        record["domains"]["store.withings.com"] = dict(acme, item="Q101")
+        record["domains"]["miles.aeroplan.com"] = dict(acme, item="Q102")
+        (self.tmp / "wikidata" / "wikidata.json").write_text(json.dumps(record))
+        curated = {"brands": [{"name": "Withings", "domains": ["withings.com"], "use": "simple-icons:withings"}]}
+        _, index, blob, report = self.build(curated)
+        self.assertNotIn("store.withings.com", index["domains"])
+        self.assertEqual(report["wikidata"]["dropped"]["subdomain-of-curated"], 1)
+        self.assertIn("store.withings.com: subdomain-of-curated", report["skipped"]["wikidata"])
+        self.assertEqual(self.icon(index, blob, "miles.aeroplan.com"), b"RIFFwikidata:Q100")
+        self.assertNotIn(b"wikidata", self.icon(index, blob, "aeroplan.com"))
+        self.assertEqual(report["wikidata"]["subdomain-override"], ["miles.aeroplan.com"])
+        # A curated `use: none` parent counts as curated too.
+        log = []
+        out, _, drops = icon_pack.wikidata_candidates(self.tmp / "wikidata", {"aeroplan.com"}, icon_pack.Blocklist(),
+                                                      [], lambda k, w: log.append(w))
+        self.assertNotIn("miles.aeroplan.com", out)
+        self.assertEqual(drops["subdomain-of-curated"], 1)
 
     def test_dry_run_prints_the_query_and_fetches_nothing(self):
         import contextlib
@@ -924,7 +1016,8 @@ class Wikidata(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("wdt:P154", printed.getvalue())
         self.assertIn("LIMIT 500 OFFSET 0", printed.getvalue())
-        self.assertIn("user-agent: OnePass icon pack builder", printed.getvalue())
+        self.assertIn("user-agent: OnePass icon pack builder (https://github.com/soma-intelligence/onepass)",
+                      printed.getvalue())
         self.assertFalse((self.tmp / "w").exists())
 
     def test_build_priority_names_and_report(self):

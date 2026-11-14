@@ -1266,8 +1266,8 @@ def domain_candidates(listed, skip, blocklist, sites, log):
 
 WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
-# Polite and generic: names the tool, nothing about who runs it.
-WIKI_UA = "OnePass icon pack builder"
+# Polite and generic: names the tool and its public repository, nothing about who runs it.
+WIKI_UA = "OnePass icon pack builder (https://github.com/soma-intelligence/onepass)"
 # Between the hand-picked list and the open sets.
 RANK_WIKIDATA = -0.5
 # A Wikidata logo wider than this for 1 high is a wordmark: dropped (only the curated list keeps one).
@@ -1282,7 +1282,7 @@ MAX_RASTER_BYTES = 2 * 1024 * 1024
 RETRY_ATTEMPTS = 5
 RETRY_MAX_WAIT = 300
 # Commons LicenseShortName values kept: public domain and CC0 only (no per-icon attribution).
-KEPT_LICENSE = re.compile(r"public domain|pd|pd-[a-z0-9 ._-]+|cc0|cc0[ -]1\.0", re.I)
+KEPT_LICENSE = re.compile(r"public domain|pd|pd-[a-z0-9._-]+|cc0|cc0[ -]1\.0", re.I)
 COMMONS_TITLE = re.compile(r"[^/\\#<>\[\]{}|:\x00-\x1f\x7f]{1,240}\.(svg|png|jpe?g|webp)", re.I)
 FILE_PATH = re.compile(r"https?://commons\.wikimedia\.org/wiki/Special:FilePath/(.+)")
 COMMONS_ORIGINAL = re.compile(r"https://upload\.wikimedia\.org/wikipedia/commons/[0-9a-f]/[0-9a-f]{2}/[^?#/]+")
@@ -1323,7 +1323,9 @@ def retry_after(error):
 
 
 def with_retries(call, sleep=None, attempts=RETRY_ATTEMPTS):
-    """call() again after 429 or 5xx (Retry-After when the server sends seconds, else 2, 4, 8... s)."""
+    """call() again after 429 or 5xx (Retry-After when the server sends seconds, else 2, 4, 8... s), and
+    after a connection error or a timeout (2, 4, 8... s), at most `attempts` calls in all."""
+    import socket
     import time
     import urllib.error
     sleep = sleep or time.sleep
@@ -1335,6 +1337,10 @@ def with_retries(call, sleep=None, attempts=RETRY_ATTEMPTS):
                 raise
             wait = retry_after(error)
             sleep(min(RETRY_MAX_WAIT, wait if wait is not None else 2 ** (attempt + 1)))
+        except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError):
+            if attempt == attempts - 1:
+                raise
+            sleep(min(RETRY_MAX_WAIT, 2 ** (attempt + 1)))
     raise IconPackError("unreachable")
 
 
@@ -1359,7 +1365,7 @@ def wikidata_query(limit, offset):
         "  OPTIONAL { ?logoStatement pq:P582 ?logoEnd . }\n"
         "  ?item p:P856 ?siteStatement .\n"
         "  ?siteStatement ps:P856 ?site ; wikibase:rank ?siteRank .\n"
-        '  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul,fr,de,es,it,pt,nl,ja". }\n'
+        '  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul,fr". }\n'
         "}"
     )
 
@@ -1489,14 +1495,41 @@ def fetch_wikidata(out, blocklist, platforms, fetcher=None, page_size=WIKIDATA_P
     def drop(reason, what):
         dropped.setdefault(reason, []).append(what)
 
-    items = {}
+    page_errors = []
+
+    def read_json(url, limit, accept, what):
+        """The parsed response, asked twice at most when it is cut short (bad JSON on a 200) or over
+        the cap; None (and a page error) when the second answer is no better."""
+        for attempt in range(2):
+            try:
+                return json.loads(fetcher(url, limit, accept))
+            except (ValueError, IconPackError) as error:
+                if attempt == 1:
+                    page_errors.append(f"{what}: {str(error)[:200]}")
+        return None
+
+    items, failed = {}, 0
     for page in range(max(1, int(max_pages))):
-        body = fetcher(sparql_url(wikidata_query(page_size, page * page_size)), SPARQL_LIMIT,
-                       "application/sparql-results+json")
-        bindings = json.loads(body)["results"]["bindings"]
-        before = set(items)
+        data = read_json(sparql_url(wikidata_query(page_size, page * page_size)), SPARQL_LIMIT,
+                         "application/sparql-results+json", f"sparql offset {page * page_size}")
+        try:
+            bindings = data["results"]["bindings"] if data is not None else None
+            if not isinstance(bindings, list):
+                raise TypeError
+        except (KeyError, TypeError):
+            if data is not None:
+                page_errors.append(f"sparql offset {page * page_size}: no results")
+            failed += 1
+            if failed >= 2:
+                break  # two pages in a row lost: the endpoint is not answering, stop asking
+            continue
+        failed = 0
+        # A page is full when it holds page_size distinct items; an item seen on an earlier page may
+        # come back (the order is only stable per query), so it is counted, not taken as the end.
+        distinct = {_binding(row, "item") for row in bindings if isinstance(row, dict)} - {""}
+        before = len(items)
         wikidata_items(bindings, items)
-        if len(set(items) - before) < page_size:
+        if len(distinct) < page_size or len(items) == before:
             break
     else:
         drop("page-limit", f"stopped after {max_pages} pages")
@@ -1536,7 +1569,10 @@ def fetch_wikidata(out, blocklist, platforms, fetcher=None, page_size=WIKIDATA_P
             "action": "query", "format": "json", "formatversion": "2", "prop": "imageinfo",
             "iiprop": "url|sha1|size|mime|extmetadata", "iiextmetadatafilter": "LicenseShortName",
             "titles": "|".join("File:" + t for t in batch)})
-        data = json.loads(fetcher(COMMONS_API + "?" + query, COMMONS_JSON_LIMIT, "application/json"))
+        data = read_json(COMMONS_API + "?" + query, COMMONS_JSON_LIMIT, "application/json",
+                         f"commons batch {start // COMMONS_BATCH + 1}")
+        if not isinstance(data, dict):
+            continue
         names = {n.get("to"): n.get("from") for n in (data.get("query") or {}).get("normalized") or []}
         pages = (data.get("query") or {}).get("pages") or []
         for page in pages.values() if isinstance(pages, dict) else pages:
@@ -1580,7 +1616,8 @@ def fetch_wikidata(out, blocklist, platforms, fetcher=None, page_size=WIKIDATA_P
                                    file=logo_of[qid])
     record = {"queried": now.isoformat(), "endpoint": WIKIDATA_SPARQL, "user_agent": WIKI_UA,
               "items": len(items), "domains": domains, "licenses": dict(sorted(licenses.items())),
-              "dropped": {k: sorted(v) for k, v in sorted(dropped.items())}, "conflicts": conflicts}
+              "dropped": {k: sorted(v) for k, v in sorted(dropped.items())}, "conflicts": conflicts,
+              "page_errors": page_errors}
     out.mkdir(parents=True, exist_ok=True)
     (out / "wikidata.json").write_text(json.dumps(record, indent=1, sort_keys=True, ensure_ascii=False) + "\n",
                                        encoding="utf-8")
@@ -1638,6 +1675,7 @@ def wikidata_candidates(folder, skip, blocklist, platforms, log):
     Skipped: curated domains (curated wins), hosts refused since (blocklist, platforms)."""
     record = json.loads((folder / "wikidata.json").read_text(encoding="utf-8"))
     refuse = wikidata_refusal(blocklist, platforms)
+    curated_parent = Blocklist(skip)
     out, drops, shared = {}, {}, {}
 
     def drop(reason, what):
@@ -1650,6 +1688,10 @@ def wikidata_candidates(folder, skip, blocklist, platforms, log):
             continue
         if domain in skip:
             drop("curated", domain)
+            continue
+        if curated_parent.blocks(domain):
+            # The app finds a subdomain's icon through its parent: this one would hide the curated icon.
+            drop("subdomain-of-curated", domain)
             continue
         reason = refuse(domain)
         if reason:
@@ -1844,9 +1886,13 @@ def build(args):
         platforms = read_domain_lists([args.platforms])[0] if args.platforms else []
         extra, wd_record, wd_drops = wikidata_candidates(Path(args.wikidata), curated_domains(curated),
                                                          load_blocklist(args.blocklist), platforms, log)
+        open_sets = {"logos", "2fa-directory", "simple-icons"}
+        overrides = sorted(d for d in extra if any(
+            any(c.source in open_sets for c in found.get(parent, []))
+            for parent in (".".join(d.split(".")[i:]) for i in range(1, len(d.split(".")) - 1))))
         for domain, candidate in extra.items():
             found.setdefault(domain, []).append(candidate)
-        wikidata = {"record": wd_record, "drops": wd_drops, "candidates": len(extra)}
+        wikidata = {"record": wd_record, "drops": wd_drops, "candidates": len(extra), "overrides": overrides}
     rejects, dropped = [], []
     if sites:
         # Hosting-platform icons (a gym portal serving its software vendor's favicon): shipped as
@@ -1956,7 +2002,11 @@ def build(args):
         report["wikidata"] = {"queried": record.get("queried"), "items": record.get("items"),
                               "domains": len(record.get("domains") or {}), "candidates": wikidata["candidates"],
                               "in_pack": len(wd_used), "licenses": dict(sorted(per_license.items())),
-                              "dropped": dict(sorted(drops.items())), "conflicts": record.get("conflicts") or {}}
+                              "dropped": dict(sorted(drops.items())), "conflicts": record.get("conflicts") or {},
+                              # Subdomains given their own Wikidata logo under a parent the open sets cover
+                              # (aws.amazon.com under amazon.com): kept, listed for review.
+                              "subdomain-override": wikidata["overrides"],
+                              "page_errors": record.get("page_errors") or []}
     (out / "report.json").write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
     print(f"{len(domains)} domains, {len(icons)} icons, {len(pack)} bytes -> {out / name}")
     return 0
