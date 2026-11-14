@@ -499,7 +499,9 @@ struct Org {
     u: TestDevice,
     p: TestDevice,
     m: TestDevice,
-    lineages: [OrgLineage; 3],
+    /// Generations 0, 1, 2, then `lineages[3]`: generation 0 followed by
+    /// an OwnersChanged {M} that drops O.
+    lineages: [OrgLineage; 4],
     chain: Vec<SignedRoster>,
 }
 
@@ -603,6 +605,12 @@ fn org() -> &'static Org {
                 owners: vec![owner_o, member_ref(M, &[&m])],
             },
         );
+        let dropped = change(
+            &l0,
+            OrgChangeKind::OwnersChanged {
+                owners: vec![member_ref(M, &[&m])],
+            },
+        );
 
         let sign =
             |body: RosterBody, d: &TestDevice| sign_roster(body, &d.public, &d.keys).unwrap();
@@ -637,7 +645,7 @@ fn org() -> &'static Org {
             u,
             p,
             m,
-            lineages: [l0, l1, l2],
+            lineages: [l0, l1, l2, dropped],
             chain,
         }
     })
@@ -750,7 +758,7 @@ fn founding_roster_signed_by_owner_accepted() {
         "founding roster by O"
     );
     // The whole fixture chain from seq 1, under every lineage generation.
-    for l in &org.lineages {
+    for l in &org.lineages[..3] {
         assert_eq!(&accept_first_roster(l, &org.chain).unwrap(), r(7));
     }
     // founding_roster follows the lineage head: owners {O, M} at gen 2.
@@ -1001,8 +1009,9 @@ fn signer_key_from_pinned_roster() {
     // A listed signer with a signature by other keys.
     let mut rec = sign_roster(base().next().unwrap(), &org.u.public, &org.u.keys).unwrap();
     rec.signer = org.a.public.clone();
-    assert!(
-        accept_next_roster(l0(), base(), &rec).is_err(),
+    assert_eq!(
+        integrity_err(accept_next_roster(l0(), base(), &rec)),
+        IntegrityError::Signature,
         "bad signature"
     );
 }
@@ -1277,4 +1286,134 @@ fn first_pin_from_owner_signed_roster() {
     let n = edit(r(5), |b| add_role(b, M, Role::Owner));
     let rec = sign_roster(n, &org.o.public, &org.o.keys).unwrap();
     denied(accept_first_roster(l0(), &[rec]), "mirror broken");
+}
+
+// Fix round 1 (rulings R7a, R7b, R7c).
+
+/// A new device's fingerprint as `a`'s only device.
+fn replace_devices(b: &mut RosterBody, a: u8, tag: u8) {
+    entry(b, a).devices = vec![device(tag).public.fingerprint()];
+}
+
+#[test]
+fn user_manager_cannot_take_over_member_with_higher_roles() {
+    let n = edit(base(), |b| {
+        add_role(b, M, Role::Auditor);
+        add_role(b, M, Role::PolicyManager);
+    });
+    let pinned = accept(base(), n, A).unwrap();
+    let n = edit(&pinned, |b| replace_devices(b, M, 0x63));
+    denied(accept(&pinned, n, U), "U rewrites devices of an Auditor");
+    let n = edit(&pinned, |b| {
+        entry(b, M).devices.push([0xFF; 32]);
+    });
+    denied(accept(&pinned, n, U), "U adds a device to an Auditor");
+    let n = edit(&pinned, |b| replace_devices(b, M, 0x63));
+    assert!(accept(&pinned, n, A).is_ok(), "A may");
+
+    let n = edit(base(), |b| add_role(b, M, Role::UserManager));
+    let pinned = accept(base(), n, A).unwrap();
+    let n = edit(&pinned, |b| replace_devices(b, M, 0x63));
+    assert!(
+        accept(&pinned, n, U).is_ok(),
+        "U rewrites a UserManager's devices"
+    );
+    let n = edit(base(), |b| replace_devices(b, M, 0x63));
+    assert!(
+        accept(base(), n, U).is_ok(),
+        "U rewrites a plain member's devices"
+    );
+}
+
+#[test]
+fn user_manager_cannot_activate_invite_it_could_not_grant() {
+    let n = edit(base(), |b| {
+        upsert(b, invite(X, RoleSet::of(&[Role::Auditor])))
+    });
+    let pinned = accept(base(), n, A).unwrap();
+    let x = device(0x64);
+    let n = edit(&pinned, |b| activate(entry(b, X), &member_ref(X, &[&x])));
+    denied(accept(&pinned, n.clone(), U), "U activates an Auditor");
+    assert!(accept(&pinned, n, A).is_ok(), "A activates X");
+    // r6's X holds UserManager: U may activate it.
+    let n = edit(r(6), |b| activate(entry(b, X), &member_ref(X, &[&x])));
+    assert!(accept(r(6), n, U).is_ok(), "U activates a UserManager");
+}
+
+#[test]
+fn member_keys_frozen_once_active() {
+    let n = edit(base(), |b| entry(b, M).account_kem_hash = [1; 32]);
+    denied(accept(base(), n.clone(), A), "A swaps M's KEM hash");
+    denied(accept(base(), n, O), "O swaps M's KEM hash");
+    let n = edit(base(), |b| {
+        entry(b, M).account_identity_pub = Some(identity_pool(0).1.clone())
+    });
+    assert_ne!(
+        base().member(acct(M)).unwrap().account_identity_pub,
+        n.member(acct(M)).unwrap().account_identity_pub
+    );
+    denied(accept(base(), n, A), "A swaps M's identity");
+    // Invited -> Removed cannot set keys either.
+    let n = edit(r(6), |b| {
+        removed_by(b, X, A);
+        entry(b, X).account_kem_hash = [1; 32];
+    });
+    denied(accept(r(6), n, A), "keys on Invited -> Removed");
+}
+
+#[test]
+fn removed_owner_loses_owner_authority() {
+    let org = org();
+    let dropped = &org.lineages[3];
+    assert!(
+        !dropped
+            .head()
+            .owners
+            .iter()
+            .any(|r| r.account_id == acct(O))
+    );
+    let n = edit(base(), |b| upsert(b, invite(X, RoleSet::EMPTY)));
+    assert!(
+        accept(base(), n.clone(), O).is_ok(),
+        "O invites under gen 0"
+    );
+    denied(
+        accept_in(dropped, base(), n, O),
+        "dropped O invites at gen 0",
+    );
+    let n = edit(base(), |b| add_role(b, A, Role::Auditor));
+    denied(
+        accept_in(dropped, base(), n, O),
+        "dropped O grants at gen 0",
+    );
+    // Other managers keep their roles.
+    let n = edit(base(), |b| upsert(b, invite(X, RoleSet::EMPTY)));
+    assert!(accept_in(dropped, base(), n, A).is_ok(), "A still invites");
+    denied(
+        accept_first_roster(dropped, &org.chain[4..7]),
+        "first pin from O's r5",
+    );
+    denied(
+        accept_first_roster(dropped, &org.chain[..1]),
+        "founding by O",
+    );
+}
+
+#[test]
+fn owner_devices_mirror_lineage() {
+    let org = org();
+    let l2 = &org.lineages[2];
+    let promoted = edit(base(), |b| {
+        b.org_head = l2.head().hash;
+        add_role(b, M, Role::Owner);
+    });
+    let pinned = accept_in(l2, base(), promoted, O).unwrap();
+    let n = edit(&pinned, |b| {
+        let e = entry(b, M);
+        e.devices.push(device(0x65).public.fingerprint());
+        e.devices.sort_unstable();
+    });
+    denied(accept_in(l2, &pinned, n, O), "O adds a device to owner M");
+    let n = edit(&pinned, |b| replace_devices(b, M, 0x65));
+    denied(accept_in(l2, &pinned, n, O), "O replaces owner M's devices");
 }

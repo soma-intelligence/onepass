@@ -95,7 +95,8 @@ pub fn founding_roster(lineage: &OrgLineage) -> Result<RosterBody> {
 }
 
 /// Owner mirror: the members holding `Owner` are exactly the `owners`
-/// accounts, each Active with the reference's identity and KEM hash.
+/// accounts, each Active with the reference's identity, KEM hash and
+/// devices (R7c: owner devices change only through the lineage).
 fn check_owner_mirror(body: &RosterBody, owners: &[MemberRef]) -> Result<()> {
     for m in &body.members {
         if m.roles.contains(Role::Owner) && !owners.iter().any(|r| r.account_id == m.account_id) {
@@ -108,6 +109,7 @@ fn check_owner_mirror(body: &RosterBody, owners: &[MemberRef]) -> Result<()> {
             || m.state != MemberState::Active
             || m.account_identity_pub.as_ref() != Some(&r.account_identity_pub)
             || m.account_kem_hash != member_kem_hash(&r.account_kem_pub)
+            || m.devices != r.devices
         {
             return Err(denied());
         }
@@ -125,6 +127,10 @@ fn transition_allowed(p: &MemberState, e: &MemberState) -> bool {
         (Suspended, Suspended | Active | Removed { .. }) => true,
         _ => false,
     }
+}
+
+fn is_head_owner(lineage: &OrgLineage, a: Id) -> bool {
+    lineage.head().owners.iter().any(|r| r.account_id == a)
 }
 
 /// The signer as the previous roster lists it.
@@ -250,6 +256,24 @@ fn check_entry(
             }
         }
         Some(p) => {
+            // R7a: taking over an account (its devices, or its activation)
+            // needs the right to grant every role it holds.
+            let activation = p.state == MemberState::Invited && e.state == MemberState::Active;
+            if (e.devices != p.devices || activation)
+                && !p_roles
+                    .union(e.roles)
+                    .without(Role::Owner)
+                    .is_subset(grantable(s.roles))
+            {
+                return Err(denied());
+            }
+            // R7a: identity and KEM hash are set once, on Invited -> Active.
+            if (e.account_identity_pub != p.account_identity_pub
+                || e.account_kem_hash != p.account_kem_hash)
+                && !activation
+            {
+                return Err(denied());
+            }
             if touches_owner && !s.roles.contains(Role::Owner) {
                 // An Admin only mirrors the Owner bit.
                 let owner_bit = p.roles.intersection(RoleSet::of(&[Role::Owner]));
@@ -295,7 +319,12 @@ pub fn check_transition(
     if prev.org_id != lineage.org_id || next.org_id != lineage.org_id {
         return Err(IntegrityError::WrongContext.into());
     }
-    let s = signer_in(prev, &signer.fingerprint())?;
+    let mut s = signer_in(prev, &signer.fingerprint())?;
+    // R7b: Owner authority only for an owner of the newest verified
+    // generation, whatever org head the rosters still name.
+    if !is_head_owner(lineage, s.account) {
+        s.roles = s.roles.without(Role::Owner);
+    }
     let head = lineage.find(&next.org_head).ok_or(Error::NotFound)?;
     let prev_head = lineage.find(&prev.org_head).ok_or(Error::NotFound)?;
     if head.generation < prev_head.generation {
@@ -361,6 +390,8 @@ pub fn accept_next_roster(
     if body.prev_hash != pinned.hash() {
         return Err(IntegrityError::OrgRosterFork.into());
     }
+    // Before the signature check (an unlisted key costs no verification);
+    // `check_transition` looks it up again as a standalone entry point.
     signer_in(pinned, &next.signer.fingerprint())?;
     verify_roster_sig(next)?;
     check_transition(lineage, pinned, body, &next.signer)?;
@@ -388,7 +419,8 @@ pub fn accept_roster_chain(
 /// The first pin (D12): `chain[0]` is the founding roster of its lineage
 /// generation signed by one of that generation's owners, or any later
 /// roster signed by a device of an owner of its `org_head` generation who
-/// is Active with `Owner` in it (the owner mirror holds); the rest goes
+/// is Active with `Owner` in it (the owner mirror holds) and who is still
+/// an owner of `lineage.head()` (R7b); the rest goes
 /// through `accept_roster_chain`. An empty chain is `NotFound`.
 pub fn accept_first_roster(lineage: &OrgLineage, chain: &[SignedRoster]) -> Result<RosterBody> {
     let (first, rest) = chain.split_first().ok_or(Error::NotFound)?;
@@ -404,6 +436,9 @@ pub fn accept_first_roster(lineage: &OrgLineage, chain: &[SignedRoster]) -> Resu
         .iter()
         .find(|r| r.devices.contains(&fpr))
         .ok_or_else(denied)?;
+    if !is_head_owner(lineage, owner.account_id) {
+        return Err(denied());
+    }
     let m = find(body, owner.account_id).ok_or_else(denied)?;
     if m.state != MemberState::Active || !m.roles.contains(Role::Owner) || !m.devices.contains(&fpr)
     {
