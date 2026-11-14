@@ -632,7 +632,13 @@ fn fill_card_and_identity_values() {
     // Its e-mail address, for an email-only sign-up step; a login has none.
     assert_eq!(ok(&v)["items"][0]["email"], "alex@atlas.dev");
     let v = h.call(json!({"op":"list_for_origin","ctx":"menu","origin":ATLAS}));
-    assert!(ok(&v)["items"].as_array().unwrap().iter().all(|i| i.get("email").is_none()));
+    assert!(
+        ok(&v)["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i.get("email").is_none())
+    );
 }
 
 fn smart(h: &mut H, recipe: Value, origin: Option<&str>) -> Value {
