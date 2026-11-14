@@ -61,6 +61,22 @@ paired("menu_fill_login", async ({ ext }) => {
   expect(marker).toBeUndefined();
 });
 
+paired("email_first_signup_and_sign_in_steps_get_the_menu", async ({ ext }) => {
+  const { page } = ext;
+  // Sign-up screen: one email field and "Continue" (Dribbble's markup), no password anywhere.
+  await page.goto(`${ATLAS}/join`);
+  const menu = await ext.openMenu(page, "#signup-email");
+  await expect(menu.locator(".menu-head")).toContainText("atlas-cloud.test");
+  await expect(menu.locator("button.row .t1", { hasText: /^Atlas Cloud$/ })).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  // Its sign-in screen on the same URL, shown by "Sign in": Remplir puts the email and continues.
+  await page.locator("#to-signin").click();
+  const signin = await ext.openMenu(page, "#signin-login");
+  await ext.pickRow(signin, "Atlas Cloud");
+  await expect(page.locator("#status")).toHaveText("Code envoyé", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
+});
+
 paired("save_new_login_then_fill", async ({ ext }) => {
   const { page } = ext;
   await page.goto(`${ATLAS}/login`);

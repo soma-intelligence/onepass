@@ -311,6 +311,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           }),
         );
       }
+      if (path === "/join") return send(page("Atlas Cloud", "atlas/email-first.html", { action: path }));
       const brand = host === "sso.evil.test" ? "Connexion unique" : "Atlas Cloud";
       return send(page("Connexion", "atlas/login.html", { brand, error: "", action: path }));
     }
@@ -466,6 +467,11 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           state.users.set(email, body.password);
           return signedIn(email);
         }
+        case "/join":
+          // Email-first, passwordless (the code would be sent by e-mail): the page title and URL
+          // say nothing of signing in or up, only the form's own "Sign in" / "Sign up" switch.
+          if (!post) return send(page("Atlas Cloud", "atlas/email-first.html", { action: path }));
+          return send(page("Atlas Cloud", "atlas/status.html", { brand, status: "Code envoyé", detail: body.email ?? "" }));
         case "/signup-passkey": {
           // One-click signup: a form that can also make a passkey (its own button).
           const challenge = randomBytes(32).toString("base64url");

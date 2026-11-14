@@ -304,6 +304,18 @@ for (const lookalike of ["https://atlass-cloud.test", "https://atlas-cloud.test.
   });
 }
 
+paired("S4_lookalike_email_first_page_gets_nothing", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto("https://atlas-cloud.test.evil.test/join");
+  const menu = await ext.openMenu(page, "#signup-email");
+  await expect(menu.getByText("Aucun login pour atlas-cloud.test.evil.test")).toBeVisible();
+  await expect(menu.locator(".t2")).toHaveCount(0);
+  await ext.settle(1500);
+  expect(ext.findExtFrame(page, "overlay")).toBeUndefined();
+  await emptyFields(page, "#signup-email");
+  expect(ext.server.captured).toEqual([]);
+});
+
 paired("S6_no_fill_in_cross_site_iframe", async ({ ext }) => {
   const { page } = ext;
   await page.goto("https://evil.test/frame");
