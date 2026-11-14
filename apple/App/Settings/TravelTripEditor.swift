@@ -35,16 +35,16 @@ struct TravelTripEditor: View {
             } footer: {
                 Text("trip.auto.footer")
             }
-            if let errorMessage {
+            if let shownError {
                 Section {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    Label(shownError, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .accessibilityIdentifier("trip.error")
                 }
             }
             Section {
                 Button("trip.save") { save() }
-                    .disabled(end <= start)
+                    .disabled(endsBeforeStart)
                     .accessibilityIdentifier("trip.save")
             }
         }
@@ -53,12 +53,25 @@ struct TravelTripEditor: View {
         .onChange(of: end) { _, _ in errorMessage = nil }
     }
 
+    /// The return is a day, not a moment: it counts until the end of that day (so a same-day return
+    /// is valid and the trip window does not close at the departure hour).
+    static func endOfDay(_ day: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(bySettingHour: 23, minute: 59, second: 59, of: day) ?? day
+    }
+
+    private var endsBeforeStart: Bool { Self.endOfDay(end) <= start }
+
+    /// A return day before the departure is said, never left silent.
+    private var shownError: String? {
+        endsBeforeStart ? String(localized: "trip.error.endBeforeStart") : errorMessage
+    }
+
     private func save() {
         // An edit keeps the trip's identity; a new start date earns a new automatic attempt.
-        var trip = existing ?? TravelTrip(start: start, end: end)
+        var trip = existing ?? TravelTrip(start: start, end: Self.endOfDay(end))
         let startMoved = existing.map { $0.start != start } ?? false
         trip.start = start
-        trip.end = end
+        trip.end = Self.endOfDay(end)
         trip.autoEnter = autoEnter
         if startMoved { trip.autoTried = false }
         do {

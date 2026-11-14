@@ -157,7 +157,7 @@ struct TravelSettings: View {
                 }
                 .accessibilityIdentifier("settings.travel.trip.\(trip.id.uuidString)")
                 .contextMenu {
-                    Button("Supprimer", role: .destructive) { model.travel.deleteTrip(id: trip.id) }
+                    Button("common.delete", role: .destructive) { model.travel.deleteTrip(id: trip.id) }
                 }
             }
             .onDelete { offsets in
