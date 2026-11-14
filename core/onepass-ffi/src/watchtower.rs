@@ -173,9 +173,13 @@ fn pwned_to_ffi(status: &PwnedStatus) -> FfiPwnedStatus {
 }
 
 /// Runs the analysis on items already copied out of the session.
-pub(crate) fn report(items: &[Item], options: &FfiWatchtowerOptions) -> FfiWatchtowerReport {
-    let today = OffsetDateTime::now_utc().date();
-    let mut opts = Options::new(today);
+pub(crate) fn report(
+    items: &[Item],
+    options: &FfiWatchtowerOptions,
+    key_use_since: Option<OffsetDateTime>,
+) -> FfiWatchtowerReport {
+    let now = OffsetDateTime::now_utc();
+    let mut opts = Options::new(now.date()).with_key_use(now, key_use_since);
     opts.expiry_warning_days = options.expiry_warning_days;
     opts.old_password_days = options.old_password_days;
     let directory = sites(options);
@@ -248,7 +252,7 @@ impl Session {
             .map(|id| parse_id(id))
             .collect::<Result<BTreeSet<Id>, _>>()?;
         // Copied under the lock, analyzed outside of it.
-        let items = self.with(|repo| {
+        let (items, key_use_since) = self.with(|repo| {
             let mut out = Vec::new();
             for vault in repo.vaults()? {
                 if excluded.contains(&vault.id) {
@@ -256,9 +260,12 @@ impl Session {
                 }
                 out.extend(repo.items(&vault)?);
             }
-            Ok(out)
+            // A failed read means the warm-up is not established: no key is
+            // reported dormant.
+            let since = repo.key_use_since().ok().flatten();
+            Ok((out, since))
         })?;
-        Ok(report(&items, &options))
+        Ok(report(&items, &options, key_use_since))
     }
 }
 
@@ -291,5 +298,31 @@ mod tests {
         };
         let dir = sites(&options).unwrap();
         assert!(dir.lookup("exemple.fr").unwrap().totp);
+    }
+
+    #[test]
+    fn dormant_check_is_listed_and_waits_for_the_warm_up() {
+        use onepass_core::model::{ItemType, new_item};
+        let mut key = new_item(ItemType::ApiCredential, Id([1; 16]), "Key");
+        key.created_at = OffsetDateTime::now_utc() - time::Duration::days(200);
+        let options = FfiWatchtowerOptions {
+            expiry_warning_days: 30,
+            old_password_days: 365,
+            ranges: None,
+            twofa_directory: None,
+            passkeys_directory: None,
+            excluded_vault_ids: vec![],
+            breach_catalog: None,
+        };
+        let count = |since| {
+            let r = report(std::slice::from_ref(&key), &options, since);
+            r.checks
+                .iter()
+                .find(|c| c.check == "dormant")
+                .map(|c| c.findings)
+        };
+        assert_eq!(count(None), Some(0));
+        let old = OffsetDateTime::now_utc() - time::Duration::days(100);
+        assert_eq!(count(Some(old)), Some(1));
     }
 }

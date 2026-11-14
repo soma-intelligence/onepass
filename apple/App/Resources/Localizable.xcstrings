@@ -59801,6 +59801,64 @@
           }
         }
       }
+    },
+    "browse.dormantKeys" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dormant keys"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claves inactivas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clés inutilisées"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiavi inutilizzate"
+          }
+        }
+      }
+    },
+    "browse.keysUnusedOver90" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API and SSH keys unused for over 90 days. Revoke them with the provider, then archive the item."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claves API y SSH sin usar desde hace más de 90 días. Revócalas con el proveedor y archiva el elemento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clés API et SSH inutilisées depuis plus de 90 jours. Révoque-les chez le fournisseur puis archive l'élément."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiavi API e SSH inutilizzate da più di 90 giorni. Revocale presso il fornitore, poi archivia l'elemento."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

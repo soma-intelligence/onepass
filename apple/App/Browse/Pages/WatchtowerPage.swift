@@ -410,6 +410,11 @@ struct WatchtowerCard: Identifiable {
             title: String(localized: "browse.pendingPassword"),
             message: String(localized: "browse.generatedPasswordNeverConfirmed"),
             symbol: "hourglass", color: .gray, source: .local),
+        WatchtowerCard(
+            id: "dormant", checks: ["dormant"],
+            title: String(localized: "browse.dormantKeys"),
+            message: String(localized: "browse.keysUnusedOver90"),
+            symbol: "key.fill", color: .gray, source: .local),
     ]
 }
 

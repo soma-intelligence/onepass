@@ -230,7 +230,7 @@ pub fn run(ctx: &Ctx, a: WatchtowerArgs) -> Result<(), CliError> {
     let catalogs = load_catalogs(&a, runner.as_deref_mut())?;
 
     // Items are read under the lock; the range lookups run after it.
-    let (items, names) = with_session(ctx, |repo| {
+    let (items, names, key_use_since) = with_session(ctx, |repo| {
         let vaults = all(repo)?;
         let chosen: Vec<usize> = match a.vault.as_deref() {
             Some(v) => vec![find_vault(&vaults, v)?],
@@ -243,10 +243,14 @@ pub fn run(ctx: &Ctx, a: WatchtowerArgs) -> Result<(), CliError> {
             names.insert(v.id, v.meta.name.clone());
             items.extend(stored(repo.items(v))?);
         }
-        Ok((items, names))
+        // A failed read means the warm-up is not established: no key is
+        // reported dormant.
+        let since = repo.key_use_since().ok().flatten();
+        Ok((items, names, since))
     })?;
 
-    let opts = Options::new(OffsetDateTime::now_utc().date());
+    let now = OffsetDateTime::now_utc();
+    let opts = Options::new(now.date()).with_key_use(now, key_use_since);
     let mut dir_source;
     let mut curl_source;
     let pwned: Option<&mut dyn RangeSource> = match (&a.hibp_dir, runner.as_deref_mut()) {

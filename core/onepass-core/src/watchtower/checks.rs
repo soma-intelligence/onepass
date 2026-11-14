@@ -6,7 +6,7 @@ use std::collections::hash_map::Entry;
 
 use data_encoding::BASE64;
 use serde::{Serialize, Serializer};
-use time::{Date, Month, UtcOffset};
+use time::{Date, Duration, Month, UtcOffset};
 
 use crate::id::Id;
 use crate::model::{FieldValue, Item, ItemType};
@@ -36,10 +36,11 @@ pub enum Check {
     Duplicate,
     WalletNoBackup,
     PendingUnused,
+    Dormant,
 }
 
 impl Check {
-    pub const ALL: [Check; 16] = [
+    pub const ALL: [Check; 17] = [
         Check::Compromised,
         Check::Reused,
         Check::Weak,
@@ -56,6 +57,7 @@ impl Check {
         Check::Duplicate,
         Check::WalletNoBackup,
         Check::PendingUnused,
+        Check::Dormant,
     ];
 
     pub fn id(self) -> &'static str {
@@ -76,6 +78,7 @@ impl Check {
             Check::Duplicate => "duplicate",
             Check::WalletNoBackup => "wallet_no_backup",
             Check::PendingUnused => "pending_unused",
+            Check::Dormant => "dormant",
         }
     }
 
@@ -89,7 +92,8 @@ impl Check {
             Check::Missing2fa
             | Check::OldPassword
             | Check::WalletNoBackup
-            | Check::PendingUnused => Severity::Low,
+            | Check::PendingUnused
+            | Check::Dormant => Severity::Low,
             Check::PasskeyAvailable | Check::Duplicate => Severity::Info,
         }
     }
@@ -237,6 +241,9 @@ const MIN_STRONG_SCORE: u8 = 3;
 /// A pending item older than this many days is flagged.
 const PENDING_UNUSED_DAYS: i64 = 30;
 
+/// A key unused for strictly more than this many days is dormant.
+const DORMANT_DAYS: i64 = 90;
+
 const MIN_RSA_BITS: u32 = 3072;
 /// DSA keys are fixed at 1024 bits in OpenSSH.
 const DSA_BITS: u32 = 1024;
@@ -257,6 +264,7 @@ pub(crate) fn local_findings(items: &[&Item], opts: &Options) -> Vec<Finding> {
         old_password(item, opts, &mut out);
         wallet_no_backup(item, &mut out);
         pending_unused(item, opts, &mut out);
+        dormant(item, opts, &mut out);
     }
     out
 }
@@ -614,6 +622,29 @@ fn pending_unused(item: &Item, opts: &Options, out: &mut Vec<Finding>) {
     }
 }
 
+/// API and SSH keys nobody used for more than `DORMANT_DAYS` days, created
+/// at least that long ago, once the account has logged key uses for that
+/// long (`Options::key_use_since`). Without a warm-up start nothing is
+/// flagged, so a fresh log does not mark every key. Reported only.
+fn dormant(item: &Item, opts: &Options, out: &mut Vec<Finding>) {
+    if !matches!(item.item_type, ItemType::ApiCredential | ItemType::SshKey) {
+        return;
+    }
+    let limit = Duration::days(DORMANT_DAYS);
+    let Some(since) = opts.key_use_since else {
+        return;
+    };
+    if opts.now - since <= limit || opts.now - item.created_at <= limit {
+        return;
+    }
+    let last = item.key_uses.entries.iter().map(|e| e.last_at).max();
+    let idle = opts.now - last.unwrap_or(item.created_at);
+    if idle > limit {
+        let days = u32::try_from(idle.whole_days()).unwrap_or(u32::MAX);
+        push(out, item, Check::Dormant, None, Detail::Age { days });
+    }
+}
+
 /// Crypto wallet without a physical backup location.
 fn wallet_no_backup(item: &Item, out: &mut Vec<Finding>) {
     if item.item_type != ItemType::CryptoWallet {
@@ -700,12 +731,137 @@ mod tests {
         }
     }
 
+    const NOW: time::OffsetDateTime = datetime!(2026-10-15 12:00 UTC);
+
+    fn days_ago(days: i64) -> time::OffsetDateTime {
+        NOW - Duration::days(days)
+    }
+
+    /// A key item created `created` days ago, last used `used` days ago
+    /// (`None`: never).
+    fn key(t: ItemType, created: i64, used: Option<i64>) -> Item {
+        use crate::model::{KeyUse, KeyUseAction, KeyUseChannel};
+        let mut i = item(t, "Key");
+        i.created_at = days_ago(created);
+        i.updated_at = i.created_at;
+        if let Some(d) = used {
+            i.key_uses.entries.push(KeyUse {
+                channel: KeyUseChannel::Cli,
+                action: KeyUseAction::Revealed,
+                device_id: Id([1; 16]),
+                device_name: "Mac".into(),
+                client: String::new(),
+                field: String::new(),
+                first_at: days_ago(d + 5),
+                last_at: days_ago(d),
+                count: 1,
+            });
+        }
+        i
+    }
+
+    fn dormant_of(items: &[Item], since: Option<time::OffsetDateTime>) -> Vec<Finding> {
+        let opts = Options::new(TODAY).with_key_use(NOW, since);
+        analyze(items, &opts, Sources::none())
+            .findings
+            .into_iter()
+            .filter(|f| f.check == Check::Dormant)
+            .collect()
+    }
+
+    #[test]
+    fn api_key_unused_91_days_is_dormant() {
+        let i = key(ItemType::ApiCredential, 200, Some(91));
+        let f = dormant_of(std::slice::from_ref(&i), Some(days_ago(100)));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].item_id, i.id);
+        assert_eq!(f[0].severity, Severity::Low);
+        assert_eq!(f[0].detail, Detail::Age { days: 91 });
+        let ssh = key(ItemType::SshKey, 200, Some(91));
+        assert_eq!(dormant_of(&[ssh], Some(days_ago(100))).len(), 1);
+    }
+
+    #[test]
+    fn last_use_is_the_latest_of_all_entries() {
+        let mut i = key(ItemType::ApiCredential, 200, Some(120));
+        let mut recent = key(ItemType::ApiCredential, 200, Some(10));
+        i.key_uses.entries.append(&mut recent.key_uses.entries);
+        assert!(dormant_of(&[i], Some(days_ago(150))).is_empty());
+    }
+
+    #[test]
+    fn never_used_old_key_is_dormant() {
+        let i = key(ItemType::SshKey, 200, None);
+        let f = dormant_of(&[i], Some(days_ago(100)));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].detail, Detail::Age { days: 200 });
+    }
+
+    #[test]
+    fn young_key_is_not_dormant() {
+        let i = key(ItemType::ApiCredential, 60, None);
+        assert!(dormant_of(&[i], Some(days_ago(100))).is_empty());
+    }
+
+    #[test]
+    fn used_89_days_ago_is_not() {
+        let i = key(ItemType::ApiCredential, 200, Some(89));
+        assert!(dormant_of(&[i], Some(days_ago(100))).is_empty());
+        // Exactly 90 days is not "more than 90".
+        let edge = key(ItemType::ApiCredential, 200, Some(90));
+        assert!(dormant_of(&[edge], Some(days_ago(100))).is_empty());
+    }
+
+    #[test]
+    fn warm_up_blocks_dormant() {
+        let i = key(ItemType::ApiCredential, 200, Some(91));
+        assert!(dormant_of(std::slice::from_ref(&i), Some(days_ago(30))).is_empty());
+        assert!(dormant_of(std::slice::from_ref(&i), Some(days_ago(90))).is_empty());
+        // No warm-up start (none recorded, or the read failed): nothing flagged.
+        assert!(dormant_of(&[i], None).is_empty());
+    }
+
+    #[test]
+    fn login_item_is_never_dormant() {
+        let i = key(ItemType::Login, 200, None);
+        assert!(dormant_of(&[i], Some(days_ago(100))).is_empty());
+    }
+
+    #[test]
+    fn archived_and_trashed_keys_are_not_dormant() {
+        let mut archived = key(ItemType::ApiCredential, 200, None);
+        archived.archived = true;
+        let mut trashed = key(ItemType::SshKey, 200, None);
+        trashed.trashed_at = Some(days_ago(1));
+        assert!(dormant_of(&[archived, trashed], Some(days_ago(100))).is_empty());
+    }
+
+    #[test]
+    fn dormant_is_excludable() {
+        let mut i = key(ItemType::ApiCredential, 200, None);
+        i.watchtower_exclusions = vec!["dormant".into()];
+        assert!(dormant_of(&[i], Some(days_ago(100))).is_empty());
+    }
+
+    #[test]
+    fn dormant_wire_index_is_pinned() {
+        // Reports and exclusions go by id, FFI consumers by position in ALL:
+        // only append.
+        assert_eq!(Check::ALL[16], Check::Dormant);
+        assert_eq!(Check::Dormant.id(), "dormant");
+        assert_eq!(Check::Dormant as u8, 16);
+        assert_eq!(
+            serde_json::to_string(&Check::Dormant).unwrap(),
+            "\"dormant\""
+        );
+    }
+
     #[test]
     fn severities_match_spec() {
         use Severity::*;
         let expected = [
             Critical, High, High, Critical, High, Medium, Medium, Medium, High, Medium, Low, Info,
-            Low, Info, Low,
+            Low, Info, Low, Low, Low,
         ];
         for (c, s) in Check::ALL.into_iter().zip(expected) {
             assert_eq!(c.severity(), s, "{}", c.id());
@@ -1053,6 +1209,7 @@ mod tests {
             today: D::MAX,
             expiry_warning_days: u16::MAX,
             old_password_days: 0,
+            ..Options::new(D::MAX)
         };
         let items = [future, history, ancient.clone(), far, card];
         let r = analyze(&items, &opts, Sources::none());
