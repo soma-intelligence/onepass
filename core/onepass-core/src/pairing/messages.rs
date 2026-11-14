@@ -588,6 +588,7 @@ mod tests {
                 identity_pub: identity.verifying_key(),
                 creator: entry.clone(),
                 created_at: 1,
+                org: None,
             },
             &keys,
             &identity,

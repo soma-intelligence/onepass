@@ -154,6 +154,7 @@ fn build() -> World {
             identity_pub: hv.clone(),
             creator: entry(p(A)),
             created_at: T0 - 1_000,
+            org: None,
         },
         device_sig: dummy_hybrid(),
         identity_sig: dummy_identity_sig(),

@@ -202,6 +202,7 @@ impl Acct {
                     identity_pub: identity_pub.clone(),
                     creator: entry_of(&me),
                     created_at: NOW - 100,
+                    org: None,
                 },
                 &keys,
                 &account.keyset().identity,

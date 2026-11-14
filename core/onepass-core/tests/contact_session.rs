@@ -62,6 +62,7 @@ fn person(name: &str) -> Person {
                 identity_pub: identity_pub.clone(),
                 creator: entry_of(&me, "iPhone"),
                 created_at: T0,
+                org: None,
             },
             &keys,
             &account.keyset().identity,

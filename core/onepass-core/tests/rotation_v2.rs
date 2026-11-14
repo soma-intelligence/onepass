@@ -110,6 +110,7 @@ fn fixture_on(server: &mut Server) -> (Device, Fixture) {
                 identity_pub: identity_pub.clone(),
                 creator: me.entry("iPhone"),
                 created_at: T0,
+                org: None,
             },
             &me.keys,
             &account.keyset().identity,

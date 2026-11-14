@@ -57,7 +57,8 @@ use zeroize::Zeroizing;
 use crate::crypto::{Aad, BlobKind, KdfParams, SecretKey, seal};
 use crate::epoch::{EpochReason, RestoreEpoch, SignedRestoreEpoch};
 use crate::lineage::{
-    GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, identity_id, sign_genesis,
+    GENESIS_FORMAT_MANAGED, GenesisBody, LINEAGE_FORMAT, LineageRecord, RosterEntry, identity_id,
+    sign_genesis,
 };
 use crate::manifest::{
     Manifest, ManifestEntry, SeenManifest, SignedManifest, check_records, manifest_hash,
@@ -66,6 +67,7 @@ use crate::manifest::{
 use crate::model::Item;
 use crate::model::events::EventKind;
 use crate::model::usage::SiteUsage;
+use crate::org::OrgId;
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent, account_record_id};
 use crate::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
@@ -482,6 +484,7 @@ fn genesis_trust(
     account: &Account,
     keys: &DeviceKeys,
     entry: &DeviceEntry,
+    org: Option<OrgId>,
     writes: &mut Vec<(Record, Option<u64>)>,
 ) -> Result<TrustState> {
     let me = keys.public(entry.device_id)?;
@@ -494,12 +497,19 @@ fn genesis_trust(
         mode: entry.mode,
         introduced_by: None,
     };
+    // A personal account's genesis stays format 1 without org, byte for
+    // byte; a managed account's is format 2 and names its organisation.
     let body = GenesisBody {
-        format: LINEAGE_FORMAT,
+        format: if org.is_some() {
+            GENESIS_FORMAT_MANAGED
+        } else {
+            LINEAGE_FORMAT
+        },
         account_id: account.params.account_id,
         identity_pub: account.params.identity_pub.clone(),
         creator: creator.clone(),
         created_at: entry.added_at,
+        org: org.map(|o| o.0),
     };
     let genesis = LineageRecord::Genesis(sign_genesis(body, keys, &account.keyset().identity)?);
     let head = LineageHead {
@@ -526,6 +536,15 @@ fn genesis_trust(
     trust.levels.insert(entry.device_id, TrustLevel::Verified);
     trust.migration_listed.insert(entry.device_id);
     Ok(trust)
+}
+
+/// What a managed account (OnePass Business) is created with: its
+/// organisation, written in the genesis (format 2), and the account id the
+/// inviter chose and the org roster lists (plan B, D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ManagedGenesis {
+    pub org_id: OrgId,
+    pub account_id: Id,
 }
 
 fn personal() -> VaultMeta {
@@ -561,7 +580,7 @@ impl<S: RecordStore> Repository<S> {
         password: &str,
         kdf: KdfParams,
     ) -> Result<(Repository<S>, SecretKey)> {
-        Self::create_with(store, password, kdf, None)
+        Self::create_with(store, password, kdf, None, None)
     }
 
     /// Key rotation v2 (spec 6.2, 15 step 6): `create_account`, and in the
@@ -581,6 +600,24 @@ impl<S: RecordStore> Repository<S> {
         kind: DeviceKind,
         mode: DeviceMode,
     ) -> Result<(Repository<S>, SecretKey)> {
+        Self::create_account_v2_with_org(store, password, kdf, device_keys, name, kind, mode, None)
+    }
+
+    /// `create_account_v2` when `org` is `None` (the same bytes, a format 1
+    /// genesis); otherwise a managed account (OnePass Business): its
+    /// account id is `org.account_id`, the one the org roster invited, and
+    /// its genesis is format 2 naming `org.org_id`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_account_v2_with_org(
+        store: S,
+        password: &str,
+        kdf: KdfParams,
+        device_keys: &DeviceKeys,
+        name: &str,
+        kind: DeviceKind,
+        mode: DeviceMode,
+        org: Option<ManagedGenesis>,
+    ) -> Result<(Repository<S>, SecretKey)> {
         check_name(name)?;
         check_mode(mode)?;
         if !store.persists_chain() {
@@ -589,7 +626,7 @@ impl<S: RecordStore> Repository<S> {
             ));
         }
         let me = Registration { name, kind, mode };
-        Self::create_with(store, password, kdf, Some((device_keys, &me)))
+        Self::create_with(store, password, kdf, Some((device_keys, &me)), org)
     }
 
     fn create_with(
@@ -597,6 +634,7 @@ impl<S: RecordStore> Repository<S> {
         password: &str,
         kdf: KdfParams,
         v2: Option<(&DeviceKeys, &Registration<'_>)>,
+        managed: Option<ManagedGenesis>,
     ) -> Result<(Repository<S>, SecretKey)> {
         if !store.list(RecordKind::AccountParams)?.is_empty() {
             return Err(Error::InvalidFormat("store already holds an account"));
@@ -606,7 +644,10 @@ impl<S: RecordStore> Repository<S> {
             secret_key,
             params_record,
             keyset_record,
-        } = Account::create_with_params(password, kdf)?;
+        } = match managed {
+            Some(m) => Account::create_with_params_and_id(password, kdf, m.account_id)?,
+            None => Account::create_with_params(password, kdf)?,
+        };
         let id = account.params.account_id;
         // Only a store that keeps the chain state can hold this device's id
         // (see `devices`): elsewhere the device list starts empty.
@@ -674,7 +715,8 @@ impl<S: RecordStore> Repository<S> {
             writes.into_iter().map(|r| (r, None)).collect();
         match (v2, &me) {
             (Some((keys, _)), Some(entry)) => {
-                let trust = genesis_trust(&repo.account, keys, entry, &mut writes)?;
+                let org = managed.map(|m| m.org_id);
+                let trust = genesis_trust(&repo.account, keys, entry, org, &mut writes)?;
                 repo.store
                     .put_first_trust(writes, Some(repo.chain.clone()), &trust)?;
             }
@@ -900,6 +942,27 @@ impl<S: RecordStore> Repository<S> {
     /// The unlocked account keys, to sign and wrap backups.
     pub fn account(&self) -> &Account {
         &self.account
+    }
+
+    /// The organisation of this account's genesis (OnePass Business), read
+    /// from the stored lineage: the genesis at the root of this device's
+    /// trusted head. `None` for a personal account and for a pre-v2 one
+    /// (no trust state); `NotFound` when a record of the chain is missing.
+    pub fn genesis_org(&self) -> Result<Option<OrgId>> {
+        let Some(trust) = self.store.trust_state()? else {
+            return Ok(None);
+        };
+        let account_id = self.account.params.account_id;
+        let records: Vec<LineageRecord> = self
+            .store
+            .list(RecordKind::Lineage)?
+            .iter()
+            .filter_map(|r| LineageRecord::decode(&r.data).ok())
+            .filter(|l| l.account_id() == account_id)
+            .collect();
+        migrate::root_of(&records, trust.head.hash)
+            .map(|(g, _)| g.body.org())
+            .ok_or(Error::NotFound)
     }
 
     /// Every vault of the account, sorted by id. A vault is returned only

@@ -281,6 +281,7 @@ fn revoked_2b_device_legacy_intro_refused() {
                 identity_pub: account.params.identity_pub.clone(),
                 creator: entry_of(&r_pub, "Vieux Mac"),
                 created_at: T0,
+                org: None,
             },
             &kr.0,
             &account.keyset().identity,

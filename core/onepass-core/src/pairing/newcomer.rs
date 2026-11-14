@@ -603,6 +603,7 @@ mod tests {
                 identity_pub: identity.verifying_key(),
                 creator: entry.clone(),
                 created_at: NOW,
+                org: None,
             },
             a,
             &identity,

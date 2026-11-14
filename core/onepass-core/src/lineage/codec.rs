@@ -4,8 +4,8 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use super::{
-    GenesisBody, IntroBody, LINEAGE_FORMAT, LegacyIntroBody, LineageRecord, MAX_ROSTER,
-    RosterEntry, RotationBody, RotationReason, Signed, SignedIntro, SignedLegacyIntro,
+    GENESIS_FORMAT_MANAGED, GenesisBody, IntroBody, LINEAGE_FORMAT, LegacyIntroBody, LineageRecord,
+    MAX_ROSTER, RosterEntry, RotationBody, RotationReason, Signed, SignedIntro, SignedLegacyIntro,
 };
 use crate::crypto::sign::{MLDSA_PUBLIC_LEN, MLDSA_SIG_LEN, SLH_PUBLIC_LEN, SLH_SIG_LEN};
 use crate::crypto::{HybridKemPublic, HybridSignature, IdentitySignature, IdentityVerifyingKey};
@@ -71,9 +71,12 @@ pub(crate) fn check_entry(e: &RosterEntry) -> Result<()> {
     Ok(())
 }
 
+/// Structural rules of a genesis: format 1 without org (personal) or
+/// format 2 with an org (managed), nothing else.
 pub fn check_genesis(b: &GenesisBody) -> Result<()> {
-    if b.format != LINEAGE_FORMAT {
-        return Err(bad("genesis format"));
+    match (b.format, b.org) {
+        (LINEAGE_FORMAT, None) | (GENESIS_FORMAT_MANAGED, Some(_)) => {}
+        _ => return Err(bad("genesis format")),
     }
     check_identity_pub(&b.identity_pub)?;
     check_entry(&b.creator)
