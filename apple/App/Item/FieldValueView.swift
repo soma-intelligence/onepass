@@ -51,7 +51,7 @@ struct FieldValueView: View {
         case .otp(let secret):
             TotpFieldView(field: field, captured: captured) { code in
                 copy(code, concealed: true)
-                noteUse()
+                noteUse(.totp)
             }
                 .id(secret)
                 .privacySensitive()
@@ -121,7 +121,11 @@ struct FieldValueView: View {
         allowsLarge: Bool? = nil, hiddenText: String? = nil, @ViewBuilder accessory: () -> Accessory
     ) -> some View {
         let session = session
-        let onReveal: ((Bool) -> Void)? = secret ? { _ in session.noteActivity() } : nil
+        let onReveal: ((Bool) -> Void)? = secret ? { shown in
+            session.noteActivity()
+            // Unmasked (or shown large): a key use, as a copy is.
+            if shown { noteUse(.revealed) }
+        } : nil
         return ValueRow(
             label: label ?? self.label, value: value, isSecret: secret, monospaced: monospaced,
             copyIdentifier: copyIdentifier ?? "field.copy.\(field.id)",
@@ -130,7 +134,7 @@ struct FieldValueView: View {
             concealToken: session.concealGeneration, captured: captured, hiddenText: hiddenText,
             onCopy: {
                 copy(value, concealed: secret)
-                if field.kind == .password { noteUse() }
+                if secret { noteUse(.copied) }
             },
             onReveal: onReveal,
             accessory: accessory)
@@ -160,9 +164,11 @@ struct FieldValueView: View {
         onCopied(String(localized: "app.copiedClearedIn90"))
     }
 
-    /// A password or one-time code copied, a website opened: the item was used.
-    private func noteUse() {
-        if let itemUseRef { model.noteItemUse(itemUseRef) }
+    /// A secret copied or revealed, a one-time code copied, a website opened: the item was used.
+    /// `action` names the key use of a secret handed out (with the field's stored label); nil for
+    /// the website, which hands out none.
+    private func noteUse(_ action: FfiKeyUseAction?) {
+        if let itemUseRef { model.noteItemUse(itemUseRef, action: action, field: action == nil ? "" : field.label) }
     }
 
     private func urlRow(url: String) -> some View {
@@ -178,7 +184,7 @@ struct FieldValueView: View {
             if let target {
                 Button("item.openInBrowser", systemImage: "arrow.up.forward.app") {
                     openURL(target)
-                    noteUse()
+                    noteUse(nil)
                 }
             }
         }
@@ -722,7 +728,7 @@ struct WebsiteRow: View {
                 if let target = FieldValueView.openable(url.url) {
                     Button {
                         openURL(target)
-                        if let itemUseRef { model.noteItemUse(itemUseRef) }
+                        if let itemUseRef { model.noteItemUse(itemUseRef, action: nil, field: "") }
                     } label: {
                         Text(url.url)
                             .lineLimit(1)

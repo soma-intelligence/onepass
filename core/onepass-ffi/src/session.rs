@@ -13,6 +13,7 @@ use time::{Duration, OffsetDateTime};
 
 use crate::convert::*;
 use crate::error::{OnePassError, invalid};
+use crate::key_use::FfiKeyUseAction;
 use crate::pairing::FfiItemRef;
 use crate::rotation::FfiRemoteCommit;
 use crate::types::*;
@@ -304,18 +305,26 @@ impl Session {
 
     /// Remember a use of the item inside the app (its password or one-time
     /// code copied, its website opened): counted every time, never a
-    /// ranking signal of a fill, the item's `updated_at` unchanged. The
-    /// item's summary after the write, for the "recently used" and
-    /// "frequently used" lists.
+    /// ranking signal of a fill, the item's `updated_at` unchanged. A use
+    /// that hands out a secret passes its `action` and the label of the
+    /// `field` touched, noted in the same write as a key use (channel App,
+    /// client "OnePass"; never the value); `None` for one that hands out
+    /// none (the website opened), `field` then ignored. The item's summary
+    /// after the write, for the "recently used" and "frequently used"
+    /// lists.
     pub fn note_app_use(
         &self,
         vault_id: String,
         item_id: String,
+        action: Option<FfiKeyUseAction>,
+        field: String,
     ) -> Result<FfiItemSummary, OnePassError> {
         let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        let key_use = action.map(|a| (a.into(), field.as_str()));
         self.with(|repo| {
             let vault = find_vault(repo, vault_id)?;
-            let item = repo.record_app_use(&vault, item_id, time::OffsetDateTime::now_utc())?;
+            let item =
+                repo.record_app_use(&vault, item_id, time::OffsetDateTime::now_utc(), key_use)?;
             Ok(summary(&item))
         })
     }

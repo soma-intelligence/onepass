@@ -748,6 +748,7 @@ final class AppModel {
             // An item saved by the AutoFill extension appears even if its store-changed notification
             // was lost (sent while the app was suspended).
             if session.state == .unlocked { Task { await session.reloadAfterExternalChange() } }
+            flushKeyUses()
             if let mailbox {
                 Task { await mailbox.enterForeground() }
             } else if let router {
@@ -1215,6 +1216,7 @@ final class AppModel {
             Task(priority: .utility) { [iconLoader] in await iconLoader.prefetch(urls) }
             resumeMailboxSetup()
             resumeMigration()
+            flushKeyUses()
             #if os(macOS)
             returnToBrowserIfAsked()
             #endif
@@ -1571,15 +1573,30 @@ final class AppModel {
             return
         }
         session.copy(totp.code, concealed: true)
-        noteItemUse(ref)
+        let otpLabel = item.sections.flatMap(\.fields).first { field in
+            if case .otp(let value) = field.value { value == secret } else { false }
+        }?.label ?? ""
+        noteItemUse(ref, action: .totp, field: otpLabel)
         showToast(String(localized: "root.codeCopied"))
     }
 
     /// An in-app use of an item (password or one-time code copied, website opened): it feeds
-    /// Fréquemment utilisés and Récemment utilisés. Viewing an item is not a use.
-    func noteItemUse(_ ref: ItemRef) {
+    /// Fréquemment utilisés and Récemment utilisés. Viewing an item is not a use. A use that hands
+    /// out a secret (copied, revealed, one-time code) passes its `action` and the stored label of
+    /// the `field` touched, for the item's key-use log; nil when none is handed out (website).
+    func noteItemUse(_ ref: ItemRef, action: FfiKeyUseAction?, field: String) {
         let session = session
-        Task { try? await session.noteAppUse(vaultID: ref.vaultID, itemID: ref.itemID) }
+        Task {
+            try? await session.noteAppUse(vaultID: ref.vaultID, itemID: ref.itemID, action: action, field: field)
+        }
+    }
+
+    /// Folds this device's key uses queued an hour ago or more into their items (at unlock and each
+    /// scene foreground). Best effort: an error leaves them queued for the next try.
+    private func flushKeyUses() {
+        let session = session
+        guard session.state == .unlocked else { return }
+        Task { _ = try? await session.flushKeyUseQueue() }
     }
 
     /// Drops every item-bearing navigation state (the new item's draft holds typed values).

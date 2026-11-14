@@ -441,6 +441,23 @@ impl<'a> AppVault<'a> {
         }
     }
 
+    /// The browser of the client served, for its key uses: the one the app
+    /// vouched for by code signature, else the one it named when it paired
+    /// (untrusted, as every client name). Empty before the session opens.
+    fn client_browser(&self) -> String {
+        lock(&self.shared.pairings)
+            .iter()
+            .find(|p| p.pairing_id == self.pairing_id)
+            .map(|p| {
+                if p.verified_browser.is_empty() {
+                    p.browser.clone()
+                } else {
+                    p.verified_browser.clone()
+                }
+            })
+            .unwrap_or_default()
+    }
+
     /// The accounts to read: `locked` unless the primary one is open.
     fn accounts(&self) -> onepass_bridge::Result<Vec<Open>> {
         let open = self.shared.open_accounts();
@@ -784,11 +801,12 @@ impl VaultAccess for AppVault<'_> {
         force: bool,
     ) -> onepass_bridge::Result<bool> {
         let (owner, _) = self.owner(vault_id)?;
+        let client = self.client_browser();
         let written = owner
             .session
             .with(|repo| {
                 let vault = find_vault(repo, vault_id)?;
-                Ok(repo.record_usage(&vault, item_id, u.clone(), now, force)?)
+                Ok(repo.record_usage(&vault, item_id, u.clone(), now, force, &client)?)
             })
             .map_err(bridge_error)?;
         if written {

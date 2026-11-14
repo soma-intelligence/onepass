@@ -1427,16 +1427,48 @@ public final class VaultSession {
 
     /// Remembers a use of the item inside the app (its password or one-time code copied, its
     /// website opened), for Récemment utilisés and Fréquemment utilisés. Opening an item is no use.
-    /// Never ranks an AutoFill choice. Fire and forget: nothing when locked; the item's summary is
-    /// replaced in place (no list reload) and the sync layer told.
-    public func noteAppUse(vaultID: String, itemID: String) async throws {
+    /// Never ranks an AutoFill choice. A use that hands out a secret passes its `action` and the
+    /// stored label of the `field` touched: the same write notes it in the item's key-use log
+    /// (never the value); nil for one that hands out none (its website opened). Fire and forget:
+    /// nothing when locked; the item's summary is replaced in place (no list reload) and the sync
+    /// layer told.
+    public func noteAppUse(
+        vaultID: String, itemID: String, action: FfiKeyUseAction? = nil, field: String = ""
+    ) async throws {
         guard session != nil else { return }
-        let summary = try await readUnmapped { try $0.noteAppUse(vaultId: vaultID, itemId: itemID) }
+        let summary = try await readUnmapped {
+            try $0.noteAppUse(vaultId: vaultID, itemId: itemID, action: action, field: field)
+        }
         if let index = summaries.firstIndex(where: { $0.id == itemID && $0.vaultId == vaultID }) {
             summaries[index] = summary
             summariesRevision &+= 1
         }
         notifySync { await $0.localChangesWritten() }
+    }
+
+    /// The item's key-use log, most recent use first: channel, action, device, client and field
+    /// label, never a value. Uses this device still queues show once flushed.
+    public func itemKeyUses(vaultID: String, itemID: String) async throws -> [FfiKeyUse] {
+        try await read { try $0.itemKeyUses(vaultId: vaultID, itemId: itemID) }
+    }
+
+    /// Empties the item's key-use log on every device once synced ("Clear log"); its
+    /// `updated_at` is unchanged. The sync layer is told.
+    public func clearKeyUses(vaultID: String, itemID: String) async throws {
+        try await read { try $0.clearKeyUses(vaultId: vaultID, itemId: itemID) }
+        notifySync { await $0.localChangesWritten() }
+    }
+
+    /// Folds this device's queued key uses an hour old or more into their items (unlock, scene
+    /// foreground). Best effort: nothing when locked; an error leaves the rows queued for the next
+    /// try and is thrown as is, without `lastError` nor counting as activity (no user action). The
+    /// sync layer is told when a use was applied.
+    @discardableResult
+    public func flushKeyUseQueue() async throws -> UInt32 {
+        guard let session else { return 0 }
+        let applied = try await background { try session.flushKeyUseQueue() }
+        if applied > 0 { notifySync { await $0.localChangesWritten() } }
+        return applied
     }
 
     /// `autofillCandidates(service:includeAll:)` for a typed service: an app matches only the Logins

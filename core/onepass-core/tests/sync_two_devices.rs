@@ -113,7 +113,7 @@ fn remote_password_change_wins_and_keeps_local_usage() {
     let v = b.vault();
     assert!(
         b.repo()
-            .record_usage(&v, x.id, site.clone(), at(T0 + 5), false)
+            .record_usage(&v, x.id, site.clone(), at(T0 + 5), false, "")
             .unwrap()
     );
     // A changes the password, later, and pushes first.
@@ -154,7 +154,7 @@ fn forget_survives_concurrent_usage_write() {
     let v = a.vault();
     assert!(
         a.repo()
-            .record_usage(&v, x.id, site_usage("x.fr", T0 + 5), at(T0 + 5), false)
+            .record_usage(&v, x.id, site_usage("x.fr", T0 + 5), at(T0 + 5), false, "")
             .unwrap()
     );
     sync(&mut server, &mut a).unwrap();
@@ -166,7 +166,14 @@ fn forget_survives_concurrent_usage_write() {
     let v = b.vault();
     assert!(
         b.repo()
-            .record_usage(&v, x.id, site_usage("y.fr", T0 + 20), at(T0 + 20), false)
+            .record_usage(
+                &v,
+                x.id,
+                site_usage("y.fr", T0 + 20),
+                at(T0 + 20),
+                false,
+                ""
+            )
             .unwrap()
     );
     sync(&mut server, &mut a).unwrap();
@@ -195,7 +202,8 @@ fn usage_only_write_never_beats_a_remote_edit_with_an_older_clock() {
                 x.id,
                 site_usage("exemple.fr", T0 + 5),
                 at(T0 + 5),
-                false
+                false,
+                ""
             )
             .unwrap()
     );
@@ -225,7 +233,8 @@ fn local_edit_with_an_older_clock_beats_a_remote_usage_only_write() {
                 x.id,
                 site_usage("exemple.fr", T0 + 5),
                 at(T0 + 5),
-                false
+                false,
+                ""
             )
             .unwrap()
     );
@@ -252,7 +261,7 @@ fn usage_only_write_never_resurrects_a_remotely_deleted_item() {
     let v = b.vault();
     assert!(
         b.repo()
-            .record_usage(&v, x.id, site_usage("x.fr", T0 + 5), at(T0 + 5), false)
+            .record_usage(&v, x.id, site_usage("x.fr", T0 + 5), at(T0 + 5), false, "")
             .unwrap()
     );
     sync(&mut server, &mut b).unwrap();

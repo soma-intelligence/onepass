@@ -65,11 +65,15 @@ use crate::manifest::{
 };
 use crate::model::Item;
 use crate::model::events::EventKind;
-use crate::model::usage::SiteUsage;
+use crate::model::key_use::{KeyUseAction, KeyUseChannel};
+use crate::model::usage::{SiteUsage, associated_pick_host};
 use crate::store::{Record, RecordKind, RecordStore, VaultEvent, account_record_id};
 use crate::trust::{DeviceLineageState, LineageHead, TrustLevel, TrustState};
 use crate::vault::{ItemRecord, Vault, VaultMeta};
 use crate::{Error, Id, IntegrityError, Result};
+
+/// The client a key use inside the app names (`record_app_use`).
+const APP_CLIENT: &str = "OnePass";
 
 mod attachments;
 mod autofill_history;
@@ -1539,6 +1543,15 @@ impl<S: RecordStore> Repository<S> {
     /// site after this item's entry, so this item becomes the last used
     /// there again (A, B, then A within the hour). Archived, trashed and
     /// unreadable items are skipped for that check.
+    ///
+    /// The fill is also a key use (AutoFill, `Filled`, no field, `client`
+    /// the browser or app filled, empty when unknown): carried by the same
+    /// save when the memory is written, else through `record_key_use`
+    /// (hourly coalescing, the queue), so one call saves the item at most
+    /// once, and returns `true` when the key use alone wrote it. A pick
+    /// remembered under `associated_pick_key` is no fill of its own (its
+    /// caller notes the fill right after) and records none. The key use is
+    /// best effort: its failure never fails the call.
     pub fn record_usage(
         &mut self,
         vault: &Vault,
@@ -1546,6 +1559,7 @@ impl<S: RecordStore> Repository<S> {
         u: SiteUsage,
         now: OffsetDateTime,
         force: bool,
+        client: &str,
     ) -> Result<bool> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
@@ -1562,22 +1576,40 @@ impl<S: RecordStore> Repository<S> {
                     .filter_map(|other| other.site_last_at(&u.site))
                     .any(|at| at > own)
             });
+        let key_use = associated_pick_host(&u.site).is_none().then(|| {
+            self.this_device_key_use(KeyUseChannel::AutoFill, KeyUseAction::Filled, client, "")
+        });
         if !item.note_usage_with(u, now, force) {
-            return Ok(false);
+            return Ok(match key_use {
+                Some(k) => self.record_key_use(vault, item_id, k, now).unwrap_or(false),
+                None => false,
+            });
         }
+        let seqs = match key_use {
+            Some(k) => self
+                .apply_key_use(vault, &mut item, k, now)
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
         self.save_item(vault, item)?;
+        let _ = self.drop_queued_key_uses(&seqs);
         Ok(true)
     }
 
     /// Remember a use of the item inside the app at `now`
     /// (`Item::note_app_use`): saved every time, with its `updated_at`
     /// unchanged, so it never beats a real edit from another device.
-    /// Returns the item as saved.
+    /// `key_use`, the action and the label of the field touched, when the
+    /// use handed out a secret (a copy, a reveal, a one-time code): noted
+    /// in the same save as a key use (App, client "OnePass"). None for a
+    /// use that touches no secret (its website opened). Returns the item
+    /// as saved.
     pub fn record_app_use(
         &mut self,
         vault: &Vault,
         item_id: Id,
         now: OffsetDateTime,
+        key_use: Option<(KeyUseAction, &str)>,
     ) -> Result<Item> {
         self.sync_epoch()?;
         let loaded = self.served(vault, Use::Write)?;
@@ -1588,7 +1620,18 @@ impl<S: RecordStore> Repository<S> {
             return Err(Error::NotFound);
         }
         item.note_app_use(now);
+        let seqs = match key_use {
+            Some((action, field)) => {
+                let k = self.this_device_key_use(KeyUseChannel::App, action, APP_CLIENT, field);
+                // Best effort: a failing queue read never fails the use.
+                self.apply_key_use(vault, &mut item, k, now)
+                    .unwrap_or_default()
+            }
+            None => Vec::new(),
+        };
         self.save_item(vault, item.clone())?;
+        // Saved: a failed drop leaves the rows queued, folded again later.
+        let _ = self.drop_queued_key_uses(&seqs);
         Ok(item)
     }
 
@@ -2437,20 +2480,20 @@ mod tests {
         };
         let min = time::Duration::minutes;
         let (t10, t20) = (t0 + min(10), t0 + min(20));
-        assert!(repo.record_usage(&v, a.id, u(t0), t0, false).unwrap());
-        assert!(repo.record_usage(&v, b.id, u(t10), t10, false).unwrap());
+        assert!(repo.record_usage(&v, a.id, u(t0), t0, false, "").unwrap());
+        assert!(repo.record_usage(&v, b.id, u(t10), t10, false, "").unwrap());
         // B used the site after A's entry: A is rewritten within the hour.
-        assert!(repo.record_usage(&v, a.id, u(t20), t20, false).unwrap());
+        assert!(repo.record_usage(&v, a.id, u(t20), t20, false, "").unwrap());
         let items = repo.items(&v).unwrap();
         let last = |id: Id| items.iter().find(|i| i.id == id).unwrap().usage[0].last_at;
         assert_eq!(last(a.id), t20);
         assert_eq!(last(b.id), t10);
         // A is now the newest: a repeat within the hour writes nothing.
         let t25 = t0 + min(25);
-        assert!(!repo.record_usage(&v, a.id, u(t25), t25, false).unwrap());
+        assert!(!repo.record_usage(&v, a.id, u(t25), t25, false, "").unwrap());
         // Unless the caller saw a newer use elsewhere (another vault).
         let t30 = t0 + min(30);
-        assert!(repo.record_usage(&v, a.id, u(t30), t30, true).unwrap());
+        assert!(repo.record_usage(&v, a.id, u(t30), t30, true, "").unwrap());
     }
 
     #[test]
@@ -2460,16 +2503,120 @@ mod tests {
         repo.save_item(&v, a.clone()).unwrap();
         let t0 = OffsetDateTime::now_utc();
         let t1 = t0 + time::Duration::seconds(5);
-        repo.record_app_use(&v, a.id, t0).unwrap();
-        let saved = repo.record_app_use(&v, a.id, t1).unwrap();
+        repo.record_app_use(&v, a.id, t0, None).unwrap();
+        let saved = repo.record_app_use(&v, a.id, t1, None).unwrap();
         assert_eq!((saved.use_count(), saved.last_used_at()), (2, Some(t1)));
         let stored = repo.items(&v).unwrap().remove(0);
         assert_eq!((stored.use_count(), stored.last_used_at()), (2, Some(t1)));
         assert_eq!(stored.updated_at, a.updated_at);
         assert!(matches!(
-            repo.record_app_use(&v, Id::new(), t1),
+            repo.record_app_use(&v, Id::new(), t1, None),
             Err(Error::NotFound)
         ));
+        // No key use without an action: an opened website hands out none.
+        assert!(stored.key_use_trailer().entries.is_empty());
+    }
+
+    #[test]
+    fn key_use_of_an_app_use_rides_its_save() {
+        use crate::model::key_use::{KeyUseAction, KeyUseChannel};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let a = login(&v, "alice");
+        repo.save_item(&v, a.clone()).unwrap();
+        let t0 = OffsetDateTime::now_utc();
+        let t1 = t0 + time::Duration::seconds(5);
+        let copied = Some((KeyUseAction::Copied, "password"));
+        repo.record_app_use(&v, a.id, t0, copied).unwrap();
+        let saved = repo.record_app_use(&v, a.id, t1, copied).unwrap();
+        let stored = repo.items(&v).unwrap().remove(0);
+        assert_eq!(stored.key_use_trailer(), saved.key_use_trailer());
+        let log = stored.key_use_trailer().entries;
+        assert_eq!(log.len(), 1, "{log:?}");
+        let e = &log[0];
+        assert_eq!(
+            (e.channel, e.action, e.client.as_str(), e.field.as_str()),
+            (
+                KeyUseChannel::App,
+                KeyUseAction::Copied,
+                "OnePass",
+                "password"
+            )
+        );
+        // Each app use is saved anyway: both counted, inside the hour.
+        assert_eq!((e.count, e.first_at, e.last_at), (2, t0, t1));
+        assert_eq!(stored.updated_at, a.updated_at);
+    }
+
+    #[test]
+    fn key_use_of_a_fill_rides_the_usage_write() {
+        use crate::fill_plan::context::FieldRole;
+        use crate::fill_plan::intent::Intent;
+        use crate::model::key_use::{KeyUseAction, KeyUseChannel};
+        use crate::model::usage::{StepKind, associated_pick_key, form_shape_hash};
+        let (mut repo, v) = fresh(MemoryStore::new());
+        let a = login(&v, "alice");
+        repo.save_item(&v, a.clone()).unwrap();
+        let t0 = OffsetDateTime::now_utc();
+        let u = |site: &str, at: OffsetDateTime| SiteUsage {
+            site: site.into(),
+            form_shape_hash: form_shape_hash(&[FieldRole::Username]),
+            intent: Intent::Login,
+            step_seq: vec![StepKind::Fill],
+            count: 1,
+            last_at: at,
+        };
+        let log = |repo: &mut Repository<MemoryStore>| {
+            repo.items(&v).unwrap().remove(0).key_use_trailer().entries
+        };
+        // A pick kept for an associated host is no fill: no key use.
+        let pick = associated_pick_key("app.a.com");
+        assert!(
+            repo.record_usage(&v, a.id, u(&pick, t0), t0, true, "Chrome")
+                .unwrap()
+        );
+        assert!(log(&mut repo).is_empty());
+        // The fill: one save carries the memory and the key use.
+        assert!(
+            repo.record_usage(&v, a.id, u("a.com", t0), t0, false, "Chrome")
+                .unwrap()
+        );
+        let entries = log(&mut repo);
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        let e = &entries[0];
+        assert_eq!(
+            (
+                e.channel,
+                e.action,
+                e.client.as_str(),
+                e.field.as_str(),
+                e.count
+            ),
+            (
+                KeyUseChannel::AutoFill,
+                KeyUseAction::Filled,
+                "Chrome",
+                "",
+                1
+            )
+        );
+        // Within the hour: no memory write, the key use is not due either
+        // (queued where the store keeps a queue), nothing written.
+        let t5 = t0 + time::Duration::minutes(5);
+        assert!(
+            !repo
+                .record_usage(&v, a.id, u("a.com", t5), t5, false, "Chrome")
+                .unwrap()
+        );
+        assert_eq!(log(&mut repo)[0].count, 1);
+        // An hour on, the memory alone is not worth a write but the key use
+        // is due: written through `record_key_use`.
+        let t61 = t0 + time::Duration::minutes(61);
+        let wrote = repo
+            .record_usage(&v, a.id, u("a.com", t61), t61, false, "Chrome")
+            .unwrap();
+        let entries = log(&mut repo);
+        assert_eq!(entries[0].last_at, t61, "{wrote} {entries:?}");
+        assert_eq!(repo.items(&v).unwrap()[0].updated_at, a.updated_at);
     }
 
     #[test]
@@ -2491,21 +2638,21 @@ mod tests {
             count: 1,
             last_at: at,
         };
-        assert!(repo.record_usage(&v, a.id, u(t0), t0, false).unwrap());
+        assert!(repo.record_usage(&v, a.id, u(t0), t0, false, "").unwrap());
         assert!(
-            repo.record_usage(&v, b.id, u(t0 + min(10)), t0 + min(10), false)
+            repo.record_usage(&v, b.id, u(t0 + min(10)), t0 + min(10), false, "")
                 .unwrap()
         );
         repo.archive_item(&v, b.id).unwrap();
         assert!(
             !repo
-                .record_usage(&v, a.id, u(t0 + min(20)), t0 + min(20), false)
+                .record_usage(&v, a.id, u(t0 + min(20)), t0 + min(20), false, "")
                 .unwrap()
         );
         repo.trash_item(&v, b.id).unwrap();
         assert!(
             !repo
-                .record_usage(&v, a.id, u(t0 + min(21)), t0 + min(21), false)
+                .record_usage(&v, a.id, u(t0 + min(21)), t0 + min(21), false, "")
                 .unwrap()
         );
     }
@@ -2531,18 +2678,18 @@ mod tests {
             repo.load(&v).unwrap().listed(item.id).unwrap().1.version
         };
         assert!(
-            repo.record_usage(&v, item.id, u("a.com"), now, false)
+            repo.record_usage(&v, item.id, u("a.com"), now, false, "")
                 .unwrap()
         );
         assert!(
-            repo.record_usage(&v, item.id, u("b.com"), now, false)
+            repo.record_usage(&v, item.id, u("b.com"), now, false, "")
                 .unwrap()
         );
         let written = version(&mut repo);
         // Same site, same shape, within the hour: no write.
         assert!(
             !repo
-                .record_usage(&v, item.id, u("a.com"), now, false)
+                .record_usage(&v, item.id, u("a.com"), now, false, "")
                 .unwrap()
         );
         assert_eq!(version(&mut repo), written);
@@ -2581,7 +2728,7 @@ mod tests {
             let item = login(vault, "alice");
             repo.save_item(vault, item.clone()).unwrap();
             assert!(
-                repo.record_usage(vault, item.id, u.clone(), now, false)
+                repo.record_usage(vault, item.id, u.clone(), now, false, "")
                     .unwrap()
             );
         }

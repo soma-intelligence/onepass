@@ -927,9 +927,15 @@ impl Session {
                     site: pick,
                     ..usage.clone()
                 };
-                written = repo.record_usage(&vault, item_id, pick, now, true)?;
+                written = repo.record_usage(&vault, item_id, pick, now, true, "")?;
             }
-            written |= repo.record_usage(&vault, item_id, usage, now, force)?;
+            // The key use names the app filled; a browser stays unnamed (the
+            // system never says which one asks).
+            let client = match &target {
+                Target::App(id) => id.as_str(),
+                Target::Site(_) => "",
+            };
+            written |= repo.record_usage(&vault, item_id, usage, now, force, client)?;
             // The pick, for the device's autofill history (best effort:
             // off, Travel Mode or a failing write never fails the fill).
             let _ = repo.record_autofill_event(AutofillEvent {
@@ -1191,8 +1197,8 @@ mod tests {
                 let vault = find_vault(repo, vault_id)?;
                 let t0 = now - time::Duration::minutes(10);
                 let t1 = now - time::Duration::minutes(5);
-                repo.record_usage(&vault, a, bridge(t0), t0, false)?;
-                repo.record_usage(&vault, b, bridge(t1), t1, false)?;
+                repo.record_usage(&vault, a, bridge(t0), t0, false, "")?;
+                repo.record_usage(&vault, b, bridge(t1), t1, false, "")?;
                 Ok(())
             })
             .unwrap();
