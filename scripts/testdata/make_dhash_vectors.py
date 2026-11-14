@@ -26,6 +26,12 @@ def mark(x, y):
     return (255, 255, 255, 0)
 
 
+def faint(x, y):
+    if 8 <= x < 56 and 8 <= y < 56:
+        return (200, 40, 90, 1 + (x // 8 + y // 8) * 3 % 20)
+    return (0, 0, 0, 0)
+
+
 noise = random.Random(14)
 noise_px = [tuple(noise.getrandbits(8) for _ in range(3)) + (255,) for _ in range(256 * 256)]
 
@@ -40,6 +46,7 @@ VECTORS = [
     ("non-square-40x16", make(40, 16, lambda x, y: ((x * 37 + y * 11) % 256, (x * 5) % 256, (y * 16) % 256, 255))),
     ("noise-256", make(256, 256, lambda x, y: noise_px[y * 256 + x])),
     ("partial-alpha-mark", make(64, 64, mark)),
+    ("low-alpha-mark", make(64, 64, faint)),
 ]
 
 out = [{"name": n, "png": base64.b64encode(p).decode(), "hash": "%016x" % icon_pack.dhash(p)} for n, p in VECTORS]

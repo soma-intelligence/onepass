@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import struct
+import zlib
 import shutil
 import sys
 import functools
@@ -600,10 +601,25 @@ class Signing(unittest.TestCase):
 class DHash(unittest.TestCase):
     def test_shared_vectors(self):
         vectors = json.loads((ROOT / "scripts" / "testdata" / "dhash-vectors.json").read_text())
-        self.assertEqual(len(vectors), 10)
+        self.assertEqual(len(vectors), 11)
         for v in vectors:
             png = base64.b64decode(v["png"])
+            # Python is the reference and matches exactly. The Swift test allows a distance of at most 2
+            # for "low-alpha-mark" only: CoreGraphics premultiplies to 8 bits, which at alpha 1 to 20
+            # cannot be undone exactly.
             self.assertEqual("%016x" % icon_pack.dhash(png), v["hash"], v["name"])
+
+    def test_refuses_what_it_cannot_hash(self):
+        def png(width, height, body=b""):
+            def chunk(kind, data):
+                return (struct.pack(">I", len(data)) + kind + data
+                        + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+            return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+                    + chunk(b"IDAT", body) + chunk(b"IEND", b""))
+        for bad in (b"", b"not a png at all, just text bytes", png(100000, 100000), png(0, 4),
+                    png(4, 4, b"garbage")):
+            with self.assertRaises(icon_pack.IconPackError):
+                icon_pack.dhash(bad)
 
     def test_distinguishes_images(self):
         vectors = {v["name"]: icon_pack.dhash(base64.b64decode(v["png"]))

@@ -8,6 +8,11 @@ public enum IconHash {
     /// Hash of the first image in `data`, or nil when it does not decode.
     public static func dHash(_ data: Data) -> UInt64? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let declaredWidth = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let declaredHeight = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+              declaredWidth > 0, declaredHeight > 0,
+              declaredWidth <= maxSide, declaredHeight <= maxSide,
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
         let width = image.width, height = image.height
         guard width > 0, height > 0 else { return nil }
@@ -15,7 +20,7 @@ public enum IconHash {
         let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(
                 data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
-                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
             context.interpolationQuality = .none
             context.setBlendMode(.copy)
@@ -27,13 +32,12 @@ public enum IconHash {
         var gray = [Double](repeating: 0, count: width * height)
         for i in 0..<(width * height) {
             let a = Double(bytes[i * 4 + 3])
-            var channels = [Double](repeating: 0, count: 3)
-            for k in 0..<3 {
-                let premultiplied = Double(bytes[i * 4 + k])
-                let straight = a > 0 ? min(255.0, (premultiplied * 255.0 / a).rounded()) : 0.0
-                channels[k] = straight * a / 255.0 + 255.0 * (1.0 - a / 255.0)
+            func over(_ k: Int) -> Double {
+                let straight = a > 0 ? min(255.0, (Double(bytes[i * 4 + k]) * 255.0 / a).rounded()) : 0.0
+                return straight * a / 255.0 + 255.0 * (1.0 - a / 255.0)
             }
-            gray[i] = 0.299 * channels[0] + 0.587 * channels[1] + 0.114 * channels[2]
+            let r = over(0), g = over(1), b = over(2)
+            gray[i] = 0.299 * r + 0.587 * g + 0.114 * b
         }
 
         let cols = spans(width, 9), rows = spans(height, 8)
@@ -57,6 +61,9 @@ public enum IconHash {
         }
         return bits
     }
+
+    /// Largest accepted width and height, in pixels.
+    static let maxSide = 4096
 
     /// Number of differing bits.
     public static func distance(_ a: UInt64, _ b: UInt64) -> Int { (a ^ b).nonzeroBitCount }

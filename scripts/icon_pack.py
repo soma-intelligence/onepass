@@ -318,13 +318,29 @@ def png_rgba(data):
     return width, height, bytes(out)
 
 
+DHASH_MAX_SIDE = 4096
+
+
 def dhash(rgba_png):
     """64-bit difference hash of a PNG, identical to VaultKit's IconHash.dHash.
 
-    Composite over white (straight alpha), gray = 0.299 R + 0.587 G + 0.114 B, area-average to
-    9 columns x 8 rows (each cell averages the source pixels it overlaps, weighted by overlap),
-    then bit = cell[row][x] > cell[row][x + 1] + 1e-9 (the margin keeps flat images at 0 despite rounding noise), row by row, first bit most significant."""
-    width, height, px = png_rgba(rgba_png)
+    Composite over white (straight alpha), gray = 0.299 R + 0.587 G + 0.114 B,
+    area-average to 9 columns x 8 rows (each cell averages the source pixels it
+    overlaps, weighted by overlap), then bit = cell[row][x] > cell[row][x + 1] + 1e-9
+    (the margin keeps flat images at 0 despite rounding noise), row by row, first
+    bit most significant. Raises IconPackError for anything but a sane 8-bit RGBA PNG
+    (at most 4096 x 4096), so callers can skip the icon."""
+    if len(rgba_png) < 33 or rgba_png[:8] != b"\x89PNG\r\n\x1a\n" or rgba_png[12:16] != b"IHDR":
+        raise IconPackError("not a PNG")
+    w, h = struct.unpack(">II", rgba_png[16:24])
+    if not (0 < w <= DHASH_MAX_SIDE and 0 < h <= DHASH_MAX_SIDE):
+        raise IconPackError("PNG too large to hash")
+    try:
+        width, height, px = png_rgba(rgba_png)
+    except (struct.error, zlib.error, IndexError) as error:
+        raise IconPackError("unreadable PNG: %s" % error)
+    if len(px) != width * height * 4:
+        raise IconPackError("unreadable PNG")
     gray = []
     for i in range(0, width * height * 4, 4):
         a = float(px[i + 3])
