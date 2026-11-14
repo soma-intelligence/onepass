@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 use onepass_core::Id;
 use onepass_core::crypto::{HybridKemPublic, HybridKemSecret, IdentityKey, IdentityVerifyingKey};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic};
-use onepass_core::org::OrgSecrets;
+use onepass_core::org::{MemberRef, OrgSecrets};
 
 /// The org secrets of the test organization.
 pub fn org_secrets() -> &'static OrgSecrets {
@@ -56,6 +56,22 @@ pub fn device(tag: u8) -> TestDevice {
     let keys = DeviceKeys::generate_software().unwrap();
     let public = keys.public(Id([tag; 16])).unwrap();
     TestDevice { keys, public }
+}
+
+/// The owner reference of test account `account`: `Id([account; 16])`,
+/// identity and KEM keys from the pools (`account % 3`, so accounts may
+/// share keys; only account ids must be unique), the devices' fingerprints
+/// sorted.
+pub fn member_ref(account: u8, devices: &[&TestDevice]) -> MemberRef {
+    let i = usize::from(account % 3);
+    let mut fprs: Vec<[u8; 32]> = devices.iter().map(|d| d.public.fingerprint()).collect();
+    fprs.sort_unstable();
+    MemberRef {
+        account_id: Id([account; 16]),
+        account_identity_pub: identity_pool(i).1.clone(),
+        account_kem_pub: kem_pool(i).1.clone(),
+        devices: fprs,
+    }
 }
 
 /// SHA-256 over the concatenation of `parts` (the crate's helper is private).

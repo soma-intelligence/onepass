@@ -21,7 +21,7 @@ final-status-level = "fail"
 # too (the share_vaults convergence tests need about 245 s alone and timed
 # out at 300 s under load while this filter missed them).
 [[profile.default.overrides]]
-filter = "test(/slh_dsa|identity_key|rotation_v2|share_vaults/) | binary(/slh_dsa|rotation_v2|share_vaults/)"
+filter = "test(/slh_dsa|identity_key|rotation_v2|share_vaults/) | binary(/slh_dsa|rotation_v2|share_vaults|org_/)"
 slow-timeout = { period = "120s", terminate-after = 5 }
 
 # Two exhaustive sharing tests need 6 to 7 minutes alone in a debug build

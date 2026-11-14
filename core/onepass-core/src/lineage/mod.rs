@@ -29,7 +29,7 @@ pub mod wipe;
 pub use ack::{
     ACK_DOMAIN, AckBody, AckStatus, SignedAck, ack_id, ack_statuses, sign_ack, verify_ack,
 };
-pub(crate) use codec::{check_entry, decode_strict_with};
+pub(crate) use codec::{check_entry, check_hybrid_sig, check_identity_sig, decode_strict_with};
 pub use codec::{check_genesis, check_intro, check_legacy_intro, check_rotation};
 pub use legacy::{LegacyAnchor, LegacyIntros, accept_legacy_intros, legacy_intro_id};
 pub use verify::{

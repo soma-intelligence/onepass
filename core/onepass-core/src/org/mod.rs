@@ -7,8 +7,14 @@ use crate::Result;
 use crate::crypto::random_array;
 
 mod identity;
+mod lineage;
 
 pub use identity::{OrgIdentityPublic, OrgSecrets, fingerprint_words, org_fingerprint};
+pub use lineage::{
+    MemberRef, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgHeadInfo, OrgLineage,
+    OrgRecordBody, SignedOrgRecord, add_owner_signature, quorum, sign_org_change, sign_org_genesis,
+    verify_org_chain, verify_org_genesis,
+};
 
 /// The id of an organization: 16 random bytes fixed at its genesis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
