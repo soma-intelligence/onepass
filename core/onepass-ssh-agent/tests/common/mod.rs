@@ -94,6 +94,7 @@ impl FakeSource {
                     confirm_each_use: false,
                     hosts: Vec::new(),
                     git_signing: false,
+                    key_field_label: "Private key".into(),
                 };
                 let (_, text) = private_texts().iter().find(|(x, _)| *x == t).unwrap();
                 (info, text.clone())

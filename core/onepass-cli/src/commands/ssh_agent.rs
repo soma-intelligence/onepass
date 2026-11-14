@@ -25,8 +25,8 @@ use onepass_guard::{
 use onepass_peer::{CodeIdentity, identify_pid, identity_of_file, parent_pid};
 use onepass_ssh_agent::keys::AgentKey;
 use onepass_ssh_agent::{
-    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of, serve,
-    ssh_client_record, ssh_keys_of,
+    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of, note_signed_in,
+    serve, ssh_client_record, ssh_keys_of,
 };
 
 use super::ssh_key::AGENT_SOCKET;
@@ -114,6 +114,14 @@ impl KeySource for SessionKeys {
 
     fn load(&mut self, item_id: &str) -> Result<AgentKey, String> {
         self.with(|repo| Ok(load_key_of(repo, item_id)))?
+    }
+
+    fn note_signed(&mut self, item_id: &str, field: &str, client: &str) {
+        // Best effort: a use that cannot be recorded never fails a signature.
+        let _ = self.with(|repo| {
+            note_signed_in(repo, item_id, field, client);
+            Ok(())
+        });
     }
 }
 
