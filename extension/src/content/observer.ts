@@ -45,7 +45,7 @@ export function signature(a: PageAnalysis): string {
     a.captchaWidget ?? false,
     a.passkeySignIn ?? false,
     a.push,
-    a.forms.map((f) => [f.ref, f.kind, f.submitRef ?? null, f.fields.map((x) => [x.ref, x.role, x.parts ?? null])]),
+    a.forms.map((f) => [f.ref, f.kind, f.submitRef ?? null, f.signupStep ?? false, f.fields.map((x) => [x.ref, x.role, x.parts ?? null])]),
     a.providerButtons.map((b) => [b.provider, b.ref]),
     a.accountChooser.map((b) => [b.email, b.ref]),
   ]);

@@ -274,6 +274,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         async pickRow(menu, title, subtitle) {
           let row = menu.locator("button.row").filter({ has: menu.locator(".t1", { hasText: exact(title) }) });
           if (subtitle !== undefined) row = row.filter({ has: menu.locator(".t2", { hasText: exact(subtitle) }) });
+          // The generate row is a suggestion row (fill UI, task 8): the password and Use, its name only
+          // in aria-label.
+          else if (typeof title === "string") row = row.or(menu.locator(`button.row.row-suggest[aria-label="${title.replace(/["\\]/g, "\\$&")}"]`));
           await expect(row).toHaveCount(1);
           await settle();
           // A frame that fades in re-arms its click guard once it is declared visible: on a

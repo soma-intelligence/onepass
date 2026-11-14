@@ -1,10 +1,19 @@
 // User flows of spec 11.3, end to end: real extension, real native host
 // (fixture vault), local HTTPS pages of the fictional Atlas Cloud.
 import { generateKeyPairSync } from "node:crypto";
+import type { Frame } from "@playwright/test";
 import { expect, paired, test } from "./fixtures";
 import { FX } from "./server";
 
 const ATLAS = "https://atlas-cloud.test";
+
+/** The toast of a login saved by itself (fill UI spec 4.1): "Login pour atlas-cloud.test enregistré". */
+async function expectSavedToast(save: Frame, identifier: string): Promise<void> {
+  const toast = save.locator(".save-toast");
+  await expect(toast).toBeVisible({ timeout: 15_000 });
+  await expect(toast.locator(".t1")).toHaveText("Login pour atlas-cloud.test enregistré");
+  await expect(toast.locator(".t2")).toHaveText(identifier);
+}
 
 test("pairing_shows_same_code", async ({ ext }) => {
   const code = await ext.pair();
@@ -61,6 +70,31 @@ paired("menu_fill_login", async ({ ext }) => {
   expect(marker).toBeUndefined();
 });
 
+paired("email_first_signup_and_sign_in_steps_get_the_menu", async ({ ext }) => {
+  const { page } = ext;
+  // Sign-up screen: one email field and "Continue" (Dribbble's markup), no password anywhere.
+  await page.goto(`${ATLAS}/join`);
+  const menu = await ext.openMenu(page, "#signup-email");
+  await expect(menu.locator(".menu-head")).toContainText("atlas-cloud.test");
+  // The identities' e-mails first (it starts a sign-up), the site's logins below.
+  await expect(menu.locator("button.row .t1").first()).toHaveText("Alex Martin");
+  await expect(menu.locator("button.row .t2").first()).toContainText(FX.atlas.email);
+  await expect(menu.locator("button.row .t1", { hasText: /^Atlas Cloud$/ })).toHaveCount(1);
+  // The pick puts the e-mail in and sends nothing (the user presses Continue).
+  await ext.pickRow(menu, "Alex Martin");
+  await expect(page.locator("#signup-email")).toHaveValue(FX.atlas.email);
+  await ext.settle(800);
+  await expect(page).toHaveURL(`${ATLAS}/join`);
+  await expect(page.locator("#status")).toHaveCount(0);
+  await page.locator("#signup-email").fill("");
+  // Its sign-in screen on the same URL, shown by "Sign in": Remplir puts the email and continues.
+  await page.locator("#to-signin").click();
+  const signin = await ext.openMenu(page, "#signin-login");
+  await ext.pickRow(signin, "Atlas Cloud");
+  await expect(page.locator("#status")).toHaveText("Code envoyé", { timeout: 30_000 });
+  await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
+});
+
 paired("save_new_login_then_fill", async ({ ext }) => {
   const { page } = ext;
   await page.goto(`${ATLAS}/login`);
@@ -69,12 +103,10 @@ paired("save_new_login_then_fill", async ({ ext }) => {
   await page.locator("#password").fill("Nouv-Pass-0042");
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté");
+  // A new login on a detected success is saved at once, a toast says so (fill UI spec 4.1).
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
-  await expect(save.getByText("alex.new@atlas.dev")).toBeVisible();
-  await ext.settle();
-  await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(save.getByText(/^Enregistré dans /)).toBeVisible();
+  await expectSavedToast(save, "alex.new@atlas.dev");
+  expect(ext.audit()).toContain('"op":"save_login"');
 
   await page.goto(`${ATLAS}/logout`);
   const menu = await ext.openMenu(page, "#email");
@@ -99,11 +131,7 @@ paired("save_after_identifier_then_password", async ({ ext }) => {
   await page.locator("#submit").click();
   await expect(page).toHaveURL(`${ATLAS}/multistep/otp`);
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
-  await expect(save.getByText("alex.new@atlas.dev")).toBeVisible();
-  await ext.settle();
-  await save.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(save.getByText(/^Enregistré dans /)).toBeVisible();
+  await expectSavedToast(save, "alex.new@atlas.dev");
   expect(ext.audit()).toContain('"op":"save_login"');
   expect(ext.audit()).not.toContain("Nouv-Pass-0042");
 });
@@ -118,13 +146,14 @@ paired("failed_login_offers_nothing", async ({ ext }) => {
   // Well past every settle delay: still nothing (the site asked for the password again).
   await ext.settle(4000);
   expect(ext.findExtFrame(page, "save")).toBeUndefined();
-  // The right password then: proposed.
+  expect(ext.audit()).not.toContain('"op":"save_login"');
+  // The right password then: saved.
   await page.locator("#email").fill("alex.new@atlas.dev");
   await page.locator("#password").fill("Nouv-Pass-0042");
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté");
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+  await expectSavedToast(save, "alex.new@atlas.dev");
 });
 
 paired("save_card_stacks_beside_another_manager", async ({ ext }) => {
@@ -136,7 +165,7 @@ paired("save_card_stacks_beside_another_manager", async ({ ext }) => {
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Connecté");
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Enregistrer le login pour atlas-cloud.test ?")).toBeVisible();
+  await expectSavedToast(save, "alex.new@atlas.dev");
   await ext.settle();
   const theirs = await page.locator("#other-manager-notification").boundingBox();
   const ours = await (await save.frameElement()).boundingBox();
@@ -170,12 +199,13 @@ paired("change_password_updates_item", async ({ ext }) => {
   await page.locator("#submit").click();
   await expect(page.locator("#status")).toHaveText("Mot de passe modifié");
 
+  // The generated password went to the login as a pending update at fill time; the submission
+  // confirms it, no question asked (fill UI spec 5.2 and 4.4).
   const save = await ext.extFrame(page, "save");
-  await expect(save.getByText("Mettre à jour le mot de passe pour atlas-cloud.test ?")).toBeVisible();
-  await expect(save.getByText(`Atlas Cloud (multi) · ${FX.ops.email}`)).toBeVisible();
-  await ext.settle();
-  await save.getByRole("button", { name: "Mettre à jour", exact: true }).click();
-  await expect(save.getByText("Mot de passe mis à jour")).toBeVisible();
+  await expectSavedToast(save, FX.ops.email);
+  expect(ext.audit()).toContain('"op":"update_password"');
+  expect(ext.audit()).toContain('"op":"confirm_pending"');
+  expect(ext.audit()).not.toContain(generated);
 
   // The item now fills the new password, which the site accepts.
   await page.goto(`${ATLAS}/login`);

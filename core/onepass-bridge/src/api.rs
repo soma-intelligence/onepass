@@ -930,6 +930,11 @@ pub struct Summary {
     /// accounts; left out otherwise. An older extension ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+    /// An identity's e-mail address (not secret, like a login's identifier in
+    /// `subtitle`): what an email-only sign-up step offers. Left out for other
+    /// kinds and when the identity has none. An older extension ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2140,6 +2145,7 @@ mod tests {
             match_quality: None,
             associated: false,
             account: None,
+            email: None,
         };
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["match"], Value::Null);
@@ -2153,12 +2159,14 @@ mod tests {
             match_quality: Some(MatchQuality::Associated),
             associated: true,
             account: Some("Soma Labs".into()),
+            email: Some("alex@atlas.dev".into()),
             ..s
         };
         let v = serde_json::to_value(&tagged).unwrap();
         assert_eq!(v["match"], "domain");
         assert_eq!(v["associated"], true);
         assert_eq!(v["account"], "Soma Labs");
-        assert_eq!(v.as_object().unwrap().len(), 14);
+        assert_eq!(v["email"], "alex@atlas.dev");
+        assert_eq!(v.as_object().unwrap().len(), 15);
     }
 }

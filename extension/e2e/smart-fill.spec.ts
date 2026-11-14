@@ -57,7 +57,8 @@ paired("smart_fill_two_step_sign_in_in_one_click", async ({ ext }) => {
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
   await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
   await expect.poll(async () => (await ext.chainState())?.status, { timeout: 20_000 }).toBe("done");
-  const plans = audited(ext, "plan_fill");
+  // The icon's plan (the auto card plans on each page load too, ctx "overlay").
+  const plans = audited(ext, "plan_fill").filter((p) => p.ctx === "menu");
   expect(plans.at(-1)).toMatchObject({ intent: "login", action: "open_chain", confidence: "high" });
   // No menu was needed.
   expect(ext.findExtFrame(page, "menu")).toBeUndefined();
@@ -77,7 +78,7 @@ paired("smart_fill_checkout_fills_card_identity_email_never_pays", async ({ ext 
   expect(await submits()).toBe(0);
   expect(page.url()).toBe(`${ATLAS}/checkout-full`);
   expect(ext.server.captured.filter((c) => c.path === "/checkout-full")).toEqual([]);
-  expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ intent: "checkout", action: "fill" });
+  expect(audited(ext, "plan_fill").filter((p) => p.ctx === "menu").at(-1)).toMatchObject({ intent: "checkout", action: "fill" });
 });
 
 paired("smart_fill_signup_generates_password_never_submits_then_saves_it", async ({ ext }) => {
@@ -93,7 +94,7 @@ paired("smart_fill_signup_generates_password_never_submits_then_saves_it", async
   await ext.settle(1500);
   expect(await submits()).toBe(0);
   expect(page.url()).toBe(`${ATLAS}/signup`);
-  expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ intent: "signup", action: "fill" });
+  expect(audited(ext, "plan_fill").filter((p) => p.ctx === "menu").at(-1)).toMatchObject({ intent: "signup", action: "fill" });
   // That address already has an account here: the user types another one and sends the form.
   await page.locator("#email").fill("new.user@atlas.dev");
   await page.locator("#submit").click();
@@ -134,7 +135,7 @@ paired("smart_fill_two_accounts_menu_then_remembered", async ({ ext }) => {
   await clickIcon(ext, page, "#email");
   const menu = await ext.extFrame(page, "menu");
   await menu.waitForLoadState("domcontentloaded");
-  expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ action: "show_menu" });
+  expect(audited(ext, "plan_fill").filter((p) => p.ctx === "menu").at(-1)).toMatchObject({ action: "show_menu" });
   // The pick signs in to the end (identifier, password, code), and the chain notes it at its end.
   await ext.pickRow(menu, "Atlas Cloud", FX.atlas.email);
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
@@ -147,7 +148,8 @@ paired("smart_fill_two_accounts_menu_then_remembered", async ({ ext }) => {
   await clickIcon(ext, page, "#email");
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
   await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
-  expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ action: "open_chain", confidence: "high" });
+  // The icon's plan (the auto card plans on each page load too, ctx "overlay").
+  expect(audited(ext, "plan_fill").filter((p) => p.ctx === "menu").at(-1)).toMatchObject({ action: "open_chain", confidence: "high" });
   expect(ext.findExtFrame(page, "menu")).toBeUndefined();
 });
 
@@ -180,7 +182,7 @@ paired("smart_fill_signup_with_passkey_asks_then_fills_with_a_password", async (
   const menu = await ext.extFrame(page, "menu");
   await expect(menu.locator('button.row[data-signup="passkey"]')).toHaveCount(1);
   await expect(page.locator("#new-password")).toHaveValue("");
-  expect(audited(ext, "plan_fill").at(-1)).toMatchObject({ intent: "signup", action: "fill" });
+  expect(audited(ext, "plan_fill").filter((p) => p.ctx === "menu").at(-1)).toMatchObject({ intent: "signup", action: "fill" });
   await pickSignup(ext, page, "password");
   await expect(page.locator("#new-password")).not.toHaveValue("", { timeout: 15_000 });
   const pw = await page.locator("#new-password").inputValue();
