@@ -26,19 +26,18 @@ struct EditorHeader: View {
                 IconMenu(item: $editor.draft.item) {
                     ItemIcon(
                         type: item.itemType, title: item.title,
-                        siteIcon: siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title),
+                        siteIcon: siteIcon
+                            ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title, custom: CustomIconKey(item)),
                         size: 64, brand: item.cardBrandName, useCategory: item.iconCategory,
                         tint: ItemTint.color(named: item.color),
                         domain: ItemIconResolver.registrableDomain(primaryURL))
                         .favoriteBadge(item.favorite, iconSize: 64)
                 }
-                // Follows the website being typed: a new address loads its icon.
-                .task(id: primaryURL) {
-                    guard let url = primaryURL else {
-                        siteIcon = nil
-                        return
-                    }
-                    siteIcon = await model.iconLoader.icon(for: url, title: item.title)
+                // Follows the website being typed: a new address loads its icon. A chosen icon
+                // comes first, a new one is a new key.
+                .task(id: ItemIconTaskID(url: primaryURL, custom: CustomIconKey(item))) {
+                    siteIcon = await model.iconLoader.icon(
+                        for: primaryURL, title: item.title, custom: CustomIconKey(item))
                 }
                 titleField
             }

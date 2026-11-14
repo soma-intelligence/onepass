@@ -402,8 +402,10 @@ final class AppModel {
         #endif
 
         let settings = environment.settings
-        // Item icons: the icon pack shipped in the app, else the site's own icon (ItemIconResolver).
-        let icons = ItemIconResolver.live(settings: settings)
+        // Item icons: the chosen icon read from the account shown, the icon pack shipped in the
+        // app, else the site's own icon (ItemIconResolver).
+        let accounts = self.accounts
+        let icons = ItemIconResolver.live(settings: settings, custom: .vault { accounts.active })
         iconLoader = icons
         Task(priority: .utility) { await icons.maintainPack() }
         onboardingInProgress = session.state == .noAccount
@@ -1221,6 +1223,8 @@ final class AppModel {
             #endif
         } else {
             resetNavigation()
+            // Decrypted chosen icons never outlive the unlock; failures marked while locked go too.
+            iconLoader.custom?.removeAll()
         }
         companion.sessionChanged()
     }

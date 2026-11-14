@@ -332,7 +332,7 @@ struct CandidateListView: View {
     private func row(_ candidate: FfiAutofillCandidate, detail: String, badge: Badge?) -> some View {
         AutoFillRow(
             type: .login, title: candidate.title, detail: detail.isEmpty ? (candidate.url ?? "") : detail,
-            url: candidate.url
+            url: candidate.url, custom: session.customIconKey(itemID: candidate.itemId, vaultID: candidate.vaultId)
         ) {
             switch badge {
             case .code:

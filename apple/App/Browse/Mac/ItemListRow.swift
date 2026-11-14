@@ -27,9 +27,10 @@ struct ItemListRow: View {
         return line.isEmpty ? ItemCategory.of(summary.itemType).singular : line
     }
 
-    /// The icon already on this device: shown on the first frame, before the task answers.
+    /// The icon already on this device (the chosen one first): shown on the first frame, before
+    /// the task answers.
     private var cachedIcon: Data? {
-        model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title)
+        model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
     }
 
     /// The site icon tile: 36 pt on iPhone and iPad, 40 pt on the Mac.
@@ -70,13 +71,46 @@ struct ItemListRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("list.row.\(summary.title)")
-        .task(id: summary.primaryUrl) {
-            guard let url = summary.primaryUrl else {
-                siteIcon = nil
-                return
-            }
-            siteIcon = await model.iconLoader.icon(for: url, title: summary.title)
+        .task(id: ItemIconTaskID(url: summary.primaryUrl, custom: CustomIconKey(summary))) {
+            siteIcon = await model.iconLoader.icon(
+                for: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
         }
+    }
+}
+
+/// What an icon task follows: the item's address and its chosen icon (a new one is a new key).
+struct ItemIconTaskID: Equatable {
+    let url: String?
+    let custom: CustomIconKey?
+}
+
+/// Hands `content` the item's icon already on this device (`ItemIconResolver.cachedIcon`, the
+/// chosen icon first), loads the chosen icon from the vault in its task, then hands it again. For
+/// rows that draw a cached icon only; one that does not load leaves the automatic icon.
+struct ItemIconSource<Content: View>: View {
+    @Environment(AppModel.self) private var model
+    let url: String?
+    let title: String
+    let custom: CustomIconKey?
+    @ViewBuilder var content: (Data?) -> Content
+    /// Bumped when a load settles: the icon is read again.
+    @State private var loads = 0
+
+    var body: some View {
+        let _ = loads
+        content(model.iconLoader.cachedIcon(for: url, title: title, custom: custom))
+            .task(id: custom) {
+                guard let custom, let store = model.iconLoader.custom, store.cached(custom) == nil else { return }
+                await store.prefetch(custom)
+                loads &+= 1
+            }
+    }
+}
+
+extension ItemIconSource {
+    /// The icon of a list row.
+    init(_ summary: FfiItemSummary, @ViewBuilder content: @escaping (Data?) -> Content) {
+        self.init(url: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary), content: content)
     }
 }
 

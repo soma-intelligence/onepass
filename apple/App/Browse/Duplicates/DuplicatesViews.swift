@@ -490,12 +490,12 @@ private struct DuplicateGroupHeader: View {
     var body: some View {
         if let primary {
             HStack(spacing: 12) {
-                ItemIcon(
-                    type: primary.summary.itemType, title: primary.summary.title,
-                    siteIcon: model.iconLoader.cachedIcon(
-                        for: primary.summary.primaryUrl, title: primary.summary.title),
-                    size: iconSize, brand: primary.summary.cardBrand,
-                    domain: ItemIconResolver.registrableDomain(primary.summary.primaryUrl))
+                ItemIconSource(primary.summary) { icon in
+                    ItemIcon(
+                        type: primary.summary.itemType, title: primary.summary.title, siteIcon: icon,
+                        size: iconSize, brand: primary.summary.cardBrand,
+                        domain: ItemIconResolver.registrableDomain(primary.summary.primaryUrl))
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(primary.summary.title)
                         .font(.body.weight(.semibold))

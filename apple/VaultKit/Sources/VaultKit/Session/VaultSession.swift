@@ -1301,6 +1301,43 @@ public final class VaultSession {
         return bytes
     }
 
+    /// Sets the icon the person chose for the item (`mime` an image type the core accepts), as a
+    /// new version. Returns the item as stored, its `customIconId` new.
+    public func setCustomIcon(itemID: String, vaultID: String, mime: String, bytes: Data) async throws -> FfiItem {
+        try await write {
+            try $0.setCustomIcon(vaultId: vaultID, itemId: itemID, mime: mime, bytes: bytes)
+        }
+    }
+
+    /// Removes the item's chosen icon: its automatic icon shows again. Returns the item as stored.
+    public func clearCustomIcon(itemID: String, vaultID: String) async throws -> FfiItem {
+        try await write {
+            try $0.clearCustomIcon(vaultId: vaultID, itemId: itemID)
+        }
+    }
+
+    /// The chosen icon of an item known only by its ids (an AutoFill candidate), from the list.
+    public func customIconKey(itemID: String, vaultID: String) -> CustomIconKey? {
+        summaries.first { $0.id == itemID && $0.vaultId == vaultID }.flatMap(CustomIconKey.init)
+    }
+
+    /// The decrypted bytes of the item's chosen icon, in memory only (`CustomIconStore`). No icon,
+    /// or one not synced yet, is `.notFound`. Rows read it in the background: it does not count as
+    /// activity for the auto-lock.
+    public func customIconData(itemID: String, vaultID: String) async throws -> Data {
+        // Never `fail`: a row's background read leaves `lastError` to what the person did.
+        guard let session else { throw VaultError.passwordRequired }
+        let gen = generation
+        let bytes: Data
+        do {
+            bytes = try await background { try session.customIconData(vaultId: vaultID, itemId: itemID) }
+        } catch {
+            throw VaultError(error)
+        }
+        guard gen == generation else { throw VaultError.passwordRequired }
+        return bytes
+    }
+
     public func setFavorite(_ favorite: Bool, itemID: String, vaultID: String) async throws {
         try await write { try $0.setFavorite(vaultId: vaultID, itemId: itemID, favorite: favorite) }
     }

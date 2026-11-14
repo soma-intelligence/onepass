@@ -65,8 +65,10 @@ struct ItemPickerList: View {
                     onPick(summary)
                 } label: {
                     HStack(spacing: Theme.Space.m) {
-                        ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 30,
-                            domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
+                        ItemIconSource(summary) { icon in
+                            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: icon, size: 30,
+                                domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
+                        }
                         VStack(alignment: .leading) {
                             Text(summary.title).foregroundStyle(.primary)
                             if !summary.listSubtitle.isEmpty {
@@ -313,8 +315,10 @@ struct SignInAccountLine: View {
         let account = model.session.summaries.first { $0.id == accountItemID && $0.trashedAt == nil }
         HStack(spacing: Theme.Space.m) {
             if let account {
-                ItemIcon(type: account.itemType, title: account.title, siteIcon: model.iconLoader.cachedIcon(for: account.primaryUrl, title: account.title), size: 30,
-                    domain: ItemIconResolver.registrableDomain(account.primaryUrl))
+                ItemIconSource(account) { icon in
+                    ItemIcon(type: account.itemType, title: account.title, siteIcon: icon, size: 30,
+                        domain: ItemIconResolver.registrableDomain(account.primaryUrl))
+                }
             } else {
                 ProviderMark(provider: LoginProvider(rawValue: provider), size: 30)
             }
@@ -358,8 +362,10 @@ struct SignInAccountChooser: View {
                             onPick(summary.id)
                         } label: {
                             HStack(spacing: Theme.Space.m) {
-                                ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 30,
-                                    domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
+                                ItemIconSource(summary) { icon in
+                                    ItemIcon(type: summary.itemType, title: summary.title, siteIcon: icon, size: 30,
+                                        domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
+                                }
                                 VStack(alignment: .leading) {
                                     Text(summary.title).foregroundStyle(.primary)
                                     if !summary.listSubtitle.isEmpty {

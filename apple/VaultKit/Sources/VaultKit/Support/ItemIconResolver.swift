@@ -2,8 +2,9 @@ import Foundation
 
 /// Where an item's icon comes from, best first (docs/icon-pack.md, "Ordre de recherche"):
 ///
-/// 1. The icon the person chose for the item. The core keeps one (`custom_icon`) but no screen
-///    sets it and the bridge does not expose it yet: callers pass it as `chosen` once it is.
+/// 1. The icon the person chose for the item (`custom_icon`), decrypted from the vault into
+///    `custom` (`CustomIconStore`, memory only): callers pass its `CustomIconKey`. One that does not
+///    load (not synced yet) falls through to the rest of this order.
 /// 2. The icon pack (`IconPackStore`): the item's host, then its parent names down to the
 ///    registrable domain. Read from a file on this device: no request at all.
 /// 3. The icon pack by the item's title, when it is a brand's name ("Reddit", "Burger King") or a
@@ -22,19 +23,26 @@ public final class ItemIconResolver: Sendable {
 
     public let pack: IconPackStore?
     public let site: SiteIconLoader
+    /// The chosen icons; nil where no vault is open (previews, tests).
+    public let custom: CustomIconStore?
     private let enabled: @Sendable () -> Bool
 
-    public init(pack: IconPackStore?, site: SiteIconLoader, enabled: @escaping @Sendable () -> Bool) {
+    public init(
+        pack: IconPackStore?, site: SiteIconLoader, custom: CustomIconStore? = nil,
+        enabled: @escaping @Sendable () -> Bool
+    ) {
         self.pack = pack
         self.site = site
+        self.custom = custom
         self.enabled = enabled
     }
 
     /// The resolver of the app or of an extension: the pack shipped in the app (`bundledPack`) and
     /// the shared pack folder (`SharedContainer.iconPackFolder`), the site icon cache in this
-    /// process's caches.
+    /// process's caches, and `custom` for the chosen icons.
     public static func live(
-        settings: VaultSettings, container: SharedContainer = .resolve(), bundle: Bundle = .main
+        settings: VaultSettings, container: SharedContainer = .resolve(), bundle: Bundle = .main,
+        custom: CustomIconStore? = nil
     ) -> ItemIconResolver {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let enabled: @Sendable () -> Bool = { settings.siteIconsEnabled }
@@ -42,7 +50,7 @@ public final class ItemIconResolver: Sendable {
             pack: IconPackStore(baseline: IconPackStore.bundledPack(in: bundle), directory: container.iconPackFolder),
             site: SiteIconLoader(
                 cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true), enabled: enabled),
-            enabled: enabled)
+            custom: custom, enabled: enabled)
     }
 
     /// The order above, for one item.
@@ -66,6 +74,12 @@ public final class ItemIconResolver: Sendable {
         return Self.pick(chosen: nil, pack: nil, site: site.cachedIcon(for: url))
     }
 
+    /// Same, the chosen icon first when it is in memory. A row shows this on its first frame and
+    /// calls `icon(for:title:custom:)` (or `custom.prefetch`) in its task, then reads it again.
+    public func cachedIcon(for url: String?, title: String, custom key: CustomIconKey?) -> Data? {
+        cachedIcon(for: url, title: title, chosen: chosenIcon(key))
+    }
+
     /// The icon of `url`, fetching the site's own icon only when the pack has none.
     public func icon(for url: String, chosen: Data? = nil) async -> Data? {
         await icon(for: url, title: "", chosen: chosen)
@@ -79,6 +93,18 @@ public final class ItemIconResolver: Sendable {
         if let named = pack?.icon(forTitle: title)?.data { return named }
         guard let url else { return nil }
         return Self.pick(chosen: nil, pack: nil, site: await site.icon(for: url))
+    }
+
+    /// Same, loading the chosen icon from the vault first (`CustomIconStore.prefetch`): a chosen
+    /// icon that does not load gives the automatic one.
+    public func icon(for url: String?, title: String, custom key: CustomIconKey?) async -> Data? {
+        if let key, let custom { await custom.prefetch(key) }
+        return await icon(for: url, title: title, chosen: chosenIcon(key))
+    }
+
+    private func chosenIcon(_ key: CustomIconKey?) -> Data? {
+        guard let key, let custom else { return nil }
+        return custom.cached(key)
     }
 
     /// Loads in the background the site icons of the hosts the pack does not cover.

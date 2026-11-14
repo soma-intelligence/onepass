@@ -18,7 +18,9 @@ struct ItemHeader: View {
     private static let iconSize: CGFloat = 64
     #endif
 
-    private var iconData: Data? { siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title) }
+    private var iconData: Data? {
+        siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title, custom: CustomIconKey(item))
+    }
 
     private var vault: FfiVault? { model.session.allVaults.first { $0.id == item.vaultId } }
 
@@ -86,12 +88,8 @@ struct ItemHeader: View {
             Spacer(minLength: 0)
         }
         .onChange(of: iconData, initial: true) { _, data in onIcon(data) }
-        .task(id: primaryURL) {
-            guard let url = primaryURL else {
-                siteIcon = nil
-                return
-            }
-            siteIcon = await model.iconLoader.icon(for: url, title: item.title)
+        .task(id: ItemIconTaskID(url: primaryURL, custom: CustomIconKey(item))) {
+            siteIcon = await model.iconLoader.icon(for: primaryURL, title: item.title, custom: CustomIconKey(item))
         }
     }
 }

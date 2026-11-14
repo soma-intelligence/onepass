@@ -29,7 +29,7 @@ struct AutoFillRootView: View {
         self.accounts = accounts
         self.switchAccount = switchAccount
         let settings = session.environment.settings
-        _icons = State(initialValue: ItemIconResolver.live(settings: settings))
+        _icons = State(initialValue: ItemIconResolver.live(settings: settings, custom: .vault { session }))
     }
 
     var body: some View {
@@ -214,17 +214,19 @@ struct AutoFillRowStyle: ButtonStyle {
     }
 }
 
-/// An item row: site icon (or the category artwork), title, detail, and a trailing view.
+/// An item row: chosen icon, site icon (or the category artwork), title, detail, and a trailing view.
 struct AutoFillRow<Trailing: View>: View {
     let type: FfiItemType
     let title: String
     let detail: String
     let url: String?
+    /// The item's chosen icon (`CustomIconKey`), nil for none.
+    var custom: CustomIconKey? = nil
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
         HStack(spacing: 12) {
-            AutoFillIcon(type: type, title: title, url: url, size: 36)
+            AutoFillIcon(type: type, title: title, url: url, custom: custom, size: 36)
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: title)
                     .font(.body.weight(.semibold))
@@ -246,24 +248,30 @@ struct AutoFillRow<Trailing: View>: View {
     }
 }
 
-/// `ItemIcon` with the site icon loaded through the extension's loader.
+/// `ItemIcon` with the chosen icon, else the site icon, loaded through the extension's loader.
 struct AutoFillIcon: View {
     @Environment(\.autofillIcons) private var loader
     let type: FfiItemType
     let title: String
     let url: String?
+    var custom: CustomIconKey? = nil
     var size: CGFloat = 36
     @State private var icon: Data?
 
+    private struct TaskID: Equatable {
+        let url: String?
+        let custom: CustomIconKey?
+    }
+
     var body: some View {
-        ItemIcon(type: type, title: title, siteIcon: icon ?? loader?.cachedIcon(for: url, title: title), size: size,
-            domain: ItemIconResolver.registrableDomain(url))
-            .task(id: url) {
-                guard let url, let loader else {
+        ItemIcon(type: type, title: title, siteIcon: icon ?? loader?.cachedIcon(for: url, title: title, custom: custom),
+            size: size, domain: ItemIconResolver.registrableDomain(url))
+            .task(id: TaskID(url: url, custom: custom)) {
+                guard let loader, url != nil || custom != nil else {
                     icon = nil
                     return
                 }
-                let loaded = await loader.icon(for: url, title: title)
+                let loaded = await loader.icon(for: url, title: title, custom: custom)
                 withAnimation(.easeOut(duration: 0.15)) { icon = loaded }
             }
     }
@@ -396,12 +404,13 @@ struct AutoFillHeader: View {
     let type: FfiItemType
     let iconTitle: String
     let url: String?
+    var custom: CustomIconKey? = nil
     let title: Text
     let subtitle: String?
 
     var body: some View {
         HStack(spacing: 14) {
-            AutoFillIcon(type: type, title: iconTitle, url: url, size: 52)
+            AutoFillIcon(type: type, title: iconTitle, url: url, custom: custom, size: 52)
             VStack(alignment: .leading, spacing: 3) {
                 title
                     .font(.title3.weight(.bold))

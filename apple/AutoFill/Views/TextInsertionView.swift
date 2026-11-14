@@ -34,7 +34,7 @@ struct TextItemsView: View {
                                     AutoFillRow(
                                         type: item.itemType, title: item.title,
                                         detail: item.listSubtitle.isEmpty ? ItemCategory.of(item.itemType).singular : item.listSubtitle,
-                                        url: item.primaryUrl
+                                        url: item.primaryUrl, custom: CustomIconKey(item)
                                     ) {
                                         Image(systemName: "chevron.forward")
                                             .font(.footnote.weight(.semibold))
@@ -90,7 +90,7 @@ struct TextFieldsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     AutoFillHeader(
                         type: item.itemType, iconTitle: item.title,
-                        url: (item.urls.first(where: \.primary) ?? item.urls.first)?.url,
+                        url: (item.urls.first(where: \.primary) ?? item.urls.first)?.url, custom: CustomIconKey(item),
                         title: Text(verbatim: item.title), subtitle: ItemCategory.of(item.itemType).singular)
                         .padding(.bottom, 14)
                     SessionErrorText(session: session)
