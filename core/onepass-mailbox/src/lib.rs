@@ -22,6 +22,7 @@ mod client;
 mod credential;
 mod drops;
 mod http;
+pub mod org;
 mod rendezvous;
 #[cfg(feature = "testing")]
 pub mod testing;

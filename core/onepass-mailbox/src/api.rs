@@ -264,3 +264,130 @@ impl MailboxApi for MailboxClient {
         MailboxClient::fetch_body(self, body)
     }
 }
+
+impl<T: MailboxApi + ?Sized> MailboxApi for Box<T> {
+    fn server_config(&self) -> Result<ServerConfig, MailboxError> {
+        (**self).server_config()
+    }
+
+    fn create(
+        &mut self,
+        invite: Option<&[u8]>,
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError> {
+        (**self).create(invite, label)
+    }
+
+    fn open(&mut self, mailbox: MailboxId) {
+        (**self).open(mailbox)
+    }
+
+    fn mailbox(&self) -> Option<MailboxId> {
+        (**self).mailbox()
+    }
+
+    fn credential_key(&self) -> CredentialKey {
+        (**self).credential_key()
+    }
+
+    fn info(&self) -> Result<MailboxInfo, MailboxError> {
+        (**self).info()
+    }
+
+    fn changes(&self, after: u64, limit: u32, full: bool) -> Result<ChangesPage, MailboxError> {
+        (**self).changes(after, limit, full)
+    }
+
+    fn next_changes(&self, feed: &mut ChangeFeed, limit: u32) -> Result<FeedPage, MailboxError> {
+        (**self).next_changes(feed, limit)
+    }
+
+    fn commit(&self, ops: Vec<CommitOp>) -> Result<CommitResponse, MailboxError> {
+        (**self).commit(ops)
+    }
+
+    fn record(&self, kind: u8, id: [u8; 16]) -> Result<Option<ServerRecord>, MailboxError> {
+        (**self).record(kind, id)
+    }
+
+    fn enroll(&mut self, ticket: &SignedEnrollTicket, label: &[u8]) -> Result<(), MailboxError> {
+        (**self).enroll(ticket, label)
+    }
+
+    fn revoke(&self, credential: CredentialId) -> Result<(), MailboxError> {
+        (**self).revoke(credential)
+    }
+
+    fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError> {
+        (**self).grant(public_key, role, put_kinds, label)
+    }
+
+    fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        (**self).set_role(credential, role, put_kinds)
+    }
+
+    fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
+        (**self).set_push(kind, token)
+    }
+
+    fn set_push_target(
+        &self,
+        tag: [u8; 16],
+        kind: PushKind,
+        token: &[u8],
+    ) -> Result<(), MailboxError> {
+        (**self).set_push_target(tag, kind, token)
+    }
+
+    fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError> {
+        (**self).set_locator(locator)
+    }
+
+    fn abandon(&self) -> Result<(), MailboxError> {
+        (**self).abandon()
+    }
+
+    fn create_child(
+        &self,
+        kind: ChildKind,
+        owner_public_key: [u8; 32],
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError> {
+        (**self).create_child(kind, owner_public_key, label)
+    }
+
+    fn issue_ticket(
+        &self,
+        new_credential_pub: CredentialKey,
+        now: i64,
+    ) -> Result<SignedEnrollTicket, MailboxError> {
+        (**self).issue_ticket(new_credential_pub, now)
+    }
+
+    fn upload_blobs(&self, blobs: &[&[u8]]) -> Result<(), MailboxError> {
+        (**self).upload_blobs(blobs)
+    }
+
+    fn fetch_body(&self, body: &Body) -> Result<Vec<u8>, MailboxError> {
+        (**self).fetch_body(body)
+    }
+
+    fn commit_with_blobs(
+        &self,
+        ops: Vec<CommitOp>,
+        blobs: &[&[u8]],
+    ) -> Result<CommitResponse, MailboxError> {
+        (**self).commit_with_blobs(ops, blobs)
+    }
+}

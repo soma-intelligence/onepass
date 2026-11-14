@@ -95,6 +95,7 @@ pub const CASES: &[(&str, Case)] = &[
     ("push_target_round_trip", push_target_round_trip),
     ("drop_round_trip", drop_round_trip),
     ("drop_conflict", drop_conflict),
+    ("org_records_are_immutable", org_records_are_immutable),
 ];
 
 /// Runs every case of `CASES` against `target`. A failing case panics with
@@ -1371,4 +1372,84 @@ fn push_target_round_trip(t: &mut dyn ConformanceTarget) {
         c.set_push_target(tag(9), PushKind::Apns, b""),
         Err(MailboxError::Malformed(_))
     ));
+}
+
+/// Kinds 29 and 30 are write-once: a put on an existing key conflicts
+/// (live row or tombstone, whatever `expected`), a delete is `Forbidden`
+/// present or absent and takes its whole batch with it. Kinds 31 and 32
+/// stay mutable.
+fn org_records_are_immutable(t: &mut dyn ConformanceTarget) {
+    let c = owner(t);
+    let at = |kind: u8, n: u8, v: u64, expected: Option<u64>, data: &[u8]| CommitOp {
+        kind,
+        id: [n; 16],
+        version: v,
+        op: Op::Put {
+            expected,
+            body: Body::Inline(data.to_vec()),
+        },
+    };
+    let rm = |kind: u8, n: u8| CommitOp {
+        kind,
+        id: [n; 16],
+        version: 9,
+        op: Op::Delete,
+    };
+
+    assert_eq!(
+        applied(c.commit(vec![at(29, 1, 1, None, b"a")]), "put kind 29"),
+        [Some(1)]
+    );
+    let cur = conflict(
+        c.commit(vec![at(29, 1, 2, Some(1), b"b")]),
+        "put kind 29 at its seq",
+    );
+    let s = cur[0].server.as_ref().expect("server row");
+    assert_eq!(
+        (s.seq, &s.body),
+        (1, &Some(Body::Inline(b"a".to_vec()))),
+        "conflict carries the row"
+    );
+    assert_eq!(
+        applied(c.commit(vec![at(30, 1, 1, None, b"a")]), "put kind 30"),
+        [Some(2)]
+    );
+    conflict(
+        c.commit(vec![at(30, 1, 2, None, b"a")]),
+        "put kind 30 twice",
+    );
+    let r = c.record(29, [1; 16]).expect("record").expect("present");
+    assert_eq!(
+        (r.seq, r.version, &r.body),
+        (1, 1, &Some(Body::Inline(b"a".to_vec()))),
+        "kind 29 unchanged"
+    );
+
+    forbidden(c.commit(vec![rm(29, 1)]), "delete kind 29 present");
+    forbidden(c.commit(vec![rm(30, 9)]), "delete kind 30 absent");
+    forbidden(
+        c.commit(vec![at(KIND, 2, 1, None, b"x"), rm(29, 1)]),
+        "batch with a delete of kind 29",
+    );
+    assert_eq!(
+        c.record(KIND, [2; 16]).expect("record"),
+        None,
+        "the batch applied nothing"
+    );
+
+    for kind in [31u8, 32] {
+        applied(c.commit(vec![at(kind, 1, 1, None, b"a")]), "put mutable");
+    }
+    let s31 = c.record(31, [1; 16]).expect("record").expect("present").seq;
+    let s32 = c.record(32, [1; 16]).expect("record").expect("present").seq;
+    applied(
+        c.commit(vec![at(31, 1, 2, Some(s31), b"b")]),
+        "update kind 31",
+    );
+    applied(
+        c.commit(vec![at(32, 1, 2, Some(s32), b"b")]),
+        "update kind 32",
+    );
+    let gone = applied(c.commit(vec![rm(32, 1)]), "delete kind 32");
+    assert!(gone[0].is_some(), "tombstone seq");
 }

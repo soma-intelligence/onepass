@@ -83,6 +83,8 @@ pub const FAKE_BASE_URL: &str = "https://mailbox.fake.invalid/functions/v1/mailb
 /// Where the fake's signed Storage URLs point (never fetched).
 const FAKE_STORAGE: &str = "https://storage.fake.invalid/object/";
 
+use crate::org::is_immutable_kind;
+
 /// Quota cost of a tombstone, bytes (`TOMBSTONE_COST` of the commit SQL).
 const TOMBSTONE_COST: i64 = 128;
 /// Smallest blob body: anything at most `INLINE_MAX` goes inline.
@@ -107,6 +109,17 @@ fn shared() -> Limits {
         max_bytes: 128 << 20,
         max_records: 100_000,
         max_credentials: 80,
+        req_per_min: 600,
+        max_commit_ops: 20_000,
+    }
+}
+
+/// Plan `org` of `seed.sql`: the mailbox of an organization.
+pub fn org_plan() -> Limits {
+    Limits {
+        max_bytes: 16 << 30,
+        max_records: 200_000,
+        max_credentials: 4096,
         req_per_min: 600,
         max_commit_ops: 20_000,
     }
@@ -592,6 +605,12 @@ impl State {
         {
             return refused(ErrorCode::Forbidden);
         }
+        if ops
+            .iter()
+            .any(|o| matches!(o.op, Op::Delete) && is_immutable_kind(o.kind))
+        {
+            return refused(ErrorCode::Forbidden);
+        }
         if ops.len() > limits.max_commit_ops as usize {
             return refused(ErrorCode::TooLarge);
         }
@@ -628,9 +647,13 @@ impl State {
             let key = (o.kind, o.id);
             let cur = mbx.records.get(&key);
             let live = cur.is_some_and(|r| r.body.is_some());
-            let conflicts = match expected {
-                None => live,
-                Some(e) => !live || cur.is_some_and(|r| r.seq != *e),
+            let conflicts = if is_immutable_kind(o.kind) {
+                cur.is_some()
+            } else {
+                match expected {
+                    None => live,
+                    Some(e) => !live || cur.is_some_and(|r| r.seq != *e),
+                }
             };
             if !conflicts {
                 continue;
