@@ -1,0 +1,23 @@
+<div class="brand">{{brand}}</div>
+<h1>Activer la validation en deux étapes</h1>
+<p>Scanne ce QR code avec ton application d'authentification, puis saisis le code.</p>
+<p class="error" id="error">{{error}}</p>
+<!-- The QR sits in a closed shadow root: the page scan does not walk it, the capture does. -->
+<div id="qr-host" style="width: 200px; height: 200px;"></div>
+<script>
+  (() => {
+    const root = document.getElementById("qr-host").attachShadow({ mode: "closed" });
+    const img = document.createElement("img");
+    img.src = "{{src}}";
+    img.width = 200;
+    img.height = 200;
+    img.alt = "QR code de configuration";
+    img.onload = () => document.getElementById("qr-host").dataset.drawn = "1";
+    root.append(img);
+  })();
+</script>
+<form id="verify" action="/2fa/verify" method="post">
+  <label for="code">Code de vérification</label>
+  <input id="code" name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+  <button id="submit" type="submit">Vérifier</button>
+</form>

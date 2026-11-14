@@ -16,6 +16,7 @@ import { generateKeyPairSync } from "node:crypto";
 import type { Frame, Page, Worker } from "@playwright/test";
 import { type Ext, expect, paired } from "./fixtures";
 import { FX } from "./server";
+import { L, cardClick, clickScan, findSetupFrame, setupFrame, siteHits, storageDump, stubCapture, tokenOf } from "./setup-helpers";
 
 const ATLAS = "https://atlas-cloud.test";
 
@@ -805,5 +806,181 @@ paired.describe("with the worker handle (e2e build)", () => {
       await hostRequest(w, { op: "passkey_get", ctx: "menu", origin: ATLAS, top_origin: ATLAS, rp_id: "atlas-cloud.test", item_id: pk?.item_id, credential_id: FX.passkey.credentialId, challenge: "AAAA" }),
     ).toEqual({ err: "not_allowed" });
     expect(ext.audit()).not.toContain("passkey_get");
+  });
+});
+
+// ---- two-factor setup (plan 2026-11-13, wave 0-1) ----
+
+/** Every run of 16 or more characters of `secret`, either case: none may be stored. */
+function base32Runs(secret: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i + 16 <= secret.length; i++) out.push(secret.slice(i, i + 16), secret.slice(i, i + 16).toLowerCase());
+  return out;
+}
+
+paired.describe("two-factor setup", () => {
+  paired.use({ uiLang: "en" });
+
+  paired("after a full scan and save, storage.local and storage.session hold no base32 run of the fixture secret", async ({ ext }) => {
+    const { page } = ext;
+    await page.goto(`${ATLAS}/2fa/img`);
+    await expect(page.locator("onepass-root")).toHaveCount(1);
+    await clickScan(ext, page);
+    const card = await setupFrame(page);
+    await cardClick(ext, card, L.add);
+    await expect(card.getByText(L.saved)).toBeVisible();
+    await expect(page.locator("#code")).toHaveValue(/^\d{6}$/);
+    // The page then shows its recovery codes and the second card saves them.
+    await page.locator("#submit").click();
+    await expect(page.locator("#codes li")).toHaveCount(10);
+    const codes = await setupFrame(page);
+    await cardClick(ext, codes, L.save);
+    await expect.poll(() => findSetupFrame(page) === undefined).toBe(true);
+    const dump = await storageDump(ext);
+    for (const run of [...base32Runs(FX.setup.secret), ...base32Runs(FX.atlas.totpSecret)]) expect(dump).not.toContain(run);
+    for (const code of FX.setup.codes) expect(dump).not.toContain(code);
+    expect(dump).not.toContain("otpauth");
+  });
+
+  paired("on the look-alike domain the card lists no login and New login is the only choice", async ({ ext }) => {
+    const { page } = ext;
+    await page.goto("https://atlass-cloud.test/2fa/img");
+    await expect(page.locator("onepass-root")).toHaveCount(1);
+    await clickScan(ext, page);
+    const card = await setupFrame(page);
+    // The issuer names the new login; no list, no options menu, no login of atlas-cloud.test.
+    await expect(card.getByText(L.title("Atlas Cloud"))).toBeVisible();
+    await expect(card.getByRole("listbox")).toHaveCount(0);
+    await expect(card.getByRole("option")).toHaveCount(0);
+    await expect(card.locator(".sc-more")).toHaveCount(0);
+    await expect(card.locator("input.sc-identifier")).toHaveValue(FX.ops.email);
+    const text = (await card.locator("body").textContent()) ?? "";
+    for (const shown of ["Atlas Cloud (multi)", FX.atlas.email]) expect(text).not.toContain(shown);
+    const buttons = await card.getByRole("button").allTextContents();
+    expect(buttons.map((b) => b.trim())).toEqual([L.cancel, L.add]);
+  });
+
+  paired("the scan makes no request: the server log shows no new hit between the click and the card", async ({ ext }) => {
+    const { page, server } = ext;
+    await page.goto(`${ATLAS}/2fa/frame`);
+    await expect(page.locator("onepass-root")).toHaveCount(1);
+    await expect(page.frameLocator("#qr").locator("img")).toBeVisible();
+    // The capture path too (stubbed: activeTab is not grantable headless).
+    await stubCapture(ext, page);
+    const popup = await ext.context.newPage();
+    await page.bringToFront();
+    await popup.goto(`chrome-extension://${ext.id}/popup.html`);
+    const scan = popup.getByRole("button", { name: L.scan });
+    await expect(scan).toBeVisible();
+    await ext.settle(1000);
+    const before = siteHits(server).length;
+    await scan.click();
+    const card = await setupFrame(page);
+    await expect(card.getByText(L.title("Atlas Cloud (multi)"))).toBeVisible();
+    await ext.settle(1000);
+    expect(siteHits(server).slice(before)).toEqual([]);
+  });
+
+  paired.describe("with the worker handle (e2e build)", () => {
+    paired.use({ build: "e2e" });
+
+    paired("a page script cannot start a scan: posting setup_* or popup_scan_qr from the page does nothing", async ({ ext }) => {
+      const { page } = ext;
+      await page.goto(`${ATLAS}/2fa/img`);
+      await expect(page.locator("onepass-root")).toHaveCount(1);
+      const fake = "A".repeat(22);
+      const forged = [
+        { type: "popup_scan_qr" },
+        { type: "setup_init", token: fake },
+        { type: "setup_save", token: fake, itemId: null, username: "pat@atlas.dev" },
+        { type: "setup_paste", token: fake, key: FX.setup.secret },
+        { type: "setup_codes_found", codes: [...FX.setup.codes] },
+        { type: "setup_scan_dom" },
+        { type: "setup_scan_capture", dataUrl: "data:image/png;base64,AAAA" },
+      ];
+      // The page posts them every way it can: to itself, to its frames, to the runtime.
+      const sent = await page.evaluate(
+        ({ id, forged }) => {
+          let runtime = 0;
+          for (const m of forged) {
+            window.postMessage(m, "*");
+            window.postMessage({ source: "onepass", ...m }, "*");
+            document.dispatchEvent(new CustomEvent("onepass", { detail: m }));
+            const r = (globalThis as { chrome?: { runtime?: { sendMessage?: (id: string, m: unknown) => unknown } } }).chrome?.runtime;
+            try {
+              if (r?.sendMessage) {
+                r.sendMessage(id, m);
+                runtime++;
+              }
+            } catch {
+              // No runtime for a web page.
+            }
+          }
+          return runtime;
+        },
+        { id: ext.id, forged },
+      );
+      expect(sent).toBe(0);
+      await ext.settle(2000);
+      expect(findSetupFrame(page)).toBeUndefined();
+      const w = await ext.worker();
+      const { tabId, documentId } = await tabOf(w, `${ATLAS}/*`);
+      // A compromised content script of that page, through the router: the UI messages are dropped,
+      // the codes report is refused (no watch on this tab).
+      const cs = { url: `${ATLAS}/2fa/img`, origin: ATLAS, tabId, frameId: 0, ...(documentId ? { documentId } : {}) };
+      for (const m of forged.slice(0, 4)) expect(await routeAs(w, m, cs)).toEqual({ dropped: true });
+      expect(await routeAs(w, forged[4], cs)).toEqual({ reply: { err: "invalid" } });
+      await ext.settle(1000);
+      expect(findSetupFrame(page)).toBeUndefined();
+      expect(Object.keys(await ext.sessionStorage()).filter((k) => k.startsWith("setup"))).toEqual([]);
+    });
+
+    paired("the setup card refuses a token from another tab", async ({ ext }) => {
+      const { page } = ext;
+      await page.goto(`${ATLAS}/2fa/img`);
+      await expect(page.locator("onepass-root")).toHaveCount(1);
+      await clickScan(ext, page);
+      const card = await setupFrame(page);
+      await expect(card.getByText(L.title("Atlas Cloud (multi)"))).toBeVisible();
+      const token = tokenOf(card);
+      const w = await ext.worker();
+      const a = await tabOf(w, `${ATLAS}/2fa/*`);
+
+      // The token leaks to another tab of the same site.
+      const other = await ext.context.newPage();
+      await other.goto(`${ATLAS}/login`);
+      await expect(other.locator("onepass-root")).toHaveCount(1);
+      const b = await tabOf(w, `${ATLAS}/login`);
+      expect(b.tabId).not.toBe(a.tabId);
+      const from = (tabId: number) => ({ url: `chrome-extension://${ext.id}/setup.html#${token}`, tabId, frameId: 4 });
+      for (const m of [
+        { type: "setup_init", token },
+        { type: "setup_save", token, itemId: null, username: "pat@atlas.dev" },
+        { type: "setup_paste", token, key: FX.setup.secret },
+        { type: "setup_close", token },
+      ]) {
+        expect(await routeAs(w, m, from(b.tabId))).toEqual({ reply: { err: "invalid" } });
+      }
+      // The same card page loaded in a frame of the other tab shows none of the card.
+      await other.evaluate((src) => {
+        const f = document.createElement("iframe");
+        f.id = "stolen";
+        f.src = src;
+        document.body.append(f);
+      }, `chrome-extension://${ext.id}/setup.html#${token}`);
+      const stolen = other.frameLocator("#stolen");
+      await expect(stolen.locator("body")).toBeAttached();
+      await ext.settle(1000);
+      const shown = (await stolen.locator("body").textContent()) ?? "";
+      expect(shown).not.toContain("Atlas Cloud (multi)");
+      expect(shown).not.toContain(FX.ops.email);
+
+      // The card of the scanned tab still works: the token was not spent by the other tab.
+      await page.bringToFront();
+      await cardClick(ext, card, L.add);
+      await expect(card.getByText(L.saved)).toBeVisible();
+      await expect(page.locator("#code")).toHaveValue(/^\d{6}$/);
+      await expect(other.locator("#email")).toHaveValue("");
+    });
   });
 });
