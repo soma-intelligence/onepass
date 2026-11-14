@@ -616,6 +616,7 @@ pub(crate) fn item_to_ffi(i: &Item) -> FfiItem {
         travel_hidden: i.travel_hidden(),
         travel_guard: i.travel_guarded(),
         icon_category: i.icon_category(),
+        custom_icon_id: i.custom_icon.as_ref().map(|c| id_hex(c.id)),
     }
 }
 
@@ -659,6 +660,7 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
         color: i.color.clone(),
         uses: i.use_count(),
         last_use_at: i.last_used_at().map(ts),
+        custom_icon_id: i.custom_icon.as_ref().map(|c| id_hex(c.id)),
     }
 }
 
@@ -871,6 +873,7 @@ mod tests {
             travel_hidden: false,
             travel_guard: false,
             icon_category: true,
+            custom_icon_id: None,
         }
     }
 
@@ -908,6 +911,31 @@ mod tests {
         assert!(s.icon_category);
         assert_eq!(s.color.as_deref(), Some("teal"));
         assert_eq!(s.tags, vec!["travail".to_string()]);
+    }
+
+    #[test]
+    fn custom_icon_id_exposed_and_kept() {
+        let now = OffsetDateTime::from_unix_timestamp(1_790_000_100).unwrap();
+        let mut stored = item_to_core(
+            &ffi_item(vec![section("main")], vec![]),
+            &Kept::new(None, true),
+            now,
+        )
+        .unwrap();
+        assert_eq!(item_to_ffi(&stored).custom_icon_id, None);
+        let icon_id = Id::new();
+        stored.custom_icon = Some(onepass_core::model::AttachmentRef {
+            id: icon_id,
+            name: "icon".into(),
+            size: 3,
+            mime: "image/png".into(),
+        });
+        let ffi = item_to_ffi(&stored);
+        assert_eq!(ffi.custom_icon_id, Some(id_hex(icon_id)));
+        assert_eq!(summary(&stored).custom_icon_id, Some(id_hex(icon_id)));
+        // An FfiItem round trip never clears the stored icon.
+        let back = item_to_core(&ffi, &Kept::new(Some(&stored), true), now).unwrap();
+        assert_eq!(back.custom_icon, stored.custom_icon);
     }
 
     #[test]

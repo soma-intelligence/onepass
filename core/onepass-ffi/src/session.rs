@@ -425,6 +425,53 @@ impl Session {
         })
     }
 
+    /// Set the item's custom icon from an image of at most 64 KiB (PNG, JPEG
+    /// or WebP), as a new item version. Returns the item as stored.
+    pub fn set_custom_icon(
+        &self,
+        vault_id: String,
+        item_id: String,
+        mime: String,
+        bytes: Vec<u8>,
+    ) -> Result<FfiItem, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        let bytes = zeroize::Zeroizing::new(bytes);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            repo.set_custom_icon(&vault, item_id, &mime, &bytes)?;
+            Ok(item_to_ffi(&find_item(repo, &vault, item_id)?))
+        })
+    }
+
+    /// Remove the item's custom icon and delete its encrypted chunks.
+    /// Returns the item as stored.
+    pub fn clear_custom_icon(
+        &self,
+        vault_id: String,
+        item_id: String,
+    ) -> Result<FfiItem, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            repo.clear_custom_icon(&vault, item_id)?;
+            Ok(item_to_ffi(&find_item(repo, &vault, item_id)?))
+        })
+    }
+
+    /// The decrypted bytes of the item's custom icon. `NotFound` when it has
+    /// none or its chunk is not synced to this device yet.
+    pub fn custom_icon_data(
+        &self,
+        vault_id: String,
+        item_id: String,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            Ok(repo.read_custom_icon(&vault, item_id)?.to_vec())
+        })
+    }
+
     pub fn trash_item(&self, vault_id: String, item_id: String) -> Result<(), OnePassError> {
         let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
         self.with(|repo| {

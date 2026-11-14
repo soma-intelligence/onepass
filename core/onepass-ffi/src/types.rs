@@ -318,6 +318,10 @@ pub struct FfiItem {
     /// reserved tag `onepass:icon-category`, never listed in `tags`).
     #[uniffi(default = false)]
     pub icon_category: bool,
+    /// Id of the item's custom icon (`Session::set_custom_icon`), `None` when
+    /// it has none. The bytes come from `Session::custom_icon_data`.
+    #[uniffi(default = None)]
+    pub custom_icon_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -413,6 +417,9 @@ pub struct FfiItemSummary {
     /// for an item never used. Swift exposes it as `lastUsedAt` (a `Date`).
     #[uniffi(default = None)]
     pub last_use_at: Option<i64>,
+    /// See `FfiItem::custom_icon_id`.
+    #[uniffi(default = None)]
+    pub custom_icon_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

@@ -2389,6 +2389,53 @@ fn attachment_add_read_remove_through_the_session() {
 }
 
 #[test]
+fn custom_icon_set_read_clear_through_the_session() {
+    let fx = fixture();
+    let item = saved_login(&fx, "Mot-de-passe-Atlas-7");
+    assert_eq!(item.custom_icon_id, None);
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.extend_from_slice(b"icone fictive");
+    let with = fx
+        .session
+        .set_custom_icon(
+            fx.vault_id.clone(),
+            item.id.clone(),
+            "image/png".into(),
+            png.clone(),
+        )
+        .unwrap();
+    let icon_id = with.custom_icon_id.clone().expect("icon id");
+    assert_eq!(with.attachment_count, 0);
+    assert_eq!(
+        fx.session
+            .custom_icon_data(fx.vault_id.clone(), item.id.clone())
+            .unwrap(),
+        png
+    );
+    let listed = fx.session.item_summaries().unwrap();
+    assert_eq!(listed[0].custom_icon_id.as_deref(), Some(icon_id.as_str()));
+    // An edit from the editor keeps the icon.
+    let mut edited = fx
+        .session
+        .item(fx.vault_id.clone(), item.id.clone())
+        .unwrap();
+    edited.title = "Atlas renommé".into();
+    edited.custom_icon_id = None;
+    let saved = fx.session.save_item(edited).unwrap();
+    assert_eq!(saved.custom_icon_id.as_deref(), Some(icon_id.as_str()));
+    let cleared = fx
+        .session
+        .clear_custom_icon(fx.vault_id.clone(), item.id.clone())
+        .unwrap();
+    assert_eq!(cleared.custom_icon_id, None);
+    assert!(
+        fx.session
+            .custom_icon_data(fx.vault_id.clone(), item.id.clone())
+            .is_err()
+    );
+}
+
+#[test]
 fn profile_round_trips_and_stays_hidden() {
     let fx = fixture();
     assert_eq!(fx.session.profile().unwrap(), None);
