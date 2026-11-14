@@ -15,6 +15,7 @@
 //! - Migration: entries that are HOTP, MD5, or use an unknown digit count are
 //!   skipped. The call fails with `InvalidFormat` when no entry is supported.
 
+use crate::model::{Field, FieldType, FieldValue, Item, ItemType, Section};
 use crate::{Error, Result};
 use aws_lc_rs::hmac;
 use data_encoding::{BASE32_NOPAD, BASE64_NOPAD};
@@ -358,6 +359,157 @@ pub fn parse_migration(uri: &str) -> Result<Vec<TotpConfig>> {
     Ok(out)
 }
 
+/// What `attach_otp` did to the item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OtpAttach {
+    /// The item had no code: the new one is stored.
+    Added,
+    /// The item already holds this very code: nothing was written.
+    Same,
+    /// The item holds a different code and `replace` was false: untouched.
+    Conflict,
+    /// The old code moved to a `previous_otp_<n>` field, the new one is stored.
+    Replaced,
+}
+
+/// An `otpauth://` URI or a bare base32 secret, parsed as `otp_code` does:
+/// a bare secret is never read as a URI.
+fn parse_otp_value(value: &str) -> Result<TotpConfig> {
+    const OTPAUTH: &str = "otpauth://";
+    let value = value.trim();
+    if value
+        .get(..OTPAUTH.len())
+        .is_some_and(|h| h.eq_ignore_ascii_case(OTPAUTH))
+    {
+        parse_otpauth(value)
+    } else {
+        totp_from_secret(value)
+    }
+}
+
+/// Same generator: secret, algorithm, digits, period (and Steam encoding).
+fn same_generator(a: &TotpConfig, b: &TotpConfig) -> bool {
+    *a.secret == *b.secret
+        && a.algorithm == b.algorithm
+        && a.digits == b.digits
+        && a.period == b.period
+        && a.steam == b.steam
+}
+
+/// Writes a one-time password seed on a Login and keeps the replaced one.
+/// `value` is an `otpauth://totp/` URI or a bare base32 secret. The item must
+/// be a Login with at most one non-empty OTP field, else `InvalidFormat`.
+/// A different stored code is only replaced when `replace` is set: the old
+/// value then moves to a concealed `previous_otp_<n>` field (smallest unused
+/// `n`, in the `custom` section) labelled `previous_label`. Without
+/// `replace`, a conflict leaves the item untouched.
+pub fn attach_otp(
+    item: &mut Item,
+    value: &str,
+    replace: bool,
+    previous_label: &str,
+) -> Result<OtpAttach> {
+    if item.item_type != ItemType::Login {
+        return Err(Error::InvalidFormat("not a login"));
+    }
+    let new_cfg = parse_otp_value(value)?;
+    let mut filled = Vec::new();
+    for (s, sec) in item.sections.iter().enumerate() {
+        for (f, field) in sec.fields.iter().enumerate() {
+            if matches!(&field.value, FieldValue::Otp(v) if !v.trim().is_empty()) {
+                filled.push((s, f));
+            }
+        }
+    }
+    if filled.len() > 1 {
+        return Err(Error::InvalidFormat("ambiguous one-time password"));
+    }
+    let new_value = Zeroizing::new(value.trim().to_owned());
+
+    let Some(&(s, f)) = filled.first() else {
+        set_otp(item, new_value);
+        return Ok(OtpAttach::Added);
+    };
+    let FieldValue::Otp(old) = &item.sections[s].fields[f].value else {
+        return Err(Error::InvalidFormat("one-time password"));
+    };
+    let old = old.clone();
+    // An unreadable stored value counts as different, never as an error.
+    if parse_otp_value(&old).is_ok_and(|c| same_generator(&c, &new_cfg)) {
+        return Ok(OtpAttach::Same);
+    }
+    if !replace {
+        return Ok(OtpAttach::Conflict);
+    }
+    let n = (1..)
+        .find(|n| {
+            let id = format!("{PREVIOUS_OTP_FIELD_PREFIX}{n}");
+            item.field(&id).is_none()
+        })
+        .unwrap_or(1);
+    let keep = Field {
+        id: format!("{PREVIOUS_OTP_FIELD_PREFIX}{n}"),
+        label: previous_label.to_owned(),
+        kind: FieldType::Concealed,
+        value: FieldValue::Concealed(Zeroizing::new(old.trim().to_owned())),
+        required: false,
+        repeatable: false,
+        autofill: false,
+    };
+    match item.sections.iter_mut().find(|s| s.id == CUSTOM_SECTION_ID) {
+        Some(sec) => sec.fields.push(keep),
+        None => item.sections.push(Section {
+            id: CUSTOM_SECTION_ID.to_owned(),
+            label: CUSTOM_SECTION_LABEL.to_owned(),
+            fields: vec![keep],
+        }),
+    }
+    item.sections[s].fields[f].value = FieldValue::Otp(new_value);
+    Ok(OtpAttach::Replaced)
+}
+
+/// Stores `value` in the Login's `totp` field, or in the first (empty) OTP field,
+/// adding a `totp` field to the first section when there is none.
+fn set_otp(item: &mut Item, value: Zeroizing<String>) {
+    let target = item
+        .sections
+        .iter_mut()
+        .flat_map(|s| s.fields.iter_mut())
+        .find(|f| f.id == "totp" && f.kind == FieldType::Otp);
+    let target = match target {
+        Some(f) => Some(f),
+        None => item
+            .sections
+            .iter_mut()
+            .flat_map(|s| s.fields.iter_mut())
+            .find(|f| f.kind == FieldType::Otp),
+    };
+    if let Some(f) = target {
+        f.value = FieldValue::Otp(value);
+        return;
+    }
+    let field = Field {
+        id: "totp".to_owned(),
+        label: "TOTP".to_owned(),
+        kind: FieldType::Otp,
+        value: FieldValue::Otp(value),
+        required: false,
+        repeatable: false,
+        autofill: false,
+    };
+    match item.sections.first_mut() {
+        Some(sec) => sec.fields.push(field),
+        None => item.sections.push(Section {
+            id: "main".to_owned(),
+            label: "Connexion".to_owned(),
+            fields: vec![field],
+        }),
+    }
+}
+
+const CUSTOM_SECTION_ID: &str = "custom";
+const CUSTOM_SECTION_LABEL: &str = "Champs perso";
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -663,5 +815,129 @@ mod tests {
                 "{u}"
             );
         }
+    }
+
+    // attach_otp
+
+    use crate::id::Id;
+    use crate::model::new_item;
+
+    const SEED: &str = "JBSWY3DPEHPK3PXP";
+    const OTHER: &str = "GEZDGNBVGY3TQOJQ";
+
+    fn login() -> Item {
+        new_item(ItemType::Login, Id::new(), "Mail")
+    }
+
+    fn totp_of(item: &Item) -> String {
+        match &item.field("totp").unwrap().value {
+            FieldValue::Otp(v) => v.to_string(),
+            _ => panic!("totp is not an otp field"),
+        }
+    }
+
+    #[test]
+    fn attach_adds_to_login_without_code() {
+        let mut item = login();
+        let r = attach_otp(&mut item, SEED, false, "Old code").unwrap();
+        assert_eq!(r, OtpAttach::Added);
+        assert_eq!(totp_of(&item), SEED);
+    }
+
+    #[test]
+    fn attach_same_secret_is_same_and_writes_nothing() {
+        let mut item = login();
+        attach_otp(&mut item, SEED, false, "Old code").unwrap();
+        let before = item.clone();
+        let uri = format!("otpauth://totp/Mail:me?secret={SEED}&issuer=Mail");
+        assert_eq!(
+            attach_otp(&mut item, &uri, true, "Old code").unwrap(),
+            OtpAttach::Same
+        );
+        assert_eq!(item, before);
+    }
+
+    #[test]
+    fn attach_conflict_leaves_item_untouched() {
+        let mut item = login();
+        attach_otp(&mut item, SEED, false, "Old code").unwrap();
+        let before = item.clone();
+        assert_eq!(
+            attach_otp(&mut item, OTHER, false, "Old code").unwrap(),
+            OtpAttach::Conflict
+        );
+        assert_eq!(item, before);
+    }
+
+    #[test]
+    fn attach_replace_keeps_old_seed() {
+        let mut item = login();
+        attach_otp(&mut item, SEED, false, "Old code").unwrap();
+        assert_eq!(
+            attach_otp(&mut item, OTHER, true, "Old code").unwrap(),
+            OtpAttach::Replaced
+        );
+        assert_eq!(totp_of(&item), OTHER);
+        let kept = item.field("previous_otp_1").unwrap();
+        assert_eq!(kept.label, "Old code");
+        assert_eq!(kept.kind, FieldType::Concealed);
+        assert!(matches!(&kept.value, FieldValue::Concealed(v) if v.as_str() == SEED));
+    }
+
+    #[test]
+    fn attach_second_replace_uses_next_index() {
+        let mut item = login();
+        attach_otp(&mut item, SEED, false, "Old code").unwrap();
+        attach_otp(&mut item, OTHER, true, "Old code").unwrap();
+        attach_otp(&mut item, "MFRGGZDFMZTWQ2LK", true, "Old code").unwrap();
+        assert!(matches!(
+            &item.field("previous_otp_2").unwrap().value,
+            FieldValue::Concealed(v) if v.as_str() == OTHER
+        ));
+        assert!(item.field("previous_otp_1").is_some());
+    }
+
+    #[test]
+    fn attach_refuses_non_login_hotp_and_garbage() {
+        let mut note = new_item(ItemType::SecureNote, Id::new(), "Note");
+        assert!(attach_otp(&mut note, SEED, false, "Old code").is_err());
+        let mut item = login();
+        let before = item.clone();
+        let hotp = format!("otpauth://hotp/Mail?secret={SEED}&counter=1");
+        assert!(attach_otp(&mut item, &hotp, false, "Old code").is_err());
+        assert!(attach_otp(&mut item, "not base32!", false, "Old code").is_err());
+        assert_eq!(item, before);
+    }
+
+    #[test]
+    fn attach_refuses_ambiguous_item() {
+        let mut item = login();
+        item.field_mut("totp").unwrap().value = FieldValue::Otp(Zeroizing::new(SEED.into()));
+        item.sections[0].fields.push(Field {
+            id: "totp_2".into(),
+            label: "TOTP 2".into(),
+            kind: FieldType::Otp,
+            value: FieldValue::Otp(Zeroizing::new(OTHER.into())),
+            required: false,
+            repeatable: false,
+            autofill: false,
+        });
+        assert!(attach_otp(&mut item, OTHER, true, "Old code").is_err());
+    }
+
+    #[test]
+    fn attach_replace_writes_the_filled_field_not_a_second_one() {
+        let mut item = login();
+        item.field_mut("totp").unwrap().id = "mfa".into();
+        item.field_mut("mfa").unwrap().value = FieldValue::Otp(Zeroizing::new(SEED.into()));
+        attach_otp(&mut item, OTHER, true, "Old code").unwrap();
+        let filled = item
+            .sections
+            .iter()
+            .flat_map(|s| &s.fields)
+            .filter(|f| matches!(&f.value, FieldValue::Otp(v) if !v.is_empty()))
+            .count();
+        assert_eq!(filled, 1);
+        assert!(item.field("previous_otp_1").is_some());
     }
 }
