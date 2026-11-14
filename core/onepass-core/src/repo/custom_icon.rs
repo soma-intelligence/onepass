@@ -84,6 +84,7 @@ impl<S: RecordStore> Repository<S> {
             return Err(e);
         }
         if let Some(old) = old {
+            // A malformed reference deletes nothing, as in `attachments.rs`.
             let gone = attachment::chunk_ids(&old).unwrap_or_default();
             self.delete_chunks(zone, &gone);
         }
@@ -106,6 +107,7 @@ impl<S: RecordStore> Repository<S> {
         );
         item.updated_at = now;
         self.save_item(vault, item)?;
+        // A malformed reference deletes nothing, as in `attachments.rs`.
         let ids = attachment::chunk_ids(&old).unwrap_or_default();
         self.delete_chunks(vault.zone(), &ids);
         Ok(())
@@ -362,8 +364,24 @@ mod tests {
         let merged = repo
             .merge_duplicates(key(&primary), &[key(&other)], "merged")
             .unwrap();
-        assert_eq!(merged.custom_icon, Some(icon.clone()));
-        assert_eq!(stored(&mut repo, &a, primary.id).custom_icon, Some(icon));
+        let mine = merged.custom_icon.clone().unwrap();
+        // Its own copy of the file, not the folded item's reference.
+        assert_ne!(mine.id, icon.id);
+        assert_eq!(
+            (mine.size, mine.mime.as_str()),
+            (icon.size, icon.mime.as_str())
+        );
+        assert_eq!(stored(&mut repo, &a, primary.id).custom_icon, Some(mine));
+        assert_eq!(
+            &repo.read_custom_icon(&a, primary.id).unwrap()[..],
+            &png(100)[..]
+        );
+        // Deleting the archived copy leaves the primary's icon alone.
+        repo.delete_item(&b, other.id).unwrap();
+        assert_eq!(
+            &repo.read_custom_icon(&a, primary.id).unwrap()[..],
+            &png(100)[..]
+        );
     }
 
     fn chunk_count(repo: &Repository<MemoryStore>) -> usize {
@@ -415,5 +433,12 @@ mod tests {
         let loaded = repo.served(&a, Use::Read).unwrap();
         let resealed = repo.reseal_vault(&a, &to, &loaded).unwrap();
         assert_eq!(resealed.attachments.len(), 1);
+        let (moved, _) = &resealed.attachments[0];
+        let icon = stored(&mut repo, &a, item.id).custom_icon.unwrap();
+        let bytes = attachment::open_attachment(&to, &icon, |id| {
+            Ok((id == moved.id).then(|| moved.clone()))
+        })
+        .unwrap();
+        assert_eq!(&bytes[..], &png(200)[..]);
     }
 }

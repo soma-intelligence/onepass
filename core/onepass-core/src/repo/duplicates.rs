@@ -244,6 +244,32 @@ impl<S: RecordStore> Repository<S> {
                 );
                 merged.attachments.push(reference);
             }
+            // An icon taken from a folded item gets its own chunks for the
+            // primary's vault: sharing the reference would tie the two
+            // items' chunks together (delete, replace, another zone).
+            if let Some(icon) = merged.custom_icon.clone()
+                && before.custom_icon.as_ref().map(|r| r.id) != Some(icon.id)
+            {
+                merged.custom_icon = None;
+                if let Some((fv, from_item)) = folded
+                    .iter()
+                    .find(|(_, i)| i.custom_icon.as_ref().is_some_and(|r| r.id == icon.id))
+                {
+                    let fv = vault_of(&vaults, *fv)?;
+                    match self.read_custom_icon(fv, from_item.id) {
+                        Ok(bytes) => {
+                            let (reference, records) =
+                                attachment::seal_attachment(pv, &icon.name, &icon.mime, &bytes)?;
+                            written.extend(records.iter().map(|c| c.id));
+                            self.put_chunks(pv.zone(), records)?;
+                            merged.custom_icon = Some(reference);
+                        }
+                        // Chunk not synced yet: the merge goes on without it.
+                        Err(Error::NotFound) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
             Ok(())
         })();
         if let Err(e) = copied {
