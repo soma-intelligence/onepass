@@ -77,6 +77,8 @@ private struct ItemsPane: View {
     /// Not secret: the list column's width.
     @AppStorage("onepass.browse.listWidth", store: AppModel.browseDefaults) private var listWidth = 330.0
     @State private var dragStart: Double?
+    /// The window's title bar (toolbar included), measured from the window.
+    @State private var barHeight: CGFloat = 52
 
     private static let listRange = 280.0...440.0
 
@@ -90,14 +92,34 @@ private struct ItemsPane: View {
                 HStack(spacing: 0) {
                     ItemListColumn()
                         .frame(width: list)
+                        // Rows scrolling up fade out under the bar, as in the sidebar (the table
+                        // gets no system edge effect).
+                        .mask {
+                            VStack(spacing: 0) {
+                                Color.clear.frame(height: barHeight)
+                                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                                    .frame(height: 12)
+                                Rectangle()
+                            }
+                            .ignoresSafeArea()
+                        }
                     divider
                     DetailColumn()
                         .frame(minWidth: Self.detailMinimum, maxWidth: .infinity)
                 }
                 // The title bar's row above: the list's search field fills what its items leave.
                 .environment(\.titleBarRoom, proxy.size.width)
+                // The pane runs under the title bar (so the detail's wash shows through it). An
+                // empty bar of the title bar's height gives the room back: rows and cards start
+                // below it, and the detail's scroll view gets the system's soft edge under it.
+                .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: barHeight) }
             }
+            .ignoresSafeArea(.container, edges: .top)
+            .background { TitlebarHeightReader(height: $barHeight) }
         }
+        // No bar background of its own: the title bar shows the detail's wash through, as it did
+        // over the detail column alone.
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         // The split view only knows its columns: this floor keeps the window from shrinking under
         // the narrowest list and detail (and the title bar's row from spilling into its menu).
         .navigationSplitViewColumnWidth(

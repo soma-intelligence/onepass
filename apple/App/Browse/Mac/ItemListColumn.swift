@@ -466,7 +466,10 @@ struct ItemListColumn: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
+        // A blur under the fill: the detail's wash, cut at the list's edge, passes behind the
+        // field as a soft glow, not a seam.
         .background(.fill.quaternary, in: Capsule())
+        .background(.ultraThinMaterial, in: Capsule())
         .overlay {
             Capsule()
                 .strokeBorder(searchFocused ? AnyShapeStyle(Theme.accent.opacity(0.8)) : AnyShapeStyle(.white.opacity(0.06)))
