@@ -129,7 +129,7 @@ class ItemScreens(private val a: MainActivity) {
         return a.pushedPage(null, trailing) {
             // Header: icon, title, "Catégorie · sous-titre", vault chip.
             val head = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(4)) }
-            head.addView(a.itemIcon(item.itemType, 56).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = ui.dp(14) })
+            head.addView(a.itemIcon(item.itemType, 56, url = (item.urls.firstOrNull { it.primary } ?: item.urls.firstOrNull())?.url, title = item.title).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = ui.dp(14) })
             val names = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
             names.addView(ui.text(item.title.ifBlank { a.t("Sans titre", "Untitled") }, 26f, ui.label, 700))
             val sub = a.summaries.firstOrNull { it.id == item.id }?.subtitle.orEmpty()
@@ -182,13 +182,79 @@ class ItemScreens(private val a: MainActivity) {
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(ui.dp(16), ui.dp(28), ui.dp(16), ui.dp(8))
             }
-            footer.addView(ui.text(a.t("Modifié le ", "Modified ") + df.format(Date(item.updatedAt * 1000)), 13f, ui.secondary).apply { gravity = Gravity.CENTER })
+            // "Modifié le …" opens the item's timeline (newest first), as on iPhone.
+            val timeline = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+            val modified = LinearLayout(a).apply {
+                gravity = Gravity.CENTER
+                isClickable = true
+                contentDescription = a.t("Historique de l'élément", "Item history")
+            }
+            modified.addView(ui.text(a.t("Modifié le ", "Modified ") + df.format(Date(item.updatedAt * 1000)), 13f, ui.secondary))
+            val chevron = ui.glyph(R.drawable.ic_chevron_right, ui.secondary, 14).apply { (layoutParams as LinearLayout.LayoutParams).marginStart = ui.dp(4) }
+            modified.addView(chevron)
+            modified.setOnClickListener {
+                val open = timeline.visibility != View.VISIBLE
+                chevron.rotation = if (open) 90f else 0f
+                timeline.visibility = if (open) View.VISIBLE else View.GONE
+                if (open && timeline.childCount == 0) a.background({ s.itemTimeline(item.vaultId, item.id) }) { r ->
+                    val events = r.getOrDefault(emptyList()).ifEmpty { listOf(me.somalabs.onepass.core.FfiTimelineEvent("created", item.createdAt, "")) }
+                    events.forEach { timeline.addView(timelineRow(it)) }
+                }
+            }
+            footer.addView(modified)
+            footer.addView(timeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(8) })
             footer.addView(ui.text(a.t("Créé le ", "Created ") + df.format(Date(item.createdAt * 1000)), 13f, ui.tertiary).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(2), 0, 0) })
             if (item.passwordHistoryCount > 0u) {
                 footer.addView(a.link(a.t("Historique des mots de passe", "Password History")) { a.push { history(item) } }.apply { gravity = Gravity.CENTER })
             }
             addView(footer)
         }
+    }
+
+    /** One event of the timeline: its symbol, the sentence, how long ago. */
+    private fun timelineRow(e: me.somalabs.onepass.core.FfiTimelineEvent): View {
+        val d = e.detail
+        val icon = when (e.kind) {
+            "created", "field_added" -> R.drawable.ic_add
+            "imported" -> R.drawable.ic_import
+            "field_removed", "trashed" -> R.drawable.ic_trash
+            "password_changed" -> R.drawable.ic_key
+            "website_added", "website_removed" -> R.drawable.ic_globe
+            "moved" -> R.drawable.ic_folder
+            "favorited", "unfavorited" -> R.drawable.ic_star
+            "archived", "unarchived" -> R.drawable.ic_archive
+            "restored" -> R.drawable.ic_restore
+            "passkey_added", "passkey_removed" -> R.drawable.ic_passkey
+            "attachment_added" -> R.drawable.ic_paperclip
+            else -> R.drawable.ic_edit
+        }
+        val text = when (e.kind) {
+            "created" -> a.t("Élément créé", "Item created")
+            "imported" -> if (d.isEmpty()) a.t("Importé", "Imported") else a.t("Importé depuis $d", "Imported from $d")
+            "field_added" -> a.t("Champ « $d » ajouté", "Field “$d” added")
+            "field_removed" -> a.t("Champ « $d » supprimé", "Field “$d” removed")
+            "field_changed" -> when (d) { "notes" -> a.t("Notes modifiées", "Notes changed"); "tags" -> a.t("Tags modifiés", "Tags changed"); else -> a.t("« $d » modifié", "“$d” changed") }
+            "password_changed" -> a.t("Mot de passe modifié", "Password changed")
+            "title_changed" -> a.t("Titre modifié", "Title changed")
+            "website_added" -> a.t("Site web ajouté : $d", "Website added: $d")
+            "website_removed" -> a.t("Site web retiré : $d", "Website removed: $d")
+            "moved" -> a.t("Déplacé vers $d", "Moved to $d")
+            "favorited" -> a.t("Ajouté aux favoris", "Added to Favorites")
+            "unfavorited" -> a.t("Retiré des favoris", "Removed from Favorites")
+            "archived" -> a.t("Archivé", "Archived")
+            "unarchived" -> a.t("Désarchivé", "Unarchived")
+            "trashed" -> a.t("Mis dans Supprimés récemment", "Moved to Recently Deleted")
+            "restored" -> a.t("Restauré", "Restored")
+            "passkey_added" -> a.t("Passkey ajoutée pour $d", "Passkey added for $d")
+            "passkey_removed" -> a.t("Passkey supprimée pour $d", "Passkey removed for $d")
+            "attachment_added" -> a.t("Pièce jointe ajoutée : $d", "Attachment added: $d")
+            else -> a.t("Modifié", "Modified")
+        }
+        val row = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(8), ui.dp(5), ui.dp(8), ui.dp(5)) }
+        row.addView(ui.glyph(icon, ui.secondary, 18).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = ui.dp(10) })
+        row.addView(ui.text(text, 15f, ui.label).apply { maxLines = 2 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(ui.text(android.text.format.DateUtils.getRelativeTimeSpanString(e.at * 1000, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS), 13f, ui.secondary))
+        return row
     }
 
     /** One field: the label in the accent above the value, "⋯" with Copier / Révéler / Afficher en grand. */

@@ -60,7 +60,7 @@ class SettingsScreens(private val a: MainActivity) {
             title = name.ifEmpty { a.t("Compte OnePass", "OnePass Account") }, subtitle = a.t("Profil, Emergency Kit", "Profile, Emergency Kit"), minHeightDp = 76,
         ) { a.push { accounts() } }), top = Ios.Space.S))
         groups.forEach { group ->
-            addView(ui.inset(ui.card(*group.map { p -> ui.row(icon = tile(p.art), title = a.t(p.fr, p.en)) { a.push { page(p) } } }.toTypedArray()), top = Ios.Space.XL))
+            addView(ui.inset(ui.card(*group.map { p -> ui.row(icon = tile(p.art), title = a.t(p.fr, p.en)) { if (p.key == "travel") a.travel.open() else a.push { page(p) } } }.toTypedArray()), top = Ios.Space.XL))
         }
     }
 
@@ -175,9 +175,27 @@ class SettingsScreens(private val a: MainActivity) {
         addView(ui.inset(ui.card(
             ui.toggleRow(a.t("Connexion Wi-Fi automatique", "Automatic Wi-Fi"), a.t("Les réseaux de tes éléments Routeur Wi-Fi", "Networks from your Wi-Fi router items"), a.wifi.enabled) { a.wifi.enabled = it },
             status,
+            ui.row(title = a.t("Réseaux Wi-Fi", "Wi-Fi Networks")) { a.push { wifiNetworks() } },
         )))
         attachWifi()
         a.backups.sections(this)
+    }
+
+    /** The networks of the Wi-Fi router items (`wifi_networks`), what automatic Wi-Fi installs. */
+    private fun wifiNetworks(): View = a.pushedPage(a.t("Réseaux Wi-Fi", "Wi-Fi Networks"), largeTitle = true) {
+        val sel = runCatching { a.vault.session?.wifiNetworks(emptyList()) }.getOrNull()
+        val nets = sel?.networks.orEmpty()
+        if (nets.isEmpty()) addView(ui.footnote(a.t("Aucun réseau : ajoute un élément Routeur Wi-Fi avec son nom de réseau et son mot de passe.", "No network: add a Wi-Fi Router item with its network name and password.")))
+        else addView(ui.inset(ui.card(*nets.sortedBy { it.ssid.lowercase() }.map { n ->
+            val sum = a.summaries.firstOrNull { it.id == n.itemId }
+            ui.row(icon = ui.glyph(R.drawable.ic_wifi, ui.accent, 24), title = n.ssid,
+                subtitle = listOfNotNull(n.security.name.replace('_', ' '), if (n.hidden) a.t("masqué", "hidden") else null, sum?.title).joinToString(" · ")) {
+                sum?.let { a.items.detail(it.vaultId, it.id) }
+            }
+        }.toTypedArray()), top = Ios.Space.S))
+        val skipped = sel?.skipped.orEmpty().values.sumOf { it.toInt() }
+        if (skipped > 0) addView(ui.footnote(a.t("$skipped éléments Routeur laissés de côté (nom de réseau ou mot de passe manquant, ou sécurité non prise en charge).", "$skipped router items left out (missing network name or password, or unsupported security).")))
+        addView(ui.footnote(a.t("Avec la connexion Wi-Fi automatique, Android rejoint ces réseaux quand ils sont à portée.", "With automatic Wi-Fi, Android joins these networks when they are in range.")))
     }
 
     private fun renderWifi(report: SyncReport?) {

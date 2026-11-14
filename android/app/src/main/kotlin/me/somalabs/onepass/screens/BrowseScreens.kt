@@ -19,10 +19,25 @@ import me.somalabs.onepass.core.FfiItemType
 import me.somalabs.onepass.ui.Category
 import me.somalabs.onepass.ui.Ios
 
-/** The item's category artwork, rounded, with the favorite star badge (ItemIcon + favoriteBadge). */
-fun MainActivity.itemIcon(type: FfiItemType, sizeDp: Int, favorite: Boolean = false): View {
+/**
+ * The item's icon, rounded, with the favorite star badge (ItemIcon + favoriteBadge): the site's
+ * brand from the icon pack when its web address (or, without one, its title) has one, else the
+ * category artwork.
+ */
+fun MainActivity.itemIcon(type: FfiItemType, sizeDp: Int, favorite: Boolean = false, url: String? = null, title: String? = null): View {
     val box = FrameLayout(this).apply { layoutParams = LinearLayout.LayoutParams(ui.dp(sizeDp), ui.dp(sizeDp)) }
-    val art = ui.image(Category.of(type).art, sizeDp).apply {
+    val pack = me.somalabs.onepass.ui.IconPack.shared
+    val brand = if (pack == null || type !in brandTypes) null else me.somalabs.onepass.ui.IconPack.host(url)?.let { pack.forHost(it) }
+        ?: title?.takeIf { url.isNullOrBlank() }?.let { pack?.forTitle(it) }
+    val art: View = if (brand != null) FrameLayout(this).apply {
+        background = ui.rounded(if (brand.monochrome) ui.card else android.graphics.Color.WHITE, sizeDp * 0.225f, ui.hairline)
+        val pad = ui.dp(sizeDp * 0.16f)
+        addView(android.widget.ImageView(this@itemIcon).apply {
+            setImageBitmap(brand.bitmap)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            if (brand.monochrome) imageTintList = android.content.res.ColorStateList.valueOf(ui.label)
+        }, FrameLayout.LayoutParams(ui.dp(sizeDp) - 2 * pad, ui.dp(sizeDp) - 2 * pad, Gravity.CENTER))
+    } else ui.image(Category.of(type).art, sizeDp).apply {
         outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, ui.dp(sizeDp * 0.225f).toFloat())
         }
@@ -40,13 +55,16 @@ fun MainActivity.itemIcon(type: FfiItemType, sizeDp: Int, favorite: Boolean = fa
     return box
 }
 
+/** The kinds that can carry a site's brand icon. */
+private val brandTypes = setOf(FfiItemType.LOGIN, FfiItemType.PASSWORD, FfiItemType.API_CREDENTIAL, FfiItemType.SUBSCRIPTION, FfiItemType.MEMBERSHIP, FfiItemType.REWARD_PROGRAM, FfiItemType.EMAIL)
+
 /** The second line of a list row: the subtitle, or the category's name (ItemListRow). */
 fun MainActivity.secondLine(s: FfiItemSummary): String =
     s.subtitle.ifBlank { s.signInProvider?.let { t("Se connecte avec ", "Signs in with ") + it.replaceFirstChar(Char::uppercase) } ?: Category.of(s.itemType).singular(this) }
 
 fun MainActivity.itemRow(s: FfiItemSummary, vaultName: String? = null): View =
     ui.row(
-        icon = itemIcon(s.itemType, 36, s.favorite),
+        icon = itemIcon(s.itemType, 36, s.favorite, s.primaryUrl, s.title),
         title = s.title.ifBlank { t("Sans titre", "Untitled") },
         subtitle = listOfNotNull(secondLine(s), vaultName).joinToString(" · "),
         minHeightDp = 60,

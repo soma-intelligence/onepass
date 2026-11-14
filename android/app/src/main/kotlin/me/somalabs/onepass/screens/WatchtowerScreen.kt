@@ -245,7 +245,7 @@ class WatchtowerScreen(private val a: MainActivity) {
             background = ui.pressable(ui.rounded(fill(c), Ios.Radius.CARD), Ios.Radius.CARD)
             isClickable = true
             contentDescription = c.title()
-            setOnClickListener { a.push { flaggedItems(c.title(), ids) } }
+            setOnClickListener { if (c.id == "duplicate") a.duplicates.open() else a.push { flaggedItems(c.title(), ids) } }
         }
         val body = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16)) }
         val top = LinearLayout(a).apply { gravity = Gravity.TOP }
@@ -280,6 +280,7 @@ class WatchtowerScreen(private val a: MainActivity) {
             note?.let { texts.addView(ui.text(it, 12f, ui.secondary).apply { setPadding(0, ui.dp(2), 0, 0) }) }
             row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             if (note == null) row.addView(ui.glyph(R.drawable.ic_check_circle, ui.green, 22))
+            if (c.id == "duplicate") { row.background = ui.pressable(null); row.isClickable = true; row.setOnClickListener { a.duplicates.open() } }
             col.addView(row)
         }
         return col

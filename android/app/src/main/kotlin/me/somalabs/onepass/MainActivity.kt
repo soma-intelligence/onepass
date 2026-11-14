@@ -68,6 +68,8 @@ class MainActivity : Activity() {
     val access by lazy { AccessScreens(this) }
     val settings by lazy { SettingsScreens(this) }
     val watchFetcher by lazy { me.somalabs.onepass.vault.WatchtowerFetcher(applicationContext) }
+    val duplicates by lazy { me.somalabs.onepass.screens.DuplicatesScreen(this) }
+    val travel by lazy { me.somalabs.onepass.screens.TravelScreen(this) }
     val backups by lazy { me.somalabs.onepass.screens.BackupScreens(this) }
 
     enum class Tab { HOME, ITEMS, WATCHTOWER, SEARCH }
@@ -147,6 +149,8 @@ class MainActivity : Activity() {
         }
         setContentView(root)
         me.somalabs.onepass.screens.Attachments.clearCache(this)
+        // The brand icons, mapped once off the main thread; the lists redraw with them.
+        Thread { me.somalabs.onepass.ui.IconPack.load(applicationContext); main.post { if (!isDestroyed) renderIfRoot() } }.start()
         route()
     }
 
