@@ -64,8 +64,10 @@ final class ItemEditorCardsUITests: XCTestCase {
         let handle = any["editor.reorder.websites"].firstMatch
         scrollTo(handle, in: app)
         let card = any["editor.section.\(sectionID)"].firstMatch
+        // A short drag, one slot: just past the middle of the section card, so the drop depends on
+        // the measured card frames (a long drag would land last whatever the frames say).
         let below = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: handle.frame.midX, dy: card.frame.maxY + 40))
+            .withOffset(CGVector(dx: handle.frame.midX, dy: card.frame.midY + 10))
         handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.2, thenDragTo: below, withVelocity: .slow, thenHoldForDuration: 0.3)
         assertWebsitesFollowSection(sectionID, in: app, "before save")

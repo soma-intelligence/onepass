@@ -19,7 +19,8 @@ struct ReorderableStack<Item: Identifiable, Row: View>: View where Item.ID: Hash
     @State private var translation: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let space = "reorderable-stack"
+    /// Each stack measures in its own space: a card stack holds row stacks of its own.
+    @State private var space = UUID()
 
     var body: some View {
         VStack(spacing: spacing) {
@@ -41,6 +42,9 @@ struct ReorderableStack<Item: Identifiable, Row: View>: View where Item.ID: Hash
             for (index, frame) in value { if let item = items[safe: index] { out[item.id] = frame } }
             frames = out
         }
+        // The frames stop here: a stack inside a card of an outer stack must not overwrite the
+        // outer stack's entries (same position keys).
+        .transformPreference(ReorderFramesKey.self) { $0 = [:] }
     }
 
     private func handle(for item: Item, at index: Int) -> ReorderHandle {
