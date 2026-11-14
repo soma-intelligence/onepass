@@ -502,9 +502,12 @@ struct Org {
     /// Generations 0, 1, 2, then `lineages[3]`: generation 0 followed by
     /// an OwnersChanged {M} that drops O; `lineages[4]`: generation 2
     /// followed by an OwnersChanged {O, M'} where M rotated its identity,
-    /// KEM key and device (`m_rotated`).
-    lineages: [OrgLineage; 5],
+    /// KEM key and device (`m_rotated`); `lineages[5]`: generation 0
+    /// followed by an OwnersChanged {O'} where the sole owner O rotated
+    /// (`o_rotated`).
+    lineages: [OrgLineage; 6],
     m_rotated: TestDevice,
+    o_rotated: TestDevice,
     chain: Vec<SignedRoster>,
 }
 
@@ -635,6 +638,13 @@ fn org() -> &'static Org {
             .unwrap();
             l2.apply(&rec).unwrap()
         };
+        let o_rotated = device(0x68);
+        let sole_rotated = change(
+            &l0,
+            OrgChangeKind::OwnersChanged {
+                owners: vec![rotated_o(&o_rotated)],
+            },
+        );
         let sign =
             |body: RosterBody, d: &TestDevice| sign_roster(body, &d.public, &d.keys).unwrap();
         let r1 = founding_roster(&l0).unwrap();
@@ -668,8 +678,9 @@ fn org() -> &'static Org {
             u,
             p,
             m,
-            lineages: [l0, l1, l2, dropped, rotated],
+            lineages: [l0, l1, l2, dropped, rotated, sole_rotated],
             m_rotated,
+            o_rotated,
             chain,
         }
     })
@@ -682,6 +693,16 @@ fn rotated_m(d: &TestDevice) -> MemberRef {
         account_identity_pub: identity_pool(0).1.clone(),
         account_kem_pub: kem_pool(0).1.clone(),
         ..member_ref(M, &[d])
+    }
+}
+
+/// O after an account rotation: another identity and KEM key, one new
+/// device.
+fn rotated_o(d: &TestDevice) -> MemberRef {
+    MemberRef {
+        account_identity_pub: identity_pool(0).1.clone(),
+        account_kem_pub: kem_pool(0).1.clone(),
+        ..member_ref(O, &[d])
     }
 }
 
@@ -1510,4 +1531,59 @@ fn owner_key_rotation_follows_lineage() {
         entry(b, U).account_kem_hash = member_kem_hash(&kem_pool(1).1);
     });
     denied(accept_in(l4, &pinned, n, O), "U's keys");
+}
+
+// Fix round 3 (ruling R7e).
+
+#[test]
+fn sole_owner_syncs_own_rotation() {
+    let org = org();
+    let l5 = &org.lineages[5];
+    assert_eq!(l5.head().owners.len(), 1);
+    let new_ref = rotated_o(&org.o_rotated);
+    let sync = |b: &mut RosterBody| {
+        b.org_head = l5.head().hash;
+        let e = entry(b, O);
+        e.account_identity_pub = Some(new_ref.account_identity_pub.clone());
+        e.account_kem_hash = member_kem_hash(&new_ref.account_kem_pub);
+        e.devices = new_ref.devices.clone();
+    };
+    // O's old device (listed in the pinned roster) signs.
+    let n = edit(base(), sync);
+    let synced = accept_in(l5, base(), n.clone(), O).unwrap();
+    assert_eq!(synced, n);
+    // The rotated device signs from then on.
+    let rec = sign_roster(
+        synced.next().unwrap(),
+        &org.o_rotated.public,
+        &org.o_rotated.keys,
+    )
+    .unwrap();
+    assert!(accept_next_roster(l5, &synced, &rec).is_ok());
+    // Self values other than the MemberRef.
+    let n = edit(base(), |b| {
+        sync(b);
+        entry(b, O).account_kem_hash = [1; 32];
+    });
+    denied(
+        accept_in(l5, base(), n, O),
+        "own KEM hash not the lineage's",
+    );
+    let n = edit(base(), |b| {
+        sync(b);
+        replace_devices(b, O, 0x69);
+    });
+    denied(accept_in(l5, base(), n, O), "own devices not the lineage's");
+    // Roles still only shrink on its own entry.
+    let n = edit(base(), |b| {
+        sync(b);
+        add_role(b, O, Role::Admin);
+    });
+    denied(accept_in(l5, base(), n, O), "own role added with the sync");
+    // Before the lineage has the rotation, a self key edit is refused.
+    let n = edit(base(), |b| {
+        let e = entry(b, O);
+        e.account_kem_hash = member_kem_hash(&new_ref.account_kem_pub);
+    });
+    denied(accept(base(), n, O), "own KEM hash without lineage");
 }

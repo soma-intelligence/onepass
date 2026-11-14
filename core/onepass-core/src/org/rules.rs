@@ -219,13 +219,23 @@ fn check_entry(
     if e.account_id == s.account {
         // Its own entry: only roles change, and only shrink (Owner
         // included: a lineage promotion of the signer is mirrored by
-        // another signer).
+        // another signer). R7e: an effective Owner may also sync its own
+        // identity, KEM hash and devices to its lineage MemberRef (a sole
+        // owner's rotation), signed by a device of the pinned roster.
         let p = p.ok_or_else(denied)?;
+        let lineage_sync = s.roles.contains(Role::Owner) && follows_lineage(owners, e);
         let same_but_roles = OrgMember {
             roles: p.roles,
             ..e.clone()
         };
-        if same_but_roles != *p || !e.roles.is_subset(p.roles) {
+        let same_but_roles_and_keys = OrgMember {
+            account_identity_pub: p.account_identity_pub.clone(),
+            account_kem_hash: p.account_kem_hash,
+            devices: p.devices.clone(),
+            ..same_but_roles.clone()
+        };
+        let allowed = same_but_roles == *p || (lineage_sync && same_but_roles_and_keys == *p);
+        if !allowed || !e.roles.is_subset(p.roles) {
             return Err(denied());
         }
         return Ok(());
