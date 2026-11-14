@@ -6,21 +6,25 @@
 //! `ORG_JOIN_DOMAIN`. The admin verifies it against the pinned roster and
 //! the org fingerprint, then activates the member (Invited -> Active).
 //!
-//! `join_code` is display only: the member reads it on its screen and the
-//! admin compares it with the code of the request in the console, which
-//! catches a request swapped by a server that saw the invitation nonce
-//! (README 20.7). Nothing verifies it and no decision rests on it.
+//! `join_code` is display only: five words derived from the account id and
+//! identity key; the member reads them on its screen and the admin compares
+//! them with the words of the request in the console, which catches a
+//! request swapped by a server that saw the invitation nonce (README 20.7,
+//! ruling R9a). Nothing verifies it and no decision rests on it.
 
 use serde::{Deserialize, Serialize};
 
+use super::identity::fingerprint_words;
 use super::{
     MAX_DISPLAY_NAME_BYTES, MAX_ORG_RECORD_BYTES, MemberState, ORG_FORMAT, ORG_JOIN_CODE_PREFIX,
     ORG_JOIN_DOMAIN, OrgId, OrgMember, RoleSet, RosterBody, invite_commit, member_kem_hash, sha256,
 };
 use crate::crypto::{HybridKemPublic, HybridSignature, IdentityVerifyingKey, random_array};
 use crate::device_keys::{DeviceKeys, DevicePublic};
+use crate::generator::Wordlist;
 use crate::lineage::{
-    GENESIS_FORMAT_MANAGED, LineageRecord, check_hybrid_sig, decode_strict_with, verify_genesis,
+    GENESIS_FORMAT_MANAGED, GenesisBody, LineageRecord, Signed, check_hybrid_sig,
+    decode_strict_with, verify_genesis,
 };
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
@@ -42,6 +46,23 @@ fn invalid(field: &str, reason: &'static str) -> Error {
 
 fn wrong_context() -> Error {
     IntegrityError::WrongContext.into()
+}
+
+/// Control characters, and invisible or direction-changing characters that
+/// would let a display name pass for another (ruling R9b): soft hyphen,
+/// zero-width and directional marks, bidi embeddings and isolates, word
+/// joiner and invisible operators, BOM.
+fn refused_name_char(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{00AD}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+        )
 }
 
 /// What the invite carries besides the server URL and the org fingerprint.
@@ -128,7 +149,7 @@ impl JoinRequestBody {
             DevicePublic::decode(&d.encode()).map_err(|_| bad("join request device"))?;
         }
         if self.display_name.len() > MAX_DISPLAY_NAME_BYTES
-            || self.display_name.chars().any(char::is_control)
+            || self.display_name.chars().any(refused_name_char)
         {
             return Err(bad("join request display name"));
         }
@@ -181,6 +202,8 @@ pub fn sign_join_request(body: JoinRequestBody, keys: &DeviceKeys) -> Result<Sig
 /// A verified join request, what `activate_member` writes into the roster:
 /// the identity, the devices' fingerprints and `member_kem_hash` of
 /// `account_kem_pub`. Plan C grants `mailbox_credential` read access.
+/// Only `verify_join_request` should produce one: a `VerifiedJoin` built
+/// by hand carries no proof of anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedJoin {
     pub account_id: Id,
@@ -191,15 +214,41 @@ pub struct VerifiedJoin {
     pub account_kem_pub: HybridKemPublic,
 }
 
-/// `SHA-256(ORG_JOIN_CODE_PREFIX || postcard(req.body))`, its first 8
-/// bytes big-endian modulo 10^8, as two zero-padded groups of four digits
-/// (`"0123 4567"`). Display only.
-pub fn join_code(req: &SignedJoinRequest) -> String {
-    let h = sha256(&[ORG_JOIN_CODE_PREFIX, &req.body.encode()]);
-    let mut first = [0u8; 8];
-    first.copy_from_slice(&h[..8]);
-    let n = u64::from_be_bytes(first) % 100_000_000;
-    format!("{:04} {:04}", n / 10_000, n % 10_000)
+/// The join code: the first group of 5 words of `fingerprint_words(h,
+/// list)` with `h = SHA-256(ORG_JOIN_CODE_PREFIX || account_id ||
+/// postcard(identity_pub))`. It depends only on the account identity, so
+/// a server that saw the invitation nonce cannot grind it by varying the
+/// rest of a request: matching it needs another identity key whose words
+/// collide. Display only.
+pub fn join_code(
+    account_id: Id,
+    identity_pub: &IdentityVerifyingKey,
+    list: Wordlist,
+) -> [String; 5] {
+    let id_enc = postcard::to_allocvec(identity_pub).expect("identity key encodes");
+    let h = sha256(&[ORG_JOIN_CODE_PREFIX, &account_id.0, &id_enc]);
+    let [first, ..] = fingerprint_words(&h, list);
+    first
+}
+
+/// `join_code` of the account named by the request's genesis, decoded
+/// strictly (a Rotation record is `WrongContext`). No signature is
+/// checked: the code is for display, `verify_join_request` decides.
+pub fn join_code_of(req: &SignedJoinRequest, list: Wordlist) -> Result<[String; 5]> {
+    let g = decode_genesis(&req.body.account_genesis)?;
+    Ok(join_code(g.body.account_id, &g.body.identity_pub, list))
+}
+
+/// The join request's genesis: a strict `LineageRecord::decode`, a
+/// Rotation record is `WrongContext`.
+fn decode_genesis(b: &[u8]) -> Result<Signed<GenesisBody>> {
+    if b.len() > MAX_JOIN_GENESIS_BYTES {
+        return Err(bad("join request genesis size"));
+    }
+    match LineageRecord::decode(b)? {
+        LineageRecord::Genesis(g) => Ok(g),
+        LineageRecord::Rotation(_) => Err(wrong_context()),
+    }
 }
 
 /// Verifies a join request against the pinned `roster` and the admin's
@@ -232,9 +281,7 @@ pub fn verify_join_request(
     if body.pinned_fpr != *org_fpr {
         return Err(IntegrityError::OrgPinMismatch.into());
     }
-    let LineageRecord::Genesis(g) = LineageRecord::decode(&body.account_genesis)? else {
-        return Err(wrong_context());
-    };
+    let g = decode_genesis(&body.account_genesis)?;
     verify_genesis(&g)?;
     let gb = &g.body;
     let device = &body.devices[0];

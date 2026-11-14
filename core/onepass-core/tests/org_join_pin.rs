@@ -11,13 +11,17 @@ use std::sync::OnceLock;
 use onepass_core::crypto::{HybridKemPublic, IdentityVerifyingKey, KdfParams, random_array};
 use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::devices::{DeviceKind, DeviceMode};
-use onepass_core::lineage::{LineageRecord, verify_genesis};
+use onepass_core::generator::Wordlist;
+use onepass_core::lineage::{
+    GenesisBody, LineageRecord, RotationBody, RotationReason, Signed, verify_genesis,
+};
 use onepass_core::org::{
     Invitation, JoinRequestBody, MAX_ORG_RECORD_BYTES, MemberState, ORG_JOIN_CODE_PREFIX,
     ORG_JOIN_DOMAIN, OrgGenesisBody, OrgId, OrgLineage, OrgMember, Role, RoleSet, RosterBody,
-    SignedJoinRequest, accept_next_roster, activate_member, founding_roster, invite_commit,
-    invite_member, join_code, member_kem_hash, org_fingerprint, scim_id_hash, sign_join_request,
-    sign_org_genesis, sign_roster, verify_join_request, verify_org_genesis,
+    SignedJoinRequest, accept_next_roster, activate_member, fingerprint_words, founding_roster,
+    invite_commit, invite_member, join_code, join_code_of, member_kem_hash, org_fingerprint,
+    scim_id_hash, sign_join_request, sign_org_genesis, sign_roster, verify_join_request,
+    verify_org_genesis,
 };
 use onepass_core::repo::{ManagedGenesis, Repository};
 use onepass_core::store::{RecordKind, RecordStore, SqliteStore};
@@ -464,6 +468,21 @@ fn join_decode_strict() {
     refused("name with a newline", &|b| {
         b.display_name = "Camille\nDurand".to_string()
     });
+    for c in [
+        '\u{00AD}', '\u{200B}', '\u{200D}', '\u{200F}', '\u{202A}', '\u{202E}', '\u{2060}',
+        '\u{2064}', '\u{2066}', '\u{2069}', '\u{FEFF}',
+    ] {
+        refused(&format!("name with U+{:04X}", c as u32), &|b| {
+            b.display_name = format!("Cam{c}ille")
+        });
+    }
+    // Neighbours of the refused ranges stay allowed.
+    for c in ['\u{2010}', '\u{2070}', '\u{2065}', '\u{202F}'] {
+        let mut b = body();
+        b.display_name = format!("Cam{c}ille");
+        let ok = signed(b, &fx().joiner.keys);
+        assert_eq!(SignedJoinRequest::decode(&ok.encode()).unwrap(), ok);
+    }
     refused("short KEM key", &|b| {
         b.account_kem_pub.mlkem.pop();
     });
@@ -504,38 +523,138 @@ fn join_carries_name_credential_kem() {
 
 #[test]
 fn join_code_is_stable_and_bound() {
+    let f = fx();
     let req = request();
-    let code = join_code(req);
-    assert_eq!(code, join_code(&req.clone()));
-    assert_eq!(code.len(), 9);
-    let bytes = code.as_bytes();
-    assert_eq!(bytes[4], b' ');
-    assert!(
-        bytes
-            .iter()
-            .enumerate()
-            .all(|(i, c)| i == 4 || c.is_ascii_digit())
+    let list = Wordlist::EffEnglish;
+    let code = join_code_of(req, list).unwrap();
+    assert_eq!(code, join_code_of(&req.clone(), list).unwrap());
+    assert_eq!(
+        code,
+        join_code(f.invitation.account_id, &f.joiner.identity, list)
     );
+    // Independent recomputation.
     let h = sha256(&[
         ORG_JOIN_CODE_PREFIX,
-        &postcard::to_allocvec(&req.body).unwrap(),
+        &f.invitation.account_id.0,
+        &postcard::to_allocvec(&f.joiner.identity).unwrap(),
     ]);
-    let n = u64::from_be_bytes(h[..8].try_into().unwrap()) % 100_000_000;
-    assert_eq!(code, format!("{:04} {:04}", n / 10_000, n % 10_000));
-    // The signature is not part of the code.
-    let mut other_sig = req.clone();
-    other_sig.device_sig.ed25519[0] ^= 1;
-    assert_eq!(join_code(&other_sig), code);
-
-    let mut nonce = req.clone();
-    nonce.body.invite_nonce[31] ^= 1;
-    assert_ne!(join_code(&nonce), code);
+    assert_eq!(code, fingerprint_words(&h, list)[0]);
+    assert!(code.iter().all(|w| !w.is_empty()));
+    // Only the identity counts: another issued_at, credential, nonce or
+    // signature with the same genesis gives the same words.
+    let mut later = body();
+    later.issued_at += 1;
+    let later = signed(later, &f.joiner.keys);
+    assert_eq!(join_code_of(&later, list).unwrap(), code);
     let mut cred = req.clone();
     cred.body.mailbox_credential[0] ^= 1;
-    assert_ne!(join_code(&cred), code);
-    let mut name = req.clone();
-    name.body.display_name.push('x');
-    assert_ne!(join_code(&name), code);
+    assert_eq!(join_code_of(&cred, list).unwrap(), code);
+    let mut nonce = req.clone();
+    nonce.body.invite_nonce[31] ^= 1;
+    nonce.device_sig.ed25519[0] ^= 1;
+    assert_eq!(join_code_of(&nonce, list).unwrap(), code);
+    // Another account's genesis: other words.
+    let j = other_account();
+    let other = signed(body_of(j), &j.keys);
+    assert_ne!(join_code_of(&other, list).unwrap(), code);
+    assert_ne!(
+        join_code(Id([0x77; 16]), &f.joiner.identity, list),
+        code,
+        "the account id counts"
+    );
+    assert_ne!(join_code_of(req, Wordlist::FrenchDiceware).unwrap(), code);
+    // Not a genesis: an error, never a code.
+    let mut garbage = req.clone();
+    garbage.body.account_genesis = vec![0; 10];
+    assert!(join_code_of(&garbage, list).is_err());
+    let mut rot = req.clone();
+    rot.body.account_genesis = rotation_record(&f.joiner);
+    integrity(
+        join_code_of(&rot, list),
+        IntegrityError::WrongContext,
+        "rotation code",
+    );
+}
+
+/// The joiner's genesis as a `Signed<GenesisBody>`.
+fn genesis_of(j: &Joiner) -> Signed<GenesisBody> {
+    match LineageRecord::decode(&j.genesis).unwrap() {
+        LineageRecord::Genesis(g) => g,
+        LineageRecord::Rotation(_) => panic!("a genesis"),
+    }
+}
+
+/// A well-shaped Rotation record of `j`'s account (it passes the strict
+/// decoder; its signatures are the genesis's, never checked here).
+fn rotation_record(j: &Joiner) -> Vec<u8> {
+    let g = genesis_of(j);
+    let rec = LineageRecord::Rotation(Signed {
+        body: RotationBody {
+            format: 1,
+            account_id: g.body.account_id,
+            generation: 1,
+            parent: LineageRecord::Genesis(g.clone()).hash(),
+            rotator: g.body.creator.device_id,
+            reason: RotationReason::Rotate,
+            revoked: vec![],
+            roster: vec![g.body.creator.clone()],
+            identity_pub: g.body.identity_pub.clone(),
+            params_hash: [1; 32],
+            keyset_hash: [2; 32],
+            deliveries: vec![],
+            from_heads: Default::default(),
+            issued_at: 1_700_000_800,
+        },
+        device_sig: g.device_sig.clone(),
+        identity_sig: g.identity_sig.clone(),
+    });
+    let enc = rec.encode();
+    assert!(matches!(
+        LineageRecord::decode(&enc).unwrap(),
+        LineageRecord::Rotation(_)
+    ));
+    enc
+}
+
+#[test]
+fn join_genesis_bad_signature_refused() {
+    let f = fx();
+    let other = genesis_of(other_account());
+    let mine = genesis_of(&f.joiner);
+    // The other account's identity key in our genesis.
+    let mut swapped_key = mine.clone();
+    swapped_key.body.identity_pub = other.body.identity_pub.clone();
+    // The other genesis's identity signature on ours.
+    let mut swapped_sig = mine.clone();
+    swapped_sig.identity_sig = other.identity_sig.clone();
+    // The other genesis's device signature on ours.
+    let mut swapped_dev = mine.clone();
+    swapped_dev.device_sig = other.device_sig.clone();
+    for (what, g) in [
+        ("identity key swapped", swapped_key),
+        ("identity signature swapped", swapped_sig),
+        ("device signature swapped", swapped_dev),
+    ] {
+        let mut b = body();
+        b.account_genesis = LineageRecord::Genesis(g).encode();
+        integrity(
+            verify(&signed(b, &f.joiner.keys)),
+            IntegrityError::Signature,
+            what,
+        );
+    }
+}
+
+#[test]
+fn join_genesis_rotation_refused() {
+    let f = fx();
+    let mut b = body();
+    b.account_genesis = rotation_record(&f.joiner);
+    integrity(
+        verify(&signed(b, &f.joiner.keys)),
+        IntegrityError::WrongContext,
+        "rotation instead of genesis",
+    );
 }
 
 #[test]

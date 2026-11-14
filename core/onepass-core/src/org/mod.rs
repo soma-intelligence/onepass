@@ -17,7 +17,8 @@ mod rules;
 pub use identity::{OrgIdentityPublic, OrgSecrets, fingerprint_words, org_fingerprint};
 pub use join::{
     Invitation, JoinRequestBody, MAX_JOIN_GENESIS_BYTES, SignedJoinRequest, VerifiedJoin,
-    activate_member, invite_member, join_code, sign_join_request, verify_join_request,
+    activate_member, invite_member, join_code, join_code_of, sign_join_request,
+    verify_join_request,
 };
 pub use keyset::{OrgKeyset, SealedOrgKeyset, open_org_keyset, seal_org_keyset};
 pub use lineage::{
