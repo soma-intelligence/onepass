@@ -17,7 +17,8 @@ public enum IconSource: String, CaseIterable, Sendable {
 }
 
 /// The list behind Debug > "Icônes à vérifier": every login with the source of its icon, so a
-/// wrong logo can be flagged. Reads the caches only (no request) and sends nothing anywhere.
+/// wrong logo can be flagged. Reads the caches only (no request) and sends nothing anywhere; like a row,
+/// it may drop a cached site icon that matches a reject.
 public enum IconSourceReport {
     public typealias Row = (domain: String, title: String, source: IconSource)
 
