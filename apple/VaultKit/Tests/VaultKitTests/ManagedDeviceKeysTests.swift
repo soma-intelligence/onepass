@@ -81,6 +81,68 @@ struct ManagedDeviceKeysTests {
         }
     }
 
+    @Test func oversizedAndEmptyPartsAreRefused() throws {
+        let tag = CryptoKitPqHalf.Backing.software.rawValue
+        // A length prefix of 0xFFFFFFFF runs past the end.
+        #expect(throws: OnePassError.self) {
+            try CryptoKitPqHalf(blob: Data([tag, 0xFF, 0xFF, 0xFF, 0xFF, 1, 2, 3]))
+        }
+        // Two zero-length parts parse but are no keys.
+        #expect(throws: OnePassError.self) {
+            try CryptoKitPqHalf(blob: Data([tag, 0, 0, 0, 0, 0, 0, 0, 0]))
+        }
+    }
+
+    @Test func aDamagedKeychainItemIsRefused() throws {
+        let keychain = InMemoryKeychain()
+        let pending = try ManagedDeviceKeys.createPending(keychain: keychain, slot: Self.slot, secureEnclave: false)
+        let good = try #require(try keychain.read(ManagedDeviceKeys.pendingKey(slot: Self.slot)))
+        let keys = ManagedDeviceKeys(keychain: keychain, accountID: Self.accountID)
+        let key = ManagedDeviceKeys.key(accountID: Self.accountID)
+
+        // Classical half of 64 bytes instead of 65.
+        var short = Data([0, 0, 0, 64])
+        short.append(pending.classical.prefix(64))
+        short.append(good.dropFirst(4 + 65))
+        try keychain.write(key, short)
+        #expect(throws: OnePassError.Crypto) { try keys.deviceKeys() }
+
+        // Length prefix past the end.
+        try keychain.write(key, Data([0xFF, 0xFF, 0xFF, 0xFF]) + good.dropFirst(4))
+        #expect(throws: OnePassError.Crypto) { try keys.deviceKeys() }
+
+        // PQ blob cut short.
+        try keychain.write(key, good.dropLast(10))
+        #expect(throws: OnePassError.Crypto) { try keys.deviceKeys() }
+
+        try keychain.write(key, good)
+        #expect(try keys.deviceKeys().classical == pending.classical)
+    }
+
+    @Test func adoptingNeverReplacesAnAccountsKeys() throws {
+        let keychain = InMemoryKeychain()
+        _ = try ManagedDeviceKeys.createPending(keychain: keychain, slot: Self.slot, secureEnclave: false)
+        try ManagedDeviceKeys.adoptPending(keychain: keychain, slot: Self.slot, accountID: Self.accountID)
+        let held = try #require(try keychain.read(ManagedDeviceKeys.key(accountID: Self.accountID)))
+
+        _ = try ManagedDeviceKeys.createPending(keychain: keychain, slot: Self.slot, secureEnclave: false)
+        #expect(throws: OnePassError.Conflict) {
+            try ManagedDeviceKeys.adoptPending(keychain: keychain, slot: Self.slot, accountID: Self.accountID)
+        }
+        #expect(try keychain.read(ManagedDeviceKeys.key(accountID: Self.accountID)) == held)
+        // The refused keys stay pending, for the caller to discard.
+        #expect(try keychain.read(ManagedDeviceKeys.pendingKey(slot: Self.slot)) != nil)
+    }
+
+    @Test func adoptingTheSameKeysAgainIsQuiet() throws {
+        let keychain = InMemoryKeychain()
+        _ = try ManagedDeviceKeys.createPending(keychain: keychain, slot: Self.slot, secureEnclave: false)
+        let item = try #require(try keychain.read(ManagedDeviceKeys.pendingKey(slot: Self.slot)))
+        try keychain.write(ManagedDeviceKeys.key(accountID: Self.accountID), item)
+        try ManagedDeviceKeys.adoptPending(keychain: keychain, slot: Self.slot, accountID: Self.accountID)
+        #expect(try keychain.read(ManagedDeviceKeys.pendingKey(slot: Self.slot)) == nil)
+    }
+
     @Test func discardAndDeleteRemoveTheItems() throws {
         let keychain = InMemoryKeychain()
         _ = try ManagedDeviceKeys.createPending(keychain: keychain, slot: Self.slot, secureEnclave: false)

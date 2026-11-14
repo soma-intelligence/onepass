@@ -10,7 +10,8 @@ extension VaultSession {
         keys: DeviceKeyPair
     ) async throws -> SecretBytes {
         let device = Self.deviceIdentity(mode: mode)
-        return try await createAccount(password: password, displayName: displayName, mode: mode) { path, bytes, kdf in
+        return try await createAccount(password: password, displayName: displayName, mode: mode, device: device) {
+            path, bytes, kdf in
             try OnePassCore.createManagedAccount(
                 dbPath: path, password: bytes, kdf: kdf, classical: keys.classical, pq: keys.pq,
                 name: device.name, kind: device.kind, mode: device.mode, orgId: orgID, accountId: accountID)

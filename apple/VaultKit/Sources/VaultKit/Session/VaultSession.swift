@@ -647,16 +647,17 @@ public final class VaultSession {
     /// The flow shared by personal and managed accounts: `make` creates the account in the core from
     /// the store path, the password bytes and the environment's KDF (`nil`: the core's default), off
     /// the main actor; then the "Personnel" vault, the profile, the Secret Key in the keychain, the
-    /// settings and the install, as `createAccount(password:displayName:mode:)` documents.
+    /// settings and the install, as `createAccount(password:displayName:mode:)` documents. `device`: this
+    /// device as `make` registered it (default: `deviceIdentity(mode:)`).
     func createAccount(
-        password: SecretBytes, displayName: String, mode: DeviceMode,
+        password: SecretBytes, displayName: String, mode: DeviceMode, device: DeviceIdentity? = nil,
         make: @escaping @Sendable (String, Data, FfiKdfParams?) throws -> FfiCreatedAccount
     ) async throws -> SecretBytes {
         try checkStoreUsable()
         if session != nil || state == .locked { throw fail(.accountExists) }
         let path = dbPath
         let kdf = environment.accountKdf
-        let device = Self.deviceIdentity(mode: mode)
+        let device = device ?? Self.deviceIdentity(mode: mode)
         let gen = beginUnlocking()
         let created: Created
         do {

@@ -45,10 +45,14 @@ public final class CryptoKitPqHalf: FfiPqDeviceHalf, @unchecked Sendable {
     /// each after its u32 big-endian length (Secure Enclave `dataRepresentation`, software
     /// `seedRepresentation`). Anything else, trailing bytes included, is refused.
     public convenience init(blob: Data) throws {
-        var reader = BlobReader(blob)
-        guard let tag = reader.byte(), let backing = Backing(rawValue: tag),
-            let mldsa = reader.prefixed(), let mlkem = reader.prefixed(), reader.isAtEnd
+        var offset = blob.startIndex
+        guard let tag = blob.byte(at: &offset), let backing = Backing(rawValue: tag),
+            var mldsa = blob.prefixed(at: &offset)
         else { throw OnePassError.Crypto }
+        defer { mldsa.wipe() }
+        guard var mlkem = blob.prefixed(at: &offset) else { throw OnePassError.Crypto }
+        defer { mlkem.wipe() }
+        guard offset == blob.endIndex else { throw OnePassError.Crypto }
         do {
             switch backing {
             case .secureEnclave:
@@ -69,11 +73,15 @@ public final class CryptoKitPqHalf: FfiPqDeviceHalf, @unchecked Sendable {
 
     /// What `init(blob:)` reads back. A software blob holds the private seeds: keychain only.
     public var blob: Data {
-        let (mldsa, mlkem): (Data, Data) =
+        var (mldsa, mlkem): (Data, Data) =
             switch keys {
             case .secureEnclave(let s, let k): (s.dataRepresentation, k.dataRepresentation)
             case .software(let s, let k): (s.seedRepresentation, k.seedRepresentation)
             }
+        defer {
+            mldsa.wipe()
+            mlkem.wipe()
+        }
         var out = Data([backing.rawValue])
         out.appendPrefixed(mldsa)
         out.appendPrefixed(mlkem)
@@ -142,16 +150,25 @@ public struct ManagedDeviceKeys: DeviceKeySource {
     ) throws -> DeviceKeyPair {
         let classical = try generateClassicalDeviceKeys()
         let pq = try CryptoKitPqHalf.generate(secureEnclave: secureEnclave)
-        try keychain.write(pendingKey(slot: slot), item(classical: classical, pq: pq))
+        var stored = item(classical: classical, pq: pq)
+        defer { stored.wipe() }
+        try keychain.write(pendingKey(slot: slot), stored)
         return DeviceKeyPair(classical: classical, pq: pq)
     }
 
     /// Moves the pending keys of `slot` to the account `accountID`. Throws `NotFound` when nothing is
-    /// pending; the pending item goes only once the account's is written.
+    /// pending and `Conflict` when the account already holds other keys (a write would replace them).
+    /// Done once the account's item is written; the pending item goes after, best effort.
     public static func adoptPending(keychain: any KeychainStore, slot: String, accountID: String) throws {
-        guard let item = try keychain.read(pendingKey(slot: slot)) else { throw OnePassError.NotFound }
-        try keychain.write(key(accountID: accountID), item)
-        try keychain.delete(pendingKey(slot: slot))
+        guard var pending = try keychain.read(pendingKey(slot: slot)) else { throw OnePassError.NotFound }
+        defer { pending.wipe() }
+        if var existing = try keychain.read(key(accountID: accountID)) {
+            defer { existing.wipe() }
+            guard existing == pending else { throw OnePassError.Conflict }
+        } else {
+            try keychain.write(key(accountID: accountID), pending)
+        }
+        try? keychain.delete(pendingKey(slot: slot))
     }
 
     /// Forgets the pending keys of `slot` (a creation cancelled or failed), quietly.
@@ -161,20 +178,37 @@ public struct ManagedDeviceKeys: DeviceKeySource {
 
     /// The account's keys. `NotFound` without the item, `Crypto` when it does not read.
     public func deviceKeys() throws -> DeviceKeyPair {
-        guard let item = try keychain.read(Self.key(accountID: accountID)) else { throw OnePassError.NotFound }
-        var reader = BlobReader(item)
-        guard let classical = reader.prefixed() else { throw OnePassError.Crypto }
-        return DeviceKeyPair(classical: classical, pq: try CryptoKitPqHalf(blob: reader.rest()))
+        guard var item = try keychain.read(Self.key(accountID: accountID)) else { throw OnePassError.NotFound }
+        defer { item.wipe() }
+        var offset = item.startIndex
+        guard var classical = item.prefixed(at: &offset) else { throw OnePassError.Crypto }
+        guard classical.count == Self.classicalLength else {
+            classical.wipe()
+            throw OnePassError.Crypto
+        }
+        var blob = item.copy(offset..<item.endIndex)
+        defer { blob.wipe() }
+        do {
+            return DeviceKeyPair(classical: classical, pq: try CryptoKitPqHalf(blob: blob))
+        } catch {
+            classical.wipe()
+            throw error
+        }
     }
 
     public func delete() throws {
         try keychain.delete(Self.key(accountID: accountID))
     }
 
+    /// Ed25519 seed and X25519 secret (`generateClassicalDeviceKeys`).
+    static let classicalLength = 65
+
     private static func item(classical: Data, pq: CryptoKitPqHalf) -> Data {
+        var blob = pq.blob
+        defer { blob.wipe() }
         var out = Data()
         out.appendPrefixed(classical)
-        out.append(pq.blob)
+        out.append(blob)
         return out
     }
 }
@@ -185,38 +219,28 @@ extension Data {
         Swift.withUnsafeBytes(of: &length) { append(contentsOf: $0) }
         append(part)
     }
-}
 
-/// Reads the managed key formats front to back; `nil` past the end.
-private struct BlobReader {
-    private let data: Data
-    private var offset: Data.Index
+    /// Zeroes key material before it is released.
+    fileprivate mutating func wipe() { resetBytes(in: startIndex..<endIndex) }
 
-    init(_ data: Data) {
-        self.data = data
-        offset = data.startIndex
-    }
+    /// `range` in a buffer of its own (a slice would share this one's storage, so wiping either
+    /// would copy instead of zeroing).
+    fileprivate func copy(_ range: Range<Index>) -> Data { self[range].withUnsafeBytes { Data($0) } }
 
-    var isAtEnd: Bool { offset == data.endIndex }
-
-    mutating func byte() -> UInt8? {
-        guard offset < data.endIndex else { return nil }
+    /// The byte at `offset`, then past it; `nil` at the end.
+    fileprivate func byte(at offset: inout Index) -> UInt8? {
+        guard offset < endIndex else { return nil }
         defer { offset += 1 }
-        return data[offset]
+        return self[offset]
     }
 
-    /// A part after its u32 big-endian length.
-    mutating func prefixed() -> Data? {
-        guard data.endIndex - offset >= 4 else { return nil }
-        let length = data[offset..<offset + 4].reduce(0) { $0 << 8 | Int($1) }
+    /// The part at `offset` after its u32 big-endian length, then past it; `nil` when it overruns.
+    fileprivate func prefixed(at offset: inout Index) -> Data? {
+        guard endIndex - offset >= 4 else { return nil }
+        let length = self[offset..<offset + 4].reduce(0) { $0 << 8 | Int($1) }
         let start = offset + 4
-        guard data.endIndex - start >= length else { return nil }
+        guard endIndex - start >= length else { return nil }
         offset = start + length
-        return Data(data[start..<offset])
-    }
-
-    mutating func rest() -> Data {
-        defer { offset = data.endIndex }
-        return Data(data[offset...])
+        return copy(start..<offset)
     }
 }
