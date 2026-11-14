@@ -1851,6 +1851,63 @@ fn shared_attachment_written_in_zone_and_read_by_member() {
     assert_eq!(chunk_rows(&mut zs, id), 0);
 }
 
+fn png() -> Vec<u8> {
+    let mut b = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    b.resize(64, 3);
+    b
+}
+
+#[test]
+fn shared_item_delete_and_move_carry_custom_icon() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let va = shared(&mut a.dev, id);
+    let item = login(id, "doc", 800);
+    a.dev.repo().save_item(&va, item.clone()).unwrap();
+    a.dev
+        .repo()
+        .set_custom_icon(&va, item.id, "image/png", &png())
+        .unwrap();
+    let personal = a.dev.vault_named("Personnel");
+    let mine = login(personal.id, "mine", 801);
+    a.dev.repo().save_item(&personal, mine.clone()).unwrap();
+    a.dev
+        .repo()
+        .set_custom_icon(&personal, mine.id, "image/png", &png())
+        .unwrap();
+    a.dev.repo().move_item(mine.id, &personal, &va).unwrap();
+    assert!(
+        a.dev
+            .store()
+            .list(RecordKind::Attachment)
+            .unwrap()
+            .is_empty()
+    );
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    let vc = shared(&mut c.dev, id);
+    assert_eq!(
+        &c.dev.repo().read_custom_icon(&vc, mine.id).unwrap()[..],
+        &png()[..]
+    );
+    let before = chunk_rows(&mut zs, id);
+    a.dev.repo().delete_item(&va, item.id).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    assert!(chunk_rows(&mut zs, id) < before);
+    let va = shared(&mut a.dev, id);
+    a.dev.repo().move_item(mine.id, &va, &personal).unwrap();
+    assert_eq!(
+        &a.dev.repo().read_custom_icon(&personal, mine.id).unwrap()[..],
+        &png()[..]
+    );
+    a.dev.repo().delete_item(&personal, mine.id).unwrap();
+    assert!(
+        a.dev
+            .store()
+            .list(RecordKind::Attachment)
+            .unwrap()
+            .is_empty()
+    );
+}
+
 #[test]
 fn shared_item_delete_and_move_carry_chunks() {
     let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);

@@ -1656,12 +1656,7 @@ impl<S: RecordStore> Repository<S> {
         let blob = *blob;
         let attachments: Vec<crate::model::AttachmentRef> = vault
             .open_item(rec)
-            .map(|item| {
-                item.attachments
-                    .into_iter()
-                    .chain(item.custom_icon)
-                    .collect()
-            })
+            .map(|item| crate::attachment::files_of(&item).cloned().collect())
             .unwrap_or_default();
         self.log_own_write(vault.id, item_id, &loaded.manifest, None)?;
         let entries = loaded.entries_without(item_id);
@@ -1726,12 +1721,7 @@ impl<S: RecordStore> Repository<S> {
         }
         // The attachments follow, once the item is listed in `to` only.
         if let Ok(item) = to.open_item(&moved) {
-            let files: Vec<_> = item
-                .attachments
-                .iter()
-                .chain(&item.custom_icon)
-                .cloned()
-                .collect();
+            let files: Vec<_> = crate::attachment::files_of(&item).cloned().collect();
             self.move_attachment_chunks(from, to, &files);
         }
         Ok(())

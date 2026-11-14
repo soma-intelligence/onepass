@@ -405,4 +405,15 @@ mod tests {
         repo.delete_vault(&b).unwrap();
         assert_eq!(chunk_count(&repo), 0);
     }
+
+    #[test]
+    fn reseal_vault_carries_custom_icon_chunks() {
+        let (mut repo, a, item) = with_item();
+        repo.set_custom_icon(&a, item.id, "image/png", &png(200))
+            .unwrap();
+        let (to, _, _) = Vault::new_shared(a.id, a.meta.clone()).unwrap();
+        let loaded = repo.served(&a, Use::Read).unwrap();
+        let resealed = repo.reseal_vault(&a, &to, &loaded).unwrap();
+        assert_eq!(resealed.attachments.len(), 1);
+    }
 }

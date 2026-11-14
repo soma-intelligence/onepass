@@ -432,6 +432,40 @@ fn attachments_of_a_hidden_item_leave_and_come_back() {
     assert_eq!(&bytes[..], b"passport scan");
 }
 
+fn png() -> Vec<u8> {
+    let mut b = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    b.resize(64, 3);
+    b
+}
+
+#[test]
+fn custom_icon_of_a_hidden_item_leaves_and_comes_back() {
+    let mut f = fx();
+    f.repo
+        .set_custom_icon(&f.voyage, f.secret, "image/png", &png())
+        .unwrap();
+    assert_eq!(f.local.chunks().len(), 1);
+    mirror(&f.local, &f.upstream);
+    let state = f.repo.enter_travel(&f.upstream).unwrap();
+    assert!(f.local.chunks().is_empty());
+    f.repo.exit_travel(&f.upstream, &state).unwrap();
+    let got = f.repo.read_custom_icon(&f.voyage, f.secret).unwrap();
+    assert_eq!(&got[..], &png()[..]);
+}
+
+#[test]
+fn entry_refused_when_the_upstream_lacks_an_icon_chunk() {
+    let mut f = fx();
+    f.repo
+        .set_custom_icon(&f.voyage, f.secret, "image/png", &png())
+        .unwrap();
+    mirror(&f.local, &f.upstream);
+    for c in f.upstream.chunks() {
+        f.upstream.0.borrow_mut().delete(c.kind, c.id).unwrap();
+    }
+    assert!(f.repo.enter_travel(&f.upstream).is_err());
+}
+
 #[test]
 fn entry_refused_when_the_upstream_lacks_a_chunk() {
     let mut f = fx();
