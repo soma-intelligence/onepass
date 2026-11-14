@@ -18,10 +18,16 @@ use tauri::Manager;
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            let dir = app
+            let mut dir = app
                 .path()
                 .app_local_data_dir()
                 .map_err(|e| format!("no data directory: {e}"))?;
+            // Debug builds only: the end-to-end tests run on a throwaway
+            // vault, never on the user's.
+            #[cfg(debug_assertions)]
+            if let Some(d) = std::env::var_os("ONEPASS_DATA_DIR") {
+                dir = d.into();
+            }
             std::fs::create_dir_all(&dir)?;
             let state = state::AppState::new(dir)?;
             app.manage(state);

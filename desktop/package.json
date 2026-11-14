@@ -10,7 +10,8 @@
     "check": "npm run typecheck && npm run build",
     "tauri": "tauri",
     "dev": "tauri dev",
-    "bundle": "tauri build"
+    "bundle": "tauri build",
+    "e2e": "node e2e/run.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4"

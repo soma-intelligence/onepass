@@ -44,6 +44,15 @@ body {
   height: 100%;
 }
 
+/* The panes scroll on their own; the window never does. */
+body {
+  overflow: hidden;
+}
+
+.center {
+  overflow: auto;
+}
+
 button,
 input,
 select,
