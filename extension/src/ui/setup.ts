@@ -210,7 +210,9 @@ export function mountSetup(root: HTMLElement, deps: FrameDeps): SetupHandle {
         err,
       ),
     );
-    focus(mismatch ? cancel : add.disabled && field ? field : add);
+    // Several logins and none picked yet: Add waits, the first login takes the focus.
+    const firstOption = list?.querySelector<HTMLElement>('[role="option"]') ?? null;
+    focus(mismatch ? cancel : add.disabled && field ? field : add.disabled && firstOption ? firstOption : add);
   }
 
   // ---- saving ----
@@ -229,10 +231,10 @@ export function mountSetup(root: HTMLElement, deps: FrameDeps): SetupHandle {
       else err.textContent = errorText(r.code);
       return;
     }
-    answer(r.value, args, name);
+    answer(r.value, args, name, replace);
   }
 
-  function answer(v: SetupSaveResult, args: SaveArgs, name: string): void {
+  function answer(v: SetupSaveResult, args: SaveArgs, name: string, replace: boolean): void {
     switch (v.status) {
       case "saved":
       case "same":
@@ -243,7 +245,8 @@ export function mountSetup(root: HTMLElement, deps: FrameDeps): SetupHandle {
         renderReplace(args, name);
         return;
       case "locked":
-        renderLocked(() => save(args, false, errLine()));
+        // A Replace click stays a Replace through the unlock.
+        renderLocked(() => save(args, replace, errLine()));
         return;
       case "refused":
         renderRefused();

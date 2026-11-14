@@ -166,6 +166,53 @@ describe("setup card", () => {
     expect(text(r)).toContain("Saved. Press the site's button to confirm.");
   });
 
+  it("keeps replace through an unlock: Replace, locked, Unlock sends replace again", async () => {
+    const answers = ["exists", "locked", "replaced"];
+    const { r, handle, worker, click } = setup(state({ candidates: [{ ...ALEX, hasTotp: true }] }), (m) =>
+      m.type === "setup_save" ? { ok: { status: answers.shift() ?? "saved" } } : null,
+    );
+    await handle.ready;
+    await click("Add");
+    await click("Replace");
+    expect(button(r, "Unlock OnePass")).toBeTruthy();
+    await click("Unlock OnePass");
+    expect(saves(worker)).toEqual([
+      { type: "setup_save", token: TOKEN, itemId: "it_01" },
+      { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
+      { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
+    ]);
+    expect(text(r)).toContain("Saved. Press the site's button to confirm.");
+  });
+
+  it("keeps replace through an unlock when the bridge error is locked", async () => {
+    let n = 0;
+    const { r, handle, worker, click } = setup(state({ candidates: [{ ...ALEX, hasTotp: true }] }), (m) => {
+      if (m.type !== "setup_save") return null;
+      n++;
+      if (n === 1) return { ok: { status: "exists" } };
+      if (n === 2) return { err: "locked" };
+      return { ok: { status: "replaced" } };
+    });
+    await handle.ready;
+    await click("Add");
+    await click("Replace");
+    await click("Unlock OnePass");
+    expect(saves(worker).slice(1)).toEqual([
+      { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
+      { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
+    ]);
+    expect(text(r)).toContain("Saved. Press the site's button to confirm.");
+  });
+
+  it("focuses the first login when several are listed and none is selected", async () => {
+    const { r, handle } = setup(state({ candidates: [ALEX, SAM], selected: null, account: "" }));
+    await handle.ready;
+    expect(button(r, "Add").disabled).toBe(true);
+    const first = r.querySelector('[role="option"]');
+    expect(first?.querySelector(".t1")?.textContent).toBe("Atlas Cloud");
+    expect(document.activeElement).toBe(first);
+  });
+
   it("shows Unlock when the vault locked before the card opened, and asks again on click", async () => {
     let locked = true;
     const { r, handle, worker, click } = setup(state(), (m) => (m.type === "setup_init" && locked ? { err: "locked" } : null));
