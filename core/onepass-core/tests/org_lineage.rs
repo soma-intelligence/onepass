@@ -16,11 +16,12 @@ use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::generator::Wordlist;
 use onepass_core::org::{
     MAX_ORG_RECORD_BYTES, MemberRef, ORG_CHANGE_DOMAIN, ORG_GENESIS_DOMAIN, OrgChangeBody,
-    OrgChangeKind, OrgGenesisBody, OrgId, OrgIdentityPublic, OrgLineage, OrgRecordBody,
-    SignedOrgRecord, add_owner_signature, fingerprint_words, org_fingerprint, quorum,
-    sign_org_change, sign_org_genesis, verify_org_chain, verify_org_genesis,
+    OrgChangeKind, OrgGenesisBody, OrgId, OrgIdentityPublic, OrgKeyset, OrgLineage, OrgRecordBody,
+    SealedOrgKeyset, SignedOrgRecord, add_owner_signature, fingerprint_words, open_org_keyset,
+    org_fingerprint, quorum, seal_org_keyset, sign_org_change, sign_org_genesis, verify_org_chain,
+    verify_org_genesis,
 };
-use onepass_core::{Error, IntegrityError};
+use onepass_core::{Error, Id, IntegrityError};
 use org_common::*;
 use sha3::Shake256;
 use sha3::digest::{ExtendableOutput, Update, XofReader};
@@ -787,4 +788,117 @@ fn record_round_trips() {
         .map(|(p, _)| p.fingerprint())
         .collect();
     assert!(fprs.windows(2).all(|p| p[0] < p[1]));
+}
+
+fn keyset() -> OrgKeyset {
+    // Same keys as org_secrets(), rebuilt from bytes (OrgSecrets is not Clone).
+    let s = org_secrets();
+    OrgKeyset {
+        org_id: ORG,
+        secrets: onepass_core::org::OrgSecrets {
+            identity: IdentityKey::from_bytes(&s.identity.to_bytes()).unwrap(),
+            audit: onepass_core::crypto::HybridKemSecret::from_bytes(&s.audit.to_bytes()).unwrap(),
+        },
+    }
+}
+
+fn sealed_for(account: u8) -> SealedOrgKeyset {
+    let i = usize::from(account % 3);
+    seal_org_keyset(&keyset(), Id([account; 16]), &kem_pool(i).1).unwrap()
+}
+
+#[test]
+fn keyset_seals_to_one_owner() {
+    let sealed = sealed_for(1);
+    let back = SealedOrgKeyset::decode(&sealed.encode()).unwrap();
+    assert_eq!(back, sealed);
+    let opened = open_org_keyset(&back, ORG, Id([1; 16]), &kem_pool(1).0).unwrap();
+    assert_eq!(opened.org_id, ORG);
+    assert_eq!(
+        opened.secrets.public(ORG).unwrap(),
+        org_secrets().public(ORG).unwrap()
+    );
+    opened.check_against(&lineage_at(0)).unwrap();
+    assert!(!format!("{opened:?}").contains("identity"));
+}
+
+#[test]
+fn keyset_bound_to_owner_and_org() {
+    let sealed = sealed_for(1);
+    let k = &kem_pool(1).0;
+    assert!(open_org_keyset(&sealed, ORG, Id([2; 16]), k).is_err());
+    assert!(open_org_keyset(&sealed, OrgId([0xee; 16]), Id([1; 16]), k).is_err());
+    assert!(open_org_keyset(&sealed, ORG, Id([1; 16]), &kem_pool(2).0).is_err());
+    // Relabelled record fields do not rescue a swapped context either.
+    let mut relabelled = sealed.clone();
+    relabelled.account_id = Id([2; 16]);
+    assert!(open_org_keyset(&relabelled, ORG, Id([2; 16]), k).is_err());
+    let mut other_org = sealed.clone();
+    other_org.org_id = OrgId([0xee; 16]);
+    assert!(open_org_keyset(&other_org, OrgId([0xee; 16]), Id([1; 16]), k).is_err());
+}
+
+#[test]
+fn keyset_blob_swap_refused() {
+    let a = sealed_for(1);
+    let b = sealed_for(2);
+    let mut franken = a.clone();
+    franken.blob = b.blob.clone();
+    assert!(open_org_keyset(&franken, ORG, Id([1; 16]), &kem_pool(1).0).is_err());
+    let mut franken = b.clone();
+    franken.envelope = a.envelope.clone();
+    assert!(open_org_keyset(&franken, ORG, Id([2; 16]), &kem_pool(2).0).is_err());
+}
+
+#[test]
+fn keyset_from_other_org_refused() {
+    let other = OrgKeyset {
+        org_id: ORG,
+        secrets: onepass_core::org::OrgSecrets::generate().unwrap(),
+    };
+    assert!(matches!(
+        other.check_against(&lineage_at(0)),
+        Err(Error::Integrity(IntegrityError::OrgPinMismatch))
+    ));
+    // Same identity, other audit key: also refused.
+    let s = org_secrets();
+    let half = OrgKeyset {
+        org_id: ORG,
+        secrets: onepass_core::org::OrgSecrets {
+            identity: IdentityKey::from_bytes(&s.identity.to_bytes()).unwrap(),
+            audit: onepass_core::crypto::HybridKemSecret::generate().unwrap(),
+        },
+    };
+    assert!(matches!(
+        half.check_against(&lineage_at(0)),
+        Err(Error::Integrity(IntegrityError::OrgPinMismatch))
+    ));
+}
+
+#[test]
+fn sealed_keyset_decode_strict() {
+    let sealed = sealed_for(1);
+    let good = sealed.encode();
+    let mut trailing = good.clone();
+    trailing.push(0);
+    let mut format2 = sealed.clone();
+    format2.format = 2;
+    let mut short = sealed.clone();
+    short.envelope.pop();
+    let mut long = sealed.clone();
+    long.envelope.push(0);
+    let oversize = vec![0u8; MAX_ORG_RECORD_BYTES + 1];
+    for bad in [
+        trailing,
+        format2.encode(),
+        short.encode(),
+        long.encode(),
+        oversize,
+    ] {
+        assert!(matches!(
+            SealedOrgKeyset::decode(&bad),
+            Err(Error::InvalidFormat(_))
+        ));
+    }
+    assert!(open_org_keyset(&format2, ORG, Id([1; 16]), &kem_pool(1).0).is_err());
 }

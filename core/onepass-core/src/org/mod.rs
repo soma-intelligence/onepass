@@ -7,9 +7,11 @@ use crate::Result;
 use crate::crypto::random_array;
 
 mod identity;
+mod keyset;
 mod lineage;
 
 pub use identity::{OrgIdentityPublic, OrgSecrets, fingerprint_words, org_fingerprint};
+pub use keyset::{OrgKeyset, SealedOrgKeyset, open_org_keyset, seal_org_keyset};
 pub use lineage::{
     MemberRef, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgHeadInfo, OrgLineage,
     OrgRecordBody, SignedOrgRecord, add_owner_signature, quorum, sign_org_change, sign_org_genesis,
