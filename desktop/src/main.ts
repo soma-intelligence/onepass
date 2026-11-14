@@ -68,6 +68,20 @@ interface Field {
   secret: boolean;
   hasValue: boolean;
   strength: number | null;
+  data?: FieldInput;
+  options: string[];
+}
+type FieldInput =
+  | { type: "text"; value: string }
+  | { type: "date"; year: number; month: number; day: number }
+  | { type: "monthYear"; year: number; month: number }
+  | { type: "address"; line1: string; line2: string; postalCode: string; city: string; region: string; country: string }
+  | { type: "empty" };
+interface Attachment {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
 }
 interface Section {
   id: string;
@@ -82,13 +96,16 @@ interface Item {
   favorite: boolean;
   notes: string;
   tags: string[];
-  urls: { label: string; url: string }[];
+  urls: { label: string; url: string; rule: string }[];
   sections: Section[];
   createdAt: number;
   updatedAt: number;
   trashed: boolean;
   archived: boolean;
   passwordHistoryCount: number;
+  attachments: Attachment[];
+  travelHidden: boolean;
+  travelGuard: boolean;
 }
 interface Report {
   score: number;
@@ -284,7 +301,9 @@ function menu(anchor: HTMLElement, entries: MenuEntry[], align: "left" | "right"
       ),
     );
   }
-  document.body.append(m);
+  // Inside the open sheet, if any: a modal dialog sits above the page.
+  const dialogs = document.querySelectorAll("dialog[open]");
+  (dialogs[dialogs.length - 1] ?? document.body).append(m);
   const r = anchor.getBoundingClientRect();
   const w = m.offsetWidth;
   m.style.top = Math.min(r.bottom + 6, window.innerHeight - m.offsetHeight - 8) + "px";
@@ -299,7 +318,7 @@ interface Sheet {
 }
 
 /** An iOS-style sheet: "Annuler" on the left, the title, the main action on the right. */
-function sheet(title: string, opts: { cancel?: string; action?: string; onAction?: (s: Sheet) => void | Promise<void>; wide?: boolean } = {}): Sheet {
+function sheet(title: string, opts: { cancel?: string; action?: string; onAction?: (s: Sheet) => void | Promise<void>; wide?: boolean; confirmCancel?: () => boolean } = {}): Sheet {
   const body = h("div", { class: "sheet-body" });
   const dialog = h("dialog", { class: "sheet" + (opts.wide ? " wide" : "") });
   const close = () => {
@@ -307,10 +326,15 @@ function sheet(title: string, opts: { cancel?: string; action?: string; onAction
     dialog.remove();
   };
   const s: Sheet = { dialog, body, close };
+  // "Annuler" with unsaved changes asks first, as the Apple editor does.
+  const cancel = () => {
+    if (!opts.confirmCancel?.()) return close();
+    confirmSheet(t("Abandonner les modifications ?", "Discard changes?"), t("Abandonner", "Discard"), close, t("Continuer la modification", "Keep Editing"));
+  };
   const bar = h(
     "div",
     { class: "sheet-bar" },
-    h("button", { class: "bar-text", type: "button", onclick: close }, opts.cancel ?? t("Annuler", "Cancel")),
+    h("button", { class: "bar-text", type: "button", onclick: cancel }, opts.cancel ?? t("Annuler", "Cancel")),
     h("div", { class: "sheet-title" }, title),
     opts.action
       ? h(
@@ -329,15 +353,15 @@ function sheet(title: string, opts: { cancel?: string; action?: string; onAction
   dialog.append(bar, body);
   dialog.addEventListener("cancel", (e) => {
     e.preventDefault();
-    close();
+    cancel();
   });
   document.body.append(dialog);
   dialog.showModal();
   return s;
 }
 
-function confirmSheet(text: string, action: string, onYes: () => void): void {
-  const s = sheet("", { action, onAction: (sh) => (sh.close(), onYes()) });
+function confirmSheet(text: string, action: string, onYes: () => void, cancel?: string): void {
+  const s = sheet("", { action, cancel, onAction: (sh) => (sh.close(), onYes()) });
   s.dialog.classList.add("alert");
   s.body.append(h("p", { class: "alert-text" }, text));
   (s.dialog.querySelector(".bar-text.bold") as HTMLElement).classList.add("destructive");
@@ -1020,7 +1044,7 @@ async function renderDetail(): Promise<void> {
       h("header", { class: "item-head" }, art(item.itemType, 64),
         h("div", {}, h("h2", {}, item.title || t("Sans titre", "Untitled")), h("div", { class: "secondary" }, [cat.singular, sel.subtitle].filter(Boolean).join(" · ")))),
       chips,
-      ...sections.flatMap((s) => [h("div", { class: "caps" }, s.label || cat.singular), h("div", { class: "card" }, ...s.fields.map((f) => fieldRow(f, args)))]),
+      ...sections.flatMap((s) => [h("div", { class: "caps" }, sectionLabel(s, cat.singular)), h("div", { class: "card" }, ...s.fields.map((f) => fieldRow(f, args)))]),
       ...(item.urls.length
         ? [h("div", { class: "caps" }, t("Sites web", "Websites")),
            h("div", { class: "card" }, ...item.urls.map((u) => urlRow(u.label || t("site web", "website"), u.url)))]
@@ -1029,12 +1053,87 @@ async function renderDetail(): Promise<void> {
       item.notes ? h("div", { class: "card notes" }, item.notes) : null,
       item.tags.length ? h("div", { class: "caps" }, "Tags") : null,
       item.tags.length ? h("div", { class: "chips" }, ...item.tags.map((x) => h("span", { class: "chip" }, x))) : null,
+      item.trashed ? null : attachmentsSection(item),
       h("div", { class: "meta" },
         h("div", {}, t("Modifié le ", "Modified ") + dateTime(item.updatedAt)),
         h("div", { class: "tertiary" }, t("Créé le ", "Created ") + dateTime(item.createdAt)),
         item.passwordHistoryCount > 0 ? h("button", { class: "bar-text", onclick: () => history(item) }, t("Historique des mots de passe", "Password History")) : null),
     ),
   );
+}
+
+const fileSize = (n: number): string =>
+  n < 1024 ? t(`${n} octets`, `${n} bytes`) : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} ${t("Ko", "KB")}` : `${(n / 1024 / 1024).toFixed(1).replace(".", t(",", "."))} ${t("Mo", "MB")}`;
+
+function attachmentError(e: unknown): string {
+  switch ((e as UiError)?.code) {
+    case "TooLarge":
+      return t("Ce fichier dépasse 20 Mo, la taille maximale d'une pièce jointe.", "This file is over 20 MB, the largest attachment allowed.");
+    case "Unreadable":
+      return t("Impossible de lire ce fichier.", "Can't read this file.");
+    case "NotFound":
+      return t("Ce fichier n'est pas encore arrivé sur cet appareil. Réessaie après la synchronisation.", "This file hasn't reached this device yet. Try again after syncing.");
+    case "NoPreview":
+      return t("Pas d'aperçu pour ce type de fichier. Exporte-le pour l'ouvrir dans une autre app.", "No preview for this kind of file. Export it to open it in another app.");
+    default:
+      return message(e);
+  }
+}
+
+/** Pièces jointes, as on the Mac item page: open, export, delete; add a file. */
+function attachmentsSection(item: Item): HTMLElement {
+  const args = { vaultId: item.vaultId, itemId: item.id };
+  const open = async (a: Attachment) => {
+    try {
+      await call("open_attachment", { ...args, attachmentId: a.id });
+    } catch (e) {
+      toast(attachmentError(e));
+    }
+  };
+  const exportFile = async (a: Attachment) => {
+    try {
+      if (await call<boolean>("export_attachment", { ...args, attachmentId: a.id })) toast(t("Fichier enregistré.", "File saved."));
+    } catch (e) {
+      toast(attachmentError(e));
+    }
+  };
+  const remove = (a: Attachment) =>
+    confirmSheet(t(`Supprimer « ${a.name} » ? Le fichier est effacé de l'élément sur tous tes appareils.`, `Delete “${a.name}”? The file is removed from the item on all your devices.`), t("Supprimer le fichier", "Delete File"), async () => {
+      try {
+        await call("remove_attachment", { ...args, attachmentId: a.id });
+        await refresh(item.id);
+      } catch (e) {
+        toast(attachmentError(e));
+      }
+    });
+  const rows = item.attachments.map((a) => {
+    const moreBtn = h("span", { class: "more", role: "button", tabindex: 0, title: t("Actions sur le fichier", "File actions"), "aria-label": t("Actions sur le fichier", "File actions") }, icon("more", 20));
+    moreBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      menu(moreBtn, [
+        { label: t("Ouvrir", "Open"), icon: "open_in_new", action: () => void open(a) },
+        { label: t("Exporter…", "Export…"), icon: "share", action: () => void exportFile(a) },
+        "separator",
+        { label: t("Supprimer…", "Delete…"), icon: "trash", destructive: true, action: () => remove(a) },
+      ]);
+    });
+    return h("button", { class: "field-row attachment-row", onclick: () => void open(a), title: t("Ouvrir", "Open") }, icon("paperclip", 20, "accent"),
+      h("span", { class: "field-text" }, h("span", { class: "row-title" }, a.name), h("span", { class: "row-sub" }, fileSize(a.size))), moreBtn);
+  });
+  const full = item.attachments.length >= 32;
+  const add = h("button", { class: "add-row", disabled: full, onclick: async () => {
+    try {
+      const saved = await call<Item | null>("add_attachment", args);
+      if (saved) {
+        const added = saved.attachments.find((a) => !item.attachments.some((b) => b.id === a.id));
+        await refresh(item.id);
+        toast(t(`Fichier ajouté : ${added?.name ?? ""}`, `File added: ${added?.name ?? ""}`));
+      }
+    } catch (e) {
+      toast(attachmentError(e));
+    }
+  } }, icon("add_circle", 20), t("Ajouter un fichier…", "Add a File…"));
+  return h("div", {}, h("div", { class: "caps" }, t("Pièces jointes", "Attachments")), h("div", { class: "card" }, ...rows, add));
 }
 
 /** Only web links open (a bare host gets https://), as on the iPhone; the
@@ -1277,95 +1376,397 @@ function newItem(): void {
   );
 }
 
-const TEXT_KINDS = new Set(["text", "concealed", "password", "url", "email", "phone", "menu", "otp", "mnemonic"]);
+const TEXT_KINDS = new Set(["text", "concealed", "password", "url", "email", "phone", "menu", "otp", "mnemonic", "number", "money"]);
+/** The kinds a custom field can have (the Apple apps' grid, without "Lieu"). */
+const customKinds = (): { kind: string; label: string; icon: IconName }[] => [
+  { kind: "text", label: t("Texte", "Text"), icon: "text_fields" },
+  { kind: "concealed", label: t("Masqué", "Hidden"), icon: "eye_off" },
+  { kind: "password", label: t("Mot de passe", "Password"), icon: "password" },
+  { kind: "date", label: "Date", icon: "calendar" },
+  { kind: "url", label: "URL", icon: "globe" },
+  { kind: "email", label: "Email", icon: "mail" },
+  { kind: "phone", label: t("Téléphone", "Phone"), icon: "call" },
+];
+const RULES = (): [string, string][] => [
+  ["domain", t("Domaine", "Domain")],
+  ["exactHost", t("Hôte exact", "Exact Host")],
+  ["exactUrl", t("URL exacte", "Exact URL")],
+  ["never", t("Jamais", "Never")],
+];
+
+/** A field of the editor: its row, and the value to send once touched. */
+interface FieldControl {
+  row: HTMLElement;
+  /** Undefined until the user changes the field (an unrevealed secret stays). */
+  value: () => FieldInput | undefined;
+}
+
+const twoDigits = (n: number) => String(n).padStart(2, "0");
+
+/** Month names of the system's language, as the Apple apps take them from the locale. */
+function monthNames(): string[] {
+  const f = new Intl.DateTimeFormat(t("fr-FR", "en-US"), { month: "long" });
+  return Array.from({ length: 12 }, (_, i) => {
+    const name = f.format(new Date(2026, i, 1));
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  });
+}
+
+function editRow(id: string, label: Node | string, body: Node, extra?: Node | null): HTMLElement {
+  return h("div", { class: "edit-row" }, h("span", { class: "field-text" }, typeof label === "string" ? h("label", { class: "field-label", for: id }, label) : label, body), extra ?? null);
+}
+
+/** One control per field kind: text, menu, date, month-year, address; the
+ * other kinds (passkey, file, place, barcode, SSH key, link) show read only. */
+function fieldControl(f: Field, labelNode?: Node): FieldControl {
+  const id = "f-" + f.id;
+  let touched = false;
+  const label = labelNode ?? f.label;
+  if (TEXT_KINDS.has(f.kind)) {
+    const secret = f.secret && f.kind !== "otp";
+    if (f.kind === "menu" && f.options.length) {
+      const select = h("select", { id }, h("option", { value: "" }, "—"), ...f.options.map((o) => h("option", { value: o }, o)));
+      select.value = f.value ?? "";
+      if (f.value && !f.options.includes(f.value)) select.append(h("option", { value: f.value }, f.value));
+      select.value = f.value ?? "";
+      select.addEventListener("change", () => (touched = true));
+      return { row: editRow(id, label, select), value: () => (touched ? { type: "text", value: select.value } : undefined) };
+    }
+    const input = h("input", {
+      id,
+      type: secret ? "password" : f.kind === "email" ? "email" : "text",
+      value: secret ? "" : (f.value ?? ""),
+      placeholder: secret && f.hasValue ? t("Inchangé", "Unchanged") : typeof label === "string" ? label : "",
+      autocomplete: "off",
+      spellcheck: false,
+      inputMode: f.kind === "number" ? "numeric" : f.kind === "phone" ? "tel" : f.kind === "url" ? "url" : undefined,
+    });
+    input.addEventListener("input", () => (touched = true));
+    let extra: Node | undefined;
+    if (f.kind === "password") {
+      extra = h("button", { class: "bar-icon", type: "button", title: t("Générer un mot de passe", "Generate Password"), "aria-label": t("Générer un mot de passe", "Generate Password"),
+        onclick: (ev: Event) => {
+          ev.preventDefault();
+          generator((p) => {
+            input.type = "text";
+            input.classList.add("mono");
+            input.value = p;
+            touched = true;
+          });
+        } }, icon("wand", 22));
+    } else if (secret) {
+      extra = h("button", { class: "bar-icon", type: "button", title: t("Afficher le mot de passe", "Show Password"), onclick: () => {
+        input.type = input.type === "password" ? "text" : "password";
+      } }, icon("eye", 20));
+    }
+    const row = h("label", { class: "edit-row", for: id }, h("span", { class: "field-text" }, typeof label === "string" ? h("span", { class: "field-label" }, label) : label, input), extra ?? null);
+    return { row, value: () => (touched ? { type: "text", value: input.value } : undefined) };
+  }
+  if (f.kind === "date") {
+    let v = f.data?.type === "date" ? { ...f.data } : null;
+    const box = h("div", { class: "inline-editor" });
+    const draw = () => {
+      if (!v) {
+        box.replaceChildren(h("button", { class: "bar-text add-value", type: "button", id, onclick: () => {
+          const d = new Date();
+          v = { type: "date", year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+          touched = true;
+          draw();
+          (box.querySelector("input") as HTMLInputElement | null)?.focus();
+        } }, t("Ajouter une date", "Add Date")));
+        return;
+      }
+      const input = h("input", { id, type: "date", value: `${String(v.year).padStart(4, "0")}-${twoDigits(v.month)}-${twoDigits(v.day)}` });
+      input.addEventListener("change", () => {
+        const m = /^(\d{4,})-(\d{2})-(\d{2})$/.exec(input.value);
+        if (!m) return;
+        v = { type: "date", year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+        touched = true;
+      });
+      box.replaceChildren(input, h("button", { class: "bar-icon", type: "button", title: t("Effacer", "Erase"), "aria-label": t("Effacer", "Erase"), onclick: () => {
+        v = null;
+        touched = true;
+        draw();
+      } }, icon("close", 18)));
+    };
+    draw();
+    return { row: editRow(id, label, box), value: () => (touched ? (v ?? { type: "empty" }) : undefined) };
+  }
+  if (f.kind === "monthYear") {
+    let v = f.data?.type === "monthYear" ? { ...f.data } : null;
+    const box = h("div", { class: "inline-editor" });
+    const draw = () => {
+      if (!v) {
+        box.replaceChildren(h("button", { class: "bar-text add-value", type: "button", id, onclick: () => {
+          const d = new Date();
+          v = { type: "monthYear", year: d.getFullYear(), month: d.getMonth() + 1 };
+          touched = true;
+          draw();
+        } }, t("Choisir le mois et l'année", "Choose Month and Year")));
+        return;
+      }
+      const month = h("select", { id, "aria-label": t("Mois", "Month") }, ...monthNames().map((n, i) => h("option", { value: String(i + 1) }, n)));
+      month.value = String(v.month);
+      const now = new Date().getFullYear();
+      const years = new Set<number>();
+      for (let y = now - 30; y <= now + 20; y++) years.add(y);
+      years.add(v.year);
+      const year = h("select", { "aria-label": t("Année", "Year") }, ...[...years].sort((a, b) => a - b).map((y) => h("option", { value: String(y) }, String(y))));
+      year.value = String(v.year);
+      const update = () => {
+        v = { type: "monthYear", year: Number(year.value), month: Number(month.value) };
+        touched = true;
+      };
+      month.addEventListener("change", update);
+      year.addEventListener("change", update);
+      box.replaceChildren(month, year, h("button", { class: "bar-icon", type: "button", title: t("Effacer", "Erase"), "aria-label": t("Effacer", "Erase"), onclick: () => {
+        v = null;
+        touched = true;
+        draw();
+      } }, icon("close", 18)));
+    };
+    draw();
+    return { row: editRow(id, label, box), value: () => (touched ? (v ?? { type: "empty" }) : undefined) };
+  }
+  if (f.kind === "address") {
+    const a = f.data?.type === "address" ? f.data : { line1: "", line2: "", postalCode: "", city: "", region: "", country: "" };
+    const part = (key: keyof typeof a, placeholder: string, cls = "") => {
+      const input = h("input", { class: cls, value: a[key] as string, placeholder, "aria-label": placeholder, autocomplete: "off", id: key === "line1" ? id : undefined });
+      input.addEventListener("input", () => (touched = true));
+      return input;
+    };
+    const parts = {
+      line1: part("line1", t("Ligne 1", "Line 1")),
+      line2: part("line2", t("Ligne 2", "Line 2")),
+      postalCode: part("postalCode", t("Code postal", "Postal Code"), "postal"),
+      city: part("city", t("Ville", "City")),
+      region: part("region", t("Région", "Region")),
+      country: part("country", t("Pays", "Country")),
+    };
+    const box = h("div", { class: "address-editor" }, parts.line1, parts.line2, h("div", { class: "address-pair" }, parts.postalCode, parts.city), parts.region, parts.country);
+    return {
+      row: editRow(id, label, box),
+      value: () =>
+        touched
+          ? { type: "address", line1: parts.line1.value, line2: parts.line2.value, postalCode: parts.postalCode.value, city: parts.city.value, region: parts.region.value, country: parts.country.value }
+          : undefined,
+    };
+  }
+  // Read only here: shown so the editor never hides what the item holds.
+  const shown = f.secret ? (f.hasValue ? "••••••••••" : "") : (f.value ?? "");
+  return { row: editRow(id, label, h("span", { class: "field-value secondary" }, shown || "—")), value: () => undefined };
+}
+
+/** Tags as chips, "Ajouter un tag" with Return, and suggestions from the vault. */
+function tagEditor(initial: string[]): { el: HTMLElement; tags: () => string[] } {
+  let tags = [...initial];
+  const chips = h("div", { class: "chips tag-chips" });
+  const input = h("input", { id: "f-tags", class: "tag-input", placeholder: t("Ajouter un tag", "Add Tag"), "aria-label": t("Ajouter un tag", "Add Tag"), autocomplete: "off" });
+  const suggestions = h("div", { class: "chips suggestions" });
+  const add = (raw: string) => {
+    const tag = raw.trim().replace(/,$/, "").trim();
+    if (tag && !tags.some((x) => x.toLowerCase() === tag.toLowerCase())) tags.push(tag);
+    input.value = "";
+    draw();
+  };
+  const draw = () => {
+    chips.replaceChildren(...tags.map((tag) =>
+      h("button", { class: "chip removable", type: "button", title: t(`Retirer le tag ${tag}`, `Remove Tag ${tag}`), "aria-label": t(`Retirer le tag ${tag}`, `Remove Tag ${tag}`),
+        onclick: () => ((tags = tags.filter((x) => x !== tag)), draw()) }, tag, icon("close", 14))), input);
+    const known = [...new Set(ui.items.flatMap((i) => i.tags))].filter((x) => !tags.some((y) => y.toLowerCase() === x.toLowerCase())).sort((a, b) => a.localeCompare(b)).slice(0, 6);
+    suggestions.replaceChildren(...known.map((tag) => h("button", { class: "chip suggestion", type: "button", onclick: () => add(tag) }, icon("add", 14), tag)));
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      add(input.value);
+    } else if (e.key === "Backspace" && !input.value && tags.length) {
+      tags.pop();
+      draw();
+      input.focus();
+    }
+  });
+  draw();
+  return { el: h("div", {}, chips, suggestions), tags: () => (input.value.trim() ? [...tags, input.value.trim()] : tags) };
+}
+
+/** The websites: one row each (address, matching rule, remove), the first one primary. */
+function urlsEditor(initial: { label: string; url: string; rule: string }[]): { el: HTMLElement; urls: () => { label: string; url: string; rule: string }[] } {
+  const rows: { label: string; input: HTMLInputElement; rule: string }[] = initial.map((u) => ({ label: u.label, input: h("input"), rule: u.rule }));
+  rows.forEach((r, i) => (r.input.value = initial[i]!.url));
+  const card = h("div", { class: "card" });
+  const draw = () => {
+    const many = rows.length > 1;
+    card.replaceChildren(...rows.map((r, i) => {
+      const id = i === 0 ? "f-url" : `f-url-${i}`;
+      r.input.id = id;
+      r.input.placeholder = "https://";
+      r.input.spellcheck = false;
+      r.input.inputMode = "url";
+      const ruleBtn = h("button", { class: "bar-icon", type: "button", title: t("Correspondance pour le remplissage", "Matching for AutoFill"), "aria-label": t("Correspondance", "Matching") }, icon("options", 20));
+      ruleBtn.addEventListener("click", () => {
+        const entries: MenuEntry[] = RULES().map(([key, name]) => ({ label: name, icon: key === r.rule ? "check" : "globe", action: () => (r.rule = key) }));
+        if (many && i > 0) entries.push("separator", { label: t("Site principal", "Main Website"), icon: "star", action: () => (rows.unshift(...rows.splice(i, 1)), draw()) });
+        menu(ruleBtn, entries);
+      });
+      const remove = h("button", { class: "bar-icon destructive", type: "button", title: t("Retirer ce site web", "Remove This Website"), "aria-label": t("Retirer ce site web", "Remove This Website"),
+        onclick: () => (rows.splice(i, 1), draw()) }, icon("remove_circle", 20));
+      return editRow(id, many && i === 0 ? t("site web principal", "Primary website") : t("site web", "Website"), r.input, h("span", { class: "row-tools" }, ruleBtn, remove));
+    }),
+    h("button", { class: "add-row", type: "button", onclick: () => {
+      rows.push({ label: "", input: h("input"), rule: "domain" });
+      draw();
+      rows[rows.length - 1]!.input.focus();
+    } }, icon("add_circle", 20), rows.length ? t("ajouter un autre site web", "add another website") : t("ajouter un site web", "add a website")));
+  };
+  if (!rows.length) rows.push({ label: "", input: h("input"), rule: "domain" });
+  draw();
+  return { el: card, urls: () => rows.map((r) => ({ label: r.label, url: r.input.value, rule: r.rule })) };
+}
+
+const isCustomSection = (s: Section) => s.id === "custom";
+const sectionLabel = (s: Section, fallback: string) => (isCustomSection(s) && (s.label === "Champs perso" || !s.label) ? t("Champs perso", "Custom fields") : s.label || fallback);
 
 function editItem(item: Item, isNew: boolean): void {
   const cat = category(item.itemType);
   const title = h("input", { id: "f-title", class: "title-input", value: item.title, placeholder: cat.singular, "aria-label": t("Titre", "Title") });
-  const changed = new Map<string, HTMLInputElement | HTMLTextAreaElement>();
   const err = h("div", { class: "error", role: "alert" });
-  const labeled = (id: string, label: string, input: HTMLElement, extra?: Node) =>
-    h("label", { class: "edit-row", for: id }, h("span", { class: "field-text" }, h("span", { class: "field-label" }, label), input), extra ?? null);
+  let dirty = false;
+  const controls = new Map<string, FieldControl>();
   const sections: Node[] = [];
   for (const sec of item.sections) {
+    if (isCustomSection(sec)) continue;
     const rows: Node[] = [];
     for (const f of sec.fields) {
-      if (!TEXT_KINDS.has(f.kind)) continue;
-      const secret = f.secret && f.kind !== "otp";
-      const input = h("input", {
-        id: "f-" + f.id,
-        type: secret ? "password" : f.kind === "email" ? "email" : "text",
-        value: secret ? "" : (f.value ?? ""),
-        placeholder: secret && f.hasValue ? t("Inchangé", "Unchanged") : f.label,
-        autocomplete: "off",
-        spellcheck: false,
-      });
-      input.addEventListener("input", () => changed.set(f.id, input));
-      let extra: Node | undefined;
-      if (f.kind === "password") {
-        extra = h("button", { class: "bar-icon", type: "button", title: t("Générer un mot de passe", "Generate Password"), "aria-label": t("Générer un mot de passe", "Generate Password"),
-          onclick: (ev: Event) => {
-            ev.preventDefault();
-            generator((p) => {
-              input.type = "text";
-              input.classList.add("mono");
-              input.value = p;
-              changed.set(f.id, input);
-            });
-          } }, icon("wand", 22));
-      }
-      rows.push(labeled("f-" + f.id, f.label, input, extra));
+      const c = fieldControl(f);
+      controls.set(f.id, c);
+      rows.push(c.row);
     }
-    if (rows.length) sections.push(h("div", { class: "caps" }, sec.label || cat.singular), h("div", { class: "card" }, ...rows));
+    if (rows.length) sections.push(h("div", { class: "caps" }, sectionLabel(sec, cat.singular)), h("div", { class: "card" }, ...rows));
   }
-  const url = h("input", { id: "f-url", value: item.urls[0]?.url ?? "", placeholder: "https://", spellcheck: false });
-  const notes = h("textarea", { id: "f-notes", placeholder: t("Notes", "Notes"), rows: 4 });
+
+  // Custom fields ("Champs perso"): label, value, remove; added from "ajouter plus".
+  interface Custom { id?: string; kind: string; label: HTMLInputElement; control: FieldControl; }
+  const customs: Custom[] = [];
+  const customCard = h("div", { class: "card" });
+  const customHead = h("div", { class: "caps" }, t("Champs perso", "Custom fields"));
+  const drawCustom = () => {
+    customHead.hidden = customCard.hidden = customs.length === 0;
+    customCard.replaceChildren(...customs.map((c) => {
+      const remove = h("button", { class: "bar-icon destructive", type: "button", title: t(`Retirer ${c.label.value || c.label.placeholder}`, `Remove ${c.label.value || c.label.placeholder}`),
+        onclick: () => {
+          customs.splice(customs.indexOf(c), 1);
+          dirty = true;
+          drawCustom();
+        } }, icon("remove_circle", 20));
+      const row = c.control.row;
+      row.classList.add("custom-row");
+      row.querySelector(".field-text")?.prepend(c.label);
+      row.querySelector(":scope > .field-text > .field-label")?.remove();
+      return h("div", { class: "custom-wrap" }, remove, row);
+    }));
+  };
+  const addCustom = (f: Field, fresh: boolean) => {
+    const label = h("input", { class: "custom-label", value: fresh ? "" : f.label, placeholder: fresh ? customKinds().find((k) => k.kind === f.kind)?.label ?? "" : t("Libellé", "Label"), "aria-label": t("Libellé", "Label") });
+    label.addEventListener("input", () => (dirty = true));
+    customs.push({ id: fresh ? undefined : f.id, kind: f.kind, label, control: fieldControl(f, h("span")) });
+    drawCustom();
+  };
+  for (const f of item.sections.find(isCustomSection)?.fields ?? []) addCustom(f, false);
+  let fresh = 0;
+  const more = h("button", { class: "add-row", type: "button" }, icon("add_circle", 20), t("ajouter plus", "add more"));
+  more.addEventListener("click", () =>
+    menu(more, customKinds().map((k) => ({
+      label: k.label,
+      icon: k.icon,
+      action: () => {
+        fresh++;
+        addCustom({ id: `new-${fresh}`, label: "", kind: k.kind, value: null, secret: k.kind === "password" || k.kind === "concealed", hasValue: false, strength: null, options: [] }, true);
+        dirty = true;
+        customs[customs.length - 1]!.label.focus();
+      },
+    })), "left"));
+  drawCustom();
+
+  const urls = urlsEditor(item.urls);
+  const notes = h("textarea", { id: "f-notes", placeholder: t("Ajoute des notes sur cet élément.", "Add notes about this item."), rows: 4 });
   notes.value = item.notes;
-  const tags = h("input", { id: "f-tags", value: item.tags.join(", "), placeholder: t("Tags, séparés par des virgules", "Tags, comma separated") });
+  const grow = () => {
+    notes.style.height = "auto";
+    notes.style.height = Math.min(notes.scrollHeight + 2, 420) + "px";
+  };
+  notes.addEventListener("input", grow);
+  const tags = tagEditor(item.tags);
+  const travelHidden = h("input", { type: "checkbox", class: "switch", checked: item.travelHidden, "aria-label": t("Caché en voyage", "Hidden in Travel Mode") });
+  const travelGuard = h("input", { type: "checkbox", class: "switch", checked: item.travelGuard, disabled: item.travelHidden, "aria-label": t("Protection renforcée en voyage", "Extra Protection in Travel Mode") });
+  travelHidden.addEventListener("change", () => (travelGuard.disabled = travelHidden.checked));
+
+  const save = async (sh: Sheet) => {
+    const fields: Record<string, FieldInput> = {};
+    for (const [id, c] of controls) {
+      const v = c.value();
+      if (v !== undefined) fields[id] = v;
+    }
+    try {
+      const saved = await call<Item>("save_item", {
+        edit: {
+          vaultId: item.vaultId,
+          itemId: item.id,
+          title: title.value.trim(),
+          notes: notes.value,
+          urls: urls.urls(),
+          tags: tags.tags(),
+          fields,
+          custom: customs.map((c) => ({ id: c.id, label: c.label.value, kind: c.kind, value: c.control.value() })),
+          travelHidden: travelHidden.checked,
+          travelGuard: travelGuard.checked && !travelHidden.checked,
+          newType: isNew ? item.itemType : undefined,
+        },
+      });
+      sh.close();
+      if (ui.page.kind !== "list") ui.page = { kind: "list", filter: { kind: "all" }, title: t("Tous les éléments", "All Items") };
+      await refresh(saved.id);
+      toast(t("Enregistré", "Saved"));
+    } catch (e) {
+      const er = e as UiError;
+      if (er.code === "Validation") {
+        const id = er.detail.split(":")[0]!;
+        const label = id === "title" ? t("Titre", "Title") : (item.sections.flatMap((x) => x.fields).find((x) => x.id === id)?.label ?? id);
+        err.textContent = er.detail.includes("required") || id === "title" ? t(`« ${label} » est obligatoire.`, `“${label}” is required.`) : t(`« ${label} » n'est pas valide.`, `“${label}” is not valid.`);
+        (document.getElementById(id === "title" ? "f-title" : "f-" + id) as HTMLElement | null)?.focus();
+      } else err.textContent = message(e);
+    }
+  };
   const s = sheet(isNew ? t("Nouvel élément", "New Item") : t("Modification", "Editing"), {
     action: t("Enregistrer", "Save"),
     wide: true,
-    onAction: async (sh) => {
-      const fields: Record<string, string> = {};
-      for (const [id, el] of changed) fields[id] = el.value;
-      try {
-        const saved = await call<Item>("save_item", {
-          edit: {
-            vaultId: item.vaultId,
-            itemId: item.id,
-            title: title.value.trim(),
-            notes: notes.value,
-            url: url.value,
-            tags: tags.value.split(",").map((x) => x.trim()).filter(Boolean),
-            fields,
-            newType: isNew ? item.itemType : undefined,
-          },
-        });
-        sh.close();
-        if (ui.page.kind !== "list") ui.page = { kind: "list", filter: { kind: "all" }, title: t("Tous les éléments", "All Items") };
-        await refresh(saved.id);
-        toast(t("Enregistré", "Saved"));
-      } catch (e) {
-        const er = e as UiError;
-        if (er.code === "Validation") {
-          const id = er.detail.split(":")[0]!;
-          const label = item.sections.flatMap((x) => x.fields).find((x) => x.id === id)?.label ?? id;
-          err.textContent = t(`« ${label} » est obligatoire.`, `“${label}” is required.`);
-        } else err.textContent = message(e);
-      }
-    },
+    onAction: save,
+    confirmCancel: () => dirty,
   });
+  s.dialog.classList.add("editor");
+  s.body.addEventListener("input", () => (dirty = true));
+  s.body.addEventListener("change", () => (dirty = true));
   s.body.append(
     h("div", { class: "card edit-head" }, art(item.itemType, 44), title),
     ...sections,
-    h("div", { class: "caps" }, t("Site web", "Website")),
-    h("div", { class: "card" }, labeled("f-url", t("site web", "website"), url)),
+    customHead,
+    customCard,
+    h("div", { class: "card list-card" }, more),
+    h("div", { class: "caps" }, t("Sites web", "Websites")),
+    urls.el,
     h("div", { class: "caps" }, t("Notes", "Notes")),
     h("div", { class: "card" }, notes),
     h("div", { class: "caps" }, "Tags"),
-    h("div", { class: "card" }, tags),
+    h("div", { class: "card pad-s" }, tags.el),
+    h("div", { class: "caps" }, "Travel Mode"),
+    h("div", { class: "card list-card" },
+      h("label", { class: "toggle-row" }, h("span", { class: "row-text" }, h("span", {}, t("Caché en voyage", "Hidden in Travel Mode")),
+        h("span", { class: "row-sub" }, t("Quitte cet appareil en Travel Mode, revient au retour.", "Leaves this device in Travel Mode, comes back when you return."))), travelHidden),
+      h("label", { class: "toggle-row" }, h("span", { class: "row-text" }, h("span", {}, t("Protection renforcée en voyage", "Extra Protection in Travel Mode")),
+        h("span", { class: "row-sub" }, t("En Travel Mode : mot de passe maître et Windows Hello pour l'afficher, jamais proposé ailleurs.", "In Travel Mode: master password and Windows Hello to show it, never offered elsewhere."))), travelGuard)),
     err,
   );
+  requestAnimationFrame(grow);
   title.focus();
 }
 

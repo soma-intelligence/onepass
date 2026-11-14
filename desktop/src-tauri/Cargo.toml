@@ -35,6 +35,9 @@ time = { version = "0.3", default-features = false, features = ["std"] }
 arboard = { version = "3", default-features = false }
 # A website opens only once parsed as http(s) (shell.rs).
 url = "2"
+# The native open and save dialogs (dialog.rs): a path chosen there never
+# crosses the IPC, the backend reads or writes the file itself.
+rfd = { version = "0.15", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

@@ -28,9 +28,17 @@ const opened = () => (existsSync(shellLog) ? readFileSync(shellLog, "utf8").spli
 rmSync(data, { recursive: true, force: true });
 mkdirSync(data, { recursive: true });
 mkdirSync(shots, { recursive: true });
+// The native open and save dialogs answer with the path written here (an
+// empty file is "Cancel"); files the test hands to the app live in `files`.
+const dialogAnswer = data + "-dialog.txt";
+const files = data + "-files";
+rmSync(files, { recursive: true, force: true });
+mkdirSync(files, { recursive: true });
+const answerDialog = (path) => writeFileSync(dialogAnswer, path ?? "");
+answerDialog("");
 
 const driver = spawn(join(homedir(), ".cargo", "bin", "tauri-driver"), ["--native-driver", edgedriver], {
-  env: { ...process.env, ONEPASS_DATA_DIR: data, ONEPASS_LANG: "fr", ONEPASS_E2E_SHELL_LOG: shellLog },
+  env: { ...process.env, ONEPASS_DATA_DIR: data, ONEPASS_LANG: "fr", ONEPASS_E2E_SHELL_LOG: shellLog, ONEPASS_E2E_DIALOG: dialogAnswer },
   stdio: "ignore",
 });
 process.on("exit", () => driver.kill());
@@ -219,6 +227,92 @@ try {
   await click(sheetAction("Enregistrer"));
   await find("//main//h2[normalize-space(.)='Box maison']");
   check("a Wi-Fi router is saved", true);
+
+  // Every field kind: menu, date, address, custom fields, tags (an identity)
+  const js = (script, ...args) => wd("POST", `${S}/execute/sync`, { script, args });
+  const setValue = (css, value) => js(`const e = document.querySelector(arguments[0]); e.value = arguments[1]; e.dispatchEvent(new Event('change', { bubbles: true })); e.dispatchEvent(new Event('input', { bubbles: true }));`, css, value);
+  await click("//button[@title='Nouvel élément']");
+  await click("//button[contains(@class,'picker-cell')][.//span[normalize-space(.)='Identité']]");
+  await type("//input[@id='f-title']", "Moi");
+  await type(editField("Prénom"), "Camille");
+  await setValue("#f-sex", (await js("return [...document.querySelectorAll('#f-sex option')].map(o => o.value).find(Boolean)")));
+  await click("//button[@id='f-birth_date']");
+  await setValue("input#f-birth_date", "1990-05-17");
+  await type("//input[@id='f-address']", "12 rue des Lilas");
+  await type("//input[@aria-label='Code postal']", "75011");
+  await type("//input[@aria-label='Ville']", "Paris");
+  await click("//dialog[@open]//button[contains(@class,'add-row') and contains(., 'ajouter plus')]");
+  await click(menuItem("Texte"));
+  await type("//dialog[@open]//input[contains(@class,'custom-label')]", "Numéro client");
+  await type("//dialog[@open]//div[contains(@class,'custom-wrap')]//input[not(contains(@class,'custom-label'))]", "A-1234");
+  await type("//input[@id='f-tags']", "famille");
+  await type("//textarea[@id='f-notes']", "Première ligneDeuxième ligne");
+  await shot("24-edition-identite");
+  await click(sheetAction("Enregistrer"));
+  await find("//main//h2[normalize-space(.)='Moi']");
+  const fieldText = async (label) => textOf(`//main//button[contains(@class,'field-row')][.//span[@class='field-label' and normalize-space(.)='${label}']]//span[contains(@class,'field-value')]`).catch(() => "");
+  check("a date saves", (await fieldText("Date de naissance")) === "1990-05-17", await fieldText("Date de naissance"));
+  check("an address saves", (await fieldText("Adresse")).includes("75011, Paris"), await fieldText("Adresse"));
+  check("a custom field saves in Champs perso", (await fieldText("Numéro client")) === "A-1234" && (await exists("//main//div[@class='caps' and normalize-space(.)='Champs perso']")));
+  check("a tag saves", await exists("//main//span[@class='chip' and normalize-space(.)='famille']"));
+  check("multiline notes save", (await textOf("//main//div[contains(@class,'notes')]")).includes("\n"));
+  await shot("25-identite");
+
+  // Attachments: add (file dialog), open (temporary file), export, delete
+  const attached = join(files, "carte-vitale.txt");
+  writeFileSync(attached, "pièce jointe de test");
+  answerDialog(attached);
+  await click("//main//button[contains(., 'Ajouter un fichier')]");
+  await find("//main//button[contains(@class,'attachment-row')][.//span[normalize-space(.)='carte-vitale.txt']]");
+  check("a file is attached", true);
+  await shot("26-piece-jointe");
+  await click("//main//button[contains(@class,'attachment-row')]");
+  await sleep(500);
+  const tempCopy = opened().find((p) => p.endsWith("carte-vitale.txt"));
+  check("an attachment opens from a temporary copy", !!tempCopy && readFileSync(tempCopy, "utf8") === "pièce jointe de test", tempCopy ?? opened().join(", "));
+  const exported = join(files, "export.txt");
+  answerDialog(exported);
+  await js("document.querySelectorAll('.more').forEach(e => e.style.opacity = 1)");
+  await click("//main//button[contains(@class,'attachment-row')]//span[contains(@class,'more')]");
+  await click(menuItem("Exporter…"));
+  await sleep(500);
+  check("an attachment exports", existsSync(exported) && readFileSync(exported, "utf8") === "pièce jointe de test");
+  await click("//main//button[contains(@class,'attachment-row')]//span[contains(@class,'more')]");
+  await click(menuItem("Supprimer…"));
+  await click(sheetAction("Supprimer le fichier"));
+  await sleep(800);
+  check("an attachment is removed", !(await exists("//main//button[contains(@class,'attachment-row')]")));
+  answerDialog("");
+
+  // Remove the custom field, month-year and money on a card
+  await click("//main//button[normalize-space(.)='Modifier']");
+  await click("//dialog[@open]//div[contains(@class,'custom-wrap')]//button[contains(@class,'destructive')]");
+  await click(sheetAction("Enregistrer"));
+  await sleep(800);
+  check("a custom field is removed", !(await exists("//main//span[@class='field-label' and normalize-space(.)='Numéro client']")));
+  await click("//button[@title='Nouvel élément']");
+  await click("//button[contains(@class,'picker-cell')][.//span[normalize-space(.)='Carte bancaire']]");
+  await type("//input[@id='f-title']", "Visa");
+  await type(editField("Titulaire"), "Camille Martin");
+  await type(editField("Numéro"), "4242424242424242");
+  await click("//button[@id='f-expiry']");
+  await setValue("select#f-expiry", "3");
+  await setValue("select[aria-label='Année']", "2030");
+  await type(editField("Plafond"), "1500,50 EUR");
+  await shot("27-edition-carte");
+  await click(sheetAction("Enregistrer"));
+  await find("//main//h2[normalize-space(.)='Visa']");
+  check("a month and year save", (await fieldText("Expiration")) === "03/2030", await fieldText("Expiration"));
+  check("an amount saves", (await fieldText("Plafond")) === "1500.50 EUR", await fieldText("Plafond"));
+  await click("//main//button[normalize-space(.)='Modifier']");
+  await clear("//input[@id='f-title']");
+  await type("//input[@id='f-title']", "Visa perso");
+  await click("//dialog[@open]//div[@class='sheet-bar']/button[1]");
+  await find("//dialog[@open]//p[contains(., 'Abandonner les modifications')]");
+  check("Annuler with changes asks first", true);
+  await click(sheetAction("Abandonner"));
+  await sleep(400);
+  check("the discarded edit is not saved", await exists("//main//h2[normalize-space(.)='Visa']"));
 
   // Lists, search, favorites, categories
   check("the list shows both items", (await exists(row("GitHub"))) && (await exists(row("Box maison"))));

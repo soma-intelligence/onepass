@@ -75,6 +75,7 @@ impl AppState {
 
     /// Drops the keys: every later call needs an unlock.
     pub fn lock(&self) {
+        purge_opened();
         if let Some(s) = self
             .session
             .lock()
@@ -95,6 +96,16 @@ impl AppState {
         }
         false
     }
+}
+
+/// Where an attachment is written to be opened by another app. Emptied at
+/// lock, at exit, at start (after a crash) and 10 minutes after each open.
+pub fn opened_dir() -> PathBuf {
+    std::env::temp_dir().join("OnePass-open")
+}
+
+pub fn purge_opened() {
+    let _ = std::fs::remove_dir_all(opened_dir());
 }
 
 /// "fr" when the Windows display language is French, "en" otherwise. A debug

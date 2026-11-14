@@ -39,6 +39,10 @@
     "allow-set-profile-name",
     "allow-strength",
     "allow-copy-secret",
-    "allow-open-url"
+    "allow-open-url",
+    "allow-add-attachment",
+    "allow-remove-attachment",
+    "allow-open-attachment",
+    "allow-export-attachment"
   ]
 }

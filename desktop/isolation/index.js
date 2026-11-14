@@ -36,6 +36,10 @@ const ALLOWED = new Set([
   "strength",
   "copy_secret",
   "open_url",
+  "add_attachment",
+  "remove_attachment",
+  "open_attachment",
+  "export_attachment",
   "plugin:event|listen",
   "plugin:event|unlisten",
 ]);

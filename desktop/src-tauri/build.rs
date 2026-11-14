@@ -33,6 +33,10 @@ const COMMANDS: &[&str] = &[
     "strength",
     "copy_secret",
     "open_url",
+    "add_attachment",
+    "remove_attachment",
+    "open_attachment",
+    "export_attachment",
 ];
 
 fn main() {

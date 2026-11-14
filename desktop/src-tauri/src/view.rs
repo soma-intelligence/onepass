@@ -6,7 +6,8 @@
 use onepass_ffi::{
     FfiFieldType, FfiFieldValue, FfiItem, FfiItemSummary, FfiItemType, FfiVault, OnePassError,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 /// An error the UI can show: a stable code, never a field value.
 #[derive(Debug, Serialize)]
@@ -122,6 +123,50 @@ pub struct FieldView {
     /// For a password: its strength level, 0 (too short) to 4 (excellent).
     /// The level only, never the value.
     pub strength: Option<u8>,
+    /// The parts of a date, month-year or address, for the editor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<FieldInput>,
+    /// The choices of a menu field.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+}
+
+/// A value the editor sends (and, for the structured kinds, receives). A
+/// text is read according to the kind of the field it goes to.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum FieldInput {
+    Text {
+        value: Zeroizing<String>,
+    },
+    Date {
+        year: i32,
+        month: u8,
+        day: u8,
+    },
+    MonthYear {
+        year: u16,
+        month: u8,
+    },
+    #[serde(rename_all = "camelCase")]
+    Address {
+        line1: String,
+        line2: String,
+        postal_code: String,
+        city: String,
+        region: String,
+        country: String,
+    },
+    Empty,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentView {
+    pub id: String,
+    pub name: String,
+    pub size: u64,
+    pub mime: String,
 }
 
 #[derive(Serialize)]
@@ -137,6 +182,28 @@ pub struct SectionView {
 pub struct UrlView {
     pub label: String,
     pub url: String,
+    pub rule: &'static str,
+}
+
+pub fn rule_key(r: onepass_ffi::FfiMatchRule) -> &'static str {
+    use onepass_ffi::FfiMatchRule as R;
+    match r {
+        R::Domain => "domain",
+        R::ExactHost => "exactHost",
+        R::ExactUrl => "exactUrl",
+        R::Never => "never",
+    }
+}
+
+pub fn rule_from_key(k: &str) -> Option<onepass_ffi::FfiMatchRule> {
+    use onepass_ffi::FfiMatchRule as R;
+    Some(match k {
+        "domain" => R::Domain,
+        "exactHost" => R::ExactHost,
+        "exactUrl" => R::ExactUrl,
+        "never" => R::Never,
+        _ => return None,
+    })
 }
 
 #[derive(Serialize)]
@@ -156,6 +223,9 @@ pub struct ItemView {
     pub trashed: bool,
     pub archived: bool,
     pub password_history_count: u32,
+    pub attachments: Vec<AttachmentView>,
+    pub travel_hidden: bool,
+    pub travel_guard: bool,
 }
 
 /// The iPhone strength meter's levels: thresholds at 40, 60, 80 and 100 bits.
@@ -182,6 +252,7 @@ impl From<&FfiItem> for ItemView {
                 .map(|u| UrlView {
                     label: u.label.clone(),
                     url: u.url.clone(),
+                    rule: rule_key(u.rule),
                 })
                 .collect(),
             sections: i
@@ -211,6 +282,12 @@ impl From<&FfiItem> for ItemView {
                                     }
                                     _ => None,
                                 },
+                                data: structured(&f.value),
+                                options: if f.kind == FfiFieldType::Menu {
+                                    onepass_ffi::menu_options(i.item_type, f.id.clone())
+                                } else {
+                                    vec![]
+                                },
                             }
                         })
                         .collect(),
@@ -221,6 +298,18 @@ impl From<&FfiItem> for ItemView {
             trashed: i.trashed_at.is_some(),
             archived: i.archived,
             password_history_count: i.password_history_count,
+            attachments: i
+                .attachments
+                .iter()
+                .map(|a| AttachmentView {
+                    id: a.id.clone(),
+                    name: a.name.clone(),
+                    size: a.size,
+                    mime: a.mime.clone(),
+                })
+                .collect(),
+            travel_hidden: i.travel_hidden,
+            travel_guard: i.travel_guard,
         }
     }
 }
@@ -285,7 +374,120 @@ pub fn display(v: &FfiFieldValue) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
-/// Kinds the editor of this first version writes as plain text.
+/// The parts of a date, month-year or address (never a secret kind).
+fn structured(v: &FfiFieldValue) -> Option<FieldInput> {
+    match v {
+        FfiFieldValue::Date { value } => Some(FieldInput::Date {
+            year: value.year,
+            month: value.month,
+            day: value.day,
+        }),
+        FfiFieldValue::MonthYear { year, month } => Some(FieldInput::MonthYear {
+            year: *year,
+            month: *month,
+        }),
+        FfiFieldValue::Address { value } => Some(FieldInput::Address {
+            line1: value.line1.clone(),
+            line2: value.line2.clone(),
+            postal_code: value.postal_code.clone(),
+            city: value.city.clone(),
+            region: value.region.clone(),
+            country: value.country.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// The value an editor input gives a field of `kind`. `None` when the
+/// input does not fit the kind (a date for a text field, a bad number).
+pub fn input_value(kind: FfiFieldType, input: FieldInput) -> Option<FfiFieldValue> {
+    use FfiFieldType as K;
+    use FfiFieldValue as V;
+    Some(match (kind, input) {
+        (_, FieldInput::Empty) => V::Empty,
+        (_, FieldInput::Text { value }) => return text_value(kind, value.to_string()),
+        (K::Date, FieldInput::Date { year, month, day }) => {
+            if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+                return None;
+            }
+            V::Date {
+                value: onepass_ffi::FfiDate { year, month, day },
+            }
+        }
+        (K::MonthYear, FieldInput::MonthYear { year, month }) => {
+            if !(1..=12).contains(&month) {
+                return None;
+            }
+            V::MonthYear { year, month }
+        }
+        (
+            K::Address,
+            FieldInput::Address {
+                line1,
+                line2,
+                postal_code,
+                city,
+                region,
+                country,
+            },
+        ) => {
+            let a = onepass_ffi::FfiAddress {
+                line1: line1.trim().to_owned(),
+                line2: line2.trim().to_owned(),
+                city: city.trim().to_owned(),
+                postal_code: postal_code.trim().to_owned(),
+                region: region.trim().to_owned(),
+                country: country.trim().to_owned(),
+            };
+            if [
+                &a.line1,
+                &a.line2,
+                &a.city,
+                &a.postal_code,
+                &a.region,
+                &a.country,
+            ]
+            .iter()
+            .all(|p| p.is_empty())
+            {
+                V::Empty
+            } else {
+                V::Address { value: a }
+            }
+        }
+        _ => return None,
+    })
+}
+
+/// "12.50 EUR", "-3 USD", "1234,5 €" as minor units and a currency.
+fn parse_money(text: &str) -> Option<(i64, String)> {
+    let text = text.trim();
+    let (amount, currency) = match text.rsplit_once(char::is_whitespace) {
+        Some((a, c)) if !c.chars().any(|ch| ch.is_ascii_digit()) => (a.trim(), c.trim()),
+        _ => (text, ""),
+    };
+    let amount = amount.replace(',', ".");
+    let negative = amount.starts_with('-');
+    let digits = amount.trim_start_matches('-');
+    let (units, cents) = digits.split_once('.').unwrap_or((digits, ""));
+    if units.is_empty() && cents.is_empty()
+        || !units.chars().all(|c| c.is_ascii_digit())
+        || !cents.chars().all(|c| c.is_ascii_digit())
+        || cents.len() > 2
+    {
+        return None;
+    }
+    let units: i64 = if units.is_empty() {
+        0
+    } else {
+        units.parse().ok()?
+    };
+    let cents: i64 = format!("{cents:0<2}").parse().ok()?;
+    let minor = units.checked_mul(100)?.checked_add(cents)?;
+    Some((if negative { -minor } else { minor }, currency.to_owned()))
+}
+
+/// Kinds the editor writes as text.
 pub fn text_value(kind: FfiFieldType, text: String) -> Option<FfiFieldValue> {
     use FfiFieldType as K;
     use FfiFieldValue as V;
@@ -302,6 +504,16 @@ pub fn text_value(kind: FfiFieldType, text: String) -> Option<FfiFieldValue> {
         K::Menu => V::Menu { value: text },
         K::Otp => V::Otp { value: text },
         K::Mnemonic => V::Mnemonic { value: text },
+        K::Number => V::Number {
+            value: text.trim().parse().ok()?,
+        },
+        K::Money => {
+            let (minor_units, currency) = parse_money(&text)?;
+            V::Money {
+                minor_units,
+                currency,
+            }
+        }
         _ => return None,
     })
 }
@@ -375,6 +587,56 @@ pub fn type_from_key(s: &str) -> Option<FfiItemType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_inputs_fit_their_kind() {
+        let date = FieldInput::Date {
+            year: 1990,
+            month: 5,
+            day: 17,
+        };
+        assert!(matches!(
+            input_value(FfiFieldType::Date, date),
+            Some(FfiFieldValue::Date { .. })
+        ));
+        let bad = FieldInput::Date {
+            year: 1990,
+            month: 13,
+            day: 1,
+        };
+        assert!(input_value(FfiFieldType::Date, bad).is_none());
+        let my = FieldInput::MonthYear {
+            year: 2030,
+            month: 3,
+        };
+        assert!(input_value(FfiFieldType::Text, my).is_none());
+        let blank = FieldInput::Address {
+            line1: " ".into(),
+            line2: String::new(),
+            postal_code: String::new(),
+            city: String::new(),
+            region: String::new(),
+            country: String::new(),
+        };
+        assert_eq!(
+            input_value(FfiFieldType::Address, blank),
+            Some(FfiFieldValue::Empty)
+        );
+        assert_eq!(
+            text_value(FfiFieldType::Number, "42".into()),
+            Some(FfiFieldValue::Number { value: 42 })
+        );
+        assert!(text_value(FfiFieldType::Number, "4x".into()).is_none());
+    }
+
+    #[test]
+    fn amounts_parse_to_minor_units() {
+        assert_eq!(parse_money("1500,50 EUR"), Some((150_050, "EUR".into())));
+        assert_eq!(parse_money("12.5"), Some((1250, String::new())));
+        assert_eq!(parse_money("-3 USD"), Some((-300, "USD".into())));
+        assert_eq!(parse_money("1.234 EUR"), None);
+        assert_eq!(parse_money("abc"), None);
+    }
 
     #[test]
     fn every_type_has_a_distinct_key() {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-export-attachment"
+description = "Enables the export_attachment command without any pre-configured scope."
+commands.allow = ["export_attachment"]
+
+[[permission]]
+identifier = "deny-export-attachment"
+description = "Denies the export_attachment command without any pre-configured scope."
+commands.deny = ["export_attachment"]

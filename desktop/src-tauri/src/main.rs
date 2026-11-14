@@ -7,6 +7,7 @@
 
 mod commands;
 mod device;
+mod dialog;
 mod secrets;
 mod shell;
 mod state;
@@ -30,6 +31,7 @@ fn main() {
                 dir = d.into();
             }
             std::fs::create_dir_all(&dir)?;
+            state::purge_opened();
             let state = state::AppState::new(dir)?;
             app.manage(state);
             if let Some(window) = app.get_webview_window("main") {
@@ -88,6 +90,10 @@ fn main() {
             commands::strength,
             commands::copy_secret,
             commands::open_url,
+            commands::add_attachment,
+            commands::remove_attachment,
+            commands::open_attachment,
+            commands::export_attachment,
         ])
         .run(tauri::generate_context!())
         .expect("OnePass failed to start");

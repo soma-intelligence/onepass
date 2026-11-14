@@ -1392,3 +1392,174 @@ input.switch:checked::after {
   opacity: 1;
   color: var(--readable-accent);
 }
+
+/* ---- editor: every field kind ------------------------------------------------------------ */
+.edit-row select,
+.inline-editor select,
+.edit-row input[type="date"] {
+  font-size: 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fill);
+  padding: 5px 8px;
+  margin-top: 4px;
+  outline: none;
+  width: auto;
+  max-width: 100%;
+  align-self: flex-start;
+  color-scheme: light dark;
+}
+.edit-row select:focus-visible,
+.edit-row input[type="date"]:focus-visible {
+  box-shadow: var(--focus);
+}
+.inline-editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inline-editor .bar-icon {
+  width: 30px;
+  height: 30px;
+  color: var(--secondary);
+}
+.bar-text.add-value {
+  padding: 4px 0;
+  color: var(--readable-accent);
+  text-align: left;
+}
+.address-editor {
+  display: flex;
+  flex-direction: column;
+}
+.address-editor input,
+.address-pair input {
+  padding: 7px 0 !important;
+  border-bottom: 0.5px solid var(--separator) !important;
+}
+.address-editor > input:last-child {
+  border-bottom: 0 !important;
+}
+.address-pair {
+  display: flex;
+  gap: 12px;
+}
+.address-pair input.postal {
+  max-width: 120px;
+}
+.row-tools {
+  display: flex;
+  align-items: center;
+}
+.bar-icon.destructive,
+.custom-wrap > .bar-icon.destructive {
+  color: var(--red);
+}
+.custom-wrap {
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  position: relative;
+}
+.custom-wrap + .custom-wrap::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 54px;
+  border-top: 0.5px solid var(--separator);
+}
+.custom-wrap > .edit-row {
+  flex: 1;
+  padding-left: 4px;
+}
+input.custom-label {
+  font-size: 13px !important;
+  font-weight: 500;
+  color: var(--readable-accent);
+  padding: 0 !important;
+}
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  color: var(--readable-accent);
+  text-align: left;
+  position: relative;
+}
+.card > * + .add-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 16px;
+  border-top: 0.5px solid var(--separator);
+}
+.add-row:hover:not(:disabled) {
+  background: var(--fill);
+}
+.add-row:disabled {
+  color: var(--tertiary);
+  cursor: default;
+}
+.card.pad-s {
+  padding: 4px 12px 12px;
+}
+.tag-chips {
+  align-items: center;
+}
+.chip.removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px 5px 12px;
+}
+.chip.removable:hover {
+  background: color-mix(in srgb, var(--chip) 28%, transparent);
+}
+.chip.suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 1px dashed var(--separator);
+  color: var(--secondary);
+  padding: 4px 10px 4px 6px;
+}
+.chip.suggestion:hover {
+  color: var(--readable-accent);
+  border-color: var(--readable-accent);
+}
+input.tag-input {
+  flex: 1;
+  min-width: 140px;
+  border: 1px dashed var(--separator);
+  border-radius: 9px;
+  background: none;
+  outline: none;
+  padding: 5px 10px;
+  font-size: 14px;
+}
+input.tag-input:focus {
+  border-color: var(--readable-accent);
+}
+.suggestions:empty {
+  display: none;
+}
+.toggle-row .row-text {
+  display: flex;
+  flex-direction: column;
+  margin-right: 12px;
+}
+.card.list-card > .toggle-row:first-child {
+  border-top: 0;
+}
+.attachment-row .row-title {
+  font-weight: 500;
+}
+.attachment-row .glyph {
+  flex: none;
+}

@@ -100,6 +100,72 @@ fn shell_open(_target: &str) -> Result<(), String> {
     Err("not supported on this system".into())
 }
 
+/// Kinds of file an attachment may open as: documents and pictures. A
+/// program, a script or a shortcut is never handed to Windows to "open"
+/// (it would run); the user can still export it.
+pub fn opens_safely(name: &str) -> bool {
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+    matches!(
+        ext.as_deref(),
+        Some(
+            "pdf"
+                | "png"
+                | "jpg"
+                | "jpeg"
+                | "gif"
+                | "webp"
+                | "bmp"
+                | "heic"
+                | "tif"
+                | "tiff"
+                | "txt"
+                | "log"
+                | "md"
+                | "csv"
+                | "json"
+                | "rtf"
+                | "docx"
+                | "xlsx"
+                | "pptx"
+                | "odt"
+                | "ods"
+                | "odp"
+        )
+    )
+}
+
+/// A file name safe to create in a folder: no path, no reserved character.
+pub fn safe_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').to_owned();
+    if cleaned.is_empty() {
+        "file".into()
+    } else {
+        cleaned
+    }
+}
+
+/// Opens a file with the app Windows associates with it, marked as coming
+/// from the Internet (Mark of the Web) so Office and others open it in
+/// protected view.
+pub fn open_file(path: &std::path::Path) -> Result<(), String> {
+    let mut zone = path.as_os_str().to_owned();
+    zone.push(":Zone.Identifier");
+    let _ = std::fs::write(zone, "[ZoneTransfer]\r\nZoneId=3\r\n");
+    let target = path.to_string_lossy();
+    if e2e_log(&target) {
+        return Ok(());
+    }
+    shell_open(&target)
+}
+
 #[cfg(test)]
 mod tests {
     use super::web_url;
