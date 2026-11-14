@@ -116,7 +116,7 @@ impl Session {
             let vault = find_vault(repo, vault_id)?;
             let item = find_item(repo, &vault, item_id)?;
             let mut entries = item.key_use_trailer().entries;
-            entries.sort_by(|a, b| b.last_at.cmp(&a.last_at));
+            entries.sort_by_key(|a| std::cmp::Reverse(a.last_at));
             Ok(entries.into_iter().map(row).collect())
         })
     }
