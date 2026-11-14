@@ -40,6 +40,10 @@ const ALLOWED = new Set([
   "remove_attachment",
   "open_attachment",
   "export_attachment",
+  "hello_status",
+  "enable_hello",
+  "disable_hello",
+  "unlock_with_hello",
   "plugin:event|listen",
   "plugin:event|unlisten",
 ]);

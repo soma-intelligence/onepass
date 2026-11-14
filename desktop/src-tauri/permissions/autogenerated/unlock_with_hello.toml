@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unlock-with-hello"
+description = "Enables the unlock_with_hello command without any pre-configured scope."
+commands.allow = ["unlock_with_hello"]
+
+[[permission]]
+identifier = "deny-unlock-with-hello"
+description = "Denies the unlock_with_hello command without any pre-configured scope."
+commands.deny = ["unlock_with_hello"]

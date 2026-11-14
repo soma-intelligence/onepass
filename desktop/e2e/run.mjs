@@ -38,7 +38,7 @@ const answerDialog = (path) => writeFileSync(dialogAnswer, path ?? "");
 answerDialog("");
 
 const driver = spawn(join(homedir(), ".cargo", "bin", "tauri-driver"), ["--native-driver", edgedriver], {
-  env: { ...process.env, ONEPASS_DATA_DIR: data, ONEPASS_LANG: "fr", ONEPASS_E2E_SHELL_LOG: shellLog, ONEPASS_E2E_DIALOG: dialogAnswer },
+  env: { ...process.env, ONEPASS_DATA_DIR: data, ONEPASS_LANG: "fr", ONEPASS_E2E_SHELL_LOG: shellLog, ONEPASS_E2E_DIALOG: dialogAnswer, ONEPASS_E2E_HELLO: "verified" },
   stdio: "ignore",
 });
 process.on("exit", () => driver.kill());
@@ -397,6 +397,27 @@ try {
   await click("//button[@title='Déverrouiller']");
   await find("//h1[normalize-space(.)='Bonjour Camille']", 60000);
   check("the right password unlocks", true);
+
+  // Windows Hello (answered "verified" by the debug build's stand-in)
+  await click("//button[@title='Compte']");
+  await click(menuItem("Réglages"));
+  await click("//div[@class='settings-side']//button[.//span[normalize-space(.)='Sécurité']]");
+  await click("//label[@for='hello-toggle']");
+  await type("//input[@id='hello-pw']", PASSWORD);
+  await shot("28-activer-windows-hello");
+  await click(sheetAction("Activer"));
+  check("Windows Hello turns on after the master password", (await waitText("//div[@id='toast']", (t) => t.includes("Windows Hello"), 60000)).includes("activé"));
+  await find("//input[@id='hello-toggle' and @checked]").catch(() => null);
+  await shot("29-securite-windows-hello");
+  await click("//dialog[@open]//div[@class='sheet-bar']/button[1]");
+  await click("//button[@title='Compte']");
+  await click(menuItem("Verrouiller"));
+  await find("//button[@aria-label='Déverrouiller avec Windows Hello']");
+  check("the lock screen offers Windows Hello", true);
+  await shot("30-verrouille-windows-hello");
+  await click("//button[@aria-label='Déverrouiller avec Windows Hello']");
+  await find("//h1[normalize-space(.)='Bonjour Camille']", 30000);
+  check("Windows Hello unlocks without the password", true);
 
   // Trash
   await click(nav("Tous les éléments"));

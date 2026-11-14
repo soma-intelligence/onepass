@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-hello-status"
+description = "Enables the hello_status command without any pre-configured scope."
+commands.allow = ["hello_status"]
+
+[[permission]]
+identifier = "deny-hello-status"
+description = "Denies the hello_status command without any pre-configured scope."
+commands.deny = ["hello_status"]

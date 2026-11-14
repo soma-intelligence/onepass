@@ -19,6 +19,9 @@ pub struct AppState {
     pub sealer: Box<dyn Sealer>,
     session: Mutex<Option<Arc<Session>>>,
     last_activity: AtomicI64,
+    prefs: Mutex<crate::prefs::Prefs>,
+    /// Why the last Windows Hello attempt fell back to the password.
+    pub hello_dropped: Mutex<Option<crate::hello::Dropped>>,
 }
 
 pub fn now() -> i64 {
@@ -27,7 +30,10 @@ pub fn now() -> i64 {
 
 impl AppState {
     pub fn new(dir: PathBuf) -> Result<AppState, String> {
+        let prefs = Mutex::new(crate::prefs::load(&dir));
         let state = AppState {
+            prefs,
+            hello_dropped: Mutex::new(None),
             dir,
             sealer: secrets::sealer(),
             session: Mutex::new(None),
@@ -43,6 +49,21 @@ impl AppState {
 
     pub fn db_path(&self) -> String {
         self.dir.join("vault.db").to_string_lossy().into_owned()
+    }
+
+    pub fn hello_path(&self) -> PathBuf {
+        self.dir.join("hello.bin")
+    }
+
+    pub fn prefs(&self) -> crate::prefs::Prefs {
+        *self.prefs.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Changes the settings and writes them.
+    pub fn update_prefs(&self, f: impl FnOnce(&mut crate::prefs::Prefs)) -> Result<(), String> {
+        let mut p = self.prefs.lock().unwrap_or_else(PoisonError::into_inner);
+        f(&mut p);
+        crate::prefs::save(&self.dir, &p)
     }
 
     pub fn device_path(&self) -> PathBuf {

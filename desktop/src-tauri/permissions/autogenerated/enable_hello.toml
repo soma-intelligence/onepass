@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-enable-hello"
+description = "Enables the enable_hello command without any pre-configured scope."
+commands.allow = ["enable_hello"]
+
+[[permission]]
+identifier = "deny-enable-hello"
+description = "Denies the enable_hello command without any pre-configured scope."
+commands.deny = ["enable_hello"]

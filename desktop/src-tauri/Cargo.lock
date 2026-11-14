@@ -3179,6 +3179,8 @@ dependencies = [
  "tauri-build",
  "time",
  "url",
+ "windows",
+ "windows-future",
  "windows-sys 0.61.2",
  "zeroize",
 ]

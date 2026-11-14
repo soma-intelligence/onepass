@@ -38,6 +38,16 @@ interface Status {
   accountId: string | null;
   protection: string;
   autoLockMinutes: number;
+  helloEnrolled: boolean;
+  helloWanted: boolean;
+  helloDropped: "expired" | "rebooted" | "invalidated" | null;
+  helloDaysLeft: number | null;
+}
+interface HelloStatus {
+  availability: "available" | "notConfigured" | "unavailable";
+  wanted: boolean;
+  enrolled: boolean;
+  daysLeft: number | null;
 }
 interface Vault {
   id: string;
@@ -643,10 +653,63 @@ function secretKeyScreen(secretKey: string): HTMLElement {
 
 // ---- lock ---------------------------------------------------------------------------------
 
+const HELLO = "Windows Hello";
+
+function helloReason(reason: Status["helloDropped"]): string {
+  switch (reason) {
+    case "expired":
+      return t("Le mot de passe maître est demandé régulièrement.", "Your master password is required from time to time.");
+    case "rebooted":
+      return t("Le mot de passe maître est demandé après un redémarrage.", "Your master password is required after a restart.");
+    case "invalidated":
+      return t("La biométrie a changé : saisis ton mot de passe maître.", "Biometrics changed. Enter your master password.");
+    default:
+      return "";
+  }
+}
+
+/** Set by "Verrouiller": the next lock screen does not prompt Windows Hello by itself. */
+let lockedByHand = false;
+
 function lockScreen(status: Status): HTMLElement {
   const { box, input } = secretInput("pw", t("Mot de passe maître", "Master Password"), "current-password");
   const err = h("div", { class: "error", role: "alert" });
   const go = h("button", { class: "go", type: "submit", title: t("Déverrouiller", "Unlock"), "aria-label": t("Déverrouiller", "Unlock") }, icon("arrow_forward", 20));
+  const hint = h("p", { class: "footnote center-text hello-hint" });
+  if (status.helloDropped) err.textContent = helloReason(status.helloDropped);
+  else if (status.helloWanted && !status.helloEnrolled) hint.textContent = t(`Déverrouille une fois avec ton mot de passe : OnePass te proposera ${HELLO}.`, `Unlock once with your password: OnePass will offer ${HELLO}.`);
+  if (status.helloEnrolled) {
+    const days = status.helloDaysLeft ?? 14;
+    const tip = t(`Déverrouiller avec ${HELLO}`, `Unlock with ${HELLO}`);
+    const reminder = days === 1
+      ? t("Mot de passe maître redemandé dans 1 jour, puis tous les 14 jours.", "Master password required again in 1 day, then every 14 days.")
+      : t(`Mot de passe maître redemandé dans ${days} jours, puis tous les 14 jours.`, `Master password required again in ${days} days, then every 14 days.`);
+    const hello = h("button", { class: "icon-button hello", type: "button", title: `${tip}. ${reminder}`, "aria-label": tip }, icon("fingerprint", 22));
+    const helloUnlock = async () => {
+      err.textContent = "";
+      hello.disabled = true;
+      try {
+        await call("unlock_with_hello");
+        await route();
+      } catch (e) {
+        const code = (e as UiError).code;
+        if (code === "HelloDropped") {
+          const now = await invoke<Status>("status").catch(() => null);
+          err.textContent = helloReason(now?.helloDropped ?? null) || t("Saisis ton mot de passe maître.", "Enter your master password.");
+          hello.remove();
+          input.focus();
+        } else if (code !== "HelloNotConfirmed") {
+          err.textContent = message(e);
+        }
+        hello.disabled = false;
+      }
+    };
+    hello.addEventListener("click", () => void helloUnlock());
+    box.append(hello);
+    // Offered first, as Face ID is on the iPhone; not right after "Verrouiller".
+    if (!lockedByHand) queueMicrotask(() => void helloUnlock());
+  }
+  lockedByHand = false;
   box.append(go);
   const form = h(
     "form",
@@ -675,6 +738,7 @@ function lockScreen(status: Status): HTMLElement {
     h("div", { class: "account-capsule" }, monogram("1", "var(--accent)", 26, true), h("span", {}, t("Compte OnePass", "OnePass Account"))),
     box,
     err,
+    hint,
     h("p", { class: "footnote center-text" },
       t(`Verrouillage automatique après ${status.autoLockMinutes} min. Clés de l'appareil protégées par ${status.protection === "dpapi" ? "Windows (DPAPI)" : status.protection}.`,
         `Auto-lock after ${status.autoLockMinutes} min. Device keys protected by ${status.protection === "dpapi" ? "Windows (DPAPI)" : status.protection}.`)),
@@ -684,6 +748,7 @@ function lockScreen(status: Status): HTMLElement {
 }
 
 async function lockNow(): Promise<void> {
+  lockedByHand = true;
   await call("lock");
   resetSession();
   await route();
@@ -2008,7 +2073,28 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
     }
     case "security": {
       const status = await call<Status>("status");
-      return [head, h("div", { class: "card list-card" },
+      const hello = await call<HelloStatus>("hello_status").catch(() => null);
+      const available = hello?.availability === "available";
+      const toggle = h("input", { type: "checkbox", class: "switch", id: "hello-toggle", checked: !!hello?.wanted, disabled: !available && !hello?.wanted, "aria-label": t(`Déverrouiller avec ${HELLO}`, `Unlock with ${HELLO}`) });
+      toggle.addEventListener("change", async () => {
+        if (!toggle.checked) {
+          await call("disable_hello").catch((e) => toast(message(e)));
+          redraw();
+          return;
+        }
+        toggle.checked = false;
+        enableHello(redraw);
+      });
+      const unlock = [
+        h("div", { class: "caps" }, t("Déverrouillage", "Unlock")),
+        h("div", { class: "card list-card" },
+          h("label", { class: "toggle-row", for: "hello-toggle" }, h("span", { class: "row-text" }, h("span", {}, t(`Déverrouiller avec ${HELLO}`, `Unlock with ${HELLO}`))), toggle),
+          row(t("Mot de passe maître", "Master Password"), t("Tous les 14 jours", "Every 14 days"))),
+        h("p", { class: "footnote" }, available || hello?.wanted
+          ? t("Aussi demandé après un redémarrage.", "Also asked after a restart.")
+          : t(`${HELLO} n'est pas configuré sur cet appareil.`, `${HELLO} is not set up on this device.`)),
+      ];
+      return [head, ...unlock, h("div", { class: "card list-card spaced" },
         h("button", { class: "row", onclick: () => changePassword() }, tile("key", "#E09400", 28), h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Changer le mot de passe maître", "Change Master Password"))), icon("chevron_right", 18, "chev")),
         h("button", { class: "row", onclick: () => void lockNow() }, tile("lock", "var(--accent)", 28), h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Verrouiller maintenant", "Lock Now"))))),
         h("p", { class: "footnote" }, t(`Les clés de cet appareil sont scellées par ${status.protection === "dpapi" ? "Windows (DPAPI)" : status.protection}. La fenêtre est exclue des captures d'écran.`,
@@ -2062,6 +2148,35 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
     default:
       return note(t("Les agents (serveur MCP, agent SSH) demandent un canal de contrôle que la version Windows n'ouvre pas encore.", "Agents (MCP server, SSH agent) need a control channel the Windows version does not open yet."));
   }
+}
+
+/** "Activer Windows Hello": the master password, then Windows Hello confirms. */
+function enableHello(after: () => void): void {
+  const pw = secretInput("hello-pw", t("Mot de passe maître", "Master Password"), "current-password");
+  const err = h("div", { class: "error", role: "alert" });
+  const s = sheet(t(`Activer ${HELLO}`, `Turn On ${HELLO}`), {
+    action: t("Activer", "Turn On"),
+    onAction: async (sh) => {
+      err.textContent = "";
+      if (!pw.input.value) return;
+      try {
+        await call("enable_hello", { password: pw.input.value });
+        pw.input.value = "";
+        sh.close();
+        toast(t(`${HELLO} activé`, `${HELLO} turned on`));
+        after();
+      } catch (e) {
+        err.textContent = (e as UiError).code === "HelloNotConfirmed"
+          ? t(`${HELLO} n'a pas été confirmé : rien n'a été activé.`, `${HELLO} wasn't confirmed, so nothing was turned on.`)
+          : message(e);
+      }
+    },
+  });
+  s.body.append(pw.box, err, h("p", { class: "footnote" }, t(`Saisis ton mot de passe maître, puis confirme avec ${HELLO}.`, `Enter your master password, then confirm with ${HELLO}.`)));
+  pw.input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") (s.dialog.querySelector(".bar-text.bold") as HTMLButtonElement | null)?.click();
+  });
+  pw.input.focus();
 }
 
 function changePassword(): void {

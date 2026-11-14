@@ -8,6 +8,8 @@
 mod commands;
 mod device;
 mod dialog;
+mod hello;
+mod prefs;
 mod secrets;
 mod shell;
 mod state;
@@ -94,6 +96,10 @@ fn main() {
             commands::remove_attachment,
             commands::open_attachment,
             commands::export_attachment,
+            commands::hello_status,
+            commands::enable_hello,
+            commands::disable_hello,
+            commands::unlock_with_hello,
         ])
         .run(tauri::generate_context!())
         .expect("OnePass failed to start");

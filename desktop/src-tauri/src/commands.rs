@@ -39,6 +39,15 @@ pub struct Status {
     /// "fr" or "en": the Windows display language, as the iPhone app
     /// follows the system's.
     pub language: &'static str,
+    /// Windows Hello can unlock now (an enrollment is on file).
+    pub hello_enrolled: bool,
+    /// "Déverrouiller avec Windows Hello" is on.
+    pub hello_wanted: bool,
+    /// Why the last Hello attempt fell back to the password: "expired",
+    /// "rebooted" or "invalidated".
+    pub hello_dropped: Option<&'static str>,
+    /// Days before the master password is asked again.
+    pub hello_days_left: Option<i64>,
 }
 
 #[tauri::command]
@@ -46,12 +55,25 @@ pub fn status(state: State<'_, AppState>) -> UiResult<Status> {
     let protection = state.sealer.name();
     let auto_lock_minutes = crate::state::AUTO_LOCK_SECS / 60;
     let store = onepass_ffi::store_state(state.db_path())?;
+    let enrolled = crate::hello::is_enrolled(&state.hello_path());
+    let dropped = *state
+        .hello_dropped
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mk = |s, account_id| Status {
         state: s,
         account_id,
         protection,
         auto_lock_minutes,
         language: crate::state::language(),
+        hello_enrolled: enrolled,
+        hello_wanted: state.prefs().hello,
+        hello_dropped: dropped.map(crate::hello::Dropped::key),
+        hello_days_left: if enrolled {
+            crate::hello::days_left(state.sealer.as_ref(), &state.hello_path())
+        } else {
+            None
+        },
     };
     Ok(match store {
         FfiStoreState::Empty => mk("empty", None),
@@ -149,10 +171,22 @@ pub fn unlock(state: State<'_, AppState>, password: String) -> UiResult<()> {
         password.to_string(),
         secrets.secret_key.to_string(),
     )?;
-    // The AUK would serve a Windows Hello unlock (spec 6.3, milestone X3):
-    // not kept until then.
-    drop(Zeroizing::new(unlocked.auk));
+    let auk = Zeroizing::new(unlocked.auk);
     state.set_session(unlocked.session);
+    // A password unlock restarts the 14 days of Windows Hello (as the Apple
+    // apps re-wrap the AUK): kept only while the setting is on.
+    if state.prefs().hello {
+        let _ = crate::hello::enroll(
+            state.sealer.as_ref(),
+            &state.hello_path(),
+            &secrets.account_id,
+            &auk,
+        );
+    }
+    *state
+        .hello_dropped
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     Ok(())
 }
 
@@ -907,12 +941,23 @@ pub fn change_password(state: State<'_, AppState>, current: String, new: String)
     let secrets = state
         .load_secrets()?
         .ok_or("this PC has no device file for the account")?;
-    let auk = s.change_password(
+    let auk = Zeroizing::new(s.change_password(
         current.to_string(),
         secrets.secret_key.to_string(),
         new.to_string(),
-    )?;
-    drop(Zeroizing::new(auk));
+    )?);
+    // Windows Hello now needs the new unlock key, or nothing.
+    if crate::hello::is_enrolled(&state.hello_path())
+        && crate::hello::enroll(
+            state.sealer.as_ref(),
+            &state.hello_path(),
+            &secrets.account_id,
+            &auk,
+        )
+        .is_err()
+    {
+        crate::hello::remove(&state.hello_path());
+    }
     Ok(())
 }
 
@@ -1098,4 +1143,160 @@ pub async fn export_attachment(
     };
     std::fs::write(&path, bytes.as_slice()).map_err(|e| format!("write: {e}"))?;
     Ok(true)
+}
+
+// ---- Windows Hello ------------------------------------------------------------------
+
+fn hwnd(window: &tauri::WebviewWindow) -> UiResult<isize> {
+    #[cfg(windows)]
+    {
+        Ok(window.hwnd().map_err(|e| format!("window: {e}"))?.0 as isize)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        Err("Windows Hello is a Windows feature".into())
+    }
+}
+
+/// Runs blocking work (Argon2id, a WinRT wait, a network fetch) off the
+/// event loop's thread.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> UiResult<T> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("task: {e}").into())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HelloStatus {
+    /// "available", "notConfigured" or "unavailable".
+    pub availability: &'static str,
+    pub wanted: bool,
+    pub enrolled: bool,
+    pub days_left: Option<i64>,
+}
+
+#[tauri::command]
+pub async fn hello_status(state: State<'_, AppState>) -> UiResult<HelloStatus> {
+    let availability = match blocking(crate::hello::availability).await? {
+        crate::hello::Availability::Available => "available",
+        crate::hello::Availability::NotConfigured => "notConfigured",
+        crate::hello::Availability::Unavailable => "unavailable",
+    };
+    let path = state.hello_path();
+    Ok(HelloStatus {
+        availability,
+        wanted: state.prefs().hello,
+        enrolled: crate::hello::is_enrolled(&path),
+        days_left: crate::hello::days_left(state.sealer.as_ref(), &path),
+    })
+}
+
+fn not_confirmed() -> view::UiError {
+    view::UiError {
+        code: "HelloNotConfirmed".into(),
+        detail: "Windows Hello did not confirm".into(),
+    }
+}
+
+/// Turns Windows Hello on: the master password is checked (without opening
+/// a session), then Windows Hello confirms, then the AUK is sealed.
+#[tauri::command]
+pub async fn enable_hello(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    password: String,
+) -> UiResult<()> {
+    let password = Zeroizing::new(password);
+    session(&state)?;
+    let secrets = state
+        .load_secrets()?
+        .ok_or("this PC has no device file for the account")?;
+    let db = state.db_path();
+    let key = secrets.secret_key.clone();
+    let auk = Zeroizing::new(
+        blocking(move || onepass_ffi::verify_password(db, password.to_string(), key.to_string()))
+            .await??,
+    );
+    let message = if fr() {
+        "Activer le déverrouillage avec Windows Hello"
+    } else {
+        "Turn on unlocking with Windows Hello"
+    };
+    let h = hwnd(&window)?;
+    if blocking(move || crate::hello::verify(h, message)).await? != crate::hello::Verdict::Verified
+    {
+        return Err(not_confirmed());
+    }
+    crate::hello::enroll(
+        state.sealer.as_ref(),
+        &state.hello_path(),
+        &secrets.account_id,
+        &auk,
+    )?;
+    state.update_prefs(|p| p.hello = true)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn disable_hello(state: State<'_, AppState>) -> UiResult<()> {
+    crate::hello::remove(&state.hello_path());
+    state.update_prefs(|p| p.hello = false)?;
+    Ok(())
+}
+
+fn hello_dropped(state: &AppState, reason: Option<crate::hello::Dropped>) -> view::UiError {
+    *state
+        .hello_dropped
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = reason;
+    view::UiError {
+        code: "HelloDropped".into(),
+        detail: "master password needed".into(),
+    }
+}
+
+/// Unlocks with Windows Hello. "HelloDropped" (the reason is in `status`)
+/// when the master password is due; "HelloNotConfirmed" when the user
+/// cancels or is not recognized (the enrollment stays).
+#[tauri::command]
+pub async fn unlock_with_hello(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> UiResult<()> {
+    let secrets = state
+        .load_secrets()?
+        .ok_or("this PC has no device file for the account")?;
+    let path = state.hello_path();
+    // Checked before asking: no Hello prompt for a key that would be refused.
+    if let Err(reason) = crate::hello::take_auk(state.sealer.as_ref(), &path, &secrets.account_id) {
+        return Err(hello_dropped(&state, reason));
+    }
+    let message = if fr() {
+        "Déverrouiller OnePass"
+    } else {
+        "Unlock OnePass"
+    };
+    let h = hwnd(&window)?;
+    if blocking(move || crate::hello::verify(h, message)).await? != crate::hello::Verdict::Verified
+    {
+        return Err(not_confirmed());
+    }
+    let auk = crate::hello::take_auk(state.sealer.as_ref(), &path, &secrets.account_id)
+        .map_err(|reason| hello_dropped(&state, reason))?;
+    let db = state.db_path();
+    match blocking(move || onepass_ffi::unlock_with_auk(db, auk.to_vec())).await? {
+        Ok(session) => {
+            state.set_session(session);
+            Ok(())
+        }
+        Err(e @ (OnePassError::WrongPassword | OnePassError::Crypto)) => {
+            // The key no longer opens the vault (password changed elsewhere).
+            crate::hello::remove(&path);
+            let _ = hello_dropped(&state, Some(crate::hello::Dropped::Invalidated));
+            Err(e.into())
+        }
+        Err(e) => Err(e.into()),
+    }
 }

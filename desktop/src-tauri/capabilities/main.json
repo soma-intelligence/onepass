@@ -43,6 +43,10 @@
     "allow-add-attachment",
     "allow-remove-attachment",
     "allow-open-attachment",
-    "allow-export-attachment"
+    "allow-export-attachment",
+    "allow-hello-status",
+    "allow-enable-hello",
+    "allow-disable-hello",
+    "allow-unlock-with-hello"
   ]
 }
