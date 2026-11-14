@@ -709,6 +709,301 @@ class Platforms(unittest.TestCase):
         self.assertLessEqual(icon_pack.distance(value, icon_pack.dhash(image)), 2)
 
 
+WIKIDATA_DATA = ROOT / "scripts" / "testdata" / "wikidata"
+
+
+class Wikidata(unittest.TestCase):
+    """Wikidata + Commons as a build source, from recorded-format fixtures (scripts/testdata/wikidata):
+    the network helper is replaced, nothing leaves the machine."""
+
+    def setUp(self):
+        Collect.setUp(self)
+        self.calls = []
+        write(self.tmp / "block.txt", "")
+        write(self.tmp / "platforms.txt", "shopify.test\n")
+
+    def fetcher(self, url, limit, accept="*/*"):
+        self.calls.append((url, limit, accept))
+        if url.startswith(icon_pack.WIKIDATA_SPARQL + "?"):
+            return (WIKIDATA_DATA / "sparql-page.json").read_bytes()
+        if url.startswith(icon_pack.COMMONS_API + "?"):
+            return (WIKIDATA_DATA / "commons-imageinfo.json").read_bytes()
+        if url.startswith("https://upload.wikimedia.org/"):
+            return (WIKIDATA_DATA / "files" / urllib.parse.unquote(url.rsplit("/", 1)[1])).read_bytes()
+        raise AssertionError(f"unexpected URL {url}")
+
+    def query(self, block=None):
+        when = icon_pack.datetime.datetime(2026, 11, 14, 9, 30, tzinfo=icon_pack.datetime.timezone.utc)
+        return icon_pack.fetch_wikidata(self.tmp / "wikidata", block or icon_pack.Blocklist(), ["shopify.test"],
+                                        fetcher=self.fetcher, now=when)
+
+    def build(self, curated=None, extra=()):
+        sources = self.tmp / "sources.json"
+        sources.write_text("{}")
+        curated_path = self.tmp / "curated.json"
+        curated_path.write_text(json.dumps(curated or {"brands": []}))
+        out = self.tmp / "out"
+        with mock.patch.object(icon_pack, "render", side_effect=lambda c, *a: b"RIFF" + c.name.encode()):
+            code = icon_pack.main(["build", "--simple-icons", str(self.roots[0]), "--logos", str(self.roots[1]),
+                                   "--twofa", str(self.roots[2]), "--sources", str(sources), "--version", "9",
+                                   "--out", str(out), "--curated", str(curated_path), "--wikidata",
+                                   str(self.tmp / "wikidata"), "--blocklist", str(self.tmp / "block.txt"),
+                                   "--platforms", str(self.tmp / "platforms.txt"), *extra])
+        self.assertEqual(code, 0)
+        manifest = json.loads((out / "icon-pack-manifest.json").read_text())
+        index, blob = icon_pack.read_pack((out / manifest["pack"]["file"]).read_bytes())
+        report = json.loads((out / "report.json").read_text())
+        return manifest, index, blob, report
+
+    def icon(self, index, blob, domain):
+        offset, length, _ = index["icons"][index["domains"][domain]]
+        return blob[offset:offset + length]
+
+    def test_licenses(self):
+        for kept in ("Public domain", "public DOMAIN", "PD", "PD-textlogo", "PD-ineligible", "PD-shape", "pd-us",
+                     "CC0", "CC0 1.0", "cc0-1.0", " <span>Public domain</span> "):
+            self.assertTrue(icon_pack.kept_license(kept), kept)
+        for dropped in ("CC BY-SA 4.0", "CC BY 3.0", "GFDL", "Copyrighted free use", "Attribution", "PDF", "",
+                        None, "Public domain; CC BY-SA", "pd-", "CC0 2.0 BY"):
+            self.assertFalse(icon_pack.kept_license(dropped), dropped)
+
+    def test_current_logo(self):
+        def s(file, rank="normal", starts=(), ended=False):
+            return {"file": file, "rank": rank, "starts": list(starts), "ended": ended}
+        pick = icon_pack.current_logo
+        self.assertEqual(pick({1: s("old.svg", starts=[(2001, 1, 1)], ended=True), 2: s("new.svg", starts=[(2015, 1, 1)]),
+                               3: s("bad.svg", "deprecated", starts=[(2020, 1, 1)])}), "new.svg")
+        self.assertEqual(pick({1: s("pref.svg", "preferred"), 2: s("later.svg", starts=[(2024, 1, 1)])}), "pref.svg")
+        self.assertEqual(pick({1: s("a.svg", starts=[(2010, 5, 1)]), 2: s("b.svg", starts=[(2010, 6, 1)]),
+                               3: s("c.svg")}), "b.svg")
+        self.assertEqual(pick({1: s("z.svg"), 2: s("y.svg")}), "y.svg")
+        self.assertIsNone(pick({1: s("x.svg", "deprecated"), 2: s("w.svg", ended=True), 3: s(None)}))
+        self.assertIsNone(icon_pack.commons_title("http://commons.wikimedia.org/wiki/Special:FilePath/..%2F..%2Fx.svg"))
+        self.assertIsNone(icon_pack.commons_title("http://commons.wikimedia.org/wiki/Special:FilePath/x.exe"))
+        self.assertIsNone(icon_pack.commons_title("https://example.org/x.svg"))
+        self.assertEqual(icon_pack.commons_title("http://commons.wikimedia.org/wiki/Special:FilePath/A%C4%93sop_logo.svg"),
+                         "Aēsop logo.svg")
+
+    def test_query_downloads_and_drops(self):
+        record = self.query()
+        # Polite to the endpoints: one query page, one Commons batch, then one download per candidate file.
+        sparql = [c for c in self.calls if c[0].startswith(icon_pack.WIKIDATA_SPARQL)]
+        self.assertEqual(len(sparql), 1)
+        self.assertEqual(sparql[0][2], "application/sparql-results+json")
+        self.assertIn("OFFSET+0", sparql[0][0])
+        self.assertTrue(all(c[0].startswith("https://") for c in self.calls))
+        domains = record["domains"]
+        self.assertEqual(sorted(domains), ["acme.test", "aircanada.com", "withings.com"])
+        acme = domains["acme.test"]
+        self.assertEqual((acme["item"], acme["label"], acme["file"], acme["license"]),
+                         ("Q100", "Acme", "Acme logo 2015.svg", "Public domain"))
+        self.assertEqual(acme["path"], "files/%s.svg" % acme["sha1"])
+        self.assertEqual((self.tmp / "wikidata" / acme["path"]).read_bytes(),
+                         (WIKIDATA_DATA / "files" / "Acme_logo_2015.svg").read_bytes())
+        self.assertEqual(domains["aircanada.com"]["path"].rsplit(".", 1)[1], "png")
+        self.assertEqual(record["conflicts"], {"acme.test": {"kept": "Q100", "others": ["Q200"]}})
+        dropped = record["dropped"]
+        self.assertEqual(dropped["license"], ["Sharealike.svg (CC BY-SA 4.0)"])
+        self.assertEqual(dropped["wordmark"], ["Widemark.svg: 5.00 wide for 1 high"])
+        self.assertEqual(dropped["unsafe-svg"], ["unsafe.svg"])
+        self.assertEqual(dropped["sha1"], ["Tampered.svg: the bytes are not the file Commons lists"])
+        self.assertEqual(dropped["platform"], ["Q800 hosted.shopify.test"])
+        self.assertEqual(sorted(dropped["not-a-brand-site"]), ["Q100 facebook.com", "Q1000 linktr.ee"])
+        self.assertNotIn("old.acme.test", json.dumps(record))
+        self.assertEqual(record["licenses"]["CC BY-SA 4.0"], {"kept": 0, "dropped": 1})
+        self.assertEqual(record["licenses"]["Public domain"], {"kept": 1, "dropped": 2})
+        self.assertEqual(record["licenses"]["PD-shape"], {"kept": 1, "dropped": 0})
+        self.assertEqual(record["queried"], "2026-11-14T09:30:00+00:00")
+        self.assertEqual(record["user_agent"], "OnePass icon pack builder")
+        # The rejected files never land in the folder; only SHA-1 named files do.
+        names = sorted(p.name for p in (self.tmp / "wikidata" / "files").iterdir())
+        self.assertEqual(len(names), 3)
+        self.assertTrue(all(icon_pack.WIKIDATA_FILE.fullmatch("files/" + n) for n in names))
+        # A blocklisted domain is never queried on Commons.
+        self.calls.clear()
+        record = self.query(icon_pack.Blocklist(["acme.test"]))
+        self.assertNotIn("acme.test", record["domains"])
+        self.assertIn("Q100 acme.test", record["dropped"]["blocklist"])
+
+    def test_download_cap_and_url(self):
+        meta = json.loads((WIKIDATA_DATA / "commons-imageinfo.json").read_text())["query"]["pages"][0]["imageinfo"][0]
+        out = self.tmp / "w"
+        big = dict(meta, size=icon_pack.MAX_SVG_BYTES + 1)
+        with self.assertRaisesRegex(icon_pack.IconPackError, "^too-large"):
+            icon_pack.commons_file("Acme logo 2015.svg", big, self.fetcher, out)
+        moved = dict(meta, url="https://evil.example/Acme_logo_2015.svg")
+        with self.assertRaisesRegex(icon_pack.IconPackError, "^url"):
+            icon_pack.commons_file("Acme logo 2015.svg", moved, self.fetcher, out)
+        gif = dict(meta, mime="image/gif")
+        with self.assertRaisesRegex(icon_pack.IconPackError, "^format"):
+            icon_pack.commons_file("Acme logo 2015.svg", gif, self.fetcher, out)
+        self.calls.clear()
+        icon_pack.commons_file("Acme logo 2015.svg", meta, self.fetcher, out)
+        self.assertEqual(self.calls[0][1], icon_pack.MAX_SVG_BYTES)
+
+    def test_paging_stops_on_a_short_page(self):
+        def row(n):
+            e = "http://www.wikidata.org/entity/"
+            return {"item": {"type": "uri", "value": f"{e}Q{n}"}, "site": {"type": "uri", "value": f"https://s{n}.test/"},
+                    "siteRank": {"type": "uri", "value": "http://wikiba.se/ontology#NormalRank"}}
+        pages = [[row(1), row(2)], [row(3), row(4)], [row(5)]]
+        seen = []
+
+        def fetcher(url, limit, accept="*/*"):
+            if url.startswith(icon_pack.WIKIDATA_SPARQL):
+                seen.append(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["query"][0])
+                return json.dumps({"results": {"bindings": pages[len(seen) - 1]}}).encode()
+            return b'{"query": {"pages": []}}'
+        record = icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2)
+        self.assertEqual(len(seen), 3)
+        self.assertIn("LIMIT 2 OFFSET 4", seen[2])
+        self.assertEqual(record["items"], 5)
+        self.assertEqual(len(record["dropped"]["no-current-logo"]), 5)
+        seen.clear()
+        record = icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2,
+                                          max_pages=1)
+        self.assertEqual(len(seen), 1)
+        self.assertIn("page-limit", record["dropped"])
+
+    def test_network_helper_user_agent_and_retries(self):
+        import urllib.error
+        attempts, waits = [], []
+
+        def flaky(url, limit, headers=None):
+            attempts.append(headers)
+            if len(attempts) == 1:
+                raise urllib.error.HTTPError(url, 429, "slow down", {"Retry-After": "7"}, None)
+            if len(attempts) == 2:
+                raise urllib.error.HTTPError(url, 503, "busy", {}, None)
+            return b"ok", url
+
+        with mock.patch.object(icon_pack, "fetch_url", side_effect=flaky):
+            self.assertEqual(icon_pack.wiki_get("https://query.wikidata.org/sparql?x", 10, "application/json",
+                                                sleep=waits.append), b"ok")
+        self.assertEqual(waits, [7, 4])
+        self.assertEqual(attempts[0], {"User-Agent": "OnePass icon pack builder", "Accept": "application/json"})
+
+        def missing(url, limit, headers=None):
+            raise urllib.error.HTTPError(url, 404, "gone", {}, None)
+        with mock.patch.object(icon_pack, "fetch_url", side_effect=missing):
+            with self.assertRaises(urllib.error.HTTPError):
+                icon_pack.wiki_get("https://commons.wikimedia.org/w/api.php", 10, sleep=waits.append)
+        self.assertEqual(waits, [7, 4])
+        # fetch_url sends the caller's User-Agent and refuses plain http.
+        captured = []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def geturl(self):
+                return "https://query.wikidata.org/sparql"
+
+            def read(self, n):
+                return b"{}"
+
+        def urlopen(request, timeout):
+            captured.append(request)
+            return Response()
+        with mock.patch("urllib.request.urlopen", side_effect=urlopen):
+            icon_pack.fetch_url("https://query.wikidata.org/sparql", 10, {"User-Agent": icon_pack.WIKI_UA})
+        self.assertEqual(captured[0].get_header("User-agent"), "OnePass icon pack builder")
+        with self.assertRaises(icon_pack.IconPackError):
+            icon_pack.fetch_url("http://query.wikidata.org/sparql", 10)
+
+    def test_dry_run_prints_the_query_and_fetches_nothing(self):
+        import contextlib
+        import io
+        printed = io.StringIO()
+        with mock.patch.object(icon_pack, "fetch_url", side_effect=AssertionError("network")), \
+                contextlib.redirect_stdout(printed):
+            code = icon_pack.main(["wikidata", "--out", str(self.tmp / "w"), "--dry-run", "--page-size", "500"])
+        self.assertEqual(code, 0)
+        self.assertIn("wdt:P154", printed.getvalue())
+        self.assertIn("LIMIT 500 OFFSET 0", printed.getvalue())
+        self.assertIn("user-agent: OnePass icon pack builder", printed.getvalue())
+        self.assertFalse((self.tmp / "w").exists())
+
+    def test_build_priority_names_and_report(self):
+        self.query()
+        curated = {"brands": [{"name": "Withings", "domains": ["withings.com"], "use": "simple-icons:withings"}]}
+        manifest, index, blob, report = self.build(curated)
+        # Wikidata beats the open sets (Air Canada is in 2FA Directory and Simple Icons too) ...
+        self.assertEqual(self.icon(index, blob, "aircanada.com"), b"RIFFwikidata:Q700")
+        self.assertEqual(self.icon(index, blob, "acme.test"), b"RIFFwikidata:Q100")
+        # ... and loses to the curated list.
+        self.assertEqual(self.icon(index, blob, "withings.com"), b"RIFFsimple-icons:withings")
+        # The item label reaches `names`.
+        self.assertEqual(index["names"]["acme"], index["domains"]["acme.test"])
+        self.assertEqual(index["names"]["aircanada"], index["domains"]["aircanada.com"])
+        self.assertEqual(manifest["wikidata_queried"], "2026-11-14T09:30:00+00:00")
+        self.assertEqual(manifest["sources"]["wikidata"]["queried"], "2026-11-14T09:30:00+00:00")
+        self.assertEqual(sorted(manifest["sources"]["wikidata"]["icons"]), ["acme.test", "aircanada.com"])
+        self.assertEqual(manifest["sources"]["wikidata"]["icons"]["acme.test"]["license"], "Public domain")
+        wd = report["wikidata"]
+        self.assertEqual((wd["in_pack"], wd["domains"], wd["candidates"]), (2, 3, 2))
+        self.assertEqual(wd["licenses"]["Public domain"], {"kept": 1, "dropped": 2, "in_pack": 1})
+        self.assertEqual(wd["licenses"]["CC BY-SA 4.0"]["dropped"], 1)
+        self.assertEqual((wd["dropped"]["curated"], wd["dropped"]["license"], wd["dropped"]["wordmark"],
+                          wd["dropped"]["unsafe-svg"]), (1, 1, 1, 1))
+        self.assertEqual(wd["conflicts"], {"acme.test": {"kept": "Q100", "others": ["Q200"]}})
+        self.assertEqual(report["licenses"]["acme.test"], "Public domain")
+        self.assertEqual(report["licenses"]["aircanada.com"], "PD-shape")
+
+    def test_build_checks_the_files_again(self):
+        self.query()
+        record = json.loads((self.tmp / "wikidata" / "wikidata.json").read_text())
+        acme = record["domains"]["acme.test"]
+        # A file swapped after the query, an unsafe one with a matching hash, a path outside the folder.
+        unsafe = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><image href="https://x.test/a.png"/></svg>'
+        (self.tmp / "wikidata" / acme["path"]).write_bytes(unsafe)
+        record["domains"]["swapped.test"] = dict(acme, sha256=hashlib.sha256(b"other").hexdigest())
+        acme["sha256"] = hashlib.sha256(unsafe).hexdigest()
+        record["domains"]["escape.test"] = dict(acme, path="../../sources.json")
+        wide = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100"><path d="M0 0h300v100H0z"/></svg>'
+        wide_path = "files/%s.svg" % ("e" * 40)
+        (self.tmp / "wikidata" / wide_path).write_bytes(wide)
+        record["domains"]["wide.test"] = dict(acme, path=wide_path, sha256=hashlib.sha256(wide).hexdigest())
+        (self.tmp / "wikidata" / "wikidata.json").write_text(json.dumps(record))
+        write(self.tmp / "block.txt", "aircanada.com\n")
+        log = []
+        out, _, drops = icon_pack.wikidata_candidates(self.tmp / "wikidata", set(),
+                                                      icon_pack.load_blocklist(self.tmp / "block.txt"),
+                                                      ["shopify.test"], lambda k, w: log.append(w))
+        self.assertEqual(sorted(out), ["withings.com"])
+        self.assertEqual(drops, {"unsafe-svg": 1, "file-changed": 1, "bad-record": 1, "wordmark": 1, "blocklist": 1})
+
+    def test_rejects_never_drop_a_wikidata_logo(self):
+        # Three unrelated sites serve one icon: a platform reject. Acme's Wikidata logo is that same
+        # image, yet it is a logo, not a site icon, and stays.
+        DomainList.setUp(self)  # a local web server, in a new self.tmp
+        write(self.tmp / "block.txt", "")
+        write(self.tmp / "platforms.txt", "shopify.test\n")
+        image = pattern(1, 256)
+        for domain in ("gym-one.test", "club-two.test", "studio-three.test"):
+            write(self.web / domain / "index.html", '<html><link rel="apple-touch-icon" href="icon.png"></html>')
+            write(self.web / domain / "icon.png", image)
+        icon_pack.fetch_domains(["gym-one.test", "club-two.test", "studio-three.test"], set(), icon_pack.Blocklist(),
+                                self.tmp / "sites", lambda k, w: None, google=False, jobs=1,
+                                fetcher=lambda url, limit: DomainList.fetcher(self, url, limit))
+        self.query()
+        record = json.loads((self.tmp / "wikidata" / "wikidata.json").read_text())
+        path = "files/%s.png" % hashlib.sha1(image).hexdigest()
+        (self.tmp / "wikidata" / path).write_bytes(image)
+        record["domains"]["acme.test"].update(path=path, sha256=hashlib.sha256(image).hexdigest())
+        (self.tmp / "wikidata" / "wikidata.json").write_text(json.dumps(record))
+        write(self.tmp / "list.txt", "gym-one.test\nclub-two.test\nstudio-three.test\n")
+        with mock.patch.object(icon_pack, "icon_hash", side_effect=embedded_hash):
+            _, index, blob, report = self.build(extra=["--sites", str(self.tmp / "sites"),
+                                                       "--domains", str(self.tmp / "list.txt")])
+        self.assertEqual(index["rejects"], ["%016x" % icon_pack.dhash(image)])
+        self.assertEqual(report["platform_icons_dropped"], ["club-two.test", "gym-one.test", "studio-three.test"])
+        self.assertEqual(self.icon(index, blob, "acme.test"), b"RIFFwikidata:Q100")
+
+
 @unittest.skipUnless(has_openssl(), "needs OpenSSL 3")
 class Signing(unittest.TestCase):
     def test_sign_then_verify(self):

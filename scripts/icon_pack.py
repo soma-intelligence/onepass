@@ -4,7 +4,7 @@
     icon_pack.py build --simple-icons DIR --logos DIR --twofa DIR --sources FILE
                        --version N --out DIR [--size 256] [--jobs N] [--sites DIR]
                        [--domains FILE]... [--blocklist FILE] [--tranco-id ID --tranco-date DATE]
-                       [--platforms FILE] [--resvg PATH] [--cwebp PATH]
+                       [--platforms FILE] [--wikidata DIR] [--resvg PATH] [--cwebp PATH]
         Reads the three upstream checkouts (untrusted data: SVG text is checked before it is
         drawn, nothing in them runs), rasterizes each kept icon to a square WebP at --size
         pixels, and writes DIR/onepass-icons-<N>.bin (the pack), DIR/icon-pack-manifest.json
@@ -16,6 +16,13 @@
         `rank,domain`), at least 128 px, into DIR (domains in DIR/domains and DIR/domains.json),
         and the icon of every hosting platform (--platforms, default scripts/icon-pack-platforms.txt)
         into DIR/platforms and DIR/platforms.json.
+    icon_pack.py wikidata --out DIR [--blocklist FILE] [--platforms FILE] [--page-size N] [--max-pages N]
+                          [--dry-run]
+        Asks Wikidata (SPARQL, paged, build time only) for items with an official website (P856)
+        and a logo (P154), keeps each item's current logo and each domain's item with the most
+        sitelinks, and downloads from Wikimedia Commons the public domain and CC0 files (SHA-1
+        checked) into DIR/files, with DIR/wikidata.json. `build --wikidata DIR` uses them after
+        the curated list and before the open sets. --dry-run prints the query and fetches nothing.
     icon_pack.py sign --manifest FILE
         Writes FILE.sig: the Ed25519 signature (base64) of the manifest's exact bytes, with the
         key in ICON_PACK_ED_PRIVATE_KEY (a 32-byte seed, base64; never generated here).
@@ -54,6 +61,7 @@ import base64
 import concurrent.futures
 import datetime
 import hashlib
+import html
 import json
 import os
 import re
@@ -413,6 +421,8 @@ class Candidate:
         self.wordmark = False
         # size: pixels this candidate is drawn at (None: the build's --size); flags: extra index flags.
         self.size, self.flags = None, 0
+        # license: the file's own license when the source names one per icon (Wikidata/Commons).
+        self.license = None
 
 
 def twofa_entries(root):
@@ -542,7 +552,8 @@ def collect(simple_root, logos_root, twofa_root, log):
 RANK_CURATED = -1
 LICENSES = {"simple-icons": "CC0-1.0", "logos": "CC0-1.0", "2fa-directory": "MIT",
             "brand": "trademark of its owner, the brand's own icon (app or site) as a browser or the App Store shows it",
-            "commons": "public domain (Wikimedia Commons, PD-textlogo), trademark of its owner"}
+            "commons": "public domain (Wikimedia Commons, PD-textlogo), trademark of its owner",
+            "wikidata": "public domain or CC0 (Wikimedia Commons file named by Wikidata P154), trademark of its owner"}
 
 
 def simple_icon(simple_root, slug):
@@ -755,12 +766,12 @@ def icon_links(html, base):
     return found, manifest
 
 
-def fetch_url(url, limit):
-    """(bytes, final URL after redirects), https only."""
+def fetch_url(url, limit, headers=None):
+    """(bytes, final URL after redirects), https only. `headers` replace or add to the defaults."""
     import urllib.request
     if not url.startswith("https://"):
         raise IconPackError("not https")
-    request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
+    request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*", **(headers or {})})
     with urllib.request.urlopen(request, timeout=20) as response:
         final = response.geturl()
         if not final.startswith("https://"):
@@ -1251,6 +1262,432 @@ def domain_candidates(listed, skip, blocklist, sites, log):
     return out, stats
 
 
+# --- Wikidata + Wikimedia Commons (fetched at build time only) ---------------
+
+WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+# Polite and generic: names the tool, nothing about who runs it.
+WIKI_UA = "OnePass icon pack builder"
+# Between the hand-picked list and the open sets.
+RANK_WIKIDATA = -0.5
+# A Wikidata logo wider than this for 1 high is a wordmark: dropped (only the curated list keeps one).
+WIKIDATA_WORDMARK = 2.6
+WIKIDATA_PAGE = 2000
+WIKIDATA_MAX_PAGES = 200
+SPARQL_LIMIT = 64 * 1024 * 1024
+COMMONS_BATCH = 50
+COMMONS_JSON_LIMIT = 4 * 1024 * 1024
+# The per-icon download caps of the other sources: SVG text, and a raster image as `site_icon` takes it.
+MAX_RASTER_BYTES = 2 * 1024 * 1024
+RETRY_ATTEMPTS = 5
+RETRY_MAX_WAIT = 300
+# Commons LicenseShortName values kept: public domain and CC0 only (no per-icon attribution).
+KEPT_LICENSE = re.compile(r"public domain|pd|pd-[a-z0-9 ._-]+|cc0|cc0[ -]1\.0", re.I)
+COMMONS_TITLE = re.compile(r"[^/\\#<>\[\]{}|:\x00-\x1f\x7f]{1,240}\.(svg|png|jpe?g|webp)", re.I)
+FILE_PATH = re.compile(r"https?://commons\.wikimedia\.org/wiki/Special:FilePath/(.+)")
+COMMONS_ORIGINAL = re.compile(r"https://upload\.wikimedia\.org/wikipedia/commons/[0-9a-f]/[0-9a-f]{2}/[^?#/]+")
+WIKIDATA_FILE = re.compile(r"files/[0-9a-f]{40}\.(svg|png|jpg|webp)")
+FORMATS = {"image/svg+xml": "svg", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+# An official website on these hosts is a page about the brand on someone else's service, not the
+# brand's own site: social networks, app stores, link hubs, code and file hosts (plus the platform list).
+NOT_A_BRAND_SITE = {
+    "facebook.com", "fb.com", "instagram.com", "twitter.com", "x.com", "linkedin.com", "youtube.com", "youtu.be",
+    "tiktok.com", "pinterest.com", "reddit.com", "tumblr.com", "vk.com", "ok.ru", "weibo.com", "weibo.cn", "t.me",
+    "telegram.me", "threads.net", "threads.com", "snapchat.com", "mastodon.social", "bsky.app", "discord.gg",
+    "discord.com", "twitch.tv", "flickr.com", "soundcloud.com", "bandcamp.com", "myspace.com", "vimeo.com",
+    "medium.com", "substack.com", "patreon.com",
+    "apps.apple.com", "itunes.apple.com", "play.google.com", "apps.microsoft.com", "chrome.google.com",
+    "chromewebstore.google.com", "appgallery.huawei.com", "galaxystore.samsung.com", "f-droid.org",
+    "linktr.ee", "beacons.ai", "lnk.bio", "bio.link", "carrd.co", "about.me", "campsite.bio", "taplink.cc",
+    "solo.to", "linkin.bio", "allmylinks.com", "flow.page", "bit.ly", "tinyurl.com", "goo.gl", "linkfly.to",
+    "sourceforge.net", "codeberg.org", "sites.google.com", "archive.org", "web.archive.org",
+} | GENERIC_SOURCE_HOSTS
+
+
+def kept_license(short_name):
+    """True for a Commons LicenseShortName that is public domain or CC0."""
+    text = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]*>", "", str(short_name or "")))).strip()
+    return bool(KEPT_LICENSE.fullmatch(text))
+
+
+def license_name(short_name):
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]*>", "", str(short_name or "")))).strip() or "(none)"
+
+
+def retry_after(error):
+    try:
+        value = int(str(error.headers.get("Retry-After", "")).strip())
+    except (AttributeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def with_retries(call, sleep=None, attempts=RETRY_ATTEMPTS):
+    """call() again after 429 or 5xx (Retry-After when the server sends seconds, else 2, 4, 8... s)."""
+    import time
+    import urllib.error
+    sleep = sleep or time.sleep
+    for attempt in range(attempts):
+        try:
+            return call()
+        except urllib.error.HTTPError as error:
+            if (error.code != 429 and not 500 <= error.code <= 599) or attempt == attempts - 1:
+                raise
+            wait = retry_after(error)
+            sleep(min(RETRY_MAX_WAIT, wait if wait is not None else 2 ** (attempt + 1)))
+    raise IconPackError("unreachable")
+
+
+def wiki_get(url, limit, accept="*/*", sleep=None):
+    """GET from a Wikimedia host through `fetch_url` (https only), with WIKI_UA and retries."""
+    return with_retries(lambda: fetch_url(url, limit, {"User-Agent": WIKI_UA, "Accept": accept})[0], sleep)
+
+
+def wikidata_query(limit, offset):
+    """One page of items with an official website (P856) and a logo (P154): every statement with its
+    rank, the logo's start and end time qualifiers, the item's sitelink count and label."""
+    limit, offset = int(limit), int(offset)
+    return (
+        "SELECT ?item ?itemLabel ?sitelinks ?logoStatement ?logo ?logoRank ?logoStart ?logoEnd\n"
+        "       ?siteStatement ?site ?siteRank WHERE {\n"
+        "  { SELECT DISTINCT ?item WHERE { ?item wdt:P154 ?anyLogo ; wdt:P856 ?anySite . }\n"
+        f"    ORDER BY ?item LIMIT {limit} OFFSET {offset} }}\n"
+        "  ?item wikibase:sitelinks ?sitelinks .\n"
+        "  ?item p:P154 ?logoStatement .\n"
+        "  ?logoStatement ps:P154 ?logo ; wikibase:rank ?logoRank .\n"
+        "  OPTIONAL { ?logoStatement pq:P580 ?logoStart . }\n"
+        "  OPTIONAL { ?logoStatement pq:P582 ?logoEnd . }\n"
+        "  ?item p:P856 ?siteStatement .\n"
+        "  ?siteStatement ps:P856 ?site ; wikibase:rank ?siteRank .\n"
+        '  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul,fr,de,es,it,pt,nl,ja". }\n'
+        "}"
+    )
+
+
+def sparql_url(query):
+    import urllib.parse
+    return WIKIDATA_SPARQL + "?" + urllib.parse.urlencode({"query": query, "format": "json"})
+
+
+def _binding(row, name):
+    value = row.get(name)
+    return str(value.get("value", "")) if isinstance(value, dict) else ""
+
+
+def _rank(uri):
+    return {"PreferredRank": "preferred", "NormalRank": "normal", "DeprecatedRank": "deprecated"}.get(
+        uri.rsplit("#", 1)[-1], "deprecated")
+
+
+def _time(text):
+    """(year, month, day) of an xsd:dateTime, None for anything else (an unknown value)."""
+    m = re.match(r"([+-]?\d{1,16})-(\d{2})-(\d{2})T", text or "")
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+
+def commons_title(value):
+    """The Commons file title of a P154 value (a Special:FilePath URL), None when it is not a plain
+    image file name. The title is only ever sent as a query parameter, never used as a path."""
+    import urllib.parse
+    m = FILE_PATH.fullmatch(value or "")
+    if not m:
+        return None
+    title = urllib.parse.unquote(m.group(1)).replace("_", " ").strip()
+    if title.startswith(".") or not COMMONS_TITLE.fullmatch(title):
+        return None
+    return title
+
+
+def wikidata_items(bindings, items=None):
+    """{Q id: {"label", "sitelinks", "logos": {statement: {...}}, "sites": {statement: {...}}}} from
+    SPARQL result rows (one row per logo statement, site statement and qualifier value)."""
+    items = {} if items is None else items
+    for row in bindings:
+        qid = _binding(row, "item").rsplit("/", 1)[-1]
+        if not re.fullmatch(r"Q[1-9][0-9]*", qid):
+            continue
+        item = items.setdefault(qid, {"label": "", "sitelinks": 0, "logos": {}, "sites": {}})
+        label = _binding(row, "itemLabel").strip()
+        if label and label != qid:
+            item["label"] = label
+        try:
+            item["sitelinks"] = max(item["sitelinks"], int(_binding(row, "sitelinks") or 0))
+        except ValueError:
+            pass
+        logo = _binding(row, "logo")
+        if logo:
+            statement = item["logos"].setdefault(_binding(row, "logoStatement") or logo, {
+                "file": commons_title(logo), "rank": _rank(_binding(row, "logoRank")), "starts": [], "ended": False})
+            start = _time(_binding(row, "logoStart"))
+            if start and start not in statement["starts"]:
+                statement["starts"].append(start)
+            # Any end time, an unknown one too, means the logo is no longer in use.
+            if "logoEnd" in row:
+                statement["ended"] = True
+        site = _binding(row, "site")
+        if site:
+            item["sites"].setdefault(_binding(row, "siteStatement") or site,
+                                     {"url": site, "rank": _rank(_binding(row, "siteRank"))})
+    return items
+
+
+def current_logo(logos):
+    """The item's current logo file: deprecated statements and ended ones (P582) left out, preferred
+    rank first, then the latest start time (P580); file name order settles the rest."""
+    live = sorted((s for s in logos.values() if s["file"] and s["rank"] != "deprecated" and not s["ended"]),
+                  key=lambda s: s["file"])
+    pool = [s for s in live if s["rank"] == "preferred"] or live
+    if not pool:
+        return None
+    return max(pool, key=lambda s: (1, max(s["starts"])) if s["starts"] else (0, (0, 0, 0)))["file"]
+
+
+def site_domains(item, refuse):
+    """[(domain, None)] or [(None, reason)]: each non-deprecated official website's host, lower case
+    without `www.`. refuse(host) gives a reason to leave a host out, or None."""
+    out = []
+    for statement in item["sites"].values():
+        if statement["rank"] == "deprecated":
+            continue
+        url = statement["url"]
+        domain = normalized_domain(url) if re.match(r"https?://", url, re.I) else None
+        if not domain:
+            out.append((None, "bad-domain", url))
+            continue
+        reason = refuse(domain)
+        out.append((None, reason, domain) if reason else (domain, None, domain))
+    return out
+
+
+def wikidata_refusal(blocklist, platforms):
+    hubs = Blocklist(NOT_A_BRAND_SITE)
+    hosted = Blocklist(platforms)
+
+    def refuse(domain):
+        if hubs.blocks(domain):
+            return "not-a-brand-site"
+        if hosted.blocks(domain):
+            return "platform"
+        if blocklist.blocks(domain):
+            return "blocklist"
+        return None
+    return refuse
+
+
+def fetch_wikidata(out, blocklist, platforms, fetcher=None, page_size=WIKIDATA_PAGE, max_pages=WIKIDATA_MAX_PAGES,
+                   now=None):
+    """Queries Wikidata for items with an official website and a logo, picks each item's current logo
+    and each domain's item (most sitelinks; the others are conflicts), asks Commons for each file's
+    URL, SHA-1, size and license, and downloads the public domain and CC0 ones into out/files
+    (named by SHA-1) with out/wikidata.json. fetcher(url, limit, accept) -> bytes (default wiki_get).
+    Returns the record written."""
+    import urllib.parse
+    fetcher = fetcher or wiki_get
+    now = now or datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    dropped = {}
+
+    def drop(reason, what):
+        dropped.setdefault(reason, []).append(what)
+
+    items = {}
+    for page in range(max(1, int(max_pages))):
+        body = fetcher(sparql_url(wikidata_query(page_size, page * page_size)), SPARQL_LIMIT,
+                       "application/sparql-results+json")
+        bindings = json.loads(body)["results"]["bindings"]
+        before = set(items)
+        wikidata_items(bindings, items)
+        if len(set(items) - before) < page_size:
+            break
+    else:
+        drop("page-limit", f"stopped after {max_pages} pages")
+
+    refuse = wikidata_refusal(blocklist, platforms)
+    claims = {}  # domain -> [(sitelinks, qid)]
+    logo_of = {}
+    for qid in sorted(items, key=lambda q: int(q[1:])):
+        item = items[qid]
+        logo = current_logo(item["logos"])
+        if not logo:
+            drop("no-current-logo", qid)
+            continue
+        domains = []
+        for domain, reason, what in site_domains(item, refuse):
+            if reason:
+                drop(reason, f"{qid} {what}")
+            elif domain not in domains:
+                domains.append(domain)
+        if not domains:
+            continue
+        logo_of[qid] = logo
+        for domain in domains:
+            claims.setdefault(domain, []).append((item["sitelinks"], qid))
+    owner, conflicts = {}, {}
+    for domain, entries in sorted(claims.items()):
+        entries.sort(key=lambda e: (-e[0], int(e[1][1:])))
+        owner[domain] = entries[0][1]
+        if len(entries) > 1:
+            conflicts[domain] = {"kept": entries[0][1], "others": [q for _, q in entries[1:]]}
+
+    titles = sorted({logo_of[q] for q in set(owner.values())})
+    info = {}
+    for start in range(0, len(titles), COMMONS_BATCH):
+        batch = titles[start:start + COMMONS_BATCH]
+        query = urllib.parse.urlencode({
+            "action": "query", "format": "json", "formatversion": "2", "prop": "imageinfo",
+            "iiprop": "url|sha1|size|mime|extmetadata", "iiextmetadatafilter": "LicenseShortName",
+            "titles": "|".join("File:" + t for t in batch)})
+        data = json.loads(fetcher(COMMONS_API + "?" + query, COMMONS_JSON_LIMIT, "application/json"))
+        names = {n.get("to"): n.get("from") for n in (data.get("query") or {}).get("normalized") or []}
+        pages = (data.get("query") or {}).get("pages") or []
+        for page in pages.values() if isinstance(pages, dict) else pages:
+            title = str(page.get("title", ""))
+            title = names.get(title, title)
+            title = title[5:] if title.startswith("File:") else title
+            if page.get("missing") or not page.get("imageinfo"):
+                continue
+            info[title.replace("_", " ")] = page["imageinfo"][0]
+
+    licenses, files = {}, {}
+    for title in titles:
+        meta = info.get(title)
+        if not meta:
+            drop("missing-on-commons", title)
+            continue
+        short = ((meta.get("extmetadata") or {}).get("LicenseShortName") or {}).get("value")
+        name = license_name(short)
+        counts = licenses.setdefault(name, {"kept": 0, "dropped": 0})
+        if not kept_license(short):
+            counts["dropped"] += 1
+            drop("license", f"{title} ({name})")
+            continue
+        try:
+            files[title] = commons_file(title, meta, fetcher, out)
+            files[title]["license"] = name
+            counts["kept"] += 1
+        except IconPackError as error:
+            reason, _, detail = str(error).partition(": ")
+            counts["dropped"] += 1
+            drop(reason, f"{title}: {detail}" if detail else title)
+        except (OSError, ValueError) as error:
+            counts["dropped"] += 1
+            drop("download", f"{title}: {error}")
+
+    domains = {}
+    for domain, qid in sorted(owner.items()):
+        got = files.get(logo_of[qid])
+        if got:
+            domains[domain] = dict(got, item=qid, label=items[qid]["label"], sitelinks=items[qid]["sitelinks"],
+                                   file=logo_of[qid])
+    record = {"queried": now.isoformat(), "endpoint": WIKIDATA_SPARQL, "user_agent": WIKI_UA,
+              "items": len(items), "domains": domains, "licenses": dict(sorted(licenses.items())),
+              "dropped": {k: sorted(v) for k, v in sorted(dropped.items())}, "conflicts": conflicts}
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "wikidata.json").write_text(json.dumps(record, indent=1, sort_keys=True, ensure_ascii=False) + "\n",
+                                       encoding="utf-8")
+    return record
+
+
+def commons_file(title, meta, fetcher, out):
+    """Downloads one Commons original after its checks (format, size, shape, URL, then SHA-1 of the
+    bytes, SVG safety or raster header) into out/files/<sha1>.<ext>. Raises IconPackError
+    "<reason>: <detail>"."""
+    kind = FORMATS.get(str(meta.get("mime", "")))
+    if not kind:
+        raise IconPackError(f"format: {meta.get('mime')}")
+    limit = MAX_SVG_BYTES if kind == "svg" else MAX_RASTER_BYTES
+    size, width, height = (int(meta.get(k) or 0) for k in ("size", "width", "height"))
+    if size > limit:
+        raise IconPackError(f"too-large: {size} bytes")
+    if width and height and width / height > WIKIDATA_WORDMARK:
+        raise IconPackError(f"wordmark: {width / height:.2f} wide for 1 high")
+    if kind != "svg" and width and height and min(width, height) < MIN_SITE_PIXELS:
+        raise IconPackError(f"small: {width}x{height}")
+    url = str(meta.get("url", ""))
+    sha1 = str(meta.get("sha1", "")).lower()
+    if not COMMONS_ORIGINAL.fullmatch(url):
+        raise IconPackError(f"url: {url[:120]}")
+    if not re.fullmatch(r"[0-9a-f]{40}", sha1):
+        raise IconPackError("sha1: missing")
+    data = fetcher(url, limit, "*/*")
+    if len(data) > limit:
+        raise IconPackError("too-large: over the cap")
+    if hashlib.sha1(data).hexdigest() != sha1:
+        raise IconPackError("sha1: the bytes are not the file Commons lists")
+    if kind == "svg":
+        if not is_safe_svg(data):
+            raise IconPackError("unsafe-svg")
+        ratio = aspect(data)
+        if not ratio:
+            raise IconPackError("unsafe-svg: no viewBox or size")
+    else:
+        dims = raster_size(data) if raster_mime(data) else None
+        if not dims or min(dims) < MIN_SITE_PIXELS:
+            raise IconPackError("small: not an image of %d px or more" % MIN_SITE_PIXELS)
+        ratio = dims[0] / dims[1]
+    if ratio > WIKIDATA_WORDMARK:
+        raise IconPackError(f"wordmark: {ratio:.2f} wide for 1 high")
+    path = f"files/{sha1}.{kind}"
+    (out / "files").mkdir(parents=True, exist_ok=True)
+    (out / path).write_bytes(data)
+    return {"path": path, "sha1": sha1, "sha256": hashlib.sha256(data).hexdigest(), "url": url}
+
+
+def wikidata_candidates(folder, skip, blocklist, platforms, log):
+    """({domain: Candidate}, record, drops) from the folder `wikidata` wrote. Every file is checked
+    again (path shape, SHA-256, SVG safety or raster header, shape): the folder is build input.
+    Skipped: curated domains (curated wins), hosts refused since (blocklist, platforms)."""
+    record = json.loads((folder / "wikidata.json").read_text(encoding="utf-8"))
+    refuse = wikidata_refusal(blocklist, platforms)
+    out, drops, shared = {}, {}, {}
+
+    def drop(reason, what):
+        drops[reason] = drops.get(reason, 0) + 1
+        log("wikidata", f"{what}: {reason}")
+
+    for domain, entry in sorted((record.get("domains") or {}).items()):
+        if normalized_domain(domain) != domain or not isinstance(entry, dict):
+            drop("bad-domain", domain)
+            continue
+        if domain in skip:
+            drop("curated", domain)
+            continue
+        reason = refuse(domain)
+        if reason:
+            drop(reason, domain)
+            continue
+        path = str(entry.get("path", ""))
+        qid = str(entry.get("item", ""))
+        if not WIKIDATA_FILE.fullmatch(path) or not re.fullmatch(r"Q[1-9][0-9]*", qid):
+            drop("bad-record", domain)
+            continue
+        file = folder / path
+        data = file.read_bytes() if file.is_file() else b""
+        if not data or hashlib.sha256(data).hexdigest() != entry.get("sha256"):
+            drop("file-changed", domain)
+            continue
+        if path.endswith(".svg"):
+            if not is_safe_svg(data):
+                drop("unsafe-svg", domain)
+                continue
+            svg, ratio = data, aspect(data)
+        elif raster_mime(data) and raster_size(data):
+            w, h = raster_size(data)
+            svg, ratio = raster_svg(data), (w / h if h else None)
+        else:
+            drop("format", domain)
+            continue
+        if not ratio or ratio > WIKIDATA_WORDMARK:
+            drop("wordmark", domain)
+            continue
+        candidate = shared.get(path)
+        if candidate is None:
+            candidate = shared[path] = Candidate(RANK_WIKIDATA, "wikidata", svg, name=f"wikidata:{qid}",
+                                                 brand=str(entry.get("label") or ""))
+            candidate.license = str(entry.get("license") or "")
+        out[domain] = candidate
+    return out, record, drops
+
+
 # --- Rendering ------------------------------------------------------------
 
 def tiled(svg, size, color):
@@ -1401,6 +1838,15 @@ def build(args):
         extra, stats = domain_candidates(listed, curated_domains(curated), load_blocklist(args.blocklist), sites, log)
         for domain, candidate in extra.items():
             found.setdefault(domain, []).append(candidate)
+    wikidata = None
+    if args.wikidata:
+        # Wikidata logos (the `wikidata` command's folder): after the curated list, before the open sets.
+        platforms = read_domain_lists([args.platforms])[0] if args.platforms else []
+        extra, wd_record, wd_drops = wikidata_candidates(Path(args.wikidata), curated_domains(curated),
+                                                         load_blocklist(args.blocklist), platforms, log)
+        for domain, candidate in extra.items():
+            found.setdefault(domain, []).append(candidate)
+        wikidata = {"record": wd_record, "drops": wd_drops, "candidates": len(extra)}
     rejects, dropped = [], []
     if sites:
         # Hosting-platform icons (a gym portal serving its software vendor's favicon): shipped as
@@ -1466,6 +1912,14 @@ def build(args):
         sources = dict(sources, **{"domain-list": {
             "license": LICENSES["brand"], "icons": stats["kept"], "pixels": DOMAIN_SIZE,
             "lists": [Path(x).name for x in args.domains]}})
+    wd_used = {d: c for d, c in picked.items() if c.source == "wikidata"}
+    if wikidata:
+        wd_domains = wikidata["record"].get("domains") or {}
+        sources = dict(sources, **{"wikidata": {
+            "license": LICENSES["wikidata"], "queried": wikidata["record"].get("queried"),
+            "endpoint": wikidata["record"].get("endpoint"),
+            "icons": {d: {k: wd_domains[d].get(k) for k in ("item", "file", "sha1", "license", "url")}
+                      for d in sorted(wd_used)}}})
     read_pack(pack)
     name = f"onepass-icons-{args.version}.bin"
     (out / name).write_bytes(pack)
@@ -1483,12 +1937,26 @@ def build(args):
         manifest["rejects"] = len(rejects)
     if tranco:
         manifest["tranco"] = tranco
+    if wikidata:
+        manifest["wikidata_queried"] = wikidata["record"].get("queried")
     (out / "icon-pack-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    licenses = {d: LICENSES.get(c.source, "") for d, c in sorted(picked.items())}
+    licenses = {d: c.license or LICENSES.get(c.source, "") for d, c in sorted(picked.items())}
     report = {"chosen": dict(sorted(chosen.items())), "licenses": licenses, "names": len(names),
               "domains_fetched": stats["fetched"], "domains_kept": stats["kept"], "domains_blocked": stats["blocked"],
               "rejects": len(rejects), "platform_icons_dropped": dropped,
               "skipped": {k: sorted(v) for k, v in skipped.items()}}
+    if wikidata:
+        record = wikidata["record"]
+        drops = {k: len(v) for k, v in (record.get("dropped") or {}).items()}
+        for k, v in wikidata["drops"].items():
+            drops[k] = drops.get(k, 0) + v
+        per_license = {}
+        for name_, counts in (record.get("licenses") or {}).items():
+            per_license[name_] = dict(counts, in_pack=sum(1 for c in wd_used.values() if c.license == name_))
+        report["wikidata"] = {"queried": record.get("queried"), "items": record.get("items"),
+                              "domains": len(record.get("domains") or {}), "candidates": wikidata["candidates"],
+                              "in_pack": len(wd_used), "licenses": dict(sorted(per_license.items())),
+                              "dropped": dict(sorted(drops.items())), "conflicts": record.get("conflicts") or {}}
     (out / "report.json").write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
     print(f"{len(domains)} domains, {len(icons)} icons, {len(pack)} bytes -> {out / name}")
     return 0
@@ -1547,6 +2015,16 @@ def main(argv=None):
     b.add_argument("--platforms", default=str(DEFAULT_PLATFORMS),
                    help="hosting platforms whose icons are rejects (default scripts/icon-pack-platforms.txt; "
                         "empty string for none)")
+    b.add_argument("--wikidata", help="the folder `wikidata` wrote (logos named by Wikidata, files from Commons)")
+    w = sub.add_parser("wikidata")
+    w.add_argument("--out", required=True)
+    w.add_argument("--blocklist", default=str(DEFAULT_BLOCKLIST))
+    w.add_argument("--platforms", default=str(DEFAULT_PLATFORMS),
+                   help="hosting platforms: an official website on one of them is left out (empty string for none)")
+    w.add_argument("--page-size", type=int, default=WIKIDATA_PAGE)
+    w.add_argument("--max-pages", type=int, default=WIKIDATA_MAX_PAGES)
+    w.add_argument("--dry-run", action="store_true",
+                   help="print the endpoint, the User-Agent and the first page's query, fetch nothing")
     st = sub.add_parser("sites")
     st.add_argument("--curated", default=str(Path(__file__).resolve().parent / "icon-pack-curated.json"))
     st.add_argument("--out", required=True)
@@ -1568,6 +2046,20 @@ def main(argv=None):
             if not 64 <= args.size <= 1024:
                 raise IconPackError("--size must be 64 to 1024")
             return build(args)
+        if args.command == "wikidata":
+            if not 1 <= args.page_size <= 10000 or args.max_pages < 1:
+                raise IconPackError("--page-size must be 1 to 10000 and --max-pages at least 1")
+            if args.dry_run:
+                print(f"endpoint: {WIKIDATA_SPARQL}\nuser-agent: {WIKI_UA}\npage size: {args.page_size}, "
+                      f"at most {args.max_pages} pages\nCommons: {COMMONS_API} (imageinfo, {COMMONS_BATCH} files "
+                      f"per request)\n\n{wikidata_query(args.page_size, 0)}")
+                return 0
+            platforms = read_domain_lists([args.platforms])[0] if args.platforms else []
+            record = fetch_wikidata(Path(args.out), load_blocklist(args.blocklist), platforms,
+                                    page_size=args.page_size, max_pages=args.max_pages)
+            print(f"{record['items']} items, {len(record['domains'])} domains with a kept logo, "
+                  f"{len(record['conflicts'])} conflicts -> {Path(args.out) / 'wikidata.json'}")
+            return 0
         if args.command == "sites":
             curated = json.loads(Path(args.curated).read_text(encoding="utf-8"))
             failed = []
