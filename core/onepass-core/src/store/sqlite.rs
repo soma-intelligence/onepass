@@ -5,8 +5,8 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{
-    AutofillRow, Record, RecordKind, RecordStore, RotationPush, TrustGuard, autofill_sql,
-    check_local_meta_key, check_local_meta_prefix,
+    AutofillRow, KeyUseQueueRow, Record, RecordKind, RecordStore, RotationPush, TrustGuard,
+    autofill_sql, check_local_meta_key, check_local_meta_prefix, key_use_queue_sql,
 };
 use crate::chain::ChainState;
 use crate::sync::merge_chain;
@@ -104,6 +104,8 @@ impl SqliteStore {
         )
         .map_err(store_err)?;
         conn.execute_batch(autofill_sql::SCHEMA)
+            .map_err(store_err)?;
+        conn.execute_batch(key_use_queue_sql::SCHEMA)
             .map_err(store_err)?;
         Ok(SqliteStore { conn })
     }
@@ -267,6 +269,39 @@ impl RecordStore for SqliteStore {
     fn autofill_clear(&mut self) -> Result<usize> {
         let tx = self.conn.transaction().map_err(store_err)?;
         let n = autofill_sql::clear(&tx)?;
+        tx.commit().map_err(store_err)?;
+        Ok(n)
+    }
+
+    fn keeps_key_use_queue(&self) -> bool {
+        true
+    }
+
+    fn key_use_queue_put(
+        &mut self,
+        item_tag: &[u8; 32],
+        replace: &[i64],
+        data: &[u8],
+        keep_total: usize,
+    ) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        key_use_queue_sql::put(&tx, item_tag, replace, data, keep_total)?;
+        tx.commit().map_err(store_err)
+    }
+
+    fn key_use_queue_rows(&self, item_tag: Option<&[u8; 32]>) -> Result<Vec<KeyUseQueueRow>> {
+        key_use_queue_sql::rows(&self.conn, item_tag)
+    }
+
+    fn key_use_queue_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        key_use_queue_sql::delete(&tx, seqs)?;
+        tx.commit().map_err(store_err)
+    }
+
+    fn key_use_queue_clear(&mut self) -> Result<usize> {
+        let tx = self.conn.transaction().map_err(store_err)?;
+        let n = key_use_queue_sql::clear(&tx)?;
         tx.commit().map_err(store_err)?;
         Ok(n)
     }

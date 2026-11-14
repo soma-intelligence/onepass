@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use super::{
-    AutofillRow, Record, RecordKind, RecordStore, Zone, check_local_meta_key,
+    AutofillRow, KeyUseQueueRow, Record, RecordKind, RecordStore, Zone, check_local_meta_key,
     check_local_meta_prefix,
 };
 use crate::chain::ChainState;
@@ -23,6 +23,9 @@ pub struct MemoryStore {
     /// Autofill history rows `(seq, site tag, data)`, oldest first.
     autofill: Vec<AutofillRow>,
     autofill_seq: i64,
+    /// Key-use queue rows `(seq, item tag, data)`, oldest first.
+    key_use_queue: Vec<KeyUseQueueRow>,
+    key_use_queue_seq: i64,
 }
 
 impl MemoryStore {
@@ -222,6 +225,46 @@ impl RecordStore for MemoryStore {
     fn autofill_clear(&mut self) -> Result<usize> {
         let n = self.autofill.len();
         self.autofill.clear();
+        Ok(n)
+    }
+
+    fn keeps_key_use_queue(&self) -> bool {
+        true
+    }
+
+    fn key_use_queue_put(
+        &mut self,
+        item_tag: &[u8; 32],
+        replace: &[i64],
+        data: &[u8],
+        keep_total: usize,
+    ) -> Result<()> {
+        self.key_use_queue.retain(|r| !replace.contains(&r.0));
+        self.key_use_queue_seq += 1;
+        self.key_use_queue
+            .push((self.key_use_queue_seq, *item_tag, data.to_vec()));
+        let extra = self.key_use_queue.len().saturating_sub(keep_total);
+        self.key_use_queue.drain(..extra);
+        Ok(())
+    }
+
+    fn key_use_queue_rows(&self, item_tag: Option<&[u8; 32]>) -> Result<Vec<KeyUseQueueRow>> {
+        Ok(self
+            .key_use_queue
+            .iter()
+            .filter(|r| item_tag.is_none_or(|t| r.1 == *t))
+            .cloned()
+            .collect())
+    }
+
+    fn key_use_queue_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        self.key_use_queue.retain(|r| !seqs.contains(&r.0));
+        Ok(())
+    }
+
+    fn key_use_queue_clear(&mut self) -> Result<usize> {
+        let n = self.key_use_queue.len();
+        self.key_use_queue.clear();
         Ok(n)
     }
 

@@ -254,6 +254,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(zones::ZONE_SCHEMA).map_err(store_err)?;
     conn.execute_batch(crate::store::autofill_sql::SCHEMA)
         .map_err(store_err)?;
+    conn.execute_batch(crate::store::key_use_queue_sql::SCHEMA)
+        .map_err(store_err)?;
     conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
         .map_err(store_err)?;
     Ok(())
@@ -3712,6 +3714,42 @@ impl RecordStore for SyncStore {
     fn autofill_clear(&mut self) -> Result<usize> {
         let tx = self.write_tx()?;
         let n = crate::store::autofill_sql::clear(&tx)?;
+        tx.commit()?;
+        Ok(n)
+    }
+
+    fn keeps_key_use_queue(&self) -> bool {
+        true
+    }
+
+    fn key_use_queue_put(
+        &mut self,
+        item_tag: &[u8; 32],
+        replace: &[i64],
+        data: &[u8],
+        keep_total: usize,
+    ) -> Result<()> {
+        let tx = self.write_tx()?;
+        crate::store::key_use_queue_sql::put(&tx, item_tag, replace, data, keep_total)?;
+        tx.commit()
+    }
+
+    fn key_use_queue_rows(
+        &self,
+        item_tag: Option<&[u8; 32]>,
+    ) -> Result<Vec<crate::store::KeyUseQueueRow>> {
+        self.read(|c| crate::store::key_use_queue_sql::rows(c, item_tag))
+    }
+
+    fn key_use_queue_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let tx = self.write_tx()?;
+        crate::store::key_use_queue_sql::delete(&tx, seqs)?;
+        tx.commit()
+    }
+
+    fn key_use_queue_clear(&mut self) -> Result<usize> {
+        let tx = self.write_tx()?;
+        let n = crate::store::key_use_queue_sql::clear(&tx)?;
         tx.commit()?;
         Ok(n)
     }

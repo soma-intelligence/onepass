@@ -77,6 +77,7 @@ pub mod custom_icon;
 pub mod duplicates;
 pub mod family;
 pub mod follow;
+mod key_use;
 pub mod kit;
 mod local;
 pub mod members;
