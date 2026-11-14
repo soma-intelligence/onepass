@@ -12,12 +12,13 @@ struct TravelSuggestionCard: View {
 
     var body: some View {
         switch model.travel.prompt {
-        // Every reason on the same text for now (per-reason titles come with the trips screens).
-        case .suggest:
+        case .suggest(let reason, _):
+            let text = Self.text(for: reason)
             card(
-                title: "travel.suggest.title",
-                detail: "travel.suggest.body",
-                symbol: "airplane.departure"
+                title: text.title,
+                detail: text.detail,
+                symbol: text.symbol,
+                error: Self.autoError(for: reason, message: model.travel.lastAutoError)
             ) {
                 Button("app.yes") {
                     model.travel.answerYes()
@@ -55,8 +56,28 @@ struct TravelSuggestionCard: View {
         }
     }
 
+    /// The card's words follow why it appears. Airport and calendar reasons are not produced yet
+    /// and speak like "away" until their own texts come.
+    private static func text(for reason: TravelReason)
+        -> (title: LocalizedStringKey, detail: LocalizedStringKey, symbol: String) {
+        switch reason {
+        case .tripStarting:
+            ("travel.trip.title", "travel.trip.body", "airplane.departure")
+        case .newTimeZone:
+            ("travel.timezone.title", "travel.timezone.body", "clock.arrow.2.circlepath")
+        case .away, .atAirport, .flightFound:
+            ("travel.suggest.title", "travel.suggest.body", "airplane.departure")
+        }
+    }
+
+    /// Why the automatic entry failed, only on the trip's own card.
+    private static func autoError(for reason: TravelReason, message: String?) -> String? {
+        guard case .tripStarting = reason, let message else { return nil }
+        return String(localized: "travel.auto.failed \(message)")
+    }
+
     private func card<Buttons: View>(
-        title: LocalizedStringKey, detail: LocalizedStringKey, symbol: String,
+        title: LocalizedStringKey, detail: LocalizedStringKey, symbol: String, error: String? = nil,
         @ViewBuilder buttons: () -> Buttons
     ) -> some View {
         VStack(alignment: .leading, spacing: compact ? 8 : 10) {
@@ -73,6 +94,13 @@ struct TravelSuggestionCard: View {
                 .font(compact ? .caption : .footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let error {
+                Text(error)
+                    .font(compact ? .caption : .footnote)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("travel.suggest.error")
+            }
             HStack(spacing: 8) { buttons() }
                 .controlSize(.small)
                 .font(.footnote.weight(.semibold))

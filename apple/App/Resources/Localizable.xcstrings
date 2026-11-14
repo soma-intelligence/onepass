@@ -59381,6 +59381,486 @@
         }
       }
     },
+    "travel.trip.title" : {
+      "comment" : "Card title when a planned trip is about to start.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Trip Starts"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu viaje empieza"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton voyage commence"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il tuo viaggio inizia"
+          }
+        }
+      }
+    },
+    "travel.trip.body" : {
+      "comment" : "Card body when a planned trip is about to start.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on Travel Mode before the border, while you still have a connection."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa Travel Mode antes de la frontera, mientras tengas conexión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active le Travel Mode avant la frontière, tant que tu as du réseau."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva Travel Mode prima della frontiera, finché hai rete."
+          }
+        }
+      }
+    },
+    "travel.timezone.title" : {
+      "comment" : "Card title when the device changed time zone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Time Zone"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva zona horaria"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveau fuseau horaire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuovo fuso orario"
+          }
+        }
+      }
+    },
+    "travel.timezone.body" : {
+      "comment" : "Card body when the device changed time zone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your device changed time zone. Are you travelling?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu dispositivo cambió de zona horaria. ¿Estás de viaje?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton appareil a changé de fuseau horaire. Tu voyages ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il tuo dispositivo ha cambiato fuso orario. Sei in viaggio?"
+          }
+        }
+      }
+    },
+    "travel.auto.failed %@" : {
+      "comment" : "Orange line on the trip card when the automatic entry failed. %@ is the reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode could not turn on: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode no se pudo activar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le Travel Mode n'a pas pu s'activer : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode non si è potuto attivare: %@"
+          }
+        }
+      }
+    },
+    "settings.travel.trips.header" : {
+      "comment" : "Settings > Travel Mode section header for planned trips.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trips"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viajes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voyages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viaggi"
+          }
+        }
+      }
+    },
+    "settings.travel.trips.footer" : {
+      "comment" : "Settings > Travel Mode, under the planned trips.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass reminds you the evening before and 3 hours before you leave. Your trips stay on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass te lo recuerda la víspera y 3 horas antes de la salida. Tus viajes se quedan en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass te le rappelle la veille et 3 heures avant le départ. Tes voyages restent sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass te lo ricorda la sera prima e 3 ore prima della partenza. I tuoi viaggi restano su questo dispositivo."
+          }
+        }
+      }
+    },
+    "settings.travel.addTrip" : {
+      "comment" : "Button that opens the trip editor.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a Trip"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir un viaje"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un voyage"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi un viaggio"
+          }
+        }
+      }
+    },
+    "trip.start" : {
+      "comment" : "Trip editor, departure date and time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Departure"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Départ"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partenza"
+          }
+        }
+      }
+    },
+    "trip.end" : {
+      "comment" : "Trip editor, return date.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Return"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regreso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ritorno"
+          }
+        }
+      }
+    },
+    "trip.auto" : {
+      "comment" : "Trip editor switch: enter Travel Mode on its own.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On Automatically"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar automáticamente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activer automatiquement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva automaticamente"
+          }
+        }
+      }
+    },
+    "trip.auto.footer" : {
+      "comment" : "Trip editor, explains the automatic switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At the first unlock within 3 hours before departure, after Face ID."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En el primer desbloqueo dentro de las 3 horas previas a la salida, tras Face ID."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au premier déverrouillage dans les 3 heures avant le départ, après Face ID."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al primo sblocco nelle 3 ore prima della partenza, dopo Face ID."
+          }
+        }
+      }
+    },
+    "trip.save" : {
+      "comment" : "Trip editor save button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salva"
+          }
+        }
+      }
+    },
+    "trip.error.endBeforeStart" : {
+      "comment" : "Trip editor error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The return must be after the departure."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El regreso debe ser después de la salida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le retour doit être après le départ."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il ritorno deve essere dopo la partenza."
+          }
+        }
+      }
+    },
+    "trip.error.tooMany" : {
+      "comment" : "Trip editor error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "16 trips at most."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "16 viajes como máximo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "16 voyages au plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al massimo 16 viaggi."
+          }
+        }
+      }
+    },
+    "trip.error.ended" : {
+      "comment" : "Trip editor error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This trip is already over."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este viaje ya terminó."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce voyage est déjà fini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo viaggio è già finito."
+          }
+        }
+      }
+    },
     "travel.suggest.body" : {
       "comment" : "Body of the travel suggestion card.",
       "extractionState" : "manual",
@@ -59988,25 +60468,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When you seem to be travelling, OnePass suggests it. Your places stay on this device."
+            "value" : "When you seem to be travelling (place or time zone), OnePass suggests it. Everything stays on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuando parece que viajas, OnePass te lo sugiere. Tus lugares se quedan en este dispositivo."
+            "value" : "Cuando parece que viajas (lugar o zona horaria), OnePass te lo sugiere. Todo se queda en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quand tu sembles en voyage, OnePass te le propose. Tes lieux restent sur cet appareil."
+            "value" : "Quand tu sembles en voyage (lieu ou fuseau horaire), OnePass te le propose. Tout reste sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quando sembri in viaggio, OnePass te lo suggerisce. I tuoi luoghi restano su questo dispositivo."
+            "value" : "Quando sembri in viaggio (luogo o fuso orario), OnePass te lo suggerisce. Tutto resta su questo dispositivo."
           }
         }
       }

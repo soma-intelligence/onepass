@@ -36,6 +36,7 @@ struct TravelSettings: View {
                 }
             }
             itemsSection
+            tripsSection
             detectionSection
             if status?.active != true {
                 Section {
@@ -141,6 +142,55 @@ struct TravelSettings: View {
         VStack(alignment: .leading, spacing: Theme.Space.xxs) {
             Text(entry.title)
             Text(entry.vaultName).font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
+    /// Planned trips: a reminder the eve and 3 hours before, and optionally Travel Mode on its own.
+    private var tripsSection: some View {
+        let trips = model.travel.trips.sorted { $0.start < $1.start }
+        return Section {
+            ForEach(trips) { trip in
+                NavigationLink {
+                    TravelTripEditor(trip: trip)
+                } label: {
+                    tripRow(trip)
+                }
+                .accessibilityIdentifier("settings.travel.trip.\(trip.id.uuidString)")
+                .contextMenu {
+                    Button("Supprimer", role: .destructive) { model.travel.deleteTrip(id: trip.id) }
+                }
+            }
+            .onDelete { offsets in
+                for index in offsets { model.travel.deleteTrip(id: trips[index].id) }
+            }
+            NavigationLink {
+                TravelTripEditor(trip: nil)
+            } label: {
+                Label("settings.travel.addTrip", systemImage: "plus")
+            }
+            .accessibilityIdentifier("settings.travel.addTrip")
+        } header: {
+            Text("settings.travel.trips.header")
+        } footer: {
+            Text("settings.travel.trips.footer")
+        }
+        .accessibilityIdentifier("settings.travel.trips")
+    }
+
+    private func tripRow(_ trip: TravelTrip) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                Text(trip.start.formatted(date: .abbreviated, time: .shortened))
+                Text(trip.end.formatted(date: .abbreviated, time: .omitted))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if trip.autoEnter {
+                Spacer()
+                Image(systemName: "bolt.fill")
+                    .foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
+            }
         }
     }
 

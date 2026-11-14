@@ -95,6 +95,7 @@
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
 		582745A6BDE935DA6DC285D3 /* LockControlIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */; };
 		5A3B3C0264919DA7784F2977 /* AccountsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCFA55095EE1CC9CC844A31 /* AccountsSettings.swift */; };
+		2D3E4F5A6B7C8D9E0F1A2B3C /* TravelTripEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C2D3E4F5A6B7C8D9E0F1A2B /* TravelTripEditor.swift */; };
 		5AD704952C61BCF3A67100E6 /* TravelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAF97588217514C64DBA911D /* TravelSettings.swift */; };
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
 		5ED861184AA47805C66DBFDF /* RemoveMemberSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */; };
@@ -609,6 +610,7 @@
 		F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueView.swift; sourceTree = "<group>"; };
 		F88A3A848FCA950CFDDC39A4 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		F98AB73D4EBAF2F2ABEB4135 /* CryptoCoinView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoCoinView.swift; sourceTree = "<group>"; };
+		1C2D3E4F5A6B7C8D9E0F1A2B /* TravelTripEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelTripEditor.swift; sourceTree = "<group>"; };
 		FAF97588217514C64DBA911D /* TravelSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelSettings.swift; sourceTree = "<group>"; };
 		FDEA14A7E048E4F8837BDCA3 /* AccountChangeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountChangeViews.swift; sourceTree = "<group>"; };
 		FF8AF3D2E817BD4D4E9F0520 /* Nearby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nearby.swift; sourceTree = "<group>"; };
@@ -1189,6 +1191,7 @@
 				DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */,
 				3E7C87AC5BA6F2B579609522 /* SyncSettings.swift */,
 				FAF97588217514C64DBA911D /* TravelSettings.swift */,
+				1C2D3E4F5A6B7C8D9E0F1A2B /* TravelTripEditor.swift */,
 				3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */,
 				568C27B38A48EE4F4ABCA00E /* WatchSettings.swift */,
 			);
@@ -2059,6 +2062,7 @@
 				68FC4A9B4F59EDDA983F6311 /* TravelDetection.swift in Sources */,
 				D9808B01BC7B1CB0EDD6BAF2 /* TravelReminderCenter+System.swift in Sources */,
 				5AD704952C61BCF3A67100E6 /* TravelSettings.swift in Sources */,
+				2D3E4F5A6B7C8D9E0F1A2B3C /* TravelTripEditor.swift in Sources */,
 				4B37189A8299C4D3E43A62BE /* TravelSuggestionCard.swift in Sources */,
 				DC9F51AA8F5C84974A3A6590 /* VaultDialRefresh.swift in Sources */,
 				8DA415577E16E2A2EC1F29F0 /* VaultEditorView.swift in Sources */,
