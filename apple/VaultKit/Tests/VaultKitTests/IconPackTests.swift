@@ -360,4 +360,49 @@ struct ItemIconResolverTests {
         #expect(ItemIconResolver.host(of: "androidapp://com.example") == nil)
         #expect(ItemIconResolver.host(of: "") == nil)
     }
+
+    // MARK: search
+
+    private func bundledPack() throws -> IconPack {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("IconPack/onepass-icons.bin")
+        return try IconPack(data: try Data(contentsOf: url))
+    }
+
+    @Test func searchFindsBrandsByNameAndDomain() throws {
+        let pack = try bundledPack()
+        #expect(pack.search("netf").first?.name == "netflix")
+        #expect(pack.search("netflix").first?.domain == "netflix.com")
+        #expect(pack.search("netflix.com").first?.name == "netflix")
+        // The pack has no Societe Generale: another accented French brand, Credit Lyonnais.
+        #expect(!pack.search("Crédit Lyonnais").isEmpty)
+        #expect(pack.search("").isEmpty)
+        #expect(pack.search("  ").isEmpty)
+    }
+
+    @Test func searchResultsAreUniquePerIconAndLimited() throws {
+        let pack = try bundledPack()
+        let found = pack.search("a", limit: 5)
+        #expect(found.count == 5)
+        let many = pack.search("a", limit: 500)
+        #expect(Set(many.map(\.icon)).count == many.count)
+        #expect(many.allSatisfy { pack.icon(number: $0.icon) != nil })
+        #expect(pack.icon(number: -1) == nil)
+        #expect(pack.icon(number: pack.iconCount) == nil)
+    }
+
+    @Test func searchRanksExactThenPrefixThenDomainThenSubstring() throws {
+        let pack = try IconPack(data: makeIconPack(
+            version: 1, icons: [(red, 0), (red, 0), (red, 0), (red, 0), (red, 0)],
+            domains: ["zed.com": 0, "bar.io": 1, "barn.io": 2, "plain.com": 3, "foobar.com": 4],
+            names: ["bar": 0, "barista": 1, "zebar": 2, "other": 3, "foobar": 4]))
+        #expect(pack.search("bar").map(\.name) == ["bar", "barista", "zebar", "foobar"])
+        #expect(pack.search("bar").first?.domain == "zed.com")
+        #expect(pack.search("plain.c").map(\.name) == ["other"])
+        let onlyDomain = try IconPack(data: makeIconPack(
+            version: 1, icons: [(red, 0)], domains: ["b.example.com": 0, "a.example.com": 0, "ex.org": 0]))
+        #expect(onlyDomain.search("ex.org").first == IconPack.Entry(name: "ex.org", domain: "ex.org", icon: 0))
+        #expect(onlyDomain.search("a.exam").first?.icon == 0)
+    }
 }

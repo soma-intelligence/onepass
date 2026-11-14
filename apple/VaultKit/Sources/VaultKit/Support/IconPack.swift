@@ -37,6 +37,8 @@ public struct IconPack: Sendable {
     /// The whole file (memory mapped when read from disk: never copied) and where the icons start.
     let data: Data
     let iconsStart: Int
+    /// The search rows, built on the first search.
+    private let searchIndex = SearchIndex()
 
     public var domainCount: Int { domains.count }
     public var iconCount: Int { icons.count }
@@ -135,6 +137,87 @@ public struct IconPack: Sendable {
         let folded = text.lowercased().replacingOccurrences(of: "&", with: "and")
             .applyingTransform(.stripDiacritics, reverse: false) ?? text
         return String(folded.unicodeScalars.filter { ("a"..."z").contains($0) || ("0"..."9").contains($0) }.map(Character.init))
+    }
+
+    /// One searchable icon: its best name, its shortest domain, its number.
+    public struct Entry: Hashable, Sendable {
+        /// The squashed brand name (the domain itself for an icon that has no name).
+        public let name: String
+        public let domain: String?
+        public let icon: Int
+    }
+
+    fileprivate struct Row: Sendable {
+        let entry: Entry
+        /// `name` squashed (the same as `name` for a named icon).
+        let key: String
+        let domains: [String]
+    }
+
+    fileprivate final class SearchIndex: Sendable {
+        private let rows = Mutex<[Row]?>(nil)
+        func get(_ pack: IconPack) -> [Row] {
+            rows.withLock { state in
+                if let state { return state }
+                var byNumber: [Int: [String]] = [:]
+                for (domain, number) in pack.domains { byNumber[number, default: []].append(domain) }
+                for number in Array(byNumber.keys) {
+                    byNumber[number]?.sort { ($0.count, $0) < ($1.count, $1) }
+                }
+                var built: [Row] = []
+                var named = Set<Int>()
+                for (name, number) in pack.names where !name.isEmpty {
+                    let domains = byNumber[number] ?? []
+                    built.append(Row(entry: Entry(name: name, domain: domains.first, icon: number), key: name, domains: domains))
+                    named.insert(number)
+                }
+                for (number, domains) in byNumber where !named.contains(number) {
+                    guard let first = domains.first else { continue }
+                    built.append(Row(entry: Entry(name: first, domain: first, icon: number), key: IconPack.squash(first), domains: domains))
+                }
+                state = built
+                return built
+            }
+        }
+    }
+
+    /// Icons whose brand name or domain matches `query` (squashed like the pack's names), best
+    /// first: exact name, name prefix, domain prefix, name substring; ties by shorter name. One
+    /// entry per icon.
+    public func search(_ query: String, limit: Int = 60) -> [Entry] {
+        let key = Self.squash(query)
+        let raw = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty, limit > 0 else { return [] }
+        var best: [Int: (rank: Int, entry: Entry)] = [:]
+        for row in searchIndex.get(self) {
+            let rank: Int
+            if row.key == key {
+                rank = 0
+            } else if row.key.hasPrefix(key) {
+                rank = 1
+            } else if row.domains.contains(where: { $0.hasPrefix(raw) }) {
+                rank = 2
+            } else if row.key.contains(key) {
+                rank = 3
+            } else {
+                continue
+            }
+            if let current = best[row.entry.icon],
+                (current.rank, current.entry.name.count, current.entry.name) <= (rank, row.entry.name.count, row.entry.name)
+            {
+                continue
+            }
+            best[row.entry.icon] = (rank, row.entry)
+        }
+        let sorted = best.values.sorted {
+            ($0.rank, $0.entry.name.count, $0.entry.name) < ($1.rank, $1.entry.name.count, $1.entry.name)
+        }
+        return sorted.prefix(limit).map(\.entry)
+    }
+
+    /// The icon with this number in the pack, nil when out of range.
+    public func icon(number: Int) -> Icon? {
+        icons.indices.contains(number) ? icon(number) : nil
     }
 
     func icon(_ number: Int) -> Icon {
