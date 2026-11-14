@@ -67,6 +67,11 @@ pub enum Ctx {
     /// 2026-11-07-agent-browser-fill 5). Accepted for `plan_fill`,
     /// `fill_login` and `fill_card` only, each with `agent_request`.
     Agent,
+    /// Two-factor setup: the QR scan's confirmation card (spec
+    /// 2026-11-13-two-factor-passkey-setup 1). Accepted by `save_totp`,
+    /// `save_recovery_codes`, `list_for_origin`, and `fill_login` with
+    /// `fields` exactly `[totp]`.
+    Setup,
 }
 
 impl Ctx {
@@ -79,6 +84,7 @@ impl Ctx {
             Self::Chain => "chain",
             Self::Passkey => "passkey",
             Self::Agent => "agent",
+            Self::Setup => "setup",
         }
     }
 }
@@ -399,6 +405,43 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         pending: bool,
     },
+    /// Write only: a TOTP seed scanned on the page goes on a Login, and is
+    /// never read back. With `item_id`, that Login of the page; without,
+    /// a new Login of the page in `vault_id` (the first vault of the
+    /// routed account when empty), titled `title` (the page's host when
+    /// empty), for `username` (required). `replace`: a different stored
+    /// seed is replaced, kept as `previous_otp_<n>` labelled
+    /// `previous_label`. Context `setup` only.
+    SaveTotp {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        uri: SecretString,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
+        #[serde(default)]
+        vault_id: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        username: String,
+        #[serde(default)]
+        replace: bool,
+        #[serde(default)]
+        previous_label: String,
+    },
+    /// Write only: the site's recovery codes, one per line, into the
+    /// concealed field `recovery_codes` of a Login of the page, replacing
+    /// its value. Context `setup` only.
+    SaveRecoveryCodes {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        item_id: String,
+        codes: SecretString,
+        #[serde(default)]
+        label: String,
+    },
     /// A pending Login (tag `onepass:pending`) whose form was sent: the tag
     /// drops, `username` (when not blank) replaces the stored one.
     ConfirmPending {
@@ -613,6 +656,8 @@ impl Request {
             | Self::CheckIdentity { id, .. }
             | Self::SaveIdentity { id, .. }
             | Self::UpdatePassword { id, .. }
+            | Self::SaveTotp { id, .. }
+            | Self::SaveRecoveryCodes { id, .. }
             | Self::ConfirmPending { id, .. }
             | Self::UndoSave { id, .. }
             | Self::DiscardPending { id, .. }
@@ -657,6 +702,8 @@ impl Request {
             Self::CheckIdentity { .. } => "check_identity",
             Self::SaveIdentity { .. } => "save_identity",
             Self::UpdatePassword { .. } => "update_password",
+            Self::SaveTotp { .. } => "save_totp",
+            Self::SaveRecoveryCodes { .. } => "save_recovery_codes",
             Self::ConfirmPending { .. } => "confirm_pending",
             Self::UndoSave { .. } => "undo_save",
             Self::DiscardPending { .. } => "discard_pending",
@@ -698,6 +745,8 @@ impl Request {
             | Self::CheckIdentity { ctx, .. }
             | Self::SaveIdentity { ctx, .. }
             | Self::UpdatePassword { ctx, .. }
+            | Self::SaveTotp { ctx, .. }
+            | Self::SaveRecoveryCodes { ctx, .. }
             | Self::ConfirmPending { ctx, .. }
             | Self::UndoSave { ctx, .. }
             | Self::DiscardPending { ctx, .. }
@@ -1016,6 +1065,20 @@ pub enum CredentialStatus {
     Pending,
 }
 
+/// `save_totp` outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TotpSaveStatus {
+    /// The Login had no seed (or is new): stored.
+    Saved,
+    /// The Login holds this very seed: nothing written.
+    Same,
+    /// The Login holds another seed and `replace` was false: nothing written.
+    Exists,
+    /// The other seed was kept as `previous_otp_<n>`, the new one stored.
+    Replaced,
+}
+
 /// A field of a plan group.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PlanField {
@@ -1192,6 +1255,11 @@ pub enum Response {
         title: Option<String>,
     },
     ItemId {
+        item_id: String,
+    },
+    /// `save_totp`.
+    TotpSaved {
+        status: TotpSaveStatus,
         item_id: String,
     },
     Generate {
@@ -1533,6 +1601,48 @@ mod tests {
             41,
             "save_identity",
         );
+    }
+
+    #[test]
+    fn request_json_round_trip_save_totp() {
+        let r = round_trip(
+            r#"{"id":40,"op":"save_totp","ctx":"setup","origin":"https://atlas-cloud.test","uri":"otpauth://totp/A?secret=JBSWY3DPEHPK3PXP","item_id":"x","vault_id":"","title":"","username":"","replace":true,"previous_label":"Old code"}"#,
+            40,
+            "save_totp",
+        );
+        assert_eq!(r.ctx(), Some(Ctx::Setup));
+        assert!(!format!("{r:?}").contains("JBSWY3DPEHPK3PXP"));
+        // A new login: no item id, the rest defaults.
+        let r: Request = serde_json::from_str(
+            r#"{"id":41,"op":"save_totp","ctx":"setup","origin":"https://atlas-cloud.test","uri":"otpauth://totp/A?secret=JBSWY3DPEHPK3PXP","username":"ada"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            r,
+            Request::SaveTotp {
+                item_id: None,
+                replace: false,
+                ..
+            }
+        ));
+        let saved = Response::TotpSaved {
+            status: TotpSaveStatus::Exists,
+            item_id: "x".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(saved).unwrap(),
+            json!({"status":"exists","item_id":"x"})
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_save_recovery_codes() {
+        let r = round_trip(
+            r#"{"id":42,"op":"save_recovery_codes","ctx":"setup","origin":"https://atlas-cloud.test","item_id":"x","codes":"abcd-1234\nefgh-5678","label":""}"#,
+            42,
+            "save_recovery_codes",
+        );
+        assert!(!format!("{r:?}").contains("abcd"));
     }
 
     #[test]

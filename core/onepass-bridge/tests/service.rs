@@ -632,7 +632,13 @@ fn fill_card_and_identity_values() {
     // Its e-mail address, for an email-only sign-up step; a login has none.
     assert_eq!(ok(&v)["items"][0]["email"], "alex@atlas.dev");
     let v = h.call(json!({"op":"list_for_origin","ctx":"menu","origin":ATLAS}));
-    assert!(ok(&v)["items"].as_array().unwrap().iter().all(|i| i.get("email").is_none()));
+    assert!(
+        ok(&v)["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i.get("email").is_none())
+    );
 }
 
 fn smart(h: &mut H, recipe: Value, origin: Option<&str>) -> Value {
@@ -4506,6 +4512,415 @@ fn vaults_marks_shared() {
             assert_eq!(e["shared"], json!(true), "{e}");
         } else {
             assert!(e.get("shared").is_none(), "{e}");
+        }
+    }
+}
+
+/// Setup context (spec 2026-11-13 two-factor setup, section 1): the TOTP
+/// secret and the recovery codes go in, never out.
+mod setup {
+    use super::*;
+    use onepass_core::model::Item;
+
+    const ADMIN: &str = "https://admin.atlas-cloud.test";
+    const VAULT_SITE: &str = "https://vault.atlas-cloud.test";
+    const SIGNUP: &str = "https://signup.atlas-cloud.test";
+    /// Apple's list: a2hosting.com became hosting.com (one way).
+    const OLD_HOST: &str = "https://www.a2hosting.com";
+    const NEW_HOST: &str = "https://my.hosting.com";
+    /// Fictional seeds, other than the fixture's.
+    const OTHER_SECRET: &str = "GEZDGNBVGY3TQOJQ";
+    const THIRD_SECRET: &str = "MFRGGZDFMZTWQ2LK";
+
+    fn uri(secret: &str) -> String {
+        format!("otpauth://totp/Atlas:alex@atlas.dev?secret={secret}&issuer=Atlas")
+    }
+
+    fn save_totp(item: Id, origin: &str, uri: &str) -> Value {
+        json!({"op":"save_totp","ctx":"setup","origin":origin,"uri":uri,"item_id":id(item)})
+    }
+
+    fn codes_req(item: Id, origin: &str, codes: &str) -> Value {
+        json!({"op":"save_recovery_codes","ctx":"setup","origin":origin,
+               "item_id":id(item),"codes":codes})
+    }
+
+    fn otp_of(item: &Item) -> String {
+        match &item.field("totp").expect("totp").value {
+            FieldValue::Otp(v) => v.to_string(),
+            _ => panic!("totp field"),
+        }
+    }
+
+    fn concealed(item: &Item, field: &str) -> String {
+        match &item.field(field).expect(field).value {
+            FieldValue::Concealed(v) => v.to_string(),
+            _ => panic!("{field} is not concealed"),
+        }
+    }
+
+    fn code_of(secret: &str, now: u64) -> String {
+        code_at(&totp_from_secret(secret).unwrap(), now).unwrap()
+    }
+
+    #[test]
+    fn save_totp_adds_then_totp_op_returns_a_code() {
+        let mut h = H::new();
+        let admin = h.ids.admin;
+        let v = h.call(save_totp(admin, ADMIN, &uri(OTHER_SECRET)));
+        assert_eq!(
+            ok(&v),
+            &json!({"status":"saved","item_id":id(admin)}),
+            "{v}"
+        );
+        assert_eq!(otp_of(h.vault().item(admin)), uri(OTHER_SECRET));
+        let v = h.call(json!({"op":"totp","ctx":"popup","item_id":id(admin)}));
+        let code = ok(&v)["code"].as_str().unwrap().to_owned();
+        assert_eq!(code.len(), 6);
+        assert_eq!(code, code_of(OTHER_SECRET, NOW));
+        // Audited without the seed.
+        let events = h.audit.events();
+        assert!(events.iter().any(|e| e.op == "save_totp"));
+        assert!(!format!("{events:?}").contains(OTHER_SECRET));
+    }
+
+    #[test]
+    fn save_totp_same_secret_answers_same() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let before = h.vault().item(atlas).clone();
+        let v = h.call(save_totp(atlas, ATLAS, &uri(TOTP_SECRET)));
+        assert_eq!(ok(&v), &json!({"status":"same","item_id":id(atlas)}), "{v}");
+        assert_eq!(h.vault().item(atlas), &before);
+        assert_eq!(h.vault().item(atlas).updated_at, before.updated_at);
+    }
+
+    #[test]
+    fn save_totp_other_secret_answers_exists_then_replaced() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let before = h.vault().item(atlas).clone();
+        let v = h.call(save_totp(atlas, ATLAS, &uri(OTHER_SECRET)));
+        assert_eq!(ok(&v)["status"], "exists", "{v}");
+        assert_eq!(h.vault().item(atlas), &before);
+
+        let mut req = save_totp(atlas, ATLAS, &uri(OTHER_SECRET));
+        req["replace"] = json!(true);
+        req["previous_label"] = json!("Old code");
+        let v = h.call(req);
+        assert_eq!(
+            ok(&v),
+            &json!({"status":"replaced","item_id":id(atlas)}),
+            "{v}"
+        );
+        let item = h.vault().item(atlas);
+        assert_eq!(otp_of(item), uri(OTHER_SECRET));
+        assert!(concealed(item, "previous_otp_1").contains(TOTP_SECRET));
+        assert_eq!(item.field("previous_otp_1").unwrap().label, "Old code");
+
+        // An empty label gets the app's own.
+        let mut req = save_totp(atlas, ATLAS, &uri(THIRD_SECRET));
+        req["replace"] = json!(true);
+        ok(&h.call(req));
+        let item = h.vault().item(atlas);
+        assert!(concealed(item, "previous_otp_2").contains(OTHER_SECRET));
+        assert_eq!(item.field("previous_otp_2").unwrap().label, "Ancien code");
+
+        // A label too long or with a control character is refused.
+        let before = h.vault().item(atlas).clone();
+        for label in ["x".repeat(41), "Old\ncode".to_owned()] {
+            let mut req = save_totp(atlas, ATLAS, &uri(OTHER_SECRET));
+            req["replace"] = json!(true);
+            req["previous_label"] = json!(label);
+            assert_eq!(err(&h.call(req)), "invalid", "{label:?}");
+        }
+        assert_eq!(h.vault().item(atlas), &before);
+    }
+
+    #[test]
+    fn save_totp_refuses_wrong_ctx() {
+        let mut h = H::new();
+        let admin = h.ids.admin;
+        let before = h.vault().item(admin).clone();
+        for ctx in [
+            "popup",
+            "menu",
+            "overlay",
+            "save_prompt",
+            "chain",
+            "agent",
+            "passkey",
+        ] {
+            let mut req = save_totp(admin, ADMIN, &uri(OTHER_SECRET));
+            req["ctx"] = json!(ctx);
+            assert_eq!(err(&h.call(req)), "not_allowed", "{ctx}");
+        }
+        assert_eq!(h.vault().item(admin), &before);
+    }
+
+    #[test]
+    fn save_totp_refuses_other_origin_and_lookalike() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let before = h.vault().item(atlas).clone();
+        for origin in ["https://evil.test", "https://\u{430}tlas-cloud.test"] {
+            let mut req = save_totp(atlas, origin, &uri(OTHER_SECRET));
+            req["replace"] = json!(true);
+            assert_eq!(err(&h.call(req)), "origin_mismatch", "{origin}");
+        }
+        assert_eq!(h.vault().item(atlas), &before);
+    }
+
+    #[test]
+    fn save_totp_refuses_associated_without_pick() {
+        let mut h = H::new();
+        let old =
+            h.svc
+                .vault_mut()
+                .add_login("Old host", "a@host.test", OLD_HOST, MatchRule::Domain);
+        let before = h.vault().item(old).clone();
+        assert_eq!(
+            err(&h.call(save_totp(old, NEW_HOST, &uri(OTHER_SECRET)))),
+            "not_allowed"
+        );
+        assert_eq!(h.vault().item(old), &before);
+        // The user's pick in the menu, then the save goes through.
+        ok(&h.call(fill(old, NEW_HOST)));
+        let v = h.call(save_totp(old, NEW_HOST, &uri(OTHER_SECRET)));
+        assert_eq!(ok(&v)["status"], "saved", "{v}");
+    }
+
+    #[test]
+    fn save_totp_refuses_hotp_migration_and_garbage() {
+        let mut h = H::new();
+        let admin = h.ids.admin;
+        let before = h.vault().item(admin).clone();
+        for bad in [
+            format!("otpauth://hotp/Atlas:alex?secret={OTHER_SECRET}&counter=1"),
+            "otpauth-migration://offline?data=CjEKCkhlbGxvId6tvu8SBFRlc3Q".to_owned(),
+            "otpauth://totp/Atlas:alex?issuer=Atlas".to_owned(),
+            "not a uri".to_owned(),
+            // A bare key: the extension sends a URI, never a lone secret.
+            OTHER_SECRET.to_owned(),
+            String::new(),
+            format!("{}&x={}", uri(OTHER_SECRET), "a".repeat(4096)),
+        ] {
+            assert_eq!(
+                err(&h.call(save_totp(admin, ADMIN, &bad))),
+                "invalid",
+                "{bad}"
+            );
+        }
+        assert_eq!(h.vault().item(admin), &before);
+    }
+
+    #[test]
+    fn save_totp_reprompt_item_asks_approver() {
+        let mut h = H::new();
+        let r = h.ids.reprompt;
+        let before = h.vault().item(r).clone();
+        let v = h.call(save_totp(r, VAULT_SITE, &uri(OTHER_SECRET)));
+        assert_eq!(err(&v), "reprompt_required");
+        assert_eq!(h.vault().item(r), &before);
+        assert_eq!(
+            h.vault().reprompts,
+            [(r, Some("vault.atlas-cloud.test".to_owned()))]
+        );
+        h.svc.vault_mut().approve_reprompt = true;
+        let v = h.call(save_totp(r, VAULT_SITE, &uri(OTHER_SECRET)));
+        assert_eq!(ok(&v)["status"], "saved", "{v}");
+    }
+
+    #[test]
+    fn save_totp_locked_vault_answers_locked() {
+        let mut h = H::new();
+        let admin = h.ids.admin;
+        h.svc.vault_mut().locked = true;
+        assert_eq!(
+            err(&h.call(save_totp(admin, ADMIN, &uri(OTHER_SECRET)))),
+            "locked"
+        );
+    }
+
+    #[test]
+    fn save_totp_new_login_needs_username() {
+        let mut h = H::new();
+        let before = h.vault().items.len();
+        let new = |user: &str| {
+            json!({"op":"save_totp","ctx":"setup","origin":SIGNUP,
+                   "uri":uri(OTHER_SECRET),"username":user})
+        };
+        assert_eq!(err(&h.call(new(""))), "invalid");
+        assert_eq!(err(&h.call(new("   "))), "invalid");
+        assert_eq!(h.vault().items.len(), before);
+
+        let v = h.call(new("ada@atlas-cloud.test"));
+        assert_eq!(ok(&v)["status"], "saved", "{v}");
+        let item_id = ok(&v)["item_id"].as_str().unwrap().to_owned();
+        assert_eq!(h.vault().items.len(), before + 1);
+        let item = h.vault().items.last().unwrap();
+        assert_eq!(item.id.to_string(), item_id);
+        assert_eq!(item.title, "signup.atlas-cloud.test");
+        assert_eq!(item.vault_id, h.ids.perso);
+        assert_eq!(item.urls.len(), 1);
+        assert_eq!(item.urls[0].url, SIGNUP);
+        assert_eq!(item.urls[0].rule, MatchRule::Domain);
+        assert_eq!(otp_of(item), uri(OTHER_SECRET));
+
+        let v = h.call(json!({"op":"list_for_origin","ctx":"setup","origin":SIGNUP}));
+        let row = ok(&v)["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["item_id"] == json!(item_id))
+            .cloned()
+            .unwrap_or_else(|| panic!("{v}"));
+        assert_eq!(row["has_totp"], true, "{row}");
+        assert_eq!(row["subtitle"], "ada@atlas-cloud.test", "{row}");
+
+        // A vault the host does not have: nothing saved.
+        let mut req = new("ada@atlas-cloud.test");
+        req["vault_id"] = json!(Id::new().to_string());
+        assert_eq!(err(&h.call(req)), "not_found");
+        // An explicit title and vault.
+        let mut req = new("ada@atlas-cloud.test");
+        req["vault_id"] = json!(id(h.ids.pro));
+        req["title"] = json!("Atlas signup");
+        ok(&h.call(req));
+        let item = h.vault().items.last().unwrap();
+        assert_eq!(item.title, "Atlas signup");
+        assert_eq!(item.vault_id, h.ids.pro);
+    }
+
+    #[test]
+    fn save_totp_is_rate_limited_like_secret_requests() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        for _ in 0..60 {
+            ok(&h.call(save_totp(atlas, ATLAS, &uri(TOTP_SECRET))));
+        }
+        assert_eq!(
+            err(&h.call(save_totp(atlas, ATLAS, &uri(TOTP_SECRET)))),
+            "rate_limited"
+        );
+        assert_eq!(
+            err(&h.call(codes_req(atlas, ATLAS, "abcd-1234"))),
+            "rate_limited"
+        );
+    }
+
+    #[test]
+    fn save_recovery_codes_writes_concealed_field() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let codes: Vec<String> = (0..10).map(|n| format!("rc{n:02}-a1b2-c3d4")).collect();
+        let v = h.call(codes_req(
+            atlas,
+            ATLAS,
+            &format!(" {}\r\n", codes.join("\r\n")),
+        ));
+        assert_eq!(ok(&v), &json!({}), "{v}");
+        let item = h.vault().item(atlas);
+        let f = item.field("recovery_codes").expect("recovery_codes");
+        assert!(!f.autofill, "never read back by the extension");
+        let stored = concealed(item, "recovery_codes");
+        assert_eq!(stored.lines().count(), 10);
+        assert_eq!(stored, codes.join("\n"));
+        // Replaced, not appended; the label taken.
+        let mut req = codes_req(atlas, ATLAS, "zz99-yy88\nxx77-ww66");
+        req["label"] = json!("Backup codes");
+        ok(&h.call(req));
+        let item = h.vault().item(atlas);
+        assert_eq!(concealed(item, "recovery_codes"), "zz99-yy88\nxx77-ww66");
+        assert_eq!(item.field("recovery_codes").unwrap().label, "Backup codes");
+        assert_eq!(
+            item.sections
+                .iter()
+                .flat_map(|s| &s.fields)
+                .filter(|f| f.id == "recovery_codes")
+                .count(),
+            1
+        );
+        // The extension cannot read them back.
+        let v = h.call(
+            json!({"op":"reveal","ctx":"popup","item_id":id(atlas),"field":"recovery_codes"}),
+        );
+        assert_eq!(err(&v), "not_allowed");
+        let events = h.audit.events();
+        assert!(events.iter().any(|e| e.op == "save_recovery_codes"));
+        assert!(!format!("{events:?}").contains("zz99"));
+    }
+
+    #[test]
+    fn save_recovery_codes_refuses_bad_lines_and_ctx() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let before = h.vault().item(atlas).clone();
+        let many: Vec<String> = (0..33).map(|n| format!("code-{n:04}")).collect();
+        for bad in [
+            String::new(),
+            "\n \n".to_owned(),
+            many.join("\n"),
+            "abcd efgh".to_owned(),
+            "abc".to_owned(),
+            "abcd\nabc".to_owned(),
+            "x".repeat(65),
+            "abcd_efgh".to_owned(),
+        ] {
+            assert_eq!(
+                err(&h.call(codes_req(atlas, ATLAS, &bad))),
+                "invalid",
+                "{bad:?}"
+            );
+        }
+        let mut req = codes_req(atlas, ATLAS, "abcd-1234");
+        req["label"] = json!("x".repeat(41));
+        assert_eq!(err(&h.call(req)), "invalid");
+        let mut req = codes_req(atlas, ATLAS, "abcd-1234");
+        req["ctx"] = json!("popup");
+        assert_eq!(err(&h.call(req)), "not_allowed");
+        assert_eq!(
+            err(&h.call(codes_req(atlas, "https://evil.test", "abcd-1234"))),
+            "origin_mismatch"
+        );
+        assert_eq!(h.vault().item(atlas), &before);
+        // 32 lines of 64 characters pass.
+        let max: Vec<String> = (0..32).map(|n| format!("{n:064}")).collect();
+        ok(&h.call(codes_req(atlas, ATLAS, &max.join("\n"))));
+    }
+
+    #[test]
+    fn fill_login_setup_ctx_only_serves_totp() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let with = |fields: Value| {
+            json!({"op":"fill_login","ctx":"setup","item_id":id(atlas),"origin":ATLAS,
+                   "fields":fields})
+        };
+        let v = h.call(with(json!(["totp"])));
+        assert_eq!(ok(&v), &json!({"totp":expected_totp(NOW)}), "{v}");
+        for fields in [
+            json!(["password"]),
+            json!(["username"]),
+            json!(["username", "totp"]),
+            json!(["totp", "totp"]),
+            json!([]),
+        ] {
+            assert_eq!(
+                err(&h.call(with(fields.clone()))),
+                "not_allowed",
+                "{fields}"
+            );
+        }
+        // The setup context opens no other operation.
+        for req in [
+            json!({"op":"totp","ctx":"setup","item_id":id(atlas),"origin":ATLAS}),
+            json!({"op":"reveal","ctx":"setup","item_id":id(atlas),"field":"password"}),
+            json!({"op":"search","ctx":"setup","query":""}),
+            json!({"op":"update_password","ctx":"setup","item_id":id(atlas),
+                   "origin":ATLAS,"password":"Planted-Pass-0101"}),
+        ] {
+            assert_eq!(err(&h.call(req.clone())), "not_allowed", "{req}");
         }
     }
 }
