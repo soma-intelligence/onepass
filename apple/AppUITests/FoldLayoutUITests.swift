@@ -1,8 +1,9 @@
 import XCTest
 
-/// The unfolded iPhone layout (list and detail side by side) on a window at least 600 pt wide, the
-/// tabs below that. On the iPhone Duo simulator the unfolded inner screen is 669 pt wide in
-/// portrait and the cover screen 466 pt, so this checks whichever screen the test runs on.
+/// The unfolded iPhone layout (the phone's tabs and the detail side by side) on a window at least
+/// 600 pt wide, the tabs alone below that. On the iPhone Duo simulator the unfolded inner screen
+/// is 669 pt wide in portrait and the cover screen 466 pt, so this checks whichever screen the
+/// test runs on.
 /// Demonstration data only (Debug `-OnePassDemoData`, fictional values, a temporary database).
 @MainActor
 final class FoldLayoutUITests: XCTestCase {
@@ -29,7 +30,7 @@ final class FoldLayoutUITests: XCTestCase {
         let width = app.windows.firstMatch.frame.width
         if FoldLayoutUITests.isUnfolded(width) {
             XCTAssertTrue(fold.exists, "unfolded layout not shown at \(width) pt")
-            XCTAssertFalse(tabs.exists, "tabs shown on an unfolded iPhone at \(width) pt")
+            XCTAssertTrue(tabs.exists, "tabs missing from the unfolded layout's left pane at \(width) pt")
         } else {
             XCTAssertTrue(tabs.exists, "tabs not shown at \(width) pt")
             XCTAssertFalse(fold.exists, "unfolded layout shown on a folded iPhone at \(width) pt")

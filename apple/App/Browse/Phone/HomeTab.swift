@@ -543,7 +543,7 @@ struct PhoneItemRows: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, summary in
-                NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
+                PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
                     HStack(spacing: Theme.Space.s) {
                         ItemListRow(summary: summary, vaultName: vaultName(summary.vaultId))
                         if let pill = pill(summary) {

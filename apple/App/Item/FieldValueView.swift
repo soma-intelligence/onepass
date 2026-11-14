@@ -506,6 +506,10 @@ struct ValueRow<Accessory: View>: View {
                 .font(enlarged ? .system(.title, design: .monospaced).weight(.semibold)
                     : monospaced ? .body.monospaced() : .body)
                 .animation(.spring(duration: 0.3, bounce: 0.2), value: enlarged)
+                // The mask stays on one line in a narrow column (the unfolded iPhone's detail
+                // half): its bullets shrink a little instead of wrapping.
+                .lineLimit(hidden ? 1 : nil)
+                .minimumScaleFactor(hidden ? 0.6 : 1)
                 #if os(iOS)
                 // Hold to see, on the value itself: shown after a short press, masked the moment
                 // the finger lifts or slides away. Taps elsewhere on the row (copy) are untouched.

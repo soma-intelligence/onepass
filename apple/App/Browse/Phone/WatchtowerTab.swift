@@ -346,7 +346,7 @@ struct WatchtowerItemsList: View {
         let showVault = model.session.vaults.count > 1
         List {
             ForEach(items, id: \.id) { summary in
-                NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
+                PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
                     ItemListRow(
                         summary: summary,
                         vaultName: showVault ? model.session.allVaults.first { $0.id == summary.vaultId }?.meta.name : nil)
