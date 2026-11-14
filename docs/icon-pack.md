@@ -32,7 +32,7 @@ L'index du pack porte aussi `names` : le nom de chaque marque (lettres et chiffr
 
 Tout se passe **à la construction**, jamais dans l'app :
 
-1. `icon_pack.py sites --domains LISTE --out DIR` va chercher l'icône de chaque domaine (même chercheur que les marques de la liste choisie : page, apple-touch-icon, manifeste, favicon.ico, copie de Google), 128 px au moins, dans `DIR/domains/` et `DIR/domains.json` (URL, SHA-256, taille, hôte final).
+1. `icon_pack.py sites --domains LISTE --out DIR` va chercher l'icône de chaque domaine (même chercheur que les marques de la liste choisie : page, apple-touch-icon, manifeste, favicon.ico, copie de Google), 128 px au moins, dans `DIR/domains/` et `DIR/domains.json` (URL, SHA-256, taille, hôtes finaux).
 2. `icon_pack.py build ... --sites DIR --domains LISTE` les dessine en carrés de **128 px** avec le drapeau **2** (bit 2) dans l'entrée de l'index ; les icônes choisies à la main et celles des jeux ouverts restent à 256 px (drapeau 1 pour une marque d'une couleur). Un domaine de la liste choisie à la main est ignoré (la liste choisie gagne). Une source de moins de 128 px est écartée, et les contrôles habituels s'appliquent (SVG sûr, icône presque vide).
 
 Le domaine est pris tel qu'il est listé : l'icône est rangée sous ce domaine même quand le site redirige ailleurs, jamais sous la cible de la redirection.
@@ -41,7 +41,7 @@ Le pack lui-même ne dit pas qui a fourni la liste : pour un CSV Tranco, `build`
 
 ### Liste d'exclusion
 
-`scripts/icon-pack-blocklist.txt` (`--blocklist`, par défaut ce fichier) : une ligne est un domaine exact (`www.` ignoré) ou `*.suffixe` (le suffixe et tout hôte en dessous, donc `*.xxx` couvre une extension entière), `#` pour un commentaire. Un domaine listé qui y figure n'est même pas contacté par `sites` ; un domaine dont la page finit, après redirections, sur un hôte de la liste est écarté, et `build` refait les deux contrôles (une liste d'exclusion peut grandir entre `sites` et `build`). Le fichier livré est un point de départ (extensions et sites adultes ou de jeux d'argent, DNS dynamique gratuit souvent détourné) que le fondateur complète avant toute vraie construction.
+`scripts/icon-pack-blocklist.txt` (`--blocklist`, par défaut ce fichier) : une ligne est un domaine (`www.` ignoré ; lui et tous ses sous-domaines, donc `m.mauvais.fr` est bloqué par `mauvais.fr`) ou `*.suffixe` (le suffixe et tout hôte en dessous, donc `*.xxx` couvre une extension entière), `#` pour un commentaire. Un domaine listé qui y figure n'est même pas contacté par `sites` ; un domaine dont la page finit, après redirections, sur un hôte de la liste est écarté, et `build` refait les deux contrôles (une liste d'exclusion peut grandir entre `sites` et `build`). Le fichier livré est un point de départ (extensions et sites adultes ou de jeux d'argent, DNS dynamique gratuit souvent détourné) que le fondateur complète avant toute vraie construction.
 
 ## Construction
 

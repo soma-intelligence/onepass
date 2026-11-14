@@ -899,8 +899,9 @@ def read_domain_lists(paths):
 
 
 class Blocklist:
-    """Domains that never get an icon. A line is an exact domain (`bad.example`, `www.` ignored) or
-    `*.suffix` (the suffix itself and every host under it, so `*.xxx` is a whole top-level domain)."""
+    """Domains that never get an icon. A line is a domain (`bad.example`, `www.` ignored: it and every
+    subdomain of it, so m.bad.example is blocked too) or `*.suffix` (the suffix itself and every host
+    under it, so `*.xxx` is a whole top-level domain)."""
 
     def __init__(self, exact=(), suffixes=()):
         self.exact, self.suffixes = frozenset(exact), tuple(suffixes)
@@ -914,7 +915,10 @@ class Blocklist:
         host = self._host(host or "")
         if not host:
             return False
-        if host in self.exact:
+        labels = host.split(".")
+        # The host and each parent name (m.shop.co.uk, shop.co.uk): a multi-part public suffix such as
+        # co.uk is only blocked if a line names it.
+        if any(".".join(labels[i:]) in self.exact for i in range(len(labels))):
             return True
         return any(host == s or host.endswith("." + s) for s in self.suffixes)
 
@@ -969,7 +973,7 @@ def fetch_domains(domains, skip, blocklist, out, log, fetcher=None, google=True,
             url, data, pixels = got
             (out / "domains" / domain).write_bytes(data)
             record[domain] = {"url": url, "sha256": hashlib.sha256(data).hexdigest(), "pixels": pixels,
-                              "final_host": sorted(hosts)[0] if hosts else "",
+                              "final_hosts": sorted(hosts),
                               "fetched": datetime.date.today().isoformat()}
     (out / "domains.json").write_text(json.dumps({"fetched": record, "blocked": sorted(blocked)}, indent=1, sort_keys=True) + "\n")
     return record, sorted(blocked)
@@ -987,7 +991,9 @@ def domain_candidates(listed, skip, blocklist, sites, log):
         if domain in skip or not file.is_file():
             continue
         stats["fetched"] += 1
-        if blocklist.blocks(domain) or blocklist.blocks(recorded.get(domain, {}).get("final_host", "")):
+        meta = recorded.get(domain, {})
+        hosts = list(meta.get("final_hosts") or []) + ([meta["final_host"]] if meta.get("final_host") else [])
+        if blocklist.blocks(domain) or any(blocklist.blocks(h) for h in hosts):
             stats["blocked"] += 1
             log("domain-blocked", domain)
             continue

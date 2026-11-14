@@ -1,5 +1,6 @@
 # Domaines qui n'ont jamais d'icone dans le pack (icon_pack.py --blocklist).
-# Une ligne : un domaine exact (www. ignore) ou *.suffixe (le suffixe et tout hote en dessous).
+# Une ligne : un domaine (www. ignore; lui et tous ses sous-domaines) ou *.suffixe (le suffixe et tout
+# hote en dessous).
 # Verifie sur le domaine liste ET sur l'hote ou la page atterrit apres redirection.
 # Liste de depart, le proprietaire l'etend.
 

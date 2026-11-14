@@ -415,9 +415,10 @@ class DomainList(unittest.TestCase):
     def test_blocklist_exact_and_suffix(self):
         write(self.tmp / "b.txt", "# header\nbad.test  # why\n\n*.adult\n*.Evil.example\n")
         block = icon_pack.load_blocklist(self.tmp / "b.txt")
-        for host in ["bad.test", "www.bad.test", "x.adult", "adult", "evil.example", "a.b.evil.example"]:
+        for host in ["bad.test", "www.bad.test", "x.adult", "adult", "evil.example", "a.b.evil.example",
+                     "sub.bad.test", "m.bad.test", "a.b.bad.test"]:
             self.assertTrue(block.blocks(host), host)
-        for host in ["sub.bad.test", "notbad.test", "good.example", "", None]:
+        for host in ["notbad.test", "good.example", "bad.test.example", "co.uk", "", None]:
             self.assertFalse(block.blocks(host), host)
         shipped = icon_pack.load_blocklist(ROOT / "scripts" / "icon-pack-blocklist.txt")
         self.assertTrue(shipped.suffixes)
@@ -467,7 +468,7 @@ class DomainList(unittest.TestCase):
         self.redirects["/old.test/"] = "/new.test/"
         record, blocked = self.fetch(["old.test"])
         self.assertEqual((sorted(record), blocked), (["old.test"], []))
-        self.assertEqual(record["old.test"]["final_host"], "new.test")
+        self.assertEqual(record["old.test"]["final_hosts"], ["new.test"])
         self.assertTrue((self.tmp / "sites" / "domains" / "old.test").is_file())
         self.assertFalse((self.tmp / "sites" / "domains" / "new.test").exists())
         write(self.tmp / "list.txt", "old.test\n")
@@ -496,6 +497,48 @@ class DomainList(unittest.TestCase):
         self.assertIn("fine.test", index["domains"])
         self.assertNotIn("shop.test", index["domains"])
         self.assertEqual((report["domains_fetched"], report["domains_kept"], report["domains_blocked"]), (2, 1, 1))
+
+    def test_exact_entry_blocks_subdomains_with_public_suffix(self):
+        block = icon_pack.Blocklist(["shop.co.uk"])
+        self.assertTrue(block.blocks("m.shop.co.uk"))
+        self.assertTrue(block.blocks("shop.co.uk"))
+        self.assertFalse(block.blocks("other.co.uk"))
+        self.assertFalse(block.blocks("co.uk"))
+
+    def test_redirect_to_subdomain_of_blocked_dropped(self):
+        self.site("m.bad.test", 200)
+        self.redirects["/front.test/"] = "/m.bad.test/"
+        record, blocked = self.fetch(["front.test"], icon_pack.Blocklist(["bad.test"]))
+        self.assertEqual((record, blocked), ({}, ["front.test"]))
+        self.assertFalse((self.tmp / "sites" / "domains" / "front.test").exists())
+
+    def test_every_recorded_final_host_is_checked(self):
+        write(self.tmp / "sites" / "domains" / "multi.test", png(200))
+        write(self.tmp / "sites" / "domains" / "old.test", png(200))
+        write(self.tmp / "sites" / "domains.json", json.dumps({"fetched": {
+            "multi.test": {"final_hosts": ["a.test", "b.test"]},
+            "old.test": {"final_host": "b.test"}}}))
+        block = icon_pack.Blocklist(["b.test"])
+        out, stats = icon_pack.domain_candidates(["multi.test", "old.test"], set(), block, self.tmp / "sites",
+                                                 lambda k, w: self.log.append((k, w)))
+        self.assertEqual((out, stats["blocked"]), ({}, 2))
+
+    def test_flags_two_and_one_combine(self):
+        self.site("plain.test", 200)
+        self.fetch(["plain.test"])
+        write(self.tmp / "list.txt", "plain.test\n")
+        write(self.tmp / "block.txt", "")
+        real = icon_pack.domain_candidates
+
+        def mono(*args):
+            out, stats = real(*args)
+            for c in out.values():
+                c.mono, c.fill = True, "000000"
+            return out, stats
+
+        with mock.patch.object(icon_pack, "domain_candidates", side_effect=mono):
+            _, index, _, _ = self.build(self.tmp / "list.txt")
+        self.assertEqual(index["icons"][index["domains"]["plain.test"]][2], 3)
 
     def test_small_source_dropped(self):
         self.site("tiny.test", 100)
