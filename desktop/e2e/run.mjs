@@ -10,7 +10,7 @@
 // environment: the app (a debug build) then runs on a throwaway vault and
 // never touches the user's.
 import { spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 
@@ -20,12 +20,17 @@ const edgedriver = process.env.ONEPASS_EDGEDRIVER;
 const shots = process.env.ONEPASS_SHOTS ?? join(tmpdir(), "onepass-e2e-shots");
 const data = process.env.ONEPASS_DATA_DIR ?? join(tmpdir(), "onepass-e2e-data");
 if (!app || !edgedriver) throw new Error("set ONEPASS_APP and ONEPASS_EDGEDRIVER");
+// What the app would hand to Windows (a website, an attachment), recorded
+// instead of opening a browser or a viewer (debug builds only).
+const shellLog = join(data + "-shell.log");
+rmSync(shellLog, { force: true });
+const opened = () => (existsSync(shellLog) ? readFileSync(shellLog, "utf8").split("\n").map((l) => l.trim()).filter(Boolean) : []);
 rmSync(data, { recursive: true, force: true });
 mkdirSync(data, { recursive: true });
 mkdirSync(shots, { recursive: true });
 
 const driver = spawn(join(homedir(), ".cargo", "bin", "tauri-driver"), ["--native-driver", edgedriver], {
-  env: { ...process.env, ONEPASS_DATA_DIR: data, ONEPASS_LANG: "fr" },
+  env: { ...process.env, ONEPASS_DATA_DIR: data, ONEPASS_LANG: "fr", ONEPASS_E2E_SHELL_LOG: shellLog },
   stdio: "ignore",
 });
 process.on("exit", () => driver.kill());
@@ -190,6 +195,9 @@ try {
   check("a live TOTP code shows", /^\d{3} • \d{3}$/.test(otp), otp);
   await shot("10-element");
   await wd("POST", `${S}/execute/sync`, { script: "document.querySelectorAll('.more').forEach(e => e.style.opacity = 1)", args: [] });
+  await click("//main//span[@title='Ouvrir dans le navigateur']");
+  await sleep(300);
+  check("a website opens in the browser (http/https only)", opened().includes("https://github.com/"), opened().join(", "));
   await click("(//main//span[contains(@class,'more')])[2]");
   await shot("11-menu-champ");
   await click(menuItem("Révéler"));

@@ -1378,3 +1378,17 @@ input.switch:checked::after {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   z-index: 100;
 }
+
+/* ---- websites --------------------------------------------------------------------------- */
+.accent-text {
+  color: var(--readable-accent);
+}
+.url-row .field-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.more.open-link {
+  opacity: 1;
+  color: var(--readable-accent);
+}

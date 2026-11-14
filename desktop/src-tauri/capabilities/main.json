@@ -38,6 +38,7 @@
     "allow-account",
     "allow-set-profile-name",
     "allow-strength",
-    "allow-copy-secret"
+    "allow-copy-secret",
+    "allow-open-url"
   ]
 }

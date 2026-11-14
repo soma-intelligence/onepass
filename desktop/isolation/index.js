@@ -35,6 +35,7 @@ const ALLOWED = new Set([
   "set_profile_name",
   "strength",
   "copy_secret",
+  "open_url",
   "plugin:event|listen",
   "plugin:event|unlisten",
 ]);

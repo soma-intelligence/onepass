@@ -5,7 +5,11 @@
 // section 3.2); a secret reaches the page only when the user reveals it.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ICON_PATHS, type IconName } from "./icons";
+import { ICON_PATHS as BASE_ICONS } from "./icons";
+import { EXTRA_ICON_PATHS } from "./icons-extra";
+
+const ICON_PATHS = { ...BASE_ICONS, ...EXTRA_ICON_PATHS };
+type IconName = keyof typeof ICON_PATHS;
 import {
   ALERT_IDS,
   VAULT_COLORS,
@@ -1019,10 +1023,7 @@ async function renderDetail(): Promise<void> {
       ...sections.flatMap((s) => [h("div", { class: "caps" }, s.label || cat.singular), h("div", { class: "card" }, ...s.fields.map((f) => fieldRow(f, args)))]),
       ...(item.urls.length
         ? [h("div", { class: "caps" }, t("Sites web", "Websites")),
-           h("div", { class: "card" }, ...item.urls.map((u) => valueRow(u.label || t("site web", "website"), u.url, "link", async () => {
-             await navigator.clipboard.writeText(u.url).catch(() => {});
-             toast(t("Copié", "Copied"));
-           })))]
+           h("div", { class: "card" }, ...item.urls.map((u) => urlRow(u.label || t("site web", "website"), u.url)))]
         : []),
       item.notes ? h("div", { class: "caps" }, t("Notes", "Notes")) : null,
       item.notes ? h("div", { class: "card notes" }, item.notes) : null,
@@ -1036,11 +1037,51 @@ async function renderDetail(): Promise<void> {
   );
 }
 
-function valueRow(label: string, value: string, ic: IconName, onclick: () => void): HTMLElement {
-  return h("button", { class: "field-row", onclick }, h("span", { class: "field-text" }, h("span", { class: "field-label" }, label), h("span", { class: "field-value" }, value)), icon(ic, 20, "accent"));
+/** Only web links open (a bare host gets https://), as on the iPhone; the
+ * backend checks again before Windows sees the address. */
+function openable(text: string): boolean {
+  const s = text.trim();
+  if (!s || /[\s\\]/.test(s)) return false;
+  try {
+    const u = new URL(s.includes("://") ? s : "https://" + s);
+    return (u.protocol === "https:" || u.protocol === "http:") && !!u.hostname && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
+
+async function openUrl(url: string): Promise<void> {
+  try {
+    await call("open_url", { url });
+  } catch (e) {
+    toast(message(e));
+  }
+}
+
+/** A website: a click copies it, the button and the menu open it in the browser. */
+function urlRow(label: string, url: string): HTMLElement {
+  const copy = async () => {
+    await navigator.clipboard.writeText(url).catch(() => {});
+    toast(t("Copié", "Copied"));
+  };
+  const canOpen = openable(url);
+  const open = canOpen
+    ? h("span", { class: "more open-link", role: "button", tabindex: 0, title: t("Ouvrir dans le navigateur", "Open in Browser"), "aria-label": t("Ouvrir dans le navigateur", "Open in Browser"),
+        onclick: (ev: Event) => (ev.stopPropagation(), void openUrl(url)) }, icon("open_in_new", 20))
+    : null;
+  const moreBtn = h("span", { class: "more", role: "button", tabindex: 0, title: t("Actions", "Actions"), "aria-label": t("Actions", "Actions") }, icon("more", 20));
+  moreBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const entries: MenuEntry[] = [{ label: t("Copier", "Copy"), icon: "copy", action: () => void copy() }];
+    if (canOpen) entries.push({ label: t("Ouvrir dans le navigateur", "Open in Browser"), icon: "open_in_new", action: () => void openUrl(url) });
+    menu(moreBtn, entries);
+  });
+  return h("button", { class: "field-row url-row", onclick: copy, title: t("Copier", "Copy") },
+    h("span", { class: "field-text" }, h("span", { class: "field-label" }, label), h("span", { class: "field-value accent-text" }, url)), open, moreBtn);
 }
 
 function fieldRow(f: Field, args: { vaultId: string; itemId: string }): HTMLElement {
+  if (f.kind === "url" && f.value) return urlRow(f.label, f.value);
   const valueEl = h("span", { class: "field-value" });
   const text = h("span", { class: "field-text" }, h("span", { class: "field-label" }, f.label), valueEl);
   const copy = async () => {

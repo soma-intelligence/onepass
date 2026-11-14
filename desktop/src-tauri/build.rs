@@ -32,6 +32,7 @@ const COMMANDS: &[&str] = &[
     "set_profile_name",
     "strength",
     "copy_secret",
+    "open_url",
 ];
 
 fn main() {

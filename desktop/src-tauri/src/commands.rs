@@ -771,3 +771,12 @@ pub fn set_profile_name(state: State<'_, AppState>, name: String) -> UiResult<()
 pub fn strength(password: String) -> f64 {
     onepass_ffi::password_strength_bits(Zeroizing::new(password).to_string())
 }
+
+// ---- websites ---------------------------------------------------------------------
+
+/// Opens an item's website in the default browser: http and https only
+/// (shell.rs), anything else is refused before Windows sees it.
+#[tauri::command]
+pub fn open_url(url: String) -> UiResult<()> {
+    Ok(crate::shell::open_web(&url)?)
+}

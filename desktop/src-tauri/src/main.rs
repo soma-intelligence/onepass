@@ -8,6 +8,7 @@
 mod commands;
 mod device;
 mod secrets;
+mod shell;
 mod state;
 mod view;
 
@@ -86,6 +87,7 @@ fn main() {
             commands::set_profile_name,
             commands::strength,
             commands::copy_secret,
+            commands::open_url,
         ])
         .run(tauri::generate_context!())
         .expect("OnePass failed to start");
