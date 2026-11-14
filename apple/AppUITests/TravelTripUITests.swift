@@ -8,13 +8,9 @@ import XCTest
 final class TravelTripUITests: XCTestCase {
     private static let seedTimeout: TimeInterval = 900
     private static let uiTimeout: TimeInterval = 15
-    /// A trip row: a button under the Voyages section. The Section's own identifier
-    /// (`settings.travel.trips`) lands on every row of the section on iOS 27.2 and replaces the rows'
-    /// `settings.travel.trip.<uuid>` and `settings.travel.addTrip`, so rows are told apart by label.
-    private static let tripRow = NSPredicate(
-        format: "identifier BEGINSWITH 'settings.travel.trip' AND identifier != 'settings.travel.addTrip' AND label != 'Ajouter un voyage'")
-    private static let addTripButton = NSPredicate(
-        format: "identifier == 'settings.travel.addTrip' OR label == 'Ajouter un voyage'")
+    /// A trip row: `settings.travel.trip.<uuid>`.
+    private static let tripRow = NSPredicate(format: "identifier BEGINSWITH 'settings.travel.trip.'")
+    private static let addTripButton = NSPredicate(format: "identifier == 'settings.travel.addTrip'")
 
     private var app: XCUIApplication!
 

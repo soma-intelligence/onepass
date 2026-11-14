@@ -170,11 +170,12 @@ struct TravelSettings: View {
             }
             .accessibilityIdentifier("settings.travel.addTrip")
         } header: {
+            // On the header, not the Section: a Section identifier overrides every row's.
             Text("settings.travel.trips.header")
+                .accessibilityIdentifier("settings.travel.trips")
         } footer: {
             Text("settings.travel.trips.footer")
         }
-        .accessibilityIdentifier("settings.travel.trips")
     }
 
     private func tripRow(_ trip: TravelTrip) -> some View {
