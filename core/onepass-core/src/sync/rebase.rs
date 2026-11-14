@@ -94,8 +94,9 @@ use crate::{Error, Id, IntegrityError, Result};
 struct Changed {
     item: Item,
     hash: [u8; 32],
-    /// The local change touched only the usage memory (`usage_only`
-    /// against the ancestor's record, when this device still holds it).
+    /// The local change touched only the usage memory and the key-use log
+    /// (`usage_only` against the ancestor's record, when this device still
+    /// holds it).
     usage_only: bool,
     /// The ancestor's record of the item, when this device still holds it.
     before: Option<Item>,
@@ -825,10 +826,12 @@ fn resolve(local: &Item, remote: Item, local_wins: bool) -> Option<Item> {
     Some(out)
 }
 
-/// `local` differs from `ancestor` in its usage memory only.
+/// `local` differs from `ancestor` in its usage memory and key-use log
+/// only: both are memory, never a real edit.
 fn usage_only(local: &Item, ancestor: &Item) -> bool {
     let mut base = ancestor.clone();
     base.set_usage_trailer(local.usage_trailer());
+    base.set_key_use_trailer(local.key_use_trailer());
     base == *local
 }
 
@@ -1027,6 +1030,20 @@ mod tests {
         assert!(usage_only(&local, &ancestor));
         local.title = "Other".into();
         assert!(!usage_only(&local, &ancestor));
+    }
+
+    #[test]
+    fn usage_only_counts_a_key_use_write_as_memory() {
+        let t0 = datetime!(2026-11-14 12:00 UTC);
+        let ancestor = new_item(ItemType::Login, Id::new(), "Example");
+        let local = with_keys(
+            ancestor.clone(),
+            vec![key_use(Id::new(), "password", 1, t0)],
+        );
+        assert!(usage_only(&local, &ancestor));
+        let mut edited = local.clone();
+        edited.title = "Other".into();
+        assert!(!usage_only(&edited, &ancestor));
     }
 
     #[test]

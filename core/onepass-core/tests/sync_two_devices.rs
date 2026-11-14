@@ -262,6 +262,60 @@ fn usage_only_write_never_resurrects_a_remotely_deleted_item() {
     assert_eq!(a.items(), b.items());
 }
 
+/// The same item with one key-use entry, `updated_at` untouched.
+fn with_key_use(item: &Item, when: i64) -> Item {
+    let mut out = item.clone();
+    out.set_key_use_trailer(onepass_core::model::key_use::KeyUseTrailer {
+        entries: vec![onepass_core::model::key_use::KeyUse {
+            channel: onepass_core::model::key_use::KeyUseChannel::Cli,
+            action: onepass_core::model::key_use::KeyUseAction::Revealed,
+            device_id: onepass_core::Id::new(),
+            device_name: "Mac".into(),
+            client: String::new(),
+            field: "password".into(),
+            first_at: at(when),
+            last_at: at(when),
+            count: 1,
+        }],
+        cleared_at: None,
+    });
+    out
+}
+
+#[test]
+fn key_use_only_write_never_resurrects_a_remotely_deleted_item() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0), ("y", T0)]);
+    let x = &items[0];
+    a.delete(x.id);
+    sync(&mut server, &mut a).unwrap();
+    // B, not synced yet, logs a key use on the deleted item.
+    b.save(&with_key_use(x, T0 + 5));
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    assert_eq!(users(&a.items()), vec!["y"]);
+    assert_eq!(a.items(), b.items());
+}
+
+#[test]
+fn key_use_only_write_never_beats_a_remote_edit_with_an_older_clock() {
+    let mut server = Server::default();
+    let (mut a, mut b, _sk, items) = setup(&mut server, &[("x", T0)]);
+    let x = &items[0];
+    b.save(&with_key_use(x, T0 + 5));
+    // A's clock is behind: its real edit is dated before the ancestor.
+    a.save(&edited(x, "x.a", T0 - 50));
+    sync(&mut server, &mut a).unwrap();
+    sync(&mut server, &mut b).unwrap();
+    sync(&mut server, &mut a).unwrap();
+
+    let got = b.items().remove(0);
+    assert_eq!(got.subtitle(), "x.a");
+    assert_eq!(got.key_use_trailer().entries.len(), 1);
+    assert_eq!(a.items(), b.items());
+}
+
 #[test]
 fn same_timestamp_edits_converge() {
     let mut server = Server::default();
