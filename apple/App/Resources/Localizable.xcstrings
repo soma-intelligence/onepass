@@ -26506,6 +26506,126 @@
         }
       }
     },
+    "item.keyUses" : {
+      "comment" : "Item detail: title of the key-use log section (who used the item's secrets).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilizzo"
+          }
+        }
+      }
+    },
+    "item.keyUses.clear" : {
+      "comment" : "Item detail, key-use log: button that empties the log.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear log"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar el registro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer le journal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella il registro"
+          }
+        }
+      }
+    },
+    "item.keyUses.clear.message" : {
+      "comment" : "Item detail, key-use log: message of the confirmation before emptying the log.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The log is emptied on every device that sees this vault."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El registro se vacía en todos los dispositivos que ven esta bóveda."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le journal est vidé sur tous les appareils qui voient ce coffre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il registro viene svuotato su tutti i dispositivi che vedono questa cassaforte."
+          }
+        }
+      }
+    },
+    "item.keyUses.clear.title" : {
+      "comment" : "Item detail, key-use log: title of the confirmation before emptying the log.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear the usage log?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Borrar el registro de uso?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer le journal d'utilisation ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancellare il registro di utilizzo?"
+          }
+        }
+      }
+    },
     "item.label" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54093,6 +54213,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "I numeri coincidono"
+          }
+        }
+      }
+    },
+    "sharing.share.keyUsesVisible" : {
+      "comment" : "Share sheet footnote: the key-use log of shared items is visible to members.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Members can see when and from which device shared items are used."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los miembros ven cuándo y desde qué dispositivo se usan los elementos compartidos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les membres voient quand et depuis quel appareil les éléments partagés sont utilisés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I membri vedono quando e da quale dispositivo vengono usati gli elementi condivisi."
           }
         }
       }

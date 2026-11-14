@@ -45,6 +45,9 @@ struct ItemDetailView: View {
     @State private var showDates = false
     /// Timeline of the footer, loaded with the item (labels and dates only, never a value).
     @State private var timeline: [FfiTimelineEvent] = []
+    /// Key-use log of the "Utilisation" section, tagged with its item so a switch never shows the
+    /// previous item's log (newest first; labels, clients and devices only, never a value).
+    @State private var keyUses: (itemID: String, uses: [FfiKeyUse]) = ("", [])
     /// "Copier en JSON" asks first: the JSON holds every secret of the item.
     @State private var confirmCopyJSON = false
     /// The identity color of the item shown (iPhone and iPad), computed once when the header
@@ -205,6 +208,13 @@ struct ItemDetailView: View {
                             setWatchtowerExclusion(check, excluded: excluded, item)
                         }
                     }
+                    KeyUseSection(
+                        uses: keyUses.itemID == item.id ? keyUses.uses : [],
+                        editable: item.trashedAt == nil && !standalone,
+                        reload: { await loadKeyUses(item) },
+                        clear: { await clearKeyUses(item) }
+                    )
+                    .id(item.id)
                 }
                 footer(item)
             }
@@ -458,6 +468,27 @@ struct ItemDetailView: View {
             guard showDates, !locked(item) else { return }
             timeline = (try? await session.itemTimeline(vaultID: item.vaultId, itemID: item.id)) ?? []
         }
+        // The "Utilisation" section's log: same trigger as the timeline, whatever the fold (the
+        // section is hidden when the log is empty), and after a remote or extension write.
+        .task(id: KeyUsesKey(item: item, unlocked: !locked(item), remote: model.remoteRevision,
+                             external: session.externalChangeRevision)) {
+            await loadKeyUses(item)
+        }
+    }
+
+    private func loadKeyUses(_ item: FfiItem) async {
+        guard !locked(item) else { return }
+        let uses = (try? await session.itemKeyUses(vaultID: item.vaultId, itemID: item.id)) ?? []
+        keyUses = (item.id, uses)
+    }
+
+    private func clearKeyUses(_ item: FfiItem) async {
+        do {
+            try await session.clearKeyUses(vaultID: item.vaultId, itemID: item.id)
+        } catch {
+            showToast(VaultError(error).localizedMessage)
+        }
+        await loadKeyUses(item)
     }
 
     static func historyLabel(_ count: UInt32) -> String {
@@ -1185,6 +1216,25 @@ private struct ItemPlacesCard: View {
 }
 
 // MARK: - Timeline
+
+/// Reloads the key-use log when the item changes, is unlocked, or a remote or extension write lands.
+private struct KeyUsesKey: Equatable {
+    let id: String
+    let vaultID: String
+    let updatedAt: Int64
+    let unlocked: Bool
+    let remote: Int
+    let external: Int
+
+    init(item: FfiItem, unlocked: Bool, remote: Int, external: Int) {
+        id = item.id
+        vaultID = item.vaultId
+        updatedAt = item.updatedAt
+        self.unlocked = unlocked
+        self.remote = remote
+        self.external = external
+    }
+}
 
 /// Reloads the timeline when the item changes or the footer opens.
 private struct TimelineKey: Equatable {
