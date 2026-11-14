@@ -6,12 +6,13 @@
 //! not have signed itself.
 //!
 //! The merge is per account and symmetric in the two sides: a removal wins
-//! (copied whole from the side that removed, the earlier `(at, by)` when
-//! both did), a state changed on one side only follows that side and a
-//! state changed on both sides is the more restrictive one, roles and
-//! devices are merged per bit and per fingerprint, and the keys (identity,
-//! KEM hash) with the directory and invitation hashes come together from
-//! one side, never mixed.
+//! (copied from the side that removed, the earlier `(at, by)` when both
+//! did, but with the keys of an activation only the other side made), a
+//! state changed on one side only follows that side and a state changed
+//! on both sides is the more restrictive one, roles and devices are merged
+//! per bit and per fingerprint, and the keys (identity, KEM hash) with the
+//! directory and invitation hashes come together from one side, never
+//! mixed.
 
 use std::collections::BTreeSet;
 
@@ -64,12 +65,30 @@ fn join(x: &OrgMember, y: &OrgMember, b: Option<&OrgMember>) -> OrgMember {
     if x == y {
         return x.clone();
     }
-    // A removal wins, copied whole from the side that removed.
+    let keys = |m: &OrgMember| (m.account_identity_pub.clone(), m.account_kem_hash);
+    // A removal wins, copied from the side that removed, except the keys:
+    // when only the other side's keys moved off the base (an activation
+    // the removal did not see), they come from that side with its
+    // directory and invitation hashes, since keys never change once set
+    // (X12).
+    let removal = |r: &OrgMember, o: &OrgMember| {
+        let mut out = r.clone();
+        if let Some(b) = b
+            && keys(o) != keys(b)
+            && keys(r) == keys(b)
+        {
+            out.account_identity_pub = o.account_identity_pub.clone();
+            out.account_kem_hash = o.account_kem_hash;
+            out.scim_id_hash = o.scim_id_hash;
+            out.invite_commit = o.invite_commit;
+        }
+        out
+    };
     match (removed_key(x), removed_key(y)) {
         (Some(kx), Some(ky)) if kx != ky => return if kx < ky { x } else { y }.clone(),
         (Some(_), Some(_)) => return smaller(x, y).clone(),
-        (Some(_), None) => return x.clone(),
-        (None, Some(_)) => return y.clone(),
+        (Some(_), None) => return removal(x, y),
+        (None, Some(_)) => return removal(y, x),
         (None, None) => {}
     }
     let state = match b {
@@ -113,7 +132,6 @@ fn join(x: &OrgMember, y: &OrgMember, b: Option<&OrgMember>) -> OrgMember {
         .collect();
     // Keys and hashes together from one side: the one whose keys moved off
     // the base, else the smaller encoding.
-    let keys = |m: &OrgMember| (m.account_identity_pub.clone(), m.account_kem_hash);
     let from = match b {
         Some(b) if keys(x) != keys(b) && keys(y) == keys(b) => x,
         Some(b) if keys(y) != keys(b) && keys(x) == keys(b) => y,

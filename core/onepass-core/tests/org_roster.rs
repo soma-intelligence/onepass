@@ -1826,6 +1826,42 @@ fn rebase_removal_wins() {
 }
 
 #[test]
+fn rebase_removal_keeps_concurrent_activation_keys() {
+    // Found by the property `concurrent_admins_converge` (org_props),
+    // shrunk: X is invited at r6; A activates X while U removes the
+    // invitation. When the activation lands first, U's rebased removal
+    // must keep the keys the activation set (frozen once set, X12): the
+    // merge copied U's entry whole (no identity) and the rebase was
+    // refused as a key change.
+    let base = r(6);
+    let x_ref = member_ref(X, &[&device(0x71)]);
+    let activates = |b: &mut RosterBody| activate(entry(b, X), &x_ref);
+    let removes = |b: &mut RosterBody| removed_by(b, X, U);
+    assert!(accept(base, edit(base, removes), U).is_ok());
+
+    let theirs = landed(base, A, activates);
+    let mine = edit(base, removes);
+    let out = rebase(base, &mine, &theirs, U).unwrap();
+    let x = member(&out, X);
+    assert_eq!(x.state, member(&mine, X).state, "U's removal");
+    assert_eq!(x.roles, RoleSet::EMPTY);
+    assert!(x.devices.is_empty());
+    assert_eq!(
+        x.account_identity_pub,
+        Some(x_ref.account_identity_pub.clone())
+    );
+    assert_eq!(x.account_kem_hash, member_kem_hash(&x_ref.account_kem_pub));
+    assert_eq!(accept(&theirs, out.clone(), U).unwrap(), out);
+
+    // The other order: the removal landed first and is terminal.
+    let theirs = landed(base, U, removes);
+    let mine = edit(base, activates);
+    let out = rebase(base, &mine, &theirs, A).unwrap();
+    assert_eq!(member(&out, X), member(&theirs, X));
+    assert_eq!(accept(&theirs, out.clone(), A).unwrap(), out);
+}
+
+#[test]
 fn rebase_state_conflict_most_restrictive() {
     let base = r(5);
     let suspends = edit(base, |b| set_state(b, M, MemberState::Suspended));
