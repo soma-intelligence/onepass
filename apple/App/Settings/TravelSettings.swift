@@ -1,5 +1,4 @@
 import DesignKit
-import LocalAuthentication
 import SwiftUI
 import VaultKit
 
@@ -244,17 +243,10 @@ struct TravelSettings: View {
         working = true
         defer { working = false }
         errorMessage = nil
-        // The device owner confirms (Touch ID, Face ID or the passcode). A device without any owner
-        // authentication has nothing to check: hiding vaults is never a risk in itself.
-        if LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) {
-            guard await SystemPresenceChecker().confirm(prompt: String(localized: "settings.turnOnTravelMode")) else { return }
-        }
-        // Every write of the leaving vaults must be in iCloud first: the core refuses otherwise.
-        await model.coordinator?.syncNow()
         do {
-            status = try await model.session.enterTravel()
-            model.travel.travelChanged(active: true)
-            model.showToast(String(localized: "Travel Mode activé"))
+            status = try await model.enterTravel(reason: String(localized: "settings.turnOnTravelMode"))
+        } catch is CancellationError {
+            // The owner cancelled the confirmation: nothing to explain.
         } catch {
             errorMessage = VaultError(error).localizedMessage
             await reload()

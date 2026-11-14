@@ -185,7 +185,7 @@ struct Sidebar: View {
                 #if !os(macOS)
                 Divider()
                 #endif
-                if model.travel.suggestion != .none {
+                if model.travel.showsCard {
                     TravelSuggestionCard(compact: true)
                         .padding(Theme.Space.m)
                         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))

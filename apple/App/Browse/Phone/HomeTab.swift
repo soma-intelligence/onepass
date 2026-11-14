@@ -50,7 +50,7 @@ struct HomeTab: View {
                         if !searchActive { DuplicatesBanner(loader: duplicates) }
                         SharingBanners(horizontalPadding: 0)
                         tiles(all: counts.all, favorites: counts.favorites)
-                        if model.travel.suggestion != .none, !searchActive {
+                        if model.travel.showsCard, !searchActive {
                             TravelSuggestionCard()
                                 .padding(Theme.Space.l)
                                 .phoneCard()

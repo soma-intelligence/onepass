@@ -217,6 +217,7 @@
 		D61F8F4E86F33CC8B8CA8DC3 /* WifiAutoController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */; };
 		D830BB8FBE565123BF120EC6 /* onepass-icons.bin in Resources */ = {isa = PBXBuildFile; fileRef = E364C6482B7E724032103715 /* onepass-icons.bin */; };
 		D91670480E50E01B5C477A14 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */; };
+		D9808B01BC7B1CB0EDD6BAF2 /* TravelReminderCenter+System.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CD2D4CA386C947DB696B2C /* TravelReminderCenter+System.swift */; };
 		DC9F51AA8F5C84974A3A6590 /* VaultDialRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3167F0DA8CE073FFD98680F /* VaultDialRefresh.swift */; };
 		DDD0D59CFD3CA351228B580B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C1B99E34B1CA7214163402DD /* Localizable.xcstrings */; };
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
@@ -530,6 +531,7 @@
 		A401A3C3163FAA3E4DF40689 /* DuplicatesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicatesViews.swift; sourceTree = "<group>"; };
 		A5F71DF9FCDFF66C5C246AEE /* AutoFillRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoFillRootView.swift; sourceTree = "<group>"; };
 		A655F824DD0D172750F0A12C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A9CD2D4CA386C947DB696B2C /* TravelReminderCenter+System.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TravelReminderCenter+System.swift"; sourceTree = "<group>"; };
 		AADC8BC0D910001EC096242B /* GlanceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceProvider.swift; sourceTree = "<group>"; };
 		AAF78448AAEC42C44F2E16FB /* ItemEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEntity.swift; sourceTree = "<group>"; };
 		AF35143E318DDE2E8D4F84CE /* PageComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageComponents.swift; sourceTree = "<group>"; };
@@ -989,6 +991,7 @@
 				863713D1483535E8956E5D18 /* SecretInputField.swift */,
 				DA59281B681069BA80A59493 /* Snapshot.swift */,
 				047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */,
+				A9CD2D4CA386C947DB696B2C /* TravelReminderCenter+System.swift */,
 				29FAC83196CF84E1C4C92CA5 /* VisionGlass.swift */,
 			);
 			path = Root;
@@ -2054,6 +2057,7 @@
 				2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */,
 				3DE3CD55A4E8F4D47BBB186A /* TotpFieldView.swift in Sources */,
 				68FC4A9B4F59EDDA983F6311 /* TravelDetection.swift in Sources */,
+				D9808B01BC7B1CB0EDD6BAF2 /* TravelReminderCenter+System.swift in Sources */,
 				5AD704952C61BCF3A67100E6 /* TravelSettings.swift in Sources */,
 				4B37189A8299C4D3E43A62BE /* TravelSuggestionCard.swift in Sources */,
 				DC9F51AA8F5C84974A3A6590 /* VaultDialRefresh.swift in Sources */,

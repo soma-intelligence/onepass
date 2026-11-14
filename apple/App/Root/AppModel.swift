@@ -1221,12 +1221,44 @@ final class AppModel {
             #if os(macOS)
             returnToBrowserIfAsked()
             #endif
+            enterTravelForTripIfDue()
         } else {
             resetNavigation()
             // Decrypted chosen icons never outlive the unlock; failures marked while locked go too.
             iconLoader.custom?.removeAll()
         }
         companion.sessionChanged()
+    }
+
+    /// A trip marked automatic starts (spec 2026-11-14): its one attempt runs at this unlock. A
+    /// failure shows the trip's card with the reason instead.
+    private func enterTravelForTripIfDue() {
+        guard let id = travel.unlocked(travelling: session.isTravelling) else { return }
+        Task {
+            do {
+                try await enterTravel(reason: String(localized: "settings.turnOnTravelMode"))
+            } catch is CancellationError {
+                travel.autoEnterFailed(id: id, message: nil)
+            } catch {
+                travel.autoEnterFailed(id: id, message: VaultError(error).localizedMessage)
+            }
+        }
+    }
+
+    /// Travel Mode on, from Réglages, the card or a trip: the device owner confirms (Touch ID, Face ID
+    /// or the passcode; a device without any owner authentication has nothing to check, hiding vaults
+    /// is never a risk in itself), then every write of the leaving vaults goes to iCloud first (the
+    /// core refuses otherwise). A refused confirmation throws `CancellationError`.
+    @discardableResult
+    func enterTravel(reason: String) async throws -> FfiTravelStatus {
+        if LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) {
+            guard await SystemPresenceChecker().confirm(prompt: reason) else { throw CancellationError() }
+        }
+        await coordinator?.syncNow()
+        let status = try await session.enterTravel()
+        travel.travelChanged(active: true)
+        showToast(String(localized: "Travel Mode activé"))
+        return status
     }
 
     /// The primary account's state changed (root view): the services bound to it (ruling P7) follow,

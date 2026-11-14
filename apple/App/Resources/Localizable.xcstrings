@@ -55285,6 +55285,126 @@
         }
       }
     },
+    "travel.reminder.eve.body" : {
+      "comment" : "Notification the evening before a planned trip (body).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember to turn on Travel Mode before the border."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recuerda activar Travel Mode antes de la frontera."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pense à activer le Travel Mode avant la frontière."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricorda di attivare Travel Mode prima della frontiera."
+          }
+        }
+      }
+    },
+    "travel.reminder.eve.title" : {
+      "comment" : "Notification the evening before a planned trip (title).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You Leave Tomorrow"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te vas mañana"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu pars demain"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parti domani"
+          }
+        }
+      }
+    },
+    "travel.reminder.go.body" : {
+      "comment" : "Notification three hours before a planned trip leaves (body).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open OnePass to turn on Travel Mode."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para activar Travel Mode."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre OnePass pour activer le Travel Mode."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per attivare Travel Mode."
+          }
+        }
+      }
+    },
+    "travel.reminder.go.title" : {
+      "comment" : "Notification three hours before a planned trip leaves (title).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leaving in 3 Hours"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sales en 3 horas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Départ dans 3 heures"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partenza tra 3 ore"
+          }
+        }
+      }
+    },
     "vaults.amber" : {
       "extractionState" : "manual",
       "localizations" : {

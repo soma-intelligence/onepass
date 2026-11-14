@@ -11,7 +11,8 @@ struct TravelSuggestionCard: View {
     var compact = false
 
     var body: some View {
-        switch model.travel.suggestion {
+        switch model.travel.prompt {
+        // Every reason on the same text for now (per-reason titles come with the trips screens).
         case .suggest:
             card(
                 title: "travel.suggest.title",
@@ -48,7 +49,8 @@ struct TravelSuggestionCard: View {
                     .accessibilityIdentifier("travel.welcome.later")
             }
             .accessibilityIdentifier("travel.welcome")
-        case .none:
+        case .none, .autoEnter:
+            // `.autoEnter`: AppModel enters Travel Mode at the unlock, the card has nothing to ask.
             EmptyView()
         }
     }
