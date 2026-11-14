@@ -2860,6 +2860,13 @@ fn cause_code(e: IntegrityError) -> u8 {
         IntegrityError::MembershipFork => 24,
         IntegrityError::FamilyRollback => 25,
         IntegrityError::SyncHomeRollback => 26,
+        IntegrityError::OrgLineageRollback => 27,
+        IntegrityError::OrgLineageFork => 28,
+        IntegrityError::OrgQuorum => 29,
+        IntegrityError::OrgRosterRollback => 30,
+        IntegrityError::OrgRosterFork => 31,
+        IntegrityError::OrgRoleDenied => 32,
+        IntegrityError::OrgPinMismatch => 33,
     }
 }
 
@@ -2892,6 +2899,13 @@ fn cause_of(code: u8) -> Option<IntegrityError> {
         24 => IntegrityError::MembershipFork,
         25 => IntegrityError::FamilyRollback,
         26 => IntegrityError::SyncHomeRollback,
+        27 => IntegrityError::OrgLineageRollback,
+        28 => IntegrityError::OrgLineageFork,
+        29 => IntegrityError::OrgQuorum,
+        30 => IntegrityError::OrgRosterRollback,
+        31 => IntegrityError::OrgRosterFork,
+        32 => IntegrityError::OrgRoleDenied,
+        33 => IntegrityError::OrgPinMismatch,
         _ => return None,
     })
 }
@@ -6211,6 +6225,13 @@ mod tests {
         MembershipFork,
         FamilyRollback,
         SyncHomeRollback,
+        OrgLineageRollback,
+        OrgLineageFork,
+        OrgQuorum,
+        OrgRosterRollback,
+        OrgRosterFork,
+        OrgRoleDenied,
+        OrgPinMismatch,
     );
 
     #[test]
@@ -6276,7 +6297,8 @@ mod tests {
     #[test]
     fn health_cause_codes_round_trip_and_fail_closed() {
         let mut codes = std::collections::BTreeSet::new();
-        assert_eq!(ALL_CAUSES.len(), 27);
+        assert_eq!(ALL_CAUSES.len(), 34);
+        assert_eq!(cause_code(IntegrityError::OrgPinMismatch), 33);
         for &cause in ALL_CAUSES {
             exhaustive(cause);
             let code = cause_code(cause);

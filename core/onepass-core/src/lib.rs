@@ -31,6 +31,7 @@ pub mod lists;
 pub mod mailbox_recovery;
 pub mod manifest;
 pub mod model;
+pub mod org;
 pub mod pairing;
 pub mod profiles;
 pub mod recovery;

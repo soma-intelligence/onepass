@@ -149,6 +149,13 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::MembershipFork => "membership_fork",
         IntegrityError::FamilyRollback => "family_rollback",
         IntegrityError::SyncHomeRollback => "sync_home_rollback",
+        IntegrityError::OrgLineageRollback => "org_lineage_rollback",
+        IntegrityError::OrgLineageFork => "org_lineage_fork",
+        IntegrityError::OrgQuorum => "org_quorum",
+        IntegrityError::OrgRosterRollback => "org_roster_rollback",
+        IntegrityError::OrgRosterFork => "org_roster_fork",
+        IntegrityError::OrgRoleDenied => "org_role_denied",
+        IntegrityError::OrgPinMismatch => "org_pin_mismatch",
     }
 }
 

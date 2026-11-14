@@ -118,6 +118,14 @@ pub enum RecordKind {
     /// the lists: id = `account_record_id`, version = its seq. A deletion
     /// from the server is ignored, like a list's.
     SyncHome,
+    /// An org's signed lineage record (`crate::org`), immutable.
+    OrgLineage,
+    /// An org's signed roster record (`crate::org`), immutable.
+    OrgRoster,
+    /// An org keyset delivery to a member (`crate::org`), replaceable.
+    OrgKeyset,
+    /// A join request to an org (`crate::org`), replaceable.
+    OrgJoinRequest,
 }
 
 /// Code of the mailbox enroll request (`crate::enroll_request`), a side
@@ -155,6 +163,10 @@ impl RecordKind {
             Self::Attachment => 25,
             Self::DeviceAck => 26,
             Self::SyncHome => 27,
+            Self::OrgLineage => 29,
+            Self::OrgRoster => 30,
+            Self::OrgKeyset => 31,
+            Self::OrgJoinRequest => 32,
         }
     }
 
@@ -187,6 +199,10 @@ impl RecordKind {
             25 => Self::Attachment,
             26 => Self::DeviceAck,
             27 => Self::SyncHome,
+            29 => Self::OrgLineage,
+            30 => Self::OrgRoster,
+            31 => Self::OrgKeyset,
+            32 => Self::OrgJoinRequest,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -211,6 +227,8 @@ impl RecordKind {
                 | Self::MemberKey
                 | Self::MemberLineage
                 | Self::DeviceAck
+                | Self::OrgLineage
+                | Self::OrgRoster
         )
     }
 
@@ -227,6 +245,8 @@ impl RecordKind {
                 | Self::Family
                 | Self::MemberLineage
                 | Self::DeviceAck
+                | Self::OrgLineage
+                | Self::OrgRoster
         )
     }
 }
@@ -1077,6 +1097,10 @@ mod tests {
             RecordKind::Attachment,
             RecordKind::DeviceAck,
             RecordKind::SyncHome,
+            RecordKind::OrgLineage,
+            RecordKind::OrgRoster,
+            RecordKind::OrgKeyset,
+            RecordKind::OrgJoinRequest,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
@@ -1110,6 +1134,20 @@ mod tests {
         assert_eq!(RecordKind::SyncHome.code(), 27);
         assert_eq!(RecordKind::from_code(27).unwrap(), RecordKind::SyncHome);
         assert!(!RecordKind::SyncHome.is_immutable());
+        assert_eq!(RecordKind::OrgLineage.code(), 29);
+        assert_eq!(RecordKind::OrgRoster.code(), 30);
+        assert_eq!(RecordKind::OrgKeyset.code(), 31);
+        assert_eq!(RecordKind::OrgJoinRequest.code(), 32);
+        assert!(RecordKind::OrgLineage.is_immutable() && RecordKind::OrgRoster.is_immutable());
+        assert!(
+            !RecordKind::OrgKeyset.is_immutable() && !RecordKind::OrgJoinRequest.is_immutable()
+        );
+        assert!(
+            RecordKind::OrgLineage.server_deletion_refused()
+                && RecordKind::OrgRoster.server_deletion_refused()
+        );
+        assert!(RecordKind::from_code(28).is_err());
+        assert!(RecordKind::from_code(33).is_err());
         assert!(RecordKind::Attachment.is_vault_prefixed());
         // Spec 6.8 (O6): code 13 went to the approver lists, the ack takes 26.
         assert_eq!(RecordKind::DeviceAck.code(), 26);
