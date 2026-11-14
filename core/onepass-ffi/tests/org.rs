@@ -2229,6 +2229,87 @@ mod lifecycle {
     }
 
     #[test]
+    fn failed_owner_change_completes_on_a_second_call() {
+        let org = publish(&FakeMailbox::org());
+        let b = org.accepted("Bea", vec![]);
+        let mut owners = vec![org.account(), b.account()];
+        owners.sort();
+        let seq = org.latest_seq();
+        // The lineage lands; the mirror roster loses its seq twice.
+        let client = org.open(
+            Box::new(Tweaked {
+                inner: org.store(),
+                hide: None,
+                hook: None,
+                feeds: Default::default(),
+                fail_mint: false,
+                on_mint: None,
+                taken: 2,
+            }),
+            &org.creator_dir,
+        );
+        let first = client.set_owners(
+            org.owner.session.clone(),
+            org.owner.keys.classical.clone(),
+            org.owner.keys.half(),
+            owners.clone(),
+            NOW,
+        );
+        assert_eq!(first, Err(OnePassError::Conflict));
+        assert_eq!(org.store().lineage_from(0).unwrap().len(), 2);
+        assert_eq!(org.latest_seq(), seq);
+        let own = b.own_client(&org);
+        assert!(!b.keyset_available(&own));
+        // Called again with the same set: the roster and the grants follow.
+        let s = org.set_owners(owners.clone()).unwrap();
+        assert_eq!(s.lineage_generation, 1);
+        assert_eq!(s.owners, owners);
+        assert_eq!(s.roster_seq, seq + 1);
+        assert_eq!(member_of(&s, &b.account()).roles, vec![FfiOrgRole::Owner]);
+        assert_eq!(org.store().lineage_from(0).unwrap().len(), 2);
+        own.refresh().unwrap();
+        assert!(b.keyset_available(&own));
+        // Manage: the new owner writes the roster.
+        let carl = org.accepted("Carl", vec![]);
+        own.refresh().unwrap();
+        b.edit(
+            &own,
+            FfiRosterEdit::Suspend {
+                account_id: carl.account(),
+            },
+        )
+        .unwrap();
+        // Mirrored now: a third call is the quorum refusal again.
+        assert!(matches!(
+            org.set_owners(owners),
+            Err(OnePassError::Validation { ref reason, .. }) if reason == "quorum"
+        ));
+    }
+
+    #[test]
+    fn removal_revokes_the_link_credential_too() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.member(MARIE, vec![]);
+        // Accepted elsewhere: the link credential outlives the acceptance.
+        let (_, second) = org.second_device();
+        org.edit_by(
+            &second,
+            FfiRosterEdit::Accept {
+                account_id: m.account(),
+                roles: vec![],
+            },
+        )
+        .unwrap();
+        assert!(org.invite_store(&m.invite).roster(1).is_ok());
+        // Removed by the device that issued the invitation.
+        org.edit(FfiRosterEdit::Remove {
+            account_id: m.account(),
+        })
+        .unwrap();
+        assert!(org.invite_store(&m.invite).roster(1).is_err());
+    }
+
+    #[test]
     fn third_owner_needs_quorum() {
         let org = publish(&FakeMailbox::org());
         let b = org.accepted("Bea", vec![]);

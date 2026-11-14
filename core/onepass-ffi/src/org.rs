@@ -21,9 +21,9 @@ use onepass_core::org::{
     OrgChangeKind, OrgGenesisBody, OrgHeadInfo, OrgId, OrgKeyset, OrgMember, OrgPin, OrgSecrets,
     PinSource, Role, RoleSet, RosterBody, RosterCheckpoint, SealedOrgKeyset, VerifiedJoin,
     activate_member, check_transition, dns_txt_value, fingerprint_words, founding_roster,
-    invite_member, join_code_of, open_org_keyset, parse_dns_txt, pin_org, rebase_roster,
-    seal_org_keyset, sign_join_request, sign_org_change, sign_org_genesis, sign_roster,
-    verify_org_genesis,
+    invite_member, join_code_of, member_kem_hash, open_org_keyset, parse_dns_txt, pin_org,
+    rebase_roster, seal_org_keyset, sign_join_request, sign_org_change, sign_org_genesis,
+    sign_roster, verify_org_genesis,
 };
 use onepass_core::repo::ManagedGenesis;
 use onepass_core::store::{RecordKind, RecordStore};
@@ -1573,9 +1573,9 @@ impl OrgClient {
     /// follows the roster (R29): `Manage` for Owner, Admin or UserManager,
     /// else `Write` on join requests only; Suspended `Read`; Removed
     /// revoked. Any failure there only clears `server_access_updated`. An
-    /// `Accept` or the `Remove` of an Invited member also revokes the
-    /// link's credential when this device issued the invitation (best
-    /// effort). `NotFound` before `pin`.
+    /// `Accept` or any `Remove` also revokes the link's credential when this
+    /// device issued the invitation (best effort; a removed member that
+    /// never dropped it loses it too). `NotFound` before `pin`.
     pub fn edit_roster(
         &self,
         session: Arc<Session>,
@@ -1607,7 +1607,8 @@ impl OrgClient {
             .roster()
             .and_then(|r| r.member(account))
             .is_some_and(|m| follow_access(mailbox, m, joined.as_ref(), !was_invited));
-        if was_invited && let Ok(invites) = load_invites(&self.state_dir) {
+        let drops_link = was_invited || matches!(edit, FfiRosterEdit::Remove { .. });
+        if drops_link && let Ok(invites) = load_invites(&self.state_dir) {
             for i in invites.iter().filter(|i| i.account_id == account.0) {
                 let _ = mailbox.revoke(i.credential_id);
             }
@@ -1659,8 +1660,11 @@ impl OrgClient {
     /// `OwnersChanged` lineage record (signed by the org identity and this
     /// device, roster checkpoint = the pinned roster), then the roster that
     /// mirrors the new owners (X9, X10). New owners' credentials get
-    /// `Manage`, best effort. A failure after the lineage write leaves it
-    /// written (a later call sees the new head). `NotFound` before `pin`.
+    /// `Manage`, best effort. The pin is refreshed first; a failure after
+    /// the lineage write leaves it written, and calling `set_owners` again
+    /// (with the same set) completes it: when this device is a head owner
+    /// and the pinned roster does not mirror the head, that roster and the
+    /// grants are written and nothing else. `NotFound` before `pin`.
     pub fn set_owners(
         &self,
         session: Arc<Session>,
@@ -1679,7 +1683,21 @@ impl OrgClient {
         wanted.dedup();
         let mut store = lock(&self.store);
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        // The newest head first: a lineage written by an earlier call whose
+        // roster write failed is completed here, never changed again.
+        let pin = self.refreshed(&mut **store, &pin)?;
         let head = pin.head().clone();
+        let fpr = signer.me.fingerprint();
+        let owner_here = head
+            .owners
+            .iter()
+            .any(|o| o.account_id == signer.account && o.devices.contains(&fpr));
+        let roster = pin.roster().ok_or(OnePassError::NotFound)?;
+        if owner_here && !mirrors(roster, &head) {
+            let _ = self.poll_joins(&mut **store);
+            let pin = self.mirror_and_grant(&mut **store, &signer, &head)?;
+            return Ok(self.show(&pin));
+        }
         let sole = match head.owners.as_slice() {
             [o] => o.account_id == signer.account && o.devices.contains(&signer.me.fingerprint()),
             _ => false,
@@ -1690,7 +1708,6 @@ impl OrgClient {
         if !wanted.contains(&signer.account) {
             return Err(validation("owners", "keeps this account"));
         }
-        let roster = pin.roster().ok_or(OnePassError::NotFound)?;
         let _ = self.poll_joins(&mut **store);
         let mut refs = Vec::new();
         let mut added = Vec::new();
@@ -1748,21 +1765,61 @@ impl OrgClient {
         }
         store.put_lineage(next_head.generation, record.encode())?;
         self.refreshed(&mut **store, &pin)?;
-        let (pin, ()) = self.signed_edit(&mut **store, &signer, |prev| {
-            Ok((mirror_owners(prev, &next_head)?, ()))
-        })?;
-        if let Some(r) = pin.roster() {
-            for (o, joined) in &added {
-                if let Some(m) = r.member(o.account_id) {
-                    let _ = follow_access(store.mailbox(), m, Some(joined), true);
-                }
-            }
-        }
+        let pin = self.mirror_and_grant(&mut **store, &signer, &next_head)?;
         Ok(self.show(&pin))
     }
 }
 
+/// `roster` mirrors `head`: it names that org head, and the members
+/// holding `Owner` are exactly its owners, each Active with the
+/// `MemberRef`'s identity, KEM hash and devices (X9, X10).
+fn mirrors(roster: &RosterBody, head: &OrgHeadInfo) -> bool {
+    let owns = |a: Id| head.owners.iter().any(|o| o.account_id == a);
+    roster.org_head == head.hash
+        && roster
+            .members
+            .iter()
+            .all(|m| m.roles.contains(Role::Owner) == owns(m.account_id))
+        && head.owners.iter().all(|o| {
+            roster.member(o.account_id).is_some_and(|m| {
+                m.state == MemberState::Active
+                    && m.account_identity_pub.as_ref() == Some(&o.account_identity_pub)
+                    && m.account_kem_hash == member_kem_hash(&o.account_kem_pub)
+                    && m.devices == o.devices
+            })
+        })
+}
+
 impl OrgClient {
+    /// The roster that mirrors `head` (signed by this owner device), then
+    /// `Manage` for the other head owners' own credentials (from their
+    /// verified join requests read so far), best effort.
+    fn mirror_and_grant(
+        &self,
+        store: &mut dyn OrgStoreApi,
+        signer: &Signer,
+        head: &OrgHeadInfo,
+    ) -> Result<OrgPin, OnePassError> {
+        let (pin, ()) =
+            self.signed_edit(store, signer, |prev| Ok((mirror_owners(prev, head)?, ())))?;
+        if let Some(r) = pin.roster() {
+            let mut joins = lock(&self.joins);
+            for o in head
+                .owners
+                .iter()
+                .filter(|o| o.account_id != signer.account)
+            {
+                if let (Some(m), Some(joined)) = (
+                    r.member(o.account_id),
+                    joins.verified(&pin, &o.account_id.0),
+                ) {
+                    let _ = follow_access(store.mailbox(), m, Some(&joined), true);
+                }
+            }
+        }
+        Ok(pin)
+    }
+
     /// The owner keyset sealed to `account`, opened with the session's KEM
     /// secret and checked against the pinned lineage; `None` when none is
     /// stored or it does not open or match.
