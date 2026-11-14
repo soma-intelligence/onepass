@@ -1189,7 +1189,7 @@ struct InMemoryRemoteTests {
 @MainActor
 @Suite("New vault offer", .timeLimit(.minutes(2)))
 struct NewVaultOfferTests {
-    @Test func offeredOnlyWhenTheRemoteHasNoAccount() async throws {
+    @Test(.tags(.slow)) func offeredOnlyWhenTheRemoteHasNoAccount() async throws {
         let remote = InMemoryRemote()
         let a = try SyncDevice(remote: remote, name: "A")
         defer { a.cleanUp() }
@@ -1211,7 +1211,7 @@ struct NewVaultOfferTests {
     /// Round 3: the restore-only device already holds the account locally; only the remote zone
     /// decides. Empty zone: offered. Zone with an account: not offered. Offline or no iCloud
     /// account: unavailable (explained, nothing offered).
-    @Test func localAccountDoesNotCountOnlyTheZone() async throws {
+    @Test(.tags(.slow)) func localAccountDoesNotCountOnlyTheZone() async throws {
         let local = try SyncDevice(remote: nil, name: "local")
         defer { local.cleanUp() }
         _ = try await local.session.createAccount(password: testPassword, displayName: "", mode: .personal)

@@ -37,3 +37,27 @@ slow-timeout = { period = "120s", terminate-after = 5 }
 
 [profile.ci.junit]
 path = "junit.xml"
+
+# scripts/verify.sh and `make test`. Inherits the default profile, its
+# per-test timeouts and overrides included; runs every test (no fail-fast),
+# lists slow ones as they pass 60 s, and sums up failures and retries at the
+# end.
+[profile.verify]
+fail-fast = false
+status-level = "slow"
+final-status-level = "flaky"
+
+# Retries are for known races of the test harness only, never for the code
+# under test; a test that passes on its retry is still reported as FLAKY.
+# onepass-peer's identity tests write a copy of a test binary and exec it
+# while other test threads fork: a child forked in that window inherits the
+# copy's write descriptor and exec fails with "Text file busy" (ETXTBSY).
+[[profile.verify.overrides]]
+filter = "binary_id(onepass-peer::identity)"
+retries = 1
+
+# onepass-mcp-relay's relay tests connect real local sockets to a child
+# process and give it a few seconds to come up, which a loaded Mac misses.
+[[profile.verify.overrides]]
+filter = "binary_id(onepass-mcp-relay::relay)"
+retries = 1

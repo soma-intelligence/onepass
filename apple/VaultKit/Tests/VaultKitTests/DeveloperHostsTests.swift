@@ -169,7 +169,7 @@ struct DeveloperHostsTests {
     }
 
     /// The panel says where the answer was given (spec 7): the phone by its name, or this Mac.
-    @Test func panelTellsWhereTheAnswerCameFrom() async throws {
+    @Test(.tags(.slow)) func panelTellsWhereTheAnswerCameFrom() async throws {
         VaultKitStrings.pinSourceLanguage()
         for (decision, expected) in [("once", "Approuvé sur iPhone de Camille"), ("denied", "Refusé sur iPhone de Camille")] {
             let (hosts, bridge, channel) = try raceHosts(phones: ["phone-a"])
