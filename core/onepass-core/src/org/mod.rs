@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 use crate::Result;
 use crate::crypto::random_array;
 
+mod identity;
+
+pub use identity::{OrgIdentityPublic, OrgSecrets, fingerprint_words, org_fingerprint};
+
 /// The id of an organization: 16 random bytes fixed at its genesis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct OrgId(pub [u8; 16]);
@@ -42,7 +46,6 @@ pub const MAX_ORG_RECORD_BYTES: usize = 900 * 1024;
 pub type DeviceFpr = [u8; 32];
 
 /// SHA-256 over the concatenation of `parts`.
-#[allow(dead_code)]
 pub(crate) fn sha256(parts: &[&[u8]]) -> [u8; 32] {
     let mut ctx = aws_lc_rs::digest::Context::new(&aws_lc_rs::digest::SHA256);
     for p in parts {
