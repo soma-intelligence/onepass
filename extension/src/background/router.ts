@@ -219,6 +219,7 @@ function form(v: unknown): FormInfo {
     fields: list(o.fields, MAX_FIELDS, field),
   };
   if (o.submitRef !== undefined) f.submitRef = ref(o.submitRef);
+  if (o.signupStep !== undefined && bool(o.signupStep)) f.signupStep = true;
   return f;
 }
 
@@ -364,6 +365,7 @@ export function parseCsToBg(m: unknown): CsToBg | null {
           formKind: member<FormKind>(o.formKind, FORM_KINDS),
         };
         if (o.auto !== undefined) r.auto = bool(o.auto);
+        if (o.signupStep !== undefined && bool(o.signupStep)) r.signupStep = true;
         return r;
       }
       case "close_menu":

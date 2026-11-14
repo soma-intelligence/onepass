@@ -308,8 +308,11 @@ paired("S4_lookalike_email_first_page_gets_nothing", async ({ ext }) => {
   const { page } = ext;
   await page.goto("https://atlas-cloud.test.evil.test/join");
   const menu = await ext.openMenu(page, "#signup-email");
-  await expect(menu.getByText("Aucun login pour atlas-cloud.test.evil.test")).toBeVisible();
-  await expect(menu.locator(".t2")).toHaveCount(0);
+  await expect(menu.locator(".menu-head")).toContainText("atlas-cloud.test.evil.test");
+  // No login of the real site: only the identity's e-mail (offered on any site, like an identity form).
+  await expect(menu.locator("button.row .t1").first()).toHaveText("Alex Martin");
+  await expect(menu.locator("button.row .t1", { hasText: /^Atlas Cloud/ })).toHaveCount(0);
+  await expect(menu.locator("button.row .t2")).toHaveText([FX.atlas.email]);
   await ext.settle(1500);
   expect(ext.findExtFrame(page, "overlay")).toBeUndefined();
   await emptyFields(page, "#signup-email");

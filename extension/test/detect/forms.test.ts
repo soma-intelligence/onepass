@@ -318,6 +318,8 @@ describe("analyzeDocument: email-first steps", () => {
   it("email_only_signup_step_with_a_sign_in_switch_is_an_identifier_step", () => {
     const { a, refs } = analyze("email-first-signup.html", "https://shots.test/signup");
     expect(a.forms.map((f) => [f.kind, roles(f, refs), idOf(refs, f.submitRef)])).toEqual([["login", { "signup-email": "email" }, "signup-go"]]);
+    // Its "Sign in" switch: the step starts a sign-up (the menu offers the identities' e-mails).
+    expect(a.forms[0]!.signupStep).toBe(true);
   });
 
   it("its sign-in screen, once shown, is one too", () => {
@@ -327,6 +329,8 @@ describe("analyzeDocument: email-first steps", () => {
     const refs = new RefRegistry();
     const a = analyzeDocument(doc, refs, { url: "https://shots.test/signup", geometry: testGeometry });
     expect(a.forms.map((f) => [f.kind, roles(f, refs)])).toEqual([["login", { "signin-login": "email" }]]);
+    // Its "Sign up" switch: a sign-in, even on the /signup URL.
+    expect(a.forms[0]!.signupStep).toBeUndefined();
   });
 
   it("a sign-up URL or title is the context, without a switch in the form", () => {
@@ -340,8 +344,19 @@ describe("analyzeDocument: email-first steps", () => {
       ["https://shots.test/", "Créer un compte - Shots"],
     ]) {
       const { a } = analyzeHtml(`<h1>Welcome</h1>${form}`, url, title);
-      expect([url, title, a.forms.map((f) => f.kind)]).toEqual([url, title, ["login"]]);
+      expect([url, title, a.forms.map((f) => [f.kind, f.signupStep])]).toEqual([url, title, [["login", true]]]);
     }
+  });
+
+  it("a sign-in page is no sign-up step, nor is a user name step", () => {
+    const form = '<form id="f"><input id="e" name="email" type="email"><button type="submit">Continue</button></form>';
+    // Sign-in wording on the page wins over a sign-up URL.
+    expect(analyzeHtml(`<h1>Sign in</h1>${form}`, "https://shots.test/signup", "Shots").a.forms.map((f) => [f.kind, f.signupStep])).toEqual([
+      ["login", undefined],
+    ]);
+    expect(analyzeHtml(form, "https://shots.test/login", "Shots").a.forms.map((f) => [f.kind, f.signupStep])).toEqual([["login", undefined]]);
+    const user = '<form id="f"><input id="u" name="username" type="text"><button type="submit">Continue</button></form>';
+    expect(analyzeHtml(user, "https://shots.test/signup", "Shots").a.forms.map((f) => [f.kind, f.signupStep])).toEqual([["login", undefined]]);
   });
 
   it("a newsletter stays out, even under a sign-up heading or next to a sign-in link outside it", () => {

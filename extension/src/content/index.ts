@@ -281,6 +281,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
     menuArmed = false;
     const req: CsToBg = { type: "open_menu", fieldRef: t.fieldRef, formRef: t.form.ref, formKind: t.form.kind };
     if (auto) req.auto = true;
+    if (t.form.signupStep && req.type === "open_menu") req.signupStep = true;
     const reply = await send(req);
     if (seq !== menuSeq || !parts || stopped || !t.el.isConnected) return;
     const raw = replyUrl(reply);

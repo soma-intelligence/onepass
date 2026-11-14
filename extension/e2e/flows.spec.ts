@@ -67,8 +67,17 @@ paired("email_first_signup_and_sign_in_steps_get_the_menu", async ({ ext }) => {
   await page.goto(`${ATLAS}/join`);
   const menu = await ext.openMenu(page, "#signup-email");
   await expect(menu.locator(".menu-head")).toContainText("atlas-cloud.test");
+  // The identities' e-mails first (it starts a sign-up), the site's logins below.
+  await expect(menu.locator("button.row .t1").first()).toHaveText("Alex Martin");
+  await expect(menu.locator("button.row .t2").first()).toContainText(FX.atlas.email);
   await expect(menu.locator("button.row .t1", { hasText: /^Atlas Cloud$/ })).toHaveCount(1);
-  await page.keyboard.press("Escape");
+  // The pick puts the e-mail in and sends nothing (the user presses Continue).
+  await ext.pickRow(menu, "Alex Martin");
+  await expect(page.locator("#signup-email")).toHaveValue(FX.atlas.email);
+  await ext.settle(800);
+  await expect(page).toHaveURL(`${ATLAS}/join`);
+  await expect(page.locator("#status")).toHaveCount(0);
+  await page.locator("#signup-email").fill("");
   // Its sign-in screen on the same URL, shown by "Sign in": Remplir puts the email and continues.
   await page.locator("#to-signin").click();
   const signin = await ext.openMenu(page, "#signin-login");

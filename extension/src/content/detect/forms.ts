@@ -772,14 +772,36 @@ function signInPage(doc: Document, roots: readonly ShadowRoot[], url: string): b
 function identifierStep(fields: Classified[], submit: Element, page: () => boolean, form: HTMLFormElement | null): boolean {
   if (fields.some((f) => f.role === "username")) return true;
   if (SIGN_IN_TEXT.test(normalizeText(buttonLabel(submit)))) return true;
-  if (form !== null && authSwitch(form, submit)) return true;
+  if (form !== null && authSwitch(form, submit) !== null) return true;
   return page();
 }
 
-/** A control of `form` (not its submit) labelled only "Sign in", "Sign up" and the like. */
-function authSwitch(form: HTMLFormElement, submit: Element): boolean {
+/**
+ * Where a control of `form` (not its submit) labelled only "Sign in", "Sign up" and the like
+ * leads: "sign_in" ("Already have an account? Sign in": the form signs up), "sign_up" ("Don't
+ * have an account? Sign up": the form signs in), or null when the form has none.
+ */
+function authSwitch(form: HTMLFormElement, submit: Element): "sign_in" | "sign_up" | null {
   const controls = Array.from(form.querySelectorAll("a, button, [role='button'], [role='link']")).slice(0, MAX_SWITCH_CONTROLS);
-  return controls.some((el) => el !== submit && AUTH_SWITCH_TEXT.test(normalizeText(buttonLabel(el))));
+  for (const el of controls) {
+    if (el === submit) continue;
+    const label = normalizeText(buttonLabel(el));
+    if (AUTH_SWITCH_TEXT.test(label)) return SIGN_IN_TEXT.test(label) ? "sign_in" : "sign_up";
+  }
+  return null;
+}
+
+/**
+ * An identifier step (a lone e-mail field, kind "login") that starts a sign-up: its form's switch
+ * leads to signing in, or, with no switch, the title or URL says sign up and nothing on the page
+ * says sign in. The menu then offers the identities' e-mail addresses first.
+ */
+function signupStep(doc: Document, roots: readonly ShadowRoot[], url: string, form: HTMLFormElement | null, step: Element | undefined): boolean {
+  const sw = form !== null && step !== undefined ? authSwitch(form, step) : null;
+  if (sw !== null) return sw === "sign_in";
+  if (![doc.title, url].some((t) => SIGN_UP_TEXT.test(normalizeText(t)))) return false;
+  const headings = queryAll(doc, roots, "h1, h2", MAX_HEADINGS).map((h) => ownText(h, 100));
+  return ![doc.title, url, ...headings].some((t) => SIGN_IN_TEXT.test(normalizeText(t)));
 }
 
 /** Order in the flattened page: shadow content sits where its host does. */
@@ -909,6 +931,10 @@ export function detectForms(
     if (kind === null) continue;
     const info: FormInfo = { ref: refs.refFor(group.container), kind, fields: mergeSplitOtp(group.fields, refs) };
     if (submit !== undefined) info.submitRef = refs.refFor(submit);
+    const onlyEmail = group.fields.length === 1 && group.fields[0]!.role === "email";
+    if (kind === "login" && onlyEmail && signupStep(doc, roots, url, isForm ? (group.container as HTMLFormElement) : null, step)) {
+      info.signupStep = true;
+    }
     out.push(info);
   }
   return out;
