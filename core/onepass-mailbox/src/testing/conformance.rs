@@ -15,7 +15,10 @@ use onepass_mailbox_proto::{
     blob_sha256, put_kinds_of,
 };
 
-use crate::{ChangeFeed, ErrorCode as Code, MailboxApi, MailboxError, RdvRole, Rendezvous};
+use crate::{
+    ChangeFeed, ErrorCode as Code, MailboxApi, MailboxError, OrgStore, OrgStoreError, RdvRole,
+    Rendezvous,
+};
 
 /// Where the suite runs. Clients all talk to the same server.
 pub trait ConformanceTarget {
@@ -96,6 +99,7 @@ pub const CASES: &[(&str, Case)] = &[
     ("drop_round_trip", drop_round_trip),
     ("drop_conflict", drop_conflict),
     ("org_records_are_immutable", org_records_are_immutable),
+    ("org_store_round_trip", org_store_round_trip),
 ];
 
 /// Runs every case of `CASES` against `target`. A failing case panics with
@@ -1452,4 +1456,89 @@ fn org_records_are_immutable(t: &mut dyn ConformanceTarget) {
     );
     let gone = applied(c.commit(vec![rm(32, 1)]), "delete kind 32");
     assert!(gone[0].is_some(), "tombstone seq");
+}
+
+/// `OrgStore` over a real mailbox: lineage, a blob roster (20 KiB, through
+/// Storage on the real stack) and an inline one, write-once rosters, keyset
+/// rewrite, join requests, and a second enrolled client reading the same.
+fn org_store_round_trip(t: &mut dyn ConformanceTarget) {
+    let org = [0x0b; 16];
+    let c = owner(t);
+    let mut store = OrgStore::new(c, org);
+
+    store
+        .put_lineage(0, b"gen0".to_vec())
+        .expect("put lineage 0");
+    store
+        .put_lineage(1, b"gen1".to_vec())
+        .expect("put lineage 1");
+    assert_eq!(
+        store.lineage_from(0).expect("lineage_from 0"),
+        vec![(0, b"gen0".to_vec()), (1, b"gen1".to_vec())],
+        "lineage from 0"
+    );
+
+    let big: Vec<u8> = (0..20 * 1024).map(|i| (i % 251) as u8).collect();
+    store
+        .put_roster(1, big.clone())
+        .expect("put roster 1 (blob)");
+    let small = b"roster two".to_vec();
+    store.put_roster(2, small.clone()).expect("put roster 2");
+    assert_eq!(
+        store.latest_roster().expect("latest_roster"),
+        Some((2, small.clone())),
+        "latest roster"
+    );
+    assert_eq!(
+        store.roster(1).expect("roster 1"),
+        Some(big),
+        "roster 1 exact bytes"
+    );
+    assert_eq!(
+        store.put_roster(2, b"other".to_vec()),
+        Err(OrgStoreError::Taken),
+        "put_roster 2 with other bytes"
+    );
+    store
+        .put_roster(2, small.clone())
+        .expect("put_roster 2 with the same bytes");
+
+    let acct = [0x0a; 16];
+    store
+        .put_owner_keyset(acct, b"keys one".to_vec())
+        .expect("put keyset");
+    store
+        .put_owner_keyset(acct, b"keys two".to_vec())
+        .expect("put keyset again");
+    assert_eq!(
+        store.owner_keyset(acct).expect("owner_keyset"),
+        Some(b"keys two".to_vec()),
+        "keyset after a rewrite"
+    );
+
+    store
+        .put_join_request([1; 16], b"join a".to_vec())
+        .expect("join a");
+    store
+        .put_join_request([2; 16], b"join b".to_vec())
+        .expect("join b");
+    assert_eq!(
+        store.join_requests().expect("join_requests"),
+        vec![([1; 16], b"join a".to_vec()), ([2; 16], b"join b".to_vec())],
+        "two join requests"
+    );
+    store.delete_join_request([1; 16]).expect("delete join a");
+    assert_eq!(
+        store.join_requests().expect("join_requests after delete"),
+        vec![([2; 16], b"join b".to_vec())],
+        "one join request left"
+    );
+
+    let second = enrolled(t, store.api());
+    let mut other = OrgStore::new(second, org);
+    assert_eq!(
+        other.latest_roster().expect("second latest_roster"),
+        Some((2, small)),
+        "second client sees the latest roster"
+    );
 }
