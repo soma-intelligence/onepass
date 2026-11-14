@@ -16,9 +16,9 @@ use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::generator::Wordlist;
 use onepass_core::org::{
     MAX_ORG_RECORD_BYTES, MemberRef, ORG_CHANGE_DOMAIN, ORG_GENESIS_DOMAIN, OrgChangeBody,
-    OrgChangeKind, OrgGenesisBody, OrgId, OrgKeyset, OrgLineage, OrgRecordBody, SealedOrgKeyset,
-    SignedOrgRecord, add_owner_signature, fingerprint_words, open_org_keyset, org_fingerprint,
-    quorum, seal_org_keyset, sign_org_change, sign_org_genesis, verify_org_chain,
+    OrgChangeKind, OrgGenesisBody, OrgId, OrgKeyset, OrgLineage, OrgRecordBody, RosterCheckpoint,
+    SealedOrgKeyset, SignedOrgRecord, add_owner_signature, fingerprint_words, open_org_keyset,
+    org_fingerprint, quorum, seal_org_keyset, sign_org_change, sign_org_genesis, verify_org_chain,
     verify_org_genesis,
 };
 use onepass_core::{Error, Id, IntegrityError};
@@ -323,7 +323,10 @@ fn owners_change(owners: Vec<MemberRef>) -> OrgChangeBody {
     change_body(
         1,
         world().genesis.hash(),
-        OrgChangeKind::OwnersChanged { owners },
+        OrgChangeKind::OwnersChanged {
+            owners,
+            roster_checkpoint: RosterCheckpoint::NONE,
+        },
     )
 }
 
@@ -759,11 +762,33 @@ fn decode_is_strict() {
         "generation 0 in a Change"
     );
     assert!(
-        refused(&change_with(
-            |c| c.kind = OrgChangeKind::OwnersChanged { owners: vec![] }
-        )),
+        refused(&change_with(|c| c.kind = OrgChangeKind::OwnersChanged {
+            owners: vec![],
+            roster_checkpoint: RosterCheckpoint::NONE,
+        })),
         "OwnersChanged empty"
     );
+    let owners = w.owners.clone();
+    let with_checkpoint = |seq: u64, hash: [u8; 32]| {
+        let owners = owners.clone();
+        change_with(move |c| {
+            c.kind = OrgChangeKind::OwnersChanged {
+                owners,
+                roster_checkpoint: RosterCheckpoint { seq, hash },
+            }
+        })
+    };
+    // X17: a zero hash only with seq 0, and seq 0 only with a zero hash.
+    assert!(
+        refused(&with_checkpoint(5, [0; 32])),
+        "checkpoint seq 5, zero hash"
+    );
+    assert!(
+        refused(&with_checkpoint(0, [1; 32])),
+        "checkpoint seq 0, non-zero hash"
+    );
+    assert!(!refused(&with_checkpoint(0, [0; 32])), "no roster yet");
+    assert!(!refused(&with_checkpoint(5, [1; 32])), "checkpoint (5, h)");
 
     let mut bad_id_sig = w.g1.clone();
     bad_id_sig.identity_sig = postcard::from_bytes::<IdentitySignature>(&[1, 0]).unwrap();

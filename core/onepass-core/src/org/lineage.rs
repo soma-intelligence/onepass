@@ -51,11 +51,43 @@ pub struct OrgGenesisBody {
     pub created_at: i64,
 }
 
+/// The last roster the co-signing owners of an `OwnersChanged` accepted
+/// (X17): `seq` and `RosterBody::hash`, `(0, [0; 32])` when no roster
+/// exists yet. A zero hash goes only with seq 0, and seq 0 only with a
+/// zero hash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RosterCheckpoint {
+    pub seq: u64,
+    pub hash: [u8; 32],
+}
+
+impl RosterCheckpoint {
+    /// No roster yet.
+    pub const NONE: RosterCheckpoint = RosterCheckpoint {
+        seq: 0,
+        hash: [0; 32],
+    };
+
+    pub(crate) fn check(&self) -> Result<()> {
+        if (self.seq == 0) != (self.hash == [0; 32]) {
+            return Err(bad("org roster checkpoint"));
+        }
+        Ok(())
+    }
+}
+
 /// What a change does. Postcard enum: append-only.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrgChangeKind {
-    OwnersChanged { owners: Vec<MemberRef> },
-    AuditKeyRotated { audit_kem_pub: HybridKemPublic },
+    /// The new owners, and the roster checkpoint (X17): rosters up to it
+    /// are judged with the owners of the generation before this change.
+    OwnersChanged {
+        owners: Vec<MemberRef>,
+        roster_checkpoint: RosterCheckpoint,
+    },
+    AuditKeyRotated {
+        audit_kem_pub: HybridKemPublic,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,7 +250,13 @@ fn check_change_body(c: &OrgChangeBody) -> Result<()> {
         return Err(bad("org change generation"));
     }
     match &c.kind {
-        OrgChangeKind::OwnersChanged { owners } => check_owners(owners),
+        OrgChangeKind::OwnersChanged {
+            owners,
+            roster_checkpoint,
+        } => {
+            check_owners(owners)?;
+            roster_checkpoint.check()
+        }
         OrgChangeKind::AuditKeyRotated { audit_kem_pub } => {
             check_kem(audit_kem_pub, "org audit kem key")
         }
@@ -363,12 +401,15 @@ fn verify_signatures(
     Ok(())
 }
 
-/// One accepted generation.
+/// One accepted generation. `roster_checkpoint` is the one its
+/// `OwnersChanged` carries (X17), `None` for the genesis and an audit key
+/// rotation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrgHeadInfo {
     pub generation: u64,
     pub hash: [u8; 32],
     pub owners: Vec<MemberRef>,
+    pub roster_checkpoint: Option<RosterCheckpoint>,
 }
 
 /// A verified org lineage. `fingerprint` is the genesis's, pinned for good;
@@ -427,17 +468,21 @@ impl OrgLineage {
         }
         verify_signatures(next, &self.identity_pub, &head.owners)?;
         let mut out = self.clone();
-        let owners = match &c.kind {
-            OrgChangeKind::OwnersChanged { owners } => owners.clone(),
+        let (owners, roster_checkpoint) = match &c.kind {
+            OrgChangeKind::OwnersChanged {
+                owners,
+                roster_checkpoint,
+            } => (owners.clone(), Some(*roster_checkpoint)),
             OrgChangeKind::AuditKeyRotated { audit_kem_pub } => {
                 out.audit_kem_pub = audit_kem_pub.clone();
-                head.owners.clone()
+                (head.owners.clone(), None)
             }
         };
         out.heads.push(OrgHeadInfo {
             generation: g,
             hash: next.hash(),
             owners,
+            roster_checkpoint,
         });
         Ok(out)
     }
@@ -462,6 +507,7 @@ pub fn verify_org_genesis(rec: &SignedOrgRecord) -> Result<OrgLineage> {
             generation: 0,
             hash: rec.hash(),
             owners: g.owners.clone(),
+            roster_checkpoint: None,
         }],
     })
 }

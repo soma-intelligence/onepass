@@ -78,7 +78,10 @@
    - Chaîne du roster (seq, prev_hash, fourche, retour en arrière, trou
      NotFound) et de la lignée (parent = tête, OrgLineageRollback, fourche)
      : non modélisées, couvertes par les tests de rules.rs, pin.rs et par
-     le fuzzing des décodeurs.
+     le fuzzing des décodeurs. Le point de contrôle du roster porté par
+     OwnersChanged (X17, rosters jugés sous la génération précédente
+     jusqu'au point de contrôle fixé par son hash) n'est pas modélisé
+     non plus : le client roster juge tout sous g1.
    - Miroir des propriétaires (X9), synchronisation des clés d'un Owner
      (X10), prise de contrôle par appareils ou activation (X7), clés
      figées des membres (X12), suspension et retrait par un Provisioner,

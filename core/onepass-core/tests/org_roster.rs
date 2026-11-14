@@ -11,7 +11,7 @@ use onepass_core::crypto::IdentityVerifyingKey;
 use onepass_core::org::{
     DeviceFpr, MAX_MEMBER_DEVICES, MAX_ORG_RECORD_BYTES, MAX_ROSTER_MEMBERS, MemberRef,
     MemberState, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgId, OrgLineage, OrgMember, Role,
-    RoleSet, RosterBody, SignedRoster, accept_first_roster, accept_next_roster,
+    RoleSet, RosterBody, RosterCheckpoint, SignedRoster, accept_first_roster, accept_next_roster,
     accept_roster_chain, check_transition, founding_roster, invite_commit, member_kem_hash,
     merge_members, rebase_roster, scim_id_hash, sign_org_change, sign_org_genesis, sign_roster,
     verify_org_genesis,
@@ -615,12 +615,14 @@ fn org() -> &'static Org {
             &l1,
             OrgChangeKind::OwnersChanged {
                 owners: vec![owner_o, member_ref(M, &[&m])],
+                roster_checkpoint: RosterCheckpoint::NONE,
             },
         );
         let dropped = change(
             &l0,
             OrgChangeKind::OwnersChanged {
                 owners: vec![member_ref(M, &[&m])],
+                roster_checkpoint: RosterCheckpoint::NONE,
             },
         );
 
@@ -633,6 +635,7 @@ fn org() -> &'static Org {
                 parent: l2.head().hash,
                 kind: OrgChangeKind::OwnersChanged {
                     owners: vec![member_ref(O, &[&o]), rotated_m(&m_rotated)],
+                    roster_checkpoint: RosterCheckpoint::NONE,
                 },
                 issued_at: 1_700_000_200,
             };
@@ -649,6 +652,7 @@ fn org() -> &'static Org {
             &l0,
             OrgChangeKind::OwnersChanged {
                 owners: vec![rotated_o(&o_rotated)],
+                roster_checkpoint: RosterCheckpoint::NONE,
             },
         );
         let o_second = device(0x6A);
@@ -656,12 +660,14 @@ fn org() -> &'static Org {
             &l0,
             OrgChangeKind::OwnersChanged {
                 owners: vec![member_ref(O, &[&o, &o_second])],
+                roster_checkpoint: RosterCheckpoint::NONE,
             },
         );
         let device_dropped = change(
             &two_devices,
             OrgChangeKind::OwnersChanged {
                 owners: vec![member_ref(O, &[&o_second])],
+                roster_checkpoint: RosterCheckpoint::NONE,
             },
         );
         let sign =

@@ -16,10 +16,10 @@ use onepass_core::lineage::{GenesisBody, LineageRecord, RotationBody, RotationRe
 use onepass_core::org::{
     Invitation, JoinRequestBody, MAX_ORG_RECORD_BYTES, MemberState, ORG_JOIN_CODE_PREFIX,
     ORG_JOIN_DOMAIN, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgId, OrgLineage, OrgMember,
-    OrgPin, OrgSecrets, PinSource, Role, RoleSet, RosterBody, SignedJoinRequest, SignedOrgRecord,
-    SignedRoster, accept_next_roster, activate_member, dns_fingerprint, dns_txt_value,
-    fingerprint_base32, fingerprint_words, founding_roster, invite_commit, invite_member,
-    join_code, join_code_of, member_kem_hash, parse_dns_txt, pin_org, scim_id_hash,
+    OrgPin, OrgSecrets, PinSource, Role, RoleSet, RosterBody, RosterCheckpoint, SignedJoinRequest,
+    SignedOrgRecord, SignedRoster, accept_next_roster, activate_member, dns_fingerprint,
+    dns_txt_value, fingerprint_base32, fingerprint_words, founding_roster, invite_commit,
+    invite_member, join_code, join_code_of, member_kem_hash, parse_dns_txt, pin_org, scim_id_hash,
     sign_join_request, sign_org_change, sign_org_genesis, sign_roster, verify_join_request,
     verify_org_genesis,
 };
@@ -1165,6 +1165,22 @@ fn pin_round_trips() {
         OrgPin::decode(&state(pin.lineage(), Some(&bad_roster))),
         "roster shape",
     );
+    // X17: no checkpoint on the genesis, a sound checkpoint elsewhere.
+    let mut genesis_checkpoint = pin.lineage().clone();
+    genesis_checkpoint.heads[0].roster_checkpoint = Some(RosterCheckpoint::NONE);
+    invalid_format(
+        OrgPin::decode(&state(&genesis_checkpoint, None)),
+        "checkpoint on the genesis",
+    );
+    let mut bad_checkpoint = pin.lineage().clone();
+    bad_checkpoint.heads[1].roster_checkpoint = Some(RosterCheckpoint {
+        seq: 3,
+        hash: [0; 32],
+    });
+    invalid_format(
+        OrgPin::decode(&state(&bad_checkpoint, None)),
+        "checkpoint seq 3 with a zero hash",
+    );
     // An unknown source variant.
     let mut bad_source = good.clone();
     bad_source[1] = 9;
@@ -1189,4 +1205,242 @@ fn pin_accessors() {
     assert_eq!(moved.head().generation, 1);
     assert_eq!(moved.fingerprint(), f.fpr);
     assert_eq!(moved.source(), PinSource::Mdm);
+}
+
+// ---------------------------------------------------------------------------
+// X17: roster checkpoints in OwnersChanged (final review I1).
+
+/// Owner accounts of the checkpoint org.
+const CO: u8 = 40;
+const CQ: u8 = 41;
+
+/// The checkpoint org: owners O (old phone `d1`) and Q (`dq`) at g0;
+/// rosters r1..r6 by `d1` under g0 (r6 invites an Auditor); `g1` swaps
+/// O's phone for `d2` and removes Q, with checkpoint `(6, hash r6)`,
+/// signed by the identity, `d1` and `dq`; `r7` by `d2` under g1 mirrors
+/// it (O's devices synced, Q's Owner bit dropped). `g1_bad` is the same
+/// change with a checkpoint hash that is not r6's, `g1_at7` the same with
+/// checkpoint `(7, hash r7_g0)` where `r7_g0` is r6's successor by `d1`
+/// under g0.
+struct CheckpointFx {
+    dq: TestDevice,
+    fpr: [u8; 32],
+    g0: Vec<u8>,
+    g1: Vec<u8>,
+    g1_bad: Vec<u8>,
+    g1_at7: Vec<u8>,
+    /// `rosters[i]` is seq `i + 1` (r1..r7, r7 under g1).
+    rosters: Vec<SignedRoster>,
+    r7_g0: SignedRoster,
+}
+
+fn checkpoint_fx() -> &'static CheckpointFx {
+    static CELL: OnceLock<CheckpointFx> = OnceLock::new();
+    CELL.get_or_init(|| {
+        let (d1, d2, dq) = (device(0x71), device(0x72), device(0x73));
+        let secrets = org_secrets();
+        let g0 = sign_org_genesis(
+            OrgGenesisBody {
+                format: 1,
+                org_id: ORG,
+                name: "Acme".to_string(),
+                org_identity_pub: secrets.identity.verifying_key(),
+                audit_kem_pub: secrets.audit.public().unwrap(),
+                owners: vec![member_ref(CO, &[&d1]), member_ref(CQ, &[&dq])],
+                created_at: 1_700_000_000,
+            },
+            &secrets.identity,
+            &[(&d1.public, &d1.keys), (&dq.public, &dq.keys)],
+        )
+        .unwrap();
+        let l0 = verify_org_genesis(&g0).unwrap();
+        let sign = |b: RosterBody, d: &TestDevice| sign_roster(b, &d.public, &d.keys).unwrap();
+        let mut bodies = vec![founding_roster(&l0).unwrap()];
+        for _ in 2..=5 {
+            let next = bodies.last().unwrap().next().unwrap();
+            bodies.push(next);
+        }
+        let (r6, _) = invite_member(
+            &bodies[4],
+            scim_id_hash(ORG, "auditor"),
+            RoleSet::of(&[Role::Auditor]),
+        )
+        .unwrap();
+        bodies.push(r6.clone());
+        let r7_g0 = sign(r6.next().unwrap(), &d1);
+        let change = |checkpoint: RosterCheckpoint| {
+            sign_org_change(
+                OrgChangeBody {
+                    format: 1,
+                    org_id: ORG,
+                    generation: 1,
+                    parent: g0.hash(),
+                    kind: OrgChangeKind::OwnersChanged {
+                        owners: vec![member_ref(CO, &[&d2])],
+                        roster_checkpoint: checkpoint,
+                    },
+                    issued_at: 1_700_000_100,
+                },
+                &secrets.identity,
+                &[(&d1.public, &d1.keys), (&dq.public, &dq.keys)],
+            )
+            .unwrap()
+        };
+        let g1 = change(RosterCheckpoint {
+            seq: 6,
+            hash: r6.hash(),
+        });
+        let g1_bad = change(RosterCheckpoint {
+            seq: 6,
+            hash: [9; 32],
+        });
+        let g1_at7 = change(RosterCheckpoint {
+            seq: 7,
+            hash: r7_g0.body.hash(),
+        });
+        let l1 = l0.apply(&g1).unwrap();
+        let mut r7 = r6.next().unwrap();
+        r7.org_head = l1.head().hash;
+        let o = r7
+            .members
+            .iter_mut()
+            .find(|m| m.account_id == Id([CO; 16]))
+            .unwrap();
+        o.devices = member_ref(CO, &[&d2]).devices;
+        let q = r7
+            .members
+            .iter_mut()
+            .find(|m| m.account_id == Id([CQ; 16]))
+            .unwrap();
+        q.roles = RoleSet::EMPTY;
+        let mut rosters: Vec<SignedRoster> = bodies.into_iter().map(|b| sign(b, &d1)).collect();
+        rosters.push(sign(r7, &d2));
+        CheckpointFx {
+            fpr: l0.fingerprint,
+            g0: g0.encode(),
+            g1: g1.encode(),
+            g1_bad: g1_bad.encode(),
+            g1_at7: g1_at7.encode(),
+            rosters,
+            r7_g0,
+            dq,
+        }
+    })
+}
+
+/// `(seq, bytes)` of the checkpoint org's rosters `seqs`.
+fn cp_rosters(seqs: &[u64]) -> Vec<(u64, Vec<u8>)> {
+    seqs.iter()
+        .map(|s| (*s, checkpoint_fx().rosters[*s as usize - 1].encode()))
+        .collect()
+}
+
+/// The checkpoint org pinned by MDM at g0, roster r`seq`.
+fn cp_pin_at(seq: u64) -> OrgPin {
+    let f = checkpoint_fx();
+    let all: Vec<u64> = (1..=seq).collect();
+    pin_org(PinSource::Mdm, Some(f.fpr), &f.g0)
+        .unwrap()
+        .advance(&[(0, f.g0.clone())], &cp_rosters(&all))
+        .unwrap()
+}
+
+#[test]
+fn owner_phone_swap_does_not_stall_roster_chain() {
+    let f = checkpoint_fx();
+    let pin = cp_pin_at(5);
+    assert_eq!(pin.roster_seq(), Some(5));
+    let lineage = [(0, f.g0.clone()), (1, f.g1.clone())];
+    // Lineage and rosters in one call: r6 (old phone d1, under g0) is
+    // judged before the swap, r7 (new phone d2) under g1.
+    let moved = pin.advance(&lineage, &cp_rosters(&[6, 7])).unwrap();
+    assert_eq!(moved.roster_seq(), Some(7));
+    assert_eq!(moved.head().generation, 1);
+    // The device already learned g1 in an earlier sync.
+    let lineage_first = pin.advance(&lineage, &[]).unwrap();
+    assert_eq!(lineage_first.roster_seq(), Some(5));
+    let later = lineage_first
+        .advance(&[(1, f.g1.clone())], &cp_rosters(&[6, 7]))
+        .unwrap();
+    assert_eq!(later, moved);
+    // Without the checkpoint, the head alone refuses r6 (X8, X11): the
+    // stall the checkpoint removes.
+    integrity(
+        accept_next_roster(moved.lineage(), pin.roster().unwrap(), &f.rosters[5]),
+        IntegrityError::OrgRoleDenied,
+        "r6 judged under g1 alone",
+    );
+}
+
+#[test]
+fn checkpoint_hash_mismatch_is_fork() {
+    let f = checkpoint_fx();
+    let lineage = [(0, f.g0.clone()), (1, f.g1_bad.clone())];
+    integrity(
+        cp_pin_at(5).advance(&lineage, &cp_rosters(&[6])),
+        IntegrityError::OrgRosterFork,
+        "r6 is not the checkpoint roster",
+    );
+    // A pinned roster at the checkpoint seq with another hash.
+    integrity(
+        cp_pin_at(6).advance(&lineage, &[]),
+        IntegrityError::OrgRosterFork,
+        "pinned r6 is not the checkpoint roster",
+    );
+    // A sibling seq 6 by the owner Q, under g0: not the checkpoint roster.
+    let q6 = sign_roster(f.rosters[4].body.next().unwrap(), &f.dq.public, &f.dq.keys).unwrap();
+    integrity(
+        cp_pin_at(5).advance(&[(0, f.g0.clone()), (1, f.g1.clone())], &[(6, q6.encode())]),
+        IntegrityError::OrgRosterFork,
+        "sibling r6 by Q",
+    );
+}
+
+#[test]
+fn removed_owner_roster_after_checkpoint_refused() {
+    let f = checkpoint_fx();
+    let pin = cp_pin_at(6)
+        .advance(&[(0, f.g0.clone()), (1, f.g1.clone())], &[])
+        .unwrap();
+    // Q, removed by g1, signs seq 7 (after the checkpoint): judged under
+    // the head, Q has no Owner authority left.
+    let q7 = sign_roster(f.rosters[5].body.next().unwrap(), &f.dq.public, &f.dq.keys).unwrap();
+    integrity(
+        pin.advance(&[(1, f.g1.clone())], &[(7, q7.encode())]),
+        IntegrityError::OrgRoleDenied,
+        "removed owner Q after the checkpoint",
+    );
+    // O's dropped phone d1 after the checkpoint: no authority either.
+    integrity(
+        pin.advance(&[(1, f.g1.clone())], &[(7, f.r7_g0.encode())]),
+        IntegrityError::OrgRoleDenied,
+        "dropped device d1 after the checkpoint",
+    );
+    // The honest r7 by the new phone passes.
+    assert_eq!(
+        pin.advance(&[(1, f.g1.clone())], &cp_rosters(&[7]))
+            .unwrap()
+            .roster_seq(),
+        Some(7)
+    );
+}
+
+#[test]
+fn frontier_roster_without_checkpoint_not_committed() {
+    let f = checkpoint_fx();
+    // g1_at7: checkpoint (7, hash of d1's r7 under g0).
+    let lineage = [(0, f.g0.clone()), (1, f.g1_at7.clone())];
+    let pin = cp_pin_at(5);
+    // r6 is judged under g0 but the chain stops before seq 7: nothing kept.
+    match pin.advance(&lineage, &cp_rosters(&[6])) {
+        Err(Error::NotFound) => {}
+        other => panic!("expected NotFound, got {other:?}"),
+    }
+    assert_eq!(pin.roster_seq(), Some(5));
+    // Reaching the checkpoint roster commits both.
+    let mut list = cp_rosters(&[6]);
+    list.push((7, f.r7_g0.encode()));
+    let moved = pin.advance(&lineage, &list).unwrap();
+    assert_eq!(moved.roster_seq(), Some(7));
+    assert_eq!(moved.roster().unwrap().hash(), f.r7_g0.body.hash());
 }

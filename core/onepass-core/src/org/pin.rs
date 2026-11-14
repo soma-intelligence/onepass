@@ -27,8 +27,9 @@ use serde::{Deserialize, Serialize};
 
 use super::lineage::{check_identity_pub, check_kem, check_name, check_owners};
 use super::{
-    ORG_PIN_VERSION, OrgHeadInfo, OrgLineage, OrgRecordBody, RosterBody, SignedOrgRecord,
-    SignedRoster, accept_first_roster, accept_roster_chain, org_fingerprint, verify_org_genesis,
+    ORG_PIN_VERSION, OrgHeadInfo, OrgLineage, OrgRecordBody, RosterBody, RosterCheckpoint,
+    SignedOrgRecord, SignedRoster, accept_first_roster, accept_next_roster, org_fingerprint,
+    verify_org_genesis,
 };
 use crate::lineage::decode_strict_with;
 use crate::{Error, IntegrityError, Result, ValidationError};
@@ -196,6 +197,77 @@ pub fn pin_org(
     })
 }
 
+/// The roster checkpoints of the `OwnersChanged` generations (X17), with
+/// the generation that carries each; seq 0 (no roster yet) left out.
+fn checkpoints(lineage: &OrgLineage) -> Vec<(u64, RosterCheckpoint)> {
+    lineage
+        .heads
+        .iter()
+        .filter_map(|h| {
+            h.roster_checkpoint
+                .filter(|c| c.seq > 0)
+                .map(|c| (h.generation, c))
+        })
+        .collect()
+}
+
+/// A roster at the seq of a checkpoint must have its hash, else
+/// `OrgRosterFork` (X17).
+fn check_checkpoints(lineage: &OrgLineage, roster: &RosterBody) -> Result<()> {
+    let h = roster.hash();
+    if checkpoints(lineage)
+        .iter()
+        .any(|(_, c)| c.seq == roster.seq && c.hash != h)
+    {
+        return Err(IntegrityError::OrgRosterFork.into());
+    }
+    Ok(())
+}
+
+/// The rosters after `pinned`, one by one (X17). A roster at or below the
+/// checkpoint of an `OwnersChanged` is judged under the lineage up to the
+/// generation before the first such change whose checkpoint covers it, a
+/// later one under the whole lineage. Every roster at a checkpoint seq
+/// must have its hash (`OrgRosterFork`). A roster judged under an older
+/// generation is kept only if this chain reaches the checkpoint that
+/// covered it: else `NotFound` and nothing is kept, so a forged roster at
+/// the frontier never enters a pin. A repeated roster is a rollback.
+fn accept_after(
+    lineage: &OrgLineage,
+    pinned: &RosterBody,
+    chain: &[SignedRoster],
+) -> Result<RosterBody> {
+    let cps = checkpoints(lineage);
+    let mut older: BTreeMap<u64, OrgLineage> = BTreeMap::new();
+    let mut needed = 0u64;
+    let mut cur = pinned.clone();
+    for rec in chain {
+        let seq = rec.body.seq;
+        let judge = match cps.iter().find(|(_, c)| c.seq >= seq) {
+            Some((g, c)) => {
+                needed = needed.max(c.seq);
+                &*older.entry(*g).or_insert_with(|| {
+                    let mut l = lineage.clone();
+                    // `g >= 1`: the genesis carries no checkpoint.
+                    l.heads.truncate(*g as usize);
+                    l
+                })
+            }
+            None => lineage,
+        };
+        if seq <= cur.seq {
+            accept_next_roster(judge, &cur, rec)?;
+            return Err(IntegrityError::OrgRosterRollback.into());
+        }
+        cur = accept_next_roster(judge, &cur, rec)?;
+        check_checkpoints(lineage, &cur)?;
+    }
+    if cur.seq < needed {
+        return Err(Error::NotFound);
+    }
+    Ok(cur)
+}
+
 impl OrgPin {
     /// The pinned org fingerprint (the genesis's, for good).
     pub fn fingerprint(&self) -> [u8; 32] {
@@ -251,9 +323,11 @@ impl OrgPin {
     /// below the pinned seq are checked against the pinned chain (same
     /// hash ignored, another hash `OrgRosterFork`, as far as the hashes
     /// link back), a list topping out below the pinned seq is
-    /// `OrgRosterRollback`, the rest goes through `accept_roster_chain`. An
-    /// empty roster list keeps the roster. Source and fingerprint never
-    /// change.
+    /// `OrgRosterRollback`, the rest is accepted roster by roster
+    /// (`accept_next_roster`) under the roster checkpoints of the lineage
+    /// (X17, `accept_after`). The pinned roster must match any checkpoint
+    /// at its seq (`OrgRosterFork`). An empty roster list keeps the
+    /// roster. Source and fingerprint never change.
     pub fn advance(
         &self,
         lineage_records: &[(u64, Vec<u8>)],
@@ -324,6 +398,9 @@ impl OrgPin {
         lineage: &OrgLineage,
         rosters: &[(u64, Vec<u8>)],
     ) -> Result<Option<RosterBody>> {
+        if let Some(pinned) = &self.roster {
+            check_checkpoints(lineage, pinned)?;
+        }
         if rosters.is_empty() {
             return Ok(self.roster.clone());
         }
@@ -370,7 +447,7 @@ impl OrgPin {
         if top < pinned.seq {
             return Err(IntegrityError::OrgRosterRollback.into());
         }
-        accept_roster_chain(lineage, pinned, new).map(Some)
+        accept_after(lineage, pinned, new).map(Some)
     }
 
     /// The admin read out `fpr_from_admin` (TOFU confirmation): the pinned
@@ -438,10 +515,13 @@ impl OrgPin {
             return Err(bad("org pin state"));
         }
         for (i, h) in l.heads.iter().enumerate() {
-            if h.generation != i as u64 {
+            if h.generation != i as u64 || (i == 0 && h.roster_checkpoint.is_some()) {
                 return Err(bad("org pin state"));
             }
             check_owners(&h.owners).map_err(fail)?;
+            if let Some(c) = &h.roster_checkpoint {
+                c.check().map_err(fail)?;
+            }
         }
         if l.fingerprint == [0; 32] {
             return Err(bad("org pin state"));

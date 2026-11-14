@@ -24,8 +24,8 @@ pub use join::{
 pub use keyset::{OrgKeyset, SealedOrgKeyset, open_org_keyset, seal_org_keyset};
 pub use lineage::{
     MemberRef, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgHeadInfo, OrgLineage,
-    OrgRecordBody, SignedOrgRecord, add_owner_signature, quorum, sign_org_change, sign_org_genesis,
-    verify_org_chain, verify_org_genesis,
+    OrgRecordBody, RosterCheckpoint, SignedOrgRecord, add_owner_signature, quorum, sign_org_change,
+    sign_org_genesis, verify_org_chain, verify_org_genesis,
 };
 pub use pin::{
     OrgPin, PinSource, dns_fingerprint, dns_txt_value, fingerprint_base32, parse_dns_txt, pin_org,

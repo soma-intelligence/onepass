@@ -12,10 +12,10 @@ use onepass_core::crypto::{HybridKemSecret, IdentityKey};
 use onepass_core::org::{
     MemberRef, MemberState, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgId, OrgKeyset,
     OrgLineage, OrgMember, OrgPin, OrgSecrets, PinSource, Role, RoleSet, RosterBody,
-    SealedOrgKeyset, SignedOrgRecord, SignedRoster, accept_first_roster, accept_next_roster,
-    founding_roster, invite_member, member_kem_hash, open_org_keyset, pin_org, scim_id_hash,
-    seal_org_keyset, sign_join_request, sign_org_change, sign_org_genesis, verify_join_request,
-    verify_org_genesis,
+    RosterCheckpoint, SealedOrgKeyset, SignedOrgRecord, SignedRoster, accept_first_roster,
+    accept_next_roster, founding_roster, invite_member, member_kem_hash, open_org_keyset, pin_org,
+    scim_id_hash, seal_org_keyset, sign_join_request, sign_org_change, sign_org_genesis,
+    verify_join_request, verify_org_genesis,
 };
 use onepass_core::repo::ManagedGenesis;
 use onepass_core::{Error, IntegrityError};
@@ -505,7 +505,10 @@ fn fork_lineage_two_owner_sets() {
                 org_id: STD_ORG,
                 generation: 1,
                 parent: l0.head().hash,
-                kind: OrgChangeKind::OwnersChanged { owners },
+                kind: OrgChangeKind::OwnersChanged {
+                    owners,
+                    roster_checkpoint: RosterCheckpoint::NONE,
+                },
                 issued_at: 1_700_000_100,
             },
             &org_secrets().identity,
