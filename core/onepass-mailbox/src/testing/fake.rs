@@ -25,7 +25,11 @@
 //! owner key, the owner a manager and owner, plan `shared` or `contact` of
 //! `seed.sql` whatever the parent's, no grandchild, live children of each
 //! kind capped by the parent's plan, no enroll ticket, deleted by their
-//! owner at any time).
+//! owner at any time), and org invites (`FakeMailbox::org`: a server whose
+//! mailboxes are on plan `org`; a manager of one mints one-use tokens of
+//! plan `managed`, 1 to 168 hours, 200 a UTC day per org mailbox; a token
+//! creates one mailbox on `managed_plan()`, then answers `not_found` as a
+//! closed server does for a spent invite).
 //!
 //! `FakeMailboxClient` runs the real client's request building and answer
 //! checks (`crate::client`, `crate::blobs`), and every answer goes through
@@ -58,17 +62,17 @@ use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use onepass_mailbox_proto::{
     BlobUrls, Body, COMMIT_BODY_MAX, COMMIT_OPS_MAX, ChangesPage, ChildKind, CommitOp,
     CommitResponse, ConflictEntry, CredentialId, CredentialRole, ErrorCode, INLINE_MAX,
-    LOCATED_MAX, Limits, Located, MailboxCreated, MailboxId, MailboxInfo, Message, Op,
-    PAGE_MAX_BYTES, PAGE_MAX_RECORDS, PushKind, RECORD_MAX, ServerConfig, ServerRecord, SetLocator,
-    Sha256, SignedEnrollTicket, Usage, credential_id, decode, encode, hex, put_kinds_allow,
-    ticket_hash, ticket_signed_bytes,
+    LOCATED_MAX, Limits, Located, MailboxCreated, MailboxId, MailboxInfo, Message,
+    ORG_INVITE_TOKEN_LEN, Op, OrgInviteCreated, PAGE_MAX_BYTES, PAGE_MAX_RECORDS, PushKind,
+    RECORD_MAX, ServerConfig, ServerRecord, SetLocator, Sha256, SignedEnrollTicket, Usage,
+    credential_id, decode, encode, hex, put_kinds_allow, ticket_hash, ticket_signed_bytes,
 };
 
 use crate::blobs::{BodyRef, blob_of, blob_set, check_answers, check_blob};
 use crate::client::{
     check_changes_query, check_commit, check_page, check_record, child_request, commit_request,
-    create_refusal, enroll_request, error_of, grant_request, issue_ticket, local, push_request,
-    role_request,
+    create_refusal, enroll_request, error_of, grant_request, issue_ticket, local,
+    org_invite_request, push_request, role_request,
 };
 use crate::drops::{
     DROP_LIFE_SECS, DROP_SLOTS, check_put as check_drop_put, check_slot as check_drop_slot,
@@ -124,6 +128,22 @@ pub fn org_plan() -> Limits {
         max_commit_ops: 20_000,
     }
 }
+
+/// Plan `managed` of `seed.sql`: a managed member's own account mailbox on
+/// the org's server, what an org-minted invite gives (`free` with 32
+/// credentials).
+pub fn managed_plan() -> Limits {
+    Limits {
+        max_bytes: 256 << 20,
+        max_records: 100_000,
+        max_credentials: 32,
+        req_per_min: 120,
+        max_commit_ops: 20_000,
+    }
+}
+
+/// Org invites an org mailbox mints in a UTC day (`api_org_invite`).
+const ORG_INVITES_PER_DAY: u32 = 200;
 
 /// Plan `contact` of `seed.sql`: the child of a pair of contacts.
 fn contact() -> Limits {
@@ -215,6 +235,8 @@ struct Mbx {
     deleted: bool,
     /// Its plan.
     limits: Limits,
+    /// On plan `org`: may mint org invites, holds no child.
+    org: bool,
     /// 1 account, 2 shared, 3 contact (`mailboxes.kind`).
     kind: u8,
     /// The account mailbox a child was created under.
@@ -228,6 +250,7 @@ impl Mbx {
     fn new(limits: Limits) -> Mbx {
         Mbx {
             limits,
+            org: false,
             kind: ACCOUNT,
             parent: None,
             created_by: None,
@@ -306,9 +329,22 @@ impl Cred {
     }
 }
 
+/// An org-minted invite, by token (the SQL keeps its SHA-256).
+#[derive(Debug)]
+struct OrgToken {
+    spent: bool,
+    /// Unix seconds.
+    expires: i64,
+}
+
 #[derive(Debug)]
 struct State {
     limits: Limits,
+    /// A mailbox created without an org-minted token is on plan `org`.
+    org: bool,
+    org_tokens: HashMap<Vec<u8>, OrgToken>,
+    /// Org invites minted per (org mailbox, UTC day).
+    org_invites_day: HashMap<(MailboxId, i64), u32>,
     mailboxes: HashMap<MailboxId, Mbx>,
     /// Credential ids are unique across mailboxes (primary key in SQL).
     credentials: HashMap<CredentialId, Cred>,
@@ -1191,11 +1227,23 @@ impl FakeMailbox {
         FakeMailbox::with_limits(selfhost())
     }
 
+    /// An organisation's server: every mailbox created without an
+    /// org-minted token is on plan `org` (`org_plan()`); a token one of
+    /// them minted gives plan `managed` (`managed_plan()`).
+    pub fn org() -> FakeMailbox {
+        let fake = FakeMailbox::with_limits(org_plan());
+        fake.lock().org = true;
+        fake
+    }
+
     /// Every mailbox gets `limits` (a plan of its own).
     pub fn with_limits(limits: Limits) -> FakeMailbox {
         FakeMailbox {
             state: Arc::new(Mutex::new(State {
                 limits,
+                org: false,
+                org_tokens: HashMap::new(),
+                org_invites_day: HashMap::new(),
                 mailboxes: HashMap::new(),
                 credentials: HashMap::new(),
                 used_tickets: HashSet::new(),
@@ -1728,10 +1776,24 @@ impl MailboxApi for FakeMailboxClient {
                 // the invite, as the SQL does).
                 return refused(ErrorCode::Malformed);
             }
+            // An org-minted token: plan managed, once, until it expires.
+            let minted = invite.filter(|i| s.org_tokens.contains_key(*i));
+            let (limits, org) = match minted {
+                Some(token) => {
+                    let t = s.org_tokens.get_mut(token).expect("minted");
+                    if t.spent || t.expires < unix_now() {
+                        return refused(ErrorCode::NotFound);
+                    }
+                    t.spent = true;
+                    (managed_plan(), false)
+                }
+                None => (s.limits.clone(), s.org),
+            };
             let m = random16();
             let mbx = Mbx {
                 created_by: Some(id),
-                ..Mbx::new(s.limits.clone())
+                org,
+                ..Mbx::new(limits)
             };
             let created = MailboxCreated {
                 mailbox_id: m,
@@ -1983,6 +2045,8 @@ impl MailboxApi for FakeMailboxClient {
             ChildKind::Shared => (2, MAX_CHILDREN.0, shared()),
             ChildKind::Contact => (3, MAX_CHILDREN.1, contact()),
         };
+        // Plan org holds no child (caps 0 in `seed.sql`).
+        let cap = if s.mailboxes[&parent].org { 0 } else { cap };
         if s.live_children(&parent, Some(kind)) >= cap {
             return refused(ErrorCode::Quota);
         }
@@ -2012,6 +2076,39 @@ impl MailboxApi for FakeMailboxClient {
             },
         );
         wire(&created)
+    }
+
+    fn create_org_invite(&self, uses: u16, ttl_hours: u16) -> Result<Vec<u8>, MailboxError> {
+        self.open_mailbox()?;
+        let req = org_invite_request(uses, ttl_hours)?;
+        let (mut s, m) = self.signed()?;
+        // `api_org_invite` after the shapes, in its order.
+        let mbx = &s.mailboxes[&m];
+        if s.caller(&self.credential.id()).role != CredentialRole::Manage
+            || !mbx.org
+            || mbx.kind != ACCOUNT
+            || mbx.parent.is_some()
+        {
+            return refused(ErrorCode::Forbidden);
+        }
+        let now = unix_now();
+        let day = now.div_euclid(86_400);
+        let count = s.org_invites_day.entry((m, day)).or_insert(0);
+        *count += 1;
+        if *count > ORG_INVITES_PER_DAY {
+            let wait = (86_400 - now.rem_euclid(86_400)).max(1) as u32;
+            return Err(error_of(ErrorCode::RateLimited, Some(wait)));
+        }
+        let mut token = vec![0u8; ORG_INVITE_TOKEN_LEN];
+        aws_lc_rs::rand::fill(&mut token).expect("system random source");
+        s.org_tokens.insert(
+            token.clone(),
+            OrgToken {
+                spent: false,
+                expires: now + i64::from(req.ttl_hours) * 3600,
+            },
+        );
+        Ok(wire(&OrgInviteCreated { token })?.token)
     }
 
     fn issue_ticket(

@@ -7,7 +7,9 @@
 -- Migration 20261031235000 writes the same child rows and caps on a
 -- database it upgrades; this file is for a fresh one.
 -- `org` is the plan of an organisation's mailbox (OnePass Business), created
--- through an invite only.
+-- through an invite only. `managed` is the plan of a managed member's own
+-- account mailbox on the organisation's server (the free row with 32
+-- credentials), created through an invite an org manager mints only.
 -- The batch size stays at the protocol's 20 000 operations on every plan
 -- but contact.
 set onepass.maintenance = 'on';
@@ -19,7 +21,8 @@ values
     ('selfhost', 1099511627776, 10000000, 256, 6000, 20000, 1024, 4096),
     ('shared', 134217728, 100000, 80, 600, 20000, 0, 0),
     ('contact', 16777216, 2000, 4, 120, 2000, 0, 0),
-    ('org', 17179869184, 200000, 4096, 600, 20000, 0, 0)
+    ('org', 17179869184, 200000, 4096, 600, 20000, 0, 0),
+    ('managed', 268435456, 100000, 32, 120, 20000, 16, 256)
 on conflict (plan) do update set
     max_bytes = excluded.max_bytes,
     max_records = excluded.max_records,

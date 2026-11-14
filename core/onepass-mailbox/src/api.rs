@@ -126,6 +126,16 @@ pub trait MailboxApi: Send {
         label: &[u8],
     ) -> Result<MailboxCreated, MailboxError>;
 
+    /// `POST /v1/mailboxes/{m}/org-invites`: a manager of the open org
+    /// mailbox (plan `org`, an account mailbox, not a child) mints a one-use
+    /// invite of plan `managed` for a member's own account mailbox, valid
+    /// `ttl_hours`. `uses` other than 1 or a ttl outside 1 to 168 hours is
+    /// `Malformed` before sending; a caller below manager, or a mailbox not
+    /// on plan `org`, is `Forbidden`; 200 a UTC day per org mailbox, then
+    /// `Retry` with the wait. Returns the 32 byte token: the server keeps
+    /// only its hash, so a lost token is lost (mint another).
+    fn create_org_invite(&self, uses: u16, ttl_hours: u16) -> Result<Vec<u8>, MailboxError>;
+
     /// A ticket for `new_credential_pub`, valid 300 s from `now`. No request.
     fn issue_ticket(
         &self,
@@ -248,6 +258,10 @@ impl MailboxApi for MailboxClient {
         MailboxClient::create_child(self, kind, owner_public_key, label)
     }
 
+    fn create_org_invite(&self, uses: u16, ttl_hours: u16) -> Result<Vec<u8>, MailboxError> {
+        MailboxClient::create_org_invite(self, uses, ttl_hours)
+    }
+
     fn issue_ticket(
         &self,
         new_credential_pub: CredentialKey,
@@ -365,6 +379,10 @@ impl<T: MailboxApi + ?Sized> MailboxApi for Box<T> {
         label: &[u8],
     ) -> Result<MailboxCreated, MailboxError> {
         (**self).create_child(kind, owner_public_key, label)
+    }
+
+    fn create_org_invite(&self, uses: u16, ttl_hours: u16) -> Result<Vec<u8>, MailboxError> {
+        (**self).create_org_invite(uses, ttl_hours)
     }
 
     fn issue_ticket(

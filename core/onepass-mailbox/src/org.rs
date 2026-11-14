@@ -34,7 +34,8 @@ use std::fmt;
 
 use aws_lc_rs::digest::{Context, SHA256};
 use onepass_mailbox_proto::{
-    Body, CommitOp, CommitResponse, Op, PAGE_MAX_RECORDS, ServerRecord, blob_sha256,
+    Body, CommitOp, CommitResponse, ORG_INVITE_USES, Op, PAGE_MAX_RECORDS, ServerRecord,
+    blob_sha256,
 };
 
 use crate::{ChangeFeed, MailboxApi, MailboxError, blobs};
@@ -335,6 +336,15 @@ impl<A: MailboxApi> OrgStore<A> {
                 Err(MailboxError::Malformed("org delete answered with a conflict").into())
             }
         }
+    }
+
+    /// Mints a one-use invite of plan `managed` for a member's own account
+    /// mailbox on this organisation's server, valid `ttl_hours` (1 to 168).
+    /// Needs a manager credential on the org mailbox. Returns the 32 byte
+    /// token to hand to the member's device, which spends it with
+    /// `MailboxApi::create`.
+    pub fn create_member_invite(&mut self, ttl_hours: u16) -> Result<Vec<u8>, OrgStoreError> {
+        Ok(self.api.create_org_invite(ORG_INVITE_USES, ttl_hours)?)
     }
 
     /// The bytes of `(kind, id)`, `None` when absent or a tombstone.

@@ -5,12 +5,13 @@ use std::collections::HashMap;
 
 use onepass_mailbox_proto::{
     COMMIT_BODY_MAX, COMMIT_OPS_MAX, CONTENT_TYPE, ChangesPage, ChangesQuery, ChildKind, CommitOp,
-    CommitRequest, CommitResponse, CreateChild, CreateMailbox, CredentialId, CredentialRole,
-    Enroll, EnrollTicket, ErrorBody, ErrorCode, GrantCredential, LocateRequest, Located,
-    MailboxCreated, MailboxId, MailboxInfo, Message, Op, PAGE_MAX_RECORDS, ProtoError, PushKind,
-    ServerConfig, ServerRecord, SetCredentialRole, SetLocator, SetPush, SignatureParams,
-    SignedEnrollTicket, TICKET_VERSION, content_digest, credential_id, decode, encode, hex,
-    signature_base, signature_header, signature_input_header, ticket_signed_bytes,
+    CommitRequest, CommitResponse, CreateChild, CreateMailbox, CreateOrgInvite, CredentialId,
+    CredentialRole, Enroll, EnrollTicket, ErrorBody, ErrorCode, GrantCredential, LocateRequest,
+    Located, MailboxCreated, MailboxId, MailboxInfo, Message, Op, OrgInviteCreated,
+    PAGE_MAX_RECORDS, ProtoError, PushKind, ServerConfig, ServerRecord, SetCredentialRole,
+    SetLocator, SetPush, SignatureParams, SignedEnrollTicket, TICKET_VERSION, content_digest,
+    credential_id, decode, encode, hex, signature_base, signature_header, signature_input_header,
+    ticket_signed_bytes,
 };
 
 use crate::credential::{Credential, CredentialKey};
@@ -309,6 +310,17 @@ impl MailboxClient {
         read(expect(r, &[200])?)
     }
 
+    /// `POST /v1/mailboxes/{m}/org-invites` (manager of an org mailbox):
+    /// a one-use invite of plan `managed`, valid `ttl_hours`. Returns the
+    /// 32 byte token, which the server answers once and never again.
+    pub fn create_org_invite(&self, uses: u16, ttl_hours: u16) -> Result<Vec<u8>, MailboxError> {
+        let target = format!("{}/org-invites", self.mailbox_path()?);
+        let req = org_invite_request(uses, ttl_hours)?;
+        let r = self.signed(Method::Post, &target, &encode(&req))?;
+        let created: OrgInviteCreated = read(expect(r, &[200])?)?;
+        Ok(created.token)
+    }
+
     /// `PUT /v1/mailboxes/{m}/push`.
     pub fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
         let target = format!("{}/push", self.mailbox_path()?);
@@ -486,6 +498,15 @@ pub(crate) fn child_request(
         owner_public_key,
         label: label.to_vec(),
     };
+    req.check().map_err(local)?;
+    Ok(req)
+}
+
+pub(crate) fn org_invite_request(
+    uses: u16,
+    ttl_hours: u16,
+) -> Result<CreateOrgInvite, MailboxError> {
+    let req = CreateOrgInvite { uses, ttl_hours };
     req.check().map_err(local)?;
     Ok(req)
 }

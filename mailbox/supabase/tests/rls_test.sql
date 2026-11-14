@@ -155,7 +155,7 @@ select onepass_test.ok(
     'update_of_a_allowed');
 
 -- Plans read only, invites hidden without the invite setting, rate open to the owner.
-select onepass_test.ok((select count(*) from onepass_mailbox.plans) = 5, 'plans_readable');
+select onepass_test.ok((select count(*) from onepass_mailbox.plans) = 6, 'plans_readable');
 select onepass_test.throws(
     $$insert into onepass_mailbox.plans values ('gold', 1, 1, 1, 1, 1)$$,
     '42501', 'plans_not_writable');

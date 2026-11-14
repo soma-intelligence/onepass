@@ -32,6 +32,7 @@ insert into t_allow (role, signature) values
     ('onepass_mailbox_api', 'onepass_mailbox.drop_get(bytea,smallint,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.drop_delete(bytea,bytea)'),
     ('onepass_mailbox_api', 'onepass_mailbox.api_set_push_target(bytea,bytea,timestamp with time zone,bytea,bytea,smallint,bytea)'),
+    ('onepass_mailbox_api', 'onepass_mailbox.api_org_invite(bytea,bytea,timestamp with time zone,bytea,smallint,smallint)'),
     ('onepass_mailbox_janitor', 'onepass_mailbox.push_forget_target(bytea,bytea,bytea)'),
     ('onepass_mailbox_janitor', 'onepass_mailbox.gc_take(integer)'),
     ('onepass_mailbox_janitor', 'onepass_mailbox.gc_done(bytea,text)'),

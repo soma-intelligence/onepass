@@ -7,7 +7,9 @@ mod fake;
 pub mod hostile_org;
 
 pub use conformance::{ConformanceTarget, QUOTA_CASE_MAX_RECORDS, run_conformance};
-pub use fake::{FAKE_BASE_URL, FakeMailbox, FakeMailboxClient, FaultHandle, org_plan};
+pub use fake::{
+    FAKE_BASE_URL, FakeMailbox, FakeMailboxClient, FaultHandle, managed_plan, org_plan,
+};
 
 use crate::MailboxError;
 use crate::credential::Credential;

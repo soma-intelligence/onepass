@@ -34,8 +34,8 @@ export const PREFIX = "/mailbox";
 export const RDV_POLL_MS = 500;
 /**
  * Body cap of the routes of small messages (create, enroll, grants, roles,
- * locator, locate, children, push): the largest of them, a SetPush with a
- * 4096 byte token, is far below it.
+ * locator, locate, children, org-invites, push): the largest of them, a
+ * SetPush with a 4096 byte token, is far below it.
  */
 export const SMALL_BODY = 8 << 10;
 /** Upload URLs signed at once by one announce (Storage round trips in flight). */
@@ -515,6 +515,26 @@ async function createChild(c: Ctx): Promise<Response> {
   );
 }
 
+/**
+ * POST /v1/mailboxes/{m}/org-invites: a manager of an org mailbox mints a
+ * one-use invite of plan managed for a member's own account mailbox. The
+ * body's uses and ttl are checked by the decoder and again by SQL; the
+ * token is answered once and never logged.
+ */
+async function createOrgInvite(c: Ctx): Promise<Response> {
+  const m = unhex(c.groups[0]);
+  await authenticate(c, m);
+  const b = decode(proto.decodeCreateOrgInvite, c.body) as { uses: number; ttl_hours: number };
+  const rows = await call(c.deps.db, "api_org_invite", [
+    ...signedArgs(c, m),
+    a.smallint(b.uses),
+    a.smallint(b.ttl_hours),
+  ]);
+  const refused = inBand(rows[0]);
+  if (refused) throw refused;
+  return postcard(proto.encodeOrgInviteCreated({ token: rows[0].token }));
+}
+
 const PUSH_KIND: Record<string, number> = { None: 0, Fcm: 1, Apns: 2, UnifiedPush: 3 };
 
 async function setPush(c: Ctx): Promise<Response> {
@@ -890,6 +910,14 @@ const ROUTES: Route[] = [
     query: "none",
     maxBody: SMALL_BODY,
     run: createChild,
+  },
+  {
+    method: "POST",
+    re: new RegExp(`^${MB}/org-invites$`),
+    auth: "signed",
+    query: "none",
+    maxBody: SMALL_BODY,
+    run: createOrgInvite,
   },
   {
     method: "PUT",
