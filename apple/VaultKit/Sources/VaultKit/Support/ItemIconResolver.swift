@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Where an item's icon comes from, best first (docs/icon-pack.md, "Ordre de recherche"):
 ///
@@ -11,7 +12,8 @@ import Foundation
 ///    web address: an item with no address, or one the pack does not know, still finds its brand.
 /// 4. The site's own icon (`SiteIconLoader`, fetched from the item's site only), shown only when
 ///    its source was at least 32 px on its longest side; a source of 32 to 63 px (stored at 64 to
-///    127 px) is drawn bare by `ItemIcon`, never stretched. A smaller one is a blur.
+///    127 px) is drawn bare by `ItemIcon`, never stretched. A smaller one is a blur. Never a hosting
+///    platform's icon (the pack's `rejects`), not even one cached before the pack knew it.
 /// 5. Nothing: `ItemIcon` then draws the monogram tile (a login with a title) or the category
 ///    artwork.
 ///
@@ -26,6 +28,9 @@ public final class ItemIconResolver: Sendable {
     /// The chosen icons; nil where no vault is open (previews, tests).
     public let custom: CustomIconStore?
     private let enabled: @Sendable () -> Bool
+    /// Per host: the cached site icon last checked against the pack's rejects (and that pack's
+    /// version), and whether it was refused. A row asks on every frame: each icon is hashed once.
+    private let checked = Mutex<[String: (png: Data, version: Int, rejected: Bool)]>([:])
 
     public init(
         pack: IconPackStore?, site: SiteIconLoader, custom: CustomIconStore? = nil,
@@ -46,10 +51,12 @@ public final class ItemIconResolver: Sendable {
     ) -> ItemIconResolver {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let enabled: @Sendable () -> Bool = { settings.siteIconsEnabled }
+        let pack = IconPackStore(baseline: IconPackStore.bundledPack(in: bundle), directory: container.iconPackFolder)
         return ItemIconResolver(
-            pack: IconPackStore(baseline: IconPackStore.bundledPack(in: bundle), directory: container.iconPackFolder),
+            pack: pack,
             site: SiteIconLoader(
-                cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true), enabled: enabled),
+                cacheDirectory: caches.appendingPathComponent("OnePass/SiteIcons", isDirectory: true), enabled: enabled,
+                rejects: { pack.pack()?.rejects ?? [] }),
             custom: custom, enabled: enabled)
     }
 
@@ -71,7 +78,7 @@ public final class ItemIconResolver: Sendable {
         if let url, let packed = packIcon(for: url) { return packed }
         if let named = pack?.icon(forTitle: title)?.data { return named }
         guard let url else { return nil }
-        return Self.pick(chosen: nil, pack: nil, site: site.cachedIcon(for: url))
+        return Self.pick(chosen: nil, pack: nil, site: notRejected(site.cachedIcon(for: url), url: url))
     }
 
     /// Same, the chosen icon first when it is in memory. A row shows this on its first frame and
@@ -92,7 +99,7 @@ public final class ItemIconResolver: Sendable {
         if let url, let packed = packIcon(for: url) { return packed }
         if let named = pack?.icon(forTitle: title)?.data { return named }
         guard let url else { return nil }
-        return Self.pick(chosen: nil, pack: nil, site: await site.icon(for: url))
+        return Self.pick(chosen: nil, pack: nil, site: notRejected(await site.icon(for: url), url: url))
     }
 
     /// Same, loading the chosen icon from the vault first (`CustomIconStore.prefetch`): a chosen
@@ -121,6 +128,19 @@ public final class ItemIconResolver: Sendable {
         await pack.shareBaseline()
         guard enabled() else { return }
         await pack.refreshIfDue()
+    }
+
+    /// `png`, the site icon of `url`, unless it is a hosting platform's icon (the pack's `rejects`):
+    /// one cached before the pack had that reject is refused here. Hashed once per host and icon.
+    func notRejected(_ png: Data?, url: String) -> Data? {
+        guard let png, let current = pack?.pack(), !current.rejects.isEmpty else { return png }
+        let key = Self.host(of: url) ?? url
+        if let memo = checked.withLock({ $0[key] }), memo.version == current.version, memo.png == png {
+            return memo.rejected ? nil : png
+        }
+        let rejected = IconPack.isRejected(png, by: current.rejects)
+        checked.withLock { $0[key] = (png, current.version, rejected) }
+        return rejected ? nil : png
     }
 
     private func packIcon(for url: String) -> Data? {

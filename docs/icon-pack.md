@@ -43,11 +43,24 @@ Le pack lui-même ne dit pas qui a fourni la liste : pour un CSV Tranco, `build`
 
 `scripts/icon-pack-blocklist.txt` (`--blocklist`, par défaut ce fichier) : une ligne est un domaine (`www.` ignoré ; lui et tous ses sous-domaines, donc `m.mauvais.fr` est bloqué par `mauvais.fr`) ou `*.suffixe` (le suffixe et tout hôte en dessous, donc `*.xxx` couvre une extension entière), `#` pour un commentaire. Un domaine listé qui y figure n'est même pas contacté par `sites` ; un domaine dont la page finit, après redirections, sur un hôte de la liste est écarté, et `build` refait les deux contrôles (une liste d'exclusion peut grandir entre `sites` et `build`). Le fichier livré est un point de départ (extensions et sites adultes ou de jeux d'argent, DNS dynamique gratuit souvent détourné) que le fondateur complète avant toute vraie construction.
 
+## Icônes de plateformes
+
+Beaucoup de sites ne montrent pas l'icône de leur marque mais celle du logiciel qui les héberge : le portail des membres d'une salle de sport sert la favicon de son logiciel de club, une boutique celle de son créateur de site, une page de connexion celle de son fournisseur d'identité (Salesforce, Okta, Shopify, Wix...). Cette icône n'est jamais montrée comme le logo de la marque.
+
+À la construction :
+
+1. `icon_pack.py sites` va aussi chercher l'icône de chaque plateforme de `scripts/icon-pack-platforms.txt` (`--platforms`, par défaut ce fichier, chaîne vide pour aucune ; même chercheur que les marques, 32 px au moins) dans `DIR/platforms/` et `DIR/platforms.json`. La liste est faite à la main, rangée par groupes en commentaires `#` : logiciels de clubs et de salles (Daxko, Club Automation, Mindbody...), créateurs de sites, fournisseurs d'identité, Salesforce, centres d'aide, commerce en ligne, forums et communautés, portails scolaires.
+2. `icon_pack.py build --sites DIR` dessine avec resvg chaque icône de site récupérée (marques `site` de la liste choisie, domaines populaires) et chaque icône de plateforme dans un carré de 128 px, puis en calcule le dHash (64 bits, le même calcul que `IconHash` dans VaultKit, vecteurs communs dans `scripts/testdata/dhash-vectors.json`). Le hachage porte toujours sur le PNG dessiné, jamais sur le fichier téléchargé.
+3. Sont des rejets : le hash de chaque icône de plateforme, et tout hash qu'au moins 3 marques différentes servent (hashes à 6 bits d'écart au plus ; une marque compte une seule fois sur tous ses domaines, `marque.com` et `marque.fr` donnent la même marque `marque`).
+4. Une icône de site proche d'un rejet (6 bits au plus) quitte le pack : le domaine passe à son icône suivante ou n'en a pas. Seul le domaine de la plateforme elle-même garde la sienne. `report.json` donne `rejects` (leur nombre) et `platform_icons_dropped` (les domaines touchés).
+
+L'index porte les rejets dans `rejects` : liste triée, sans doublon, de hashes en 16 chiffres hexadécimaux minuscules. Dans l'app, `SiteIconLoader` calcule le dHash du PNG normalisé qu'il s'apprête à garder (au plus 256 px de côté, jamais le fichier téléchargé) et le refuse s'il est à 6 bits ou moins d'un rejet : il essaie le candidat suivant, et si tous sont refusés le site n'a pas d'icône (échec retenu comme les autres). Une icône de site déjà en cache qui correspond à un rejet arrivé avec un pack plus récent n'est pas montrée non plus : `ItemIconResolver` la vérifie à la lecture, une fois par hôte et par icône.
+
 ## Construction
 
 `scripts/icon_pack.py build` lit les trois dépôts (données non fiables : chaque archive est dépaquetée dans son propre dossier vide, rien n'y est exécuté, Python tourne avec `-I`), garde pour chaque domaine la meilleure icône (logos `-icon` en couleurs, puis 2FA Directory en couleurs, puis Simple Icons, puis les autres carrées), refuse tout SVG qui lirait autre chose que lui-même (DOCTYPE, entité, script, image, `href` externe, `url()` externe, `@import`, texte), le dessine avec [resvg](https://github.com/linebender/resvg) en carré de 256 px (dossier de ressources vide, polices système ignorées) et l'encode en WebP sans perte (`cwebp -lossless`). Une icône presque vide est écartée et le domaine passe à la suivante.
 
-Format 1 du pack (`onepass-icons-<version>.bin`, entiers big-endian) : `OPIP`, octet de format, longueur de l'index (u32), index JSON (`version`, `size`, `icons` en `[offset, longueur, drapeaux]`, `domains` en domaine vers numéro d'icône, et en option `names` et `tenants`, qu'un lecteur plus ancien ignore), puis les icônes. Drapeau 1 : marque d'une couleur. Drapeau 2 : icône de 128 px issue d'une liste de domaines (les autres font `size` px). Le manifeste `icon-pack-manifest.json` donne la version, la taille et le SHA-256 du pack et les commits amont ; `icon-pack-manifest.json.sig` est la signature Ed25519 (base64) de ses octets exacts.
+Format 1 du pack (`onepass-icons-<version>.bin`, entiers big-endian) : `OPIP`, octet de format, longueur de l'index (u32), index JSON (`version`, `size`, `icons` en `[offset, longueur, drapeaux]`, `domains` en domaine vers numéro d'icône, et en option `names`, `tenants` et `rejects`, qu'un lecteur plus ancien ignore ; un pack sans `rejects` n'en a aucun), puis les icônes. Drapeau 1 : marque d'une couleur. Drapeau 2 : icône de 128 px issue d'une liste de domaines (les autres font `size` px). Le manifeste `icon-pack-manifest.json` donne la version, la taille et le SHA-256 du pack et les commits amont ; `icon-pack-manifest.json.sig` est la signature Ed25519 (base64) de ses octets exacts.
 
 Tests : `python3 -I scripts/test_icon_pack.py` (rendu de bout en bout si `resvg` et `cwebp` sont là, signature si OpenSSL 3 est là) et la suite `IconPack` de VaultKit.
 
@@ -79,7 +92,7 @@ Le binaire (environ 11 Mo) n'est remplacé qu'à une version de l'app, jamais ch
 1. Icône choisie par la personne pour l'élément. Le cœur la garde (`custom_icon`) mais aucun écran ne la règle et le pont ne l'expose pas encore : le paramètre `chosen` attend ce branchement.
 2. Pack : l'hôte de l'élément, puis ses noms parents jusqu'au domaine enregistrable (jamais le parent d'une plateforme `tenants`). Un hôte couvert par le pack n'est jamais demandé au site, même en préchargement.
 3. Pack, par le titre de l'élément quand c'est le nom d'une marque (« Reddit ») ou une adresse (« reddit.com ») : un élément sans adresse trouve aussi sa marque.
-4. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, la tuile monogramme.
+4. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, la tuile monogramme. Jamais l'icône d'une plateforme d'hébergement (`rejects`, voir plus haut).
 5. Sinon `ItemIcon` dessine la tuile monogramme (un identifiant qui a un titre) ou l'illustration de la catégorie.
 
 ## Rendu dans les listes

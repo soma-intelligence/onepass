@@ -54,6 +54,11 @@ extension URLSession {
 /// The result is a square PNG of `iconPixels` (aspect kept, transparent padding, high quality
 /// interpolation), or smaller for a small source: never more than twice the source's size.
 ///
+/// A hosting platform's icon (`rejects`, from the icon pack: a gym portal serving its club software's
+/// favicon) is never kept: the normalized PNG about to be kept is hashed (`IconHash`), and one within
+/// `IconPack.rejectDistance` of a reject is refused and the next candidate tried. Every candidate
+/// refused: the host has no icon (a failure, remembered like any other).
+///
 /// When the item's own host yields nothing (`dashboard.stripe.com`, `notion.so`), its registrable
 /// domain (`stripe.com`, never a bare public suffix: `registrableDomain`) is tried, then `www.` plus
 /// that domain, then the app hosts of that same domain (`app.`, `account.`, `my.`: a brand whose
@@ -100,6 +105,8 @@ public actor SiteIconLoader {
     private let session: URLSession
     private let resolver: any HostResolver
     private let enabled: @Sendable () -> Bool
+    /// The icon pack's `rejects` (read at each search: a refreshed pack may bring new ones).
+    private let rejects: @Sendable () -> [UInt64]
     private var inFlight: [String: Task<Data?, Never>] = [:]
     /// Icons already read or fetched, by host: a row shows its icon on its first frame, never the
     /// placeholder first.
@@ -108,12 +115,14 @@ public actor SiteIconLoader {
     public init(
         cacheDirectory: URL, session: URLSession = .ephemeralNoCookies,
         resolver: any HostResolver = SystemHostResolver(),
-        enabled: @escaping @Sendable () -> Bool
+        enabled: @escaping @Sendable () -> Bool,
+        rejects: @escaping @Sendable () -> [UInt64] = { [] }
     ) {
         self.cacheDirectory = cacheDirectory
         self.session = session
         self.resolver = resolver
         self.enabled = enabled
+        self.rejects = rejects
     }
 
     /// PNG bytes of the site's icon, or nil (disabled, not HTTPS, no icon, recently failed).
@@ -305,8 +314,11 @@ public actor SiteIconLoader {
     /// parent domain other items share); the item's host is written by the caller. `refreshing`: the
     /// parent's cache is not taken as the answer (it is as old as the icon being refreshed).
     private func attempt(_ host: String, remember: Bool, refreshing: Bool = false) async -> Attempt {
+        let rejects = self.rejects()
         if remember, !refreshing {
-            if let cached = try? Data(contentsOf: cacheFile(host: host, ext: "png")), isImage(cached) {
+            if let cached = try? Data(contentsOf: cacheFile(host: host, ext: "png")), isImage(cached),
+                !IconPack.isRejected(cached, by: rejects)
+            {
                 return .icon(cached)
             }
             if let age = markerAge(host: host), age < Self.failureLifetime { return .miss }
@@ -368,6 +380,9 @@ public actor SiteIconLoader {
                 failures[candidate.kind, default: 0] += 1
                 continue
             }
+            // A hosting platform's icon, not the brand's: the next candidate. Hashed on the
+            // normalized PNG (at most `iconPixels` square), never on the download.
+            if IconPack.isRejected(decoded.png, by: rejects) { continue }
             if decoded.sourcePixels > best?.sourcePixels ?? 0 { best = decoded }
         }
 

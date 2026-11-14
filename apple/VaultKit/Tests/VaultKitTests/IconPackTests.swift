@@ -8,7 +8,7 @@ import Testing
 /// A pack in format 1, as `scripts/icon_pack.py` writes it.
 func makeIconPack(
     version: Int, icons: [(Data, Int)], domains: [String: Int], size: Int = 256, names: [String: Int]? = nil,
-    tenants: [String]? = nil
+    tenants: [String]? = nil, rejects: [String]? = nil
 ) -> Data {
     var offsets: [[Int]] = []
     var blob = Data()
@@ -19,6 +19,7 @@ func makeIconPack(
     var index: [String: Any] = ["format": 1, "version": version, "size": size, "icons": offsets, "domains": domains]
     if let names { index["names"] = names }
     if let tenants { index["tenants"] = tenants }
+    if let rejects { index["rejects"] = rejects }
     let json = try! JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
     var out = Data("OPIP".utf8)
     out.append(1)
@@ -71,6 +72,22 @@ struct IconPackTests {
         // A shared suffix is never reached by stripping labels.
         #expect(pack.icon(forHost: "other.gov.uk") == nil)
         #expect(pack.icon(forHost: "x.service.gov.uk")?.data == mark)
+    }
+
+    /// Hosting-platform icon hashes: parsed from 16 hex digits; an older pack has none; anything
+    /// else is a malformed index.
+    @Test func parsesRejects() throws {
+        let pack = try IconPack(data: makeIconPack(
+            version: 3, icons: [(red, 0)], domains: ["a.com": 0], rejects: ["00000000000000ff", "f0f0f0f0f0f0f0f0"]))
+        #expect(pack.rejects == [0xFF, 0xF0F0_F0F0_F0F0_F0F0])
+        let older = try IconPack(data: makeIconPack(version: 3, icons: [(red, 0)], domains: ["a.com": 0]))
+        #expect(older.rejects.isEmpty)
+        #expect(older.icon(forHost: "a.com")?.data == red)
+        for bad in ["ff", "00000000000000FF", "000000000000000g", "0000000000000000ff"] {
+            #expect(throws: IconPack.Problem.malformedIndex) {
+                try IconPack(data: makeIconPack(version: 3, icons: [(red, 0)], domains: ["a.com": 0], rejects: [bad]))
+            }
+        }
     }
 
     @Test func refusesMalformedPacks() {

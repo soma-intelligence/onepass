@@ -1031,4 +1031,96 @@ extension SiteIconLoaderTests {
         await loader.settle()
         #expect(StubProtocol.requests(host: "logo-neuf.exemple.fr").count == requests)
     }
+
+    // MARK: Platform icons
+
+    /// An opaque PNG of 9 x 8 gray blocks drawn from `seed`: two seeds hash far apart.
+    static func patternPNG(seed: UInt64, side: Int = 192) -> Data {
+        var state = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        func next() -> CGFloat {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return CGFloat(state >> 56) / 255
+        }
+        let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        for row in 0..<8 {
+            for column in 0..<9 {
+                let gray = next()
+                context.setFillColor(red: gray, green: gray, blue: gray, alpha: 1)
+                let x0 = column * side / 9, x1 = (column + 1) * side / 9
+                let y0 = row * side / 8, y1 = (row + 1) * side / 8
+                context.fill(CGRect(x: x0, y: side - y1, width: x1 - x0, height: y1 - y0))
+            }
+        }
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        CGImageDestinationFinalize(destination)
+        return data as Data
+    }
+
+    /// The reject of an icon: the dHash of the PNG the loader would keep for it.
+    static func rejectHash(_ source: Data) throws -> UInt64 {
+        let decoded = try #require(SiteIconLoader.decodeIcon(source))
+        return try #require(IconHash.dHash(decoded.png))
+    }
+
+    @Test func patternsHashFarApart() throws {
+        let a = try Self.rejectHash(Self.patternPNG(seed: 1)), b = try Self.rejectHash(Self.patternPNG(seed: 2))
+        #expect(IconHash.distance(a, b) > IconPack.rejectDistance)
+    }
+
+    /// The site's best candidate is its hosting platform's icon (a reject): the next one is kept.
+    @Test func platformIconIsRefusedForTheNextCandidate() async throws {
+        let (session, _) = Self.makeSession()
+        let platform = Self.patternPNG(seed: 1), brand = Self.patternPNG(seed: 2)
+        let reject = try Self.rejectHash(platform)
+        let html = #"<link rel="icon" href="/vendor.png" sizes="512x512"><link rel="icon" href="/club.png" sizes="192x192">"#
+        StubProtocol.install(host: "portail.club-exemple.fr") { request in
+            switch request.url?.path {
+            case "", "/": .init(body: Data(html.utf8))
+            case "/vendor.png": .init(body: platform)
+            case "/club.png": .init(body: brand)
+            default: .init(status: 404)
+            }
+        }
+        let loader = SiteIconLoader(
+            cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true },
+            rejects: { [0x0123_4567_89AB_CDEF, reject] })
+        let png = try #require(await loader.icon(for: "https://portail.club-exemple.fr/connexion"))
+        let kept = try #require(IconHash.dHash(png))
+        #expect(IconHash.distance(kept, try Self.rejectHash(brand)) == 0)
+        #expect(IconHash.distance(kept, reject) > IconPack.rejectDistance)
+        let paths = StubProtocol.requests(host: "portail.club-exemple.fr").compactMap(\.url?.path)
+        #expect(paths.contains("/vendor.png"))
+        #expect(paths.contains("/club.png"))
+    }
+
+    /// Every candidate is the platform's icon: no icon, and the failure is remembered.
+    @Test func allCandidatesRefusedGivesNoIcon() async throws {
+        let (session, _) = Self.makeSession()
+        let platform = Self.patternPNG(seed: 1)
+        let reject = try Self.rejectHash(platform)
+        StubProtocol.install(host: "membres.salle-exemple.fr") { request in
+            switch request.url?.path {
+            case "", "/": .init(body: Data(#"<link rel="icon" href="/vendor.png" sizes="512x512">"#.utf8))
+            case "/vendor.png", "/apple-touch-icon.png", "/favicon.ico": .init(body: platform)
+            default: .init(status: 404)
+            }
+        }
+        let directory = Self.tempDirectory()
+        let loader = SiteIconLoader(
+            cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true },
+            rejects: { [reject] })
+        #expect(await loader.icon(for: "https://membres.salle-exemple.fr") == nil)
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent(Self.cacheName("membres.salle-exemple.fr")).path))
+        let count = StubProtocol.requests(host: "membres.salle-exemple.fr").count
+        #expect(count > 0)
+        #expect(await loader.icon(for: "https://membres.salle-exemple.fr") == nil)
+        #expect(StubProtocol.requests(host: "membres.salle-exemple.fr").count == count)
+        // Without the reject the same site has an icon.
+        let plain = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true })
+        #expect(await plain.icon(for: "https://membres.salle-exemple.fr") != nil)
+    }
 }

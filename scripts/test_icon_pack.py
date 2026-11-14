@@ -575,6 +575,127 @@ class DomainList(unittest.TestCase):
         self.assertEqual(icon_pack.curated_domains({"brands": [{"domains": ["WWW.Apple.com"], "use": "none"}]}), {"apple.com"})
 
 
+def pattern(seed, size=128):
+    """A PNG of 9 x 8 gray blocks drawn from `seed`: different seeds hash far apart."""
+    import random
+    rng = random.Random(seed)
+    grid = [[rng.randrange(256) for _ in range(9)] for _ in range(8)]
+    rows = []
+    for y in range(size):
+        line = grid[y * 8 // size]
+        rows.append(b"".join(bytes((line[x * 9 // size],) * 3 + (255,)) for x in range(size)))
+    return icon_pack.png_from_rgba(size, size, rows)
+
+
+def embedded_hash(svg, resvg, work):
+    """icon_hash without resvg: the dHash of the PNG `raster_svg` embedded."""
+    import re
+    return icon_pack.dhash(base64.b64decode(re.search(rb"base64,([^\"]+)", svg).group(1)))
+
+
+class Platforms(unittest.TestCase):
+    """Hosting-platform icons: rejects in the index, and never shipped as a brand's icon."""
+
+    def setUp(self):
+        DomainList.setUp(self)
+        write(self.tmp / "block.txt", "")
+        write(self.tmp / "none.txt", "")
+
+    fetcher = DomainList.fetcher
+    fetch = DomainList.fetch
+
+    def serve(self, domain, image):
+        write(self.web / domain / "index.html", '<html><link rel="apple-touch-icon" href="icon.png"></html>')
+        write(self.web / domain / "icon.png", image)
+
+    def build(self, domains, platforms="none.txt"):
+        write(self.tmp / "list.txt", "\n".join(domains) + "\n")
+        with mock.patch.object(icon_pack, "icon_hash", side_effect=embedded_hash):
+            return DomainList.build(self, self.tmp / "list.txt", ["--platforms", str(self.tmp / platforms)])
+
+    def test_icon_shared_by_three_sites_is_a_reject(self):
+        for domain in ("gym-one.test", "club-two.test", "studio-three.test"):
+            self.serve(domain, pattern(1))
+        self.serve("own.test", pattern(2))
+        domains = ["gym-one.test", "club-two.test", "studio-three.test", "own.test"]
+        self.fetch(domains)
+        manifest, index, report, _ = self.build(domains)
+        self.assertEqual(index["rejects"], ["%016x" % icon_pack.dhash(pattern(1))])
+        for domain in domains[:3]:
+            self.assertNotIn(domain, index["domains"])
+        self.assertIn("own.test", index["domains"])
+        self.assertEqual(report["platform_icons_dropped"], sorted(domains[:3]))
+        self.assertEqual((report["rejects"], manifest["rejects"]), (1, 1))
+
+    def test_platform_list_icon_is_a_reject(self):
+        self.serve("vendor.test", pattern(3))
+        self.serve("portal.test", pattern(3))
+        self.serve("other.test", pattern(4))
+        write(self.tmp / "platforms.txt", "# gym software\nvendor.test\n")
+        record = icon_pack.fetch_platforms(["vendor.test"], self.tmp / "sites", lambda k, w: self.log.append((k, w)),
+                                           fetcher=self.fetcher, google=False, jobs=1)
+        self.assertEqual(sorted(record), ["vendor.test"])
+        self.assertTrue((self.tmp / "sites" / "platforms" / "vendor.test").is_file())
+        self.assertIn("vendor.test", json.loads((self.tmp / "sites" / "platforms.json").read_text())["fetched"])
+        domains = ["portal.test", "other.test", "vendor.test"]
+        self.fetch(domains)
+        _, index, report, _ = self.build(domains, platforms="platforms.txt")
+        self.assertEqual(index["rejects"], ["%016x" % icon_pack.dhash(pattern(3))])
+        self.assertNotIn("portal.test", index["domains"])
+        self.assertIn("other.test", index["domains"])
+        # The platform's own domain keeps its own icon.
+        self.assertIn("vendor.test", index["domains"])
+        self.assertEqual(report["platform_icons_dropped"], ["portal.test"])
+
+    def test_one_brand_on_its_own_domains_is_not_a_reject(self):
+        domains = ["brand.com", "brand.fr", "brand.de", "brand.co.uk"]
+        for domain in domains:
+            self.serve(domain, pattern(5))
+        self.fetch(domains)
+        _, index, report, _ = self.build(domains)
+        self.assertNotIn("rejects", index)
+        for domain in domains:
+            self.assertIn(domain, index["domains"])
+        self.assertEqual((report["rejects"], report["platform_icons_dropped"]), (0, []))
+
+    def test_near_duplicates_cluster_and_far_ones_do_not(self):
+        base = 0x0F0F_F0F0_3C3C_A5A5
+        near = base ^ 0b111111  # 6 bits away
+        far = base ^ 0b1111111  # 7 bits away
+        self.assertEqual(icon_pack.find_rejects([("a.test", base), ("b.test", near), ("c.test", base)]), sorted({base, near}))
+        self.assertEqual(icon_pack.find_rejects([("a.test", base), ("b.test", base), ("c.test", far)]), [])
+        self.assertEqual(icon_pack.find_rejects([("a.test", base), ("b.test", base)], [far]), [far])
+        self.assertTrue(icon_pack.is_rejected(near, [base]))
+        self.assertFalse(icon_pack.is_rejected(far, [base]))
+
+    def test_rejects_in_the_index(self):
+        data = icon_pack.pack_bytes(3, 256, [(b"a", 0)], {"a.com": 0}, rejects=[255, 1, 255])
+        index, _ = icon_pack.read_pack(data)
+        self.assertEqual(index["rejects"], ["0000000000000001", "00000000000000ff"])
+        bad = data.replace(b'"0000000000000001"', b'"000000000000000G"')
+        with self.assertRaises(icon_pack.IconPackError):
+            icon_pack.read_pack(bad)
+
+    def test_shipped_platform_list(self):
+        path = ROOT / "scripts" / "icon-pack-platforms.txt"
+        listed, tranco = icon_pack.read_domain_lists([path])
+        self.assertFalse(tranco)
+        self.assertGreaterEqual(len(listed), 35)
+        self.assertEqual(len(listed), len(set(listed)))
+        self.assertNotIn("\u2014", path.read_text())
+        for domain in ("daxko.com", "clubautomation.com", "force.com", "salesforce.com", "okta.com", "shopify.com",
+                       "wix.com", "squarespace.com", "wordpress.com", "zendesk.com"):
+            self.assertIn(domain, listed)
+
+    @unittest.skipUnless(os.environ.get("RESVG") or shutil.which("resvg"), "needs resvg")
+    def test_icon_hash_draws_then_hashes(self):
+        work = self.tmp / "work"
+        work.mkdir()
+        image = pattern(6, 256)
+        value = icon_pack.icon_hash(icon_pack.raster_svg(image), os.environ.get("RESVG") or shutil.which("resvg"), work)
+        self.assertLessEqual(icon_pack.distance(value, icon_pack.dhash(image)), 2)
+
+
 @unittest.skipUnless(has_openssl(), "needs OpenSSL 3")
 class Signing(unittest.TestCase):
     def test_sign_then_verify(self):

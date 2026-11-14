@@ -4,16 +4,18 @@
     icon_pack.py build --simple-icons DIR --logos DIR --twofa DIR --sources FILE
                        --version N --out DIR [--size 256] [--jobs N] [--sites DIR]
                        [--domains FILE]... [--blocklist FILE] [--tranco-id ID --tranco-date DATE]
-                       [--resvg PATH] [--cwebp PATH]
+                       [--platforms FILE] [--resvg PATH] [--cwebp PATH]
         Reads the three upstream checkouts (untrusted data: SVG text is checked before it is
         drawn, nothing in them runs), rasterizes each kept icon to a square WebP at --size
         pixels, and writes DIR/onepass-icons-<N>.bin (the pack), DIR/icon-pack-manifest.json
         (version, size and SHA-256 of the pack, the upstream commits) and DIR/report.json.
         --sources is a JSON object {"simple-icons": {"commit": ..., "archive_sha256": ...}, ...}.
-    icon_pack.py sites [--curated FILE] [--domains FILE]... [--blocklist FILE] --out DIR
+    icon_pack.py sites [--curated FILE] [--domains FILE]... [--blocklist FILE] [--platforms FILE] --out DIR
         Fetches, at build time only, the icon of every curated brand that uses its site and, with
         --domains, of every popular domain listed (plain text, one per line, or a Tranco CSV
-        `rank,domain`), at least 128 px, into DIR (domains in DIR/domains and DIR/domains.json).
+        `rank,domain`), at least 128 px, into DIR (domains in DIR/domains and DIR/domains.json),
+        and the icon of every hosting platform (--platforms, default scripts/icon-pack-platforms.txt)
+        into DIR/platforms and DIR/platforms.json.
     icon_pack.py sign --manifest FILE
         Writes FILE.sig: the Ed25519 signature (base64) of the manifest's exact bytes, with the
         key in ICON_PACK_ED_PRIVATE_KEY (a 32-byte seed, base64; never generated here).
@@ -32,6 +34,9 @@ Pack format 1 (all integers big-endian):
     index = {"format": 1, "version": N, "size": px,
              "icons": [[offset, length, flags], ...],   offsets into the icon bytes
              "domains": {"withings.com": icon number, ...}}
+    optional keys: "names", "tenants", and "rejects": dHashes (16 lowercase hex digits, sorted) of
+    hosting-platform icons (a gym portal serving its software vendor's favicon), which the app
+    never shows as a site's icon.
     flags: bit 0 = one color mark (drawn in the text color by the app);
            bit 1 (value 2) = a 128 px icon from a popular-domain list (--domains), the others
            being `size` px.
@@ -999,17 +1004,18 @@ def curated_domains(curated):
     return {d for entry in curated.get("brands", []) for d in (normalized_domain(x) for x in entry.get("domains", [])) if d}
 
 
-def fetch_domains(domains, skip, blocklist, out, log, fetcher=None, google=True, jobs=8):
-    """Fetches each listed domain's own icon (at least MIN_DOMAIN_PIXELS) into out/domains/<domain>
-    and out/domains.json. The icon belongs to the domain as listed, whatever the site redirects to.
+def fetch_domains(domains, skip, blocklist, out, log, fetcher=None, google=True, jobs=8, folder="domains",
+                  min_pixels=MIN_DOMAIN_PIXELS):
+    """Fetches each listed domain's own icon (at least `min_pixels`) into out/<folder>/<domain>
+    and out/<folder>.json. The icon belongs to the domain as listed, whatever the site redirects to.
     A listed domain, or the host its page ends on, that the blocklist names is dropped. Returns
     (record, blocked domains)."""
-    (out / "domains").mkdir(parents=True, exist_ok=True)
+    (out / folder).mkdir(parents=True, exist_ok=True)
 
     def one(domain):
         hosts = set()
         try:
-            url, data, pixels = site_icon(f"https://{domain}/", fetcher, google, MIN_DOMAIN_PIXELS, hosts)
+            url, data, pixels = site_icon(f"https://{domain}/", fetcher, google, min_pixels, hosts)
         except (IconPackError, OSError, ValueError) as error:
             return domain, None, str(error), hosts
         return domain, (url, data, pixels), None, hosts
@@ -1029,12 +1035,174 @@ def fetch_domains(domains, skip, blocklist, out, log, fetcher=None, google=True,
                 log("domain", f"{domain}: {error}")
                 continue
             url, data, pixels = got
-            (out / "domains" / domain).write_bytes(data)
+            (out / folder / domain).write_bytes(data)
             record[domain] = {"url": url, "sha256": hashlib.sha256(data).hexdigest(), "pixels": pixels,
                               "final_hosts": sorted(hosts),
                               "fetched": datetime.date.today().isoformat()}
-    (out / "domains.json").write_text(json.dumps({"fetched": record, "blocked": sorted(blocked)}, indent=1, sort_keys=True) + "\n")
+    (out / f"{folder}.json").write_text(json.dumps({"fetched": record, "blocked": sorted(blocked)}, indent=1, sort_keys=True) + "\n")
     return record, sorted(blocked)
+
+
+# --- Hosting platforms (their icons are never a brand's logo) --------------
+
+DEFAULT_PLATFORMS = Path(__file__).resolve().parent / "icon-pack-platforms.txt"
+# A platform's favicon may be small: the app keeps site icons from 32 px on.
+MIN_PLATFORM_PIXELS = 32
+# Two icons whose dHashes differ in at most this many bits are the same icon (the app uses the same).
+REJECT_DISTANCE = 6
+# An icon shared by this many different brands (registrable domains with different names) belongs to
+# the platform that hosts them, not to any of them.
+SHARED_BRANDS = 3
+# Side of the PNG each site icon is drawn at to be hashed.
+HASH_PIXELS = 128
+
+
+def fetch_platforms(platforms, out, log, fetcher=None, google=True, jobs=8):
+    """Fetches the own icon of every hosting platform (daxko.com, okta.com, wix.com...) into
+    out/platforms/<domain> and out/platforms.json, with the same fetcher as the brands. Returns the
+    record."""
+    record, _ = fetch_domains(platforms, set(), Blocklist(), out, log, fetcher, google, jobs, folder="platforms",
+                              min_pixels=MIN_PLATFORM_PIXELS)
+    return record
+
+
+def source_svg(data):
+    """The SVG resvg draws for a fetched icon: the file itself when it is a safe SVG, else the raster
+    image embedded (`raster_svg`); None for anything else."""
+    if is_safe_svg(data):
+        return data
+    if raster_mime(data) and raster_size(data):
+        return raster_svg(data)
+    return None
+
+
+def platform_svgs(sites, platforms):
+    """{platform domain: SVG} for the platform icons `sites` fetched into sites/platforms."""
+    out = {}
+    for domain in platforms:
+        file = sites / "platforms" / domain
+        if file.is_file():
+            svg = source_svg(file.read_bytes())
+            if svg:
+                out[domain] = svg
+    return out
+
+
+def icon_hash(svg, resvg, work):
+    """dHash of `svg` drawn by resvg in a HASH_PIXELS square (the rendered PNG, never the raw
+    download: the app hashes its own normalized copy too)."""
+    try:
+        source, png = work / "hash.svg", work / "hash.png"
+        source.write_bytes(squared(svg, HASH_PIXELS))
+        if png.exists():
+            png.unlink()
+        empty = work / "resources"
+        empty.mkdir(exist_ok=True)
+        result = subprocess.run([resvg, "--resources-dir", str(empty), "--skip-system-fonts", str(source), str(png)],
+                                capture_output=True, timeout=60)
+        if result.returncode != 0 or not png.exists():
+            raise IconPackError("resvg failed: " + result.stderr.decode(errors="replace").strip()[:200])
+        return dhash(png.read_bytes())
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise IconPackError(f"cannot hash: {error}") from None
+
+
+def distance(a, b):
+    return bin(a ^ b).count("1")
+
+
+def brand_label(domain):
+    """The brand a domain names: its registrable domain's first label, squashed (brand.com and
+    brand.co.uk give "brand")."""
+    reg = registrable(domain) or domain
+    return squash(reg.split(".")[0])
+
+
+def find_rejects(icons, platform_hashes=()):
+    """Sorted hashes of platform icons: every platform's own icon, plus each site icon hash that
+    SHARED_BRANDS or more different brands serve (icons within REJECT_DISTANCE, counted by
+    `brand_label`, so one brand's own domains count once). icons: [(domain, hash)]."""
+    labels = {}
+    for domain, value in icons:
+        labels.setdefault(value, set()).add(brand_label(domain))
+    rejects = set(platform_hashes)
+    values = list(labels)
+    for value in values:
+        near = set()
+        for other in values:
+            if distance(value, other) <= REJECT_DISTANCE:
+                near |= labels[other]
+        if len(near) >= SHARED_BRANDS:
+            rejects.add(value)
+    return sorted(rejects)
+
+
+def is_rejected(value, rejects):
+    return any(distance(value, r) <= REJECT_DISTANCE for r in rejects)
+
+
+# Candidates that are a site's own icon, fetched by `sites` (curated `site` brands, domain lists).
+SITE_SOURCES = {"brand", "domain-list"}
+
+
+def reject_platform_icons(found, sites, platforms, resvg, jobs, log):
+    """Hashes every fetched site icon among the candidates and every platform icon (each drawn by
+    resvg, `icon_hash`), finds the rejects (`find_rejects`), and drops from `found` each site icon
+    that matches one: it must not ship as a brand's logo. A platform's own domain keeps its icon.
+    Returns (rejects, dropped domains)."""
+    digest = {}
+
+    def key(svg):
+        k = digest.get(id(svg))
+        if k is None:
+            k = digest[id(svg)] = hashlib.sha256(svg).hexdigest()
+        return k
+
+    owners = {}  # one entry per fetched file: a curated brand's candidate serves all its domains
+    for domain, candidates in found.items():
+        for c in candidates:
+            if c.source in SITE_SOURCES and id(c) not in owners:
+                owners[id(c)] = (c.name.partition(":")[2] or domain, c)
+    shared = platform_svgs(sites, platforms)
+    todo = {key(c.svg): c.svg for _, c in owners.values()}
+    todo.update({key(svg): svg for svg in shared.values()})
+    hashes = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        local = threading.local()
+
+        def one(item):
+            k, svg = item
+            if not hasattr(local, "work"):
+                local.work = Path(tempfile.mkdtemp(dir=tmp))
+            try:
+                return k, icon_hash(svg, resvg, local.work), None
+            except IconPackError as error:
+                return k, None, str(error)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+            for k, value, error in pool.map(one, sorted(todo.items())):
+                if value is None:
+                    log("hash", f"{k[:12]}: {error}")
+                else:
+                    hashes[k] = value
+    icons = [(owner, hashes[key(c.svg)]) for owner, c in owners.values() if key(c.svg) in hashes]
+    rejects = find_rejects(icons, [hashes[key(svg)] for svg in shared.values() if key(svg) in hashes])
+    own = {registrable(d) or d for d in platforms}
+    dropped = set()
+    for domain in sorted(found):
+        kept = []
+        for c in found[domain]:
+            value = hashes.get(key(c.svg)) if c.source in SITE_SOURCES else None
+            if value is not None and is_rejected(value, rejects) and (registrable(domain) or domain) not in own:
+                dropped.add(domain)
+                log("platform-icon", f"{domain}: {c.name}")
+                continue
+            kept.append(c)
+        if kept:
+            found[domain] = kept
+        else:
+            del found[domain]
+    return rejects, sorted(dropped)
 
 
 def domain_candidates(listed, skip, blocklist, sites, log):
@@ -1153,9 +1321,10 @@ def brand_names(picked, domains):
     return dict(sorted(out.items()))
 
 
-def pack_bytes(version, size, icons, domains, names=None, tenants=None):
+def pack_bytes(version, size, icons, domains, names=None, tenants=None, rejects=None):
     """icons: [(bytes, flags)], domains: {domain: index}, names: {squashed brand name: index},
-    tenants: domains whose icon is not inherited by their subdomains (acme.zendesk.com is Acme's)."""
+    tenants: domains whose icon is not inherited by their subdomains (acme.zendesk.com is Acme's),
+    rejects: dHashes of platform icons (ints), written as 16 hex digits, sorted, once each."""
     offsets, blob, position = [], bytearray(), 0
     for data, flags in icons:
         offsets.append([position, len(data), flags])
@@ -1166,6 +1335,8 @@ def pack_bytes(version, size, icons, domains, names=None, tenants=None):
         index["names"] = dict(sorted(names.items()))
     if tenants:
         index["tenants"] = sorted(tenants)
+    if rejects:
+        index["rejects"] = sorted({"%016x" % r for r in rejects})
     index = json.dumps(index, separators=(",", ":"), sort_keys=True).encode()
     return MAGIC + bytes([FORMAT]) + struct.pack(">I", len(index)) + index + bytes(blob)
 
@@ -1185,6 +1356,9 @@ def read_pack(data):
     for number in list(index["domains"].values()) + list(index.get("names", {}).values()):
         if not 0 <= number < len(index["icons"]):
             raise IconPackError("domain points past the icons")
+    for value in index.get("rejects", []):
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{16}", value):
+            raise IconPackError("a reject is not 16 lowercase hex digits")
     return index, blob
 
 
@@ -1216,6 +1390,12 @@ def build(args):
         extra, stats = domain_candidates(listed, curated_domains(curated), load_blocklist(args.blocklist), sites, log)
         for domain, candidate in extra.items():
             found.setdefault(domain, []).append(candidate)
+    rejects, dropped = [], []
+    if sites:
+        # Hosting-platform icons (a gym portal serving its software vendor's favicon): shipped as
+        # `rejects` for the app, and never kept as a brand's icon here.
+        platforms = read_domain_lists([args.platforms])[0] if args.platforms else []
+        rejects, dropped = reject_platform_icons(found, sites, platforms, args.resvg, args.jobs, log)
     # Each domain's best candidate is drawn; a domain whose candidate fails moves to its next one.
     queues = {d: sorted(c, key=lambda c: (c.rank, c.name)) for d, c in found.items()}
     results = {}  # (svg sha, fill) -> (webp bytes, flags) or None
@@ -1265,7 +1445,7 @@ def build(args):
     stats["kept"] = sum(1 for c in picked.values() if c.rank == RANK_DOMAIN_LIST)
     names = brand_names(picked, domains)
     tenants = sorted(d for d in (normalized_domain(x) for x in curated.get("tenants", [])) if d in domains)
-    pack = pack_bytes(args.version, args.size, icons, domains, names=names, tenants=tenants)
+    pack = pack_bytes(args.version, args.size, icons, domains, names=names, tenants=tenants, rejects=rejects)
     used = {name.partition(":")[2] for name in chosen.values() if name.startswith("brand:")}
     if used:
         # Where each brand icon in the pack came from (URL, hash, size, date): the per-icon record.
@@ -1288,12 +1468,15 @@ def build(args):
         "pixels": args.size,
         "sources": sources,
     }
+    if rejects:
+        manifest["rejects"] = len(rejects)
     if tranco:
         manifest["tranco"] = tranco
     (out / "icon-pack-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     licenses = {d: LICENSES.get(c.source, "") for d, c in sorted(picked.items())}
     report = {"chosen": dict(sorted(chosen.items())), "licenses": licenses, "names": len(names),
               "domains_fetched": stats["fetched"], "domains_kept": stats["kept"], "domains_blocked": stats["blocked"],
+              "rejects": len(rejects), "platform_icons_dropped": dropped,
               "skipped": {k: sorted(v) for k, v in skipped.items()}}
     (out / "report.json").write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
     print(f"{len(domains)} domains, {len(icons)} icons, {len(pack)} bytes -> {out / name}")
@@ -1350,12 +1533,17 @@ def main(argv=None):
     b.add_argument("--curated", default=str(Path(__file__).resolve().parent / "icon-pack-curated.json"),
                    help="hand-picked brands (default scripts/icon-pack-curated.json; empty string for none)")
     b.add_argument("--sites", help="the folder `sites` wrote (brand icons fetched at build time)")
+    b.add_argument("--platforms", default=str(DEFAULT_PLATFORMS),
+                   help="hosting platforms whose icons are rejects (default scripts/icon-pack-platforms.txt; "
+                        "empty string for none)")
     st = sub.add_parser("sites")
     st.add_argument("--curated", default=str(Path(__file__).resolve().parent / "icon-pack-curated.json"))
     st.add_argument("--out", required=True)
     st.add_argument("--domains", action="append", help="a popular-domain list (plain text or Tranco CSV; repeatable)")
     st.add_argument("--blocklist", default=str(DEFAULT_BLOCKLIST))
     st.add_argument("--jobs", type=int, default=8)
+    st.add_argument("--platforms", default=str(DEFAULT_PLATFORMS),
+                    help="hosting platforms whose icons are fetched into OUT/platforms (empty string for none)")
     s = sub.add_parser("sign")
     s.add_argument("--manifest", required=True)
     v = sub.add_parser("verify")
@@ -1379,6 +1567,10 @@ def main(argv=None):
                 record, blocked = fetch_domains(listed, curated_domains(curated), load_blocklist(args.blocklist), out,
                                                 lambda kind, what: failed.append(what), jobs=args.jobs)
                 print(f"{len(record)} domain icons, {len(blocked)} blocked")
+            if args.platforms:
+                platforms, _ = read_domain_lists([args.platforms])
+                record = fetch_platforms(platforms, out, lambda kind, what: failed.append(what), jobs=args.jobs)
+                print(f"{len(record)} platform icons")
             for line in failed:
                 print(f"icon_pack: {line}", file=sys.stderr)
             return 0

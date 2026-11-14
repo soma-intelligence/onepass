@@ -13,9 +13,9 @@ import Synchronization
 /// `format`, `version`, `size`, `icons` as `[offset, length, flags]` into the bytes that follow,
 /// `domains` as domain to icon number; optional `names`, a brand name squashed to lowercase letters
 /// and digits to icon number, and `tenants`, domains whose icon is not inherited by their
-/// subdomains), then the icons (square lossless WebP, `size` pixels unless flagged 128). Flags are
-/// bits: 1 = a one color mark (monochrome), 2 = this icon is 128 pixels, not `size`; both can be
-/// set (flags 3).
+/// subdomains; and `rejects`, the dHashes of hosting-platform icons as 16 lowercase hex digits), then
+/// the icons (square lossless WebP, `size` pixels unless flagged 128). Flags are bits: 1 = a one
+/// color mark (monochrome), 2 = this icon is 128 pixels, not `size`; both can be set (flags 3).
 public struct IconPack: Sendable {
     public static let magic = Data("OPIP".utf8)
     public static let format: UInt8 = 1
@@ -38,6 +38,10 @@ public struct IconPack: Sendable {
     let domains: [String: Int]
     let names: [String: Int]
     let tenants: Set<String>
+    /// dHashes (`IconHash`) of hosting-platform icons: a gym member portal serving its club
+    /// software's favicon, a shop on a site builder serving the builder's. A site icon within
+    /// `rejectDistance` of one is never shown as the brand's logo. Empty for a pack without the key.
+    public let rejects: [UInt64]
     /// The whole file (memory mapped when read from disk: never copied) and where the icons start.
     let data: Data
     let iconsStart: Int
@@ -62,6 +66,7 @@ public struct IconPack: Sendable {
         let domains: [String: Int]
         let names: [String: Int]?
         let tenants: [String]?
+        let rejects: [String]?
     }
 
     /// Parses a pack, every offset and every domain's icon number checked.
@@ -89,12 +94,20 @@ public struct IconPack: Sendable {
         where !(0..<icons.count).contains(number) {
             throw .outOfBounds
         }
+        var rejects: [UInt64] = []
+        for text in index.rejects ?? [] {
+            guard text.utf8.count == 16, text.allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) }),
+                let value = UInt64(text, radix: 16)
+            else { throw .malformedIndex }
+            rejects.append(value)
+        }
         self.version = index.version
         self.pixels = index.size
         self.icons = icons.map { (offset: $0.0, length: $0.1, flags: $0.2) }
         self.domains = index.domains
         self.names = index.names ?? [:]
         self.tenants = Set(index.tenants ?? [])
+        self.rejects = rejects
         self.data = data
         self.iconsStart = iconsStart
     }
@@ -134,6 +147,17 @@ public struct IconPack: Sendable {
         let key = Self.squash(trimmed)
         guard key.count >= 3, let number = names[key] else { return nil }
         return icon(number)
+    }
+
+    /// Largest Hamming distance between two dHashes of the same icon (`REJECT_DISTANCE` in
+    /// scripts/icon_pack.py).
+    public static let rejectDistance = 6
+
+    /// Whether `png` is a hosting-platform icon: its dHash is within `rejectDistance` of one of
+    /// `rejects`. An image that does not hash is not refused.
+    public static func isRejected(_ png: Data, by rejects: [UInt64]) -> Bool {
+        guard !rejects.isEmpty, let hash = IconHash.dHash(png) else { return false }
+        return rejects.contains { IconHash.distance($0, hash) <= rejectDistance }
     }
 
     /// `scripts/icon_pack.py squash`: letters and digits only, accents dropped.
