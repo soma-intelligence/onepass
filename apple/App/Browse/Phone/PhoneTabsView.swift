@@ -37,6 +37,9 @@ extension EnvironmentValues {
     @Entry var phoneSearchActive = false
     /// Pushes a screen on the visible tab's stack (Profil > "Modifier l'identité").
     @Entry var pushPhoneRoute: @MainActor (PhoneRoute) -> Void = { _ in }
+    /// Closes the Profil sheet of the unfolded iPhone, then runs the closure (Réglages present
+    /// from the root, so only once the sheet is gone). Nil when the Profil is not a sheet.
+    @Entry var closeProfileSheet: (@MainActor (@escaping @MainActor () -> Void) -> Void)?
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
@@ -354,6 +357,8 @@ struct FoldSplitView: View {
     @State private var dragToken = 0
     /// Profil from the account panel: no tab stack here to push it on, so a sheet.
     @State private var showsProfile = false
+    /// Run once the Profil sheet is gone (Réglages).
+    @State private var afterProfile: (@MainActor () -> Void)?
 
     var body: some View {
         GeometryReader { proxy in
@@ -372,8 +377,15 @@ struct FoldSplitView: View {
                 .environment(\.pushPhoneRoute) { route in
                     if case .profile = route { showsProfile = true }
                 }
-                .sheet(isPresented: $showsProfile) {
-                    NavigationStack { ProfileView() }
+                .sheet(isPresented: $showsProfile, onDismiss: {
+                    let next = afterProfile
+                    afterProfile = nil
+                    next?()
+                }) {
+                    FoldProfileSheet { next in
+                        afterProfile = next
+                        showsProfile = false
+                    }
                 }
                 .frame(width: half)
                 DetailColumn()
@@ -533,6 +545,34 @@ struct ItemRowDrag: ViewModifier {
         } else {
             content
         }
+    }
+}
+/// The Profil on the unfolded iPhone: a sheet with its own stack, so its rows push there as on
+/// the folded phone (Watchtower, the passkeys, an item to edit). Réglages close it first.
+private struct FoldProfileSheet: View {
+    let close: @MainActor (@escaping @MainActor () -> Void) -> Void
+    @State private var path: [PhoneRoute] = []
+    @State private var showsWatchtower = false
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            ProfileView()
+                .navigationDestination(isPresented: $showsWatchtower) { WatchtowerTab() }
+                .navigationDestination(for: PhoneRoute.self) { route in
+                    switch route {
+                    case .list(let filter): CategoryListView(filter: filter)
+                    case .watchtower(let title, let itemIDs): WatchtowerItemsList(title: title, itemIDs: itemIDs)
+                    case .item(let ref): ItemDetailView(ref: ref).id(ref)
+                    case .crypto, .cryptoCoin, .duplicates, .profile: EmptyView()
+                    }
+                }
+        }
+        .environment(\.inPhoneTabs, true)
+        .environment(\.pushPhoneRoute) { path.append($0) }
+        .environment(\.openPhoneTab) { tab in
+            if tab == .watchtower { showsWatchtower = true }
+        }
+        .environment(\.closeProfileSheet, close)
     }
 }
 #endif

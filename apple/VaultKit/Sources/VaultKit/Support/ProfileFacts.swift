@@ -54,6 +54,26 @@ public enum ProfileFacts {
             .map { Issue(check: $0.check, findings: $0.findings) }
     }
 
+    /// What the Watchtower row of the Security card says.
+    public enum WatchtowerStatus: Equatable, Sendable {
+        /// No report yet, the run goes on.
+        case analyzing
+        /// No report and the run failed: the row says so instead of waiting for ever.
+        case unavailable
+        /// A report with no problem.
+        case clear
+        /// A report with problems, as `topIssues` lists them.
+        case issues([Issue])
+    }
+
+    /// The row's status: the report when there is one (a later failure keeps it shown), else
+    /// analyzing or unavailable.
+    public static func watchtowerStatus(_ report: FfiWatchtowerReport?, failed: Bool, among checks: [String]) -> WatchtowerStatus {
+        guard report != nil else { return failed ? .unavailable : .analyzing }
+        let issues = topIssues(report, among: checks)
+        return issues.isEmpty ? .clear : .issues(issues)
+    }
+
     /// "Personnel", "Professionnel", "Géré par une organisation".
     public static func kindLabel(_ kind: FfiAccountKind) -> String {
         switch kind {
