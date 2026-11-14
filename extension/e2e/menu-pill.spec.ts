@@ -64,15 +64,12 @@ paired("pill_other_logins_are_reachable", async ({ ext }) => {
     };
   });
   expect(look).toEqual({ closeInside: true, signIn: true, tabUnder: true, opacity: "1" });
+  // The site has exactly one other login: the tab under the capsule is that login itself, named,
+  // and one click signs in with it (9b7731354); a searchable list only with more.
+  await expect(others).toHaveClass(/\bov-other\b/);
+  await expect(others.locator(".t1")).toHaveText("Atlas Cloud (multi)");
+  await expect(others).toHaveAttribute("aria-label", `Se connecter avec ${FX.ops.email}`);
   await others.click();
-  const search = overlay.locator(".ov-search");
-  await expect(search).toBeFocused();
-  // Typing finds the login, Enter signs in with it.
-  await ext.settle();
-  await search.pressSequentially("multi");
-  await expect(overlay.locator(".ov-opt")).toHaveCount(1);
-  await expect(overlay.locator(".ov-opt").first()).toHaveAttribute("aria-selected", "true");
-  await search.press("Enter");
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
   await expect(page.locator("#detail")).toHaveText(FX.ops.email);
 });
