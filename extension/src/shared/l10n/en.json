@@ -330,5 +330,6 @@
   "popup.signInPill": "Sign-in pill",
   "popup.signInPillHelp": "It shows up by itself on a sign-in or signup page. Nothing is filled until you click.",
   "popup.pillNeverSites": "Never on these sites",
-  "popup.removeSite": "Remove {site}"
+  "popup.removeSite": "Remove {site}",
+  "setup.previousCode": "Previous code"
 }

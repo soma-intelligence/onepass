@@ -410,7 +410,7 @@ export interface PlanFillResponse {
 }
 
 /** The extension frames of the in-page shell (content/frames.ts); `ghost`: the suggested password over its field. */
-export type FrameKind = "menu" | "overlay" | "save" | "ghost";
+export type FrameKind = "menu" | "overlay" | "save" | "ghost" | "setup";
 
 /** A box in CSS px: the field's in the viewport, or the ghost's pill in its own frame. */
 export interface GhostRect {
@@ -535,7 +535,12 @@ export type CsToBg =
    * A trusted input in the top page while the sign-in pill it showed by itself is there: that
    * card folds away (the worker checks it is one, and idle). Carries nothing typed.
    */
-  | { type: "page_typed" };
+  | { type: "page_typed" }
+  /**
+   * The on-demand setup scanner (`setup-scan.js`, top frame) saw recovery codes while the worker
+   * watched for them after a two-factor seed was saved: shown in the setup card, never kept.
+   */
+  | { type: "setup_codes_found"; codes: string[] };
 
 /** What the content script sends of a `PageContext`: everything but the origins and frame kind. */
 export type PlanContextBody = Pick<PageContext, "forms" | "typed_username_hash">;
@@ -706,7 +711,63 @@ export type UiToBg =
   | { type: "passkey_save"; token: string; vaultId?: string }
   /** "Autre appareil": the browser's own passkey dialog takes over. */
   | { type: "passkey_other"; token: string }
-  | { type: "passkey_cancel"; token: string };
+  | { type: "passkey_cancel"; token: string }
+  // ---- two-factor setup (setup.html, background/setup) ----
+  /** "Scan 2FA QR code" in the popup: the active tab is scanned, then the setup card shows. */
+  | { type: "popup_scan_qr" }
+  | { type: "setup_init"; token: string }
+  /** `itemId` null: a new login (`username`, else the QR account). `replace`: the second click after `exists`. */
+  | { type: "setup_save"; token: string; itemId: string | null; username?: string; replace?: boolean }
+  /** The setup key typed or pasted in the card when no QR was read. */
+  | { type: "setup_paste"; token: string; key: string }
+  | { type: "setup_codes_save"; token: string }
+  | { type: "setup_close"; token: string };
+
+/** A login of the page the setup card offers as the target of the seed (no secret). */
+export interface SetupCandidate {
+  itemId: string;
+  title: string;
+  username: string;
+  hasTotp: boolean;
+  associated: boolean;
+}
+
+/** What `setup_init` and `setup_paste` answer: issuer and account only, never the seed. */
+export interface SetupCardState {
+  mode: "confirm" | "paste" | "codes";
+  issuer: string;
+  account: string;
+  candidates: SetupCandidate[];
+  /** Never an associated item. */
+  selected: string | null;
+  /** The account read from the QR differs from the selected item's username. */
+  mismatch: boolean;
+  /** Mode "codes": how many recovery codes the page shows. */
+  codeCount?: number;
+}
+
+/** What `popup_scan_qr` answers. "none": nothing found, the card asks for the key. */
+export interface SetupScanResult {
+  status: "card" | "none" | "unavailable";
+}
+
+/** What `setup_save` answers; `code` and `remaining` when no code field was filled. */
+export interface SetupSaveResult {
+  status: "saved" | "same" | "exists" | "replaced" | "locked" | "refused";
+  code?: string;
+  remaining?: number;
+}
+
+/** What `setup_codes_save` answers. */
+export interface SetupCodesResult {
+  status: "saved" | "locked" | "refused";
+}
+
+/** Worker to the on-demand setup scanner (`setup-scan.js`), by frame. */
+export type BgToScan =
+  | { type: "setup_scan_dom" }
+  | { type: "setup_scan_capture"; dataUrl: string }
+  | { type: "setup_watch_codes"; ms: number };
 
 /**
  * Background to content script. `origin` on `fill`, `click` and `submit` is a
@@ -821,6 +882,7 @@ const CS_TO_BG_TYPES: ReadonlySet<string> = new Set<CsToBg["type"]>([
   "ghost_dismiss",
   "ghost_menu",
   "page_typed",
+  "setup_codes_found",
 ]);
 
 /** Cheap discriminant check for messages received from content scripts. */

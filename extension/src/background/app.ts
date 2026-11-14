@@ -57,6 +57,8 @@ import { Planner, type PlanOrigins, type RunOutcome, framesFromSender, mainRoles
 import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup";
 import { type Handlers, createRouter, parsePlanContextBody } from "./router";
 import { type SavePending, SavePrompts } from "./save";
+import { SetupCards } from "./setup/card";
+import { SetupScan } from "./setup/scan";
 import { type SuggestionRecord, Suggestions } from "./suggest";
 import type { ModelSession } from "./model";
 import { BgError, type BridgeLike, Session, toBgError } from "./session";
@@ -354,6 +356,14 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     providersShown: (t, d) => chainRef.current?.providersShown?.(t, d) ?? Promise.resolve([]),
     acting: (t) => chainRef.current?.acting?.(t) ?? Promise.resolve(null),
   };
+  /** A click on a card of ours in the page: Face ID right there on iOS (the click is the one attempt), the app elsewhere. */
+  const cardUnlock = async (tabId: number): Promise<UnlockAsked> => {
+    const state = await vaultOf({ op: "vault_state" }).catch(() => null);
+    if (!state) return askAppUnlock(tabId, true);
+    if (!state.locked) return "unlocked";
+    const after = await vaultOf({ op: "unlock_biometric" }).catch(() => null);
+    return after !== null && !after.locked ? "unlocked" : "failed";
+  };
   const overlays: Overlays = new Overlays({
     ext,
     area: store.session,
@@ -361,14 +371,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     session,
     chain: lateChain,
     frames,
-    // A click on the card: Face ID right there on iOS (the click is the one attempt), the app elsewhere.
-    askUnlock: async (tabId) => {
-      const state = await vaultOf({ op: "vault_state" }).catch(() => null);
-      if (!state) return askAppUnlock(tabId, true);
-      if (!state.locked) return "unlocked";
-      const after = await vaultOf({ op: "unlock_biometric" }).catch(() => null);
-      return after !== null && !after.locked ? "unlocked" : "failed";
-    },
+    askUnlock: cardUnlock,
     // A chain locked mid-way: the app is asked; on iOS the worker never prompts by itself.
     askUnlockChain: async (tabId) => ((await hasNativeVault()) ? "failed" : askAppUnlock(tabId)),
     unlockOp: (tabId) => unlockOp(tabId),
@@ -455,6 +458,17 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     ...(opts.now ? { now: opts.now } : {}),
   });
   filler.onFilled = (tabId, origin, kind, itemId) => saveFlow.noteFilled(tabId, origin, kind, itemId);
+  // Two-factor setup (spec section 1): the popup's scan and the card it shows in the page.
+  const setupCards = new SetupCards({
+    ext,
+    session,
+    filler,
+    analyses,
+    lastUsed: (tabId, origin) => saveFlow.lastLoginFilled(tabId, origin),
+    askUnlock: (tabId) => cardUnlock(tabId),
+    ...(opts.now ? { now: opts.now } : {}),
+  });
+  const setupScan = new SetupScan({ ext, cards: setupCards });
   const providerFlows = new ProviderFlows({
     area: store.session,
     session,
@@ -1141,6 +1155,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (from.frameId === 0) await overlays.foldAuto(from.tabId, from.documentId);
         return {};
       },
+      setup_codes_found: async (m, from) => setupCards.codesFound(m, from),
       menu_key: async (m, from) => {
         // Only to the menu of this very frame (and document).
         const token = await menus.forFrame(from.tabId, from.frameId, from.documentId);
@@ -1524,7 +1539,13 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       save_resize: async (m, from) => savePrompts.resize(m.token, from, m.height, m.width),
       save_fold: async (m, from) => savePrompts.fold(m.token, from),
       save_unfold: async (m, from) => savePrompts.unfold(m.token, from),
+      setup_init: async (m, from) => setupCards.init(m.token, from),
+      setup_save: async (m, from) => setupCards.save(m.token, from, m.itemId, m.username, m.replace),
+      setup_paste: async (m, from) => setupCards.paste(m.token, from, m.key),
+      setup_codes_save: async (m, from) => setupCards.codesSave(m.token, from),
+      setup_close: async (m, from) => setupCards.close(m.token, from),
       ...popup.handlers(),
+      popup_scan_qr: async () => setupScan.scan(),
       popup_pending: async () => ({ pending: await savePrompts.pendingList() }),
       popup_pending_decide: async (m) => savePrompts.decidePending(m.id, m.decision),
     },
@@ -1574,6 +1595,8 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     overlays,
     autoPill,
     saves: savePrompts,
+    setupCards,
+    setupScan,
     analyses,
     popup,
     handlers,
@@ -1589,6 +1612,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       menus.install(ext);
       overlays.tokens.install(ext);
       savePrompts.tokens.install(ext);
+      setupCards.install(ext);
       analyses.install(ext);
       runner?.install(ext);
       analyses.onAnalysis((a, cs) => {

@@ -118,7 +118,7 @@ export interface ContentScript {
   readonly internals: { readonly root: ShadowRoot; readonly refs: RefRegistry };
 }
 
-const FRAME_KINDS: ReadonlySet<string> = new Set<FrameKind>(["menu", "overlay", "save", "ghost"]);
+const FRAME_KINDS: ReadonlySet<string> = new Set<FrameKind>(["menu", "overlay", "save", "ghost", "setup"]);
 const MAX_VALUE = 4096;
 
 function str(v: unknown): v is string {

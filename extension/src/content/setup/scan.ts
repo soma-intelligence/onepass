@@ -10,16 +10,14 @@
 // No network request is made. A cross-origin image or a tainted canvas is skipped (the
 // capture path covers it). Nothing decoded is logged.
 import { ext } from "../../shared/browser";
+import type { CsToBg } from "../../shared/messages";
 import { type OtpauthShallow, shallowOtpauth } from "../../setup/otpauth";
 import { decodeQr } from "../../setup/qr-decode";
 import { type Candidate, findCandidates } from "./candidates";
 import { findRecoveryCodes } from "./recovery";
 
-/** Sent to the worker; Task 8 adds it to `CsToBg` and the router. */
-interface SetupCodesFound {
-  type: "setup_codes_found";
-  codes: string[];
-}
+/** Sent to the worker (validated by the router, accepted only while it watches this tab). */
+type SetupCodesFound = Extract<CsToBg, { type: "setup_codes_found" }>;
 
 const MAX_FOUND = 3;
 const MAX_PIXELS = 2_000_000;

@@ -330,5 +330,6 @@
   "popup.signInPill": "Pillola di accesso",
   "popup.signInPillHelp": "Compare da sola su una pagina di accesso o di registrazione. Non si compila nulla finché non fai clic.",
   "popup.pillNeverSites": "Mai su questi siti",
-  "popup.removeSite": "Rimuovi {site}"
+  "popup.removeSite": "Rimuovi {site}",
+  "setup.previousCode": "Codice precedente"
 }

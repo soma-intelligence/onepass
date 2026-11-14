@@ -330,5 +330,6 @@
   "popup.signInPill": "Pastille de connexion",
   "popup.signInPillHelp": "Elle apparaît d'elle-même sur une page de connexion ou d'inscription. Rien n'est rempli sans ton clic.",
   "popup.pillNeverSites": "Jamais sur ces sites",
-  "popup.removeSite": "Retirer {site}"
+  "popup.removeSite": "Retirer {site}",
+  "setup.previousCode": "Ancien code"
 }

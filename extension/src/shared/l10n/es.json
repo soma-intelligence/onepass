@@ -330,5 +330,6 @@
   "popup.signInPill": "Píldora de inicio de sesión",
   "popup.signInPillHelp": "Aparece sola en una página de inicio de sesión o de registro. No se rellena nada hasta que hagas clic.",
   "popup.pillNeverSites": "Nunca en estos sitios",
-  "popup.removeSite": "Quitar {site}"
+  "popup.removeSite": "Quitar {site}",
+  "setup.previousCode": "Código anterior"
 }
