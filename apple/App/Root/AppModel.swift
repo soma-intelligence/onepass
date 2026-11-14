@@ -477,12 +477,13 @@ final class AppModel {
             seedAccountIfRequested()
             openDebugItemIfRequested()
         }
-        // Captures (`-OnePassDemoPage watchtower|developer|crypto|duplicates`): opens that page at launch.
+        // Captures (`-OnePassDemoPage watchtower|developer|crypto|duplicates|profile`): opens that page at launch.
         switch UserDefaults.standard.string(forKey: "OnePassDemoPage") {
         case "watchtower": page = .watchtower
         case "developer": page = .developer
         case "crypto": page = .crypto
         case "duplicates": page = .duplicates
+        case "profile": page = .profile
         // Travel screenshots: Réglages > Travel Mode in its sheet.
         case "travel": travelSheet = .exit
         default: break
@@ -2014,6 +2015,8 @@ enum BrowsePage: Hashable {
     case items, watchtower, crypto, developer
     /// Doublons possibles (spec 2026-11-03-duplicates): the review page of the sidebar row.
     case duplicates
+    /// Profil (spec 2026-11-14-profile-account-security): opened from the account panel.
+    case profile
 }
 
 /// The items a Watchtower card shows in the list, under the card's title.
