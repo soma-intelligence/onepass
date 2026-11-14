@@ -71,4 +71,19 @@ final class ProfileUITests: XCTestCase {
         reveal("profile.security.passkeys").tap()
         XCTAssertTrue(element("profile.account").waitForNonExistence(timeout: Self.uiTimeout), "passkeys list not pushed")
     }
+
+    /// iPad (regular width, split view): the sidebar's account menu has Profil, and the Profil's rows
+    /// open their page there (no tab bar to switch).
+    func testIPadAccountMenuOpensProfileAndWatchtower() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "iPad only")
+        element("account.menu").tap()
+        // A system menu: its items expose their title, not always their identifier.
+        let byID = element("account.profile")
+        let item = byID.waitForExistence(timeout: 3) ? byID : app.buttons["Profile"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: Self.uiTimeout), "account menu without Profil")
+        item.tap()
+        XCTAssertTrue(element("profile.account").waitForExistence(timeout: Self.uiTimeout), "Profil not opened")
+        reveal("profile.security.watchtower").tap()
+        XCTAssertTrue(element("page.watchtower").waitForExistence(timeout: Self.uiTimeout), "Watchtower not opened")
+    }
 }

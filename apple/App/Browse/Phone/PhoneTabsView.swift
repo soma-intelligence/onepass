@@ -29,6 +29,8 @@ enum PhoneTab: String, Hashable {
 }
 
 extension EnvironmentValues {
+    /// The view is on a tab stack of the iPhone (pushes and tab switches work there).
+    @Entry var inPhoneTabs = false
     /// Switches the iPhone tab bar to a tab.
     @Entry var openPhoneTab: @MainActor (PhoneTab) -> Void = { _ in }
     /// The iPhone search is presented: Accueil keeps its banners for when it is really on screen.
@@ -191,6 +193,7 @@ struct PhoneTabsView: View {
                 }
         }
         .environment(\.itemZoomNamespace, itemZoom)
+        .environment(\.inPhoneTabs, true)
         .environment(\.pushPhoneRoute) { route in
             paths[which, default: []].append(route)
             // As the path binding does: the top item of the visible stack is the selection.
