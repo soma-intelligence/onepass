@@ -1,10 +1,12 @@
+import CoreText
 import ImageIO
 import SwiftUI
 import OnePassCore
 
 /// Row icon: the brand icon `ItemIconResolver` found (the person's choice, the icon pack, else the
-/// site's own icon when sharp enough), otherwise the illustrated category artwork (for logins, the
-/// teal monogram tile with the title's first letter when there is one).
+/// site's own icon when sharp enough), otherwise, for a login with a letter to show, the monogram
+/// tile (`MonogramStyle`: a color picked by the site's domain, the title's or domain's first
+/// letter), else the illustrated category artwork.
 public struct ItemIcon: View {
     private let type: FfiItemType
     private let title: String
@@ -18,20 +20,27 @@ public struct ItemIcon: View {
 
     private let brand: String?
     private let tint: Color?
+    private let domain: String?
+    private let useCategory: Bool
 
     /// `brand`: a credit card's network ("visa", "mastercard", "amex"...): the card shows that
     /// network's mark on its color instead of the generic card artwork.
     /// `useCategory`: the item's choice of its category artwork over its site's icon
     /// (`FfiItem.iconCategory`). `tint`: the item's badge color (`ItemTint`): a tile of that color
     /// behind the category glyph (a login's title letter). A site icon is never tinted.
+    /// `domain`: the registrable domain of the item's primary address
+    /// (`ItemIconResolver.registrableDomain`): a login's monogram tile takes its color from it, so
+    /// every item of one site matches; without it, from the title.
     public init(
         type: FfiItemType, title: String, siteIcon: Data?, size: CGFloat = 38, brand: String? = nil,
-        useCategory: Bool = false, tint: Color? = nil
+        useCategory: Bool = false, tint: Color? = nil, domain: String? = nil
     ) {
         self.type = type
         self.title = title
         self.size = size
         self.tint = tint
+        self.domain = domain?.isEmpty == false ? domain : nil
+        self.useCategory = useCategory
         let prepared = useCategory ? nil : siteIcon.flatMap(Self.prepared)
         self.image = prepared?.image
         self.treatment = prepared?.treatment ?? .fullBleed
@@ -252,10 +261,10 @@ public struct ItemIcon: View {
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
-    /// Fewer source pixels than the tile shows on a Retina screen (with a little slack): drawn
-    /// at its own size rather than stretched.
+    /// Fewer source pixels than the tile shows on a 3x screen: drawn bare at its own size rather
+    /// than stretched to fill the tile (a stored 64 px icon in a 38 pt row needs 114).
     static func isLowResolution(_ image: CGImage, side: CGFloat) -> Bool {
-        CGFloat(min(image.width, image.height)) < side * 2 * 0.75
+        CGFloat(min(image.width, image.height)) < side * 3
     }
 
     private var category: ItemCategory { .of(type) }
@@ -269,10 +278,34 @@ public struct ItemIcon: View {
     private var corner: CGFloat { size * 9 / 38 }
     private var side: CGFloat { size * min(scale, 1.6) }
 
-    /// A login's title letter, for the tinted tile.
-    private var monogram: String? {
+    /// A login's letter for the monogram tile: the title's first letter or digit, else the
+    /// domain's (`MonogramStyle.letter`).
+    var monogram: String? {
         guard type == .login else { return nil }
-        return title.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() }
+        return MonogramStyle.letter(title: title, domain: domain)
+    }
+
+    /// The color of the tile drawn when there is no image: the item's own color when it has one
+    /// (any category); for a login with a letter, the palette color of its domain (else its
+    /// title), unless the person chose the category artwork. Nil: no tile, the category artwork.
+    func monogramColor(dark: Bool) -> Color? {
+        if let tint { return tint }
+        guard !useCategory, monogram != nil else { return nil }
+        let pair = MonogramStyle.palette[MonogramStyle.colorIndex(seed: domain ?? title)]
+        return dark ? pair.dark : pair.light
+    }
+
+    /// `monogramColor` for the current appearance.
+    var monogramColor: Color? { monogramColor(dark: colorScheme == .dark) }
+
+    /// Points to move the letter down so the middle of its capitals, not of its line box, sits in
+    /// the middle of the tile: SF's line box has more room above the capitals than below them.
+    static func capCenterOffset(fontSize: CGFloat) -> CGFloat {
+        let font = CTFontCreateUIFontForLanguage(.system, fontSize, nil)
+            ?? CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
+        let ascent = CTFontGetAscent(font), descent = CTFontGetDescent(font), cap = CTFontGetCapHeight(font)
+        // Line box middle is (ascent + descent) / 2 from its top; capitals' middle is ascent - cap / 2.
+        return (ascent - cap / 2) - (ascent + descent) / 2
     }
 
     /// The site's icon is drawn (not the category artwork).
@@ -286,18 +319,21 @@ public struct ItemIcon: View {
 
     @ViewBuilder private var content: some View {
         Group {
-            if image == nil, let tint {
-                // A tinted tile with the category's glyph, white.
+            if image == nil, let fill = monogramColor {
+                // The monogram tile: the item's color, or its domain's, with a login's letter (any
+                // other category's glyph), white.
                 // Inset like the category artwork's own tile, so both read the same size in a list.
                 RoundedRectangle(cornerRadius: corner * 0.8, style: .continuous)
-                    .fill(tint.gradient)
+                    .fill(fill.gradient)
                     .frame(width: side * 0.8, height: side * 0.8)
                     .frame(width: side, height: side)
                     .overlay {
                         if let letter = monogram {
                             Text(verbatim: letter)
-                                .font(.system(size: side * 0.42, weight: .bold, design: .rounded))
+                                .font(.system(size: side * 0.46, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.white)
+                                .fixedSize()
+                                .offset(y: Self.capCenterOffset(fontSize: side * 0.46))
                         } else {
                             Image(systemName: category.symbol)
                                 .font(.system(size: side * 0.38, weight: .medium))
@@ -336,12 +372,13 @@ public struct ItemIcon: View {
                     }
                     .overlay { hairline }
             } else if let image, Self.isLowResolution(image, side: side) {
-                // A small favicon, bare: at most one point per source pixel and 85% of the square.
+                // A small favicon, bare: at most 85% of the square and one point per two source
+                // pixels (a 2x density), so a stored 64 px icon reads 32 pt next to 38 pt tiles.
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: min(side * 0.85, CGFloat(image.width)), height: min(side * 0.85, CGFloat(image.height)))
+                    .frame(width: min(side * 0.85, CGFloat(image.width) / 2), height: min(side * 0.85, CGFloat(image.height) / 2))
                     .frame(width: side, height: side)
             } else if let image {
                 // Edge to edge artwork, rounded like an app icon, no border.
@@ -353,7 +390,7 @@ public struct ItemIcon: View {
                     .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                     .overlay { hairline }
             } else {
-                CategoryArtwork(type: type, size: side, monogram: type == .login ? title : nil)
+                CategoryArtwork(type: type, size: side, monogram: monogram)
             }
         }
     }

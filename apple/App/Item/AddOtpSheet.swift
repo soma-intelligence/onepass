@@ -212,7 +212,8 @@ private struct OtpAccountTarget: View {
             Task { await pick(login) }
         } label: {
             HStack(spacing: Theme.Space.m) {
-                ItemIcon(type: login.itemType, title: login.title, siteIcon: model.iconLoader.cachedIcon(for: login.primaryUrl, title: login.title), size: 30)
+                ItemIcon(type: login.itemType, title: login.title, siteIcon: model.iconLoader.cachedIcon(for: login.primaryUrl, title: login.title), size: 30,
+                    domain: ItemIconResolver.registrableDomain(login.primaryUrl))
                 VStack(alignment: .leading) {
                     Text(login.title).foregroundStyle(.primary)
                     if !login.subtitle.isEmpty {

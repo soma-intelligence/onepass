@@ -113,6 +113,17 @@ public final class ItemIconResolver: Sendable {
         return host
     }
 
+    /// The registrable domain of an item's address (`https://accounts.example.co.uk/login` gives
+    /// `example.co.uk`): the seed of its monogram color, so every item of one site matches. An IP
+    /// address or a single-label host (`localhost`, `nas`) is its own domain. Nil for no address,
+    /// a scheme other than http(s), or a bare public suffix.
+    public static func registrableDomain(_ url: String?) -> String? {
+        guard let url, let host = host(of: url) else { return nil }
+        let isAddress = host.contains(":") || host.allSatisfy { $0.isNumber || $0 == "." }
+        if isAddress || !host.contains(".") { return host }
+        return SiteIconLoader.registrableDomain(of: host)
+    }
+
     /// `SiteIconLoader` stores a square PNG of `min(256, 2 x source)` pixels: a side of at least
     /// twice `minSitePixels` means a source of at least `minSitePixels`.
     static func sharpEnough(_ png: Data) -> Data? {

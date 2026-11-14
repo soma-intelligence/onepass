@@ -28,7 +28,8 @@ struct EditorHeader: View {
                         type: item.itemType, title: item.title,
                         siteIcon: siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title),
                         size: 64, brand: item.cardBrandName, useCategory: item.iconCategory,
-                        tint: ItemTint.color(named: item.color))
+                        tint: ItemTint.color(named: item.color),
+                        domain: ItemIconResolver.registrableDomain(primaryURL))
                         .favoriteBadge(item.favorite, iconSize: 64)
                 }
                 // Follows the website being typed: a new address loads its icon.

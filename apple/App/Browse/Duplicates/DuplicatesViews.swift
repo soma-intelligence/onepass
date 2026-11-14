@@ -494,7 +494,8 @@ private struct DuplicateGroupHeader: View {
                     type: primary.summary.itemType, title: primary.summary.title,
                     siteIcon: model.iconLoader.cachedIcon(
                         for: primary.summary.primaryUrl, title: primary.summary.title),
-                    size: iconSize, brand: primary.summary.cardBrand)
+                    size: iconSize, brand: primary.summary.cardBrand,
+                    domain: ItemIconResolver.registrableDomain(primary.summary.primaryUrl))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(primary.summary.title)
                         .font(.body.weight(.semibold))

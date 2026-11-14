@@ -256,7 +256,8 @@ struct AutoFillIcon: View {
     @State private var icon: Data?
 
     var body: some View {
-        ItemIcon(type: type, title: title, siteIcon: icon ?? loader?.cachedIcon(for: url, title: title), size: size)
+        ItemIcon(type: type, title: title, siteIcon: icon ?? loader?.cachedIcon(for: url, title: title), size: size,
+            domain: ItemIconResolver.registrableDomain(url))
             .task(id: url) {
                 guard let url, let loader else {
                     icon = nil

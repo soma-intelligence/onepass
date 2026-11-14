@@ -45,6 +45,40 @@ import VaultKit
         #expect(!ItemIcon(type: .login, title: "Atlas", siteIcon: png, useCategory: true).showsSiteIcon)
     }
 
+    /// The monogram tile takes its color from the domain, not the title: two items of one site
+    /// match in a list whatever their names.
+    @MainActor @Test func monogramColorFollowsDomain() {
+        let a = ItemIcon(type: .login, title: "Atlas perso", siteIcon: nil, domain: "atlas-cloud.example")
+        let b = ItemIcon(type: .login, title: "Zephyr travail", siteIcon: nil, domain: "atlas-cloud.example")
+        #expect(a.monogramColor(dark: false) != nil)
+        #expect(a.monogramColor(dark: false) == b.monogramColor(dark: false))
+        #expect(a.monogramColor(dark: true) == b.monogramColor(dark: true))
+        let index = MonogramStyle.colorIndex(seed: "atlas-cloud.example")
+        #expect(a.monogramColor(dark: false) == MonogramStyle.palette[index].light)
+        #expect(a.monogramColor(dark: true) == MonogramStyle.palette[index].dark)
+    }
+
+    /// No domain: the title is the seed. The item's own color wins over the palette.
+    @MainActor @Test func monogramColorFallsBackToTitleAndTint() {
+        let byTitle = ItemIcon(type: .login, title: "Atlas", siteIcon: nil)
+        #expect(byTitle.monogramColor(dark: false) == MonogramStyle.palette[MonogramStyle.colorIndex(seed: "Atlas")].light)
+        let tinted = ItemIcon(type: .login, title: "Atlas", siteIcon: nil, tint: .orange, domain: "atlas.example")
+        #expect(tinted.monogramColor(dark: false) == .orange)
+        // No letter anywhere: the category artwork, no monogram tile.
+        #expect(ItemIcon(type: .login, title: "", siteIcon: nil).monogramColor(dark: false) == nil)
+        #expect(ItemIcon(type: .login, title: "🔑", siteIcon: nil).monogramColor(dark: false) == nil)
+        // Not a login: no monogram unless tinted.
+        #expect(ItemIcon(type: .secureNote, title: "Atlas", siteIcon: nil).monogramColor(dark: false) == nil)
+        // The category artwork chosen: no domain color.
+        #expect(ItemIcon(type: .login, title: "Atlas", siteIcon: nil, useCategory: true).monogramColor(dark: false) == nil)
+    }
+
+    /// A letter from the domain when the title has none.
+    @MainActor @Test func monogramLetterFromDomain() {
+        #expect(ItemIcon(type: .login, title: "🔑", siteIcon: nil, domain: "zephyr.example").monogram == "Z")
+        #expect(ItemIcon(type: .login, title: "atlas", siteIcon: nil, domain: "zephyr.example").monogram == "A")
+    }
+
     @Test func tintNames() {
         for name in ["blue", "green", "orange", "purple", "pink", "teal", "indigo", "graphite"] {
             #expect(ItemTint.color(named: name) != nil)
