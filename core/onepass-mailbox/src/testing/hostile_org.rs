@@ -11,8 +11,8 @@
 //! Precedence when lies conflict, for `latest_roster`: a `fork_roster` at a
 //! seq at or above the honest newest wins (the highest such seq), then
 //! `replay_roster`, then `withhold_newest_roster`, then the honest answer.
-//! `replay_roster` serves the inner store's honest bytes even when a
-//! `fork_roster` is armed at the same seq.
+//! `replay_roster` serves the inner store's honest bytes when the fork seq
+//! is below the honest newest; at or above the newest the fork wins.
 //! `roster(seq)` answers a forked seq's bytes first, otherwise the inner
 //! store's. `lineage_from` applies `withhold_lineage_from` first (so a fork
 //! at or past the withheld generation is never served), then

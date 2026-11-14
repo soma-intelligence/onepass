@@ -56,6 +56,11 @@ pub const ORG_READ_MAX: usize = 1024;
 /// A join request as `join_requests` lists it: the account, its bytes.
 pub type JoinRequest = ([u8; 16], Vec<u8>);
 
+/// Most pages `join_requests` reads before it calls the server hostile: the
+/// plan `org` holds at most 200 000 records (`max_records`), so an honest
+/// feed ends within that many records, `PAGE_MAX_RECORDS` a page, plus one.
+pub const ORG_FEED_PAGES_MAX: usize = 200_000 / PAGE_MAX_RECORDS as usize + 1;
+
 /// Attempts of a keyset or join request rewrite before `Contended`.
 const REWRITE_ATTEMPTS: usize = 4;
 
@@ -299,7 +304,12 @@ impl<A: MailboxApi> OrgStore<A> {
     pub fn join_requests(&mut self) -> Result<Vec<JoinRequest>, OrgStoreError> {
         let mut feed = ChangeFeed::full();
         let mut live: BTreeMap<[u8; 16], Body> = BTreeMap::new();
+        let mut pages = 0usize;
         loop {
+            pages += 1;
+            if pages > ORG_FEED_PAGES_MAX {
+                return Err(MailboxError::Malformed("org join feed never ends").into());
+            }
             let page = self.api.next_changes(&mut feed, PAGE_MAX_RECORDS)?;
             for r in page.records.into_iter().filter(|r| r.kind == ORG_JOIN_KIND) {
                 match r.body {

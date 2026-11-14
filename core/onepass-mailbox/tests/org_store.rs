@@ -3,11 +3,18 @@
 //! answers a hostile or racing server can give.
 
 use onepass_mailbox::org::{
-    ORG_JOIN_KIND, ORG_LINEAGE_KIND, ORG_READ_MAX, join_record_id, lineage_record_id,
+    ORG_FEED_PAGES_MAX, ORG_JOIN_KIND, ORG_LINEAGE_KIND, ORG_READ_MAX, join_record_id,
+    lineage_record_id,
 };
 use onepass_mailbox::testing::{FakeMailbox, FakeMailboxClient, org_plan};
 use onepass_mailbox::{Credential, MailboxApi, MailboxError, OrgStore, OrgStoreError};
-use onepass_mailbox_proto::{Body, CommitOp, Op, ServerRecord};
+use onepass_mailbox_proto::{
+    Body, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialId, CredentialRole,
+    MailboxCreated, MailboxId, MailboxInfo, Op, PushKind, ServerConfig, ServerRecord,
+    SignedEnrollTicket,
+};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const ORG: [u8; 16] = [7; 16];
 
@@ -255,4 +262,147 @@ fn org_delete_of_lineage_is_forbidden() {
     }]);
     assert_eq!(r, Err(MailboxError::Forbidden));
     assert_eq!(s.lineage_from(0).unwrap(), vec![(0, b"a".to_vec())]);
+}
+
+/// A mailbox whose feed never ends: every `changes` answers an empty page
+/// with `more = true`. Everything else goes to the real fake. Panics past
+/// 10 000 calls so a missing bound fails instead of hanging.
+struct EndlessFeed {
+    inner: FakeMailboxClient,
+    calls: Arc<AtomicUsize>,
+}
+
+impl MailboxApi for EndlessFeed {
+    fn server_config(&self) -> Result<ServerConfig, MailboxError> {
+        self.inner.server_config()
+    }
+    fn create(
+        &mut self,
+        invite: Option<&[u8]>,
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError> {
+        self.inner.create(invite, label)
+    }
+    fn open(&mut self, mailbox: MailboxId) {
+        self.inner.open(mailbox)
+    }
+    fn mailbox(&self) -> Option<MailboxId> {
+        self.inner.mailbox()
+    }
+    fn credential_key(&self) -> onepass_mailbox::CredentialKey {
+        self.inner.credential_key()
+    }
+    fn info(&self) -> Result<MailboxInfo, MailboxError> {
+        self.inner.info()
+    }
+    fn changes(&self, after: u64, _limit: u32, _full: bool) -> Result<ChangesPage, MailboxError> {
+        let n = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(n <= 10_000, "join_requests never stopped reading pages");
+        Ok(ChangesPage {
+            incarnation: 1,
+            min_cursor: 0,
+            head: after,
+            records: Vec::new(),
+            next_after: after,
+            more: true,
+        })
+    }
+    fn commit(&self, ops: Vec<CommitOp>) -> Result<CommitResponse, MailboxError> {
+        self.inner.commit(ops)
+    }
+    fn record(&self, kind: u8, id: [u8; 16]) -> Result<Option<ServerRecord>, MailboxError> {
+        self.inner.record(kind, id)
+    }
+    fn enroll(&mut self, ticket: &SignedEnrollTicket, label: &[u8]) -> Result<(), MailboxError> {
+        self.inner.enroll(ticket, label)
+    }
+    fn revoke(&self, credential: CredentialId) -> Result<(), MailboxError> {
+        self.inner.revoke(credential)
+    }
+    fn grant(
+        &self,
+        public_key: [u8; 32],
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+        label: &[u8],
+    ) -> Result<CredentialId, MailboxError> {
+        self.inner.grant(public_key, role, put_kinds, label)
+    }
+    fn set_role(
+        &self,
+        credential: CredentialId,
+        role: CredentialRole,
+        put_kinds: Option<[u8; 32]>,
+    ) -> Result<(), MailboxError> {
+        self.inner.set_role(credential, role, put_kinds)
+    }
+    fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
+        self.inner.set_push(kind, token)
+    }
+    fn set_push_target(
+        &self,
+        tag: [u8; 16],
+        kind: PushKind,
+        token: &[u8],
+    ) -> Result<(), MailboxError> {
+        self.inner.set_push_target(tag, kind, token)
+    }
+    fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError> {
+        self.inner.set_locator(locator)
+    }
+    fn abandon(&self) -> Result<(), MailboxError> {
+        self.inner.abandon()
+    }
+    fn create_child(
+        &self,
+        kind: ChildKind,
+        owner_public_key: [u8; 32],
+        label: &[u8],
+    ) -> Result<MailboxCreated, MailboxError> {
+        self.inner.create_child(kind, owner_public_key, label)
+    }
+    fn create_org_invite(&self, uses: u16, ttl_hours: u16) -> Result<Vec<u8>, MailboxError> {
+        self.inner.create_org_invite(uses, ttl_hours)
+    }
+    fn issue_ticket(
+        &self,
+        new_credential_pub: onepass_mailbox::CredentialKey,
+        now: i64,
+    ) -> Result<SignedEnrollTicket, MailboxError> {
+        self.inner.issue_ticket(new_credential_pub, now)
+    }
+    fn upload_blobs(&self, blobs: &[&[u8]]) -> Result<(), MailboxError> {
+        self.inner.upload_blobs(blobs)
+    }
+    fn fetch_body(&self, body: &Body) -> Result<Vec<u8>, MailboxError> {
+        self.inner.fetch_body(body)
+    }
+}
+
+#[test]
+fn join_requests_stops_on_an_endless_feed() {
+    let fake = FakeMailbox::with_limits(org_plan());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut s = OrgStore::new(
+        EndlessFeed {
+            inner: fake.client(Credential::generate().unwrap()),
+            calls: calls.clone(),
+        },
+        ORG,
+    );
+    assert!(matches!(
+        s.join_requests(),
+        Err(OrgStoreError::Mailbox(MailboxError::Malformed(_)))
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), ORG_FEED_PAGES_MAX);
+}
+
+#[test]
+fn put_roster_blob_retry_after_lost_reply_is_ok() {
+    let (fake, mut s) = setup();
+    let data = bytes(20 * 1024, 5);
+    fake.faults().drop_commit_reply();
+    assert!(s.put_roster(4, data.clone()).is_err());
+    assert_eq!(s.put_roster(4, data.clone()), Ok(()));
+    assert_eq!(s.roster(4).unwrap(), Some(data));
 }
