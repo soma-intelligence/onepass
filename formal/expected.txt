@@ -361,6 +361,59 @@ sharing_no_role_check.pv | not event(ManifestAccepted(d,v_18,dave,g_21)) | false
 # Sanité : Carol lit l'item de Bob.
 sharing_no_role_check.pv | not event(ManifestAccepted(carol,v_18,bob,g1)) | false
 
+# org_roster.pv : roster signé d'une organisation (plan B E1, spec 15), autorité des rôles du
+# roster épinglé, Owner seulement pour un appareil de la tête de lignée (X8, X11), règle de
+# l'ensemble englobant de GRANT, quorum de la lignée sur deux comptes distincts (D4), épingle
+# jamais suivie. U (UserManager, Auditor), P (Provisioner), O3 (retiré, avec l'identité) et
+# l'ancien appareil de O1 sont à l'attaquant (A11, T-ADM).
+# R1 : un ajout n'est accepté que d'un Owner, Admin ou UserManager.
+org_roster.pv | event(AddAcceptedFrom(d_4,m_38,r_2)) ==> r_2 = role_owner || r_2 = role_admin || r_2 = role_um | true
+# R2 : un ajout sous la clé de l'Admin honnête a été signé par lui.
+org_roster.pv | event(AddAcceptedFrom(d_4,m_38,role_admin)) ==> event(RoleHolderSigned(add(m_38))) | true
+# R3 : aucun rôle Admin n'est donné à Mallory.
+org_roster.pv | not event(GrantAccepted(d_4,mallory[],role_admin)) | true
+# R4 (spec 15) : un Provisioner ne fait accepter aucun ajout.
+org_roster.pv | not event(AddAcceptedFrom(d_4,mallory[],role_prov)) | true
+# R5 : Admin donné seulement par un détenteur de rôle honnête.
+org_roster.pv | event(GrantAccepted(d_4,m_38,role_admin)) ==> event(RoleHolderSigned(grant(m_38,role_admin))) | true
+# R6 : ensemble englobant, le UserManager ne donne pas un rôle qu'il ne détient pas.
+org_roster.pv | not event(GrantAccepted(d_4,m_38,role_prov)) | true
+# R7 : le bit Owner n'est jamais donné par un roster (il suit la lignée).
+org_roster.pv | not event(GrantAccepted(d_4,m_38,role_owner)) | true
+# R8 (X8) : un propriétaire retiré de la lignée n'a plus d'autorité.
+org_roster.pv | not event(ChangeAcceptedBy(d_4,o3,b_7)) | true
+# R9 (X11) : un appareil que la tête de lignée ne liste plus ne signe rien.
+org_roster.pv | not event(ChangeAcceptedBy(d_4,o1,add(mallory[]))) | true
+# Épingle : une genèse épinglée porte l'identité de l'organisation.
+org_roster.pv | event(GenesisPinned(d_4,vk_2)) ==> event(OrgIdentity(vk_2)) | true
+# Lignée : un changement accepté a été co-signé par un propriétaire honnête.
+org_roster.pv | event(LineageAccepted(d_4,b_7)) ==> event(HonestOwnerSigned(b_7)) | true
+# Sanité : Bob est ajouté par l'Admin.
+org_roster.pv | not event(MemberAccepted(d_4,bob[])) | false
+# Sanité : l'Owner honnête O1 donne Admin à Bob.
+org_roster.pv | not event(GrantAccepted(d_4,bob[],role_admin)) | false
+# Sanité : le UserManager donne Auditor, qu'il détient.
+org_roster.pv | not event(GrantAccepted(d_4,mallory[],role_aud)) | false
+# Sanité : la genèse honnête est épinglée.
+org_roster.pv | not event(GenesisPinned(d_4,vk_2)) | false
+# Sanité : le changement g0 vers g1 signé par O1 et O2 est accepté.
+org_roster.pv | not event(LineageAccepted(d_4,owners_changed(g0,g1))) | false
+# Témoin : deux appareils de O3 arrivent au test des comptes distincts, qui seul les arrête.
+org_roster.pv | not event(QuorumCandidate(d_4,owners_changed(g0,g_evil[]),o3,o3)) | false
+
+# org_roster_no_role_check.pv : témoin négatif, le client accepte tout corps signé par une clé du
+# roster épinglé sans contrôler le rôle ni la tête de lignée (attaques attendues) ; les requêtes de
+# rôles de org_roster.pv dépendent du contrôle. R2 n'est pas reprise (indépendante du contrôle).
+org_roster_no_role_check.pv | event(AddAcceptedFrom(d_4,m_38,r_2)) ==> r_2 = role_owner || r_2 = role_admin || r_2 = role_um | false
+org_roster_no_role_check.pv | not event(GrantAccepted(d_4,mallory[],role_admin)) | false
+org_roster_no_role_check.pv | not event(AddAcceptedFrom(d_4,mallory[],role_prov)) | false
+org_roster_no_role_check.pv | not event(GrantAccepted(d_4,m_38,role_prov)) | false
+org_roster_no_role_check.pv | not event(GrantAccepted(d_4,m_38,role_owner)) | false
+org_roster_no_role_check.pv | not event(ChangeAcceptedBy(d_4,o3,b_7)) | false
+org_roster_no_role_check.pv | not event(ChangeAcceptedBy(d_4,o1,add(mallory[]))) | false
+# Sanité : Bob est ajouté.
+org_roster_no_role_check.pv | not event(MemberAccepted(d_4,bob[])) | false
+
 # recovery.pv : aide à la récupération par l'organisateur (spec 2026-10-30-sharing-families-design.md,
 # 11.4 à 11.7 et 17 ; arbitrages B-1 et B-2 du plan Famille). RK = HKDF(S_org || S_store), S_org
 # enveloppé pour la clé de l'organisateur épinglée au niveau Vérifié, S_store dans la base privée du

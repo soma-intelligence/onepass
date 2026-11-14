@@ -1,0 +1,25 @@
+(* formal-lib: org_roster_core.pvl *)
+(* Témoin négatif de org_roster.pv : le client roster accepte tout corps
+   signé par une clé du roster épinglé, sans contrôler son rôle ni
+   l'autorité Owner par la tête de lignée (RosterClient avec
+   check_roles = false). Tout le reste est le processus System de
+   org_roster_core.pvl.
+
+   Attendu : les requêtes de rôles de org_roster.pv tombent (U, P, O3 ou
+   l'ancien appareil de O1 font accepter ce qu'ils signent), ce qui montre
+   qu'elles dépendent du contrôle et ne sont pas vides. R2 n'est pas
+   reprise : elle ne dépend pas du contrôle des rôles. Les requêtes de
+   lignée et d'épingle sont celles de org_roster.pv, inchangées ici. *)
+
+query d: bitstring, m: bitstring, r: bitstring;
+  event(AddAcceptedFrom(d, m, r)) ==> r = role_owner || r = role_admin || r = role_um.
+query d: bitstring; event(GrantAccepted(d, mallory, role_admin)).
+query d: bitstring; event(AddAcceptedFrom(d, mallory, role_prov)).
+query d: bitstring, m: bitstring; event(GrantAccepted(d, m, role_prov)).
+query d: bitstring, m: bitstring; event(GrantAccepted(d, m, role_owner)).
+query d: bitstring, b: bitstring; event(ChangeAcceptedBy(d, o3, b)).
+query d: bitstring; event(ChangeAcceptedBy(d, o1, add(mallory))).
+(* Sanité : Bob est ajouté. *)
+query d: bitstring; event(MemberAccepted(d, bob)).
+
+process System(false)

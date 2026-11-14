@@ -1,0 +1,54 @@
+(* formal-lib: org_roster_core.pvl *)
+(* Modèle formel OnePass Business (plan B, E1, spec 15) : roster signé,
+   rôles du roster épinglé, autorité Owner tirée de la tête de lignée,
+   règle de l'ensemble englobant de GRANT, quorum de la lignée sur des
+   comptes distincts, épingle jamais suivie. Distribution, abstractions et
+   limites : en tête de org_roster_core.pvl. Témoin négatif :
+   org_roster_no_role_check.pv (même processus, sans contrôle des rôles). *)
+
+(* R1 : un ajout n'est accepté que d'un Owner, Admin ou UserManager. *)
+query d: bitstring, m: bitstring, r: bitstring;
+  event(AddAcceptedFrom(d, m, r)) ==> r = role_owner || r = role_admin || r = role_um.
+(* R2 : un ajout sous la clé de l'Admin honnête a été signé par lui. *)
+query d: bitstring, m: bitstring;
+  event(AddAcceptedFrom(d, m, role_admin)) ==> event(RoleHolderSigned(add(m))).
+(* R3 : U et P compromis, O3 et l'ancien appareil de O1 aussi : aucun
+   rôle Admin n'est donné à Mallory. *)
+query d: bitstring; event(GrantAccepted(d, mallory, role_admin)).
+(* R4 (spec 15) : un Provisioner ne fait accepter aucun ajout. *)
+query d: bitstring; event(AddAcceptedFrom(d, mallory, role_prov)).
+(* R5 : Admin donné seulement par un détenteur de rôle honnête. *)
+query d: bitstring, m: bitstring;
+  event(GrantAccepted(d, m, role_admin)) ==> event(RoleHolderSigned(grant(m, role_admin))).
+(* R6 : ensemble englobant, U (UserManager, Auditor) ne donne pas
+   Provisioner, et personne d'autre ne le donne. *)
+query d: bitstring, m: bitstring; event(GrantAccepted(d, m, role_prov)).
+(* R7 : le bit Owner n'est jamais donné par un roster. *)
+query d: bitstring, m: bitstring; event(GrantAccepted(d, m, role_owner)).
+(* R8 (X8) : O3, retiré de la lignée mais Owner dans le roster épinglé,
+   n'a plus d'autorité. *)
+query d: bitstring, b: bitstring; event(ChangeAcceptedBy(d, o3, b)).
+(* R9 (X11) : l'ancien appareil de O1, que la tête ne liste plus, ne
+   signe rien au nom de O1. *)
+query d: bitstring; event(ChangeAcceptedBy(d, o1, add(mallory))).
+(* Épingle : une genèse épinglée porte l'identité de l'organisation. *)
+query d: bitstring, vk: pkey; event(GenesisPinned(d, vk)) ==> event(OrgIdentity(vk)).
+(* Lignée : quorum de deux comptes distincts, O3 et l'identité compromis. *)
+query d: bitstring, b: bitstring;
+  event(LineageAccepted(d, b)) ==> event(HonestOwnerSigned(b)).
+
+(* Sanité (attendu false) : Bob est ajouté par l'Admin. *)
+query d: bitstring; event(MemberAccepted(d, bob)).
+(* Sanité : l'Owner honnête O1 donne Admin à Bob (autorité par la tête). *)
+query d: bitstring; event(GrantAccepted(d, bob, role_admin)).
+(* Sanité : U donne Auditor, qu'il détient, à Mallory. *)
+query d: bitstring; event(GrantAccepted(d, mallory, role_aud)).
+(* Sanité : la genèse honnête est épinglée. *)
+query d: bitstring, vk: pkey; event(GenesisPinned(d, vk)).
+(* Sanité : le changement g0 -> g1 de O1 et O2 est accepté. *)
+query d: bitstring; event(LineageAccepted(d, owners_changed(g0, g1))).
+(* Témoin : deux appareils de O3 sur un corps choisi par l'attaquant
+   arrivent au test des comptes distincts, qui seul les arrête. *)
+query d: bitstring; event(QuorumCandidate(d, owners_changed(g0, g_evil), o3, o3)).
+
+process System(true)

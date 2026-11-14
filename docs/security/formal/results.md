@@ -111,6 +111,31 @@
 | manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),2,mh_12))` | false | false |
 | manifest.pv | `not event(Fetched(d_3,v_84,seen(2,h0),3,mh_12))` | false | false |
 | manifest.pv | `not event(ItemAccepted(d_3,v_84,one_entry(i_6,ver_9,rh_6)))` | false | false |
+| org_roster.pv | `event(AddAcceptedFrom(d_4,m_38,r_2)) ==> r_2 = role_owner \|\| r_2 = role_admin \|\| r_2 = role_um` | true | true |
+| org_roster.pv | `event(AddAcceptedFrom(d_4,m_38,role_admin)) ==> event(RoleHolderSigned(add(m_38)))` | true | true |
+| org_roster.pv | `not event(GrantAccepted(d_4,mallory[],role_admin))` | true | true |
+| org_roster.pv | `not event(AddAcceptedFrom(d_4,mallory[],role_prov))` | true | true |
+| org_roster.pv | `event(GrantAccepted(d_4,m_38,role_admin)) ==> event(RoleHolderSigned(grant(m_38,role_admin)))` | true | true |
+| org_roster.pv | `not event(GrantAccepted(d_4,m_38,role_prov))` | true | true |
+| org_roster.pv | `not event(GrantAccepted(d_4,m_38,role_owner))` | true | true |
+| org_roster.pv | `not event(ChangeAcceptedBy(d_4,o3,b_7))` | true | true |
+| org_roster.pv | `not event(ChangeAcceptedBy(d_4,o1,add(mallory[])))` | true | true |
+| org_roster.pv | `event(GenesisPinned(d_4,vk_2)) ==> event(OrgIdentity(vk_2))` | true | true |
+| org_roster.pv | `event(LineageAccepted(d_4,b_7)) ==> event(HonestOwnerSigned(b_7))` | true | true |
+| org_roster.pv | `not event(MemberAccepted(d_4,bob[]))` | false | false |
+| org_roster.pv | `not event(GrantAccepted(d_4,bob[],role_admin))` | false | false |
+| org_roster.pv | `not event(GrantAccepted(d_4,mallory[],role_aud))` | false | false |
+| org_roster.pv | `not event(GenesisPinned(d_4,vk_2))` | false | false |
+| org_roster.pv | `not event(LineageAccepted(d_4,owners_changed(g0,g1)))` | false | false |
+| org_roster.pv | `not event(QuorumCandidate(d_4,owners_changed(g0,g_evil[]),o3,o3))` | false | false |
+| org_roster_no_role_check.pv | `event(AddAcceptedFrom(d_4,m_38,r_2)) ==> r_2 = role_owner \|\| r_2 = role_admin \|\| r_2 = role_um` | false | false |
+| org_roster_no_role_check.pv | `not event(GrantAccepted(d_4,mallory[],role_admin))` | false | false |
+| org_roster_no_role_check.pv | `not event(AddAcceptedFrom(d_4,mallory[],role_prov))` | false | false |
+| org_roster_no_role_check.pv | `not event(GrantAccepted(d_4,m_38,role_prov))` | false | false |
+| org_roster_no_role_check.pv | `not event(GrantAccepted(d_4,m_38,role_owner))` | false | false |
+| org_roster_no_role_check.pv | `not event(ChangeAcceptedBy(d_4,o3,b_7))` | false | false |
+| org_roster_no_role_check.pv | `not event(ChangeAcceptedBy(d_4,o1,add(mallory[])))` | false | false |
+| org_roster_no_role_check.pv | `not event(MemberAccepted(d_4,bob[]))` | false | false |
 | recovery.pv | `not attacker(ks_org[])` | true | true |
 | recovery.pv | `not attacker(ks_srv[])` | true | true |
 | recovery.pv | `not attacker(ks_main[])` | true | true |
