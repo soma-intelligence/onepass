@@ -22,7 +22,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use onepass_core::Id;
-use onepass_core::model::Item;
+use onepass_core::model::{Item, KeyUseAction};
 use onepass_core::reference::SecretRef;
 use onepass_guard::{
     AuditEntry, AuditLog, AuditSink, OUTCOME_NOT_PAIRED, SignedAuditSink, Surface, SystemClock,
@@ -1653,6 +1653,17 @@ impl VaultPort for SessionPort {
 
     fn save_item(&mut self, vault_id: Id, item: Item) -> Result<(), PortError> {
         self.call(|p| p.save_item(vault_id, item.clone()))
+    }
+
+    fn record_key_use(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        action: KeyUseAction,
+        client: &str,
+        field: &str,
+    ) -> Result<(), PortError> {
+        self.call(|p| p.record_key_use(vault_id, item_id, action, client, field))
     }
 }
 
