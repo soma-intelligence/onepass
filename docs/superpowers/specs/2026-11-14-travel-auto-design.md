@@ -44,7 +44,7 @@ Règles : `end > start` ; au plus 16 voyages ; un voyage dont `end` est passé d
 ### 3.2 Ajouts à `TravelPlaces`
 
 - `trips: [TravelTrip]`.
-- `usualOffsets: [Int: [Int]]` : décalage UTC en secondes vers les jours où il a été vu (même fenêtre de 60 jours que les cellules). Un décalage est habituel après 3 jours distincts.
+- `usualOffsets: [String: [Int]]` : clé `"<TimeZone.identifier>|<décalage UTC en secondes>"` vers les jours où elle a été vue (même fenêtre de 60 jours que les cellules). Un décalage est habituel après 3 jours distincts, ou si un décalage habituel porte le même identifiant de fuseau (l'heure d'été chez soi ne déclenche rien).
 - `seenEventIDs: Set<String>` : événements de calendrier déjà proposés (acceptés ou refusés), au plus 256, les plus anciens partent d'abord.
 - `lastCalendarScan: Double?`, `lastAirportNotice: Int?` (jour).
 - `airportsEnabled`, `calendarEnabled` restent dans `UserDefaults` comme `onepass.travel.suggest` (préférences, pas des données de lieu).
@@ -57,7 +57,7 @@ Nouveau type dans `VaultKit/Travel/TravelPlanner.swift`, sans horloge, sans posi
 
 Entrée `TravelSignals` : `now`, `places` (inout), `travelling`, `unlocked`, verdict de lieu (`TravelVerdict?`), décalage UTC courant, `atAirport: Bool`.
 
-Sortie `TravelSuggestion` étendue :
+Sortie : un nouveau type `TravelPrompt` (`TravelSuggestion` reste celui de `TravelDetector`, inchangé, et le planner le traduit) :
 - `.none` ;
 - `.suggest(reason: Reason, notify: Bool)` avec `Reason` = `.away(cell)` (existant), `.tripStarting(tripID)`, `.flightFound(eventID, start, end)`, `.atAirport`, `.newTimeZone` ;
 - `.autoEnter(tripID)` ;
@@ -87,7 +87,7 @@ Ordre de décision (le premier qui s'applique gagne) :
 - **Quand.** Au premier plan, coffre déverrouillé, au plus une fois par jour (`lastCalendarScan`).
 - **Quoi.** Les événements des 30 prochains jours, tous calendriers. Un événement est un vol si l'une des règles suivantes s'applique :
   1. Le titre contient deux codes IATA de 3 lettres majuscules connus de la liste d'aéroports (section 7) ;
-  2. Le titre contient un numéro de vol (`[A-Z0-9]{2}\s?\d{1,4}`) et un mot-clé de vol des 4 langues de l'app (`flight`, `vol`, `Flug`, `vuelo`, liste dans un fichier de règles) ;
+  2. Le titre contient un numéro de vol (`[A-Z0-9]{2}\s?\d{1,4}`) et un mot-clé de vol des 4 langues de l'app (fr, en, es, it : `vol`, `flight`, `vuelo`, `volo`, liste dans un fichier de règles) ;
   3. L'événement a un `timeZone` dont le décalage diffère de l'actuel et un `structuredLocation`.
 - **Résultat.** Le premier vol non vu donne `.flightFound` ; le retour est le prochain vol trouvé dans les 30 jours, sinon `start + 7 jours`, modifiable. La carte « Vol le 3 déc. Créer un voyage ? » : Oui ouvre l'éditeur de voyage prérempli, Non et Plus tard ajoutent l'identifiant à `seenEventIDs`. Jamais de création silencieuse.
 - **Mémoire.** Ni titre, ni lieu, ni notes ne sont gardés : seulement l'identifiant et les dates du voyage créé.
@@ -115,7 +115,7 @@ Jamais automatique, quel que soit le signal. La carte « De retour ? Désactiver
 
 - **VaultKit, `TravelPlannerTests`** : chaque branche de l'ordre de décision ; fenêtre `start - 3 h` ; `autoEnter` seulement déverrouillé ; une seule tentative auto ; « Non » et « Plus tard » par raison ; décalage habituel après 3 jours ; Travel Mode actif ne propose rien sauf `.welcomeBack` ; nettoyage des voyages finis depuis 7 jours ; limite de 16 voyages.
 - **VaultKit, compatibilité** : un `TravelPlaces` encodé par la version actuelle (fixture JSON) se décode avec ses lieux intacts et `trips` vide.
-- **VaultKit, `FlightMatcherTests`** : règles 1 à 3 sur des titres connus dans les 4 langues, faux positifs (« Volley », « Flugzeugmuseum » sans numéro), événement sans lieu.
+- **VaultKit, `FlightMatcherTests`** : règles 1 à 3 sur des titres connus dans les 4 langues, faux positifs (« Volley », « Volontariat » sans numéro), événement sans lieu.
 - **VaultKit, `AirportIndexTests`** : les 20 plus proches de Paris, de Tokyo, autour de l'antiméridien ; le fichier se charge et a des codes uniques.
 - **App, UI tests (bundle QA)** : ajouter un voyage, la carte « Ton voyage commence » à l'ouverture avec une horloge de test (`-travel-now`) ; aéroport simulé (`simctl location` sur CDG) avec `-travel-airports-on` en DEBUG.
 - **Notifications** : test unitaire des identifiants et des dates programmées, sans le centre système (protocole injecté).
