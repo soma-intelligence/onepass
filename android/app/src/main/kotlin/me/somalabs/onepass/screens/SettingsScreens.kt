@@ -177,6 +177,7 @@ class SettingsScreens(private val a: MainActivity) {
             status,
         )))
         attachWifi()
+        a.backups.sections(this)
     }
 
     private fun renderWifi(report: SyncReport?) {

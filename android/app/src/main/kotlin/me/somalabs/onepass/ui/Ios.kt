@@ -211,7 +211,8 @@ class Ios(val context: Context) {
             trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(green, fill))
             setOnCheckedChangeListener { _, v -> onChange(v) }
         }
-        return row(title = title, subtitle = subtitle, chevron = false, trailing = sw)
+        // Touching the row flips the switch, as on iPhone.
+        return row(title = title, subtitle = subtitle, chevron = false, trailing = sw) { if (sw.isEnabled) sw.toggle() }
     }
 
     // ---- inputs ----------------------------------------------------------------------------

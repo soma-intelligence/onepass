@@ -67,6 +67,7 @@ class MainActivity : Activity() {
     val watchtower by lazy { WatchtowerScreen(this) }
     val access by lazy { AccessScreens(this) }
     val settings by lazy { SettingsScreens(this) }
+    val backups by lazy { me.somalabs.onepass.screens.BackupScreens(this) }
 
     enum class Tab { HOME, ITEMS, WATCHTOWER, SEARCH }
 
