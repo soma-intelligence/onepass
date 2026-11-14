@@ -1,6 +1,6 @@
 # Key usage log: who used a secret, where, through which channel
 
-Date: 2026-11-14. Status: design approved in conversation, no code written.
+Date: 2026-11-14. Status: built on branch feat/key-usage-log (commits 80f81f76d..9367778c5), not merged, not pushed.
 
 ## Goal
 
