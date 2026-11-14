@@ -1,5 +1,6 @@
-//! The signed org roster (Business E1, plan B Task 6): roles as a bit set,
-//! member shape rules, the strict codec and the caps.
+//! The signed org roster (Business E1, plan B Tasks 6 and 7): roles as a
+//! bit set, member shape rules, the strict codec and the caps; then the
+//! acceptance rules of spec 5.5 (who may sign which change).
 
 mod org_common;
 
@@ -7,11 +8,13 @@ use std::sync::OnceLock;
 
 use onepass_core::crypto::IdentityVerifyingKey;
 use onepass_core::org::{
-    DeviceFpr, MAX_MEMBER_DEVICES, MAX_ORG_RECORD_BYTES, MAX_ROSTER_MEMBERS, MemberState, OrgId,
-    OrgMember, Role, RoleSet, RosterBody, SignedRoster, invite_commit, member_kem_hash,
-    scim_id_hash, sign_roster,
+    DeviceFpr, MAX_MEMBER_DEVICES, MAX_ORG_RECORD_BYTES, MAX_ROSTER_MEMBERS, MemberRef,
+    MemberState, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgId, OrgLineage, OrgMember, Role,
+    RoleSet, RosterBody, SignedRoster, accept_first_roster, accept_next_roster,
+    accept_roster_chain, check_transition, founding_roster, invite_commit, member_kem_hash,
+    scim_id_hash, sign_org_change, sign_org_genesis, sign_roster, verify_org_genesis,
 };
-use onepass_core::{Error, Id};
+use onepass_core::{Error, Id, IntegrityError};
 use org_common::*;
 
 const ORG: OrgId = OrgId([7; 16]);
@@ -465,4 +468,813 @@ fn next_chains() {
     last.seq = u64::MAX;
     last.prev_hash = [1; 32];
     assert!(last.next().is_err());
+}
+
+// ---------------------------------------------------------------------
+// Task 7: roster acceptance rules (spec 5.5, D7 to D13).
+// ---------------------------------------------------------------------
+
+/// Accounts of the fixture org: owner O, admin A, user manager U,
+/// provisioner P, plain member M; X and Y are invited later.
+const O: u8 = 1;
+const A: u8 = 2;
+const U: u8 = 3;
+const P: u8 = 4;
+const M: u8 = 5;
+const X: u8 = 6;
+const Y: u8 = 7;
+
+fn acct(a: u8) -> Id {
+    Id([a; 16])
+}
+
+/// The fixture org: its devices, the lineage at generation 0 (owners {O}),
+/// 1 (audit key rotated, owners {O}) and 2 (owners {O, M}), and rosters
+/// r1..r7 (`chain[i]` is seq `i + 1`): r1 founding by O, r2 O invites A, U,
+/// P, M, r3 O activates them, r4 and r5 by O unchanged, r6 A invites X
+/// with {UserManager}, r7 U invites Y with {UserManager}.
+struct Org {
+    o: TestDevice,
+    a: TestDevice,
+    u: TestDevice,
+    p: TestDevice,
+    m: TestDevice,
+    lineages: [OrgLineage; 3],
+    chain: Vec<SignedRoster>,
+}
+
+fn dev(o: &Org, a: u8) -> &TestDevice {
+    match a {
+        O => &o.o,
+        A => &o.a,
+        U => &o.u,
+        P => &o.p,
+        M => &o.m,
+        _ => unreachable!(),
+    }
+}
+
+fn invite(a: u8, roles: RoleSet) -> OrgMember {
+    OrgMember {
+        account_id: acct(a),
+        account_identity_pub: None,
+        scim_id_hash: [0; 32],
+        invite_commit: invite_commit(ORG, acct(a), &[a; 32]),
+        account_kem_hash: [0; 32],
+        roles,
+        state: MemberState::Invited,
+        devices: vec![],
+    }
+}
+
+/// `m` Active with the identity, KEM hash and devices of `member_ref(a)`.
+fn activate(m: &mut OrgMember, r: &MemberRef) {
+    m.state = MemberState::Active;
+    m.account_identity_pub = Some(r.account_identity_pub.clone());
+    m.account_kem_hash = member_kem_hash(&r.account_kem_pub);
+    m.devices = r.devices.clone();
+}
+
+fn upsert(body: &mut RosterBody, m: OrgMember) {
+    match body
+        .members
+        .binary_search_by(|x| x.account_id.cmp(&m.account_id))
+    {
+        Ok(i) => body.members[i] = m,
+        Err(i) => body.members.insert(i, m),
+    }
+}
+
+fn entry(body: &mut RosterBody, a: u8) -> &mut OrgMember {
+    body.members
+        .iter_mut()
+        .find(|m| m.account_id == acct(a))
+        .unwrap()
+}
+
+fn org() -> &'static Org {
+    static CELL: OnceLock<Org> = OnceLock::new();
+    CELL.get_or_init(|| {
+        let (o, a, u, p, m) = (
+            device(0x10),
+            device(0x20),
+            device(0x30),
+            device(0x40),
+            device(0x50),
+        );
+        let secrets = org_secrets();
+        let owner_o = member_ref(O, &[&o]);
+        let genesis = sign_org_genesis(
+            OrgGenesisBody {
+                format: 1,
+                org_id: ORG,
+                name: "Acme".to_string(),
+                org_identity_pub: secrets.identity.verifying_key(),
+                audit_kem_pub: secrets.audit.public().unwrap(),
+                owners: vec![owner_o.clone()],
+                created_at: 1_700_000_000,
+            },
+            &secrets.identity,
+            &[(&o.public, &o.keys)],
+        )
+        .unwrap();
+        let l0 = verify_org_genesis(&genesis).unwrap();
+        let change = |l: &OrgLineage, kind: OrgChangeKind| {
+            let body = OrgChangeBody {
+                format: 1,
+                org_id: ORG,
+                generation: l.head().generation + 1,
+                parent: l.head().hash,
+                kind,
+                issued_at: 1_700_000_100,
+            };
+            let rec = sign_org_change(body, &secrets.identity, &[(&o.public, &o.keys)]).unwrap();
+            l.apply(&rec).unwrap()
+        };
+        let l1 = change(
+            &l0,
+            OrgChangeKind::AuditKeyRotated {
+                audit_kem_pub: kem_pool(1).1.clone(),
+            },
+        );
+        let l2 = change(
+            &l1,
+            OrgChangeKind::OwnersChanged {
+                owners: vec![owner_o, member_ref(M, &[&m])],
+            },
+        );
+
+        let sign =
+            |body: RosterBody, d: &TestDevice| sign_roster(body, &d.public, &d.keys).unwrap();
+        let r1 = founding_roster(&l0).unwrap();
+        let mut r2 = r1.next().unwrap();
+        upsert(&mut r2, invite(A, RoleSet::of(&[Role::Admin])));
+        upsert(&mut r2, invite(U, RoleSet::of(&[Role::UserManager])));
+        upsert(&mut r2, invite(P, RoleSet::of(&[Role::Provisioner])));
+        upsert(&mut r2, invite(M, RoleSet::EMPTY));
+        let mut r3 = r2.next().unwrap();
+        for (acc, d) in [(A, &a), (U, &u), (P, &p), (M, &m)] {
+            activate(entry(&mut r3, acc), &member_ref(acc, &[d]));
+        }
+        let r4 = r3.next().unwrap();
+        let r5 = r4.next().unwrap();
+        let mut r6 = r5.next().unwrap();
+        upsert(&mut r6, invite(X, RoleSet::of(&[Role::UserManager])));
+        let mut r7 = r6.next().unwrap();
+        upsert(&mut r7, invite(Y, RoleSet::of(&[Role::UserManager])));
+        let chain = vec![
+            sign(r1, &o),
+            sign(r2, &o),
+            sign(r3, &o),
+            sign(r4, &o),
+            sign(r5, &o),
+            sign(r6, &a),
+            sign(r7, &u),
+        ];
+        Org {
+            o,
+            a,
+            u,
+            p,
+            m,
+            lineages: [l0, l1, l2],
+            chain,
+        }
+    })
+}
+
+fn l0() -> &'static OrgLineage {
+    &org().lineages[0]
+}
+
+/// Roster `seq` of the fixture chain.
+fn r(seq: usize) -> &'static RosterBody {
+    &org().chain[seq - 1].body
+}
+
+/// The pinned roster most tests start from: r3, all five members Active.
+fn base() -> &'static RosterBody {
+    r(3)
+}
+
+/// `prev.next()` edited by `f`.
+fn edit(prev: &RosterBody, f: impl FnOnce(&mut RosterBody)) -> RosterBody {
+    let mut n = prev.next().unwrap();
+    f(&mut n);
+    n
+}
+
+/// `next` signed by account `by`'s device, accepted after `prev` under
+/// lineage `l`.
+fn accept_in(
+    l: &OrgLineage,
+    prev: &RosterBody,
+    next: RosterBody,
+    by: u8,
+) -> onepass_core::Result<RosterBody> {
+    let d = dev(org(), by);
+    let rec = sign_roster(next, &d.public, &d.keys).unwrap();
+    accept_next_roster(l, prev, &rec)
+}
+
+fn accept(prev: &RosterBody, next: RosterBody, by: u8) -> onepass_core::Result<RosterBody> {
+    accept_in(l0(), prev, next, by)
+}
+
+fn integrity_err<T: std::fmt::Debug>(r: onepass_core::Result<T>) -> IntegrityError {
+    match r {
+        Err(Error::Integrity(e)) => e,
+        other => panic!("expected an integrity error, got {other:?}"),
+    }
+}
+
+fn denied<T: std::fmt::Debug>(r: onepass_core::Result<T>, what: &str) {
+    match r {
+        Err(Error::Integrity(IntegrityError::OrgRoleDenied)) => {}
+        other => panic!("{what}: expected OrgRoleDenied, got {other:?}"),
+    }
+}
+
+fn not_found<T: std::fmt::Debug>(r: onepass_core::Result<T>, what: &str) {
+    match r {
+        Err(Error::NotFound) => {}
+        other => panic!("{what}: expected NotFound, got {other:?}"),
+    }
+}
+
+fn add_role(b: &mut RosterBody, a: u8, role: Role) {
+    let e = entry(b, a);
+    e.roles = e.roles.with(role);
+}
+
+fn set_state(b: &mut RosterBody, a: u8, s: MemberState) {
+    entry(b, a).state = s;
+}
+
+fn removed_by(b: &mut RosterBody, a: u8, by: u8) {
+    let e = entry(b, a);
+    e.state = MemberState::Removed {
+        at: 1_700_000_500,
+        by: acct(by),
+    };
+    e.roles = RoleSet::EMPTY;
+    e.devices.clear();
+}
+
+#[test]
+fn founding_roster_signed_by_owner_accepted() {
+    let org = org();
+    let f = founding_roster(l0()).unwrap();
+    assert_eq!(f.seq, 1);
+    assert_eq!(f.prev_hash, [0; 32]);
+    assert_eq!(f.org_id, ORG);
+    assert_eq!(f.org_head, l0().head().hash);
+    let owner = member_ref(O, &[&org.o]);
+    assert_eq!(
+        f.members,
+        vec![OrgMember {
+            account_id: acct(O),
+            account_identity_pub: Some(owner.account_identity_pub.clone()),
+            scim_id_hash: [0; 32],
+            invite_commit: [0; 32],
+            account_kem_hash: member_kem_hash(&owner.account_kem_pub),
+            roles: RoleSet::of(&[Role::Owner]),
+            state: MemberState::Active,
+            devices: owner.devices.clone(),
+        }]
+    );
+    assert_eq!(&f, r(1));
+    assert_eq!(
+        accept_first_roster(l0(), &org.chain[..1]).unwrap(),
+        f,
+        "founding roster by O"
+    );
+    // The whole fixture chain from seq 1, under every lineage generation.
+    for l in &org.lineages {
+        assert_eq!(&accept_first_roster(l, &org.chain).unwrap(), r(7));
+    }
+    // founding_roster follows the lineage head: owners {O, M} at gen 2.
+    let f2 = founding_roster(&org.lineages[2]).unwrap();
+    assert_eq!(f2.org_head, org.lineages[2].head().hash);
+    assert_eq!(
+        f2.members.iter().map(|m| m.account_id).collect::<Vec<_>>(),
+        vec![acct(O), acct(M)]
+    );
+    assert!(
+        accept_first_roster(
+            &org.lineages[2],
+            &[sign_roster(f2, &org.m.public, &org.m.keys).unwrap()]
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn founding_roster_by_non_owner_refused() {
+    let org = org();
+    let f = founding_roster(l0()).unwrap();
+    let by_a = sign_roster(f.clone(), &org.a.public, &org.a.keys).unwrap();
+    denied(accept_first_roster(l0(), &[by_a]), "founding by A");
+    // A seq-1 roster that is not the founding roster, even by O.
+    let mut other = f;
+    upsert(&mut other, invite(X, RoleSet::EMPTY));
+    let rec = sign_roster(other, &org.o.public, &org.o.keys).unwrap();
+    denied(accept_first_roster(l0(), &[rec]), "seq 1 not founding");
+    not_found(accept_first_roster(l0(), &[]), "empty chain");
+}
+
+#[test]
+fn admin_invites_and_grants() {
+    let n = edit(base(), |b| {
+        upsert(b, invite(X, RoleSet::of(&[Role::UserManager])))
+    });
+    assert_eq!(accept(base(), n.clone(), A).unwrap(), n);
+    let n = edit(base(), |b| add_role(b, M, Role::Auditor));
+    assert!(accept(base(), n, A).is_ok(), "A grants Auditor to M");
+    let n = edit(base(), |b| add_role(b, M, Role::Admin));
+    assert!(accept(base(), n, A).is_ok(), "A grants Admin to M");
+    // A new invitation needs an invitation commitment.
+    let n = edit(base(), |b| {
+        let mut x = invite(X, RoleSet::EMPTY);
+        x.invite_commit = [0; 32];
+        upsert(b, x)
+    });
+    denied(accept(base(), n, A), "invite without commitment");
+}
+
+#[test]
+fn user_manager_cannot_grant_admin() {
+    let n = edit(base(), |b| {
+        upsert(b, invite(X, RoleSet::of(&[Role::Admin])))
+    });
+    denied(accept(base(), n, U), "U invites an Admin");
+    let n = edit(base(), |b| add_role(b, M, Role::Admin));
+    denied(accept(base(), n, U), "U grants Admin to M");
+}
+
+#[test]
+fn user_manager_grants_only_what_it_holds() {
+    let n = edit(base(), |b| add_role(b, M, Role::Auditor));
+    denied(accept(base(), n, U), "U grants Auditor");
+    let n = edit(base(), |b| {
+        upsert(b, invite(X, RoleSet::of(&[Role::Provisioner])))
+    });
+    denied(accept(base(), n, U), "U invites a Provisioner");
+    let n = edit(base(), |b| add_role(b, M, Role::UserManager));
+    assert!(accept(base(), n, U).is_ok(), "U grants UserManager");
+    let n = edit(base(), |b| {
+        upsert(b, invite(X, RoleSet::of(&[Role::UserManager])))
+    });
+    assert!(accept(base(), n, U).is_ok(), "U invites a UserManager");
+}
+
+#[test]
+fn no_self_escalation() {
+    let n = edit(base(), |b| add_role(b, U, Role::Admin));
+    denied(accept(base(), n, U), "U adds Admin to itself");
+    let n = edit(base(), |b| add_role(b, U, Role::Auditor));
+    denied(accept(base(), n, U), "U adds Auditor to itself");
+    let n = edit(base(), |b| entry(b, U).devices.push([0xFF; 32]));
+    denied(accept(base(), n, U), "U adds a device to itself");
+    let n = edit(base(), |b| add_role(b, A, Role::Owner));
+    denied(accept(base(), n, A), "A adds Owner to itself");
+    let n = edit(base(), |b| entry(b, U).roles = RoleSet::EMPTY);
+    assert!(accept(base(), n, U).is_ok(), "U drops its own UserManager");
+}
+
+#[test]
+fn user_manager_cannot_touch_admins() {
+    let n = edit(base(), |b| set_state(b, A, MemberState::Suspended));
+    denied(accept(base(), n, U), "U suspends A");
+    let n = edit(base(), |b| removed_by(b, A, U));
+    denied(accept(base(), n, U), "U removes A");
+    let n = edit(base(), |b| entry(b, A).roles = RoleSet::EMPTY);
+    denied(accept(base(), n, U), "U revokes A's Admin");
+    let n = edit(base(), |b| set_state(b, O, MemberState::Suspended));
+    denied(accept(base(), n, U), "U suspends O");
+    // A plain member is fine.
+    let n = edit(base(), |b| set_state(b, M, MemberState::Suspended));
+    assert!(accept(base(), n, U).is_ok(), "U suspends M");
+}
+
+#[test]
+fn admin_cannot_touch_owners() {
+    let n = edit(base(), |b| set_state(b, O, MemberState::Suspended));
+    denied(accept(base(), n, A), "A suspends O");
+    let n = edit(base(), |b| {
+        let e = entry(b, O);
+        e.devices.push([0xFF; 32]);
+    });
+    denied(accept(base(), n, A), "A edits O's devices");
+    let n = edit(base(), |b| add_role(b, O, Role::Auditor));
+    denied(accept(base(), n, A), "A grants Auditor to O");
+    // An owner may.
+    let n = edit(base(), |b| add_role(b, A, Role::Auditor));
+    assert!(accept(base(), n, O).is_ok(), "O grants Auditor to A");
+    let n = edit(base(), |b| set_state(b, A, MemberState::Suspended));
+    assert!(accept(base(), n, O).is_ok(), "O suspends A");
+}
+
+#[test]
+fn provisioner_only_suspends_or_removes() {
+    let org = org();
+    let n = edit(base(), |b| set_state(b, M, MemberState::Suspended));
+    let suspended = accept(base(), n, P).unwrap();
+    let n = edit(&suspended, |b| removed_by(b, M, P));
+    assert!(accept(&suspended, n, P).is_ok(), "P removes suspended M");
+    let n = edit(base(), |b| removed_by(b, M, P));
+    assert!(accept(base(), n, P).is_ok(), "P removes M");
+    let n = edit(base(), |b| removed_by(b, U, P));
+    assert!(accept(base(), n, P).is_ok(), "P removes U and its roles");
+
+    let n = edit(base(), |b| upsert(b, invite(X, RoleSet::EMPTY)));
+    denied(accept(base(), n, P), "P invites");
+    let n = edit(base(), |b| add_role(b, M, Role::Auditor));
+    denied(accept(base(), n, P), "P grants");
+    let n = edit(&suspended, |b| set_state(b, M, MemberState::Active));
+    denied(accept(&suspended, n, P), "P reactivates");
+    // r6 has X invited: P cannot activate it.
+    let x = device(0x61);
+    let n = edit(r(6), |b| activate(entry(b, X), &member_ref(X, &[&x])));
+    assert!(accept(r(6), n.clone(), O).is_ok(), "O activates X");
+    denied(accept(r(6), n, P), "P activates X");
+    let n = edit(base(), |b| entry(b, M).devices.push([0xFF; 32]));
+    denied(accept(base(), n, P), "P edits devices");
+    let n = edit(base(), |b| b.org_head = org.lineages[1].head().hash);
+    denied(
+        accept_in(&org.lineages[1], base(), n.clone(), P),
+        "P changes org_head",
+    );
+    assert!(
+        accept_in(&org.lineages[1], base(), n, O).is_ok(),
+        "O changes org_head"
+    );
+    let n = edit(base(), |b| removed_by(b, P, P));
+    denied(accept(base(), n, P), "P removes itself");
+    let n = edit(base(), |b| {
+        removed_by(b, M, P);
+        entry(b, M).scim_id_hash = [1; 32];
+    });
+    denied(accept(base(), n, P), "P removes and edits");
+    let n = edit(base(), |b| {
+        set_state(b, U, MemberState::Suspended);
+        entry(b, U).roles = RoleSet::EMPTY;
+    });
+    denied(accept(base(), n, P), "P suspends U and revokes its role");
+    // Unchanged roster: fine.
+    assert!(accept(base(), base().next().unwrap(), P).is_ok());
+}
+
+#[test]
+fn provisioner_cannot_remove_admin() {
+    let n = edit(base(), |b| removed_by(b, A, P));
+    denied(accept(base(), n, P), "P removes A");
+    let n = edit(base(), |b| set_state(b, A, MemberState::Suspended));
+    denied(accept(base(), n, P), "P suspends A");
+    let n = edit(base(), |b| set_state(b, O, MemberState::Suspended));
+    denied(accept(base(), n, P), "P suspends O");
+}
+
+#[test]
+fn policy_manager_and_auditor_cannot_sign() {
+    for role in [Role::PolicyManager, Role::Auditor] {
+        let n = edit(base(), |b| add_role(b, M, role));
+        let pinned = accept(base(), n, O).unwrap();
+        denied(
+            accept(&pinned, pinned.next().unwrap(), M),
+            "unchanged roster by M",
+        );
+        let n = edit(&pinned, |b| upsert(b, invite(X, RoleSet::EMPTY)));
+        denied(accept(&pinned, n, M), "invite by M");
+    }
+    denied(
+        accept(base(), base().next().unwrap(), M),
+        "member without roles",
+    );
+}
+
+#[test]
+fn suspended_or_removed_signer_refused() {
+    let n = edit(base(), |b| set_state(b, A, MemberState::Suspended));
+    let pinned = accept(base(), n, O).unwrap();
+    denied(
+        accept(&pinned, pinned.next().unwrap(), A),
+        "suspended admin",
+    );
+    let n = edit(&pinned, |b| set_state(b, A, MemberState::Active));
+    denied(accept(&pinned, n, A), "suspended admin reactivates itself");
+    let n = edit(base(), |b| removed_by(b, U, O));
+    let pinned = accept(base(), n, O).unwrap();
+    denied(
+        accept(&pinned, pinned.next().unwrap(), U),
+        "removed user manager",
+    );
+}
+
+#[test]
+fn signer_key_from_pinned_roster() {
+    let org = org();
+    let new = device(0x60);
+    let n = edit(base(), |b| {
+        let e = entry(b, A);
+        e.devices.push(new.public.fingerprint());
+        e.devices.sort_unstable();
+    });
+    let rec = sign_roster(n.clone(), &new.public, &new.keys).unwrap();
+    denied(
+        accept_next_roster(l0(), base(), &rec),
+        "signed by the new device",
+    );
+    // O may add A's device; then the new device signs.
+    let pinned = accept(base(), n, O).unwrap();
+    let rec = sign_roster(pinned.next().unwrap(), &new.public, &new.keys).unwrap();
+    assert!(accept_next_roster(l0(), &pinned, &rec).is_ok());
+
+    // A's signing key under another device id: its fingerprint is not listed.
+    let other = org.a.keys.public(Id([0x99; 16])).unwrap();
+    assert_ne!(other.fingerprint(), org.a.public.fingerprint());
+    let rec = sign_roster(base().next().unwrap(), &other, &org.a.keys).unwrap();
+    denied(
+        accept_next_roster(l0(), base(), &rec),
+        "fingerprint mismatch",
+    );
+    // A listed signer with a signature by other keys.
+    let mut rec = sign_roster(base().next().unwrap(), &org.u.public, &org.u.keys).unwrap();
+    rec.signer = org.a.public.clone();
+    assert!(
+        accept_next_roster(l0(), base(), &rec).is_err(),
+        "bad signature"
+    );
+}
+
+#[test]
+fn owner_role_mirrors_lineage() {
+    let org = org();
+    let l2 = &org.lineages[2];
+    let n = edit(base(), |b| add_role(b, M, Role::Owner));
+    denied(accept(base(), n, A), "A grants Owner to M");
+    let n = edit(base(), |b| add_role(b, M, Role::Owner));
+    denied(accept(base(), n, O), "O grants Owner to M");
+    let promoted = edit(base(), |b| {
+        b.org_head = l2.head().hash;
+        add_role(b, M, Role::Owner);
+    });
+    assert_eq!(
+        accept_in(l2, base(), promoted.clone(), A).unwrap(),
+        promoted,
+        "mirror by A"
+    );
+    assert!(
+        accept_in(l2, base(), promoted.clone(), O).is_ok(),
+        "mirror by O"
+    );
+    denied(
+        accept_in(l2, base(), promoted, U),
+        "mirror by a user manager",
+    );
+    let omitted = edit(base(), |b| b.org_head = l2.head().hash);
+    denied(accept_in(l2, base(), omitted, A), "owner omitted");
+    // A mirrored owner with another identity.
+    let n = edit(base(), |b| {
+        b.org_head = l2.head().hash;
+        add_role(b, M, Role::Owner);
+        entry(b, M).account_identity_pub = Some(identity_pool(0).1.clone());
+    });
+    denied(accept_in(l2, base(), n, O), "owner identity differs");
+    // A lineage owner absent from prev may be added directly, Active.
+    let pinned = r(1);
+    let n = edit(pinned, |b| {
+        b.org_head = l2.head().hash;
+        let mut m = OrgMember {
+            roles: RoleSet::of(&[Role::Owner]),
+            ..invite(M, RoleSet::EMPTY)
+        };
+        m.invite_commit = [0; 32];
+        activate(&mut m, &member_ref(M, &[&org.m]));
+        upsert(b, m);
+    });
+    assert!(accept_in(l2, pinned, n, O).is_ok(), "lineage owner added");
+}
+
+#[test]
+fn recovery_officer_never_in_e1() {
+    let org = org();
+    let mut rec = sign_roster(base().next().unwrap(), &org.o.public, &org.o.keys).unwrap();
+    add_role(&mut rec.body, M, Role::RecoveryOfficer);
+    assert!(matches!(
+        accept_next_roster(l0(), base(), &rec),
+        Err(Error::InvalidFormat(_))
+    ));
+    assert!(matches!(
+        check_transition(l0(), base(), &rec.body, &org.o.public),
+        Err(Error::InvalidFormat(_))
+    ));
+}
+
+#[test]
+fn members_never_disappear() {
+    let n = edit(base(), |b| b.members.retain(|m| m.account_id != acct(M)));
+    denied(accept(base(), n, O), "O drops M");
+    let n = edit(r(6), |b| b.members.retain(|m| m.account_id != acct(X)));
+    denied(accept(r(6), n, A), "A drops invited X");
+}
+
+#[test]
+fn removed_is_terminal() {
+    let n = edit(base(), |b| removed_by(b, M, O));
+    let pinned = accept(base(), n, O).unwrap();
+    let org = org();
+    let n = edit(&pinned, |b| {
+        activate(entry(b, M), &member_ref(M, &[&org.m]));
+    });
+    denied(accept(&pinned, n, O), "Removed -> Active");
+    let n = edit(&pinned, |b| {
+        entry(b, M).state = MemberState::Removed {
+            at: 1_800_000_000,
+            by: acct(O),
+        }
+    });
+    denied(accept(&pinned, n, O), "another at");
+    let n = edit(&pinned, |b| entry(b, M).scim_id_hash = [1; 32]);
+    denied(accept(&pinned, n, O), "removed entry edited");
+    // Fields the per-entry rules do not freeze stay frozen once Removed.
+    let n = edit(&pinned, |b| entry(b, M).account_kem_hash = [1; 32]);
+    denied(accept(&pinned, n, O), "removed kem hash edited");
+    let n = edit(&pinned, |b| entry(b, M).account_identity_pub = None);
+    denied(accept(&pinned, n, O), "removed identity dropped");
+}
+
+#[test]
+fn removed_by_must_be_signer() {
+    let n = edit(base(), |b| removed_by(b, M, A));
+    denied(accept(base(), n, O), "by A, signed by O");
+    let n = edit(base(), |b| removed_by(b, M, O));
+    assert!(accept(base(), n, O).is_ok());
+    let n = edit(base(), |b| removed_by(b, M, O));
+    denied(accept(base(), n, P), "P signs a removal by O");
+}
+
+#[test]
+fn state_transitions() {
+    let pinned = r(6); // X Invited, the others Active.
+    let n = edit(pinned, |b| {
+        activate(entry(b, X), &member_ref(X, &[&device(0x61)]))
+    });
+    assert!(accept(pinned, n, O).is_ok(), "Invited -> Active");
+    let n = edit(pinned, |b| removed_by(b, X, A));
+    assert!(accept(pinned, n, A).is_ok(), "Invited -> Removed");
+    let n = edit(base(), |b| set_state(b, M, MemberState::Suspended));
+    let suspended = accept(base(), n, A).unwrap();
+    let n = edit(&suspended, |b| set_state(b, M, MemberState::Active));
+    assert!(accept(&suspended, n, A).is_ok(), "Suspended -> Active");
+    let n = edit(&suspended, |b| removed_by(b, M, A));
+    assert!(accept(&suspended, n, A).is_ok(), "Suspended -> Removed");
+    let n = edit(base(), |b| removed_by(b, M, A));
+    assert!(accept(base(), n, A).is_ok(), "Active -> Removed");
+
+    let n = edit(pinned, |b| {
+        let e = entry(b, X);
+        activate(e, &member_ref(X, &[&device(0x62)]));
+        e.state = MemberState::Suspended;
+    });
+    assert!(n.check().is_ok());
+    denied(accept(pinned, n, O), "Invited -> Suspended");
+    let n = edit(base(), |b| {
+        let e = entry(b, M);
+        e.state = MemberState::Invited;
+        e.account_identity_pub = None;
+        e.account_kem_hash = [0; 32];
+        e.devices.clear();
+    });
+    assert!(n.check().is_ok());
+    denied(accept(base(), n, O), "Active -> Invited");
+}
+
+#[test]
+fn immutable_member_fields() {
+    let n = edit(base(), |b| entry(b, M).account_id = Id([0x70; 16]));
+    denied(accept(base(), n, O), "account_id");
+    let n = edit(base(), |b| entry(b, M).scim_id_hash = [1; 32]);
+    denied(accept(base(), n, O), "scim_id_hash");
+    let n = edit(base(), |b| entry(b, M).invite_commit = [1; 32]);
+    denied(accept(base(), n, O), "invite_commit");
+}
+
+#[test]
+fn org_head_must_be_known_and_not_older() {
+    let org = org();
+    let l1 = &org.lineages[1];
+    let n = edit(base(), |b| b.org_head = [0xAB; 32]);
+    not_found(accept(base(), n, O), "unknown head");
+    let n = edit(base(), |b| b.org_head = l1.head().hash);
+    let pinned = accept_in(l1, base(), n, O).unwrap();
+    let n = edit(&pinned, |b| b.org_head = l0().head().hash);
+    assert_eq!(
+        integrity_err(accept_in(l1, &pinned, n, O)),
+        IntegrityError::OrgLineageRollback
+    );
+    let mut other = base().next().unwrap();
+    other.org_id = OrgId([8; 16]);
+    let rec = sign_roster(other, &org.o.public, &org.o.keys).unwrap();
+    assert_eq!(
+        integrity_err(accept_next_roster(l0(), base(), &rec)),
+        IntegrityError::WrongContext
+    );
+}
+
+#[test]
+fn roster_with_unknown_head_asks_for_lineage() {
+    let org = org();
+    // Generation 2 exists, but this client's lineage stops at 1.
+    let n = edit(base(), |b| {
+        b.org_head = org.lineages[2].head().hash;
+        add_role(b, M, Role::Owner);
+    });
+    not_found(
+        accept_in(&org.lineages[1], base(), n.clone(), O),
+        "head not applied yet",
+    );
+    // Once the lineage has it, the same roster is fine.
+    assert!(accept_in(&org.lineages[2], base(), n, O).is_ok());
+}
+
+#[test]
+fn replayed_older_roster_is_rollback() {
+    let org = org();
+    assert_eq!(
+        integrity_err(accept_next_roster(l0(), r(5), &org.chain[3])),
+        IntegrityError::OrgRosterRollback
+    );
+    assert_eq!(
+        &accept_next_roster(l0(), r(5), &org.chain[4]).unwrap(),
+        r(5)
+    );
+    assert_eq!(
+        integrity_err(accept_roster_chain(
+            l0(),
+            r(4),
+            &org.chain[4..6]
+                .iter()
+                .chain(&org.chain[4..5])
+                .cloned()
+                .collect::<Vec<_>>()
+        )),
+        IntegrityError::OrgRosterRollback
+    );
+}
+
+#[test]
+fn same_seq_other_body_is_fork() {
+    let mut other = r(4).next().unwrap();
+    upsert(&mut other, invite(X, RoleSet::EMPTY));
+    assert_eq!(other.seq, 5);
+    let o = &org().o;
+    let rec = sign_roster(other, &o.public, &o.keys).unwrap();
+    assert_eq!(
+        integrity_err(accept_next_roster(l0(), r(5), &rec)),
+        IntegrityError::OrgRosterFork
+    );
+}
+
+#[test]
+fn next_with_wrong_prev_hash_is_fork() {
+    let mut n = r(5).next().unwrap();
+    n.prev_hash = [1; 32];
+    assert_eq!(n.seq, 6);
+    let o = &org().o;
+    let rec = sign_roster(n, &o.public, &o.keys).unwrap();
+    assert_eq!(
+        integrity_err(accept_next_roster(l0(), r(5), &rec)),
+        IntegrityError::OrgRosterFork
+    );
+}
+
+#[test]
+fn gap_asks_for_intermediate() {
+    let org = org();
+    not_found(accept_next_roster(l0(), r(5), &org.chain[6]), "seq 7 on 5");
+    assert_eq!(
+        &accept_roster_chain(l0(), r(5), &org.chain[5..7]).unwrap(),
+        r(7)
+    );
+    assert_eq!(&accept_roster_chain(l0(), r(5), &[]).unwrap(), r(5));
+}
+
+#[test]
+fn first_pin_from_owner_signed_roster() {
+    let org = org();
+    assert_eq!(&accept_first_roster(l0(), &org.chain[4..7]).unwrap(), r(7));
+    denied(
+        accept_first_roster(l0(), &org.chain[5..7]),
+        "starting at r6 by A",
+    );
+    // An owner device of another generation's owners does not count: M is
+    // an owner at generation 2 only.
+    let n = edit(r(5), |_| {});
+    let rec = sign_roster(n, &org.m.public, &org.m.keys).unwrap();
+    denied(accept_first_roster(&org.lineages[2], &[rec]), "M at gen 0");
+    // A first roster whose owner bits do not mirror its generation.
+    let n = edit(r(5), |b| add_role(b, M, Role::Owner));
+    let rec = sign_roster(n, &org.o.public, &org.o.keys).unwrap();
+    denied(accept_first_roster(l0(), &[rec]), "mirror broken");
 }

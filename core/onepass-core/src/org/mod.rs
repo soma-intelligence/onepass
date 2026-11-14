@@ -10,6 +10,7 @@ mod identity;
 mod keyset;
 mod lineage;
 mod roster;
+mod rules;
 
 pub use identity::{OrgIdentityPublic, OrgSecrets, fingerprint_words, org_fingerprint};
 pub use keyset::{OrgKeyset, SealedOrgKeyset, open_org_keyset, seal_org_keyset};
@@ -21,6 +22,9 @@ pub use lineage::{
 pub use roster::{
     MemberState, OrgMember, Role, RoleSet, RosterBody, SignedRoster, invite_commit,
     member_kem_hash, scim_id_hash, sign_roster,
+};
+pub use rules::{
+    accept_first_roster, accept_next_roster, accept_roster_chain, check_transition, founding_roster,
 };
 
 /// The id of an organization: 16 random bytes fixed at its genesis.
