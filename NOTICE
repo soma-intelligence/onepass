@@ -32,4 +32,9 @@ All brand names and logos in the icon pack are trademarks of their respective ow
 shown only to help people recognize their own accounts; their use implies no affiliation or
 endorsement.
 
+QR decoder of the browser extension (extension/src/setup/qr-decode.ts)
+
+- jsQR, https://github.com/cozmo/jsQR
+  Apache-2.0.
+
 Word lists used by the core keep their own licenses: core/onepass-core/data/LICENSES.md.

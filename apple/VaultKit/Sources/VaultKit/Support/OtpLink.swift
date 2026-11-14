@@ -110,15 +110,6 @@ extension OtpLink {
     static func previousCodeLabel(bundle: Bundle = VaultKitStrings.bundle) -> String {
         String(localized: "otpLink.previousCode", bundle: bundle)
     }
-
-    /// `previous_otp_<n>`, never used in `item` yet.
-    static func nextPreviousCodeID(in item: FfiItem) -> String {
-        let used = item.sections.flatMap(\.fields).compactMap { field -> Int? in
-            guard field.id.hasPrefix(previousCodePrefix) else { return nil }
-            return Int(field.id.dropFirst(previousCodePrefix.count))
-        }
-        return previousCodePrefix + String((used.max() ?? 0) + 1)
-    }
 }
 
 /// A request from outside the app that waits for the unlock (a code to copy, a verification code
@@ -163,22 +154,13 @@ extension VaultSession {
     public func attachOtp(_ account: OtpLinkAccount, toItemID itemID: String, vaultID: String, confirmed: Bool)
         async throws -> FfiItem
     {
-        var item = try await loadItem(vaultID: vaultID, itemID: itemID)
+        let item = try await loadItem(vaultID: vaultID, itemID: itemID)
         guard item.itemType == .login else { throw VaultError.other(Self.notALogin) }
         guard !item.reprompt || confirmed else { throw VaultError.other(Self.confirmFirst) }
-        if let previous = Self.currentOtp(in: item), previous != account.uri {
-            var draft = ItemDraft(item: item)
-            draft.addCustomField(kind: .concealed, label: OtpLink.previousCodeLabel())
-            if let s = draft.item.sections.firstIndex(where: { $0.id == ItemDraft.customSectionID }),
-                let f = draft.item.sections[s].fields.indices.last
-            {
-                draft.item.sections[s].fields[f].id = OtpLink.nextPreviousCodeID(in: draft.item)
-                draft.item.sections[s].fields[f].value = .concealed(value: previous)
-            }
-            item = draft.item
-        }
-        Self.setOtp(account.uri, in: &item)
-        return try await save(item)
+        // The core owns the rule (same code, replaced code kept as `previous_otp_<n>`).
+        let attached = try OnePassCore.attachOtp(
+            item: item, value: account.uri, replace: true, previousLabel: OtpLink.previousCodeLabel())
+        return try await save(attached.item)
     }
 
     /// A new Login with the code: the issuer as its title, the account as its username.

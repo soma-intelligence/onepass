@@ -47,8 +47,10 @@ export interface PairOptions {
  * `agent`: a fill an MCP agent asked for and the holder approved in the app
  * (spec 2026-11-07-agent-browser-fill 5); `plan_fill`, `fill_login` and
  * `fill_card` only, each with `agent_request`.
+ * `setup`: two-factor setup, the QR scan's confirmation card (`save_totp`, `save_recovery_codes`,
+ * `list_for_origin`, `fill_login`).
  */
-export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey" | "agent";
+export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey" | "agent" | "setup";
 export type FillField = "username" | "password" | "totp";
 export type MatchRule = "domain" | "exact_host" | "exact_url" | "never";
 
@@ -249,6 +251,32 @@ interface Ops {
       tags: string[];
     };
     res: { item_id: string };
+  };
+  /**
+   * A two-factor seed scanned or pasted on a setup page (`setup` only). `uri` is an
+   * `otpauth://totp/` URI, at most 2048 bytes (a bare key is refused). With `item_id` the seed goes
+   * into that Login, else a new Login is made from `vault_id`, `title` and `username`. `exists`: the
+   * Login holds another seed and `replace` was false, nothing written; `replaced`: the old seed was
+   * kept as a field labelled `previous_label`.
+   */
+  save_totp: {
+    req: {
+      ctx: Ctx;
+      origin: string;
+      uri: string;
+      item_id?: string;
+      vault_id?: string;
+      title?: string;
+      username?: string;
+      replace?: boolean;
+      previous_label?: string;
+    };
+    res: { status: "saved" | "same" | "exists" | "replaced"; item_id: string };
+  };
+  /** The recovery codes shown at setup, stored on the Login (`setup` only). */
+  save_recovery_codes: {
+    req: { ctx: Ctx; origin: string; item_id: string; codes: string; label?: string };
+    res: Record<string, never>;
   };
   /**
    * A card typed by hand in a checkout (`save_prompt` only): `same` when a card with this number
