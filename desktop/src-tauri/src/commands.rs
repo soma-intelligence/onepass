@@ -208,10 +208,10 @@ pub fn new_item(
     title: String,
 ) -> UiResult<ItemView> {
     let t = view::type_from_key(&item_type).ok_or("unknown item type")?;
-    // Saved at once so the editor works on a stored item.
+    // Not stored: an empty item fails the core's validation (required
+    // fields). `save_item` with `newType` stores it once filled in.
     let s = session(&state)?;
-    let item = s.new_item(vault_id, t, title)?;
-    Ok(ItemView::from(&s.save_item(item)?))
+    Ok(ItemView::from(&s.new_item(vault_id, t, title)?))
 }
 
 #[derive(Deserialize)]
@@ -226,6 +226,9 @@ pub struct ItemEdit {
     /// New text values by field id. Absent fields keep their value, so an
     /// unrevealed secret is never overwritten by an empty one.
     pub fields: HashMap<String, Zeroizing<String>>,
+    /// Set for an item `new_item` made and nothing stored yet: its type.
+    #[serde(default)]
+    pub new_type: Option<String>,
 }
 
 fn apply_edit(item: &mut FfiItem, edit: ItemEdit) -> UiResult<()> {
@@ -261,7 +264,13 @@ fn apply_edit(item: &mut FfiItem, edit: ItemEdit) -> UiResult<()> {
 #[tauri::command]
 pub fn save_item(state: State<'_, AppState>, edit: ItemEdit) -> UiResult<ItemView> {
     let s = session(&state)?;
-    let mut item = s.item(edit.vault_id.clone(), edit.item_id.clone())?;
+    let mut item = match &edit.new_type {
+        Some(t) => {
+            let t = view::type_from_key(t).ok_or("unknown item type")?;
+            s.new_item(edit.vault_id.clone(), t, edit.title.clone())?
+        }
+        None => s.item(edit.vault_id.clone(), edit.item_id.clone())?,
+    };
     apply_edit(&mut item, edit)?;
     if let Some(e) = onepass_ffi::validate_item(item.clone()) {
         return Err(e.into());

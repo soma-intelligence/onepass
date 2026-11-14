@@ -638,7 +638,7 @@ async function renderDetail(): Promise<void> {
 
 const TEXT_KINDS = new Set(["text", "concealed", "password", "url", "email", "phone", "menu", "otp", "mnemonic"]);
 
-function editItem(item: Item): void {
+function editItem(item: Item, isNew = false): void {
   const title = h("input", { value: item.title, id: "f-title" });
   const url = h("input", { value: item.urls[0]?.url ?? "", id: "f-url", placeholder: "https://" });
   const notes = h("textarea", { id: "f-notes" });
@@ -694,7 +694,7 @@ function editItem(item: Item): void {
           const fields: Record<string, string> = {};
           for (const [id, el] of changed) fields[id] = el.value;
           try {
-            await call("save_item", {
+            const saved = await call<Item>("save_item", {
               edit: {
                 vaultId: item.vaultId,
                 itemId: item.id,
@@ -702,11 +702,13 @@ function editItem(item: Item): void {
                 notes: notes.value,
                 url: url.value,
                 fields,
+                newType: isNew ? item.itemType : undefined,
               },
             });
             dialog.close();
             dialog.remove();
             await reload();
+            ui.selected = ui.items.find((i) => i.id === saved.id) ?? ui.selected;
             renderSidebar();
             renderList();
             await renderDetail();
@@ -716,7 +718,7 @@ function editItem(item: Item): void {
           }
         },
       },
-      h("h2", {}, "Modifier"),
+      h("h2", {}, isNew ? "Nouvel élément" : "Modifier"),
       h("label", { for: "f-title" }, "Titre"),
       title,
       h("label", { for: "f-url" }, "Site web"),
@@ -770,12 +772,8 @@ function openNewItem(): void {
             });
             dialog.close();
             dialog.remove();
-            await reload();
-            ui.selected = ui.items.find((i) => i.id === item.id) ?? null;
-            renderSidebar();
-            renderList();
-            await renderDetail();
-            editItem(item);
+            // Not stored yet: the editor stores it on save.
+            editItem(item, true);
           } catch (e) {
             err.textContent = message(e);
           }

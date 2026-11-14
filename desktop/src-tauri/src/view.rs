@@ -17,6 +17,12 @@ pub struct UiError {
 
 impl From<OnePassError> for UiError {
     fn from(e: OnePassError) -> Self {
+        if let OnePassError::Validation { field, reason } = &e {
+            return UiError {
+                code: "Validation".into(),
+                detail: format!("{field}: {reason}"),
+            };
+        }
         // The FFI error's Debug never carries a value (onepass-ffi error.rs).
         let detail = format!("{e:?}");
         let code = detail

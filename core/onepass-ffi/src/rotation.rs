@@ -1264,14 +1264,13 @@ pub fn restore_from_kit(
     Session::new(repo)
 }
 
-/// Tests only: a software PQ half (ML-DSA-87 and ML-KEM-1024 in memory),
-/// for the Swift tests of the flows that need device keys. Built into the
-/// fast-KDF test framework only, never into a shipped one.
-#[cfg(feature = "dev-fast-kdf")]
-struct TestSoftwareHalf(onepass_core::device_keys::SoftwarePqHalf);
+/// A software PQ half (ML-DSA-87 and ML-KEM-1024 in memory). Devices
+/// without these algorithms in hardware use it (spec 2026-10-30 section
+/// 6.1: Android before 17, Windows, Linux); the app keeps its secret bytes
+/// sealed by a hardware key (Android Keystore, TPM), never in clear.
+struct SoftwareHalf(onepass_core::device_keys::SoftwarePqHalf);
 
-#[cfg(feature = "dev-fast-kdf")]
-impl FfiPqDeviceHalf for TestSoftwareHalf {
+impl FfiPqDeviceHalf for SoftwareHalf {
     fn mldsa_public(&self) -> Result<Vec<u8>, OnePassError> {
         Ok(self.0.mldsa_public()?)
     }
@@ -1289,11 +1288,30 @@ impl FfiPqDeviceHalf for TestSoftwareHalf {
     }
 }
 
+/// Fresh software PQ half, as the secret bytes the app seals and keeps
+/// (3200 bytes: ML-DSA-87 seed, then the ML-KEM-1024 decapsulation key).
+#[uniffi::export]
+pub fn generate_software_pq_half() -> Result<Vec<u8>, OnePassError> {
+    Ok(onepass_core::device_keys::SoftwarePqHalf::generate()?
+        .to_bytes()
+        .to_vec())
+}
+
+/// The software PQ half of `bytes` (from [`generate_software_pq_half`]),
+/// for the calls that take `pq`. `InvalidInput`-like failures are `Crypto`.
+#[uniffi::export]
+pub fn open_software_pq_half(bytes: Vec<u8>) -> Result<Arc<dyn FfiPqDeviceHalf>, OnePassError> {
+    let bytes = Zeroizing::new(bytes);
+    Ok(Arc::new(SoftwareHalf(
+        onepass_core::device_keys::SoftwarePqHalf::from_bytes(&bytes)?,
+    )))
+}
+
 /// Tests only (fast-KDF test framework): a fresh software PQ half.
 #[cfg(feature = "dev-fast-kdf")]
 #[uniffi::export]
 pub fn test_software_pq_half() -> Result<Arc<dyn FfiPqDeviceHalf>, OnePassError> {
-    Ok(Arc::new(TestSoftwareHalf(
+    Ok(Arc::new(SoftwareHalf(
         onepass_core::device_keys::SoftwarePqHalf::generate()?,
     )))
 }
