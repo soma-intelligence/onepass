@@ -1103,6 +1103,17 @@ impl OrgClient {
         })
     }
 
+    /// A one-use `managed` mailbox token (32 bytes, 168 hours) for the
+    /// creator's own account mailbox on this server (R32): the creator has
+    /// no join link, so its device mints one with the org mailbox's manager
+    /// credential right after `publish` and spends it at once with
+    /// `mailbox_create_managed`. Rust keeps no copy. `Forbidden` for a
+    /// credential that does not manage the org mailbox.
+    pub fn mint_member_token(&self) -> Result<Vec<u8>, OnePassError> {
+        let mut store = lock(&self.store);
+        Ok(store.create_member_invite(MEMBER_TOKEN_TTL_HOURS)?)
+    }
+
     /// Revokes the credential this client holds, on the server (a
     /// credential may revoke itself): the member's device drops the link's
     /// credential once it uses its own (R27). The client fails from then on.

@@ -2473,4 +2473,123 @@ mod lifecycle {
             FfiMemberState::Active
         );
     }
+
+    /// A published org on a `TestOrgServer`, its owner and the creator's
+    /// org client.
+    struct ServerOrg {
+        server: Arc<TestOrgServer>,
+        owner: Owner,
+        admin: Arc<OrgClient>,
+        mailbox_id: String,
+        dirs: TempDir,
+    }
+
+    fn server_org() -> ServerOrg {
+        let server = TestOrgServer::new();
+        let draft = OrgDraft::new().unwrap();
+        let owner = Owner::new(&draft.org_id());
+        let dirs = TempDir::new().unwrap();
+        let dir = dirs.path().join("admin").to_string_lossy().into_owned();
+        let created = server
+            .draft_publish(
+                draft.clone(),
+                owner.session.clone(),
+                owner.keys.classical.clone(),
+                owner.keys.half(),
+                ORG_NAME.into(),
+                dir.clone(),
+                NOW,
+            )
+            .unwrap();
+        let admin = server
+            .client(
+                created.mailbox_id.clone(),
+                created.credential_seed.clone(),
+                draft.org_id(),
+                dir,
+            )
+            .unwrap();
+        ServerOrg {
+            server,
+            owner,
+            admin,
+            mailbox_id: created.mailbox_id,
+            dirs,
+        }
+    }
+
+    #[test]
+    fn creator_mints_a_token_for_its_own_managed_mailbox() {
+        let org = server_org();
+        let token = org.admin.mint_member_token().unwrap();
+        assert_eq!(token.len(), 32);
+        let cred = mailbox_generate_credential().unwrap();
+        let home = org
+            .server
+            .create_member_mailbox(cred.seed.clone(), token.clone())
+            .unwrap();
+        assert_ne!(home.mailbox_id, org.mailbox_id);
+        // One use: a second mailbox with the same token is refused.
+        let other = mailbox_generate_credential().unwrap();
+        assert!(org.server.create_member_mailbox(other.seed, token).is_err());
+    }
+
+    #[test]
+    fn a_mailbox_off_the_managed_plan_fails_closed() {
+        let org = server_org();
+        // Not a minted token: this org server gives the org plan.
+        let cred = mailbox_generate_credential().unwrap();
+        let err = org
+            .server
+            .create_member_mailbox(cred.seed, vec![7; 32])
+            .unwrap_err();
+        assert!(
+            matches!(&err, OnePassError::Validation { field, .. } if field == "mailbox plan"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_member_token_is_32_bytes() {
+        let org = server_org();
+        let mut token = org.admin.mint_member_token().unwrap();
+        token.pop();
+        let cred = mailbox_generate_credential().unwrap();
+        assert!(matches!(
+            org.server.create_member_mailbox(cred.seed, token),
+            Err(OnePassError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn a_join_link_credential_mints_no_member_token() {
+        let org = server_org();
+        let link = org
+            .admin
+            .create_invite(
+                org.owner.session.clone(),
+                org.owner.keys.classical.clone(),
+                org.owner.keys.half(),
+                "Marie".into(),
+                None,
+                vec![],
+                NOW,
+            )
+            .unwrap();
+        let invite = org_invite_parse(link.link, true).unwrap();
+        let joiner = org
+            .server
+            .client(
+                invite.mailbox_id,
+                invite.credential_seed,
+                invite.org_id,
+                org.dirs
+                    .path()
+                    .join("joiner")
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+            .unwrap();
+        assert_eq!(joiner.mint_member_token(), Err(OnePassError::Forbidden));
+    }
 }

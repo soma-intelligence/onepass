@@ -21,8 +21,9 @@ use zeroize::Zeroizing;
 
 use super::invite::LOOPBACK_URL;
 use super::{FfiOrgCreated, OrgClient, OrgDraft, org_id_of};
+use crate::convert::bytes_hex;
 use crate::error::OnePassError;
-use crate::mailbox::fresh_credential;
+use crate::mailbox::{FfiMailboxHome, create_managed_mailbox, fresh_credential};
 use crate::rotation::FfiPqDeviceHalf;
 use crate::session::Session;
 
@@ -78,6 +79,26 @@ impl TestOrgServer {
             state_dir,
             now,
         )
+    }
+
+    /// `mailbox_create_managed` on this server: the account mailbox of the
+    /// credential of `credential_seed`, created with the `managed` token
+    /// `token` and checked to be on the managed plan. Its home names
+    /// `LOOPBACK_URL`.
+    pub fn create_member_mailbox(
+        &self,
+        credential_seed: Vec<u8>,
+        token: Vec<u8>,
+    ) -> Result<FfiMailboxHome, OnePassError> {
+        let seed = Zeroizing::new(credential_seed);
+        let token = Zeroizing::new(token);
+        let mut client = self.fake.client(Credential::from_seed(&seed)?);
+        let (mailbox_id, incarnation) = create_managed_mailbox(&mut client, &token)?;
+        Ok(FfiMailboxHome {
+            base_url: LOOPBACK_URL.into(),
+            mailbox_id: bytes_hex(&mailbox_id),
+            incarnation,
+        })
     }
 
     /// An org client of mailbox `mailbox_id` (32 hex) holding the
