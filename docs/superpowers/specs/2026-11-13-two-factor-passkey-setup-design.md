@@ -1,6 +1,6 @@
 # Two-factor and passkey setup: QR capture, prompts and guided journey
 
-Date: 2026-11-13. Status: design agreed section by section with the owner, not built.
+Date: 2026-11-13. Status: wave 1 built on main (commits ad96d2237..bd94e97cd), Chromium unit and end-to-end green with the capture stubbed, real toolbar-click capture and Firefox to be checked by hand by the owner, Safari and real sites not run.
 
 ## Goal
 
@@ -329,6 +329,56 @@ dispatches to them.
 - Apple: unit tests, then GUI tests on the demo vault with the QA bundle id.
 - Real sites: each recipe checked by the owner with the recorder. Safari on Mac and iOS: a pass
   on real devices.
+
+## Probe results
+
+Wave 0, run on 2026-11-13. Scripts and fixtures stayed in a scratch folder, nothing in the repo.
+
+### Probe 1: tab capture
+
+Question: can the service worker call `tabs.captureVisibleTab`, and does the capture show a QR
+code inside a cross-origin frame or on a tainted canvas?
+
+Run on Chromium 1217 (headless, Playwright) with jsQR 1.4.0 and fake otpauth data. With the
+current manifest (`activeTab`, `https://*/*` and loopback) the capture fails every time with
+"Either the '<all_urls>' or 'activeTab' permission is required." It fails with no gesture, from
+an alarm, and after a click in a popup page. Chromium does not accept `https://*/*` in place of
+`<all_urls>`. With `<all_urls>` added the capture works in every case, and jsQR reads the QR
+from a plain page, from a cross-origin frame and from a tainted canvas: the capture is a pixel
+copy of the viewport, so frames and canvases are no obstacle.
+
+Not tested: a real click on the toolbar icon, the only thing that grants `activeTab`
+(headless Chromium cannot do it, and `action.openPopup` did not grant it), and Firefox (no
+Firefox on the test Mac).
+
+Owner ruling, 2026-11-13: `activeTab` only, no `<all_urls>`. The capture relies on the popup
+opened from the toolbar icon. A scan with no click is not possible, so the journey card of
+wave 3 asks for a click on the toolbar icon at the QR step. The end-to-end tests stub the
+capture; the owner checks the real toolbar click by hand.
+
+### Probe 2: QR decoder
+
+Three decoders on 40 generated images (URIs of 60, 120 and 200 characters, modules of 2 to
+8 px, black on white, inverted, brand colour, a 15 percent centre logo, JPEG quality 60, SVG at
+1x and 2x, a 2x capture scaled to half). jsQR 1.4.0 (Apache-2.0, pure JS) read 39 of 40.
+qr-scanner 1.4.2 also read 39, but only its worker core could run headless, and that core is a
+jsQR fork. zxing-wasm 3.1.6 read 39 too, and needs `'wasm-unsafe-eval'` in the extension CSP
+plus a 0.4 MB gzip wasm file. All three miss the same image (60 characters, 8 px modules,
+15 percent logo). No decoder reads an image that jsQR misses, so the swap rule (3 more images,
+no wasm) is not met. Decision: jsQR, which runs under `script-src 'self'` and decodes in about
+4 ms in Node. Times were measured in Node, not in an extension page.
+
+### Probe 3: handoff to Firefox and Safari
+
+Not run: no Firefox and no Safari driver on the test Mac. Nothing in wave 1 depends on it; it
+feeds wave 3. Manual steps for the owner:
+
+1. Firefox: load `dist/firefox` with the development native host, turn the agent loop on
+   behind a throwaway flag, wait 10 idle minutes, queue a probe job from the app and time its
+   arrival through the pending `agent_wait`. Pass: under 30 s.
+2. Safari on the Mac: build with the QA bundle id, let the extension worker go to sleep, then
+   navigate so that a `webNavigation.onCommitted` listener sends a `sendNativeMessage`, queue a
+   probe job and time its arrival. Pass: under 30 s.
 
 ## Delivery waves
 
