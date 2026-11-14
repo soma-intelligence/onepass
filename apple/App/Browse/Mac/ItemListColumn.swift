@@ -23,6 +23,96 @@ enum SearchFieldFocus {
 }
 #endif
 
+#if os(macOS)
+extension EnvironmentValues {
+    /// Mac: the width of the title bar's row above the list and the detail (nil: the window's).
+    @Entry var titleBarRoom: CGFloat?
+}
+
+/// Mac: measures the title bar's row around one toolbar item (the view it sits behind): the other
+/// items after it at their natural widths, the gaps and the margins. SwiftUI gives a toolbar item
+/// the width it asks for and never stretches it, so the item asks for the row's width less this.
+/// Only the other items are measured here: the row's width comes from the layout (`titleBarRoom`),
+/// so a resize narrows the item in the same pass, before the bar could push items into its menu.
+struct ToolbarRowProbe: NSViewRepresentable {
+    @Binding var reserved: CGFloat
+    /// The row's width (`titleBarRoom`): where the pane starts, for what sits left of the item.
+    let room: CGFloat?
+    /// Changes when the bar's other items may change (selection, editing): measured again.
+    let trigger: [String]
+
+    func makeNSView(context: Context) -> ProbeView { ProbeView() }
+
+    func updateNSView(_ view: ProbeView, context: Context) {
+        view.room = room
+        view.onMeasure = { measured in
+            let target = measured.rounded(.up)
+            if abs(target - reserved) >= 1 { reserved = target }
+        }
+        view.scheduleMeasure()
+    }
+
+    final class ProbeView: NSView {
+        var onMeasure: ((CGFloat) -> Void)?
+        var room: CGFloat?
+        /// The window the row belongs to, kept while the item sits in the overflow menu (out of
+        /// the window) so the row can still be measured.
+        private weak var hostWindow: NSWindow?
+
+        /// The title bar's room around items, as measured on macOS 26: the row starts 4 pt into
+        /// its pane, items sit 0 to 6 pt apart, a closed flexible space keeps 8.5 pt and the last
+        /// item ends 7 pt from the window's edge. Rounded up: a point to spare keeps the last item
+        /// out of the overflow menu.
+        private let gap: CGFloat = 4
+        private let flexibleSpaceMinimum: CGFloat = 9
+        private let leadingInset: CGFloat = 6
+        private let trailingMargin: CGFloat = 8
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window, window.toolbar != nil { hostWindow = window }
+            scheduleMeasure()
+        }
+
+        /// Toolbar items change on the next pass: measured then, and once more when they settle.
+        func scheduleMeasure() {
+            DispatchQueue.main.async { [weak self] in self?.measure() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.measure() }
+        }
+
+        private func measure() {
+            guard let window = window ?? hostWindow, let items = window.toolbar?.items,
+                let index = items.firstIndex(where: { item in item.view.map { isDescendant(of: $0) } ?? false })
+            else { return }
+            // With the sidebar hidden, its toggle (and the window's buttons) share the row: the
+            // item starts after the last of them.
+            var leading = leadingInset
+            if let room {
+                let paneLeft = window.frame.width - room
+                for item in items[..<index] {
+                    guard let view = item.view, view.window != nil else { continue }
+                    let frame = view.convert(view.bounds, to: nil)
+                    if frame.minX >= paneLeft - 1 { leading = max(leading, frame.maxX - paneLeft + gap) }
+                }
+            }
+            var reserved = leading + trailingMargin + gap
+            for item in items[(index + 1)...] {
+                if item.itemIdentifier == .flexibleSpace {
+                    reserved += flexibleSpaceMinimum
+                    continue
+                }
+                guard let view = item.view, !(item is NSTrackingSeparatorToolbarItem) else { continue }
+                // An item in the overflow menu can report a smaller fitting size than its frame.
+                let natural = max(view.fittingSize.width, view.frame.width)
+                guard natural > 1 else { continue }
+                reserved += natural + gap
+            }
+            onMeasure?(reserved)
+        }
+    }
+}
+#endif
+
 /// Middle column (spec 6.1): items of the sidebar filter, search (⌘F), sort by title or by
 /// modification date (then grouped by month, "OCTOBRE 2026"), "Nouvel élément" (⌘N).
 struct ItemListColumn: View {
@@ -45,6 +135,10 @@ struct ItemListColumn: View {
     @State private var selectAllMonitor: Any?
     /// "Fusionner…" on two picked rows: the merge sheet's pair.
     @State private var mergePick: MergePickRequest?
+    /// The title bar's row above the list and the detail, and what its items other than the search
+    /// field take (`ToolbarRowProbe`): the search field gets the rest.
+    @Environment(\.titleBarRoom) private var titleBarRoom
+    @State private var rowReserved: CGFloat = 400
     #endif
 
     private var session: VaultSession { model.session }
@@ -199,14 +293,25 @@ struct ItemListColumn: View {
         #if os(macOS)
         // Mockup `Main`: the list names its filter above the rows; the toolbar keeps search and actions.
         .toolbar(removing: .title)
-        // One row in the title bar above the list: the search field (it names the category it
-        // searches), then the category filter, the sort order and "Nouvel élément" as quiet round
-        // icons. No glass behind it, no second row under the title bar.
+        // One row in the title bar across the list and the detail: the search field (it names the
+        // category it searches) grows to fill it, then the category filter, the sort order and
+        // "Nouvel élément" as quiet round icons at the right edge. No glass behind it, no second
+        // row under the title bar.
         .toolbar {
             ToolbarItem(placement: .automatic) {
+                // A toolbar item keeps the width it asks for: the search field asks for the row
+                // less what the bar's other items take (`ToolbarRowProbe`).
+                searchField
+                    .frame(width: titleBarRoom.map { max(180, $0 - rowReserved) } ?? 210)
+                    .background {
+                        ToolbarRowProbe(
+                            reserved: $rowReserved, room: titleBarRoom,
+                            trigger: [model.selectedItem.map { "\($0)" } ?? "", "\(model.isEditing)", "\(shownCategory.map { "\($0)" } ?? "")"])
+                    }
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 4) {
-                    searchField
-                        .frame(minWidth: 150, idealWidth: 210, maxWidth: 320)
                     categoryPill
                     sortMenu
                     newItemButton

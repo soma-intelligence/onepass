@@ -11,6 +11,20 @@ struct SplitBrowseView: View {
 
     var body: some View {
         Group {
+            #if os(macOS)
+            // Mac: two columns, the item list and the detail side by side in the second one, so the
+            // title bar above them is one section: the search field runs across both, its actions
+            // at the right edge (a third split column would cut the bar at the list's edge).
+            NavigationSplitView(columnVisibility: $visibility) {
+                sidebar
+            } detail: {
+                if model.page == .items {
+                    ItemsPane()
+                } else {
+                    PageColumn(page: model.page)
+                }
+            }
+            #else
             if model.page == .items {
                 NavigationSplitView(columnVisibility: $visibility) {
                     sidebar
@@ -31,6 +45,7 @@ struct SplitBrowseView: View {
                     PageColumn(page: model.page)
                 }
             }
+            #endif
         }
         #if DEBUG && os(iOS)
         .task {
@@ -53,6 +68,71 @@ struct SplitBrowseView: View {
             #endif
     }
 }
+
+#if os(macOS)
+/// Mac, right of the sidebar on the item list: the list, a divider dragged to resize it, then the
+/// detail. One SwiftUI tree (not `HSplitView`, whose AppKit panes drop their toolbar items), so the
+/// list's search and the detail's actions share the title bar above both.
+private struct ItemsPane: View {
+    /// Not secret: the list column's width.
+    @AppStorage("onepass.browse.listWidth", store: AppModel.browseDefaults) private var listWidth = 330.0
+    @State private var dragStart: Double?
+
+    private static let listRange = 280.0...440.0
+
+    var body: some View {
+        // The column's root stack: the title bar takes its items from here.
+        NavigationStack {
+            GeometryReader { proxy in
+                // The chosen width, narrowed when the window is tight so the detail keeps its floor.
+                let room = Double(proxy.size.width) - 1 - Self.detailMinimum
+                let list = min(listWidth.clamped(to: Self.listRange), max(Self.listRange.lowerBound, room))
+                HStack(spacing: 0) {
+                    ItemListColumn()
+                        .frame(width: list)
+                    divider
+                    DetailColumn()
+                        .frame(minWidth: Self.detailMinimum, maxWidth: .infinity)
+                }
+                // The title bar's row above: the list's search field fills what its items leave.
+                .environment(\.titleBarRoom, proxy.size.width)
+            }
+        }
+        // The split view only knows its columns: this floor keeps the window from shrinking under
+        // the narrowest list and detail (and the title bar's row from spilling into its menu).
+        .navigationSplitViewColumnWidth(
+            min: Self.listRange.lowerBound + 1 + Self.detailMinimum, ideal: 330 + 1 + 520)
+    }
+
+    private static let detailMinimum = 320.0
+
+    /// The system's thin separator line, with a wider invisible grip and the resize cursor. It stops
+    /// under the title bar, so the search field runs across unbroken.
+    private var divider: some View {
+        Divider()
+            .overlay {
+                Color.clear
+                    .frame(width: 8)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.columnResize.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { drag in
+                                let start = dragStart ?? listWidth
+                                dragStart = start
+                                listWidth = (start + drag.translation.width).clamped(to: Self.listRange)
+                            }
+                            .onEnded { _ in dragStart = nil })
+            }
+    }
+}
+
+private extension Double {
+    func clamped(to range: ClosedRange<Double>) -> Double { Swift.min(Swift.max(self, range.lowerBound), range.upperBound) }
+}
+#endif
 
 /// Right of the sidebar when a full page is chosen. On the Mac the page names itself in its own
 /// heading, so the title bar shows no title (the account stays where it is on the item list), and
@@ -98,27 +178,34 @@ struct DetailColumn: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        NavigationStack {
-            if let draft = model.newItemDraft {
-                ItemEditorView(draft: draft, isNew: true) { saved in
-                    model.finishNewItem(saved)
-                }
-                .id(draft.item.id)
+        #if os(macOS)
+        // Mac: inside the items pane's own stack (a second stack here took the title bar's items).
+        content
+        #else
+        NavigationStack { content }
+        #endif
+    }
+
+    @ViewBuilder private var content: some View {
+        if let draft = model.newItemDraft {
+            ItemEditorView(draft: draft, isNew: true) { saved in
+                model.finishNewItem(saved)
+            }
+            .id(draft.item.id)
+            #if os(iOS)
+            .headerFade()
+            #endif
+        } else if let ref = model.selectedItem {
+            ItemDetailView(ref: ref).id(ref)
                 #if os(iOS)
                 .headerFade()
                 #endif
-            } else if let ref = model.selectedItem {
-                ItemDetailView(ref: ref).id(ref)
-                    #if os(iOS)
-                    .headerFade()
-                    #endif
-            } else {
-                // The vault picture alone carries the empty state; the words stay for VoiceOver.
-                VaultIllustration(size: 340, tint: Theme.accent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityElement()
-                    .accessibilityLabel(Text("browse.noItemSelectedChoose"))
-            }
+        } else {
+            // The vault picture alone carries the empty state; the words stay for VoiceOver.
+            VaultIllustration(size: 340, tint: Theme.accent)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityElement()
+                .accessibilityLabel(Text("browse.noItemSelectedChoose"))
         }
     }
 }
