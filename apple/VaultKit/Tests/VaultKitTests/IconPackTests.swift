@@ -304,11 +304,11 @@ struct ItemIconResolverTests {
     @Test func orderIsChosenThenPackThenSharpSiteIcon() {
         let chosen = Data("chosen".utf8)
         let sharp = png(side: 128)
-        let blurry = png(side: 96)
+        let blurry = png(side: 48)
         #expect(ItemIconResolver.pick(chosen: chosen, pack: packIcon, site: sharp) == chosen)
         #expect(ItemIconResolver.pick(chosen: nil, pack: packIcon, site: sharp) == packIcon)
         #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: sharp) == sharp)
-        // A 48 px source is stored at 96 px: shown as the monogram tile instead.
+        // A 24 px source is stored at 48 px: shown as the monogram tile instead.
         #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: blurry) == nil)
         #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: nil) == nil)
     }

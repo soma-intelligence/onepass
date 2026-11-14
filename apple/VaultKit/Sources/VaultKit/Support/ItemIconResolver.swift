@@ -9,8 +9,8 @@ import Foundation
 /// 3. The icon pack by the item's title, when it is a brand's name ("Reddit", "Burger King") or a
 ///    web address: an item with no address, or one the pack does not know, still finds its brand.
 /// 4. The site's own icon (`SiteIconLoader`, fetched from the item's site only), shown only when
-///    its source was at least `minSitePixels` on its longest side. A smaller one stretched to a
-///    tile is a blur.
+///    its source was at least 32 px on its longest side; a source of 32 to 63 px (stored at 64 to
+///    127 px) is drawn bare by `ItemIcon`, never stretched. A smaller one is a blur.
 /// 5. Nothing: `ItemIcon` then draws the monogram tile (a login with a title) or the category
 ///    artwork.
 ///
@@ -18,7 +18,7 @@ import Foundation
 /// "Website Icons" off, no icon of either kind is shown and nothing is fetched.
 public final class ItemIconResolver: Sendable {
     /// Smallest source (pixels, longest side) of a site icon that is shown.
-    public static let minSitePixels = 64
+    public static let minSitePixels = 32
 
     public let pack: IconPackStore?
     public let site: SiteIconLoader
