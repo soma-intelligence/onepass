@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 /// What a scanned QR code gives the one-time password row.
 public enum OtpScanResult: Equatable, Sendable {
@@ -18,5 +19,27 @@ public enum OtpScan {
             return .notOtp
         }
         return accounts.count == 1 ? .value(accounts[0].uri) : .severalAccounts(accounts.count)
+    }
+}
+
+extension OtpScan {
+    /// The image of a drop: its image data, or the file a Finder drag points to.
+    @MainActor public static func imageData(from provider: NSItemProvider) async -> Data? {
+        if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier),
+            let data = await load(provider, type: .image)
+        {
+            return data
+        }
+        guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
+            let reference = await load(provider, type: .fileURL),
+            let url = URL(dataRepresentation: reference, relativeTo: nil), url.isFileURL
+        else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    @MainActor private static func load(_ provider: NSItemProvider, type: UTType) async -> Data? {
+        await withCheckedContinuation { continuation in
+            _ = provider.loadDataRepresentation(for: type) { data, _ in continuation.resume(returning: data) }
+        }
     }
 }

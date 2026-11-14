@@ -85,9 +85,9 @@ private struct OtpImageScanSheet: View {
 
     private func load(_ providers: [NSItemProvider]) {
         guard let provider = providers.first else { return }
-        _ = provider.loadDataRepresentation(for: .image) { data, _ in
-            let image = data.flatMap(NSImage.init(data:))
-            Task { @MainActor in read(image) }
+        Task {
+            let data = await OtpScan.imageData(from: provider)
+            read(data.flatMap(NSImage.init(data:)))
         }
     }
 

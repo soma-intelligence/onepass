@@ -26,6 +26,8 @@ struct ItemDetailView: View {
 
     @State private var item: FfiItem?
     @State private var loadError: String?
+    /// Where the websites card sits among the free sections (per device, set by the editor).
+    @AppStorage(EditorLayout.websitesSlotKey) private var websitesSlot = 0
     @State private var actionError: String?
     @State private var confirmDelete = false
     // Reprompt.
@@ -352,9 +354,9 @@ struct ItemDetailView: View {
         if item.itemType == .cryptoWallet, !standalone {
             CryptoWalletWatchCard(item: item) { self.item = $0 }
         }
-        let slots = EditorLayout.movableSlots(
-            freeSectionIDs: sections.map(\.id).filter(free.contains),
-            websitesSlot: UserDefaults.standard.integer(forKey: EditorLayout.websitesSlotKey))
+        let slots = EditorLayout.shownSlots(
+            freeSectionIDs: ItemDraft(item: item).freeSectionIDs, shown: Set(sections.map(\.id)),
+            websitesSlot: websitesSlot)
         ForEach(slots, id: \.self) { slot in
             switch slot {
             case .websites: websitesCard(item)

@@ -20,6 +20,14 @@ public enum EditorLayout {
         return slots
     }
 
+    /// The movable cards the item page shows: placed among all the free sections as in the editor,
+    /// then the sections the page hides (no value) left out.
+    public static func shownSlots(freeSectionIDs: [String], shown: Set<String>, websitesSlot: Int) -> [EditorSlot] {
+        movableSlots(freeSectionIDs: freeSectionIDs, websitesSlot: websitesSlot).filter { slot in
+            if case .section(let id) = slot { shown.contains(id) } else { true }
+        }
+    }
+
     /// Where the websites card sits in `slots`, to store after a move.
     public static func websitesSlot(after slots: [EditorSlot]) -> Int {
         slots.firstIndex(of: .websites) ?? slots.count

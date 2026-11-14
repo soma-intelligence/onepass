@@ -238,13 +238,14 @@ public struct ItemDraft: Equatable, Sendable {
 
     /// The item to hand to `VaultSession.save`: blank URLs dropped, URLs trimmed, one primary URL,
     /// free sections left without a field dropped, free sections and their fields left without a
-    /// label get their default one back.
+    /// label get their default one back ("Champs perso" for the custom section).
     public func preparedForSave() -> FfiItem {
         var out = item
         out.sections.removeAll { isFreeSection($0.id) && $0.fields.isEmpty }
         for s in out.sections.indices where isFreeSection(out.sections[s].id) {
             let name = out.sections[s].label.trimmingCharacters(in: .whitespacesAndNewlines)
-            out.sections[s].label = name.isEmpty ? Self.defaultSectionLabel() : name
+            let fallback = out.sections[s].id == Self.customSectionID ? Self.customSectionLabel : Self.defaultSectionLabel()
+            out.sections[s].label = name.isEmpty ? fallback : name
             for f in out.sections[s].fields.indices {
                 let label = out.sections[s].fields[f].label.trimmingCharacters(in: .whitespacesAndNewlines)
                 out.sections[s].fields[f].label = label.isEmpty ? Self.defaultLabel(out.sections[s].fields[f].kind) : label

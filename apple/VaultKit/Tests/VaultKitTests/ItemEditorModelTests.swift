@@ -369,6 +369,13 @@ struct ItemDraftCardsTests {
         #expect(saved.sections[1].fields[0].label == ItemDraft.defaultLabel(.text))
     }
 
+    @Test func blankCustomSectionGetsItsOwnName() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: ItemDraft.customSectionID, label: " ", fields: [textField("custom_1", "Code", "x")]))
+        let saved = ItemDraft(item: item).preparedForSave()
+        #expect(saved.sections.last?.label == ItemDraft.customSectionLabel)
+    }
+
     @Test func addCustomFieldIntoSection() {
         var item = draftItem(.login)
         item.sections.append(FfiSection(id: "section_1", label: "Banque", fields: []))

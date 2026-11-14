@@ -62,4 +62,13 @@ struct EditorLayoutTests {
         #expect(Array(order.prefix(4)) == ["username", "password", "totp", "passkeys"])
         #expect(order.count == section.fields.count)
     }
+
+    /// The item page hides sections without a value; the websites card keeps the place it has in
+    /// the editor, counted among all the free sections.
+    @Test func shownSlotsCountHiddenSections() {
+        let slots = EditorLayout.shownSlots(freeSectionIDs: ["s1", "s2"], shown: ["s2"], websitesSlot: 1)
+        #expect(slots == [.websites, .section("s2")])
+        #expect(EditorLayout.shownSlots(freeSectionIDs: ["s1", "s2"], shown: ["s1", "s2"], websitesSlot: 1)
+            == [.section("s1"), .websites, .section("s2")])
+    }
 }
