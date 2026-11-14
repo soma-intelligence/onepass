@@ -6,16 +6,12 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
-import android.text.Editable
-import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
-import android.text.TextWatcher
 import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.LinearLayout
@@ -29,9 +25,7 @@ import me.somalabs.onepass.core.FfiFieldType
 import me.somalabs.onepass.core.FfiFieldValue
 import me.somalabs.onepass.core.FfiItem
 import me.somalabs.onepass.core.FfiItemType
-import me.somalabs.onepass.core.FfiMatchRule
 import me.somalabs.onepass.core.FfiPasswordRecipe
-import me.somalabs.onepass.core.FfiUrl
 import me.somalabs.onepass.core.generatePassword
 import me.somalabs.onepass.core.passwordEntropyBits
 import me.somalabs.onepass.core.passwordStrengthBits
@@ -181,6 +175,7 @@ class ItemScreens(private val a: MainActivity) {
                 item.tags.forEach { tag -> row.addView(ui.chip(tag), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = ui.dp(8) }) }
                 addView(android.widget.HorizontalScrollView(a).apply { isHorizontalScrollBarEnabled = false; addView(row) })
             }
+            if (!trashed) addView(Attachments(a).section(item) { reopen(item) })
             val df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.SHORT)
             val footer = LinearLayout(a).apply {
                 orientation = LinearLayout.VERTICAL
@@ -472,140 +467,11 @@ class ItemScreens(private val a: MainActivity) {
 
     // ---- editor ----------------------------------------------------------------------------------------------
 
-    private val textKinds = setOf(
-        FfiFieldType.TEXT, FfiFieldType.CONCEALED, FfiFieldType.PASSWORD, FfiFieldType.URL, FfiFieldType.EMAIL,
-        FfiFieldType.PHONE, FfiFieldType.MENU, FfiFieldType.OTP, FfiFieldType.MNEMONIC,
-    )
+    /** The editor ("Nouvel élément" / "Modification"): see [ItemEditor]. */
+    fun edit(item: FfiItem, isNew: Boolean) = ItemEditor(a, item, isNew).open()
 
-    private fun textValue(kind: FfiFieldType, text: String): FfiFieldValue = if (text.isEmpty()) FfiFieldValue.Empty else when (kind) {
-        FfiFieldType.TEXT -> FfiFieldValue.Text(text)
-        FfiFieldType.CONCEALED -> FfiFieldValue.Concealed(text)
-        FfiFieldType.PASSWORD -> FfiFieldValue.Password(text)
-        FfiFieldType.URL -> FfiFieldValue.Url(text)
-        FfiFieldType.EMAIL -> FfiFieldValue.Email(text)
-        FfiFieldType.PHONE -> FfiFieldValue.Phone(text)
-        FfiFieldType.MENU -> FfiFieldValue.Menu(text)
-        FfiFieldType.OTP -> FfiFieldValue.Otp(text)
-        else -> FfiFieldValue.Mnemonic(text)
-    }
-
-    private fun watch(e: EditText, on: () -> Unit) = e.addTextChangedListener(object : TextWatcher {
-        override fun afterTextChanged(x: Editable?) = on()
-        override fun beforeTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
-        override fun onTextChanged(x: CharSequence?, a: Int, b: Int, c: Int) {}
-    })
-
-    /** The editor ("Nouvel élément" / "Modification"), built once so a redraw keeps what is typed. */
-    fun edit(item: FfiItem, isNew: Boolean) {
-        val s = a.vault.session ?: return a.route()
-        val cat = Category.of(item.itemType)
-        val inputs = mutableMapOf<String, Pair<FfiFieldType, EditText>>()
-        val changed = mutableSetOf<String>()
-        val title = ui.field(cat.singular(a), item.title).apply { textSize = 22f; typeface = Typeface.create(Typeface.DEFAULT, 600, false) }
-        val url = ui.field("https://", item.urls.firstOrNull { it.primary }?.url ?: item.urls.firstOrNull()?.url ?: "").apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        }
-        val notes = ui.field(a.t("Notes", "Notes"), item.notes).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            minLines = 3
-            gravity = Gravity.TOP
-        }
-        val tags = ui.field(a.t("Tags, séparés par des virgules", "Tags, comma separated"), item.tags.joinToString(", "))
-        val err = ui.footnote("", ui.red)
-
-        fun labeled(label: String, input: View, trailing: View? = null): View {
-            val row = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, ui.dp(8), ui.dp(8), 0) }
-            val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-            col.addView(ui.text(label, 13f, ui.readableAccent, 500).apply { setPadding(ui.dp(16), 0, ui.dp(16), 0) })
-            col.addView(input.apply { (this as? EditText)?.setPadding(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(10)) })
-            row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            trailing?.let { row.addView(it) }
-            // Touching the row (its label) puts the cursor in the field, as on iPhone.
-            (input as? EditText)?.let { e ->
-                row.setOnClickListener {
-                    e.requestFocus()
-                    a.getSystemService(android.view.inputmethod.InputMethodManager::class.java).showSoftInput(e, 0)
-                }
-            }
-            return row
-        }
-
-        val save = save@{
-            val updated = item.copy(
-                title = title.text.toString().trim(),
-                notes = notes.text.toString(),
-                tags = tags.text.toString().split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
-                urls = url.text.toString().trim().let { u ->
-                    val others = item.urls.filter { !it.primary }
-                    if (u.isEmpty()) others else listOf(FfiUrl("", u, FfiMatchRule.DOMAIN, true)) + others
-                },
-                sections = item.sections.map { sec ->
-                    sec.copy(fields = sec.fields.map { f ->
-                        val input = inputs[f.id]
-                        if (input != null && f.id in changed) f.copy(value = textValue(f.kind, input.second.text.toString())) else f
-                    })
-                },
-            )
-            a.background({ s.saveItem(updated) }) { r ->
-                r.onSuccess { saved ->
-                    a.changed {
-                        a.pop()
-                        if (!isNew) a.pop()
-                        a.push { detailPage(saved) }
-                    }
-                }.onFailure { e ->
-                    err.text = if (e is me.somalabs.onepass.core.OnePassException.Validation) {
-                        val label = item.sections.flatMap { it.fields }.firstOrNull { it.id == e.field }?.label ?: e.field
-                        a.t("« $label » est obligatoire.", "“$label” is required.")
-                    } else a.message(e)
-                }
-            }
-        }
-
-        val page = a.pushedPage(
-            if (isNew) a.t("Nouvel élément", "New Item") else a.t("Modification", "Editing"),
-            trailing = listOf(a.barText(a.t("Enregistrer", "Save"), bold = true) { save() }),
-        ) {
-            val head = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), ui.dp(4), 0, ui.dp(4)) }
-            head.addView(a.itemIcon(item.itemType, 44))
-            head.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(ui.inset(ui.card(head), top = Ios.Space.S))
-
-            for (sec in item.sections) {
-                val rows = sec.fields.filter { it.kind in textKinds }.map { f ->
-                    val secret = isSecret(f.kind) && f.kind != FfiFieldType.OTP
-                    val has = f.value !is FfiFieldValue.Empty
-                    val input = ui.field(if (secret && has) a.t("Inchangé", "Unchanged") else f.label, if (secret) "" else display(f.value) ?: "", password = secret).apply {
-                        if (f.kind == FfiFieldType.EMAIL) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-                        if (f.kind == FfiFieldType.PHONE) inputType = InputType.TYPE_CLASS_PHONE
-                    }
-                    watch(input) { changed.add(f.id) }
-                    inputs[f.id] = f.kind to input
-                    if (f.kind == FfiFieldType.PASSWORD) {
-                        labeled(f.label, input, a.barIcon(R.drawable.ic_wand, a.t("Générer un mot de passe", "Generate Password")) {
-                            generator { p ->
-                                input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                                input.typeface = Typeface.MONOSPACE
-                                input.setText(p)
-                            }
-                        })
-                    } else labeled(f.label, input)
-                }
-                if (rows.isEmpty()) continue
-                addView(ui.capsLabel(sec.label.ifBlank { cat.singular(a) }))
-                addView(ui.inset(ui.card(*rows.toTypedArray())))
-            }
-            addView(ui.capsLabel(a.t("Site web", "Website")))
-            addView(ui.inset(ui.card(labeled(a.t("site web", "website"), url))))
-            addView(ui.capsLabel(a.t("Notes", "Notes")))
-            addView(ui.inset(ui.card(notes)))
-            addView(ui.capsLabel("Tags"))
-            addView(ui.inset(ui.card(tags)))
-            addView(err)
-        }
-        a.push(tabs = false) { (page.parent as? ViewGroup)?.removeView(page); page }
-        if (isNew) title.requestFocus()
-    }
+    /** After a save: the item's page. */
+    fun showSaved(item: FfiItem) = a.push { detailPage(item) }
 
     // ---- generator -------------------------------------------------------------------------------------------
 

@@ -144,6 +144,7 @@ class MainActivity : Activity() {
             insets
         }
         setContentView(root)
+        me.somalabs.onepass.screens.Attachments.clearCache(this)
         route()
     }
 
@@ -235,6 +236,8 @@ class MainActivity : Activity() {
         recentSearches.clear()
         stacks.clear()
         noTabs.clear()
+        guards.clear()
+        me.somalabs.onepass.screens.Attachments.clearCache(this)
         route()
     }
 
@@ -278,16 +281,52 @@ class MainActivity : Activity() {
     /** Pages shown without the tab bar (the editor, as the iPhone's full-screen sheet). */
     private val noTabs = mutableSetOf<() -> View>()
 
-    fun push(tabs: Boolean = true, build: () -> View) {
+    /** Pages that ask before they are left (the editor with unsaved changes). */
+    private val guards = mutableMapOf<() -> View, (leave: () -> Unit) -> Unit>()
+
+    fun push(tabs: Boolean = true, guard: ((leave: () -> Unit) -> Unit)? = null, build: () -> View) {
         if (!tabs) noTabs.add(build)
+        guard?.let { guards[build] = it }
         stack(tab).add(build)
         render()
     }
 
+    /** Back: the top page's guard decides first. */
     fun pop() {
+        val top = stack(tab).last()
+        val g = guards[top]
+        if (g != null) g { if (stack(tab).lastOrNull() === top) popNow() } else popNow()
+    }
+
+    /** Leaves the top page without asking. */
+    fun popNow() {
         val s = stack(tab)
-        if (s.size > 1) noTabs.remove(s.removeAt(s.lastIndex))
+        if (s.size > 1) s.removeAt(s.lastIndex).let { noTabs.remove(it); guards.remove(it) }
         render()
+    }
+
+    // ---- activity results (file pickers) -----------------------------------------------------
+
+    private val results = mutableMapOf<Int, (Int, android.content.Intent?) -> Unit>()
+    private var nextRequest = 1000
+
+    /** Starts an activity for its result (SAF pickers, system settings). */
+    fun launch(intent: android.content.Intent, done: (resultCode: Int, data: android.content.Intent?) -> Unit) {
+        val code = nextRequest++
+        results[code] = done
+        try {
+            startActivityForResult(intent, code)
+        } catch (e: android.content.ActivityNotFoundException) {
+            results.remove(code)
+            toast(message(e))
+        }
+    }
+
+    @Deprecated("Framework Activity results")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        results.remove(requestCode)?.invoke(resultCode, data)
     }
 
     /** Redraws only when a tab root is shown (a pushed page keeps what is typed). */

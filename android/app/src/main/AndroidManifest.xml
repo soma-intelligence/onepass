@@ -25,5 +25,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- One decrypted attachment, lent read only to the app the user
+             picks (per-URI grant); never exported. -->
+        <provider
+            android:name=".AttachmentProvider"
+            android:authorities="${applicationId}.attachments"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>
