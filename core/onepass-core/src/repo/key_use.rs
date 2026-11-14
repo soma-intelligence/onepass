@@ -71,9 +71,10 @@ impl<S: RecordStore> Repository<S> {
     /// entry for `u` is due (`KeyUseTrailer::due`: none yet, or the last
     /// write an hour ago or more), or when an entry carries a time after
     /// `now` (a skewed or hostile synced entry is clamped at once, so it
-    /// neither skews the TTL nor blocks the coalescing). Otherwise, or in
-    /// a read-only session (`Error::ReadOnly`), the use goes to the
-    /// device's queue. Archived and trashed items are recorded; the
+    /// neither skews the TTL nor blocks the coalescing). Otherwise the use
+    /// goes to the device's queue, as it does when the write is refused
+    /// for now (`write_refused_for_now`: a read-only session, or a shared
+    /// vault where this account only reads). Archived and trashed items are recorded; the
     /// account profile is `NotFound`. Returns `true` when the item was
     /// written. Callers record after the secret was handed out and ignore
     /// the error: a failure to record never fails the use.
@@ -86,7 +87,11 @@ impl<S: RecordStore> Repository<S> {
     ) -> Result<bool> {
         match self.write_key_use(vault, item_id, &u, now) {
             Ok(true) => Ok(true),
-            Ok(false) | Err(Error::ReadOnly) => {
+            Ok(false) => {
+                self.queue_key_use(vault.id, item_id, &u, now)?;
+                Ok(false)
+            }
+            Err(e) if write_refused_for_now(&e) => {
                 self.queue_key_use(vault.id, item_id, &u, now)?;
                 Ok(false)
             }
@@ -113,7 +118,11 @@ impl<S: RecordStore> Repository<S> {
         }
         let seqs = self.apply_key_use(vault, &mut item, u.clone(), now)?;
         self.save_item(vault, item)?;
-        self.drop_queued_key_uses(&seqs)?;
+        // The item is saved: a failure to drop the rows folded in does not
+        // fail the use (core has no logger; the caller's debug log is the
+        // place). Those rows stay queued and are folded again at the next
+        // write or flush, so their batch may be counted twice.
+        let _ = self.drop_queued_key_uses(&seqs);
         Ok(true)
     }
 
@@ -151,15 +160,21 @@ impl<S: RecordStore> Repository<S> {
     /// Fold the queued rows whose last use is an hour old or more into
     /// their items, item by item, each saved with its `updated_at`
     /// unchanged. Rows of an item or a vault that is gone, and rows that
-    /// no longer open, are dropped. An item that cannot be written (a
-    /// read-only session, an alert) keeps its rows and does not stop the
-    /// others; the first such error is returned once all were tried.
+    /// no longer open, are dropped; rows sealed before a key rotation are
+    /// sealed again under the current keys first (`rekey_key_use_queue`).
+    /// An item this account may not write for now (a shared vault where it
+    /// only reads, `write_refused_for_now`) keeps its rows, without error:
+    /// a later role change flushes them, and the cap bounds them. Any other
+    /// item that cannot be written (a read-only session, an alert) keeps
+    /// its rows and does not stop the others; the first such error is
+    /// returned once all were tried.
     /// Returns how many rows were applied. Run at the start of a write
     /// session and at each app foreground.
     pub fn flush_key_use_queue(&mut self, now: OffsetDateTime) -> Result<usize> {
         if !self.store.keeps_key_use_queue() {
             return Ok(0);
         }
+        self.rekey_key_use_queue()?;
         let keys = self.key_use_queue_keys()?;
         let ripe_before = now - Duration::seconds(REWRITE_AFTER_SECS);
         let mut dead = Vec::new();
@@ -190,6 +205,10 @@ impl<S: RecordStore> Repository<S> {
                     self.drop_queued_key_uses(&seqs)?;
                 }
                 Err(Error::NotFound) => self.drop_queued_key_uses(&seqs)?,
+                Err(Error::ReadOnly) => {
+                    first_err.get_or_insert(Error::ReadOnly);
+                }
+                Err(e) if write_refused_for_now(&e) => {}
                 Err(e) => {
                     first_err.get_or_insert(e);
                 }
@@ -215,6 +234,39 @@ impl<S: RecordStore> Repository<S> {
         }
         item.set_key_use_trailer(t);
         self.save_item(vault, item)
+    }
+
+    /// Seal again under the current keys every queued row that opens only
+    /// under a key the account retired (`Keyset::retired_kem`): the queue
+    /// keys derive from the KEM secret, so a key rotation (this device's,
+    /// or one it followed) would otherwise leave the rows of a read-only
+    /// session (`Error::ReadOnly` until the rotation is answered) unread
+    /// and dropped. Each row moves under its item's current tag. Rows that
+    /// open under no key are left for the caller to drop.
+    fn rekey_key_use_queue(&mut self) -> Result<()> {
+        let retired = &self.account.keyset().retired_kem;
+        if retired.is_empty() {
+            return Ok(());
+        }
+        let account_id = self.account_id();
+        let old: Vec<QueueKeys> = retired
+            .iter()
+            .map(|k| QueueKeys::derive(&k.to_bytes(), account_id))
+            .collect::<Result<_>>()?;
+        let keys = self.key_use_queue_keys()?;
+        for (seq, tag, data) in self.store.key_use_queue_rows(None)? {
+            if keys.open_row(&tag, &data).is_ok() {
+                continue;
+            }
+            let Some(row) = old.iter().find_map(|k| k.open_row(&tag, &data).ok()) else {
+                continue;
+            };
+            let new_tag = keys.item_tag(row.item_id);
+            let blob = keys.seal_row(&new_tag, &row)?;
+            self.store
+                .key_use_queue_put(&new_tag, &[seq], &blob, MAX_QUEUE_ROWS)?;
+        }
+        Ok(())
     }
 
     /// Erase this device's whole queue (Travel Mode): how many rows went.
@@ -341,6 +393,19 @@ impl<S: RecordStore> Repository<S> {
         let blob = keys.seal_row(&tag, &row)?;
         self.store
             .key_use_queue_put(&tag, &replace, &blob, MAX_QUEUE_ROWS)
+    }
+}
+
+/// A key-use write refused for now that may be allowed later: a read-only
+/// session (`Error::ReadOnly`, until the rotation is answered), or a
+/// shared vault where this account's role only reads
+/// (`Validation("role", "read only")`; a manager may raise it with
+/// `set_role`). The use is queued rather than lost.
+fn write_refused_for_now(e: &Error) -> bool {
+    match e {
+        Error::ReadOnly => true,
+        Error::Validation(v) => v.field == "role" && v.reason == "read only",
+        _ => false,
     }
 }
 

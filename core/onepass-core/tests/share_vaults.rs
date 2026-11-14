@@ -1958,3 +1958,45 @@ fn shared_item_delete_and_move_carry_chunks() {
     settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
     assert_eq!(chunk_rows(&mut zs, id), 0);
 }
+
+/// A member who only reads a shared vault cannot write a key use into
+/// its items: the use is queued, not lost, and not an error. Once a
+/// manager raises the role, the flush writes it.
+#[test]
+fn reader_key_use_is_queued_until_promoted() {
+    use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Read);
+    let vc = shared(&mut c.dev, id);
+    let item = items[0].id;
+    let u = c.dev.repo().this_device_key_use(
+        KeyUseChannel::Mcp,
+        KeyUseAction::Revealed,
+        "Claude Code",
+        "password",
+    );
+    let written = c.dev.repo().record_key_use(&vc, item, u, at(NOW)).unwrap();
+    assert!(!written);
+    assert_eq!(c.dev.store().key_use_queue_rows(None).unwrap().len(), 1);
+    // Still a reader: the flush keeps the row, without error.
+    assert_eq!(c.dev.repo().flush_key_use_queue(at(NOW + 7200)).unwrap(), 0);
+    assert_eq!(c.dev.store().key_use_queue_rows(None).unwrap().len(), 1);
+
+    let carol = account_id(&mut c.dev);
+    a.dev
+        .repo()
+        .set_role(id, carol, Role::Write, NOW + 3)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    assert_eq!(c.dev.repo().flush_key_use_queue(at(NOW + 7200)).unwrap(), 1);
+    assert!(c.dev.store().key_use_queue_rows(None).unwrap().is_empty());
+    let vc = shared(&mut c.dev, id);
+    let got = c
+        .dev
+        .repo()
+        .items(&vc)
+        .unwrap()
+        .into_iter()
+        .find(|i| i.id == item)
+        .unwrap();
+    assert_eq!(got.key_use_trailer().entries.len(), 1);
+}
