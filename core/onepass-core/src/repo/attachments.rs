@@ -113,7 +113,7 @@ impl<S: RecordStore> Repository<S> {
 
     /// Chunks of `r` whose prefix names another vault this account opens
     /// (a move or a rotation cut short): re-wrapped into `vault`.
-    fn heal_attachment(&mut self, vault: &Vault, r: &AttachmentRef) -> Result<()> {
+    pub(super) fn heal_attachment(&mut self, vault: &Vault, r: &AttachmentRef) -> Result<()> {
         let mut others: Option<Vec<Vault>> = None;
         let zone = vault.zone();
         for id in attachment::chunk_ids(r)? {

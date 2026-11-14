@@ -1654,9 +1654,14 @@ impl<S: RecordStore> Repository<S> {
         let loaded = self.served(vault, Use::Write)?;
         let (blob, rec) = loaded.listed(item_id).ok_or(Error::NotFound)?;
         let blob = *blob;
-        let attachments = vault
+        let attachments: Vec<crate::model::AttachmentRef> = vault
             .open_item(rec)
-            .map(|item| item.attachments)
+            .map(|item| {
+                item.attachments
+                    .into_iter()
+                    .chain(item.custom_icon)
+                    .collect()
+            })
             .unwrap_or_default();
         self.log_own_write(vault.id, item_id, &loaded.manifest, None)?;
         let entries = loaded.entries_without(item_id);
@@ -1721,7 +1726,13 @@ impl<S: RecordStore> Repository<S> {
         }
         // The attachments follow, once the item is listed in `to` only.
         if let Ok(item) = to.open_item(&moved) {
-            self.move_attachment_chunks(from, to, &item.attachments);
+            let files: Vec<_> = item
+                .attachments
+                .iter()
+                .chain(&item.custom_icon)
+                .cloned()
+                .collect();
+            self.move_attachment_chunks(from, to, &files);
         }
         Ok(())
     }

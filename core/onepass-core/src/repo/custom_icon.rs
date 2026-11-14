@@ -117,6 +117,7 @@ impl<S: RecordStore> Repository<S> {
         self.readable()?;
         let item = self.icon_item(vault, item_id, Use::Read)?;
         let reference = item.custom_icon.ok_or(Error::NotFound)?;
+        self.heal_attachment(vault, &reference)?;
         let store = &self.store;
         let zone = vault.zone();
         attachment::open_attachment(vault, &reference, |id| {
@@ -363,5 +364,45 @@ mod tests {
             .unwrap();
         assert_eq!(merged.custom_icon, Some(icon.clone()));
         assert_eq!(stored(&mut repo, &a, primary.id).custom_icon, Some(icon));
+    }
+
+    fn chunk_count(repo: &Repository<MemoryStore>) -> usize {
+        repo.store.list(RecordKind::Attachment).unwrap().len()
+    }
+
+    #[test]
+    fn move_item_keeps_custom_icon_readable() {
+        let (mut repo, a, item) = with_item();
+        let b = repo.create_vault(meta("B")).unwrap();
+        repo.set_custom_icon(&a, item.id, "image/png", &png(200))
+            .unwrap();
+        repo.move_item(item.id, &a, &b).unwrap();
+        assert_eq!(
+            &repo.read_custom_icon(&b, item.id).unwrap()[..],
+            &png(200)[..]
+        );
+    }
+
+    #[test]
+    fn delete_item_removes_custom_icon_chunks() {
+        let (mut repo, v, item) = with_item();
+        repo.set_custom_icon(&v, item.id, "image/png", &png(200))
+            .unwrap();
+        assert_eq!(chunk_count(&repo), 1);
+        repo.delete_item(&v, item.id).unwrap();
+        assert_eq!(chunk_count(&repo), 0);
+    }
+
+    #[test]
+    fn delete_vault_removes_custom_icon_chunks() {
+        let (mut repo, _a) = fresh();
+        let b = repo.create_vault(meta("B")).unwrap();
+        let item = login(&b, "Doomed");
+        repo.save_item(&b, item.clone()).unwrap();
+        repo.set_custom_icon(&b, item.id, "image/png", &png(200))
+            .unwrap();
+        repo.trash_item(&b, item.id).unwrap();
+        repo.delete_vault(&b).unwrap();
+        assert_eq!(chunk_count(&repo), 0);
     }
 }
