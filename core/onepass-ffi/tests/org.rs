@@ -955,6 +955,10 @@ mod lifecycle {
         /// One entry per `join_requests_since` call: did it start from a
         /// full feed. A `join_requests` call (the whole feed) logs `None`.
         feeds: Arc<std::sync::Mutex<Vec<Option<bool>>>>,
+        /// `create_member_invite` fails.
+        fail_mint: bool,
+        /// Runs once when `create_member_invite` is asked.
+        on_mint: Option<Hook>,
     }
 
     impl OrgStoreApi for Tweaked {
@@ -1026,6 +1030,12 @@ mod lifecycle {
         }
 
         fn create_member_invite(&mut self, ttl_hours: u16) -> Result<Vec<u8>, OrgStoreError> {
+            if let Some(hook) = self.on_mint.take() {
+                hook();
+            }
+            if self.fail_mint {
+                return Err(MailboxError::Malformed("test mint fault").into());
+            }
             self.inner.create_member_invite(ttl_hours)
         }
     }
@@ -1037,6 +1047,8 @@ mod lifecycle {
                 hide,
                 hook,
                 feeds: Default::default(),
+                fail_mint: false,
+                on_mint: None,
             })
         }
     }
@@ -1137,7 +1149,9 @@ mod lifecycle {
     use onepass_core::org::{
         JoinRequestBody, SignedJoinRequest, activate_member, sign_join_request, verify_join_request,
     };
-    use onepass_ffi::{FfiInviteLink, FfiJoinRequest, FfiOrgInvite, org_invite_parse};
+    use onepass_ffi::{
+        FfiInviteLink, FfiJoinPosted, FfiJoinRequest, FfiOrgInvite, org_invite_parse,
+    };
 
     const DOMAIN: &str = "somalabs.me";
     const MARIE: &str = "Marie Dupont";
@@ -1229,7 +1243,7 @@ mod lifecycle {
     }
 
     impl Joiner {
-        fn post(&self, invite: &FfiOrgInvite, name: &str) -> Result<Vec<String>, OnePassError> {
+        fn post(&self, invite: &FfiOrgInvite, name: &str) -> Result<FfiJoinPosted, OnePassError> {
             self.client.post_join_request(
                 self.session.clone(),
                 self.keys.classical.clone(),
@@ -1299,8 +1313,19 @@ mod lifecycle {
                 .iter()
                 .any(|m| m.account_id == invite.account_id && m.state == FfiMemberState::Invited)
         );
-        let words = joiner.post(&invite, MARIE).unwrap();
+        let posted = joiner.post(&invite, MARIE).unwrap();
+        let words = posted.code_words.clone();
         assert_eq!(words.len(), 5);
+        // R27: the request names the member's own credential, not the link's.
+        let req = SignedJoinRequest::decode(&org.raw_requests()[0].1).unwrap();
+        let link_key = Credential::from_seed(&invite.credential_seed)
+            .unwrap()
+            .public_key();
+        let own_key = Credential::from_seed(&posted.credential_seed)
+            .unwrap()
+            .public_key();
+        assert_ne!(req.body.mailbox_credential, link_key.to_bytes());
+        assert_eq!(req.body.mailbox_credential, own_key.to_bytes());
         let got = org.creator().join_requests().unwrap();
         assert_eq!(
             got,
@@ -1327,11 +1352,8 @@ mod lifecycle {
         assert_eq!(other.len(), 1);
         assert!(!other[0].issued_here);
         assert_eq!(other[0].invite_label, None);
-        // Names come from the verified request.
-        let state = org.creator().refresh().unwrap();
-        let creator = org.creator();
-        creator.join_requests().unwrap();
-        let state_named = creator.refresh().unwrap();
+        // Names come from the verified request, read by refresh itself (R28).
+        let state_named = org.creator().refresh().unwrap();
         assert_eq!(
             state_named
                 .members
@@ -1342,7 +1364,10 @@ mod lifecycle {
                 .as_deref(),
             Some(MARIE)
         );
-        assert_eq!(state.roster_seq, state_named.roster_seq);
+        // The member drops the link's credential: that client is done.
+        joiner.client.revoke_own_credential().unwrap();
+        assert!(joiner.client.refresh().is_err());
+        assert!(org.invite_store(&invite).roster(1).is_err());
     }
 
     #[test]
@@ -1446,11 +1471,14 @@ mod lifecycle {
         org.joiner(&invite).post(&invite, MARIE).unwrap();
         let creator = org.creator();
         assert_eq!(creator.join_requests().unwrap().len(), 1);
+        assert!(org.invite_store(&invite).roster(1).is_ok());
         creator
             .decline_join_request(invite.account_id.clone())
             .unwrap();
         assert_eq!(creator.join_requests().unwrap(), vec![]);
         assert!(org.raw_requests().is_empty());
+        // The issuing device revoked the link's credential (R27).
+        assert!(org.invite_store(&invite).roster(1).is_err());
         // The invitation itself stands (withdrawing it is a roster edit).
         let s = creator.refresh().unwrap();
         assert_eq!(s.roster_seq, 2);
@@ -1472,6 +1500,8 @@ mod lifecycle {
                 hide: None,
                 hook: None,
                 feeds: feeds.clone(),
+                fail_mint: false,
+                on_mint: None,
             }),
             &org.creator_dir,
         );
@@ -1523,5 +1553,84 @@ mod lifecycle {
         assert_eq!(invite_by(&joiner), Err(integrity("org_role_denied")));
         assert_eq!(org.store().latest_roster().unwrap().unwrap().0, 3);
         assert_eq!(joiner.client.state().unwrap().unwrap().roster_seq, 3);
+    }
+
+    // ---- fix round 1: side-effect order of create_invite (R28) -----------------------
+
+    impl Org {
+        fn credential_count(&self) -> u16 {
+            self.client().info().unwrap().usage.credentials
+        }
+
+        fn invite_through(&self, client: &OrgClient) -> Result<FfiInviteLink, OnePassError> {
+            client.create_invite(
+                self.owner.session.clone(),
+                self.owner.keys.classical.clone(),
+                self.owner.keys.half(),
+                "Marie".into(),
+                None,
+                vec![],
+                NOW,
+            )
+        }
+    }
+
+    #[test]
+    fn broken_invites_file_fails_before_any_write() {
+        let org = publish(&FakeMailbox::org());
+        std::fs::write(org.creator_dir.join("invites.bin"), b"\x01garbage").unwrap();
+        let credentials = org.credential_count();
+        assert!(matches!(
+            org.invite_through(&org.creator()),
+            Err(OnePassError::InvalidInput { .. })
+        ));
+        assert_eq!(org.store().latest_roster().unwrap().unwrap().0, 1);
+        assert_eq!(org.credential_count(), credentials);
+    }
+
+    #[test]
+    fn failed_token_mint_revokes_the_credential() {
+        let org = publish(&FakeMailbox::org());
+        let credentials = org.credential_count();
+        let client = org.open(
+            Box::new(Tweaked {
+                inner: org.store(),
+                hide: None,
+                hook: None,
+                feeds: Default::default(),
+                fail_mint: true,
+                on_mint: None,
+            }),
+            &org.creator_dir,
+        );
+        assert!(org.invite_through(&client).is_err());
+        // The roster write stands; the granted credential does not.
+        assert_eq!(org.store().latest_roster().unwrap().unwrap().0, 2);
+        assert_eq!(org.credential_count(), credentials);
+        assert!(!org.creator_dir.join("invites.bin").exists());
+    }
+
+    #[test]
+    fn unsaved_invites_file_still_returns_the_link() {
+        let org = publish(&FakeMailbox::org());
+        // After the server writes, a folder takes the place of invites.bin:
+        // the local save fails.
+        let path = org.creator_dir.join("invites.bin");
+        let hook: Hook = Box::new(move || std::fs::create_dir(&path).unwrap());
+        let client = org.open(
+            Box::new(Tweaked {
+                inner: org.store(),
+                hide: None,
+                hook: None,
+                feeds: Default::default(),
+                fail_mint: false,
+                on_mint: Some(hook),
+            }),
+            &org.creator_dir,
+        );
+        let link = org.invite_through(&client).unwrap();
+        let invite = org_invite_parse(link.link, false).unwrap();
+        assert_eq!(invite.account_id, link.account_id);
+        assert_eq!(org.store().latest_roster().unwrap().unwrap().0, 2);
     }
 }

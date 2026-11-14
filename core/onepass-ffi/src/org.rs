@@ -686,6 +686,15 @@ pub struct FfiInviteLink {
     pub account_id: String,
 }
 
+/// What `post_join_request` returns: the join code (5 words) the member
+/// reads to the admin, and the seed of the member's own org mailbox
+/// credential (R27), for the keychain.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiJoinPosted {
+    pub code_words: Vec<String>,
+    pub credential_seed: Vec<u8>,
+}
+
 /// A verified join request waiting for the admin.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct FfiJoinRequest {
@@ -868,11 +877,15 @@ impl OrgClient {
 
     /// Move the pin forward: the lineage from the pinned head generation,
     /// the rosters from the pinned seq to the newest. Any refusal leaves
-    /// `pin.bin` byte for byte as it was. `NotFound` before `pin`.
+    /// `pin.bin` byte for byte as it was. Then the join feed is read for
+    /// what changed (R28), so member names follow; a failure there keeps
+    /// the names as they were and does not fail the refresh. `NotFound`
+    /// before `pin`.
     pub fn refresh(&self) -> Result<FfiOrgState, OnePassError> {
         let mut store = lock(&self.store);
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
         let pin = self.refreshed(&mut **store, &pin)?;
+        let _ = self.poll_joins(&mut **store);
         Ok(self.show(&pin))
     }
 
@@ -897,9 +910,13 @@ impl OrgClient {
     /// link names this client's server, the org mailbox, the pinned
     /// fingerprint, the account id, the nonce, the credential seed, the
     /// token and `domain`; Rust writes neither the seed nor the token.
-    /// `invites.bin` keeps the account id, nonce, `label` and `now`. A
-    /// failure after the roster write leaves the Invited member in the
-    /// roster (withdrawn by removing it). `NotFound` before `pin`.
+    /// `invites.bin` keeps the account id, nonce, the invite credential's
+    /// id, `label` and `now`; it is read before any server write (R28), and
+    /// failing to save it once the server writes are done does not fail the
+    /// call (the link is returned, the label is lost). A token mint failure
+    /// revokes the just-granted credential, best effort. Any failure after
+    /// the roster write leaves the Invited member in the roster (withdrawn
+    /// by removing it). `NotFound` before `pin`.
     #[allow(clippy::too_many_arguments)]
     pub fn create_invite(
         &self,
@@ -930,19 +947,28 @@ impl OrgClient {
         };
         // The server URL and the domain are checked before anything is written.
         org_invite_encode(invite.clone())?;
+        // A broken invites.bin fails here, before any server write.
+        load_invites(&self.state_dir)?;
         let signer = Signer::of(&session, &classical, pq)?;
         let roles = role_set(&roles);
         let (pin, invitation) = self.edit_roster(&mut **store, &signer, |prev| {
             Ok(invite_member(prev, [0; 32], roles)?)
         })?;
         let credential = fresh_credential()?;
-        store.mailbox().grant(
+        let credential_id = store.mailbox().grant(
             credential.public_key().to_bytes(),
             CredentialRole::Write,
             Some(put_kinds_of(&[ORG_JOIN_KIND])),
             INVITE_CREDENTIAL_LABEL,
         )?;
-        let token = Zeroizing::new(store.create_member_invite(MEMBER_TOKEN_TTL_HOURS)?);
+        let token = match store.create_member_invite(MEMBER_TOKEN_TTL_HOURS) {
+            Ok(t) => Zeroizing::new(t),
+            Err(e) => {
+                // No link carries it: best effort, the mint error is the answer.
+                let _ = store.mailbox().revoke(credential_id);
+                return Err(e.into());
+            }
+        };
         let account_id = id_hex(invitation.account_id);
         invite.account_id = account_id.clone();
         invite.fingerprint = pin.fingerprint().to_vec();
@@ -950,15 +976,18 @@ impl OrgClient {
         invite.credential_seed = credential.seed().to_vec();
         invite.member_token = token.to_vec();
         let link = org_invite_encode(invite)?;
-        add_invite(
+        // The server holds the invitation now: a local write failure loses
+        // only `issued_here` and the label, never the link (R28).
+        let _ = add_invite(
             &self.state_dir,
             LocalInvite {
                 account_id: invitation.account_id.0,
                 nonce: invitation.nonce,
+                credential_id,
                 label,
                 created_at: now,
             },
-        )?;
+        );
         Ok(FfiInviteLink { link, account_id })
     }
 
@@ -967,11 +996,16 @@ impl OrgClient {
     /// The session must be the invited account (`Validation { field:
     /// "account" }`) of a managed genesis naming this org (`Validation {
     /// field: "org" }`) made on this device (R20, `Validation { field:
-    /// "device" }`). The request names the pinned fingerprint and this
-    /// client's credential key. `display_name`: 1 to 64 bytes of UTF-8, no
-    /// control or invisible character (`Validation { field: "display_name"
-    /// }`). Posting again replaces the request. Returns the join code: the
-    /// 5 words the member reads to the admin. `NotFound` before `pin`.
+    /// "device" }`). The request names the pinned fingerprint and a fresh
+    /// org mailbox credential for the member (R27): the link's credential
+    /// only reads, pins and posts, and never becomes the member's. Its seed
+    /// comes back for the app's keychain; once Active the member reopens
+    /// with it and calls `revoke_own_credential` on the link's client.
+    /// `display_name`: 1 to 64 bytes of UTF-8, no control or invisible
+    /// character (`Validation { field: "display_name" }`). Posting again
+    /// replaces the request (with another credential). Returns the join
+    /// code, the 5 words the member reads to the admin, and the seed.
+    /// `NotFound` before `pin`.
     pub fn post_join_request(
         &self,
         session: Arc<Session>,
@@ -980,7 +1014,7 @@ impl OrgClient {
         invite: FfiOrgInvite,
         display_name: String,
         now: i64,
-    ) -> Result<Vec<String>, OnePassError> {
+    ) -> Result<FfiJoinPosted, OnePassError> {
         let classical = Zeroizing::new(classical);
         if org_id_of(&invite.org_id)? != self.org_id {
             return Err(validation(
@@ -1034,6 +1068,7 @@ impl OrgClient {
             ));
         }
         let signer = Signer::with_keys(device_keys(&classical, pq)?, me)?;
+        let own = fresh_credential()?;
         let body = JoinRequestBody {
             format: ORG_FORMAT,
             org_id: OrgId(self.org_id),
@@ -1043,7 +1078,7 @@ impl OrgClient {
             account_genesis: genesis,
             devices: vec![signer.me],
             display_name,
-            mailbox_credential: store.mailbox().credential_key().to_bytes(),
+            mailbox_credential: own.public_key().to_bytes(),
             account_kem_pub: kem,
             issued_at: now,
         };
@@ -1051,7 +1086,20 @@ impl OrgClient {
         let signed = sign_join_request(body, &signer.keys)?;
         let code = join_code_of(&signed, Wordlist::EffEnglish)?;
         store.put_join_request(account.0, signed.encode())?;
-        Ok(code.into_iter().collect())
+        Ok(FfiJoinPosted {
+            code_words: code.into_iter().collect(),
+            credential_seed: own.seed().to_vec(),
+        })
+    }
+
+    /// Revokes the credential this client holds, on the server (a
+    /// credential may revoke itself): the member's device drops the link's
+    /// credential once it uses its own (R27). The client fails from then on.
+    pub fn revoke_own_credential(&self) -> Result<(), OnePassError> {
+        let store = lock(&self.store);
+        let mailbox = store.mailbox();
+        mailbox.revoke(mailbox.credential_key().id())?;
+        Ok(())
     }
 
     /// The verified join requests of Invited members, oldest first (issue
@@ -1067,9 +1115,8 @@ impl OrgClient {
         let mut store = lock(&self.store);
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
         let invites = load_invites(&self.state_dir)?;
+        self.poll_joins(&mut **store)?;
         let mut joins = lock(&self.joins);
-        let delta = store.join_requests_since(&mut joins.feed)?;
-        joins.apply(&self.org_id, delta);
         let mut out: Vec<(i64, FfiJoinRequest)> = joins
             .verdicts(&pin)
             .into_iter()
@@ -1108,13 +1155,20 @@ impl OrgClient {
         Ok(out.into_iter().map(|(_, r)| r).collect())
     }
 
-    /// Deletes the join request of `account_id` (32 hex). The roster is
-    /// untouched: the invitation stands until its Invited member is removed.
+    /// Deletes the join request of `account_id` (32 hex) and, when this
+    /// device issued the invitation, revokes its link credential (best
+    /// effort, R27). The roster is untouched: the invitation stands until
+    /// its Invited member is removed.
     pub fn decline_join_request(&self, account_id: String) -> Result<(), OnePassError> {
         let account = parse_id(&account_id)?;
         let mut store = lock(&self.store);
         store.delete_join_request(account.0)?;
         lock(&self.joins).remove(&account.0);
+        if let Ok(invites) = load_invites(&self.state_dir) {
+            for i in invites.iter().filter(|i| i.account_id == account.0) {
+                let _ = store.mailbox().revoke(i.credential_id);
+            }
+        }
         Ok(())
     }
 }
@@ -1172,6 +1226,15 @@ impl OrgClient {
         }
         save_pin(&self.state_dir, &next)?;
         Ok(next)
+    }
+
+    /// Reads what changed in the join feed since the last read into the
+    /// cache (R2).
+    fn poll_joins(&self, store: &mut dyn OrgStoreApi) -> Result<(), OnePassError> {
+        let mut joins = lock(&self.joins);
+        let delta = store.join_requests_since(&mut joins.feed)?;
+        joins.apply(&self.org_id, delta);
+        Ok(())
     }
 
     /// The pin as the apps show it, member names from the verified join

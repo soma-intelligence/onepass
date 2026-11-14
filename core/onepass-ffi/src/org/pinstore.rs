@@ -49,13 +49,15 @@ pub(crate) fn save_pin(dir: &Path, pin: &OrgPin) -> Result<(), OnePassError> {
 pub(crate) struct LocalInvite {
     pub(crate) account_id: [u8; 16],
     pub(crate) nonce: [u8; 32],
+    /// The link credential's id (public), revoked on decline or accept.
+    pub(crate) credential_id: [u8; 16],
     pub(crate) label: String,
     pub(crate) created_at: i64,
 }
 
 /// `invites.bin`: `[INVITES_VERSION] || postcard(Vec<(account_id, nonce,
-/// label, created_at)>)`.
-type InviteRow = ([u8; 16], [u8; 32], String, i64);
+/// credential_id, label, created_at)>)`.
+type InviteRow = ([u8; 16], [u8; 32], [u8; 16], String, i64);
 
 /// The invitations in `dir`, empty when there is no file. A file that does
 /// not decode is refused (`InvalidInput`), never replaced silently.
@@ -76,12 +78,15 @@ pub(crate) fn load_invites(dir: &Path) -> Result<Vec<LocalInvite>, OnePassError>
     }
     Ok(rows
         .into_iter()
-        .map(|(account_id, nonce, label, created_at)| LocalInvite {
-            account_id,
-            nonce,
-            label,
-            created_at,
-        })
+        .map(
+            |(account_id, nonce, credential_id, label, created_at)| LocalInvite {
+                account_id,
+                nonce,
+                credential_id,
+                label,
+                created_at,
+            },
+        )
         .collect())
 }
 
@@ -92,7 +97,15 @@ pub(crate) fn add_invite(dir: &Path, invite: LocalInvite) -> Result<(), OnePassE
     all.push(invite);
     let rows: Vec<InviteRow> = all
         .into_iter()
-        .map(|i| (i.account_id, i.nonce, i.label, i.created_at))
+        .map(|i| {
+            (
+                i.account_id,
+                i.nonce,
+                i.credential_id,
+                i.label,
+                i.created_at,
+            )
+        })
         .collect();
     let mut bytes = vec![INVITES_VERSION];
     bytes.extend(postcard::to_allocvec(&rows).map_err(|_| OnePassError::Store)?);
