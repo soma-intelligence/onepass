@@ -99,8 +99,14 @@ class MainActivity : Activity() {
         wifi = WifiAutomation.get(this)
         root = FrameLayout(this).apply { setBackgroundColor(c.bg) }
         root.setOnApplyWindowInsetsListener { v, insets ->
-            val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.ime())
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            if (Build.VERSION.SDK_INT >= 30) {
+                val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.ime())
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            } else {
+                // Android 10: the system window insets include the keyboard.
+                @Suppress("DEPRECATION")
+                v.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+            }
             insets
         }
         setContentView(root)
@@ -226,8 +232,11 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Android 10 to 12: no back dispatcher. */
+    /** Android 10 to 12 only: no back dispatcher there. Android 13+ never
+     *  reaches this (setBack registers an OnBackInvokedCallback), so the
+     *  gesture-back lint, which wants AndroidX, does not apply. */
     @Deprecated("Android 13+ uses OnBackInvokedDispatcher (setBack)")
+    @android.annotation.SuppressLint("GestureBackNavigation")
     override fun onBackPressed() {
         val action = onBack
         if (action != null) {
