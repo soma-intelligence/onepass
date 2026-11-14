@@ -1,0 +1,53 @@
+<!-- Passwordless email-first page, markup copied from dribbble.com/signup (2026-11-13): an
+     email-only sign-up step, and the sign-in screen on the same URL behind "Sign in". -->
+<div class="brand">Atlas Cloud</div>
+<section id="screen-signup" class="auth-screen">
+  <h1>Welcome to Atlas Cloud</h1>
+  <form id="signup" action="{{action}}" method="post" class="display-contents" data-auth-form novalidate>
+    <fieldset class="auth-screen__fieldset js-validation-parent">
+      <input id="signup-email" class="input2 input2--large" placeholder="Enter email address" type="email" name="email" aria-label="Email address" required>
+    </fieldset>
+    <div data-server-message hidden></div>
+    <button id="signup-go" class="btn2 btn2--medium btn2--full-width" type="submit" data-submit>
+      Continue
+    </button>
+    <div class="auth-screen__disclaimer-text">
+      By continuing, you agree to our
+      <a target="_blank" href="/terms">Terms</a> and
+      <a target="_blank" href="/privacy">Privacy Policy</a>.
+    </div>
+    <div class="auth-screen__disclaimer-text">
+      Already have an account?
+      <button id="to-signin" class="text-button underline" type="button" data-screen-transition="auth-signin">
+        Sign in
+      </button>
+    </div>
+  </form>
+</section>
+<section id="screen-signin" class="auth-screen" hidden>
+  <h1>Welcome back</h1>
+  <form id="signin" action="{{action}}" method="post" class="display-contents" data-auth-form novalidate>
+    <fieldset class="auth-screen__fieldset js-validation-parent">
+      <input id="signin-login" class="input2 input2--large" placeholder="Enter email or username" autocomplete="email" type="text" name="email" aria-label="Email address or username" required>
+    </fieldset>
+    <div data-server-message hidden></div>
+    <button id="signin-go" class="btn2 btn2--medium btn2--full-width" type="submit" data-submit>
+      Continue
+    </button>
+    <div class="auth-screen__disclaimer-text">
+      Don't have an account?
+      <button id="to-signup" class="text-button underline" type="button" data-screen-transition="auth-signup">
+        Sign up
+      </button>
+    </div>
+  </form>
+</section>
+<script>
+  for (const b of document.querySelectorAll("[data-screen-transition]")) {
+    b.addEventListener("click", () => {
+      const signin = b.dataset.screenTransition === "auth-signin";
+      document.getElementById("screen-signup").hidden = signin;
+      document.getElementById("screen-signin").hidden = !signin;
+    });
+  }
+</script>

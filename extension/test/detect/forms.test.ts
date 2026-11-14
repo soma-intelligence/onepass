@@ -314,6 +314,50 @@ function analyzeHtml(body: string, url = SITE, title = "Atlas Cloud"): { a: Page
   return { a: analyzeDocument(document, refs, { url, geometry: testGeometry }), refs };
 }
 
+describe("analyzeDocument: email-first steps", () => {
+  it("email_only_signup_step_with_a_sign_in_switch_is_an_identifier_step", () => {
+    const { a, refs } = analyze("email-first-signup.html", "https://shots.test/signup");
+    expect(a.forms.map((f) => [f.kind, roles(f, refs), idOf(refs, f.submitRef)])).toEqual([["login", { "signup-email": "email" }, "signup-go"]]);
+  });
+
+  it("its sign-in screen, once shown, is one too", () => {
+    const doc = loadFixture("email-first-signup.html");
+    byId("screen-signup").hidden = true;
+    byId("screen-signin").hidden = false;
+    const refs = new RefRegistry();
+    const a = analyzeDocument(doc, refs, { url: "https://shots.test/signup", geometry: testGeometry });
+    expect(a.forms.map((f) => [f.kind, roles(f, refs)])).toEqual([["login", { "signin-login": "email" }]]);
+  });
+
+  it("a sign-up URL or title is the context, without a switch in the form", () => {
+    const form = '<form id="f"><input id="e" name="email" type="email" placeholder="Enter email address"><button type="submit">Continue</button></form>';
+    for (const [url, title] of [
+      ["https://shots.test/signup", "Shots"],
+      ["https://shots.test/users/sign_up", "Shots"],
+      ["https://shots.test/register", "Shots"],
+      ["https://shots.test/inscription", "Shots"],
+      ["https://shots.test/", "Create your account | Shots"],
+      ["https://shots.test/", "Créer un compte - Shots"],
+    ]) {
+      const { a } = analyzeHtml(`<h1>Welcome</h1>${form}`, url, title);
+      expect([url, title, a.forms.map((f) => f.kind)]).toEqual([url, title, ["login"]]);
+    }
+  });
+
+  it("a newsletter stays out, even under a sign-up heading or next to a sign-in link outside it", () => {
+    const nl =
+      '<form id="nl"><label for="e">Your email</label><input id="e" name="email" type="email"><button type="submit">Continue</button></form>';
+    for (const body of [
+      `<h2>Sign up for our newsletter</h2>${nl}`,
+      `<header><a href="/login">Sign in</a></header><h1>Spring sale</h1>${nl}`,
+      `<h1>Spring sale</h1><form id="nl"><input id="e" name="email" type="email"><button type="submit">Continue</button><a href="/privacy">Privacy</a></form>`,
+    ]) {
+      const { a } = analyzeHtml(body, "https://shop.atlas-cloud.test/deals", "Atlas Shop");
+      expect(a.forms).toEqual([]);
+    }
+  });
+});
+
 describe("analyzeDocument: lab fixes (A2 to A4)", () => {
   it("security_code_alone_is_otp", () => {
     const { a, refs } = analyzeHtml(

@@ -45,6 +45,20 @@ const NEXT_TEXT =
  */
 const SIGN_IN_TEXT =
   /\b(sign ?in|signin|log ?in|login|logon|auth|authenticate|authentication|authentifi\w*|authorize|oauth|sso|connexion|se connecter|identifi\w*|anmelden|anmeldung|einloggen|iniciar sesion|acceder|accedi|accesso|entrar|iniciar sessao|inloggen|aanmelden)\b/;
+/**
+ * Sign-up wording, read in the page title and URL only (never in headings: "Sign up for our
+ * newsletter"). An email-only first step of a sign-up is an identifier step too (Dribbble).
+ */
+const SIGN_UP_TEXT =
+  /\b(sign ?up|register|registration|create (an |your |a free )?account|inscription|s inscrire|creer (un |votre |ton )?compte|registrieren|registrierung|konto erstellen|registrarse|crear (una )?cuenta|registrati|registrazione|crea (un )?account|criar (uma )?conta|cadastre se|registreren|account aanmaken)\b/;
+/**
+ * The whole label of a control inside the form that switches between signing in and signing up
+ * ("Already have an account? Sign in"): the form is one of the two.
+ */
+const AUTH_SWITCH_TEXT =
+  /^(sign ?in|log ?in|login|se connecter|connexion|sign ?up|register|create (an |your )?account|s inscrire|inscription|creer (un )?compte|anmelden|einloggen|registrieren|iniciar sesion|registrarse|crear (una )?cuenta|accedi|registrati|entrar|cadastre se|inloggen|aanmelden|registreren)$/;
+/** Controls read inside one form for the sign-in / sign-up switch. */
+const MAX_SWITCH_CONTROLS = 20;
 /** "Forgot password" wording, matched on link texts. */
 const FORGOT_TEXT =
   /\b(forgot|forgotten|mot de passe oublie|passwort vergessen|kennwort vergessen|olvidaste|olvido|password dimenticata|esqueceu|esqueci|wachtwoord vergeten)\b/;
@@ -746,6 +760,7 @@ function signInPage(doc: Document, roots: readonly ShadowRoot[], url: string): b
   const headings = queryAll(doc, roots, "h1, h2", MAX_HEADINGS).map((h) => ownText(h, 100));
   const texts = [doc.title, url, ...headings];
   if (texts.some((t) => SIGN_IN_TEXT.test(normalizeText(t)))) return true;
+  if ([doc.title, url].some((t) => SIGN_UP_TEXT.test(normalizeText(t)))) return true;
   return queryAll(doc, roots, "a", MAX_FORGOT_LINKS).some((a) => FORGOT_TEXT.test(normalizeText(ownText(a, 100))));
 }
 
@@ -754,10 +769,17 @@ function signInPage(doc: Document, roots: readonly ShadowRoot[], url: string): b
  * sign-in context: a field read as a user name, a sign-in button label, or a
  * sign-in page (computed lazily, once per document).
  */
-function identifierStep(fields: Classified[], submit: Element, page: () => boolean): boolean {
+function identifierStep(fields: Classified[], submit: Element, page: () => boolean, form: HTMLFormElement | null): boolean {
   if (fields.some((f) => f.role === "username")) return true;
   if (SIGN_IN_TEXT.test(normalizeText(buttonLabel(submit)))) return true;
+  if (form !== null && authSwitch(form, submit)) return true;
   return page();
+}
+
+/** A control of `form` (not its submit) labelled only "Sign in", "Sign up" and the like. */
+function authSwitch(form: HTMLFormElement, submit: Element): boolean {
+  const controls = Array.from(form.querySelectorAll("a, button, [role='button'], [role='link']")).slice(0, MAX_SWITCH_CONTROLS);
+  return controls.some((el) => el !== submit && AUTH_SWITCH_TEXT.test(normalizeText(buttonLabel(el))));
 }
 
 /** Order in the flattened page: shadow content sits where its host does. */
@@ -880,7 +902,9 @@ export function detectForms(
     const step = submit ?? findSubmit(group, idleButtons, isForm);
     const kind = formKind(
       group.fields.map((f) => f.role),
-      step !== undefined && isNextLabel(step) && identifierStep(group.fields, step, isSignInPage),
+      step !== undefined &&
+        isNextLabel(step) &&
+        identifierStep(group.fields, step, isSignInPage, isForm ? (group.container as HTMLFormElement) : null),
     );
     if (kind === null) continue;
     const info: FormInfo = { ref: refs.refFor(group.container), kind, fields: mergeSplitOtp(group.fields, refs) };
