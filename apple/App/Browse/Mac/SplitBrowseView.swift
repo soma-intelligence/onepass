@@ -106,6 +106,7 @@ private struct ItemsPane: View {
                     divider
                     DetailColumn()
                         .frame(minWidth: Self.detailMinimum, maxWidth: .infinity)
+                        .mask { barEdgeFade.ignoresSafeArea() }
                 }
                 // The title bar's row above: the list's search field fills what its items leave.
                 .environment(\.titleBarRoom, proxy.size.width)
@@ -127,6 +128,25 @@ private struct ItemsPane: View {
     }
 
     private static let detailMinimum = 320.0
+
+    /// The detail's glow fades in from the list's side across the title bar, so the bar has no
+    /// hard edge where the list ends; just below the bar the detail is whole again. Two layers
+    /// (their alphas add up): a fade from the left edge, and a band that is opaque below the bar.
+    private var barEdgeFade: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 110)
+                Color.black
+            }
+            VStack(spacing: 0) {
+                Color.clear.frame(height: barHeight)
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 30)
+                Rectangle()
+            }
+        }
+    }
 
     /// The system's thin separator line, with a wider invisible grip and the resize cursor. It stops
     /// under the title bar, so the search field runs across unbroken.
