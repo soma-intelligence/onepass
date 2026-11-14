@@ -232,6 +232,8 @@ mod lifecycle {
     };
     const NOW: i64 = 1_800_000_000;
     const ORG_NAME: &str = "Soma Labs";
+    /// The org mailbox server the clients name in their join links.
+    use super::SERVER as SERVER_URL;
 
     struct Half(SoftwarePqHalf);
 
@@ -404,7 +406,7 @@ mod lifecycle {
         }
 
         fn open(&self, store: Box<dyn OrgStoreApi + Send>, dir: &Path) -> Arc<OrgClient> {
-            OrgClient::with_store(store, self.org_id, dir.to_path_buf())
+            OrgClient::with_store(store, self.org_id, dir.to_path_buf(), SERVER_URL.into())
         }
 
         /// A second device of the org (fresh state dir) pinned TOFU from the
@@ -612,7 +614,12 @@ mod lifecycle {
         let org = publish(&FakeMailbox::org());
         let dir = org._dirs.path().join("second");
         // The client expects org id [7; 16]; the mailbox holds another org.
-        let client = OrgClient::with_store(Box::new(org.store()), [7; 16], dir.clone());
+        let client = OrgClient::with_store(
+            Box::new(org.store()),
+            [7; 16],
+            dir.clone(),
+            SERVER_URL.into(),
+        );
         assert_eq!(
             client.pin(FfiPinSource::Tofu { verified: false }, None, NOW),
             Err(integrity("wrong_context"))
@@ -945,6 +952,9 @@ mod lifecycle {
         inner: OrgStore<FakeMailboxClient>,
         hide: Option<u64>,
         hook: Option<Hook>,
+        /// One entry per `join_requests_since` call: did it start from a
+        /// full feed. A `join_requests` call (the whole feed) logs `None`.
+        feeds: Arc<std::sync::Mutex<Vec<Option<bool>>>>,
     }
 
     impl OrgStoreApi for Tweaked {
@@ -995,6 +1005,7 @@ mod lifecycle {
         }
 
         fn join_requests(&mut self) -> Result<Vec<JoinRequest>, OrgStoreError> {
+            self.feeds.lock().unwrap().push(None);
             self.inner.join_requests()
         }
 
@@ -1002,6 +1013,7 @@ mod lifecycle {
             &mut self,
             feed: &mut ChangeFeed,
         ) -> Result<JoinFeedDelta, OrgStoreError> {
+            self.feeds.lock().unwrap().push(Some(feed.is_full()));
             self.inner.join_requests_since(feed)
         }
 
@@ -1024,6 +1036,7 @@ mod lifecycle {
                 inner: self.store(),
                 hide,
                 hook,
+                feeds: Default::default(),
             })
         }
     }
@@ -1117,5 +1130,398 @@ mod lifecycle {
         let client = org.open(org.tweaked(Some(2), None), &dir);
         assert_eq!(client.refresh(), Err(integrity("org_roster_rollback")));
         assert_eq!(pin_bytes(&dir), before);
+    }
+
+    // ---- invitations and join requests (Task 3) ------------------------------------
+
+    use onepass_core::org::{
+        JoinRequestBody, SignedJoinRequest, activate_member, sign_join_request, verify_join_request,
+    };
+    use onepass_ffi::{FfiInviteLink, FfiJoinRequest, FfiOrgInvite, org_invite_parse};
+
+    const DOMAIN: &str = "somalabs.me";
+    const MARIE: &str = "Marie Dupont";
+
+    impl Org {
+        /// The creator's own client (its pin is in `creator_dir`).
+        fn creator(&self) -> Arc<OrgClient> {
+            self.open(Box::new(self.store()), &self.creator_dir)
+        }
+
+        /// An invitation by the owner's device, with its parsed link.
+        fn invite(&self, label: &str, roles: Vec<FfiOrgRole>) -> (FfiInviteLink, FfiOrgInvite) {
+            let link = self
+                .creator()
+                .create_invite(
+                    self.owner.session.clone(),
+                    self.owner.keys.classical.clone(),
+                    self.owner.keys.half(),
+                    label.into(),
+                    Some(DOMAIN.into()),
+                    roles,
+                    NOW,
+                )
+                .unwrap();
+            let invite = org_invite_parse(link.link.clone(), false).unwrap();
+            (link, invite)
+        }
+
+        /// A client of the org mailbox holding the invite credential.
+        fn invite_store(&self, invite: &FfiOrgInvite) -> OrgStore<FakeMailboxClient> {
+            let mut c = self
+                .fake
+                .client(Credential::from_seed(&invite.credential_seed).unwrap());
+            c.open(unhex(&invite.mailbox_id));
+            OrgStore::new(c, self.org_id)
+        }
+
+        /// The device that follows an invite: an org client with the invite
+        /// credential, pinned TOFU against the link's fingerprint, and the
+        /// managed account of the invited account id.
+        fn joiner(&self, invite: &FfiOrgInvite) -> Joiner {
+            let dir = TempDir::new().unwrap();
+            let client = OrgClient::with_store(
+                Box::new(self.invite_store(invite)),
+                self.org_id,
+                dir.path().join("org"),
+                SERVER_URL.into(),
+            );
+            client
+                .pin(
+                    FfiPinSource::Tofu { verified: false },
+                    Some(invite.fingerprint.clone()),
+                    NOW,
+                )
+                .unwrap();
+            let keys = Keys::new();
+            let created = create_managed_account(
+                db_path(dir.path()),
+                PASSWORD.as_bytes().to_vec(),
+                Some(FAST),
+                keys.classical.clone(),
+                keys.half(),
+                "iPhone".into(),
+                FfiDeviceKind::Phone,
+                FfiDeviceMode::Personal,
+                invite.org_id.clone(),
+                Some(invite.account_id.clone()),
+            )
+            .unwrap();
+            Joiner {
+                _dir: dir,
+                session: created.session,
+                keys,
+                client,
+            }
+        }
+
+        /// The raw join requests in the mailbox.
+        fn raw_requests(&self) -> Vec<([u8; 16], Vec<u8>)> {
+            self.store().join_requests().unwrap()
+        }
+    }
+
+    struct Joiner {
+        _dir: TempDir,
+        session: Arc<Session>,
+        keys: Keys,
+        client: Arc<OrgClient>,
+    }
+
+    impl Joiner {
+        fn post(&self, invite: &FfiOrgInvite, name: &str) -> Result<Vec<String>, OnePassError> {
+            self.client.post_join_request(
+                self.session.clone(),
+                self.keys.classical.clone(),
+                self.keys.half(),
+                invite.clone(),
+                name.into(),
+                NOW,
+            )
+        }
+    }
+
+    #[test]
+    fn invite_link_parses_to_this_org() {
+        let org = publish(&FakeMailbox::org());
+        let (link, invite) = org.invite("Marie", vec![]);
+        assert_eq!(invite.server_url, SERVER_URL);
+        assert_eq!(invite.org_id, hex(&org.org_id));
+        assert_eq!(invite.mailbox_id, org.created.mailbox_id);
+        assert_eq!(invite.fingerprint, org.created.state.fingerprint);
+        assert_eq!(invite.domain.as_deref(), Some(DOMAIN));
+        assert_eq!(invite.account_id, link.account_id);
+        assert_eq!(invite.nonce.len(), 32);
+        assert_eq!(invite.member_token.len(), 32);
+        assert_ne!(invite.credential_seed, org.created.credential_seed);
+        // The roster moved to seq 2 with the Invited member, no role.
+        let s = org.creator().state().unwrap().unwrap();
+        assert_eq!(s.roster_seq, 2);
+        let m = s
+            .members
+            .iter()
+            .find(|m| m.account_id == link.account_id)
+            .unwrap();
+        assert_eq!(m.state, FfiMemberState::Invited);
+        assert!(m.roles.is_empty());
+        // Roles given at invitation sit in the roster.
+        let (admin, _) = org.invite("Paul", vec![FfiOrgRole::Admin]);
+        let s = org.creator().state().unwrap().unwrap();
+        assert_eq!(s.roster_seq, 3);
+        let m = s
+            .members
+            .iter()
+            .find(|m| m.account_id == admin.account_id)
+            .unwrap();
+        assert_eq!(m.roles, vec![FfiOrgRole::Admin]);
+        // The invite file keeps neither the credential seed nor the token.
+        let local = std::fs::read(org.creator_dir.join("invites.bin")).unwrap();
+        let holds = |needle: &[u8]| local.windows(needle.len()).any(|w| w == needle);
+        assert!(holds(&unhex::<16>(&link.account_id)));
+        assert!(!holds(&invite.credential_seed));
+        assert!(!holds(&invite.member_token));
+    }
+
+    fn hex(b: &[u8]) -> String {
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    }
+
+    #[test]
+    fn joiner_reads_with_the_invite_credential_and_posts_once() {
+        let org = publish(&FakeMailbox::org());
+        let (_, invite) = org.invite("Marie", vec![]);
+        let joiner = org.joiner(&invite);
+        // The joiner pinned the org and sees itself Invited.
+        let s = joiner.client.state().unwrap().unwrap();
+        assert_eq!(s.fingerprint, invite.fingerprint);
+        assert!(
+            s.members
+                .iter()
+                .any(|m| m.account_id == invite.account_id && m.state == FfiMemberState::Invited)
+        );
+        let words = joiner.post(&invite, MARIE).unwrap();
+        assert_eq!(words.len(), 5);
+        let got = org.creator().join_requests().unwrap();
+        assert_eq!(
+            got,
+            vec![FfiJoinRequest {
+                account_id: invite.account_id.clone(),
+                display_name: MARIE.into(),
+                devices: got[0].devices.clone(),
+                code_words: words.clone(),
+                issued_here: true,
+                invite_label: Some("Marie".into()),
+                in_roster: false,
+            }]
+        );
+        assert_eq!(got[0].devices.len(), 1);
+        assert_eq!(got[0].devices[0].fingerprint.len(), 64);
+        // Posting again rewrites the one request.
+        joiner.post(&invite, MARIE).unwrap();
+        assert_eq!(org.raw_requests().len(), 1);
+        assert_eq!(org.creator().join_requests().unwrap().len(), 1);
+        // Another device of the org did not issue it.
+        let (_, second) = org.second_device();
+        second.refresh().unwrap();
+        let other = second.join_requests().unwrap();
+        assert_eq!(other.len(), 1);
+        assert!(!other[0].issued_here);
+        assert_eq!(other[0].invite_label, None);
+        // Names come from the verified request.
+        let state = org.creator().refresh().unwrap();
+        let creator = org.creator();
+        creator.join_requests().unwrap();
+        let state_named = creator.refresh().unwrap();
+        assert_eq!(
+            state_named
+                .members
+                .iter()
+                .find(|m| m.account_id == invite.account_id)
+                .unwrap()
+                .display_name
+                .as_deref(),
+            Some(MARIE)
+        );
+        assert_eq!(state.roster_seq, state_named.roster_seq);
+    }
+
+    #[test]
+    fn display_name_is_checked() {
+        let org = publish(&FakeMailbox::org());
+        let (_, invite) = org.invite("Marie", vec![]);
+        let joiner = org.joiner(&invite);
+        let long = "é".repeat(33); // 66 bytes, 33 characters
+        for name in ["", long.as_str(), "Marie\u{200B}", "Ma\nrie"] {
+            assert!(
+                matches!(
+                    joiner.post(&invite, name),
+                    Err(OnePassError::Validation { ref field, .. }) if field == "display_name"
+                ),
+                "{name:?}"
+            );
+        }
+        assert!(org.raw_requests().is_empty());
+        joiner.post(&invite, &"é".repeat(32)).unwrap();
+    }
+
+    #[test]
+    fn invite_credential_cannot_write_the_roster() {
+        let org = publish(&FakeMailbox::org());
+        let (_, invite) = org.invite("Marie", vec![]);
+        let mut store = org.invite_store(&invite);
+        let two = store.roster(2).unwrap().unwrap();
+        let err = store.put_roster(3, two).unwrap_err();
+        assert_eq!(OnePassError::from(err), OnePassError::Forbidden);
+        assert_eq!(org.store().latest_roster().unwrap().unwrap().0, 2);
+    }
+
+    #[test]
+    fn request_for_another_accounts_invitation_is_dropped() {
+        let org = publish(&FakeMailbox::org());
+        let (_, a) = org.invite("Marie", vec![]);
+        let (_, b) = org.invite("Paul", vec![]);
+        let marie = org.joiner(&a);
+        let paul = org.joiner(&b);
+        // Paul's session is not the account of Marie's invitation.
+        assert!(matches!(
+            paul.post(&a, "Paul"),
+            Err(OnePassError::Validation { .. })
+        ));
+        // Paul's own account with Marie's nonce: posted, then dropped.
+        let stolen = FfiOrgInvite {
+            nonce: a.nonce.clone(),
+            ..b.clone()
+        };
+        paul.post(&stolen, "Paul").unwrap();
+        marie.post(&a, MARIE).unwrap();
+        assert_eq!(org.raw_requests().len(), 2);
+        let got = org.creator().join_requests().unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].account_id, a.account_id);
+    }
+
+    #[test]
+    fn forged_join_request_is_dropped() {
+        let org = publish(&FakeMailbox::org());
+        let (_, invite) = org.invite("Marie", vec![]);
+        let joiner = org.joiner(&invite);
+        joiner.post(&invite, MARIE).unwrap();
+        let creator = org.creator();
+        assert_eq!(creator.join_requests().unwrap().len(), 1);
+        let account: [u8; 16] = unhex(&invite.account_id);
+        let honest = SignedJoinRequest::decode(&org.raw_requests()[0].1).unwrap();
+
+        // Another display name under the old signature.
+        let mut forged = honest.clone();
+        forged.body.display_name = "Admin".into();
+        org.store()
+            .put_join_request(account, forged.encode())
+            .unwrap();
+        assert_eq!(creator.join_requests().unwrap(), vec![]);
+
+        // Validly signed, but the mailbox credential is no Ed25519 point.
+        let mut point = [0u8; 32];
+        point[0] = 2; // y = 2 is not on the curve
+        let body = JoinRequestBody {
+            mailbox_credential: point,
+            ..honest.body.clone()
+        };
+        let signed = sign_join_request(body, &joiner.keys.core()).unwrap();
+        org.store()
+            .put_join_request(account, signed.encode())
+            .unwrap();
+        assert_eq!(creator.join_requests().unwrap(), vec![]);
+
+        // The honest one again is shown again.
+        org.store()
+            .put_join_request(account, honest.encode())
+            .unwrap();
+        assert_eq!(creator.join_requests().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn decline_removes_the_request() {
+        let org = publish(&FakeMailbox::org());
+        let (_, invite) = org.invite("Marie", vec![]);
+        org.joiner(&invite).post(&invite, MARIE).unwrap();
+        let creator = org.creator();
+        assert_eq!(creator.join_requests().unwrap().len(), 1);
+        creator
+            .decline_join_request(invite.account_id.clone())
+            .unwrap();
+        assert_eq!(creator.join_requests().unwrap(), vec![]);
+        assert!(org.raw_requests().is_empty());
+        // The invitation itself stands (withdrawing it is a roster edit).
+        let s = creator.refresh().unwrap();
+        assert_eq!(s.roster_seq, 2);
+        assert!(
+            s.members
+                .iter()
+                .any(|m| m.account_id == invite.account_id && m.state == FfiMemberState::Invited)
+        );
+    }
+
+    #[test]
+    fn join_feed_is_incremental() {
+        let org = publish(&FakeMailbox::org());
+        let (_, invite) = org.invite("Marie", vec![]);
+        let feeds: Arc<std::sync::Mutex<Vec<Option<bool>>>> = Default::default();
+        let client = org.open(
+            Box::new(Tweaked {
+                inner: org.store(),
+                hide: None,
+                hook: None,
+                feeds: feeds.clone(),
+            }),
+            &org.creator_dir,
+        );
+        assert_eq!(client.join_requests().unwrap(), vec![]);
+        org.joiner(&invite).post(&invite, MARIE).unwrap();
+        assert_eq!(client.join_requests().unwrap().len(), 1);
+        assert_eq!(client.join_requests().unwrap().len(), 1);
+        // One full read, then only changes since the cursor.
+        assert_eq!(
+            *feeds.lock().unwrap(),
+            vec![Some(true), Some(false), Some(false)]
+        );
+    }
+
+    #[test]
+    fn a_member_without_manage_rights_cannot_create_an_invite() {
+        let org = publish(&FakeMailbox::org());
+        let (_, invite) = org.invite("Marie", vec![]);
+        let joiner = org.joiner(&invite);
+        joiner.post(&invite, MARIE).unwrap();
+        // Still Invited: its device is in no roster entry.
+        let invite_by = |j: &Joiner| {
+            j.client.create_invite(
+                j.session.clone(),
+                j.keys.classical.clone(),
+                j.keys.half(),
+                "Paul".into(),
+                None,
+                vec![],
+                NOW,
+            )
+        };
+        assert_eq!(invite_by(&joiner), Err(integrity("org_role_denied")));
+        // Activated by the owner (by hand: acceptance is Task 4), no role.
+        let mut store = org.store();
+        let two = SignedRoster::decode(&store.roster(2).unwrap().unwrap()).unwrap();
+        let req = SignedJoinRequest::decode(&org.raw_requests()[0].1).unwrap();
+        let fpr: [u8; 32] = org.created.state.fingerprint.clone().try_into().unwrap();
+        let joined = verify_join_request(&req, &two.body, &fpr).unwrap();
+        let three = activate_member(&two.body, &joined).unwrap();
+        let three = sign_roster(three, &org.owner.device(), &org.owner.keys.core()).unwrap();
+        store.put_roster(3, three.encode()).unwrap();
+        let s = joiner.client.refresh().unwrap();
+        assert!(
+            s.members
+                .iter()
+                .any(|m| m.account_id == invite.account_id && m.state == FfiMemberState::Active)
+        );
+        assert_eq!(invite_by(&joiner), Err(integrity("org_role_denied")));
+        assert_eq!(org.store().latest_roster().unwrap().unwrap().0, 3);
+        assert_eq!(joiner.client.state().unwrap().unwrap().roster_seq, 3);
     }
 }

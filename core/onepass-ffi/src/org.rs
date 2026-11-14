@@ -4,24 +4,29 @@
 //! the owner keyset.
 
 mod invite;
+mod join;
 mod pinstore;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use onepass_core::device_keys::{DeviceKeys, DevicePublic};
 use onepass_core::generator::Wordlist;
 use onepass_core::lineage::LineageRecord;
 use onepass_core::org::{
-    MemberRef, MemberState, ORG_FORMAT, OrgGenesisBody, OrgId, OrgKeyset, OrgPin, OrgSecrets,
-    PinSource, Role, RoleSet, dns_txt_value, fingerprint_words, founding_roster, parse_dns_txt,
-    pin_org, seal_org_keyset, sign_org_genesis, sign_roster, verify_org_genesis,
+    JoinRequestBody, MAX_DISPLAY_NAME_BYTES, MemberRef, MemberState, ORG_FORMAT, OrgGenesisBody,
+    OrgId, OrgKeyset, OrgPin, OrgSecrets, PinSource, Role, RoleSet, RosterBody, check_transition,
+    dns_txt_value, fingerprint_words, founding_roster, invite_member, join_code_of, parse_dns_txt,
+    pin_org, seal_org_keyset, sign_join_request, sign_org_genesis, sign_roster, verify_org_genesis,
 };
 use onepass_core::repo::ManagedGenesis;
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::SyncStore;
 use onepass_core::{Id, IntegrityError};
-use onepass_mailbox::{MailboxApi, MailboxClient, OrgStore, OrgStoreApi};
+use onepass_mailbox::org::ORG_JOIN_KIND;
+use onepass_mailbox::{MailboxApi, MailboxClient, OrgStore, OrgStoreApi, OrgStoreError};
+use onepass_mailbox_proto::{CredentialRole, put_kinds_of};
 use zeroize::Zeroizing;
 
 use crate::convert::{bytes_hex, hex_bytes, id_hex, parse_id};
@@ -31,7 +36,8 @@ use crate::mailbox::{FfiMailboxEndpoint, LABEL, credential, fresh_credential, ma
 use crate::rotation::{FfiPqDeviceHalf, device_keys};
 use crate::session::Session;
 use crate::types::{FfiCreatedAccount, FfiKdfParams};
-use pinstore::{load_pin, pin_lock, save_pin};
+use join::{JoinCache, Verdict};
+use pinstore::{LocalInvite, add_invite, load_invites, load_pin, pin_lock, save_pin};
 
 pub use invite::{org_invite_encode, org_invite_parse};
 
@@ -198,6 +204,13 @@ const ROLES: [(Role, FfiOrgRole); 7] = [
     (Role::RecoveryOfficer, FfiOrgRole::RecoveryOfficer),
     (Role::Provisioner, FfiOrgRole::Provisioner),
 ];
+
+fn role_set(roles: &[FfiOrgRole]) -> RoleSet {
+    ROLES
+        .iter()
+        .filter(|(_, f)| roles.contains(f))
+        .fold(RoleSet::EMPTY, |s, (r, _)| s.with(*r))
+}
 
 fn roles_of(set: RoleSet) -> Vec<FfiOrgRole> {
     ROLES
@@ -664,15 +677,109 @@ impl OrgDraft {
     }
 }
 
+/// What `create_invite` returns: the join link to hand over (it carries the
+/// invite credential seed and the member token: share it, never store it)
+/// and the invited account id (32 hex).
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiInviteLink {
+    pub link: String,
+    pub account_id: String,
+}
+
+/// A verified join request waiting for the admin.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiJoinRequest {
+    /// 32 hex.
+    pub account_id: String,
+    pub display_name: String,
+    pub devices: Vec<FfiOrgDevice>,
+    /// The join code (5 words) the member reads out.
+    pub code_words: Vec<String>,
+    /// This device issued the invitation (`invites.bin`).
+    pub issued_here: bool,
+    pub invite_label: Option<String>,
+    /// Always false from `join_requests` (Invited members only).
+    pub in_roster: bool,
+}
+
+/// `Write` on join requests only, for the invite credential (A2).
+const INVITE_CREDENTIAL_LABEL: &[u8] = b"org-invite";
+/// Life of the one-use `managed` mailbox token of an invitation (R4).
+const MEMBER_TOKEN_TTL_HOURS: u16 = 168;
+
+fn validation(field: &str, reason: &str) -> OnePassError {
+    OnePassError::Validation {
+        field: field.into(),
+        reason: reason.into(),
+    }
+}
+
+/// R12: 1 to 64 bytes of UTF-8 and the core's character rules.
+fn check_display_name(body: &JoinRequestBody) -> Result<(), OnePassError> {
+    let name = &body.display_name;
+    if name.is_empty()
+        || name.len() > MAX_DISPLAY_NAME_BYTES
+        || matches!(
+            body.check(),
+            Err(onepass_core::Error::InvalidFormat(
+                "join request display name"
+            ))
+        )
+    {
+        return Err(validation(
+            "display_name",
+            "1 to 64 bytes, no control or invisible character",
+        ));
+    }
+    Ok(())
+}
+
+/// This device as a signer: its public half as the session's store trusts
+/// it, with the keys checked to match.
+struct Signer {
+    me: DevicePublic,
+    keys: DeviceKeys,
+}
+
+impl Signer {
+    fn of(
+        session: &Session,
+        classical: &[u8],
+        pq: Arc<dyn FfiPqDeviceHalf>,
+    ) -> Result<Signer, OnePassError> {
+        let keys = device_keys(classical, pq)?;
+        let me = session.with(|repo| {
+            Ok(repo
+                .store()
+                .trust_state()?
+                .ok_or_else(|| invalid("device keys"))?
+                .me)
+        })?;
+        Signer::with_keys(keys, me)
+    }
+
+    fn with_keys(keys: DeviceKeys, me: DevicePublic) -> Result<Signer, OnePassError> {
+        if keys.public(me.device_id)? != me {
+            return Err(invalid("device keys"));
+        }
+        Ok(Signer { me, keys })
+    }
+}
+
 /// An organisation this device follows: its mailbox (as an org store) and
 /// its pin in `state_dir`. Every state it returns comes from the pin; the
 /// server's answers move the pin only once fully verified.
 #[derive(uniffi::Object)]
 pub struct OrgClient {
-    /// Also serializes every pin update of this client.
+    /// Also serializes every pin update of this client. Locked before
+    /// `joins` whenever both are held.
     store: Mutex<Box<dyn OrgStoreApi + Send>>,
     org_id: [u8; 16],
     state_dir: PathBuf,
+    /// The mailbox server's URL, named in the join links this client makes.
+    server_url: String,
+    /// The join requests read so far (R2).
+    joins: Mutex<JoinCache>,
 }
 
 #[uniffi::export]
@@ -691,19 +798,21 @@ impl OrgClient {
         let seed = Zeroizing::new(credential_seed);
         let mailbox = self::mailbox_id(&mailbox_id)?;
         let org_id = org_id_of(&org_id)?;
+        let server_url = endpoint.base_url.clone();
         let mut client = MailboxClient::new(endpoint.into(), credential(&seed)?)?;
         client.open(mailbox);
         Ok(Self::build(
             Box::new(OrgStore::new(client, org_id)),
             org_id,
             PathBuf::from(state_dir),
+            server_url,
         ))
     }
 
     /// The pinned state, local only (`None` before `pin`).
     pub fn state(&self) -> Result<Option<FfiOrgState>, OnePassError> {
         let _store = lock(&self.store);
-        Ok(self.load()?.map(|p| view(&p, &HashMap::new())))
+        Ok(self.load()?.map(|p| self.show(&p)))
     }
 
     /// Pin the org the mailbox serves. `Mdm` and `Dns` need
@@ -747,10 +856,13 @@ impl OrgClient {
                 Err(OnePassError::OrgPinMismatch)
             }
             Some(old) => {
-                let lineage = store.lineage_from(old.head().generation)?;
-                self.advance_and_save(&mut **store, &old, Some(&old), &lineage)
+                let pin = self.refreshed(&mut **store, &old)?;
+                Ok(self.show(&pin))
             }
-            None => self.advance_and_save(&mut **store, &fresh, None, &lineage),
+            None => {
+                let pin = self.advance_and_save(&mut **store, &fresh, None, &lineage)?;
+                Ok(self.show(&pin))
+            }
         }
     }
 
@@ -760,8 +872,8 @@ impl OrgClient {
     pub fn refresh(&self) -> Result<FfiOrgState, OnePassError> {
         let mut store = lock(&self.store);
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
-        let lineage = store.lineage_from(pin.head().generation)?;
-        self.advance_and_save(&mut **store, &pin, Some(&pin), &lineage)
+        let pin = self.refreshed(&mut **store, &pin)?;
+        Ok(self.show(&pin))
     }
 
     /// The user compared the fingerprint words with an admin's and they
@@ -773,7 +885,237 @@ impl OrgClient {
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
         let pin = pin.confirm_tofu(&pin.fingerprint())?;
         save_pin(&self.state_dir, &pin)?;
-        Ok(view(&pin, &HashMap::new()))
+        Ok(self.show(&pin))
+    }
+
+    /// Invites a member (R4) with a signed roster edit by this device: a
+    /// new Invited member (a fresh account id, `roles`, the commitment of a
+    /// random 32-byte nonce) at roster seq + 1, checked against the core
+    /// rules first (`Integrity { org_role_denied }`, nothing written). Then
+    /// a fresh credential is granted `Write` on join requests only (kind
+    /// 32) and a one-use `managed` mailbox token is minted (168 hours). The
+    /// link names this client's server, the org mailbox, the pinned
+    /// fingerprint, the account id, the nonce, the credential seed, the
+    /// token and `domain`; Rust writes neither the seed nor the token.
+    /// `invites.bin` keeps the account id, nonce, `label` and `now`. A
+    /// failure after the roster write leaves the Invited member in the
+    /// roster (withdrawn by removing it). `NotFound` before `pin`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_invite(
+        &self,
+        session: Arc<Session>,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+        label: String,
+        domain: Option<String>,
+        roles: Vec<FfiOrgRole>,
+        now: i64,
+    ) -> Result<FfiInviteLink, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let mut store = lock(&self.store);
+        let mailbox = store
+            .mailbox()
+            .mailbox()
+            .ok_or_else(|| invalid("mailbox"))?;
+        let mut invite = FfiOrgInvite {
+            server_url: self.server_url.clone(),
+            mailbox_id: bytes_hex(&mailbox),
+            org_id: bytes_hex(&self.org_id),
+            account_id: bytes_hex(&[0; 16]),
+            fingerprint: vec![0; 32],
+            nonce: vec![0; 32],
+            credential_seed: vec![0; 32],
+            member_token: vec![0; 32],
+            domain,
+        };
+        // The server URL and the domain are checked before anything is written.
+        org_invite_encode(invite.clone())?;
+        let signer = Signer::of(&session, &classical, pq)?;
+        let roles = role_set(&roles);
+        let (pin, invitation) = self.edit_roster(&mut **store, &signer, |prev| {
+            Ok(invite_member(prev, [0; 32], roles)?)
+        })?;
+        let credential = fresh_credential()?;
+        store.mailbox().grant(
+            credential.public_key().to_bytes(),
+            CredentialRole::Write,
+            Some(put_kinds_of(&[ORG_JOIN_KIND])),
+            INVITE_CREDENTIAL_LABEL,
+        )?;
+        let token = Zeroizing::new(store.create_member_invite(MEMBER_TOKEN_TTL_HOURS)?);
+        let account_id = id_hex(invitation.account_id);
+        invite.account_id = account_id.clone();
+        invite.fingerprint = pin.fingerprint().to_vec();
+        invite.nonce = invitation.nonce.to_vec();
+        invite.credential_seed = credential.seed().to_vec();
+        invite.member_token = token.to_vec();
+        let link = org_invite_encode(invite)?;
+        add_invite(
+            &self.state_dir,
+            LocalInvite {
+                account_id: invitation.account_id.0,
+                nonce: invitation.nonce,
+                label,
+                created_at: now,
+            },
+        )?;
+        Ok(FfiInviteLink { link, account_id })
+    }
+
+    /// Posts the join request of `session`'s managed account for `invite`
+    /// through this client (the invite credential), signed by this device.
+    /// The session must be the invited account (`Validation { field:
+    /// "account" }`) of a managed genesis naming this org (`Validation {
+    /// field: "org" }`) made on this device (R20, `Validation { field:
+    /// "device" }`). The request names the pinned fingerprint and this
+    /// client's credential key. `display_name`: 1 to 64 bytes of UTF-8, no
+    /// control or invisible character (`Validation { field: "display_name"
+    /// }`). Posting again replaces the request. Returns the join code: the
+    /// 5 words the member reads to the admin. `NotFound` before `pin`.
+    pub fn post_join_request(
+        &self,
+        session: Arc<Session>,
+        classical: Vec<u8>,
+        pq: Arc<dyn FfiPqDeviceHalf>,
+        invite: FfiOrgInvite,
+        display_name: String,
+        now: i64,
+    ) -> Result<Vec<String>, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        if org_id_of(&invite.org_id)? != self.org_id {
+            return Err(validation(
+                "org",
+                "the invitation is for another organisation",
+            ));
+        }
+        let account = parse_id(&invite.account_id)?;
+        let nonce: [u8; 32] = invite
+            .nonce
+            .as_slice()
+            .try_into()
+            .map_err(|_| invalid("nonce"))?;
+        let mut store = lock(&self.store);
+        let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        let (genesis, me, kem) = session.with(|repo| {
+            let params = &repo.account().params;
+            if params.account_id != account {
+                return Err(validation("account", "not the invited account"));
+            }
+            let me = repo
+                .store()
+                .trust_state()?
+                .ok_or_else(|| invalid("device keys"))?
+                .me;
+            let genesis = repo
+                .store()
+                .list(RecordKind::Lineage)?
+                .into_iter()
+                .find(|r| {
+                    matches!(LineageRecord::decode(&r.data),
+                        Ok(LineageRecord::Genesis(g)) if g.body.account_id == account)
+                })
+                .ok_or(OnePassError::NotFound)?
+                .data;
+            Ok((genesis, me, params.kem_pub.clone()))
+        })?;
+        let Ok(LineageRecord::Genesis(g)) = LineageRecord::decode(&genesis) else {
+            return Err(OnePassError::NotFound);
+        };
+        if g.body.org != Some(self.org_id) {
+            return Err(validation(
+                "org",
+                "not a managed account of this organisation",
+            ));
+        }
+        if g.body.creator.device_id != me.device_id {
+            return Err(validation(
+                "device",
+                "join from the device that made the account",
+            ));
+        }
+        let signer = Signer::with_keys(device_keys(&classical, pq)?, me)?;
+        let body = JoinRequestBody {
+            format: ORG_FORMAT,
+            org_id: OrgId(self.org_id),
+            account_id: account,
+            invite_nonce: nonce,
+            pinned_fpr: pin.fingerprint(),
+            account_genesis: genesis,
+            devices: vec![signer.me],
+            display_name,
+            mailbox_credential: store.mailbox().credential_key().to_bytes(),
+            account_kem_pub: kem,
+            issued_at: now,
+        };
+        check_display_name(&body)?;
+        let signed = sign_join_request(body, &signer.keys)?;
+        let code = join_code_of(&signed, Wordlist::EffEnglish)?;
+        store.put_join_request(account.0, signed.encode())?;
+        Ok(code.into_iter().collect())
+    }
+
+    /// The verified join requests of Invited members, oldest first (issue
+    /// time, then account id). Reads only what changed since the last call
+    /// (R2: the first call, and a feed the server restarts, read it whole).
+    /// A request that does not verify against the pinned roster and
+    /// fingerprint, or whose credential is no Ed25519 key (R17), is dropped
+    /// and counted nowhere. Requests of members past Invited only name them
+    /// (R25) and are not listed, so `in_roster` is false here.
+    /// `issued_here` and `invite_label` come from this device's
+    /// `invites.bin`. `NotFound` before `pin`.
+    pub fn join_requests(&self) -> Result<Vec<FfiJoinRequest>, OnePassError> {
+        let mut store = lock(&self.store);
+        let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        let invites = load_invites(&self.state_dir)?;
+        let mut joins = lock(&self.joins);
+        let delta = store.join_requests_since(&mut joins.feed)?;
+        joins.apply(&self.org_id, delta);
+        let mut out: Vec<(i64, FfiJoinRequest)> = joins
+            .verdicts(&pin)
+            .into_iter()
+            .filter_map(|v| match v {
+                Verdict::Invited {
+                    joined,
+                    code_words,
+                    issued_at,
+                } => {
+                    let account = joined.account_id();
+                    let local = invites.iter().find(|i| i.account_id == account.0);
+                    Some((
+                        issued_at,
+                        FfiJoinRequest {
+                            account_id: id_hex(account),
+                            display_name: joined.display_name().to_owned(),
+                            devices: joined
+                                .devices()
+                                .iter()
+                                .map(|d| FfiOrgDevice {
+                                    fingerprint: bytes_hex(&d.fingerprint()),
+                                    name: None,
+                                })
+                                .collect(),
+                            code_words,
+                            issued_here: local.is_some(),
+                            invite_label: local.map(|i| i.label.clone()),
+                            in_roster: false,
+                        },
+                    ))
+                }
+                Verdict::Member(_) | Verdict::Dropped => None,
+            })
+            .collect();
+        out.sort_by(|a, b| (a.0, &a.1.account_id).cmp(&(b.0, &b.1.account_id)));
+        Ok(out.into_iter().map(|(_, r)| r).collect())
+    }
+
+    /// Deletes the join request of `account_id` (32 hex). The roster is
+    /// untouched: the invitation stands until its Invited member is removed.
+    pub fn decline_join_request(&self, account_id: String) -> Result<(), OnePassError> {
+        let account = parse_id(&account_id)?;
+        let mut store = lock(&self.store);
+        store.delete_join_request(account.0)?;
+        lock(&self.joins).remove(&account.0);
+        Ok(())
     }
 }
 
@@ -782,11 +1124,14 @@ impl OrgClient {
         store: Box<dyn OrgStoreApi + Send>,
         org_id: [u8; 16],
         state_dir: PathBuf,
+        server_url: String,
     ) -> Arc<Self> {
         Arc::new(OrgClient {
             store: Mutex::new(store),
             org_id,
             state_dir,
+            server_url,
+            joins: Mutex::new(JoinCache::new()),
         })
     }
 
@@ -810,7 +1155,7 @@ impl OrgClient {
         pin: &OrgPin,
         base: Option<&OrgPin>,
         lineage: &[(u64, Vec<u8>)],
-    ) -> Result<FfiOrgState, OnePassError> {
+    ) -> Result<OrgPin, OnePassError> {
         let next = advance(store, pin, lineage)?;
         // Compare and save under the process-wide pin lock: another client
         // on the same folder may have saved meanwhile. Never write over a
@@ -820,27 +1165,74 @@ impl OrgClient {
         let _pins = pin_lock();
         let stored = self.load()?;
         if stored.as_ref() == Some(&next) {
-            return Ok(view(&next, &HashMap::new()));
+            return Ok(next);
         }
         if stored.as_ref() != base {
             return Err(OnePassError::Conflict);
         }
         save_pin(&self.state_dir, &next)?;
-        Ok(view(&next, &HashMap::new()))
+        Ok(next)
+    }
+
+    /// The pin as the apps show it, member names from the verified join
+    /// requests read so far (R25; no network).
+    fn show(&self, pin: &OrgPin) -> FfiOrgState {
+        view(pin, &lock(&self.joins).names(pin))
+    }
+
+    /// The pin refreshed from the server (the lineage from its head
+    /// generation, the rosters from its seq).
+    fn refreshed(&self, store: &mut dyn OrgStoreApi, pin: &OrgPin) -> Result<OrgPin, OnePassError> {
+        let lineage = store.lineage_from(pin.head().generation)?;
+        self.advance_and_save(store, pin, Some(pin), &lineage)
+    }
+
+    /// One signed roster edit, the path of every roster change: `edit`
+    /// builds the candidate from the pinned roster; the core rules check it
+    /// for this device (`Integrity { org_role_denied }`, nothing written);
+    /// it is signed and put at seq + 1. A seq taken meanwhile (`Taken`, or
+    /// `Contended`): refresh, then build and put once more from the new
+    /// pin; a second loss is `Conflict`. The pin then moves through the
+    /// verified path, and `edit`'s output comes back with it.
+    fn edit_roster<T>(
+        &self,
+        store: &mut dyn OrgStoreApi,
+        signer: &Signer,
+        mut edit: impl FnMut(&RosterBody) -> Result<(RosterBody, T), OnePassError>,
+    ) -> Result<(OrgPin, T), OnePassError> {
+        let mut pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        let mut retried = false;
+        loop {
+            let prev = pin.roster().ok_or(OnePassError::NotFound)?;
+            let (next, out) = edit(prev)?;
+            check_transition(pin.lineage(), prev, &next, &signer.me)?;
+            let seq = next.seq;
+            let signed = sign_roster(next, &signer.me, &signer.keys)?;
+            match store.put_roster(seq, signed.encode()) {
+                Ok(()) => return Ok((self.refreshed(store, &pin)?, out)),
+                Err(OrgStoreError::Taken | OrgStoreError::Contended) if !retried => {
+                    retried = true;
+                    pin = self.refreshed(store, &pin)?;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
     }
 }
 
 #[cfg(feature = "dev-fast-kdf")]
 impl OrgClient {
     /// An org client over any org store: `OrgStore` over a `FakeMailbox`
-    /// client, or `HostileOrgStore` (tests only, no TLS).
+    /// client, or `HostileOrgStore` (tests only, no TLS). `server_url`: what
+    /// its join links name.
     #[doc(hidden)]
     pub fn with_store(
         store: Box<dyn OrgStoreApi + Send>,
         org_id: [u8; 16],
         state_dir: PathBuf,
+        server_url: String,
     ) -> Arc<Self> {
-        Self::build(store, org_id, state_dir)
+        Self::build(store, org_id, state_dir, server_url)
     }
 }
 

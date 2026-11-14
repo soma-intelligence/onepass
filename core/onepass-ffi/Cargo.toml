@@ -26,6 +26,9 @@ onepass-mcp-relay = { path = "../onepass-mcp-relay" }
 onepass-peer = { path = "../onepass-peer" }
 onepass-ssh-agent = { path = "../onepass-ssh-agent" }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
+# Decodes an Ed25519 point (a join request's mailbox credential, plan C R17):
+# neither the mailbox crate nor aws-lc checks a raw public key.
+num-bigint = "0.4"
 serde_json.workspace = true
 data-encoding.workspace = true
 uniffi = { version = "=0.32.2" }
