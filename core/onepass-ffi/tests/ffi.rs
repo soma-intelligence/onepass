@@ -1020,8 +1020,10 @@ fn attach_otp_adds_keeps_conflicts_and_replaces() {
         .session
         .new_item(f.vault_id.clone(), FfiItemType::Login, "Atlas".into())
         .unwrap();
-    let a = "otpauth://totp/Atlas:ada?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Atlas".to_string();
-    let b = "otpauth://totp/Atlas:ada?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Atlas".to_string();
+    let a =
+        "otpauth://totp/Atlas:ada?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Atlas".to_string();
+    let b =
+        "otpauth://totp/Atlas:ada?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Atlas".to_string();
 
     let r = attach_otp(item, a.clone(), false, "Old".into()).unwrap();
     assert_eq!(r.outcome, FfiOtpAttach::Added);
