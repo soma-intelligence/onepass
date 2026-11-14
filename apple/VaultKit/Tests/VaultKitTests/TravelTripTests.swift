@@ -63,4 +63,41 @@ struct TravelTripTests {
         #expect(places.taught == ["xn7"])
         #expect(places.trips.isEmpty)
     }
+
+    @Test func storeTellsMissingFromUnreadable() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("travel-places.bin")
+        let keychain = InMemoryKeychain()
+        let store = TravelPlacesStore(url: url, keychain: keychain)
+        #expect(store.open() == .missing)
+        var places = TravelPlaces()
+        places.trips = [
+            TravelTrip(
+                start: Date(timeIntervalSince1970: 1_800_000_000), end: Date(timeIntervalSince1970: 1_800_600_000))
+        ]
+        try store.save(places)
+        #expect(store.open() == .opened(places))
+        // The keychain refuses while the device is locked: the file is there, not readable now.
+        let locked = TravelPlacesStore(url: url, keychain: LockedKeychain())
+        #expect(locked.open() == .unreadable)
+        // A file that does not decrypt is not missing either.
+        let other = InMemoryKeychain()
+        try other.write(TravelPlacesStore.keyName, Data(repeating: 7, count: 32))
+        #expect(TravelPlacesStore(url: url, keychain: other).open() == .unreadable)
+        // A file that opens but does not decode is forgotten.
+        let keyData = try #require(try keychain.read(TravelPlacesStore.keyName))
+        let sealed = try AES.GCM.seal(Data("not json".utf8), using: SymmetricKey(data: keyData))
+        try #require(sealed.combined).write(to: url)
+        #expect(store.open() == .missing)
+    }
+}
+
+/// A keychain as on a locked device: every read is refused.
+private struct LockedKeychain: KeychainStore {
+    struct Locked: Error {}
+    func read(_ key: String) throws -> Data? { throw Locked() }
+    func write(_ key: String, _ data: Data) throws { throw Locked() }
+    func delete(_ key: String) throws { throw Locked() }
+    func writeAfterFirstUnlock(_ key: String, _ data: Data) throws { throw Locked() }
 }

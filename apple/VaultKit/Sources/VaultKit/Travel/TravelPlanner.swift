@@ -73,6 +73,9 @@ public enum TravelPlanner {
         prune(&places, now: s.now)
 
         if s.travelling {
+            // A trip still covers now (the next leg of the journey): not home yet, whatever the
+            // place says.
+            if activeTrip(places, now: s.now) != nil { return .none }
             // Only the most recent finished trip counts: an older one never brings the card back.
             let finished = finishedTrip(places, now: s.now).map { $0.id != places.welcomeTripDismissed } ?? false
             return finished || s.place == .welcomeBack ? .welcomeBack : .none

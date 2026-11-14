@@ -122,6 +122,20 @@ struct TravelPlannerTests {
         #expect(TravelPlanner.decide(&places, s) == .none)
     }
 
+    @Test func backToBackTripsNoWelcomeBetweenLegs() {
+        var places = TravelPlaces()
+        let first = Self.finished(endedAgo: 3600)
+        let second = TravelTrip(
+            start: Self.now.addingTimeInterval(-1800), end: Self.now.addingTimeInterval(4 * 86_400))
+        places.trips = [first, second]
+        let s = Self.signals(travelling: true, place: .welcomeBack, timeZone: Self.tokyo)
+        #expect(TravelPlanner.decide(&places, s) == .none)
+        // The second leg over too: now the journey is.
+        let after = Self.signals(
+            travelling: true, timeZone: Self.tokyo, now: second.end.addingTimeInterval(3600))
+        #expect(TravelPlanner.decide(&places, after) == .welcomeBack)
+    }
+
     @Test func noOnTimeZoneTeachesIt() {
         var places = Self.parisSeen(3)
         let s = Self.signals(timeZone: Self.tokyo)

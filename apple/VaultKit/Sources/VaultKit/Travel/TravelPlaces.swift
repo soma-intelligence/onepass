@@ -283,12 +283,29 @@ public struct TravelPlacesStore: Sendable {
     /// The places, or empty ones when there is no file, no key, or the file does not open (it is
     /// then forgotten: learning starts again).
     public func load() -> TravelPlaces {
+        if case .opened(let places) = open() { return places }
+        return TravelPlaces()
+    }
+
+    /// What `open` found on disk.
+    public enum Opened: Equatable, Sendable {
+        /// No file, or a file that decrypted but does not decode: start from empty places.
+        case missing
+        case opened(TravelPlaces)
+        /// A file is there but cannot be read now: protected while the device is locked, its key
+        /// refused or gone, or it does not decrypt. Never overwrite it: it may hold planned trips.
+        case unreadable
+    }
+
+    /// Tells a missing file from one that cannot be read now, unlike `load`.
+    public func open() -> Opened {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
         guard let sealed = try? Data(contentsOf: url), let keyData = try? keychain.read(Self.keyName),
             let box = try? AES.GCM.SealedBox(combined: sealed),
-            let plain = try? AES.GCM.open(box, using: SymmetricKey(data: keyData)),
-            let places = try? JSONDecoder().decode(TravelPlaces.self, from: plain)
-        else { return TravelPlaces() }
-        return places
+            let plain = try? AES.GCM.open(box, using: SymmetricKey(data: keyData))
+        else { return .unreadable }
+        guard let places = try? JSONDecoder().decode(TravelPlaces.self, from: plain) else { return .missing }
+        return .opened(places)
     }
 
     public func save(_ places: TravelPlaces) throws {
