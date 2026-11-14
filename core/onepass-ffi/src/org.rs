@@ -31,7 +31,7 @@ use crate::mailbox::{FfiMailboxEndpoint, LABEL, credential, fresh_credential, ma
 use crate::rotation::{FfiPqDeviceHalf, device_keys};
 use crate::session::Session;
 use crate::types::{FfiCreatedAccount, FfiKdfParams};
-use pinstore::{load_pin, save_pin};
+use pinstore::{load_pin, pin_lock, save_pin};
 
 pub use invite::{org_invite_encode, org_invite_parse};
 
@@ -312,8 +312,11 @@ fn rosters_since(
     let mut out = Vec::new();
     for seq in start..latest {
         // A hole below the newest the server named: it withholds a roster
-        // (or names a seq it does not hold). Stops at the first one.
-        let bytes = store.roster(seq)?.ok_or(OnePassError::NotFound)?;
+        // the chain needs, a rollback of what it announced. Stops at the
+        // first one.
+        let bytes = store
+            .roster(seq)?
+            .ok_or_else(|| integrity(IntegrityError::OrgRosterRollback))?;
         out.push((seq, bytes));
     }
     out.push((latest, newest));
@@ -351,8 +354,43 @@ pub struct FfiOrgCreated {
 #[derive(uniffi::Object)]
 pub struct OrgDraft {
     org_id: OrgId,
-    secrets: Mutex<Option<OrgSecrets>>,
+    stage: Mutex<Stage>,
 }
+
+/// Where a draft stands. The secrets live until the org mailbox exists;
+/// from then on the signed records and the mailbox client wait in
+/// `Created` until every write and the pin are done.
+enum Stage {
+    Fresh(OrgSecrets),
+    Created(Box<Pending>),
+    Used,
+}
+
+/// A publish whose org mailbox exists (the one-use invite is spent) but
+/// whose records or pin are not all written yet.
+struct Pending {
+    client: Box<dyn MailboxApi>,
+    credential_seed: Zeroizing<Vec<u8>>,
+    mailbox_id: [u8; 16],
+    genesis: Vec<u8>,
+    roster: Vec<u8>,
+    owner_account: [u8; 16],
+    sealed_keyset: Vec<u8>,
+    pin: OrgPin,
+}
+
+/// What a publish writes, signed before the mailbox is created.
+struct Signed {
+    genesis: Vec<u8>,
+    roster: Vec<u8>,
+    owner_account: [u8; 16],
+    sealed_keyset: Vec<u8>,
+    pin: OrgPin,
+}
+
+/// A mailbox client holding a fresh credential, and that credential's seed.
+type Connect<'a> =
+    Box<dyn FnOnce() -> Result<(Box<dyn MailboxApi>, Zeroizing<Vec<u8>>), OnePassError> + 'a>;
 
 #[uniffi::export]
 impl OrgDraft {
@@ -360,7 +398,7 @@ impl OrgDraft {
     pub fn new() -> Result<Arc<Self>, OnePassError> {
         Ok(Arc::new(OrgDraft {
             org_id: OrgId::generate()?,
-            secrets: Mutex::new(Some(OrgSecrets::generate()?)),
+            stage: Mutex::new(Stage::Fresh(OrgSecrets::generate()?)),
         }))
     }
 
@@ -377,8 +415,15 @@ impl OrgDraft {
     /// `state_dir` as `Tofu { verified: true }` (the creator vouches for its
     /// own genesis). `session` must be a managed account of this org
     /// (`Validation { field: "org" }`), unlocked, opened with these device
-    /// keys. Consumes the secrets once they are about to be used: a second
-    /// call is `InvalidInput("draft used")`.
+    /// keys.
+    ///
+    /// A failure before the mailbox exists leaves the draft as it was. A
+    /// failure after (a write or the pin) keeps the mailbox, its credential
+    /// and the signed records in the draft: calling `publish` again resumes
+    /// the remaining writes and the pin on that mailbox (the same bytes
+    /// again are accepted), whatever the other arguments, and never spends
+    /// another invite. Once a publish has finished, a further call is
+    /// `InvalidInput("draft used")`.
     #[allow(clippy::too_many_arguments)]
     pub fn publish(
         &self,
@@ -392,12 +437,15 @@ impl OrgDraft {
         now: i64,
     ) -> Result<FfiOrgCreated, OnePassError> {
         let classical = Zeroizing::new(classical);
-        let credential = fresh_credential()?;
-        let seed = credential.seed();
-        let client = MailboxClient::new(endpoint.into(), credential)?;
+        let connect: Connect<'_> = Box::new(move || {
+            let credential = fresh_credential()?;
+            let seed = credential.seed();
+            let client: Box<dyn MailboxApi> =
+                Box::new(MailboxClient::new(endpoint.into(), credential)?);
+            Ok((client, seed))
+        });
         self.publish_on(
-            client,
-            &seed,
+            connect,
             &server_invite,
             &session,
             &classical,
@@ -410,13 +458,12 @@ impl OrgDraft {
 }
 
 impl OrgDraft {
-    /// `publish` over any mailbox client (`client` holds the credential of
-    /// `credential_seed`, no mailbox open yet).
+    /// `publish` over the mailbox client `connect` makes (called only when
+    /// the mailbox is still to be created).
     #[allow(clippy::too_many_arguments)]
-    fn publish_on<A: MailboxApi>(
+    fn publish_on(
         &self,
-        mut client: A,
-        credential_seed: &[u8],
+        connect: Connect<'_>,
         server_invite: &str,
         session: &Session,
         classical: &[u8],
@@ -425,6 +472,62 @@ impl OrgDraft {
         state_dir: &Path,
         now: i64,
     ) -> Result<FfiOrgCreated, OnePassError> {
+        // Held for the whole call: one publish at a time per draft.
+        let mut stage = lock(&self.stage);
+        let pending = match std::mem::replace(&mut *stage, Stage::Used) {
+            Stage::Used => return Err(invalid("draft used")),
+            Stage::Created(p) => p,
+            Stage::Fresh(secrets) => {
+                let keyset = OrgKeyset {
+                    org_id: self.org_id,
+                    secrets,
+                };
+                let created = self
+                    .sign(&keyset, session, classical, pq, name, now)
+                    .and_then(|signed| {
+                        let (mut client, credential_seed) = connect()?;
+                        let created = client.create(Some(server_invite.as_bytes()), LABEL)?;
+                        Ok((signed, client, credential_seed, created.mailbox_id))
+                    });
+                match created {
+                    // Nothing exists anywhere yet: the draft stays fresh.
+                    Err(e) => {
+                        *stage = Stage::Fresh(keyset.secrets);
+                        return Err(e);
+                    }
+                    Ok((signed, client, credential_seed, mailbox_id)) => Box::new(Pending {
+                        client,
+                        credential_seed,
+                        mailbox_id,
+                        genesis: signed.genesis,
+                        roster: signed.roster,
+                        owner_account: signed.owner_account,
+                        sealed_keyset: signed.sealed_keyset,
+                        pin: signed.pin,
+                    }),
+                }
+            }
+        };
+        match self.finish(pending, state_dir) {
+            Ok(created) => Ok(created),
+            Err((pending, e)) => {
+                *stage = Stage::Created(pending);
+                Err(e)
+            }
+        }
+    }
+
+    /// The genesis, the founding roster, the sealed keyset and the pin,
+    /// signed by this device for the managed account of `session`.
+    fn sign(
+        &self,
+        keyset: &OrgKeyset,
+        session: &Session,
+        classical: &[u8],
+        pq: Arc<dyn FfiPqDeviceHalf>,
+        name: String,
+        now: i64,
+    ) -> Result<Signed, OnePassError> {
         let keys = device_keys(classical, pq)?;
         let (owner, me) = session.with(|repo| {
             if repo.genesis_org()? != Some(self.org_id) {
@@ -450,10 +553,7 @@ impl OrgDraft {
         if keys.public(me.device_id)? != me {
             return Err(invalid("device keys"));
         }
-        let secrets = lock(&self.secrets)
-            .take()
-            .ok_or_else(|| invalid("draft used"))?;
-        let public = secrets.public(self.org_id)?;
+        let public = keyset.secrets.public(self.org_id)?;
         let body = OrgGenesisBody {
             format: ORG_FORMAT,
             org_id: self.org_id,
@@ -463,37 +563,77 @@ impl OrgDraft {
             owners: vec![owner.clone()],
             created_at: now,
         };
-        let genesis = sign_org_genesis(body, &secrets.identity, &[(&me, &keys)])?;
+        let genesis = sign_org_genesis(body, &keyset.secrets.identity, &[(&me, &keys)])?;
         let lineage = verify_org_genesis(&genesis)?;
         let roster = sign_roster(founding_roster(&lineage)?, &me, &keys)?;
-        let keyset = OrgKeyset {
-            org_id: self.org_id,
-            secrets,
-        };
-        let sealed = seal_org_keyset(&keyset, owner.account_id, &owner.account_kem_pub)?;
+        let sealed = seal_org_keyset(keyset, owner.account_id, &owner.account_kem_pub)?;
         let (genesis, roster) = (genesis.encode(), roster.encode());
         // The pin goes through the same checks as any other device's.
         let pin = pin_org(PinSource::Tofu { verified: false }, None, &genesis)?
             .advance(&[(0, genesis.clone())], &[(1, roster.clone())])?;
         let pin = pin.confirm_tofu(&pin.fingerprint())?;
-
-        let created = client.create(Some(server_invite.as_bytes()), LABEL)?;
-        let mut store = OrgStore::new(client, self.org_id.0);
-        store.put_lineage(0, genesis)?;
-        store.put_roster(1, roster)?;
-        store.put_owner_keyset(owner.account_id.0, sealed.encode())?;
-        save_pin(state_dir, &pin)?;
-        Ok(FfiOrgCreated {
-            mailbox_id: bytes_hex(&created.mailbox_id),
-            credential_seed: credential_seed.to_vec(),
-            state: view(&pin, &HashMap::new()),
+        Ok(Signed {
+            genesis,
+            roster,
+            owner_account: owner.account_id.0,
+            sealed_keyset: sealed.encode(),
+            pin,
         })
+    }
+
+    /// The writes and the pin of a publish whose mailbox exists. Every put
+    /// is idempotent (`OrgStore`: the same bytes again are accepted, the
+    /// keyset is rewritten), so a resumed publish runs them all again. On a
+    /// failure the pending publish comes back with the error.
+    fn finish(
+        &self,
+        p: Box<Pending>,
+        state_dir: &Path,
+    ) -> Result<FfiOrgCreated, (Box<Pending>, OnePassError)> {
+        let Pending {
+            client,
+            credential_seed,
+            mailbox_id,
+            genesis,
+            roster,
+            owner_account,
+            sealed_keyset,
+            pin,
+        } = *p;
+        let mut store = OrgStore::new(client, self.org_id.0);
+        let done: Result<(), OnePassError> = (|| {
+            store.put_lineage(0, genesis.clone())?;
+            store.put_roster(1, roster.clone())?;
+            store.put_owner_keyset(owner_account, sealed_keyset.clone())?;
+            save_pin(state_dir, &pin)
+        })();
+        match done {
+            Ok(()) => Ok(FfiOrgCreated {
+                mailbox_id: bytes_hex(&mailbox_id),
+                credential_seed: credential_seed.to_vec(),
+                state: view(&pin, &HashMap::new()),
+            }),
+            Err(e) => Err((
+                Box::new(Pending {
+                    client: store.into_api(),
+                    credential_seed,
+                    mailbox_id,
+                    genesis,
+                    roster,
+                    owner_account,
+                    sealed_keyset,
+                    pin,
+                }),
+                e,
+            )),
+        }
     }
 }
 
 #[cfg(feature = "dev-fast-kdf")]
 impl OrgDraft {
-    /// `publish` over a test mailbox client (`FakeMailbox`, no TLS).
+    /// `publish` over a test mailbox client (`FakeMailbox`, no TLS) holding
+    /// the credential of `credential_seed`.
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub fn publish_with_client(
@@ -508,9 +648,11 @@ impl OrgDraft {
         state_dir: String,
         now: i64,
     ) -> Result<FfiOrgCreated, OnePassError> {
+        let classical = Zeroizing::new(classical);
+        let seed = Zeroizing::new(credential_seed);
+        let connect: Connect<'_> = Box::new(move || Ok((client, seed)));
         self.publish_on(
-            client,
-            &credential_seed,
+            connect,
             &server_invite,
             &session,
             &classical,
@@ -600,17 +742,16 @@ impl OrgClient {
         if fresh.lineage().org_id.0 != self.org_id {
             return Err(integrity(IntegrityError::WrongContext));
         }
-        let (base, lineage) = match self.load()? {
+        match self.load()? {
             Some(old) if old.fingerprint() != fresh.fingerprint() => {
-                return Err(OnePassError::OrgPinMismatch);
+                Err(OnePassError::OrgPinMismatch)
             }
             Some(old) => {
                 let lineage = store.lineage_from(old.head().generation)?;
-                (old, lineage)
+                self.advance_and_save(&mut **store, &old, Some(&old), &lineage)
             }
-            None => (fresh, lineage),
-        };
-        self.advance_and_save(&mut **store, &base, &lineage)
+            None => self.advance_and_save(&mut **store, &fresh, None, &lineage),
+        }
     }
 
     /// Move the pin forward: the lineage from the pinned head generation,
@@ -620,7 +761,7 @@ impl OrgClient {
         let mut store = lock(&self.store);
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
         let lineage = store.lineage_from(pin.head().generation)?;
-        self.advance_and_save(&mut **store, &pin, &lineage)
+        self.advance_and_save(&mut **store, &pin, Some(&pin), &lineage)
     }
 
     /// The user compared the fingerprint words with an admin's and they
@@ -628,6 +769,7 @@ impl OrgClient {
     /// pin, `NotFound` before `pin`).
     pub fn mark_verified(&self) -> Result<FfiOrgState, OnePassError> {
         let _store = lock(&self.store);
+        let _pins = pin_lock();
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
         let pin = pin.confirm_tofu(&pin.fingerprint())?;
         save_pin(&self.state_dir, &pin)?;
@@ -660,16 +802,30 @@ impl OrgClient {
         Ok(pin)
     }
 
+    /// `pin` moved forward and saved. `base`: the pin stored when the call
+    /// started (`None` for a first pin).
     fn advance_and_save(
         &self,
         store: &mut dyn OrgStoreApi,
         pin: &OrgPin,
+        base: Option<&OrgPin>,
         lineage: &[(u64, Vec<u8>)],
     ) -> Result<FfiOrgState, OnePassError> {
         let next = advance(store, pin, lineage)?;
-        if load_pin(&self.state_dir)?.as_ref() != Some(&next) {
-            save_pin(&self.state_dir, &next)?;
+        // Compare and save under the process-wide pin lock: another client
+        // on the same folder may have saved meanwhile. Never write over a
+        // pin other than the one this advance started from (an older pin
+        // over a newer one would be a rollback): `Conflict`, the caller
+        // refreshes again from what is stored.
+        let _pins = pin_lock();
+        let stored = self.load()?;
+        if stored.as_ref() == Some(&next) {
+            return Ok(view(&next, &HashMap::new()));
         }
+        if stored.as_ref() != base {
+            return Err(OnePassError::Conflict);
+        }
+        save_pin(&self.state_dir, &next)?;
         Ok(view(&next, &HashMap::new()))
     }
 }

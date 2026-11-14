@@ -210,7 +210,18 @@ mod lifecycle {
     };
     use onepass_mailbox::testing::hostile_org::HostileOrgStore;
     use onepass_mailbox::testing::{FakeMailbox, FakeMailboxClient};
-    use onepass_mailbox::{Credential, MailboxApi, OrgStore, OrgStoreApi};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use onepass_mailbox::org::{JoinFeedDelta, JoinRequest, ORG_ROSTER_KIND};
+    use onepass_mailbox::{
+        ChangeFeed, Credential, CredentialKey, FeedPage, MailboxApi, MailboxError, OrgStore,
+        OrgStoreApi, OrgStoreError,
+    };
+    use onepass_mailbox_proto::{
+        Body, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialId, CredentialRole,
+        MailboxCreated, MailboxId, MailboxInfo, PushKind, ServerConfig, ServerRecord,
+        SignedEnrollTicket,
+    };
     use tempfile::TempDir;
 
     const PASSWORD: &str = "Café-étoile";
@@ -411,13 +422,13 @@ mod lifecycle {
             (dir, client)
         }
 
-        /// Roster seq 2 (an Invited member), signed by the owner's device.
-        fn write_roster_2(&self) {
+        /// Roster `seq` (one more Invited member), signed by the owner's device.
+        fn write_roster(&self, seq: u64) {
             let mut store = self.store();
-            let one = SignedRoster::decode(&store.roster(1).unwrap().unwrap()).unwrap();
-            let (next, _) = invite_member(&one.body, [0; 32], RoleSet::EMPTY).unwrap();
+            let prev = SignedRoster::decode(&store.roster(seq - 1).unwrap().unwrap()).unwrap();
+            let (next, _) = invite_member(&prev.body, [0; 32], RoleSet::EMPTY).unwrap();
             let signed = sign_roster(next, &self.owner.device(), &self.owner.keys.core()).unwrap();
-            store.put_roster(2, signed.encode()).unwrap();
+            store.put_roster(seq, signed.encode()).unwrap();
         }
     }
 
@@ -636,7 +647,7 @@ mod lifecycle {
     fn refresh_follows_a_new_roster() {
         let org = publish(&FakeMailbox::org());
         let (_, second) = org.second_device();
-        org.write_roster_2();
+        org.write_roster(2);
         let s = second.refresh().unwrap();
         assert_eq!(s.roster_seq, 2);
         assert_eq!(s.members.len(), 2);
@@ -652,7 +663,7 @@ mod lifecycle {
     fn withheld_or_replayed_roster_never_rolls_back() {
         let org = publish(&FakeMailbox::org());
         let (dir, second) = org.second_device();
-        org.write_roster_2();
+        org.write_roster(2);
         assert_eq!(second.refresh().unwrap().roster_seq, 2);
 
         let mut hostile = org.hostile();
@@ -744,7 +755,7 @@ mod lifecycle {
     fn pin_file_unchanged_after_a_refused_refresh() {
         let org = publish(&FakeMailbox::org());
         let (dir, second) = org.second_device();
-        org.write_roster_2();
+        org.write_roster(2);
         second.refresh().unwrap();
         let before = pin_bytes(&dir);
         let mut hostile = org.hostile();
@@ -764,5 +775,347 @@ mod lifecycle {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o700);
+    }
+
+    // ---- fix round 1: resumed publish, pin races, withheld rosters -----------------
+
+    /// A mailbox client that fails the first commit writing a roster.
+    struct FailRoster {
+        inner: FakeMailboxClient,
+        armed: AtomicBool,
+    }
+
+    impl FailRoster {
+        fn fault(&self, ops: &[CommitOp]) -> Result<(), MailboxError> {
+            if ops.iter().any(|o| o.kind == ORG_ROSTER_KIND)
+                && self.armed.swap(false, Ordering::SeqCst)
+            {
+                return Err(MailboxError::Malformed("test fault"));
+            }
+            Ok(())
+        }
+    }
+
+    impl MailboxApi for FailRoster {
+        fn server_config(&self) -> Result<ServerConfig, MailboxError> {
+            self.inner.server_config()
+        }
+
+        fn create(
+            &mut self,
+            invite: Option<&[u8]>,
+            label: &[u8],
+        ) -> Result<MailboxCreated, MailboxError> {
+            self.inner.create(invite, label)
+        }
+
+        fn open(&mut self, mailbox: MailboxId) {
+            self.inner.open(mailbox)
+        }
+
+        fn mailbox(&self) -> Option<MailboxId> {
+            self.inner.mailbox()
+        }
+
+        fn credential_key(&self) -> CredentialKey {
+            self.inner.credential_key()
+        }
+
+        fn info(&self) -> Result<MailboxInfo, MailboxError> {
+            self.inner.info()
+        }
+
+        fn changes(&self, after: u64, limit: u32, full: bool) -> Result<ChangesPage, MailboxError> {
+            self.inner.changes(after, limit, full)
+        }
+
+        fn next_changes(
+            &self,
+            feed: &mut ChangeFeed,
+            limit: u32,
+        ) -> Result<FeedPage, MailboxError> {
+            self.inner.next_changes(feed, limit)
+        }
+
+        fn commit(&self, ops: Vec<CommitOp>) -> Result<CommitResponse, MailboxError> {
+            self.fault(&ops)?;
+            self.inner.commit(ops)
+        }
+
+        fn record(&self, kind: u8, id: [u8; 16]) -> Result<Option<ServerRecord>, MailboxError> {
+            self.inner.record(kind, id)
+        }
+
+        fn enroll(
+            &mut self,
+            ticket: &SignedEnrollTicket,
+            label: &[u8],
+        ) -> Result<(), MailboxError> {
+            self.inner.enroll(ticket, label)
+        }
+
+        fn revoke(&self, credential: CredentialId) -> Result<(), MailboxError> {
+            self.inner.revoke(credential)
+        }
+
+        fn grant(
+            &self,
+            public_key: [u8; 32],
+            role: CredentialRole,
+            put_kinds: Option<[u8; 32]>,
+            label: &[u8],
+        ) -> Result<CredentialId, MailboxError> {
+            self.inner.grant(public_key, role, put_kinds, label)
+        }
+
+        fn set_role(
+            &self,
+            credential: CredentialId,
+            role: CredentialRole,
+            put_kinds: Option<[u8; 32]>,
+        ) -> Result<(), MailboxError> {
+            self.inner.set_role(credential, role, put_kinds)
+        }
+
+        fn set_push(&self, kind: PushKind, token: &[u8]) -> Result<(), MailboxError> {
+            self.inner.set_push(kind, token)
+        }
+
+        fn set_push_target(
+            &self,
+            tag: [u8; 16],
+            kind: PushKind,
+            token: &[u8],
+        ) -> Result<(), MailboxError> {
+            self.inner.set_push_target(tag, kind, token)
+        }
+
+        fn set_locator(&self, locator: [u8; 16]) -> Result<(), MailboxError> {
+            self.inner.set_locator(locator)
+        }
+
+        fn abandon(&self) -> Result<(), MailboxError> {
+            self.inner.abandon()
+        }
+
+        fn create_child(
+            &self,
+            kind: ChildKind,
+            owner_public_key: [u8; 32],
+            label: &[u8],
+        ) -> Result<MailboxCreated, MailboxError> {
+            self.inner.create_child(kind, owner_public_key, label)
+        }
+
+        fn create_org_invite(&self, uses: u16, ttl_hours: u16) -> Result<Vec<u8>, MailboxError> {
+            self.inner.create_org_invite(uses, ttl_hours)
+        }
+
+        fn issue_ticket(
+            &self,
+            new_credential_pub: CredentialKey,
+            now: i64,
+        ) -> Result<SignedEnrollTicket, MailboxError> {
+            self.inner.issue_ticket(new_credential_pub, now)
+        }
+
+        fn upload_blobs(&self, blobs: &[&[u8]]) -> Result<(), MailboxError> {
+            self.inner.upload_blobs(blobs)
+        }
+
+        fn fetch_body(&self, body: &Body) -> Result<Vec<u8>, MailboxError> {
+            self.inner.fetch_body(body)
+        }
+
+        fn commit_with_blobs(
+            &self,
+            ops: Vec<CommitOp>,
+            blobs: &[&[u8]],
+        ) -> Result<CommitResponse, MailboxError> {
+            self.fault(&ops)?;
+            self.inner.commit_with_blobs(ops, blobs)
+        }
+    }
+
+    type Hook = Box<dyn FnOnce() + Send>;
+
+    /// An org store that hides one roster seq and runs `hook` once when
+    /// `latest_roster` is asked (another client acting meanwhile).
+    struct Tweaked {
+        inner: OrgStore<FakeMailboxClient>,
+        hide: Option<u64>,
+        hook: Option<Hook>,
+    }
+
+    impl OrgStoreApi for Tweaked {
+        fn put_lineage(&mut self, generation: u64, bytes: Vec<u8>) -> Result<(), OrgStoreError> {
+            self.inner.put_lineage(generation, bytes)
+        }
+
+        fn lineage_from(&mut self, generation: u64) -> Result<Vec<(u64, Vec<u8>)>, OrgStoreError> {
+            self.inner.lineage_from(generation)
+        }
+
+        fn put_roster(&mut self, seq: u64, bytes: Vec<u8>) -> Result<(), OrgStoreError> {
+            self.inner.put_roster(seq, bytes)
+        }
+
+        fn roster(&mut self, seq: u64) -> Result<Option<Vec<u8>>, OrgStoreError> {
+            if self.hide == Some(seq) {
+                return Ok(None);
+            }
+            self.inner.roster(seq)
+        }
+
+        fn latest_roster(&mut self) -> Result<Option<(u64, Vec<u8>)>, OrgStoreError> {
+            if let Some(hook) = self.hook.take() {
+                hook();
+            }
+            self.inner.latest_roster()
+        }
+
+        fn put_owner_keyset(
+            &mut self,
+            account_id: [u8; 16],
+            bytes: Vec<u8>,
+        ) -> Result<(), OrgStoreError> {
+            self.inner.put_owner_keyset(account_id, bytes)
+        }
+
+        fn owner_keyset(&mut self, account_id: [u8; 16]) -> Result<Option<Vec<u8>>, OrgStoreError> {
+            self.inner.owner_keyset(account_id)
+        }
+
+        fn put_join_request(
+            &mut self,
+            account_id: [u8; 16],
+            bytes: Vec<u8>,
+        ) -> Result<(), OrgStoreError> {
+            self.inner.put_join_request(account_id, bytes)
+        }
+
+        fn join_requests(&mut self) -> Result<Vec<JoinRequest>, OrgStoreError> {
+            self.inner.join_requests()
+        }
+
+        fn join_requests_since(
+            &mut self,
+            feed: &mut ChangeFeed,
+        ) -> Result<JoinFeedDelta, OrgStoreError> {
+            self.inner.join_requests_since(feed)
+        }
+
+        fn delete_join_request(&mut self, account_id: [u8; 16]) -> Result<(), OrgStoreError> {
+            self.inner.delete_join_request(account_id)
+        }
+
+        fn mailbox(&self) -> &dyn MailboxApi {
+            self.inner.mailbox()
+        }
+
+        fn create_member_invite(&mut self, ttl_hours: u16) -> Result<Vec<u8>, OrgStoreError> {
+            self.inner.create_member_invite(ttl_hours)
+        }
+    }
+
+    impl Org {
+        fn tweaked(&self, hide: Option<u64>, hook: Option<Hook>) -> Box<dyn OrgStoreApi + Send> {
+            Box::new(Tweaked {
+                inner: self.store(),
+                hide,
+                hook,
+            })
+        }
+    }
+
+    #[test]
+    fn publish_resumes_after_a_failed_write() {
+        let fake = FakeMailbox::org();
+        let draft = OrgDraft::new().unwrap();
+        let owner = Owner::new(&draft.org_id());
+        let dirs = TempDir::new().unwrap();
+        let state_dir = dirs.path().join("creator");
+        let cred = mailbox_generate_credential().unwrap();
+        let client = FailRoster {
+            inner: fake.client(Credential::from_seed(&cred.seed).unwrap()),
+            armed: AtomicBool::new(true),
+        };
+        let first = draft.publish_with_client(
+            Box::new(client),
+            cred.seed.clone(),
+            "org-invite".into(),
+            owner.session.clone(),
+            owner.keys.classical.clone(),
+            owner.keys.half(),
+            ORG_NAME.into(),
+            state_dir.to_string_lossy().into_owned(),
+            NOW,
+        );
+        assert!(
+            matches!(first, Err(OnePassError::MailboxUnavailable { .. })),
+            "{first:?}"
+        );
+        assert!(!state_dir.join("pin.bin").exists());
+        // Resumed: the client passed now is never used (no second mailbox).
+        let created = publish_draft(&draft, &fake, &owner, &state_dir).unwrap();
+        assert_eq!(created.credential_seed, cred.seed);
+        assert_eq!(created.state.roster_seq, 1);
+        assert_eq!(created.state.source, FfiPinSource::Tofu { verified: true });
+        let org = Org {
+            fake: fake.clone(),
+            org_id: unhex(&draft.org_id()),
+            owner,
+            created,
+            _dirs: dirs,
+            creator_dir: state_dir,
+        };
+        let mut store = org.store();
+        assert!(store.roster(1).unwrap().is_some());
+        let owner_id: [u8; 16] = unhex(&org.owner.session.account_id());
+        assert!(store.owner_keyset(owner_id).unwrap().is_some());
+        let (_, second) = org.second_device();
+        assert_eq!(
+            second.state().unwrap().unwrap().fingerprint,
+            org.created.state.fingerprint
+        );
+        // Finished: used.
+        assert!(matches!(
+            publish_draft(&draft, &fake, &org.owner, &org._dirs.path().join("again")),
+            Err(OnePassError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn refresh_never_writes_over_a_newer_pin() {
+        let org = publish(&FakeMailbox::org());
+        let (dir, _) = org.second_device();
+        org.write_roster(2);
+        let other = org.open(Box::new(org.store()), &dir);
+        // While this client fetches, another one on the same folder marks the
+        // pin verified: the unverified result must not land over it.
+        let hook: Hook = Box::new(move || {
+            other.mark_verified().unwrap();
+        });
+        let client = org.open(org.tweaked(None, Some(hook)), &dir);
+        assert_eq!(client.refresh(), Err(OnePassError::Conflict));
+        let s = client.state().unwrap().unwrap();
+        assert_eq!(s.source, FfiPinSource::Tofu { verified: true });
+        assert_eq!(s.roster_seq, 1);
+        // Again, from what is stored now.
+        let s = client.refresh().unwrap();
+        assert_eq!(s.roster_seq, 2);
+        assert_eq!(s.source, FfiPinSource::Tofu { verified: true });
+    }
+
+    #[test]
+    fn withheld_middle_roster_is_a_rollback() {
+        let org = publish(&FakeMailbox::org());
+        let (dir, _) = org.second_device();
+        org.write_roster(2);
+        org.write_roster(3);
+        let before = pin_bytes(&dir);
+        let client = org.open(org.tweaked(Some(2), None), &dir);
+        assert_eq!(client.refresh(), Err(integrity("org_roster_rollback")));
+        assert_eq!(pin_bytes(&dir), before);
     }
 }
