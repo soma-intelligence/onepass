@@ -7,6 +7,7 @@ use crate::Result;
 use crate::crypto::random_array;
 
 mod identity;
+mod join;
 mod keyset;
 mod lineage;
 mod rebase;
@@ -14,6 +15,10 @@ mod roster;
 mod rules;
 
 pub use identity::{OrgIdentityPublic, OrgSecrets, fingerprint_words, org_fingerprint};
+pub use join::{
+    Invitation, JoinRequestBody, MAX_JOIN_GENESIS_BYTES, SignedJoinRequest, VerifiedJoin,
+    activate_member, invite_member, join_code, sign_join_request, verify_join_request,
+};
 pub use keyset::{OrgKeyset, SealedOrgKeyset, open_org_keyset, seal_org_keyset};
 pub use lineage::{
     MemberRef, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgHeadInfo, OrgLineage,
