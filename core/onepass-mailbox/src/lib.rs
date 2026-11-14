@@ -42,6 +42,7 @@ pub use drops::{
 };
 pub use http::{Endpoint, tls_client_config};
 pub use onepass_mailbox_proto::ErrorCode;
+pub use org::{OrgStore, OrgStoreApi, OrgStoreError};
 pub use rendezvous::{RDV_FRAMES_MAX, RDV_SESSION_BYTES_MAX, RdvRole, Rendezvous};
 pub use wake::WakeListener;
 
