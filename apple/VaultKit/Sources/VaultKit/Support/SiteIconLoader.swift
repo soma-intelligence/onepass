@@ -195,6 +195,14 @@ public actor SiteIconLoader {
         }
     }
 
+    /// Drops the icon cached for the host of `url` (memory and disk): the next `icon(for:)` searches
+    /// the site again. Used when a cached icon turns out to be a hosting platform's.
+    public func forget(_ url: String) {
+        guard let host = Self.fetchableHost(of: url) else { return }
+        memory.withLock { $0[host] = nil }
+        try? FileManager.default.removeItem(at: cacheFile(host: host, ext: "png"))
+    }
+
     /// Waits for the background refreshes under way (tests).
     func settle() async {
         while let task = inFlight.values.first {

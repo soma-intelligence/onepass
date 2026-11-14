@@ -1097,6 +1097,25 @@ extension SiteIconLoaderTests {
         #expect(paths.contains("/club.png"))
     }
 
+    /// A flat icon hashes 0, which says nothing about it: never refused, not even by a reject of 0
+    /// (an older or hand-edited pack).
+    @Test func flatIconIsNeverRefused() async throws {
+        let (session, _) = Self.makeSession()
+        let flat = Self.pngData(side: 64)
+        #expect(IconHash.dHash(try #require(SiteIconLoader.decodeIcon(flat)).png) == 0)
+        #expect(!IconPack.isRejected(flat, by: [0]))
+        StubProtocol.install(host: "uni.exemple.fr") { request in
+            request.url?.path == "/apple-touch-icon.png" ? .init(body: flat) : .init(status: 404)
+        }
+        let pack = try IconPack(data: makeIconPack(
+            version: 2, icons: [(Data("x".utf8), 0)], domains: ["autre.fr": 0], rejects: ["0000000000000000"]))
+        #expect(pack.rejects == [0])
+        let loader = SiteIconLoader(
+            cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true },
+            rejects: { pack.rejects })
+        #expect(await loader.icon(for: "https://uni.exemple.fr") != nil)
+    }
+
     /// Every candidate is the platform's icon: no icon, and the failure is remembered.
     @Test func allCandidatesRefusedGivesNoIcon() async throws {
         let (session, _) = Self.makeSession()

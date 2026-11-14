@@ -1055,6 +1055,10 @@ REJECT_DISTANCE = 6
 SHARED_BRANDS = 3
 # Side of the PNG each site icon is drawn at to be hashed.
 HASH_PIXELS = 128
+# A dHash with fewer or more bits set says little about the icon (a flat tile hashes 0): it is never a
+# reject and never matches one (IconPack.minHashBits / maxHashBits in the app).
+MIN_HASH_BITS = 8
+MAX_HASH_BITS = 56
 
 
 def fetch_platforms(platforms, out, log, fetcher=None, google=True, jobs=8):
@@ -1111,6 +1115,11 @@ def distance(a, b):
     return bin(a ^ b).count("1")
 
 
+def informative(value):
+    """A hash with enough structure to identify an icon: MIN_HASH_BITS to MAX_HASH_BITS bits set."""
+    return MIN_HASH_BITS <= bin(value).count("1") <= MAX_HASH_BITS
+
+
 def brand_label(domain):
     """The brand a domain names: its registrable domain's first label, squashed (brand.com and
     brand.co.uk give "brand")."""
@@ -1121,11 +1130,13 @@ def brand_label(domain):
 def find_rejects(icons, platform_hashes=()):
     """Sorted hashes of platform icons: every platform's own icon, plus each site icon hash that
     SHARED_BRANDS or more different brands serve (icons within REJECT_DISTANCE, counted by
-    `brand_label`, so one brand's own domains count once). icons: [(domain, hash)]."""
+    `brand_label`, so one brand's own domains count once). icons: [(domain, hash)]. A hash that is
+    not `informative` (a flat tile) is left out on both sides."""
     labels = {}
     for domain, value in icons:
-        labels.setdefault(value, set()).add(brand_label(domain))
-    rejects = set(platform_hashes)
+        if informative(value):
+            labels.setdefault(value, set()).add(brand_label(domain))
+    rejects = {value for value in platform_hashes if informative(value)}
     values = list(labels)
     for value in values:
         near = set()
@@ -1138,7 +1149,7 @@ def find_rejects(icons, platform_hashes=()):
 
 
 def is_rejected(value, rejects):
-    return any(distance(value, r) <= REJECT_DISTANCE for r in rejects)
+    return informative(value) and any(informative(r) and distance(value, r) <= REJECT_DISTANCE for r in rejects)
 
 
 # Candidates that are a site's own icon, fetched by `sites` (curated `site` brands, domain lists).

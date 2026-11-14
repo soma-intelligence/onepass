@@ -99,7 +99,14 @@ public final class ItemIconResolver: Sendable {
         if let url, let packed = packIcon(for: url) { return packed }
         if let named = pack?.icon(forTitle: title)?.data { return named }
         guard let url else { return nil }
-        return Self.pick(chosen: nil, pack: nil, site: notRejected(await site.icon(for: url), url: url))
+        let fetched = await site.icon(for: url)
+        if fetched != nil, notRejected(fetched, url: url) == nil {
+            // A platform's icon cached before the pack knew it: searched again at once, so the
+            // site's next candidate is found without waiting for the cache to age.
+            await site.forget(url)
+            return Self.pick(chosen: nil, pack: nil, site: notRejected(await site.icon(for: url), url: url))
+        }
+        return Self.pick(chosen: nil, pack: nil, site: fetched)
     }
 
     /// Same, loading the chosen icon from the vault first (`CustomIconStore.prefetch`): a chosen
@@ -140,6 +147,11 @@ public final class ItemIconResolver: Sendable {
         }
         let rejected = IconPack.isRejected(png, by: current.rejects)
         checked.withLock { $0[key] = (png, current.version, rejected) }
+        if rejected {
+            // Dropped from the cache once, here: the row's `icon(for:)` then searches the site again.
+            let site = self.site
+            Task { await site.forget(url) }
+        }
         return rejected ? nil : png
     }
 

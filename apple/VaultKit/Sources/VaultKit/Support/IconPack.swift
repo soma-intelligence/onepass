@@ -153,11 +153,20 @@ public struct IconPack: Sendable {
     /// scripts/icon_pack.py).
     public static let rejectDistance = 6
 
+    /// A dHash with fewer or more bits set says little about the icon (a flat tile hashes 0): it is
+    /// never refused, and such a reject is ignored (`MIN_HASH_BITS` / `MAX_HASH_BITS` in the build).
+    public static let minHashBits = 8
+    public static let maxHashBits = 56
+
+    static func isInformative(_ hash: UInt64) -> Bool {
+        (minHashBits...maxHashBits).contains(hash.nonzeroBitCount)
+    }
+
     /// Whether `png` is a hosting-platform icon: its dHash is within `rejectDistance` of one of
-    /// `rejects`. An image that does not hash is not refused.
+    /// `rejects`. An image that does not hash, or whose hash is not informative, is not refused.
     public static func isRejected(_ png: Data, by rejects: [UInt64]) -> Bool {
-        guard !rejects.isEmpty, let hash = IconHash.dHash(png) else { return false }
-        return rejects.contains { IconHash.distance($0, hash) <= rejectDistance }
+        guard !rejects.isEmpty, let hash = IconHash.dHash(png), isInformative(hash) else { return false }
+        return rejects.contains { isInformative($0) && IconHash.distance($0, hash) <= rejectDistance }
     }
 
     /// `scripts/icon_pack.py squash`: letters and digits only, accents dropped.

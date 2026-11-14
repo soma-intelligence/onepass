@@ -658,6 +658,19 @@ class Platforms(unittest.TestCase):
             self.assertIn(domain, index["domains"])
         self.assertEqual((report["rejects"], report["platform_icons_dropped"]), (0, []))
 
+    def test_flat_tiles_of_unrelated_brands_are_not_a_reject(self):
+        domains = ["alpha.test", "bravo.test", "charlie.test"]
+        for domain, color in zip(domains, (b"\x20\x40\xc0\xff", b"\xc0\x20\x20\xff", b"\x10\x90\x30\xff")):
+            self.serve(domain, icon_pack.png_from_rgba(128, 128, [color * 128] * 128))
+        self.fetch(domains)
+        _, index, report, _ = self.build(domains)
+        self.assertNotIn("rejects", index)
+        for domain in domains:
+            self.assertIn(domain, index["domains"])
+        self.assertEqual(report["platform_icons_dropped"], [])
+        self.assertEqual(icon_pack.find_rejects([("a.test", 0), ("b.test", 0), ("c.test", 0)], [0, (1 << 64) - 1]), [])
+        self.assertFalse(icon_pack.is_rejected(0, [0]))
+
     def test_near_duplicates_cluster_and_far_ones_do_not(self):
         base = 0x0F0F_F0F0_3C3C_A5A5
         near = base ^ 0b111111  # 6 bits away
