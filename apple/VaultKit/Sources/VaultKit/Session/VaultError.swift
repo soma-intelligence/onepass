@@ -66,6 +66,9 @@ public enum VaultError: Error, Equatable, Sendable {
                 self = .integrity(kind: "membership_fork")
             case .IdentityPending:
                 self = .other(String(localized: "sharing.error.identityPending", bundle: VaultKitStrings.bundle))
+            case .OrgPinMismatch:
+                // Same value the generic integrity arm gave before the variant existed.
+                self = .integrity(kind: "org_pin_mismatch")
             }
         case let error as BiometricError:
             switch error {
