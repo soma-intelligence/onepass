@@ -51,6 +51,31 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Passkeys and passwords in Android's Credential Manager (passkey/), Android 14+. -->
+        <service
+            android:name=".passkey.OnePassCredentialService"
+            android:enabled="@bool/credential_provider_enabled"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.credentials.CredentialProviderService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.credentials.provider"
+                android:resource="@xml/credential_provider" />
+        </service>
+
+        <activity
+            android:name=".passkey.PasskeyActivity"
+            android:enabled="@bool/credential_provider_enabled"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- One decrypted attachment, lent read only to the app the user
              picks (per-URI grant); never exported. -->
         <provider

@@ -10,5 +10,9 @@
             android:name=".LoginDemoActivity"
             android:exported="true"
             android:taskAffinity="me.somalabs.onepass.demo" />
+        <activity
+            android:name=".PasskeyDemoActivity"
+            android:exported="true"
+            android:taskAffinity="me.somalabs.onepass.demo" />
     </application>
 </manifest>
