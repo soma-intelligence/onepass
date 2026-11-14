@@ -49,6 +49,10 @@ interface SetupRecord extends BoundRecord {
   codes?: string[];
   /** A final answer was given: only `init` and `close` remain. */
   spent: boolean;
+  /** The host answered `exists` for this card: only then may a save ask to replace. */
+  sawExists?: boolean;
+  /** A `save_totp` or `save_recovery_codes` of this card is waiting for the host. */
+  inFlight?: boolean;
 }
 
 interface WatchRecord {
@@ -259,6 +263,10 @@ export class SetupCards {
     if (rec.spent || rec.mode !== "confirm" || rec.uri === undefined) throw new BgError("invalid");
     // Only an item the card offered.
     if (itemId !== null && !(rec.candidates ?? []).some((c) => c.itemId === itemId)) throw new BgError("invalid");
+    // A second click while the host writes: nothing more is sent.
+    if (rec.inFlight) return { status: "refused" };
+    // Replace only answers an `exists` this very card was given.
+    if (replace === true && rec.sawExists !== true) return { status: "refused" };
     const req: { op: "save_totp"; ctx: "setup"; origin: string; uri: string; item_id?: string; username?: string; replace?: boolean; previous_label: string } = {
       op: "save_totp",
       ctx: "setup",
@@ -270,9 +278,11 @@ export class SetupCards {
     else req.username = (username ?? "").trim() || rec.account;
     if (replace === true) req.replace = true;
     let r: { status: "saved" | "same" | "exists" | "replaced"; item_id: string };
+    rec.inFlight = true;
     try {
       r = await this.deps.session.request(req);
     } catch (e) {
+      rec.inFlight = false;
       if (toBgError(e).code === "locked") {
         // The seed stays: the card's next click retries without a new scan.
         this.askUnlock(rec.tabId);
@@ -283,7 +293,11 @@ export class SetupCards {
       await this.tokens.update(token, rec);
       return { status: "refused" };
     }
-    if (r.status === "exists") return { status: "exists" };
+    rec.inFlight = false;
+    if (r.status === "exists") {
+      rec.sawExists = true;
+      return { status: "exists" };
+    }
     const period = rec.period;
     this.wipe(rec);
     rec.spent = true;
@@ -391,9 +405,12 @@ export class SetupCards {
   async codesSave(token: string, ui: UiContext): Promise<SetupCodesResult> {
     const rec = await this.record(token, ui);
     if (rec.spent || rec.mode !== "codes" || !rec.codes || rec.itemId === undefined) throw new BgError("invalid");
+    if (rec.inFlight) return { status: "refused" };
+    rec.inFlight = true;
     try {
       await this.deps.session.request({ op: "save_recovery_codes", ctx: "setup", origin: rec.origin, item_id: rec.itemId, codes: rec.codes.join("\n") });
     } catch (e) {
+      rec.inFlight = false;
       if (toBgError(e).code === "locked") {
         this.askUnlock(rec.tabId);
         return { status: "locked" };
@@ -403,6 +420,7 @@ export class SetupCards {
       await this.tokens.update(token, rec);
       return { status: "refused" };
     }
+    rec.inFlight = false;
     this.wipe(rec);
     rec.spent = true;
     await this.tokens.update(token, rec);

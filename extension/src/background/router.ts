@@ -445,9 +445,9 @@ export function parseCsToBg(m: unknown): CsToBg | null {
 const MAX_RECOVERY_CODES = 32;
 const RECOVERY_CODE_RE = /^[A-Za-z0-9-]{4,64}$/;
 
-/** One recovery code as the bridge takes it: 4 to 64 of `[A-Za-z0-9-]` once trimmed. */
+/** One recovery code as the bridge takes it: 4 to 64 of `[A-Za-z0-9-]` once every space is removed ("1234 5678"). */
 function recoveryCode(v: unknown): string {
-  const s = str(v, 256).trim();
+  const s = str(v, 256).replace(/\s+/g, "");
   if (!RECOVERY_CODE_RE.test(s)) throw new Invalid();
   return s;
 }

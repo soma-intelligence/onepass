@@ -25,6 +25,9 @@ function setup(o: { url?: string; incognito?: boolean; reply?: Reply; capture?: 
   ext.setFrame(TAB, 0, url, "doc-1");
   ext.setFrame(TAB, 1, `${SITE}/embed`, "doc-k");
   ext.parents.set(`${TAB}:1`, 0);
+  // A third-party frame: never injected, never asked.
+  ext.setFrame(TAB, 2, "https://ads.test/slot", "doc-ad");
+  ext.parents.set(`${TAB}:2`, 0);
   ext.tabReply = (_tab, message, options) => o.reply?.(options.frameId ?? -1, message as { type: string });
   ext.captureImpl = o.capture === null ? undefined : (o.capture ?? (() => PNG));
   const session = {
@@ -60,7 +63,7 @@ describe("setup scan", () => {
       },
     });
     expect(await h.scan.scan()).toEqual({ status: "card" });
-    expect(h.ext.injections).toEqual([{ target: { tabId: TAB, allFrames: true }, files: ["setup-scan.js"] }]);
+    expect(h.ext.injections).toEqual([{ target: { tabId: TAB, frameIds: [0, 1] }, files: ["setup-scan.js"] }]);
     expect(h.sent("setup_scan_dom").map((s) => s.options.frameId).sort()).toEqual([0, 1]);
     expect(h.ext.captures).toHaveLength(0);
     expect(h.sent("setup_scan_capture")).toHaveLength(0);
@@ -84,7 +87,26 @@ describe("setup scan", () => {
     expect(cap).toHaveLength(1);
     expect(cap[0]?.options).toMatchObject({ frameId: 0 });
     expect((await h.cards.init(h.token(), UI)).mode).toBe("confirm");
+    // The cross-origin frame got no scanner and no question.
+    expect(h.ext.injections.flatMap((i) => i.target.frameIds ?? [])).not.toContain(2);
+    expect(h.sent("setup_scan_dom").map((s) => s.options.frameId)).not.toContain(2);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("captures nothing when the scanned tab is no longer the active one of its window", async () => {
+    const found = { found: [{ uri: URI, issuer: "Atlas", account: "alex@atlas.dev" }] };
+    const reply: Reply = (_f, m) => (m.type === "setup_scan_dom" ? { found: [] } : m.type === "setup_scan_capture" ? found : undefined);
+    // Another tab came to the front.
+    let h = setup({ reply });
+    h.ext.tabStates.set(TAB, { active: false, windowId: 4 });
+    expect(await h.scan.scan()).toEqual({ status: "none" });
+    expect(h.ext.captures).toHaveLength(0);
+    // The tab moved to another window.
+    h = setup({ reply });
+    h.ext.tabStates.set(TAB, { active: true, windowId: 9 });
+    expect(await h.scan.scan()).toEqual({ status: "none" });
+    expect(h.ext.captures).toHaveLength(0);
+    expect(h.sent("setup_scan_capture")).toHaveLength(0);
   });
 
   it("shows the paste card when nothing is found and when the capture throws", async () => {

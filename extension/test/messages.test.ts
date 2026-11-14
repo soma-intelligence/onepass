@@ -78,8 +78,11 @@ describe("messages types", () => {
     expect(parseUiToBg({ type: "setup_paste", token: tok, key: "" })).toBeNull();
     for (const type of ["setup_init", "setup_codes_save", "setup_close"]) expect(parseUiToBg({ type, token: tok })).toEqual({ type, token: tok });
     expect(parseUiToBg({ type: "popup_scan_qr", tabId: 3 })).toEqual({ type: "popup_scan_qr" });
-    expect(parseCsToBg({ type: "setup_codes_found", codes: [" ab12-cd34 ", "ef56gh78"] })).toEqual({ type: "setup_codes_found", codes: ["ab12-cd34", "ef56gh78"] });
-    for (const codes of [[], ["ab1"], ["ab12 cd34"], ["x".repeat(65)], Array(33).fill("ab12-cd34"), "ab12-cd34"]) {
+    expect(parseCsToBg({ type: "setup_codes_found", codes: [" ab12-cd34 ", "ef56gh78", "1234 5678"] })).toEqual({
+      type: "setup_codes_found",
+      codes: ["ab12-cd34", "ef56gh78", "12345678"],
+    });
+    for (const codes of [[], ["ab1"], ["ab c"], ["ab12_cd34"], ["x".repeat(65)], Array(33).fill("ab12-cd34"), "ab12-cd34"]) {
       expect(parseCsToBg({ type: "setup_codes_found", codes })).toBeNull();
     }
   });

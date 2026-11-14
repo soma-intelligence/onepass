@@ -164,6 +164,43 @@ describe("setup card", () => {
     expect(saves[1]).toMatchObject({ item_id: "it_a", replace: true });
   });
 
+  it("honours replace only after this card saw exists", async () => {
+    const h = setup({
+      items: [item("it_a", "alex@atlas.dev", { has_totp: true })],
+      answer: (r) => (r.op === "save_totp" ? { status: r.replace === true ? "replaced" : "exists", item_id: "it_a" } : undefined),
+    });
+    const token = await h.open();
+    await h.cards.init(token, UI);
+    // A forged first click with replace: refused, nothing written, the card stays usable.
+    expect(await h.cards.save(token, UI, "it_a", undefined, true)).toEqual({ status: "refused" });
+    expect(h.ops()).not.toContain("save_totp");
+    expect(await h.cards.save(token, UI, "it_a")).toEqual({ status: "exists" });
+    expect((await h.cards.save(token, UI, "it_a", undefined, true)).status).toBe("replaced");
+    expect(h.requests.filter((r) => r.op === "save_totp")).toHaveLength(2);
+  });
+
+  it("sends one save_totp for two clicks at once", async () => {
+    let release: (() => void) | null = null;
+    const h = setup({
+      items: [item("it_a", "alex@atlas.dev")],
+      answer: (r) =>
+        r.op === "save_totp"
+          ? new Promise((resolve) => {
+              release = () => resolve({ status: "saved", item_id: "it_a" });
+            })
+          : undefined,
+    });
+    const token = await h.open();
+    await h.cards.init(token, UI);
+    const first = h.cards.save(token, UI, "it_a");
+    const second = h.cards.save(token, UI, "it_a");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await second).toEqual({ status: "refused" });
+    (release as unknown as () => void)();
+    expect((await first).status).toBe("saved");
+    expect(h.requests.filter((r) => r.op === "save_totp")).toHaveLength(1);
+  });
+
   it("fills the code only after a saved, same or replaced answer", async () => {
     for (const status of ["saved", "same", "replaced"] as const) {
       const h = setup({
@@ -339,14 +376,20 @@ describe("setup card", () => {
     expect(await h.ext.send(msg, csSender("https://evil.test/", TAB, 0))).toEqual({ err: "invalid" });
     // Another tab.
     expect(await h.ext.send(msg, csSender(`${SITE}/settings`, 8, 0))).toEqual({ err: "invalid" });
-    // Codes the bridge would refuse never reach the handler.
-    expect(await h.ext.send({ type: "setup_codes_found", codes: ["a b"] }, csSender(`${SITE}/settings`, TAB, 0))).toBeTypeOf("symbol");
+    // Codes the bridge would refuse, even without their spaces, never reach the handler.
+    expect(await h.ext.send({ type: "setup_codes_found", codes: ["ab c"] }, csSender(`${SITE}/settings`, TAB, 0))).toBeTypeOf("symbol");
     expect(cards()).toBe(before);
     // The top frame of the watched site: the codes card.
     expect(await h.ext.send(msg, csSender(`${SITE}/settings/codes`, TAB, 0, { documentId: "doc-1" }))).toEqual({ ok: {} });
     expect(cards()).toBe(before + 1);
     const codesToken = (h.sent("show_frame").at(-1)?.message as { url: string }).url.split("#")[1] as string;
     expect(await h.cards.init(codesToken, UI)).toMatchObject({ mode: "codes", codeCount: 6, selected: "it_a" });
+    // Grouped codes ("1234 5678") lose their spaces before the check.
+    const seen: unknown[] = [];
+    const spy = createRouter(h.ext.runtime, { cs: { setup_codes_found: async (m) => (seen.push(m.codes), {}) }, ui: {} });
+    spy({ type: "setup_codes_found", codes: ["1234 5678", " ab12-cd34 "] }, csSender(`${SITE}/x`, TAB, 0), () => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(seen).toEqual([["12345678", "ab12-cd34"]]);
     expect(await h.cards.codesSave(codesToken, UI)).toEqual({ status: "saved" });
     expect(h.requests.find((r) => r.op === "save_recovery_codes")).toEqual({
       op: "save_recovery_codes",

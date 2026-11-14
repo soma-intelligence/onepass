@@ -56,10 +56,10 @@ export class SetupScan {
   private async pageScan(tabId: number, origin: string): Promise<OtpauthShallow | null> {
     const scripting = this.deps.ext.scripting;
     if (!scripting) return null;
-    await scripting.executeScript({ target: { tabId, allFrames: true }, files: [SCANNER_FILE] });
     const all = (await this.deps.ext.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? [];
-    // The top frame and frames of exactly its origin (the scanner checks it again in the page).
+    // The top frame and frames of exactly its origin only (the scanner checks it again in the page).
     const ids = [0, ...all.filter((f) => f.frameId !== 0 && parseOrigin(f.url)?.origin === origin).map((f) => f.frameId).sort((a, b) => a - b)];
+    await scripting.executeScript({ target: { tabId, frameIds: ids }, files: [SCANNER_FILE] });
     const answers = await Promise.all(ids.map((id) => this.ask(tabId, id, { type: "setup_scan_dom" })));
     for (const a of answers) if (a[0]) return a[0];
     return null;
@@ -69,6 +69,9 @@ export class SetupScan {
   private async captureScan(tabId: number, windowId: number | undefined): Promise<OtpauthShallow | null> {
     const capture = this.deps.ext.tabs.captureVisibleTab;
     if (!capture) return null;
+    // The capture shows the window's active tab: it must still be the scanned one, in that window.
+    const now = await this.deps.ext.tabs.get?.(tabId).catch(() => undefined);
+    if (now?.active !== true || windowId === undefined || now.windowId !== windowId) return null;
     let dataUrl: string;
     try {
       dataUrl = await capture.call(this.deps.ext.tabs, windowId, { format: "png" });
