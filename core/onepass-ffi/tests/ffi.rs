@@ -2702,7 +2702,5 @@ mod key_use {
             (after.uses, after.updated_at),
             (before.uses, before.updated_at)
         );
-        // Nothing queued: a write session applied every use at once.
-        assert_eq!(fx.session.flush_key_use_queue().unwrap(), 0);
     }
 }

@@ -1475,12 +1475,20 @@ public final class VaultSession {
 
     /// Folds this device's queued key uses an hour old or more into their items (unlock, scene
     /// foreground). Best effort: nothing when locked; an error leaves the rows queued for the next
-    /// try and is thrown as is, without `lastError` nor counting as activity (no user action). The
-    /// sync layer is told when a use was applied.
+    /// try and is thrown as is, without `lastError` nor counting as activity (no user action). An
+    /// integrity error still ends in "Données refusées", as `readUnmapped` does. The sync layer is
+    /// told when a use was applied.
     @discardableResult
     public func flushKeyUseQueue() async throws -> UInt32 {
         guard let session else { return 0 }
-        let applied = try await background { try session.flushKeyUseQueue() }
+        let gen = generation
+        let applied: UInt32
+        do {
+            applied = try await background { try session.flushKeyUseQueue() }
+        } catch {
+            if case .integrity = VaultError(error) { _ = handle(error, generation: gen) }
+            throw error
+        }
         if applied > 0 { notifySync { await $0.localChangesWritten() } }
         return applied
     }

@@ -737,6 +737,8 @@ struct ItemDetailView: View {
     private func copyJSON(_ item: FfiItem) {
         guard !locked(item), let json = ItemJSON.string(item) else { return }
         session.copy(json, concealed: true)
+        // Secrets handed out: a key use (never a use of the item for its counter).
+        model.noteItemKeyUse(ItemRef(vaultID: item.vaultId, itemID: item.id), action: .copied, field: "JSON")
         model.showToast(String(localized: "item.jsonCopiedClearedIn"))
     }
 

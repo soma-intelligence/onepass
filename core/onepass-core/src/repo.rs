@@ -2651,8 +2651,8 @@ mod tests {
                 1
             )
         );
-        // Within the hour: no memory write, the key use is not due either
-        // (queued where the store keeps a queue), nothing written.
+        // Within the hour, same browser: no memory write, the key use is not
+        // due either (queued where the store keeps a queue), nothing written.
         let t5 = t0 + time::Duration::minutes(5);
         assert!(
             !repo
@@ -2660,14 +2660,30 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(log(&mut repo)[0].count, 1);
-        // An hour on, the memory alone is not worth a write but the key use
-        // is due: written through `record_key_use`.
-        let t61 = t0 + time::Duration::minutes(61);
-        let wrote = repo
-            .record_usage(&v, a.id, u("a.com", t61), t61, false, "Chrome")
-            .unwrap();
+        // Within the hour, another browser: the memory is unchanged, but the
+        // key use has a new coalescing key, so it is due and written alone
+        // (the `record_key_use` fallback): the call reports the write.
+        assert!(
+            repo.record_usage(&v, a.id, u("a.com", t5), t5, false, "Safari")
+                .unwrap()
+        );
         let entries = log(&mut repo);
-        assert_eq!(entries[0].last_at, t61, "{wrote} {entries:?}");
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        let safari = entries.iter().find(|e| e.client == "Safari").unwrap();
+        assert_eq!(
+            (safari.action, safari.count, safari.last_at),
+            (KeyUseAction::Filled, 1, t5)
+        );
+        // An hour on, the memory entry is stale and rewritten: the key use
+        // rides that same save (`apply_key_use`).
+        let t61 = t0 + time::Duration::minutes(61);
+        assert!(
+            repo.record_usage(&v, a.id, u("a.com", t61), t61, false, "Chrome")
+                .unwrap()
+        );
+        let entries = log(&mut repo);
+        let chrome = entries.iter().find(|e| e.client == "Chrome").unwrap();
+        assert_eq!(chrome.last_at, t61, "{entries:?}");
         assert_eq!(repo.items(&v).unwrap()[0].updated_at, a.updated_at);
     }
 
