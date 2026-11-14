@@ -9,6 +9,7 @@ use crate::crypto::random_array;
 mod identity;
 mod keyset;
 mod lineage;
+mod rebase;
 mod roster;
 mod rules;
 
@@ -19,6 +20,7 @@ pub use lineage::{
     OrgRecordBody, SignedOrgRecord, add_owner_signature, quorum, sign_org_change, sign_org_genesis,
     verify_org_chain, verify_org_genesis,
 };
+pub use rebase::{merge_members, rebase_roster};
 pub use roster::{
     MemberState, OrgMember, Role, RoleSet, RosterBody, SignedRoster, invite_commit,
     member_kem_hash, scim_id_hash, sign_roster,

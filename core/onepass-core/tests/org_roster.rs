@@ -1,6 +1,7 @@
 //! The signed org roster (Business E1, plan B Tasks 6 and 7): roles as a
 //! bit set, member shape rules, the strict codec and the caps; then the
-//! acceptance rules of spec 5.5 (who may sign which change).
+//! acceptance rules of spec 5.5 (who may sign which change); then the
+//! three-way merge and rebase after a lost write (Task 8).
 
 mod org_common;
 
@@ -12,7 +13,8 @@ use onepass_core::org::{
     MemberState, OrgChangeBody, OrgChangeKind, OrgGenesisBody, OrgId, OrgLineage, OrgMember, Role,
     RoleSet, RosterBody, SignedRoster, accept_first_roster, accept_next_roster,
     accept_roster_chain, check_transition, founding_roster, invite_commit, member_kem_hash,
-    scim_id_hash, sign_org_change, sign_org_genesis, sign_roster, verify_org_genesis,
+    merge_members, rebase_roster, scim_id_hash, sign_org_change, sign_org_genesis, sign_roster,
+    verify_org_genesis,
 };
 use onepass_core::{Error, Id, IntegrityError};
 use org_common::*;
@@ -1709,4 +1711,229 @@ fn rotated_owner_new_device_signs_sync() {
         check_transition(l5, base(), &n, &stranger.public),
         "check_transition, random device",
     );
+}
+
+// ---------------------------------------------------------------------
+// Task 8: three-way merge and rebase after a lost write.
+
+/// `prev.next()` edited by `f`, accepted after `prev` as signed by `by`.
+fn landed(prev: &RosterBody, by: u8, f: impl FnOnce(&mut RosterBody)) -> RosterBody {
+    accept(prev, edit(prev, f), by).unwrap()
+}
+
+/// `mine` (signed by `by`) rebased over `theirs`, both written after
+/// `base`, under lineage `l`; the merge is symmetric in the two sides.
+fn rebase_in(
+    l: &OrgLineage,
+    base: &RosterBody,
+    mine: &RosterBody,
+    theirs: &RosterBody,
+    by: u8,
+) -> onepass_core::Result<RosterBody> {
+    if let (Ok(a), Ok(b)) = (
+        merge_members(&base.members, &mine.members, &theirs.members),
+        merge_members(&base.members, &theirs.members, &mine.members),
+    ) {
+        assert_eq!(a, b, "merge is symmetric");
+    }
+    rebase_roster(l, base, mine, theirs, &dev(org(), by).public)
+}
+
+fn rebase(
+    base: &RosterBody,
+    mine: &RosterBody,
+    theirs: &RosterBody,
+    by: u8,
+) -> onepass_core::Result<RosterBody> {
+    rebase_in(l0(), base, mine, theirs, by)
+}
+
+fn member(b: &RosterBody, a: u8) -> &OrgMember {
+    b.member(acct(a)).unwrap()
+}
+
+#[test]
+fn rebase_keeps_both_changes() {
+    let base = r(5);
+    let mine = edit(base, |b| {
+        upsert(b, invite(X, RoleSet::of(&[Role::UserManager])))
+    });
+    let theirs = landed(base, U, |b| set_state(b, M, MemberState::Suspended));
+    assert_eq!(theirs.seq, 6);
+    let out = rebase(base, &mine, &theirs, A).unwrap();
+    assert_eq!(out.seq, 7);
+    assert_eq!(out.prev_hash, theirs.hash());
+    assert_eq!(member(&out, X).state, MemberState::Invited);
+    assert_eq!(member(&out, X).roles, RoleSet::of(&[Role::UserManager]));
+    assert_eq!(member(&out, M).state, MemberState::Suspended);
+    assert_eq!(accept(&theirs, out.clone(), A).unwrap(), out);
+
+    // The org head is the newer of the two sides' heads.
+    let l1 = &org().lineages[1];
+    let mine = edit(base, |b| {
+        b.org_head = l1.head().hash;
+        upsert(b, invite(X, RoleSet::EMPTY));
+    });
+    let out = rebase_in(l1, base, &mine, &theirs, A).unwrap();
+    assert_eq!(out.org_head, l1.head().hash);
+    assert!(accept_in(l1, &theirs, out, A).is_ok());
+}
+
+#[test]
+fn rebase_removal_wins() {
+    let base = r(5);
+    let removes = edit(base, |b| removed_by(b, M, A));
+    let grants = landed(base, O, |b| add_role(b, M, Role::Auditor));
+    let out = rebase(base, &removes, &grants, A).unwrap();
+    assert_eq!(member(&out, M), member(&removes, M), "copied from mine");
+    assert_eq!(member(&out, M).roles, RoleSet::EMPTY);
+    assert!(member(&out, M).devices.is_empty());
+    assert!(accept(&grants, out, A).is_ok());
+
+    // The other way round: theirs removed M, mine granted.
+    let removes = landed(base, A, |b| removed_by(b, M, A));
+    let grants = edit(base, |b| add_role(b, M, Role::Auditor));
+    let out = rebase(base, &grants, &removes, O).unwrap();
+    assert_eq!(member(&out, M), member(&removes, M));
+    assert!(accept(&removes, out, O).is_ok());
+
+    // Both removed, at different times: the earlier removal.
+    let early = edit(base, |b| removed_by(b, M, A));
+    let late = landed(base, O, |b| {
+        removed_by(b, M, O);
+        if let MemberState::Removed { at, .. } = &mut entry(b, M).state {
+            *at += 10;
+        }
+    });
+    let merged = merge_members(&base.members, &early.members, &late.members).unwrap();
+    let m = merged.iter().find(|e| e.account_id == acct(M)).unwrap();
+    assert_eq!(m, member(&early, M));
+}
+
+#[test]
+fn rebase_state_conflict_most_restrictive() {
+    let base = r(5);
+    let suspends = edit(base, |b| set_state(b, M, MemberState::Suspended));
+    let removes = landed(base, O, |b| removed_by(b, M, O));
+    let out = rebase(base, &suspends, &removes, A).unwrap();
+    assert!(matches!(member(&out, M).state, MemberState::Removed { .. }));
+    assert_eq!(member(&out, M), member(&removes, M));
+    assert!(accept(&removes, out, A).is_ok());
+
+    // Without a base entry, the more restrictive of two live states.
+    let mut x = member(r(3), M).clone();
+    x.account_id = acct(Y);
+    let y = OrgMember {
+        state: MemberState::Suspended,
+        ..x.clone()
+    };
+    let merged = merge_members(&[], &[x], std::slice::from_ref(&y)).unwrap();
+    assert_eq!(merged, vec![y]);
+}
+
+#[test]
+fn rebase_roles_three_way_per_bit() {
+    let base = r(6); // X Invited with {UserManager}
+    assert_eq!(member(base, X).roles, RoleSet::of(&[Role::UserManager]));
+    let mine = edit(base, |b| add_role(b, X, Role::Auditor));
+    let theirs = landed(base, O, |b| entry(b, X).roles = RoleSet::EMPTY);
+    let out = rebase(base, &mine, &theirs, A).unwrap();
+    assert_eq!(member(&out, X).roles, RoleSet::of(&[Role::Auditor]));
+    assert!(accept(&theirs, out, A).is_ok());
+}
+
+#[test]
+fn rebase_devices_three_way() {
+    let org = org();
+    let d0 = org.m.public.fingerprint();
+    let (d1, d2) = (fprs()[0], fprs()[1]);
+    let sorted = |mut v: Vec<DeviceFpr>| {
+        v.sort_unstable();
+        v
+    };
+    let base = landed(r(5), O, |b| entry(b, M).devices = sorted(vec![d0, d2]));
+    // Mine adds d1 (and drops d2), theirs drops d0.
+    let mine = edit(&base, |b| entry(b, M).devices = sorted(vec![d0, d1]));
+    let theirs = landed(&base, O, |b| entry(b, M).devices = vec![d2]);
+    let out = rebase(&base, &mine, &theirs, A).unwrap();
+    assert_eq!(member(&out, M).devices, vec![d1]);
+    assert!(accept(&theirs, out, A).is_ok());
+}
+
+#[test]
+fn rebase_both_invite_same_account() {
+    let base = r(5);
+    let mine = edit(base, |b| {
+        upsert(
+            b,
+            invite(X, RoleSet::of(&[Role::UserManager, Role::Auditor])),
+        )
+    });
+    let theirs = landed(base, O, |b| {
+        upsert(
+            b,
+            invite(X, RoleSet::of(&[Role::Auditor, Role::PolicyManager])),
+        )
+    });
+    let out = rebase(base, &mine, &theirs, A).unwrap();
+    assert_eq!(member(&out, X).state, MemberState::Invited);
+    assert_eq!(member(&out, X).roles, RoleSet::of(&[Role::Auditor]));
+    assert!(accept(&theirs, out, A).is_ok());
+}
+
+#[test]
+fn rebase_refuses_unauthorized_result() {
+    // U suspends M while O made M an Admin: the merged M is a suspended
+    // Admin, a change U may not sign.
+    let base = r(5);
+    let mine = edit(base, |b| set_state(b, M, MemberState::Suspended));
+    let theirs = landed(base, O, |b| add_role(b, M, Role::Admin));
+    denied(rebase(base, &mine, &theirs, U), "U over an Admin grant");
+}
+
+#[test]
+fn rebase_needs_siblings() {
+    let base = r(5);
+    let mine = edit(base, |b| upsert(b, invite(X, RoleSet::EMPTY)));
+    let theirs = landed(base, U, |b| set_state(b, M, MemberState::Suspended));
+    let not_siblings = |r: onepass_core::Result<RosterBody>, what: &str| match r {
+        Err(Error::Validation(_)) => {}
+        other => panic!("{what}: expected a validation error, got {other:?}"),
+    };
+    let later = theirs.next().unwrap();
+    not_siblings(rebase(base, &mine, &later, A), "seq differs");
+    not_siblings(rebase(r(4), &mine, &theirs, A), "base is not the parent");
+    let mut forked = mine.clone();
+    forked.prev_hash = r(4).hash();
+    not_siblings(rebase(base, &forked, &theirs, A), "mine prev_hash");
+    let mut forked = theirs.clone();
+    forked.prev_hash = r(4).hash();
+    not_siblings(rebase(base, &mine, &forked, A), "theirs prev_hash");
+}
+
+#[test]
+fn rebase_twice_converges() {
+    // A invites X; U's suspension of M lands first as 6; A rebases to 7.
+    let base = r(5);
+    let mine = edit(base, |b| {
+        upsert(b, invite(X, RoleSet::of(&[Role::UserManager])))
+    });
+    let u6 = landed(base, U, |b| set_state(b, M, MemberState::Suspended));
+    let a7 = rebase(base, &mine, &u6, A).unwrap();
+    assert_eq!(a7.seq, 7);
+    // P's removal of M lands first as 7; A rebases again over it to 8.
+    let p7 = landed(&u6, P, |b| removed_by(b, M, P));
+    let a8 = rebase(&u6, &a7, &p7, A).unwrap();
+    assert_eq!(a8.seq, 8);
+    assert_eq!(a8.prev_hash, p7.hash());
+    assert_eq!(member(&a8, X).state, MemberState::Invited);
+    assert_eq!(member(&a8, M), member(&p7, M));
+    assert_eq!(accept(&p7, a8.clone(), A).unwrap(), a8);
+    // The rebased roster carries both lost writes' outcomes: the chain
+    // 5 -> 6 -> 7 -> 8 is accepted from 5.
+    let chain = [(&u6, U), (&p7, P), (&a8, A)].map(|(b, by)| {
+        let d = dev(org(), by);
+        sign_roster(b.clone(), &d.public, &d.keys).unwrap()
+    });
+    assert_eq!(accept_roster_chain(l0(), base, &chain).unwrap(), a8);
 }
