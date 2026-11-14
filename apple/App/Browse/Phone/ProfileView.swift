@@ -17,7 +17,10 @@ struct ProfileView: View {
     #if os(iOS)
     @Environment(\.pushPhoneRoute) private var push
     @Environment(\.openPhoneTab) private var openPhoneTab
-    #else
+    /// On a tab stack of the iPhone; on the iPad split view (and the unfolded iPhone) the rows
+    /// open their page as the Mac does.
+    @Environment(\.inPhoneTabs) private var inPhoneTabs
+    #elseif os(macOS)
     @Environment(\.openSettings) private var openSettingsWindow
     #endif
     @State private var changingPassword = false
@@ -166,10 +169,9 @@ struct ProfileView: View {
                 leading: { WatchtowerScoreRing(score: report.map { Int($0.score) }) }
             ) {
                 #if os(iOS)
-                openPhoneTab(.watchtower)
-                #else
-                model.page = .watchtower
+                if inPhoneTabs { openPhoneTab(.watchtower); return }
                 #endif
+                model.page = .watchtower
             }
             ProfileNavRow(
                 label: "profile.security.unlock",
@@ -193,25 +195,23 @@ struct ProfileView: View {
                 id: "profile.security.passkeys"
             ) {
                 #if os(iOS)
-                push(.list(.passkeys))
-                #else
-                model.selection = .passkeys
-                model.page = .items
+                if inPhoneTabs { push(.list(.passkeys)); return }
                 #endif
+                model.showItems(.passkeys)
             }
             Spacer().frame(height: Theme.Space.l)
         }
         .accessibilityIdentifier("profile.security")
     }
 
-    /// A Réglages page: the settings sheet on the iPhone, the Settings window on the Mac.
+    /// A Réglages page: the Settings window on the Mac, the settings sheet elsewhere.
     private func openSettings(_ page: SettingsPage) {
         model.settingsPageRequest = page
-        #if os(iOS)
-        model.showSettings = true
-        #else
+        #if os(macOS)
         NSApp.activate()
         openSettingsWindow()
+        #else
+        model.showSettings = true
         #endif
     }
 
@@ -278,15 +278,14 @@ struct ProfileView: View {
     }
 
     /// The item's detail, opening straight in its editor (after its reprompt, if any): pushed on
-    /// the iPhone, revealed in the item list on the Mac.
+    /// the iPhone tabs, revealed in the item list elsewhere (iPad, Mac).
     private func edit(_ summary: FfiItemSummary) {
         let ref = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
         model.editOnOpen = ref
         #if os(iOS)
-        push(.item(ref))
-        #else
-        model.perform(.reveal(ref))
+        if inPhoneTabs { push(.item(ref)); return }
         #endif
+        model.perform(.reveal(ref))
     }
 
     // MARK: - Field reading (template ids of the core: identity and credit_card)

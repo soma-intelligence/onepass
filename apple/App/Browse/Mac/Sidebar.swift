@@ -465,6 +465,8 @@ struct AccountHeader: View {
         Menu {
             AccountsMenuItems()
             Section {
+                Button("Profil", systemImage: "person.crop.circle") { model.page = .profile }
+                    .accessibilityIdentifier("account.profile")
                 Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
                     .accessibilityIdentifier("account.newVault")
                 Button("Importer…", systemImage: "square.and.arrow.down") { model.showImport = true }
