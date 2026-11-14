@@ -29,7 +29,7 @@
 //! keyset or join request the current version plus 1 (1 when absent).
 //! Reads ignore them.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use aws_lc_rs::digest::{Context, SHA256};
@@ -55,6 +55,25 @@ pub const ORG_READ_MAX: usize = 1024;
 
 /// A join request as `join_requests` lists it: the account, its bytes.
 pub type JoinRequest = ([u8; 16], Vec<u8>);
+
+/// What `join_requests_since` found: the join requests that changed since
+/// the cursor.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct JoinFeedDelta {
+    /// Requests written (or rewritten) since the cursor, sorted by account
+    /// id. A rewrite of a known account appears once, with the new bytes.
+    pub upserts: Vec<JoinRequest>,
+    /// Record ids (`join_record_id(org_id, account_id)`) whose request is
+    /// gone since the cursor: deleted, or rewritten to a frame that does
+    /// not hash to its id. A tombstone carries only the record id and the id
+    /// cannot be inverted, so the caller maps it with `join_record_id` over
+    /// the accounts it holds. Always empty when `reset` is true.
+    pub removed: Vec<[u8; 16]>,
+    /// The call served a full fetch (first call, a cursor the server no
+    /// longer holds, or a new incarnation): the caller drops everything it
+    /// cached and takes `upserts` as the whole set.
+    pub reset: bool,
+}
 
 /// Records the plan `org` allows (`max_records` of `org_plan`).
 const ORG_MAX_RECORDS: usize = 200_000;
@@ -193,7 +212,20 @@ pub trait OrgStoreApi {
         bytes: Vec<u8>,
     ) -> Result<(), OrgStoreError>;
     fn join_requests(&mut self) -> Result<Vec<JoinRequest>, OrgStoreError>;
+    /// What changed among join requests since `feed` (start with
+    /// `ChangeFeed::full()`; keep the same value between calls). Same page
+    /// cap as `join_requests` (`ORG_FEED_PAGES_MAX`, `Malformed` past it).
+    fn join_requests_since(
+        &mut self,
+        feed: &mut ChangeFeed,
+    ) -> Result<JoinFeedDelta, OrgStoreError>;
     fn delete_join_request(&mut self, account_id: [u8; 16]) -> Result<(), OrgStoreError>;
+    /// The mailbox the store wraps, for credential management (grant,
+    /// set_role, revoke), `info` and `create_org_invite`. Never for org
+    /// records.
+    fn mailbox(&self) -> &dyn MailboxApi;
+    /// `OrgStore::create_member_invite` (one-use `managed` token).
+    fn create_member_invite(&mut self, ttl_hours: u16) -> Result<Vec<u8>, OrgStoreError>;
 }
 
 /// The client of an organisation mailbox: reads and writes its records as
@@ -320,33 +352,82 @@ impl<A: MailboxApi> OrgStore<A> {
     /// Every live join request, one per account, sorted by account id. A
     /// frame whose prefix does not hash to the id it sits at is dropped.
     pub fn join_requests(&mut self) -> Result<Vec<JoinRequest>, OrgStoreError> {
-        let mut feed = ChangeFeed::full();
+        Ok(self.join_requests_since(&mut ChangeFeed::full())?.upserts)
+    }
+
+    /// The join requests that changed since `feed` (see `JoinFeedDelta`).
+    /// Start with `ChangeFeed::full()` and keep the same value between calls.
+    /// A cursor the server no longer holds (`CursorExpired`) or a new
+    /// incarnation restarts the feed once with a full fetch and answers
+    /// `reset`; a second failure is returned. At most `ORG_FEED_PAGES_MAX`
+    /// pages per fetch; the page count restarts with the fetch.
+    pub fn join_requests_since(
+        &mut self,
+        feed: &mut ChangeFeed,
+    ) -> Result<JoinFeedDelta, OrgStoreError> {
+        match self.join_delta(feed) {
+            Err(OrgStoreError::Mailbox(
+                MailboxError::CursorExpired | MailboxError::IncarnationChanged { .. },
+            )) if !feed.is_full() => {
+                *feed = ChangeFeed::full();
+                self.join_delta(feed)
+            }
+            other => other,
+        }
+    }
+
+    fn join_delta(&mut self, feed: &mut ChangeFeed) -> Result<JoinFeedDelta, OrgStoreError> {
+        // Work on a copy so a failed call leaves the caller's feed alone.
+        let mut cursor = *feed;
         let mut live: BTreeMap<[u8; 16], Body> = BTreeMap::new();
+        let mut gone: BTreeSet<[u8; 16]> = BTreeSet::new();
+        let mut reset = false;
         let mut pages = 0usize;
         loop {
             pages += 1;
             if pages > ORG_FEED_PAGES_MAX {
                 return Err(MailboxError::Malformed("org join feed never ends").into());
             }
-            let page = self.api.next_changes(&mut feed, PAGE_MAX_RECORDS)?;
+            let page = self.api.next_changes(&mut cursor, PAGE_MAX_RECORDS)?;
+            reset |= page.full;
             for r in page.records.into_iter().filter(|r| r.kind == ORG_JOIN_KIND) {
                 match r.body {
-                    Some(b) => live.insert(r.id, b),
-                    None => live.remove(&r.id),
-                };
+                    Some(b) => {
+                        gone.remove(&r.id);
+                        live.insert(r.id, b);
+                    }
+                    None => {
+                        live.remove(&r.id);
+                        gone.insert(r.id);
+                    }
+                }
             }
             if !page.more {
                 break;
             }
         }
-        let mut out: BTreeMap<[u8; 16], Vec<u8>> = BTreeMap::new();
+        let mut upserts: BTreeMap<[u8; 16], Vec<u8>> = BTreeMap::new();
         for (id, body) in live {
             let data = self.api.fetch_body(&body)?;
-            if let Some((account, request)) = parse_join_frame(&self.org_id, &id, &data) {
-                out.insert(account, request.to_vec());
+            match parse_join_frame(&self.org_id, &id, &data) {
+                Some((account, request)) => {
+                    upserts.insert(account, request.to_vec());
+                }
+                None => {
+                    gone.insert(id);
+                }
             }
         }
-        Ok(out.into_iter().collect())
+        *feed = cursor;
+        Ok(JoinFeedDelta {
+            upserts: upserts.into_iter().collect(),
+            removed: if reset {
+                Vec::new()
+            } else {
+                gone.into_iter().collect()
+            },
+            reset,
+        })
     }
 
     /// Deletes the join request of `account_id`; nothing to delete is `Ok`.
@@ -506,8 +587,23 @@ impl<A: MailboxApi> OrgStoreApi for OrgStore<A> {
         OrgStore::join_requests(self)
     }
 
+    fn join_requests_since(
+        &mut self,
+        feed: &mut ChangeFeed,
+    ) -> Result<JoinFeedDelta, OrgStoreError> {
+        OrgStore::join_requests_since(self, feed)
+    }
+
     fn delete_join_request(&mut self, account_id: [u8; 16]) -> Result<(), OrgStoreError> {
         OrgStore::delete_join_request(self, account_id)
+    }
+
+    fn mailbox(&self) -> &dyn MailboxApi {
+        &self.api
+    }
+
+    fn create_member_invite(&mut self, ttl_hours: u16) -> Result<Vec<u8>, OrgStoreError> {
+        OrgStore::create_member_invite(self, ttl_hours)
     }
 }
 

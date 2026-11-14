@@ -7,7 +7,9 @@ use onepass_mailbox::org::{
     lineage_record_id,
 };
 use onepass_mailbox::testing::{FakeMailbox, FakeMailboxClient, org_plan};
-use onepass_mailbox::{Credential, MailboxApi, MailboxError, OrgStore, OrgStoreError};
+use onepass_mailbox::{
+    ChangeFeed, Credential, MailboxApi, MailboxError, OrgStore, OrgStoreApi, OrgStoreError,
+};
 use onepass_mailbox_proto::{
     Body, ChangesPage, ChildKind, CommitOp, CommitResponse, CredentialId, CredentialRole,
     MailboxCreated, MailboxId, MailboxInfo, Op, PushKind, ServerConfig, ServerRecord,
@@ -199,6 +201,125 @@ fn owner_keyset_replace_and_read() {
     s.put_owner_keyset(acc, b"two".to_vec()).unwrap();
     assert_eq!(s.owner_keyset(acc), Ok(Some(b"two".to_vec())));
     assert_eq!(s.owner_keyset([0x33; 16]), Ok(None));
+}
+
+#[test]
+fn join_feed_first_call_is_full_and_reset() {
+    let (_f, mut s) = setup();
+    s.put_join_request([2; 16], b"r2".to_vec()).unwrap();
+    s.put_join_request([1; 16], b"r1".to_vec()).unwrap();
+    let mut feed = ChangeFeed::full();
+    let d = s.join_requests_since(&mut feed).unwrap();
+    assert!(d.reset);
+    assert_eq!(
+        d.upserts,
+        vec![([1; 16], b"r1".to_vec()), ([2; 16], b"r2".to_vec())]
+    );
+    assert!(d.removed.is_empty());
+    assert!(!feed.is_full());
+}
+
+#[test]
+fn join_feed_second_call_gives_only_new() {
+    let (_f, mut s) = setup();
+    s.put_join_request([1; 16], b"r1".to_vec()).unwrap();
+    s.put_join_request([2; 16], b"r2".to_vec()).unwrap();
+    let mut feed = ChangeFeed::full();
+    s.join_requests_since(&mut feed).unwrap();
+    s.put_join_request([3; 16], b"r3".to_vec()).unwrap();
+    let d = s.join_requests_since(&mut feed).unwrap();
+    assert!(!d.reset);
+    assert_eq!(d.upserts, vec![([3; 16], b"r3".to_vec())]);
+    assert!(d.removed.is_empty());
+    let d = s.join_requests_since(&mut feed).unwrap();
+    assert!(!d.reset);
+    assert!(d.upserts.is_empty() && d.removed.is_empty());
+}
+
+#[test]
+fn join_feed_reports_deletion() {
+    let (_f, mut s) = setup();
+    let (a1, a2) = ([1; 16], [2; 16]);
+    s.put_join_request(a1, b"r1".to_vec()).unwrap();
+    s.put_join_request(a2, b"r2".to_vec()).unwrap();
+    let mut feed = ChangeFeed::full();
+    s.join_requests_since(&mut feed).unwrap();
+    s.delete_join_request(a1).unwrap();
+    let d = s.join_requests_since(&mut feed).unwrap();
+    assert!(!d.reset);
+    assert!(d.upserts.is_empty());
+    assert_eq!(d.removed, vec![join_record_id(&ORG, &a1)]);
+    let d = s.join_requests_since(&mut feed).unwrap();
+    assert!(d.removed.is_empty());
+}
+
+#[test]
+fn join_feed_rewrite_is_an_upsert() {
+    let (_f, mut s) = setup();
+    let a1 = [1; 16];
+    s.put_join_request(a1, b"old".to_vec()).unwrap();
+    let mut feed = ChangeFeed::full();
+    s.join_requests_since(&mut feed).unwrap();
+    s.put_join_request(a1, b"new".to_vec()).unwrap();
+    s.put_join_request(a1, b"newer".to_vec()).unwrap();
+    let d = s.join_requests_since(&mut feed).unwrap();
+    assert_eq!(d.upserts, vec![(a1, b"newer".to_vec())]);
+    assert!(d.removed.is_empty() && !d.reset);
+}
+
+#[test]
+fn join_feed_delete_then_repost_is_an_upsert_only() {
+    let (_f, mut s) = setup();
+    let a1 = [1; 16];
+    s.put_join_request(a1, b"old".to_vec()).unwrap();
+    let mut feed = ChangeFeed::full();
+    s.join_requests_since(&mut feed).unwrap();
+    s.delete_join_request(a1).unwrap();
+    s.put_join_request(a1, b"again".to_vec()).unwrap();
+    let d = s.join_requests_since(&mut feed).unwrap();
+    assert_eq!(d.upserts, vec![(a1, b"again".to_vec())]);
+    assert!(d.removed.is_empty());
+}
+
+#[test]
+fn join_feed_restarts_full_on_a_new_incarnation() {
+    let (_f, mut s) = setup();
+    s.put_join_request([1; 16], b"r1".to_vec()).unwrap();
+    let mut feed = ChangeFeed::full();
+    s.join_requests_since(&mut feed).unwrap();
+    let wrong = feed.incarnation().unwrap() + 1;
+    let mut stale = ChangeFeed::incremental(feed.after(), wrong);
+    let d = s.join_requests_since(&mut stale).unwrap();
+    assert!(d.reset);
+    assert_eq!(d.upserts, vec![([1; 16], b"r1".to_vec())]);
+    assert_eq!(stale.incarnation(), feed.incarnation());
+    assert!(!stale.is_full());
+}
+
+#[test]
+fn join_feed_ignores_other_kinds() {
+    let (_f, mut s) = setup();
+    let mut feed = ChangeFeed::full();
+    s.join_requests_since(&mut feed).unwrap();
+    s.put_roster(1, b"r".to_vec()).unwrap();
+    let d = s.join_requests_since(&mut feed).unwrap();
+    assert!(d.upserts.is_empty() && d.removed.is_empty() && !d.reset);
+}
+
+#[test]
+fn trait_reaches_the_mailbox_and_member_invites() {
+    let fake = FakeMailbox::org();
+    let mut c = fake.client(Credential::generate().unwrap());
+    c.create(Some(b"org invite"), b"org").unwrap();
+    let mut s = OrgStore::new(c, ORG);
+    let api: &mut dyn OrgStoreApi = &mut s;
+    assert!(api.mailbox().info().is_ok());
+    let key = Credential::generate().unwrap().public_key().to_bytes();
+    api.mailbox()
+        .grant(key, CredentialRole::Write, None, b"x")
+        .unwrap();
+    assert_eq!(api.mailbox().info().unwrap().usage.credentials, 2);
+    assert_eq!(api.create_member_invite(24).unwrap().len(), 32);
 }
 
 #[test]

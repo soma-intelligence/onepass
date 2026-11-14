@@ -3,7 +3,8 @@
 
 use onepass_mailbox::testing::hostile_org::HostileOrgStore;
 use onepass_mailbox::testing::{FakeMailbox, FakeMailboxClient, org_plan};
-use onepass_mailbox::{Credential, MailboxApi, OrgStore, OrgStoreApi};
+use onepass_mailbox::{ChangeFeed, Credential, MailboxApi, OrgStore, OrgStoreApi};
+use onepass_mailbox_proto::CredentialRole;
 
 const ORG: [u8; 16] = [5; 16];
 
@@ -174,4 +175,36 @@ fn withhold_newest_roster_reaches_seq_0() {
     assert_eq!(h.latest_roster().unwrap(), None);
     h.put_roster(1, r(1)).unwrap();
     assert_eq!(h.latest_roster().unwrap(), Some((0, r(0))));
+}
+
+#[test]
+fn dropped_join_requests_never_appear_in_the_feed() {
+    let (_f, mut h) = setup();
+    h.put_join_request([1; 16], b"a".to_vec()).unwrap();
+    h.put_join_request([2; 16], b"b".to_vec()).unwrap();
+    h.drop_join_request([1; 16]);
+    let mut feed = ChangeFeed::full();
+    let d = h.join_requests_since(&mut feed).unwrap();
+    assert_eq!(d.upserts, vec![([2; 16], b"b".to_vec())]);
+    h.put_join_request([1; 16], b"a2".to_vec()).unwrap();
+    h.put_join_request([3; 16], b"c".to_vec()).unwrap();
+    let d = h.join_requests_since(&mut feed).unwrap();
+    assert_eq!(d.upserts, vec![([3; 16], b"c".to_vec())]);
+    h.drop_all_join_requests();
+    h.put_join_request([4; 16], b"d".to_vec()).unwrap();
+    assert!(h.join_requests_since(&mut feed).unwrap().upserts.is_empty());
+}
+
+#[test]
+fn hostile_forwards_the_mailbox_and_member_invites() {
+    let fake = FakeMailbox::org();
+    let mut c = fake.client(Credential::generate().unwrap());
+    c.create(Some(b"org invite"), b"org").unwrap();
+    let mut h = HostileOrgStore::new(OrgStore::new(c, ORG));
+    assert!(h.mailbox().info().is_ok());
+    let key = Credential::generate().unwrap().public_key().to_bytes();
+    h.mailbox()
+        .grant(key, CredentialRole::Write, None, b"x")
+        .unwrap();
+    assert_eq!(h.create_member_invite(24).unwrap().len(), 32);
 }

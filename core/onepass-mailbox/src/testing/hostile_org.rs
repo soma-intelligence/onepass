@@ -22,7 +22,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::org::{JoinRequest, OrgStoreApi, OrgStoreError};
+use crate::org::{JoinFeedDelta, JoinRequest, OrgStoreApi, OrgStoreError};
+use crate::{ChangeFeed, MailboxApi};
 
 /// An org store that lies on reads. See the module doc.
 pub struct HostileOrgStore<S: OrgStoreApi> {
@@ -86,7 +87,7 @@ impl<S: OrgStoreApi> HostileOrgStore<S> {
         self.dropped_joins.insert(account_id);
     }
 
-    /// join_requests answers an empty list.
+    /// join_requests (and the `upserts` of join_requests_since) answer empty.
     pub fn drop_all_join_requests(&mut self) {
         self.drop_all_joins = true;
     }
@@ -184,7 +185,33 @@ impl<S: OrgStoreApi> OrgStoreApi for HostileOrgStore<S> {
         Ok(out)
     }
 
+    /// The inner feed with the drop rules applied to `upserts`. A dropped
+    /// request is left out of `upserts` and not added to `removed`; the
+    /// cursor still moves past it, as for a server that hides it.
+    fn join_requests_since(
+        &mut self,
+        feed: &mut ChangeFeed,
+    ) -> Result<JoinFeedDelta, OrgStoreError> {
+        let mut delta = self.inner.join_requests_since(feed)?;
+        if self.drop_all_joins {
+            delta.upserts.clear();
+        } else {
+            delta
+                .upserts
+                .retain(|(account, _)| !self.dropped_joins.contains(account));
+        }
+        Ok(delta)
+    }
+
     fn delete_join_request(&mut self, account_id: [u8; 16]) -> Result<(), OrgStoreError> {
         self.inner.delete_join_request(account_id)
+    }
+
+    fn mailbox(&self) -> &dyn MailboxApi {
+        self.inner.mailbox()
+    }
+
+    fn create_member_invite(&mut self, ttl_hours: u16) -> Result<Vec<u8>, OrgStoreError> {
+        self.inner.create_member_invite(ttl_hours)
     }
 }
