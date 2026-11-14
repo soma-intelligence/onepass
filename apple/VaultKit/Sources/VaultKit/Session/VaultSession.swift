@@ -638,6 +638,20 @@ public final class VaultSession {
     public func createAccount(password: SecretBytes, displayName: String, mode: DeviceMode) async throws
         -> SecretBytes
     {
+        try await createAccount(password: password, displayName: displayName, mode: mode) { path, bytes, kdf in
+            try kdf.map { try createAccountWithKdfBytes(dbPath: path, password: bytes, kdf: $0) }
+                ?? createAccountBytes(dbPath: path, password: bytes)
+        }
+    }
+
+    /// The flow shared by personal and managed accounts: `make` creates the account in the core from
+    /// the store path, the password bytes and the environment's KDF (`nil`: the core's default), off
+    /// the main actor; then the "Personnel" vault, the profile, the Secret Key in the keychain, the
+    /// settings and the install, as `createAccount(password:displayName:mode:)` documents.
+    func createAccount(
+        password: SecretBytes, displayName: String, mode: DeviceMode,
+        make: @escaping @Sendable (String, Data, FfiKdfParams?) throws -> FfiCreatedAccount
+    ) async throws -> SecretBytes {
         try checkStoreUsable()
         if session != nil || state == .locked { throw fail(.accountExists) }
         let path = dbPath
@@ -648,10 +662,7 @@ public final class VaultSession {
         do {
             created = try await background {
                 if try hasAccount(dbPath: path) { throw VaultError.accountExists }
-                let account = try password.withData { bytes in
-                    try kdf.map { try createAccountWithKdfBytes(dbPath: path, password: bytes, kdf: $0) }
-                        ?? createAccountBytes(dbPath: path, password: bytes)
-                }
+                let account = try password.withData { try make(path, $0, kdf) }
                 // The core hands the Secret Key back as a `String` (UniFFI lift): copied into a wipeable
                 // buffer at once, the `String` dies with this closure (R5).
                 let secretKey = SecretBytes(utf8: account.secretKey)
