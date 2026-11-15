@@ -45,6 +45,9 @@ struct AboutSettings: View {
                     Text(verbatim: "ML-KEM-1024 · ML-DSA-87 · SLH-DSA")
                 }
                     .accessibilityIdentifier("settings.about.crypto")
+                // Site pack licences (2FA Directory MIT, 2factorauth/passkeys CC BY 4.0), as in NOTICE.
+                Text("settings.about.dataSources")
+                    .accessibilityIdentifier("settings.about.dataSources")
             }
         }
         .settingsPage("À propos")

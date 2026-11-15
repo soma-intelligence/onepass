@@ -44,6 +44,8 @@ struct SiteSetupBanner: View {
         .padding(Theme.Space.l)
         .background(style.tint.opacity(0.16), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).stroke(style.tint.opacity(0.35)))
+        // A container: the identifier names the card, its buttons keep their own.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(style.identifier)
     }
 
@@ -56,10 +58,12 @@ struct SiteSetupBanner: View {
 }
 
 /// The main button of a site setup offer: opens the site's settings, its help page (2FA), or its
-/// passkey enrollment page, looked up only when tapped (`PasskeyEnrollment.page`).
+/// passkey enrollment page, looked up only when tapped (`PasskeyEnrollment.page`). `identifier`
+/// replaces the banner's accessibility identifier (Watchtower rows: `watchtower.setup.<itemID>`).
 struct SiteSetupButton: View {
     @Environment(\.openURL) private var openURL
     let offer: SiteSetupOffer
+    var identifier: String?
     @State private var finding = false
 
     var body: some View {
@@ -68,7 +72,7 @@ struct SiteSetupButton: View {
             .buttonStyle(.borderedProminent)
             .tint(style.tint)
             .disabled(finding)
-            .accessibilityIdentifier("\(style.identifier).\(offer.kind == .passkey ? "use" : "open")")
+            .accessibilityIdentifier(identifier ?? "\(style.identifier).\(offer.kind == .passkey ? "use" : "open")")
     }
 
     private var label: LocalizedStringKey {
@@ -90,6 +94,30 @@ struct SiteSetupButton: View {
                 finding = false
                 openURL(url)
             }
+        }
+    }
+}
+
+/// A row of the "2FA disponible" or "Clé d'accès disponible" Watchtower list (Mac, iPad, iPhone):
+/// the row as is, then the offer's main button (`watchtower.setup.<itemID>`) when the list carries
+/// a site check and the last report has an offer for the item. Any other list: the row alone.
+struct WatchtowerSetupRow<Row: View>: View {
+    @Environment(AppModel.self) private var model
+    let itemID: String
+    let check: String?
+    @ViewBuilder let row: () -> Row
+
+    var body: some View {
+        if let check, let kind = SiteSetupOffer.Kind(rawValue: check),
+            let offer = SiteSetupOffer.offer(kind: kind, itemID: itemID, report: model.watchtower.report)
+        {
+            HStack(spacing: Theme.Space.m) {
+                row()
+                SiteSetupButton(offer: offer, identifier: "watchtower.setup.\(itemID)")
+                    .controlSize(.small)
+            }
+        } else {
+            row()
         }
     }
 }

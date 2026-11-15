@@ -27,7 +27,7 @@ struct WatchtowerPage: View {
                                 card: card, report: report, checkBreaches: watchtower.checkBreaches,
                                 breachCatalog: watchtower.breachCatalogUsed
                             ) {
-                                model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report))
+                                model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report), check: card.siteCheck)
                             }
                         }
                         let seen = model.seenByFormerMemberIDs
@@ -297,6 +297,15 @@ struct WatchtowerCard: Identifiable {
 
     /// The card's drawn icon in Assets (Watchtower/watchtower-<id>), in the settings icons' style.
     var artwork: String { "watchtower-\(id)" }
+
+    /// The site check of a card made of `missing_2fa` or `passkey_available` alone: its list rows
+    /// carry the setup button. Nil for every other card.
+    var siteCheck: String? {
+        guard checks.count == 1, let check = checks.first,
+            SiteSetupOffer.Kind(rawValue: check) != nil
+        else { return nil }
+        return check
+    }
 
     func itemIDs(in report: FfiWatchtowerReport) -> Set<String> {
         Set(report.checks.filter { checks.contains($0.check) }.flatMap(\.itemIds))

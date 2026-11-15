@@ -506,7 +506,9 @@ struct ItemListColumn: View {
     @ViewBuilder private func rows(_ items: [FfiItemSummary]) -> some View {
         let showVault = showsVaultName
         ForEach(items, id: \.id) { summary in
-            ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
+            WatchtowerSetupRow(itemID: summary.id, check: model.watchtowerFilter?.check) {
+                ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
+            }
                 .tag(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
                 .contextMenu { contextMenu(summary) }
                 .visionHoverEffect()

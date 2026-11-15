@@ -218,7 +218,7 @@ private struct PhoneWatchtowerCard: View {
     let ids: Set<String>
 
     var body: some View {
-        NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids)) {
+        NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck)) {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     HStack(alignment: .top) {
@@ -337,16 +337,20 @@ struct WatchtowerItemsList: View {
     @Environment(AppModel.self) private var model
     let title: String
     let itemIDs: Set<String>
+    /// The card's site check: its rows carry the setup button (`WatchtowerSetupRow`).
+    let check: String?
 
     var body: some View {
         let items = model.session.items(filter: .all, query: "", sort: .title).filter { itemIDs.contains($0.id) }
         let showVault = model.session.vaults.count > 1
         List {
             ForEach(items, id: \.id) { summary in
-                PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
-                    ItemListRow(
-                        summary: summary,
-                        vaultName: showVault ? model.session.allVaults.first { $0.id == summary.vaultId }?.meta.name : nil)
+                WatchtowerSetupRow(itemID: summary.id, check: check) {
+                    PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
+                        ItemListRow(
+                            summary: summary,
+                            vaultName: showVault ? model.session.allVaults.first { $0.id == summary.vaultId }?.meta.name : nil)
+                    }
                 }
                 .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
             }

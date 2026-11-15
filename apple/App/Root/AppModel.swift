@@ -1893,10 +1893,11 @@ final class AppModel {
     }
 
     /// "Voir les éléments" of a Watchtower card: every item of the visible vaults that the check
-    /// flagged, in the full list.
-    func showWatchtowerItems(title: String, itemIDs: Set<String>) {
+    /// flagged, in the full list. `check` is the card's site check (`WatchtowerCard.siteCheck`):
+    /// its rows then carry the setup button.
+    func showWatchtowerItems(title: String, itemIDs: Set<String>, check: String? = nil) {
         selection = .all
-        watchtowerFilter = WatchtowerListFilter(title: title, itemIDs: itemIDs)
+        watchtowerFilter = WatchtowerListFilter(title: title, itemIDs: itemIDs, check: check)
         page = .items
         if let ref = selectedItem, !itemIDs.contains(ref.itemID) { perform(.select(nil)) }
     }
@@ -2127,6 +2128,8 @@ enum BrowsePage: Hashable {
 struct WatchtowerListFilter: Equatable {
     var title: String
     var itemIDs: Set<String>
+    /// `missing_2fa` or `passkey_available` for the site cards (rows show `SiteSetupButton`), else nil.
+    var check: String?
 }
 
 extension AppModel {

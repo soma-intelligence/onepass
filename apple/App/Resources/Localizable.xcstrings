@@ -41607,6 +41607,35 @@
         }
       }
     },
+    "settings.about.dataSources" : {
+      "comment" : "Réglages > À propos: licences of the bundled site data (site pack)",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Site data: 2FA Directory (MIT) and Passkeys Directory (CC BY 4.0)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos de sitios: 2FA Directory (MIT) y Passkeys Directory (CC BY 4.0)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Données des sites : 2FA Directory (MIT) et Passkeys Directory (CC BY 4.0)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dati dei siti: 2FA Directory (MIT) e Passkeys Directory (CC BY 4.0)."
+          }
+        }
+      }
+    },
     "settings.aboutLoginsExportLogins" : {
       "extractionState" : "manual",
       "localizations" : {

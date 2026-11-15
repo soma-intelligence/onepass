@@ -18,7 +18,7 @@ struct CryptoPhraseAlertCard: View {
         Group {
             if !wallets.isEmpty {
                 NavigationLink(value: PhoneRoute.watchtower(
-                    title: String(localized: "crypto.watchtower.title"), itemIDs: Set(wallets.map(\.itemId)))) {
+                    title: String(localized: "crypto.watchtower.title"), itemIDs: Set(wallets.map(\.itemId)), check: nil)) {
                     VStack(alignment: .leading, spacing: 0) {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .top) {

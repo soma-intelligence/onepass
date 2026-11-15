@@ -1498,6 +1498,8 @@ struct ItemWatchtowerSection: View {
                     }
                 }
             }
+            // A container: the identifier names the section, its buttons keep their own.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("item.watchtower")
         }
     }

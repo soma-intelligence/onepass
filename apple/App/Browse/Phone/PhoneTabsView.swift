@@ -8,8 +8,8 @@ import VaultKit
 enum PhoneRoute: Hashable {
     case list(ItemFilter)
     case item(ItemRef)
-    /// The items flagged by a Watchtower card.
-    case watchtower(title: String, itemIDs: Set<String>)
+    /// The items flagged by a Watchtower card; `check` is its site check (`WatchtowerCard.siteCheck`).
+    case watchtower(title: String, itemIDs: Set<String>, check: String?)
     /// The Crypto screen (watch-only balances) and one coin of it.
     case crypto
     case cryptoCoin(String)
@@ -175,8 +175,8 @@ struct PhoneTabsView: View {
                         switch route {
                         case .list(let filter):
                             CategoryListView(filter: filter)
-                        case .watchtower(let title, let itemIDs):
-                            WatchtowerItemsList(title: title, itemIDs: itemIDs)
+                        case .watchtower(let title, let itemIDs, let check):
+                            WatchtowerItemsList(title: title, itemIDs: itemIDs, check: check)
                         case .crypto:
                             CryptoPortfolioView()
                         case .cryptoCoin(let coin):
