@@ -89,6 +89,8 @@ public final class VaultSettings: @unchecked Sendable {
         static let orgJoinNonce = "onepass.org.joinNonce"
         static let orgJoinPosted = "onepass.org.joinPosted"
         static let orgCreator = "onepass.org.creator"
+        static let orgJoinWaiting = "onepass.org.joinWaiting"
+        static let orgMemberTokenRefused = "onepass.org.memberTokenRefused"
     }
 
     // MARK: - Managed account (OnePass Business)
@@ -122,6 +124,20 @@ public final class VaultSettings: @unchecked Sendable {
     public var orgCreator: Bool {
         get { defaults.bool(forKey: Key.orgCreator) }
         set { defaults.set(newValue, forKey: Key.orgCreator) }
+    }
+
+    /// The join request waits for a presence check: biometrics could not answer at unlock (R34). The
+    /// app asks for the password and posts with `ManagedAccountResume.sendJoinRequest`.
+    public var orgJoinWaiting: Bool {
+        get { defaults.bool(forKey: Key.orgJoinWaiting) }
+        set { defaults.set(newValue, forKey: Key.orgJoinWaiting) }
+    }
+
+    /// The org server refused the member token of the account mailbox (spent, expired or off the
+    /// managed plan, R36). A joiner needs a new link; the setup is not retried until it is cleared.
+    public var orgMemberTokenRefused: Bool {
+        get { defaults.bool(forKey: Key.orgMemberTokenRefused) }
+        set { defaults.set(newValue, forKey: Key.orgMemberTokenRefused) }
     }
 
     /// This device was found revoked and its erase has not completed yet (L6): the app shows the

@@ -67,10 +67,11 @@ actor FakeOrgBackend: OrgBackend {
     }
 
     func postJoinRequest(
-        session: Session, keys: DeviceKeyPair, invite: FfiOrgInvite, displayName: String, now: Int64
+        session: Session, keys: DeviceKeyPair, invite: FfiOrgInvite, displayName: String, credentialSeed: Data,
+        now: Int64
     ) async throws -> FfiJoinPosted {
         record("postJoinRequest")
-        return FfiJoinPosted(codeWords: ["a", "b", "c", "d", "e"], credentialSeed: Data(count: 32))
+        return FfiJoinPosted(codeWords: ["a", "b", "c", "d", "e"])
     }
 
     func revokeOwnCredential() async throws { record("revokeOwnCredential") }
@@ -310,12 +311,14 @@ struct OrgSessionTests {
         serverUrl: "http://127.0.0.1:1/functions/v1/mailbox", mailboxId: "00112233445566778899aabbccddeeff",
         orgId: "5f3e2d1c0b0a99887766554433221100", accountId: otherID, fingerprint: fingerprint,
         nonce: Data(count: 32), credentialSeed: Data(count: 32), memberToken: Data(count: 32), domain: nil)
+    static let ownSeed = SecretBytes(copying: Data(repeating: 6, count: 32))
 
     /// R31: the join request is signed by this device, so presence comes first.
     @Test func joinRequestAsksPresenceFirst() async throws {
         let f = try await OrgFixture.make(roles: [])
         defer { f.cleanUp() }
-        _ = try await f.org.requestToJoin(invite: Self.invite, displayName: "Alice", password: nil)
+        _ = try await f.org.requestToJoin(
+            invite: Self.invite, displayName: "Alice", password: nil, ownCredential: Self.ownSeed)
         #expect(await f.backend.writes == ["postJoinRequest@1"])
     }
 
@@ -324,7 +327,8 @@ struct OrgSessionTests {
         defer { f.cleanUp() }
         f.harness.presence.answer(false)
         await #expect(throws: OrgActionError.passwordRequired) {
-            _ = try await f.org.requestToJoin(invite: Self.invite, displayName: "Alice", password: nil)
+            _ = try await f.org.requestToJoin(
+            invite: Self.invite, displayName: "Alice", password: nil, ownCredential: Self.ownSeed)
         }
         #expect(await f.backend.writes.isEmpty)
     }

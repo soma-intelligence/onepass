@@ -112,19 +112,22 @@ extension AppModel {
         }
         let keychain = vault.environment.keychain
         let pending = try ManagedDeviceKeys.createPending(keychain: keychain, slot: onboarding.slot)
+        let secretKey: SecretBytes
         do {
-            let secretKey = try await vault.createManagedAccount(
+            secretKey = try await vault.createManagedAccount(
                 password: password, displayName: displayName, mode: mode, orgID: orgID, accountID: accountID,
                 keys: pending)
-            guard let made = vault.environment.settings.accountID else { throw VaultError.notFound }
-            try ManagedDeviceKeys.adoptPending(keychain: keychain, slot: onboarding.slot, accountID: made)
-            // The join's org session was made before the account (to pin): remade with its keys.
-            orgSessions[onboarding.slot] = nil
-            return secretKey
         } catch {
+            // No account names these keys: they go. Past this point the account exists and its keys
+            // stay (pending ones are adopted at the next try or removed with the slot).
             ManagedDeviceKeys.discardPending(keychain: keychain, slot: onboarding.slot)
             throw error
         }
+        guard let made = vault.environment.settings.accountID else { throw VaultError.notFound }
+        try ManagedDeviceKeys.adoptPending(keychain: keychain, slot: onboarding.slot, accountID: made)
+        // The join's org session was made before the account (to pin): remade with its keys.
+        orgSessions[onboarding.slot] = nil
+        return secretKey
     }
 
     /// After the account exists, in the background: a creation publishes the org and mints the token
@@ -140,12 +143,34 @@ extension AppModel {
         if case .create(let name, let serverInvite) = onboarding.route {
             guard await publishOrg(slot: slot, name: name, serverInvite: serverInvite) else { return }
         }
-        await runManagedMailboxSetup(slot, secretKey: secretKey)
-        if case .join = onboarding.route, let org = orgSession(for: slot) {
+        await runManagedMailboxSetup(slot, secretKey: secretKey, quiet: false)
+        guard case .join = onboarding.route, let org = orgSession(for: slot) else { return }
+        guard let password else {
             await ManagedAccountResume.run(
+                settings: settings, org: org, credentials: credentials, displayName: settings.displayName)
+            return
+        }
+        do {
+            try await ManagedAccountResume.sendJoinRequest(
                 settings: settings, org: org, credentials: credentials, displayName: settings.displayName,
                 password: password)
+        } catch {
+            // Posted again at the next unlock.
+            Self.orgLog.error("join request not posted in the onboarding")
         }
+    }
+
+    /// Posts the join request of `slot` that waits for a presence check (`orgJoinWaiting`, R34), with
+    /// the master password the user typed.
+    func sendJoinRequest(slot: String, password: SecretBytes) async throws(OrgActionError) {
+        guard let vault = accounts.session(for: slot), let org = orgSession(for: slot) else {
+            throw .other(VaultError.notFound.localizedMessage)
+        }
+        let settings = vault.environment.settings
+        try await ManagedAccountResume.sendJoinRequest(
+            settings: settings, org: org,
+            credentials: ManagedOrgCredentials(keychain: vault.environment.keychain, slot: slot),
+            displayName: settings.displayName, password: password)
     }
 
     /// The org of a creation: published with the account's session and device keys, the org mailbox
@@ -167,7 +192,10 @@ extension AppModel {
             let credentials = ManagedOrgCredentials(keychain: keychain, slot: slot)
             try credentials.storeOwnSeed(SecretBytes(taking: &created.credentialSeed), orgMailboxID: created.mailboxId)
             orgDraft = nil
-            guard let backend = orgBackend(for: slot) else { return false }
+            // The unfinished org made before the publish: remade on the org mailbox.
+            orgSessions[slot] = nil
+            orgBackends[slot] = nil
+            guard let backend = orgBackend(for: slot) as? ManagedOrgBackend else { return false }
             let token = try await backend.mintMemberToken()
             defer { token.wipe() }
             try credentials.storeMemberToken(token)
@@ -192,7 +220,7 @@ extension AppModel {
         if !(await hasManagedMailbox(vault)),
             let key = try? SecretKeyVault(keychain: vault.environment.keychain).loadBytes(accountID: accountID)
         {
-            await runManagedMailboxSetup(slot, secretKey: key)
+            await runManagedMailboxSetup(slot, secretKey: key, quiet: true)
             key.wipe()
         }
         guard let org = orgSession(for: slot) else { return }
@@ -210,9 +238,10 @@ extension AppModel {
     }
 
     /// The account mailbox of a managed slot on its org server (R32): the slot's own sync store and
-    /// setup, made with the slot's member token (minted again by a creator that lost it), then handed
-    /// to the slot's `ManagedAccountSync`. Offline, it resumes at the next unlock.
-    private func runManagedMailboxSetup(_ slot: String, secretKey: SecretBytes) async {
+    /// setup (its own pending seed slot), made with the slot's member token (`ManagedMailboxSetup`:
+    /// a creator mints again once, a refused joiner is flagged), then handed to the slot's
+    /// `ManagedAccountSync`. Offline, it resumes at the next unlock. `quiet` (at unlock): no toast.
+    private func runManagedMailboxSetup(_ slot: String, secretKey: SecretBytes, quiet: Bool) async {
         guard let vault = accounts.session(for: slot), let kind = accounts.profile(slot)?.kind,
             case .managed(let serverURL, _) = kind, OrgServers.isUsable(kind), let url = URL(string: serverURL)
         else {
@@ -221,27 +250,31 @@ extension AppModel {
         }
         let databaseURL = vault.environment.databaseURL
         let keychain = vault.environment.keychain
-        let credentials = ManagedOrgCredentials(keychain: keychain, slot: slot)
+        let settings = vault.environment.settings
         guard let store = try? openSyncStore(dbPath: databaseURL.path) else { return }
-        var token = try? credentials.memberToken()
-        if token == nil, vault.environment.settings.orgCreator, let backend = orgBackend(for: slot) {
-            token = try? await backend.mintMemberToken()
-            if let token { try? credentials.storeMemberToken(token) }
+        let mint: (@MainActor () async throws -> SecretBytes)?
+        if settings.orgCreator, let backend = orgBackend(for: slot) as? ManagedOrgBackend {
+            mint = { try await backend.mintMemberToken() }
+        } else {
+            mint = nil
         }
-        defer { token?.wipe() }
-        let setup = MailboxSetup(
-            provisioning: FfiMailboxProvisioning(databasePath: databaseURL.path),
-            credentials: MailboxCredentialStore(keychain: keychain), store: store, hosted: nil, memberToken: token)
-        guard let outcome = await vault.runMailboxSetup(
-            setup, choice: .selfHost(url: url, extraCAPEM: nil), secretKey: secretKey)
-        else { return }
+        let outcome = await ManagedMailboxSetup.run(
+            settings: settings, credentials: ManagedOrgCredentials(keychain: keychain, slot: slot), mint: mint,
+            makeSetup: { token in
+                MailboxSetup(
+                    provisioning: FfiMailboxProvisioning(databasePath: databaseURL.path),
+                    credentials: MailboxCredentialStore(keychain: keychain), store: store, hosted: nil,
+                    memberToken: token, managed: true, pendingCredentialID: MailboxSetup.pendingCredentialID(slot: slot))
+            },
+            perform: { setup in
+                await vault.runMailboxSetup(setup, choice: .selfHost(url: url, extraCAPEM: nil), secretKey: secretKey)
+            })
         switch outcome {
-        case .ready(let home):
-            try? credentials.deleteMemberToken()
+        case .ready(let home)?:
             attachManagedMailbox(home: home, databaseURL: databaseURL, keychain: keychain, slot: slot)
-        case .failed(let message):
-            showToast(message, kind: .error)
-        case .offline, .iCloud:
+        case .failed(let message)?:
+            if !quiet { showToast(message, kind: .error) }
+        case .tokenRefused?, .offline?, .iCloud?, nil:
             break
         }
     }
@@ -276,17 +309,19 @@ extension AppModel {
         return org
     }
 
-    /// The org client of a managed slot: the member's own credential once it works, else the link's.
-    private func orgBackend(for slot: String) -> ManagedOrgBackend? {
+    /// The org client of a managed slot: the member's own credential once it works, else the link's;
+    /// a creation cut off before its publish gets `UnfinishedOrgBackend` (`ManagedAccountResume.backend`).
+    private func orgBackend(for slot: String) -> (any OrgBackend)? {
         if let made = orgBackends[slot] { return made }
         guard case .managed(let serverURL, let orgID)? = accounts.profile(slot)?.kind,
-            let vault = accounts.session(for: slot), let mailboxID = vault.environment.settings.orgMailboxID
+            let vault = accounts.session(for: slot)
         else { return nil }
+        let settings = vault.environment.settings
         let endpoint = FfiMailboxEndpoint(baseUrl: serverURL, extraCaPem: nil)
         let stateDir = Self.orgStateDirectory(vault).path
-        let backend = ManagedOrgBackend(
-            credentials: ManagedOrgCredentials(keychain: vault.environment.keychain, slot: slot),
-            orgMailboxID: mailboxID
+        let mailboxID = settings.orgMailboxID ?? ""
+        let backend = ManagedAccountResume.backend(
+            settings: settings, credentials: ManagedOrgCredentials(keychain: vault.environment.keychain, slot: slot)
         ) { seed in
             try OrgClient.open(
                 endpoint: endpoint, mailboxId: mailboxID, credentialSeed: seed, orgId: orgID, stateDir: stateDir)

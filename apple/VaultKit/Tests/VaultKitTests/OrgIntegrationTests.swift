@@ -77,13 +77,17 @@ struct OrgIntegrationTests {
         #expect(joiner.state?.fingerprint == owner.state?.fingerprint)
         _ = try await Self.managedAccount(
             joinerHarness, joinerVault, name: "Bob", orgID: invite.orgId, accountID: invite.accountId)
+        // The member's own credential, made (and, in the app, kept) before the post (R35).
+        let ownSeed = try mailboxGenerateCredential().seed
+        let own = SecretBytes(copying: ownSeed)
         // No biometrics on the joiner: the master password is the presence check (R31).
         await #expect(throws: OrgActionError.passwordRequired) {
-            _ = try await joiner.requestToJoin(invite: invite, displayName: "Bob", password: nil)
+            _ = try await joiner.requestToJoin(invite: invite, displayName: "Bob", password: nil, ownCredential: own)
         }
         let password = SecretBytes(utf8: testPassword)
         defer { password.wipe() }
-        let posted = try await joiner.requestToJoin(invite: invite, displayName: "Bob", password: password)
+        let posted = try await joiner.requestToJoin(
+            invite: invite, displayName: "Bob", password: password, ownCredential: own)
         #expect(posted.codeWords.count == 5)
         #expect(joiner.me?.state == .invited)
 
@@ -108,7 +112,7 @@ struct OrgIntegrationTests {
 
         // R27: the member reopens with its own credential and sees itself Active.
         let ownClient = try server.client(
-            mailboxId: invite.mailboxId, credentialSeed: posted.credentialSeed, orgId: invite.orgId,
+            mailboxId: invite.mailboxId, credentialSeed: ownSeed, orgId: invite.orgId,
             stateDir: joinerDir)
         let member = OrgSession(vault: joinerVault, backend: FfiOrgBackend(client: ownClient), keys: joinerKeys)
         await member.load()

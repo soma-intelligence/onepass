@@ -9,8 +9,11 @@ public protocol OrgBackend: Sendable {
     func refresh() async throws -> FfiOrgState
     func markVerified() async throws -> FfiOrgState
     func joinRequests() async throws -> [FfiJoinRequest]
+    /// `credentialSeed`: the member's own org mailbox credential, kept in the keychain before the post
+    /// (R35); the request names its key.
     func postJoinRequest(
-        session: Session, keys: DeviceKeyPair, invite: FfiOrgInvite, displayName: String, now: Int64
+        session: Session, keys: DeviceKeyPair, invite: FfiOrgInvite, displayName: String, credentialSeed: Data,
+        now: Int64
     ) async throws -> FfiJoinPosted
     /// Revokes the credential this backend's client holds (a member drops the link's, R27).
     func revokeOwnCredential() async throws
@@ -51,12 +54,13 @@ public struct FfiOrgBackend: OrgBackend {
     }
 
     public func postJoinRequest(
-        session: Session, keys: DeviceKeyPair, invite: FfiOrgInvite, displayName: String, now: Int64
+        session: Session, keys: DeviceKeyPair, invite: FfiOrgInvite, displayName: String, credentialSeed: Data,
+        now: Int64
     ) async throws -> FfiJoinPosted {
         try await CoreThread.run { [client] in
             try client.postJoinRequest(
                 session: session, classical: keys.classical, pq: keys.pq, invite: invite, displayName: displayName,
-                now: now)
+                credentialSeed: credentialSeed, now: now)
         }
     }
 

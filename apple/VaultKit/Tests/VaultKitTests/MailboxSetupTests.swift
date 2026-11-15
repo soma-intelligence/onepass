@@ -138,30 +138,158 @@ struct MailboxSetupTests {
         #expect(EmergencyKit.qrPayload(secretKey: key) == "onepass-kit:1:" + key.replacingOccurrences(of: "-", with: ""))
     }
 
-    @Test func managedSetupSpendsTheTokenOnTheOrgServer() async throws {
-        let f = try Fixture()
-        let org = URL(string: "https://onepass.example.org/functions/v1/mailbox")!
-        let token = Data(repeating: 7, count: 32)
-        let setup = MailboxSetup(
+    // MARK: - Managed accounts (R32, R36)
+
+    static let org = URL(string: "https://onepass.example.org/functions/v1/mailbox")!
+    static let orgChoice = SyncChoice.selfHost(url: org, extraCAPEM: nil)
+
+    /// A managed setup of slot `s1` (its own pending seed slot).
+    static func managedSetup(_ f: Fixture, token: Data?) -> MailboxSetup {
+        MailboxSetup(
             provisioning: f.provisioning, credentials: f.credentials, store: f.store, hosted: nil,
-            memberToken: SecretBytes(copying: token))
-        let outcome = await setup.run(session: f.session, choice: .selfHost(url: org, extraCAPEM: nil), secretKey: f.secretKey)
-        guard case .ready(let home) = outcome else { Issue.record("\(outcome)"); return }
-        #expect(home.baseURL == org)
-        #expect(f.provisioning.calls == ["credential", "createManaged", "open"])
-        #expect(f.provisioning.tokens == [token])
+            memberToken: token.map { SecretBytes(copying: $0) }, managed: true,
+            pendingCredentialID: MailboxSetup.pendingCredentialID(slot: "s1"))
     }
 
-    @Test func aMailboxOffTheManagedPlanFailsTheSetup() async throws {
+    @Test func managedSetupSpendsTheTokenOnTheOrgServer() async throws {
+        let f = try Fixture()
+        let token = Data(repeating: 7, count: 32)
+        let outcome = await Self.managedSetup(f, token: token).run(
+            session: f.session, choice: Self.orgChoice, secretKey: f.secretKey)
+        guard case .ready(let home) = outcome else { Issue.record("\(outcome)"); return }
+        #expect(home.baseURL == Self.org)
+        #expect(f.provisioning.calls == ["credential", "createManaged", "checkManaged", "open"])
+        #expect(f.provisioning.tokens == [token])
+        #expect(f.provisioning.checked == [home.mailboxID])
+    }
+
+    @Test func managedSetupKeepsItsPendingSeedApartFromThePrimary() async throws {
+        let f = try Fixture()
+        let primary = SecretBytes(copying: Data(repeating: 1, count: 32))
+        try f.credentials.store(seed: primary, mailboxID: MailboxSetup.pendingID)
+        let setup = Self.managedSetup(f, token: Data(repeating: 7, count: 32))
+        await setup.setInterruptAfter(.credential)
+        _ = await setup.run(session: f.session, choice: Self.orgChoice, secretKey: f.secretKey)
+        let managed = try #require(try f.credentials.seed(mailboxID: MailboxSetup.pendingCredentialID(slot: "s1")))
+        let kept = try #require(try f.credentials.seed(mailboxID: MailboxSetup.pendingID))
+        #expect(kept.withData { $0 } == Data(repeating: 1, count: 32))
+        #expect(managed.withData { $0 } != kept.withData { $0 })
+    }
+
+    @Test func aSpentTokenIsRefusedAndItsSeedDropped() async throws {
         let f = try Fixture()
         f.provisioning.failNext(
-            "createManaged", OnePassError.Validation(field: "mailbox plan", reason: "not the managed plan"))
-        let setup = MailboxSetup(
-            provisioning: f.provisioning, credentials: f.credentials, store: f.store, hosted: nil,
-            memberToken: SecretBytes(copying: Data(repeating: 7, count: 32)))
-        let org = URL(string: "https://onepass.example.org/functions/v1/mailbox")!
-        let outcome = await setup.run(session: f.session, choice: .selfHost(url: org, extraCAPEM: nil), secretKey: f.secretKey)
-        guard case .failed = outcome else { Issue.record("\(outcome)"); return }
+            "createManaged", OnePassError.Validation(field: "member token", reason: "spent"))
+        let outcome = await Self.managedSetup(f, token: Data(repeating: 7, count: 32)).run(
+            session: f.session, choice: Self.orgChoice, secretKey: f.secretKey)
+        #expect(outcome == .tokenRefused)
+        #expect(try f.credentials.seed(mailboxID: MailboxSetup.pendingCredentialID(slot: "s1")) == nil)
+        #expect(MailboxSetup.progressMailboxIDNow(store: f.store) == nil)
+        // A new token starts over on a new credential.
+        let again = await Self.managedSetup(f, token: Data(repeating: 8, count: 32)).run(
+            session: f.session, choice: Self.orgChoice, secretKey: f.secretKey)
+        guard case .ready = again else { Issue.record("\(again)"); return }
+        #expect(f.provisioning.calls.filter { $0 == "credential" }.count == 2)
+    }
+
+    @Test func aMailboxOffTheManagedPlanIsRefused() async throws {
+        let f = try Fixture()
+        f.provisioning.failNext(
+            "checkManaged", OnePassError.Validation(field: "mailbox plan", reason: "not the managed plan"))
+        let outcome = await Self.managedSetup(f, token: Data(repeating: 7, count: 32)).run(
+            session: f.session, choice: Self.orgChoice, secretKey: f.secretKey)
+        #expect(outcome == .tokenRefused)
+        let made = try #require(f.provisioning.checked.first)
+        #expect(try f.credentials.seed(mailboxID: made) == nil)
+        #expect(!f.provisioning.calls.contains("open"))
+    }
+
+    /// The mailbox is recorded before its plan check: a cut there, or an offline check, resumes on the
+    /// same mailbox (no second token spent).
+    @Test func aCutAfterCreationChecksTheSameMailboxAgain() async throws {
+        let f = try Fixture()
+        let first = Self.managedSetup(f, token: Data(repeating: 7, count: 32))
+        await first.setInterruptAfter(.created)
+        #expect(await first.run(session: f.session, choice: Self.orgChoice, secretKey: f.secretKey)
+            == .failed("interrupted"))
+        let made = try #require(MailboxSetup.progressMailboxIDNow(store: f.store))
+        #expect(try f.credentials.seed(mailboxID: made) != nil)
+        f.provisioning.failNext("checkManaged", OnePassError.MailboxUnavailable(reason: "unreachable"))
+        // The token is gone by now: none is needed past the creation.
+        #expect(await Self.managedSetup(f, token: nil).run(
+            session: f.session, choice: Self.orgChoice, secretKey: f.secretKey) == .offline)
+        let outcome = await Self.managedSetup(f, token: nil).run(
+            session: f.session, choice: Self.orgChoice, secretKey: f.secretKey)
+        guard case .ready(let home) = outcome else { Issue.record("\(outcome)"); return }
+        #expect(home.mailboxID == made)
+        #expect(f.provisioning.calls.filter { $0 == "createManaged" }.count == 1)
+        #expect(f.provisioning.checked == [made, made])
+    }
+
+    // MARK: - Member token policy (ManagedMailboxSetup)
+
+    private static func settings() -> VaultSettings {
+        VaultSettings(defaults: UserDefaults(suiteName: "onepass-managed-\(UUID().uuidString)")!, scope: "s1")
+    }
+
+    @MainActor
+    @Test func aCreatorMintsAgainOnceAfterARefusedToken() async throws {
+        let f = try Fixture()
+        let settings = Self.settings()
+        settings.orgCreator = true
+        let credentials = ManagedOrgCredentials(keychain: f.keychain, slot: "s1")
+        try credentials.storeMemberToken(SecretBytes(copying: Data(repeating: 7, count: 32)))
+        f.provisioning.failNext("createManaged", OnePassError.Validation(field: "member token", reason: "spent"))
+        var mints = 0
+        let outcome = await ManagedMailboxSetup.run(
+            settings: settings, credentials: credentials,
+            mint: {
+                mints += 1
+                return SecretBytes(copying: Data(repeating: 9, count: 32))
+            },
+            makeSetup: { token in
+                MailboxSetup(
+                    provisioning: f.provisioning, credentials: f.credentials, store: f.store, hosted: nil,
+                    memberToken: token, managed: true, pendingCredentialID: MailboxSetup.pendingCredentialID(slot: "s1"))
+            },
+            perform: { await $0.run(session: f.session, choice: Self.orgChoice, secretKey: f.secretKey) })
+        guard case .ready? = outcome else { Issue.record("\(String(describing: outcome))"); return }
+        #expect(mints == 1)
+        // The stored token was tried and refused, then the minted one made the mailbox.
+        #expect(f.provisioning.calls.filter { $0 == "createManaged" }.count == 2)
+        #expect(f.provisioning.tokens == [Data(repeating: 9, count: 32)])
+        #expect(try credentials.memberToken() == nil)
+        #expect(!settings.orgMemberTokenRefused)
+    }
+
+    @MainActor
+    @Test func aJoinerWithARefusedTokenWaitsForANewLink() async throws {
+        let f = try Fixture()
+        let settings = Self.settings()
+        let credentials = ManagedOrgCredentials(keychain: f.keychain, slot: "s1")
+        try credentials.storeMemberToken(SecretBytes(copying: Data(repeating: 7, count: 32)))
+        f.provisioning.failNext("createManaged", OnePassError.Validation(field: "member token", reason: "spent"))
+        var runs = 0
+        let makeSetup: @MainActor (SecretBytes?) -> MailboxSetup = { token in
+            MailboxSetup(
+                provisioning: f.provisioning, credentials: f.credentials, store: f.store, hosted: nil,
+                memberToken: token, managed: true, pendingCredentialID: MailboxSetup.pendingCredentialID(slot: "s1"))
+        }
+        let perform: @MainActor (MailboxSetup) async -> MailboxSetupOutcome? = { setup in
+            runs += 1
+            return await setup.run(session: f.session, choice: Self.orgChoice, secretKey: f.secretKey)
+        }
+        let first = await ManagedMailboxSetup.run(
+            settings: settings, credentials: credentials, mint: nil, makeSetup: makeSetup, perform: perform)
+        #expect(first == .tokenRefused)
+        #expect(settings.orgMemberTokenRefused)
+        #expect(try credentials.memberToken() == nil)
+        // The next unlock stops at the flag: nothing is retried.
+        let second = await ManagedMailboxSetup.run(
+            settings: settings, credentials: credentials, mint: nil, makeSetup: makeSetup, perform: perform)
+        #expect(second == .tokenRefused)
+        #expect(runs == 1)
+        #expect(f.provisioning.calls.filter { $0 == "createManaged" }.count == 1)
     }
 
     @Test func selfHostURLValidated() async throws {

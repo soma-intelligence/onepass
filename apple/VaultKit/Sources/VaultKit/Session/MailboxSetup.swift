@@ -10,8 +10,11 @@ public protocol MailboxProvisioning: Sendable {
     /// A new mailbox on `endpoint`, managed by the credential of `seed`.
     func create(_ endpoint: FfiMailboxEndpoint, seed: Data, invite: String?) async throws -> FfiMailboxHome
     /// A managed member's own mailbox on its organisation's server, made with the one-use `managed`
-    /// token (32 bytes) and checked to be on the managed plan (R16, R32).
+    /// token (32 bytes, R32). A spent or unknown token fails as `Validation` on "member token".
     func createManaged(_ endpoint: FfiMailboxEndpoint, seed: Data, token: Data) async throws -> FfiMailboxHome
+    /// The managed mailbox `mailboxID` is on the managed plan (R16, R36); `Validation` on "mailbox
+    /// plan" otherwise. Read again after a cut instead of creating again.
+    func checkManaged(_ endpoint: FfiMailboxEndpoint, seed: Data, mailboxID: String) async throws
     /// The sync client of `home`, signed by the credential of `seed`.
     func open(_ home: MailboxHome, seed: Data) async throws -> any MailboxSyncing
     /// The mailboxes registered under `locator` on `endpoint` (hex ids, oldest first).
@@ -43,6 +46,12 @@ public struct FfiMailboxProvisioning: MailboxProvisioning {
         try await CoreThread.run { try mailboxCreateManaged(endpoint: endpoint, credentialSeed: seed, token: token) }
     }
 
+    public func checkManaged(_ endpoint: FfiMailboxEndpoint, seed: Data, mailboxID: String) async throws {
+        try await CoreThread.run {
+            try mailboxCheckManaged(endpoint: endpoint, credentialSeed: seed, mailboxId: mailboxID)
+        }
+    }
+
     public func open(_ home: MailboxHome, seed: Data) async throws -> any MailboxSyncing {
         let path = databasePath
         let sync = try await CoreThread.run {
@@ -64,6 +73,9 @@ public enum MailboxSetupOutcome: Equatable, Sendable {
     case iCloud
     /// The server could not be reached: the account stays on this device, the setup resumes later.
     case offline
+    /// A managed setup only: the org server refused the member token (spent or expired) or made the
+    /// mailbox off the managed plan (R36). The progress is dropped; a new token starts over.
+    case tokenRefused
     case failed(String)
 }
 
@@ -86,11 +98,17 @@ public actor MailboxSetup {
         var baseURL: URL
         var extraCAPEM: String?
         var mailboxID: String?
+        /// A managed setup (made with a member token). Absent on a personal setup.
+        var managed: Bool?
+        /// The managed mailbox was read back on the managed plan (R36).
+        var managedChecked: Bool?
     }
 
     static let metaKey = "mailbox.setup"
     /// The keychain slot of the device seed before the mailbox id is known.
-    static let pendingID = "pending"
+    public static let pendingID = "pending"
+    /// The server's answers to a managed setup that a new token fixes (R36).
+    static let tokenRefusals: Set<String> = ["member token", "mailbox plan"]
     /// The grant label of the recovery credential: the server sees it, it names a role only.
     static let recoveryLabel = Data("recovery".utf8)
 
@@ -100,6 +118,11 @@ public actor MailboxSetup {
     private let hosted: URL?
     /// A managed account's one-use `managed` token: the mailbox is made with it (nil: personal path).
     private let memberToken: SecretBytes?
+    /// A managed account's setup, token or not (no token: refused before anything is created).
+    private let managed: Bool
+    /// The keychain slot of the device seed before the mailbox id is known (`pendingID` for the
+    /// primary account; a managed slot keeps its own so two setups never share one).
+    private let pendingCredentialID: String
     /// Tests: stop (as a crash would) right after this step is recorded.
     var interruptAfter: Step?
 
@@ -107,17 +130,24 @@ public actor MailboxSetup {
 
     /// `hosted`: the OnePass server of this build (`MailboxEndpoints.hosted()`). `memberToken`: for a
     /// managed account only, the token its mailbox is created with on the organisation's server (the
-    /// caller wipes it after the run).
+    /// caller wipes it after the run). `managed`: a managed setup even without a token (one resumed
+    /// past its creation needs none). `pendingCredentialID`: see `pendingCredentialID(slot:)`.
     public init(
         provisioning: any MailboxProvisioning, credentials: MailboxCredentialStore, store: SyncStoreHandle,
-        hosted: URL? = MailboxEndpoints.hosted(), memberToken: SecretBytes? = nil
+        hosted: URL? = MailboxEndpoints.hosted(), memberToken: SecretBytes? = nil, managed: Bool = false,
+        pendingCredentialID: String = MailboxSetup.pendingID
     ) {
+        self.managed = managed || memberToken != nil
         self.provisioning = provisioning
         self.credentials = credentials
         self.store = store
         self.hosted = hosted
         self.memberToken = memberToken
+        self.pendingCredentialID = pendingCredentialID
     }
+
+    /// The pending seed slot of a managed account's setup (`pending.<slot>`).
+    public static func pendingCredentialID(slot: String) -> String { "\(pendingID).\(slot)" }
 
     func setInterruptAfter(_ step: Step?) { interruptAfter = step }
 
@@ -173,7 +203,8 @@ public actor MailboxSetup {
                 (base, ca) = (url, pem)
             }
             if !migrating { try await SyncBackendState.write(.pendingSetup(choice), store: store) }
-            progress = Progress(step: .started, baseURL: base, extraCAPEM: ca, mailboxID: nil)
+            progress = Progress(
+                step: .started, baseURL: base, extraCAPEM: ca, mailboxID: nil, managed: managed ? true : nil)
             try await save(progress!)
         }
         var p = progress!
@@ -182,29 +213,46 @@ public actor MailboxSetup {
         // 1. This device's credential, kept before the server knows it.
         if p.step < .credential {
             let credential = try await provisioning.generateCredential()
-            try credentials.store(seed: SecretBytes(copying: credential.seed), mailboxID: Self.pendingID)
+            try credentials.store(seed: SecretBytes(copying: credential.seed), mailboxID: pendingCredentialID)
             try await advance(&p, to: .credential)
         }
         // 2. The mailbox, managed by that credential.
         if p.step < .created {
-            guard let seed = try credentials.seed(mailboxID: Self.pendingID) else {
+            guard let seed = try credentials.seed(mailboxID: pendingCredentialID) else {
                 throw OnePassError.InvalidInput(what: "mailbox credential")
             }
             let seedData = seed.withData { Data($0) }
             let created: FfiMailboxHome
-            if let memberToken {
-                created = try await provisioning.createManaged(
-                    endpoint, seed: seedData, token: memberToken.withData { Data($0) })
+            if p.managed == true {
+                guard let memberToken else { return await refuse(p) }
+                do {
+                    created = try await provisioning.createManaged(
+                        endpoint, seed: seedData, token: memberToken.withData { Data($0) })
+                } catch OnePassError.Validation(let field, _) where Self.tokenRefusals.contains(field) {
+                    return await refuse(p)
+                }
             } else {
                 created = try await provisioning.create(endpoint, seed: seedData, invite: nil)
             }
+            // The mailbox exists: its id and seed are recorded before anything else is asked of it,
+            // so a cut from here on resumes on it and never spends another token.
             try credentials.store(seed: seed, mailboxID: created.mailboxId)
-            try credentials.delete(mailboxID: Self.pendingID)
+            try credentials.delete(mailboxID: pendingCredentialID)
             p.mailboxID = created.mailboxId
             try await advance(&p, to: .created)
         }
         guard let mailboxID = p.mailboxID, let seed = try credentials.seed(mailboxID: mailboxID) else {
             throw OnePassError.InvalidInput(what: "mailbox credential")
+        }
+        // 2b. A managed mailbox is on the managed plan (R16, R36), read again after a cut.
+        if p.managed == true, p.managedChecked != true {
+            do {
+                try await provisioning.checkManaged(endpoint, seed: seed.withData { Data($0) }, mailboxID: mailboxID)
+            } catch OnePassError.Validation(let field, _) where Self.tokenRefusals.contains(field) {
+                return await refuse(p)
+            }
+            p.managedChecked = true
+            try await save(p)
         }
         let home = MailboxHome(baseURL: p.baseURL, mailboxID: mailboxID, extraCAPEM: p.extraCAPEM)
         let sync = try await provisioning.open(home, seed: seed.withData { Data($0) })
@@ -242,6 +290,25 @@ public actor MailboxSetup {
         try await SyncBackendState.write(.mailbox(home), store: store)
         try await advance(&p, to: .done)
         return .ready(home)
+    }
+
+    /// The token was refused: the progress and its seeds go, so a new token starts from a new
+    /// credential and a new mailbox.
+    private func refuse(_ p: Progress) async -> MailboxSetupOutcome {
+        Self.log.error("managed mailbox refused by the org server")
+        try? credentials.delete(mailboxID: pendingCredentialID)
+        if let mailboxID = p.mailboxID { try? credentials.delete(mailboxID: mailboxID) }
+        await forget()
+        return .tokenRefused
+    }
+
+    /// The mailbox id this store's setup progress names, if any (an account's removal deletes its
+    /// seed before the store goes). On the caller's thread.
+    public static func progressMailboxIDNow(store: SyncStoreHandle) -> String? {
+        guard let data = try? store.meta(key: metaKey), !data.isEmpty,
+            let p = try? JSONDecoder().decode(Progress.self, from: data)
+        else { return nil }
+        return p.mailboxID
     }
 
     /// Drop the progress of an abandoned setup (a migration that lost its claim): the next setup

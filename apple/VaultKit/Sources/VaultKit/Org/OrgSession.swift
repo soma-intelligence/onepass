@@ -232,18 +232,19 @@ public final class OrgSession {
         state = try await mapped { try await backend.markVerified() }
     }
 
-    /// Posts this account's join request, signed by this device after a presence check (R31). The
-    /// returned seed is the member's own org mailbox credential (R27): the caller keeps it in the
-    /// keychain, this session does not.
+    /// Posts this account's join request, signed by this device after a presence check (R31).
+    /// `ownCredential`: the member's own org mailbox credential seed (R27), which the caller stored in
+    /// the keychain before this call (R35); a repost passes the same seed.
     public func requestToJoin(
-        invite: FfiOrgInvite, displayName: String, password: SecretBytes?
+        invite: FfiOrgInvite, displayName: String, password: SecretBytes?, ownCredential: SecretBytes
     ) async throws(OrgActionError) -> FfiJoinPosted {
         let (session, pair) = try signer()
         try await confirmPresence(password: password, prompt: "org.presence.joinPrompt")
         let at = timestamp
+        let seed = ownCredential.withData { Data($0) }
         let posted = try await mapped {
             try await backend.postJoinRequest(
-                session: session, keys: pair, invite: invite, displayName: displayName, now: at)
+                session: session, keys: pair, invite: invite, displayName: displayName, credentialSeed: seed, now: at)
         }
         await refresh()
         return posted

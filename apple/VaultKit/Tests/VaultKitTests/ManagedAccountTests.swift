@@ -133,6 +133,59 @@ struct ManagedAccountTests {
         #expect(h.accounts.profiles.count == 1)
     }
 
+    /// Removed at a launch that never opened the slot: its settings and every keychain item still go,
+    /// read from the slot's scoped settings and its store (backend state, setup progress).
+    @Test func removingAManagedAccountWithNoSessionDropsEverything() async throws {
+        let h = try AccountsHarness()
+        defer { h.cleanUp() }
+        h.accounts.serverAvailable = { OrgServers.isUsable($0, allowHTTP: false) }
+        let kind = FfiAccountKind.managed(serverUrl: "https://onepass.example.org", orgId: Self.orgID)
+        let slot = try h.accounts.beginAdding(kind: kind, label: "Org", color: .indigo)
+        try await h.createAccount(in: slot, name: "Bob")
+        let session = try #require(h.accounts.session(for: slot))
+        let accountID = try #require(session.environment.settings.accountID)
+        _ = try ManagedDeviceKeys.createPending(keychain: h.keychain, slot: slot, secureEnclave: false)
+        try ManagedDeviceKeys.adoptPending(keychain: h.keychain, slot: slot, accountID: accountID)
+        _ = try ManagedDeviceKeys.createPending(keychain: h.keychain, slot: slot, secureEnclave: false)
+
+        let (orgMailbox, homeMailbox, setupMailbox) =
+            (String(repeating: "cd", count: 16), String(repeating: "aa", count: 16), String(repeating: "bb", count: 16))
+        session.environment.settings.orgMailboxID = orgMailbox
+        let credentials = ManagedOrgCredentials(keychain: h.keychain, slot: slot)
+        try credentials.storeOwnSeed(SecretBytes(copying: Data(repeating: 3, count: 32)), orgMailboxID: orgMailbox)
+        try credentials.storeLinkSeed(SecretBytes(copying: Data(repeating: 4, count: 32)))
+        try credentials.storeMemberToken(SecretBytes(copying: Data(repeating: 5, count: 32)))
+        let mailboxes = MailboxCredentialStore(keychain: h.keychain)
+        let pendingID = MailboxSetup.pendingCredentialID(slot: slot)
+        for id in [homeMailbox, setupMailbox, pendingID, MailboxSetup.pendingID] {
+            try mailboxes.store(seed: SecretBytes(copying: Data(repeating: 6, count: 32)), mailboxID: id)
+        }
+        let dbURL = try h.store.databaseURL(slot: slot)
+        do {
+            let store = try openSyncStore(dbPath: dbURL.path)
+            let home = MailboxHome(
+                baseURL: URL(string: "https://onepass.example.org")!, mailboxID: homeMailbox, extraCAPEM: nil)
+            try await SyncBackendState.write(.mailbox(home), store: store)
+            let progress = MailboxSetup.Progress(
+                step: .created, baseURL: home.baseURL, extraCAPEM: nil, mailboxID: setupMailbox, managed: true)
+            try store.setMeta(key: MailboxSetup.metaKey, value: try JSONEncoder().encode(progress))
+        }
+        h.accounts.lockAll()
+
+        let relaunched = h.relaunched()
+        try relaunched.remove(slot)
+        #expect(try h.keychain.read(ManagedDeviceKeys.key(accountID: accountID)) == nil)
+        #expect(try h.keychain.read(ManagedDeviceKeys.pendingKey(slot: slot)) == nil)
+        #expect(try credentials.ownSeed(orgMailboxID: orgMailbox) == nil)
+        #expect(try credentials.linkSeed() == nil)
+        #expect(try credentials.memberToken() == nil)
+        for id in [homeMailbox, setupMailbox, pendingID] { #expect(try mailboxes.seed(mailboxID: id) == nil) }
+        // The primary account's pending seed is not the slot's.
+        #expect(try mailboxes.seed(mailboxID: MailboxSetup.pendingID) != nil)
+        #expect(VaultSettings(defaults: h.defaults, scope: slot).orgMailboxID == nil)
+        #expect(!FileManager.default.fileExists(atPath: dbURL.path))
+    }
+
     // MARK: - Resume
 
     /// A managed account for `orgID` in `h`, its software keys adopted under the new account id.
@@ -202,15 +255,34 @@ struct ManagedAccountTests {
             joinerHarness, joinerVault, name: "Bob", orgID: invite.orgId, accountID: invite.accountId)
         #expect(!settings.orgJoinPosted)
 
-        // Next unlock: the request is posted once, the member's own seed kept.
+        // Next unlock, no biometrics: nothing posted, no error shown, the join waits for the password (R34).
+        #expect(await ManagedAccountResume.run(
+            settings: settings, org: joiner, credentials: credentials, displayName: "Bob") == false)
+        #expect(settings.orgJoinWaiting)
+        #expect(!settings.orgJoinPosted)
+
+        // A wrong password posts nothing, but the member's own seed is already kept (R35).
+        let wrong = SecretBytes(utf8: "not the password at all 12 !")
+        defer { wrong.wipe() }
+        await #expect(throws: OrgActionError.self) {
+            try await ManagedAccountResume.sendJoinRequest(
+                settings: settings, org: joiner, credentials: credentials, displayName: "Bob", password: wrong)
+        }
+        #expect(!settings.orgJoinPosted)
+        let kept = try #require(try credentials.ownSeed(orgMailboxID: invite.mailboxId))
+        let keptSeed = kept.withData { Data($0) }
+
+        // The password: posted once, with the same seed (a repost names the same credential).
         let password = SecretBytes(utf8: testPassword)
         defer { password.wipe() }
-        #expect(await ManagedAccountResume.run(
+        #expect(try await ManagedAccountResume.sendJoinRequest(
             settings: settings, org: joiner, credentials: credentials, displayName: "Bob", password: password))
         #expect(settings.orgJoinPosted)
-        #expect(try credentials.ownSeed(orgMailboxID: invite.mailboxId) != nil)
+        #expect(!settings.orgJoinWaiting)
+        let own = try #require(try credentials.ownSeed(orgMailboxID: invite.mailboxId))
+        #expect(own.withData { Data($0) } == keptSeed)
         #expect(await ManagedAccountResume.run(
-            settings: settings, org: joiner, credentials: credentials, displayName: "Bob", password: password) == false)
+            settings: settings, org: joiner, credentials: credentials, displayName: "Bob") == false)
         await owner.refresh()
         #expect(owner.joinRequests.map(\.displayName) == ["Bob"])
         #expect(await backend.usesOwnCredential == false)
@@ -226,27 +298,32 @@ struct ManagedAccountTests {
         #expect(settings.orgJoinNonce == nil)
     }
 
+    /// A creation cut off before its publish: no org mailbox is known, so the org backend of the slot
+    /// is the unfinished one and the session shows it (the path the app takes).
     @Test func interruptedCreationShowsUnfinished() async throws {
-        let server = TestOrgServer()
         let h = try SessionHarness()
         defer { h.cleanUp() }
         let vault = h.makeSession()
-        h.settings.orgCreator = true
-        let mailboxID = String(repeating: "cd", count: 16)
-        h.settings.orgMailboxID = mailboxID
         let credentials = ManagedOrgCredentials(keychain: h.keychain, slot: "creator")
-        try credentials.storeOwnSeed(SecretBytes(copying: Data(repeating: 5, count: 32)), orgMailboxID: mailboxID)
-        let stateDir = h.dir.appendingPathComponent("org").path
-        let orgID = Self.orgID
-        let backend = ManagedOrgBackend(credentials: credentials, orgMailboxID: mailboxID) { seed in
-            try server.client(mailboxId: mailboxID, credentialSeed: seed, orgId: orgID, stateDir: stateDir)
-        }
+        let open: ManagedOrgBackend.Open = { _ in throw OnePassError.NotFound }
+        // A slot with no org yet has no org backend.
+        #expect(ManagedAccountResume.backend(settings: h.settings, credentials: credentials, open: open) == nil)
+
+        h.settings.orgCreator = true
+        let backend = try #require(
+            ManagedAccountResume.backend(settings: h.settings, credentials: credentials, open: open))
+        #expect(backend is UnfinishedOrgBackend)
         let org = ManagedAccountResume.session(
             vault: vault, backend: backend, keys: ManagedDeviceKeys(keychain: h.keychain, accountID: "none"))
         let posted = await ManagedAccountResume.run(
             settings: h.settings, org: org, credentials: credentials, displayName: "Alice")
         #expect(!posted)
         #expect(org.phase == .unfinishedCreation)
+
+        // Once published, the org mailbox is known: the slot's backend is the managed one.
+        h.settings.orgMailboxID = String(repeating: "cd", count: 16)
+        let published = ManagedAccountResume.backend(settings: h.settings, credentials: credentials, open: open)
+        #expect(published is ManagedOrgBackend)
     }
 }
 
