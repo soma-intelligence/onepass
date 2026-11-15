@@ -3,7 +3,7 @@
 
     icon_pack.py build --simple-icons DIR --logos DIR --twofa DIR --sources FILE
                        --version N --out DIR [--size 256] [--jobs N] [--sites DIR]
-                       [--domains FILE]... [--blocklist FILE] [--tranco-id ID --tranco-date DATE]
+                       [--domains FILE]... [--blocklist FILE]
                        [--platforms FILE] [--wikidata DIR] [--resvg PATH] [--cwebp PATH]
         Reads the three upstream checkouts (untrusted data: SVG text is checked before it is
         drawn, nothing in them runs), rasterizes each kept icon to a square WebP at --size
@@ -12,8 +12,7 @@
         --sources is a JSON object {"simple-icons": {"commit": ..., "archive_sha256": ...}, ...}.
     icon_pack.py sites [--curated FILE] [--domains FILE]... [--blocklist FILE] [--platforms FILE] --out DIR
         Fetches, at build time only, the icon of every curated brand that uses its site and, with
-        --domains, of every popular domain listed (plain text, one per line, or a Tranco CSV
-        `rank,domain`), at least 128 px, into DIR (domains in DIR/domains and DIR/domains.json),
+        --domains, of every popular domain listed (plain text, one per line), at least 128 px, into DIR (domains in DIR/domains and DIR/domains.json),
         and the icon of every hosting platform (--platforms, default scripts/icon-pack-platforms.txt)
         into DIR/platforms and DIR/platforms.json.
     icon_pack.py wikidata --out DIR [--blocklist FILE] [--platforms FILE] [--page-size N] [--max-pages N]
@@ -954,24 +953,23 @@ DEFAULT_BLOCKLIST = Path(__file__).resolve().parent / "icon-pack-blocklist.txt"
 
 
 def read_domain_lists(paths):
-    """([domain, ...], is_tranco) from list files. A file is plain text (one domain per line, `#`
-    comments) or a Tranco CSV (`rank,domain`, told by its comma). Each entry becomes its registrable
-    domain (the app finds a subdomain's icon through its parent), once, in list order."""
-    seen, out, tranco = set(), [], False
+    """[domain, ...] from plain text list files (one domain per line, `#` comments). Each entry
+    becomes its registrable domain (the app finds a subdomain's icon through its parent), once, in
+    list order. A line with a comma (a ranked CSV) is refused: no list records its provenance."""
+    seen, out = set(), []
     for path in paths:
         for line in Path(path).read_text(encoding="utf-8").splitlines():
             line = line.split("#", 1)[0].strip()
             if not line:
                 continue
             if "," in line:
-                tranco = True
-                line = line.rsplit(",", 1)[1]
+                raise IconPackError(f"{Path(path).name}: one domain per line, no CSV")
             host = normalized_domain(line)
             domain = registrable(host) if host else None
             if domain and domain not in seen:
                 seen.add(domain)
                 out.append(domain)
-    return out, tranco
+    return out
 
 
 class Blocklist:
@@ -1825,6 +1823,14 @@ def platform_icons(domains, platforms):
     return sorted(out)
 
 
+def platform_tenants(domains, curated_tenants, platforms):
+    """Sorted tenant domains: the curated tenants and every hosting platform domain (`platforms`)
+    with an icon in `domains`. A tenant's subdomains never inherit its icon (a club's portal at
+    club.clubautomation.com is the club's, not Club Automation's); the bare domain keeps it."""
+    listed = (normalized_domain(x) for x in list(curated_tenants) + list(platforms))
+    return sorted({d for d in listed if d and d in domains})
+
+
 def pack_bytes(version, size, icons, domains, names=None, tenants=None, rejects=None, platforms=None):
     """icons: [(bytes, flags)], domains: {domain: index}, names: {squashed brand name: index},
     tenants: domains whose icon is not inherited by their subdomains (acme.zendesk.com is Acme's),
@@ -1888,22 +1894,18 @@ def build(args):
     for domain, candidate in curated_candidates(curated, roots, sites, log).items():
         found.setdefault(domain, []).append(candidate)
     fetched = json.loads((sites / "sites.json").read_text(encoding="utf-8")) if sites and (sites / "sites.json").is_file() else {}
-    stats, tranco = {"fetched": 0, "kept": 0, "blocked": 0}, None
+    stats = {"fetched": 0, "kept": 0, "blocked": 0}
     if args.domains:
         if not sites:
             raise IconPackError("--domains needs --sites (the folder `sites --domains` wrote)")
-        listed, is_tranco = read_domain_lists(args.domains)
-        if is_tranco:
-            if not args.tranco_id or not args.tranco_date:
-                raise IconPackError("a Tranco CSV needs --tranco-id and --tranco-date (recorded in the manifest)")
-            tranco = {"id": args.tranco_id, "date": args.tranco_date}
+        listed = read_domain_lists(args.domains)
         extra, stats = domain_candidates(listed, curated_domains(curated), load_blocklist(args.blocklist), sites, log)
         for domain, candidate in extra.items():
             found.setdefault(domain, []).append(candidate)
     wikidata = None
     if args.wikidata:
         # Wikidata logos (the `wikidata` command's folder): after the curated list, before the open sets.
-        platforms = read_domain_lists([args.platforms])[0] if args.platforms else []
+        platforms = read_domain_lists([args.platforms]) if args.platforms else []
         extra, wd_record, wd_drops = wikidata_candidates(Path(args.wikidata), curated_domains(curated),
                                                          load_blocklist(args.blocklist), platforms, log)
         open_sets = {"logos", "2fa-directory", "simple-icons"}
@@ -1917,7 +1919,7 @@ def build(args):
     if sites:
         # Hosting-platform icons (a gym portal serving its software vendor's favicon): shipped as
         # `rejects` for the app, and never kept as a brand's icon here.
-        platforms = read_domain_lists([args.platforms])[0] if args.platforms else []
+        platforms = read_domain_lists([args.platforms]) if args.platforms else []
         rejects, dropped = reject_platform_icons(found, sites, platforms, args.resvg, args.jobs, log)
     # Each domain's best candidate is drawn; a domain whose candidate fails moves to its next one.
     queues = {d: sorted(c, key=lambda c: (c.rank, c.name)) for d, c in found.items()}
@@ -1967,10 +1969,10 @@ def build(args):
                     del queues[domain]
     stats["kept"] = sum(1 for c in picked.values() if c.rank == RANK_DOMAIN_LIST)
     names = brand_names(picked, domains)
-    tenants = sorted(d for d in (normalized_domain(x) for x in curated.get("tenants", [])) if d in domains)
     # Icons of hosting platforms: never another site's parent brand in the app.
-    platform_list = read_domain_lists([args.platforms])[0] if args.platforms else []
+    platform_list = read_domain_lists([args.platforms]) if args.platforms else []
     platforms = platform_icons(domains, platform_list)
+    tenants = platform_tenants(domains, curated.get("tenants", []), platform_list)
     pack = pack_bytes(args.version, args.size, icons, domains, names=names, tenants=tenants, rejects=rejects,
                       platforms=platforms)
     used = {name.partition(":")[2] for name in chosen.values() if name.startswith("brand:")}
@@ -2005,8 +2007,6 @@ def build(args):
     }
     if rejects:
         manifest["rejects"] = len(rejects)
-    if tranco:
-        manifest["tranco"] = tranco
     if wikidata:
         manifest["wikidata_queried"] = wikidata["record"].get("queried")
     (out / "icon-pack-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -2077,12 +2077,10 @@ def main(argv=None):
     b.add_argument("--cwebp", default="cwebp")
     b.add_argument("--jobs", type=int, default=os.cpu_count() or 2)
     b.add_argument("--domains", action="append",
-                   help="a popular-domain list (plain text or Tranco CSV; repeatable): its icons, fetched by "
+                   help="a popular-domain list (plain text, one per line; repeatable): its icons, fetched by "
                         "`sites --domains`, are drawn at 128 px with index flag 2")
     b.add_argument("--blocklist", default=str(DEFAULT_BLOCKLIST),
                    help="domains and *.suffix lines that never get an icon (default scripts/icon-pack-blocklist.txt)")
-    b.add_argument("--tranco-id", help="id of the Tranco list (recorded in the manifest when --domains is a Tranco CSV)")
-    b.add_argument("--tranco-date", help="date of the Tranco list, YYYY-MM-DD")
     b.add_argument("--curated", default=str(Path(__file__).resolve().parent / "icon-pack-curated.json"),
                    help="hand-picked brands (default scripts/icon-pack-curated.json; empty string for none)")
     b.add_argument("--sites", help="the folder `sites` wrote (brand icons fetched at build time)")
@@ -2102,7 +2100,7 @@ def main(argv=None):
     st = sub.add_parser("sites")
     st.add_argument("--curated", default=str(Path(__file__).resolve().parent / "icon-pack-curated.json"))
     st.add_argument("--out", required=True)
-    st.add_argument("--domains", action="append", help="a popular-domain list (plain text or Tranco CSV; repeatable)")
+    st.add_argument("--domains", action="append", help="a popular-domain list (plain text, one per line; repeatable)")
     st.add_argument("--blocklist", default=str(DEFAULT_BLOCKLIST))
     st.add_argument("--jobs", type=int, default=8)
     st.add_argument("--platforms", default=str(DEFAULT_PLATFORMS),
@@ -2128,7 +2126,7 @@ def main(argv=None):
                       f"at most {args.max_pages} pages\nCommons: {COMMONS_API} (imageinfo, {COMMONS_BATCH} files "
                       f"per request)\n\n{wikidata_query(args.page_size, 0)}")
                 return 0
-            platforms = read_domain_lists([args.platforms])[0] if args.platforms else []
+            platforms = read_domain_lists([args.platforms]) if args.platforms else []
             record = fetch_wikidata(Path(args.out), load_blocklist(args.blocklist), platforms,
                                     page_size=args.page_size, max_pages=args.max_pages)
             print(f"{record['items']} items, {len(record['domains'])} domains with a kept logo, "
@@ -2140,12 +2138,12 @@ def main(argv=None):
             out = Path(args.out)
             fetch_sites(curated, out, lambda kind, what: failed.append(what))
             if args.domains:
-                listed, _ = read_domain_lists(args.domains)
+                listed = read_domain_lists(args.domains)
                 record, blocked = fetch_domains(listed, curated_domains(curated), load_blocklist(args.blocklist), out,
                                                 lambda kind, what: failed.append(what), jobs=args.jobs)
                 print(f"{len(record)} domain icons, {len(blocked)} blocked")
             if args.platforms:
-                platforms, _ = read_domain_lists([args.platforms])
+                platforms = read_domain_lists([args.platforms])
                 record = fetch_platforms(platforms, out, lambda kind, what: failed.append(what), jobs=args.jobs)
                 print(f"{len(record)} platform icons")
             for line in failed:

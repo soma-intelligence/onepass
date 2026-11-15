@@ -404,14 +404,16 @@ class DomainList(unittest.TestCase):
         report = json.loads((out / "report.json").read_text())
         return manifest, index, report, sizes
 
-    def test_lists_plain_csv_and_comments(self):
-        a, b = self.tmp / "a.txt", self.tmp / "b.csv"
+    def test_lists_plain_and_comments(self):
+        a, b, c = self.tmp / "a.txt", self.tmp / "b.txt", self.tmp / "c.csv"
         write(a, "# banks\nWww.Plain.test\n\nhttps://sub.shop.test/path  # inline\nplain.test\nco.uk\n")
-        write(b, "1,google.com\n2,mail.plain.test\n3,github.io\nrank,domain\n")
-        listed, tranco = icon_pack.read_domain_lists([a])
-        self.assertEqual((listed, tranco), (["plain.test", "shop.test"], False))
-        listed, tranco = icon_pack.read_domain_lists([a, b])
-        self.assertEqual((listed, tranco), (["plain.test", "shop.test", "google.com"], True))
+        write(b, "google.com\nmail.plain.test\ngithub.io\n")
+        write(c, "1,google.com\n")
+        self.assertEqual(icon_pack.read_domain_lists([a]), ["plain.test", "shop.test"])
+        self.assertEqual(icon_pack.read_domain_lists([a, b]), ["plain.test", "shop.test", "google.com"])
+        # A ranked CSV is refused: no list records its provenance.
+        with self.assertRaises(icon_pack.IconPackError):
+            icon_pack.read_domain_lists([c])
 
     def test_blocklist_exact_and_suffix(self):
         write(self.tmp / "b.txt", "# header\nbad.test  # why\n\n*.adult\n*.Evil.example\n")
@@ -426,9 +428,8 @@ class DomainList(unittest.TestCase):
         self.assertLess(len((ROOT / "scripts" / "icon-pack-blocklist.txt").read_text().splitlines()), 60)
 
     def test_shipped_french_list(self):
-        listed, tranco = icon_pack.read_domain_lists([ROOT / "scripts" / "icon-pack-domains-fr.txt"])
+        listed = icon_pack.read_domain_lists([ROOT / "scripts" / "icon-pack-domains-fr.txt"])
         text = (ROOT / "scripts" / "icon-pack-domains-fr.txt").read_text()
-        self.assertFalse(tranco)
         self.assertGreater(len(listed), 250)
         self.assertEqual(len(listed), len(set(listed)))
         self.assertNotIn("\u2014", text)
@@ -440,17 +441,17 @@ class DomainList(unittest.TestCase):
         record, blocked = self.fetch(["plain.test"])
         self.assertEqual((sorted(record), blocked), (["plain.test"], []))
         self.assertEqual(record["plain.test"]["pixels"], 200)
-        write(self.tmp / "list.csv", "1,plain.test\n")
+        write(self.tmp / "list.txt", "plain.test\n")
         write(self.tmp / "block.txt", "# none\n")
-        manifest, index, report, sizes = self.build(self.tmp / "list.csv", ["--tranco-id", "ZZ9XY", "--tranco-date", "2026-11-01"])
+        manifest, index, report, sizes = self.build(self.tmp / "list.txt")
         self.assertEqual(sizes["domain:plain.test"], 128)
         offset, length, flags = index["icons"][index["domains"]["plain.test"]]
         self.assertEqual(flags, icon_pack.FLAG_DOMAIN_LIST)
         self.assertEqual(flags, 2)
         self.assertEqual((report["domains_fetched"], report["domains_kept"], report["domains_blocked"]), (1, 1, 0))
-        self.assertEqual(manifest["tranco"], {"id": "ZZ9XY", "date": "2026-11-01"})
+        self.assertNotIn("tranco", manifest)
 
-    def test_tranco_csv_needs_its_id(self):
+    def test_csv_list_is_refused(self):
         self.site("plain.test", 200)
         self.fetch(["plain.test"])
         write(self.tmp / "list.csv", "1,plain.test\n")
@@ -643,9 +644,19 @@ class Platforms(unittest.TestCase):
         self.assertEqual(index["rejects"], ["%016x" % icon_pack.dhash(pattern(3))])
         self.assertNotIn("portal.test", index["domains"])
         self.assertIn("other.test", index["domains"])
-        # The platform's own domain keeps its own icon.
+        # The platform's own domain keeps its own icon, as a tenant: its subdomains (a club's
+        # portal on the platform) never inherit it.
         self.assertIn("vendor.test", index["domains"])
+        self.assertIn("vendor.test", index["tenants"])
         self.assertEqual(report["platform_icons_dropped"], ["portal.test"])
+
+    def test_platform_domains_with_an_icon_are_tenants(self):
+        domains = {"clubautomation.com": 0, "zendesk.com": 1, "acme.com": 2}
+        self.assertEqual(
+            icon_pack.platform_tenants(domains, ["zendesk.com", "gone.com"],
+                                       ["clubautomation.com", "www.clubautomation.com", "wix.com"]),
+            ["clubautomation.com", "zendesk.com"])
+        self.assertEqual(icon_pack.platform_tenants(domains, [], []), [])
 
     def test_one_brand_on_its_own_domains_is_not_a_reject(self):
         domains = ["brand.com", "brand.fr", "brand.de", "brand.co.uk"]
@@ -704,8 +715,7 @@ class Platforms(unittest.TestCase):
 
     def test_shipped_platform_list(self):
         path = ROOT / "scripts" / "icon-pack-platforms.txt"
-        listed, tranco = icon_pack.read_domain_lists([path])
-        self.assertFalse(tranco)
+        listed = icon_pack.read_domain_lists([path])
         self.assertGreaterEqual(len(listed), 35)
         self.assertEqual(len(listed), len(set(listed)))
         self.assertNotIn("\u2014", path.read_text())
