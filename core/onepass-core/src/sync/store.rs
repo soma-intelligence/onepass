@@ -2109,6 +2109,7 @@ impl SyncStore {
             "zone_pending",
             "zone_staging",
             "zone_fetch",
+            "zone_ancestor",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -2147,6 +2148,7 @@ impl SyncStore {
             "zone_pending",
             "zone_staging",
             "zone_fetch",
+            "zone_ancestor",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -3957,6 +3959,7 @@ impl RecordStore for SyncStore {
             "zone_pending",
             "zone_staging",
             "zone_fetch",
+            "zone_ancestor",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -5754,6 +5757,26 @@ mod tests {
         // Both connections keep working on the same file.
         s.put(rec(vault, RecordKind::Keyset, 1, b"k")).unwrap();
         assert_eq!(other.list(RecordKind::Keyset).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn resets_wipe_kept_shared_ancestors() {
+        for recovery in [false, true] {
+            let mut s = SyncStore::open_in_memory().unwrap();
+            s.conn
+                .execute(
+                    "INSERT INTO zone_ancestor (zone, kind, id, version, data) VALUES (?1, 1, ?2, 1, ?3)",
+                    rusqlite::params![vec![7u8], vec![1u8], b"sealed".to_vec()],
+                )
+                .unwrap();
+            assert_eq!(count(&s, "zone_ancestor"), 1);
+            if recovery {
+                s.reset_for_recovery().unwrap();
+            } else {
+                s.reset().unwrap();
+            }
+            assert_eq!(count(&s, "zone_ancestor"), 0, "recovery: {recovery}");
+        }
     }
 
     #[test]
