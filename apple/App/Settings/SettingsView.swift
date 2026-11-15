@@ -32,7 +32,8 @@ enum SettingsTiming {
 /// from milestone 2b, Travel Mode and, on the Mac, Développeur from milestone 7): a grouped list on
 /// iPhone and iPad, tabs in the Mac `Settings` window.
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, security, autofill, sync, accounts, vaults, contacts, family, devices, travel, crypto, developer, about
+    case general, security, autofill, sync, accounts, vaults, contacts, family, organisation, devices, travel, crypto,
+        developer, about
 
     var id: String { rawValue }
 
@@ -46,6 +47,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .vaults: "Coffres"
         case .contacts: "settings.contacts.title"
         case .family: "settings.family.title"
+        case .organisation: "org.title"
         case .devices: "Appareils"
         case .travel: "Travel Mode"
         case .crypto: "crypto.title"
@@ -64,6 +66,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .vaults: "lock.rectangle.stack.fill"
         case .contacts: "person.crop.circle.badge.checkmark"
         case .family: "figure.2.and.child.holdinghands"
+        case .organisation: "building.2.fill"
         case .devices: "laptopcomputer.and.iphone"
         case .travel: "airplane"
         case .crypto: "bitcoinsign.circle"
@@ -82,6 +85,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .vaults: Color(red: 0.49, green: 0.23, blue: 0.93)
         case .contacts: Color(red: 0.16, green: 0.60, blue: 0.86)
         case .family: Color(red: 0.93, green: 0.36, blue: 0.45)
+        case .organisation: Color(red: 0.35, green: 0.34, blue: 0.84)
         case .devices: Color(red: 0.0, green: 0.55, blue: 0.70)
         case .travel: Color(red: 0.0, green: 0.55, blue: 0.75)
         case .crypto: Color(red: 0.95, green: 0.58, blue: 0.10)
@@ -90,9 +94,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab.
+    /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab. Organisation
+    /// has none yet: its symbol on its tint.
     var artwork: String? {
-        "settings-\(rawValue)"
+        self == .organisation ? nil : "settings-\(rawValue)"
     }
 
     /// The page's content, without its own navigation container.
@@ -106,6 +111,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .vaults: VaultsSettings()
         case .contacts: ContactsView()
         case .family: FamilyView()
+        case .organisation: OrganisationSettings()
         case .devices: DevicesSettings()
         case .travel: TravelSettings()
         case .crypto: CryptoSettingsView()
@@ -163,6 +169,7 @@ struct SettingsView: View {
                     row(.vaults)
                     row(.contacts)
                     row(.family)
+                    row(.organisation)
                     row(.devices)
                     row(.travel)
                     row(.crypto)
@@ -324,6 +331,7 @@ struct MacSettingsView: View {
                             row(.vaults)
                             row(.contacts)
                             row(.family)
+                            row(.organisation)
                             row(.devices)
                             row(.travel)
                             row(.crypto)

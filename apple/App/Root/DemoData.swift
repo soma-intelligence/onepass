@@ -36,6 +36,10 @@ import UIKit
 ///   `-OnePassDemoShowWork YES` shows the business account (locked); `-OnePassDemoAddAccount YES`
 ///   opens "Ajouter un compte".
 /// - `-OnePassDemoBulkItems <n>`: n more fictional logins (a large vault for measurements).
+/// - `-OnePassDemoOrg YES`: Réglages > Organisation shows a made-up organisation in memory
+///   (`DemoOrgBackend`, no server): the demo account is its owner, with members and a join request.
+///   `-OnePassDemoOrg join`: the demo account is a member waiting for its administrator (join code).
+///   On the Mac, `-OnePassSnapshotOnly organisation` renders that page, light then dark.
 enum DemoData {
     static let password = "demo-onepass-2026"
     static let displayName = "Camille Durand"
@@ -224,6 +228,7 @@ extension AppModel {
                 if defaults.bool(forKey: "OnePassDemoSecondAccount") { try await seedSecondDemoAccount() }
                 // `-OnePassDemoSharing YES [-OnePassDemoRecoveryAlert YES]`: the sharing screens.
                 if defaults.bool(forKey: "OnePassDemoSharing") { showDemoSharing() }
+                if let org = defaults.string(forKey: "OnePassDemoOrg"), org != "NO" { showDemoOrg(org) }
                 demoPreparing = false
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.

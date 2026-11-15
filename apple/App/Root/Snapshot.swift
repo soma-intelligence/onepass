@@ -32,6 +32,17 @@ enum Snapshot {
             return
         }
 
+        // `-OnePassSnapshotOnly organisation` (with `-OnePassDemoOrg`): Réglages > Organisation, light then dark.
+        if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "organisation" {
+            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: appearance)
+                model.settingsPageRequest = .organisation
+                await captureSettings(directory, "mac-settings-organisation-\(suffix)", height: 1300)
+            }
+            NSApp.terminate(nil)
+            return
+        }
+
         // `-OnePassSnapshotOnly cards`: Cartes bancaires with the Amex selected, light then dark.
         if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "cards" {
             let amex = model.session.summaries.first { $0.title == "Amex Platinum" }

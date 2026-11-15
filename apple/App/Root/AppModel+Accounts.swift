@@ -231,7 +231,7 @@ extension AppModel {
     }
 
     /// The sync and org objects the app holds for `slot`.
-    private func forgetAccountLinks(_ slot: String) {
+    func forgetAccountLinks(_ slot: String) {
         accountLink.syncs[slot] = nil
         accountLink.managedSyncs[slot] = nil
         orgSessions[slot] = nil
@@ -239,7 +239,7 @@ extension AppModel {
         if managedOnboarding?.slot == slot { managedOnboarding = nil }
     }
 
-    private func stopAccountTasks(_ slot: String) {
+    func stopAccountTasks(_ slot: String) {
         accountTasks[slot]?.forEach { $0.cancel() }
         accountTasks[slot] = nil
     }

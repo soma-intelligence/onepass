@@ -107,6 +107,25 @@ final class SettingsUITests: XCTestCase {
         element("accounts.add.dismiss").tap()
     }
 
+    /// Réglages > Organisation sits right after Famille; on the personal demo account it offers to join
+    /// an organisation (an iPhone never offers to create one).
+    func testOrganisationPageSitsAfterFamilyAndOffersJoin() throws {
+        _ = openSettings()
+        let family = element("settings.family")
+        let organisation = element("settings.organisation")
+        var swipes = 0
+        while !(organisation.exists && organisation.isHittable), swipes < 3 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(organisation.waitForExistence(timeout: Self.uiTimeout), "no Organisation row")
+        XCTAssertTrue(family.exists, "no Famille row")
+        XCTAssertGreaterThan(organisation.frame.minY, family.frame.minY, "Organisation is not after Famille")
+        organisation.tap()
+        XCTAssertTrue(element("org.entry.join").waitForExistence(timeout: Self.uiTimeout), "no Join an organisation")
+        XCTAssertFalse(element("org.entry.create").exists, "an iPhone offers to create an organisation")
+    }
+
     func testNewVaultFromSettingsShowsInTheList() throws {
         _ = openSettings()
         element("settings.vaults").tap()

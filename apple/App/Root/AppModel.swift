@@ -43,6 +43,11 @@ final class AppModel {
     @ObservationIgnored var orgSessions: [String: OrgSession] = [:]
     /// The org client of each managed slot, under its org session.
     @ObservationIgnored var orgBackends: [String: any OrgBackend] = [:]
+    #if DEBUG
+    /// Screenshots (`-OnePassDemoOrg`): a fake organisation the Organisation page shows for the
+    /// personal demo account (`shownOrgSession`). Never set outside the demo.
+    var demoOrgSession: OrgSession?
+    #endif
     /// Signing in to an added account: the account id of its Emergency Kit (scanned from a version 2
     /// QR code, or typed from the printed kit), which names its iCloud zone (ruling P8).
     var signInAccountID: String?

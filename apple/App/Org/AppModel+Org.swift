@@ -158,6 +158,7 @@ extension AppModel {
         guard let vault = accounts.session(for: slot) else { throw missing }
         let settings = vault.environment.settings
         settings.orgMailboxID = invite.mailboxId
+        settings.orgDomain = invite.domain
         settings.orgJoinNonce = invite.nonce.map { String(format: "%02x", $0) }.joined()
         let credentials = ManagedOrgCredentials(keychain: vault.environment.keychain, slot: slot)
         do {
@@ -180,11 +181,21 @@ extension AppModel {
 
     /// Leaves the managed sign up of `slot` before its account exists (creation or join): the slot,
     /// its pending device keys and its org credentials go (`AccountSessions.discard`). Another slot's
-    /// sign up under way is left alone; only `slot`'s org objects are dropped.
+    /// sign up under way is left alone; only `slot`'s org objects are dropped, and `slot` itself if
+    /// it still has no account (a join a newer one replaced), so no directory entry is left behind.
     func cancelOrgJoin(slot: String) {
         orgSessions[slot] = nil
         orgBackends[slot] = nil
-        guard managedOnboarding?.slot == slot else { return }
+        guard managedOnboarding?.slot == slot else {
+            guard slot != accounts.activeSlot, addingAccount?.slot != slot,
+                let profile = accounts.profile(slot), profile.accountID == nil,
+                accounts.session(for: slot)?.environment.settings.accountID == nil
+            else { return }
+            stopAccountTasks(slot)
+            forgetAccountLinks(slot)
+            accounts.cancelAdding(slot)
+            return
+        }
         managedOnboarding = nil
         orgDraft = nil
         if addingAccount?.slot == slot { cancelAddingAccount() }
@@ -395,6 +406,15 @@ extension AppModel {
     }
 
     // MARK: - Org session
+
+    /// The org session Réglages > Organisation shows: the active account's, when it is managed.
+    var shownOrgSession: OrgSession? {
+        #if DEBUG
+        if let demoOrgSession { return demoOrgSession }
+        #endif
+        guard case .managed? = accounts.activeProfile?.kind else { return nil }
+        return orgSession(for: accounts.activeSlot)
+    }
 
     /// The org session of a managed slot, made on first use once its org mailbox is known.
     func orgSession(for slot: String) -> OrgSession? {
