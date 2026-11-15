@@ -142,6 +142,36 @@ import VaultKit
         #expect(ItemIcon.decode(Data([1, 2, 3])) == nil)
         #expect(ItemIcon.decode(Data()) == nil)
     }
+
+    /// A plain red PNG of `width` x `height` pixels (compresses to a few KB however large).
+    static func blank(width: Int, height: Int) throws -> Data {
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let image = try #require(context.makeImage())
+        let out = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return out as Data
+    }
+
+    @Test func refusesADeclaredSideOver1024() throws {
+        #expect(ItemIcon.decode(try Self.blank(width: 1024, height: 1024)) != nil)
+        #expect(ItemIcon.decode(try Self.blank(width: 1025, height: 8)) == nil)
+        #expect(ItemIcon.decode(try Self.blank(width: 8, height: 4000)) == nil)
+        #expect(ItemIcon.prepared(try Self.blank(width: 2048, height: 2048)) == nil)
+    }
+
+    @Test func purgeEmptiesThePreparedCache() throws {
+        let data = try Self.blank(width: 64, height: 64)
+        #expect(ItemIcon.prepared(data) != nil)
+        #expect(ItemIcon.isCached(data))
+        ItemIcon.purgeCache()
+        #expect(!ItemIcon.isCached(data))
+    }
 }
 
 @Suite struct FieldDisclosureTests {

@@ -253,12 +253,32 @@ public struct ItemIcon: View {
         return image.cropping(to: rect)
     }
 
-    /// PNG (or any ImageIO format) to CGImage, same code on iOS and macOS.
+    /// Largest side, in pixels, an icon may declare: the pack ships 128 px, a chosen icon is at
+    /// most 256, a site icon a few hundred. A small file can declare a huge canvas (a PNG bomb).
+    static let maxDecodedSide = 1024
+
+    /// PNG (or any ImageIO format) to CGImage, same code on iOS and macOS. The declared pixel size
+    /// is read first (without decoding) and anything over `maxDecodedSide` on a side is refused.
     nonisolated static func decode(_ data: Data) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-            CGImageSourceGetCount(source) > 0
+            CGImageSourceGetCount(source) > 0,
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+            let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+            width > 0, height > 0, width <= maxDecodedSide, height <= maxDecodedSide
         else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// Drop every prepared icon: on lock or sign out, so no decoded chosen or site icon stays in
+    /// memory.
+    public nonisolated static func purgeCache() {
+        cache.removeAllObjects()
+    }
+
+    /// The prepared form of `data` is in the cache (tests).
+    nonisolated static func isCached(_ data: Data) -> Bool {
+        cache.object(forKey: data as NSData) != nil
     }
 
     /// Fewer source pixels than the tile shows on a 3x screen: drawn bare at its own size rather
