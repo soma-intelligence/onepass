@@ -1511,7 +1511,8 @@ def fetch_wikidata(out, blocklist, platforms, fetcher=None, page_size=WIKIDATA_P
         page error) when the second answer is no better."""
         for attempt in range(2):
             try:
-                return json.loads(fetcher(url, limit, accept))
+                # strict=False: labels on Wikidata may hold raw control characters (tabs, newlines).
+                return json.loads(fetcher(url, limit, accept), strict=False)
             except (ValueError, IconPackError, OSError) as error:
                 if attempt == 1:
                     page_errors.append(f"{what}: {str(error)[:200]}")
@@ -1633,6 +1634,18 @@ def fetch_wikidata(out, blocklist, platforms, fetcher=None, page_size=WIKIDATA_P
     return record
 
 
+def commons_original(url):
+    """The file URL without the tracking query Commons now appends (utm_source, utm_campaign...).
+    Any other query or a fragment is left in place, so the URL check refuses it."""
+    import urllib.parse
+    parts = urllib.parse.urlsplit(url)
+    if parts.query and not parts.fragment:
+        keys = [key for key, _ in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)]
+        if keys and all(key.startswith("utm_") for key in keys):
+            return urllib.parse.urlunsplit(parts._replace(query=""))
+    return url
+
+
 def commons_file(title, meta, fetcher, out):
     """Downloads one Commons original after its checks (format, size, shape, URL, then SHA-1 of the
     bytes, SVG safety or raster header) into out/files/<sha1>.<ext>. Raises IconPackError
@@ -1648,7 +1661,7 @@ def commons_file(title, meta, fetcher, out):
         raise IconPackError(f"wordmark: {width / height:.2f} wide for 1 high")
     if kind != "svg" and width and height and min(width, height) < MIN_SITE_PIXELS:
         raise IconPackError(f"small: {width}x{height}")
-    url = str(meta.get("url", ""))
+    url = commons_original(str(meta.get("url", "")))
     sha1 = str(meta.get("sha1", "")).lower()
     if not COMMONS_ORIGINAL.fullmatch(url):
         raise IconPackError(f"url: {url[:120]}")

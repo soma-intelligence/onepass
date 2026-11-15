@@ -786,6 +786,14 @@ class Wikidata(unittest.TestCase):
             return (WIKIDATA_DATA / "files" / urllib.parse.unquote(url.rsplit("/", 1)[1])).read_bytes()
         raise AssertionError(f"unexpected URL {url}")
 
+    def test_commons_tracking_query_is_dropped_any_other_is_kept(self):
+        base = "https://upload.wikimedia.org/wikipedia/commons/8/84/Acme_logo_2015.svg"
+        self.assertEqual(icon_pack.commons_original(base + "?utm_source=commons.wikimedia.org&utm_campaign=index"), base)
+        self.assertEqual(icon_pack.commons_original(base), base)
+        for kept in (base + "?utm_source=x&download=1", base + "?utm_source=x#y", base + "?a"):
+            self.assertEqual(icon_pack.commons_original(kept), kept)
+            self.assertIsNone(icon_pack.COMMONS_ORIGINAL.fullmatch(icon_pack.commons_original(kept)))
+
     def query(self, block=None):
         when = icon_pack.datetime.datetime(2026, 11, 14, 9, 30, tzinfo=icon_pack.datetime.timezone.utc)
         return icon_pack.fetch_wikidata(self.tmp / "wikidata", block or icon_pack.Blocklist(), ["shopify.test"],
@@ -1013,6 +1021,14 @@ class Wikidata(unittest.TestCase):
         seen.clear()
         icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2)
         self.assertEqual(len(seen), 2)
+
+    def test_raw_control_characters_in_labels_do_not_lose_a_page(self):
+        page = b'{"results": {"bindings": [{"itemLabel": {"type": "literal", "value": "Tab\tLabel"}}]}}'
+
+        def fetcher(url, limit, accept="*/*"):
+            return page if url.startswith(icon_pack.WIKIDATA_SPARQL) else b'{"query": {"pages": []}}'
+        record = icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2)
+        self.assertEqual(record["page_errors"], [])
 
     def test_cut_or_oversized_answers_become_page_errors(self):
         good = json.dumps({"results": {"bindings": []}}).encode()
