@@ -1,4 +1,5 @@
 import Foundation
+import VaultKit
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -21,7 +22,6 @@ enum OrgConsole {
     /// `onepass://org/join`, before any parsing: the link's secrets are read by the core only, after
     /// the unlock (`orgInviteParse`).
     static func isJoinLink(_ url: URL) -> Bool {
-        guard url.scheme?.lowercased() == "onepass", url.host()?.lowercased() == "org" else { return false }
-        return url.path() == "/join" || url.path() == "/join/"
+        OrgInviteLink.isJoinLink(url)
     }
 }

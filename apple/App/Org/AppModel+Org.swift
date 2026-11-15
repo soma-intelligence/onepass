@@ -16,6 +16,12 @@ struct ManagedOnboarding: Equatable {
     var displayName: String?
 }
 
+/// A join under way: the managed slot `beginOrgJoin` made and the organisation it pinned there.
+struct OrgJoinStart: Equatable {
+    let slot: String
+    let state: FfiOrgState
+}
+
 /// The name and colour of a managed account, chosen in "Add an account".
 struct OrgAccountLook: Equatable {
     let label: String
@@ -63,13 +69,13 @@ extension AppModel {
 
     /// Starts joining the organisation of `invite`: the pin plan (MDM, DNS, else first use), a managed
     /// slot, the link's secrets in the keychain, then the pin, before the account exists. Any failure
-    /// takes the slot out again.
+    /// takes the slot out again. The caller keeps the slot to cancel that join only (`cancelOrgJoin(slot:)`).
     func beginOrgJoin(_ invite: FfiOrgInvite, look: OrgAccountLook? = nil) async throws(OrgActionError)
-        -> FfiOrgState
+        -> OrgJoinStart
     {
         let plan = await OrgPinResolver(mdm: ManagedOrgConfig.read(), dns: SystemDNSTXTResolver()).plan(for: invite)
         // Refused before any slot exists, each refusal with what to do about it.
-        if case .refuse(let reason) = plan { throw .other(Self.refusalMessage(reason)) }
+        if case .refuse(let reason) = plan { throw .other(reason.message) }
         let kind = FfiAccountKind.managed(serverUrl: invite.serverUrl, orgId: invite.orgId)
         do {
             try beginAddingAccount(
@@ -81,28 +87,19 @@ extension AppModel {
         let slot = accounts.activeSlot
         managedOnboarding = ManagedOnboarding(slot: slot, route: .join(invite))
         do throws(OrgActionError) {
-            return try await pinJoinedOrg(invite, plan: plan, slot: slot)
+            return OrgJoinStart(slot: slot, state: try await pinJoinedOrg(invite, plan: plan, slot: slot))
         } catch {
-            cancelOrgJoin()
+            cancelOrgJoin(slot: slot)
             throw error
         }
     }
 
     /// The member's name typed in "Join an organisation": kept on the slot and handed to the
     /// onboarding under the sheet, which signs the member up next.
-    func confirmOrgJoin(displayName: String) {
-        guard let slot = managedOnboarding?.slot else { return }
+    func confirmOrgJoin(slot: String, displayName: String) {
+        guard managedOnboarding?.slot == slot else { return }
         accounts.session(for: slot)?.environment.settings.displayName = displayName
         managedOnboarding?.displayName = displayName
-    }
-
-    /// What a refused pin plan tells the user (before any slot exists).
-    static func refusalMessage(_ reason: OrgPinRefusal) -> String {
-        switch reason {
-        case .mdmInvalid: String(localized: "org.refusal.mdmInvalid")
-        case .mdmMismatch: String(localized: "org.refusal.mdmMismatch")
-        case .dnsMismatch: String(localized: "org.refusal.dnsMismatch")
-        }
     }
 
     /// The account's name: the one chosen in "Add an account", else `fallback`.
@@ -114,22 +111,32 @@ extension AppModel {
     // MARK: - Sheets
 
     /// Shows an organisation sheet at the root: the sheets the model owns close first (as for a
-    /// verification code link), so it never stacks on Settings. `afterSheet`: the caller's own sheet
-    /// is closing (it is given the same time to leave).
+    /// verification code link), so it never stacks on Settings. An item being written keeps the sheet
+    /// out (a message says so): the join or creation switches account, which would drop the edit.
+    /// `afterSheet`: the caller's own sheet is closing (it is given the same time to leave).
     func presentOrgSheet(_ sheet: OrgSheet, afterSheet: Bool = false) async {
+        guard newItemDraft == nil, !editing else {
+            showToast(String(localized: "org.join.finishEditing"), kind: .error)
+            return
+        }
         let covered = afterSheet || showSettings || showAddAccount || showGenerator || showNewItemPicker
-            || showImport || orgSheet != nil
+            || showImport || showOtpScanner || otpLinkRequest != nil || totpPasswordRequest != nil
+            || orgSheet != nil
+        totpPasswordRequest = nil
+        showOtpScanner = false
         showSettings = false
         showAddAccount = false
         showGenerator = false
         showNewItemPicker = false
         showImport = false
+        otpLinkRequest = nil
         orgSheet = nil
         if covered {
             try? await Task.sleep(for: .milliseconds(700))
         } else {
             await Task.yield()
         }
+        guard session.state == .unlocked else { return }
         orgSheet = sheet
     }
 
@@ -161,19 +168,26 @@ extension AppModel {
         }
         guard let org = orgSession(for: slot) else { throw missing }
         try await org.pin(plan)
+        // Cancelled while the pin ran (its sheet closed): the slot is gone, its org objects go too.
+        guard managedOnboarding?.slot == slot else {
+            orgSessions[slot] = nil
+            orgBackends[slot] = nil
+            throw missing
+        }
         guard let state = org.state else { throw missing }
         return state
     }
 
-    /// Leaves a managed sign up before its account exists (creation or join): the slot, its pending
-    /// device keys and its org credentials go (`AccountSessions.discard`).
-    func cancelOrgJoin() {
-        guard let onboarding = managedOnboarding else { return }
+    /// Leaves the managed sign up of `slot` before its account exists (creation or join): the slot,
+    /// its pending device keys and its org credentials go (`AccountSessions.discard`). Another slot's
+    /// sign up under way is left alone; only `slot`'s org objects are dropped.
+    func cancelOrgJoin(slot: String) {
+        orgSessions[slot] = nil
+        orgBackends[slot] = nil
+        guard managedOnboarding?.slot == slot else { return }
         managedOnboarding = nil
         orgDraft = nil
-        orgSessions[onboarding.slot] = nil
-        orgBackends[onboarding.slot] = nil
-        if addingAccount?.slot == onboarding.slot { cancelAddingAccount() }
+        if addingAccount?.slot == slot { cancelAddingAccount() }
     }
 
     // MARK: - Onboarding

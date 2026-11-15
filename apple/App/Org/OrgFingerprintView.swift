@@ -39,7 +39,11 @@ struct OrgFingerprintView: View {
         case .mdm:
             String(localized: "org.source.mdm")
         case .dns:
-            String(format: String(localized: "org.source.dns"), domain ?? "")
+            if let domain, !domain.isEmpty {
+                String(format: String(localized: "org.source.dns"), domain)
+            } else {
+                String(localized: "org.source.dnsNoDomain")
+            }
         case .tofu(verified: false):
             String(localized: "org.source.tofu")
         case .tofu(verified: true):

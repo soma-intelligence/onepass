@@ -34843,6 +34843,35 @@
         }
       }
     },
+    "org.join.finishEditing" : {
+      "comment" : "Join an organisation: an item is being edited when the invitation opens.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish the item you're editing, then open the invitation again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Termina el elemento que estás editando y vuelve a abrir la invitación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Termine l'élément que tu modifies, puis ouvre de nouveau l'invitation."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Termina l'elemento che stai modificando, poi apri di nuovo l'invito."
+          }
+        }
+      }
+    },
     "org.join.linkExpired" : {
       "comment" : "Join an organisation: an invitation link opened while locked waited more than 2 minutes.",
       "localizations" : {
@@ -34959,93 +34988,6 @@
         }
       }
     },
-    "org.refusal.dnsMismatch" : {
-      "comment" : "Join refused: the domain's DNS record names another fingerprint.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This invitation doesn't match the organisation's domain. Don't join, and tell your administrator."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta invitación no coincide con el dominio de la organización. No te unas y avisa a tu administrador."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette invitation ne correspond pas au domaine de l'organisation. Ne la rejoins pas et préviens ton administrateur."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Questo invito non corrisponde al dominio dell'organizzazione. Non unirti e avvisa il tuo amministratore."
-          }
-        }
-      }
-    },
-    "org.refusal.mdmInvalid" : {
-      "comment" : "Join refused: the MDM profile's OnePass keys are not usable.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your device's management profile has an invalid OnePass setting. Contact your administrator."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El perfil de gestión de tu dispositivo tiene un ajuste de OnePass no válido. Contacta con tu administrador."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le profil de gestion de ton appareil contient un réglage OnePass non valide. Contacte ton administrateur."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Il profilo di gestione del tuo dispositivo ha un'impostazione OnePass non valida. Contatta il tuo amministratore."
-          }
-        }
-      }
-    },
-    "org.refusal.mdmMismatch" : {
-      "comment" : "Join refused: the invitation names another organisation than the MDM profile.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This invitation is for a different organisation than the one managing this device."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta invitación es para una organización distinta de la que gestiona este dispositivo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette invitation est pour une autre organisation que celle qui gère cet appareil."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Questo invito è per un'organizzazione diversa da quella che gestisce questo dispositivo."
-          }
-        }
-      }
-    },
     "org.source.dns" : {
       "comment" : "Organisation fingerprint: confirmed by the DNS record of the domain (the argument).",
       "localizations" : {
@@ -35071,6 +35013,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confermata dal dominio dell'organizzazione (%@)"
+          }
+        }
+      }
+    },
+    "org.source.dnsNoDomain" : {
+      "comment" : "Organisation fingerprint: confirmed by the DNS record, domain unknown.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmed by the organisation's domain"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmada por el dominio de la organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmée par le domaine de l'organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confermata dal dominio dell'organizzazione"
           }
         }
       }

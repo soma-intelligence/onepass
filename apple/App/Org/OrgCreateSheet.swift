@@ -62,7 +62,7 @@ struct OrgCreateSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("common.continue", action: create)
-                        .disabled(trimmed(name).isEmpty || trimmed(server).isEmpty)
+                        .disabled(!canCreate)
                         .accessibilityIdentifier("org.create.confirm")
                 }
             }
@@ -85,7 +85,14 @@ struct OrgCreateSheet: View {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// R37: org servers are closed, so the server's invitation code is required (an empty one would
+    /// strand the creator account in an unfinished creation).
+    private var canCreate: Bool {
+        !trimmed(name).isEmpty && !trimmed(server).isEmpty && !trimmed(serverInvite).isEmpty
+    }
+
     private func create() {
+        guard canCreate else { return }
         guard let url = URL(string: trimmed(server)) else {
             errorMessage = AccountsError.serverUnavailable.message
             return

@@ -33,6 +33,8 @@ struct OrgJoinSheet: View {
     private final class Lifetime {
         var joined = false
         var closed = false
+        /// The slot this sheet's `beginOrgJoin` made: the only one it may cancel.
+        var slot: String?
     }
 
     var body: some View {
@@ -62,7 +64,7 @@ struct OrgJoinSheet: View {
         }
         .onDisappear {
             lifetime.closed = true
-            if !lifetime.joined { model.cancelOrgJoin() }
+            if !lifetime.joined, let slot = lifetime.slot { model.cancelOrgJoin(slot: slot) }
         }
     }
 
@@ -174,19 +176,21 @@ struct OrgJoinSheet: View {
     private func open(_ invite: FfiOrgInvite) async {
         phase = .opening
         do {
-            let state = try await model.beginOrgJoin(invite, look: look)
+            let start = try await model.beginOrgJoin(invite, look: look)
             if lifetime.closed {
-                model.cancelOrgJoin()
+                model.cancelOrgJoin(slot: start.slot)
                 return
             }
-            phase = .ready(state, invite)
+            lifetime.slot = start.slot
+            phase = .ready(start.state, invite)
         } catch {
             phase = .failed(error.message)
         }
     }
 
     private func markVerified(_ invite: FfiOrgInvite) async {
-        guard let slot = model.managedOnboarding?.slot, let org = model.orgSession(for: slot) else { return }
+        guard let slot = lifetime.slot, model.managedOnboarding?.slot == slot, let org = model.orgSession(for: slot)
+        else { return }
         verifying = true
         defer { verifying = false }
         do {
@@ -199,9 +203,9 @@ struct OrgJoinSheet: View {
     }
 
     private func join() {
-        guard Self.nameFits(name) else { return }
+        guard Self.nameFits(name), let slot = lifetime.slot else { return }
         lifetime.joined = true
-        model.confirmOrgJoin(displayName: name.trimmingCharacters(in: .whitespacesAndNewlines))
+        model.confirmOrgJoin(slot: slot, displayName: name.trimmingCharacters(in: .whitespacesAndNewlines))
         dismiss()
     }
 }
