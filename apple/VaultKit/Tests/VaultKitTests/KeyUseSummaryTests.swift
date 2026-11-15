@@ -13,33 +13,45 @@ struct KeyUseSummaryTests {
 
     static func use(
         _ channel: FfiKeyUseChannel = .app, _ action: FfiKeyUseAction = .copied, client: String = "",
-        field: String = "", device: String = "", agoSeconds: Int64, count: UInt32
+        field: String = "", device: String = "", firstAgoSeconds: Int64? = nil, agoSeconds: Int64,
+        count: UInt32
     ) -> FfiKeyUse {
-        let at = Int64(now.timeIntervalSince1970) - agoSeconds
+        let base = Int64(now.timeIntervalSince1970)
+        let at = base - agoSeconds
         return FfiKeyUse(
             channel: channel, action: action, deviceName: device, client: client, field: field,
-            firstAt: at, lastAt: at, count: count)
+            firstAt: base - (firstAgoSeconds ?? agoSeconds), lastAt: at, count: count)
     }
 
-    @Test func header_for_recent_and_month_count() {
-        let day: Int64 = 86_400
-        // Not sorted on purpose: the newest entry gives the relative part. The 40-day-old entry
-        // is outside the month, so 10 + 4 = 14.
+    // `now` is 2027-01-15 08:00 UTC; every date below sits well inside its month, whatever the
+    // machine's time zone.
+    static let day: Int64 = 86_400
+
+    @Test func header_counts_every_use_since_the_first_month() {
+        // Not sorted on purpose: the newest entry gives the relative part. An entry coalesces
+        // forever, so its count runs from its first use (300 days ago, March 2026), not this
+        // month: 365 + 7 + 4 = 376 uses since March 2026.
         let uses = [
-            Self.use(.cli, agoSeconds: 5 * day, count: 4),
-            Self.use(.mcp, agoSeconds: 40 * day, count: 7),
-            Self.use(.app, agoSeconds: 2 * 3600, count: 10),
+            Self.use(.cli, agoSeconds: 5 * Self.day, count: 4),
+            Self.use(.mcp, firstAgoSeconds: 100 * Self.day, agoSeconds: 40 * Self.day, count: 7),
+            Self.use(.sshAgent, .signed, firstAgoSeconds: 300 * Self.day, agoSeconds: 2 * 3600, count: 365),
         ]
         let header = KeyUseSummary.header(uses, now: Self.now, locale: Self.fr)
         // The formatter puts a no-break space between the number and its unit.
-        #expect(header == "Utilisée il y a 2\u{A0}h · 14 fois ce mois")
+        #expect(header == "Utilisée il y a 2\u{A0}h · 376 fois depuis mars 2026")
     }
 
-    @Test func header_without_use_this_month_has_no_count() {
-        let uses = [Self.use(agoSeconds: 45 * 86_400, count: 3)]
+    @Test func header_since_this_year_names_the_month_only() {
+        let uses = [Self.use(firstAgoSeconds: 10 * Self.day, agoSeconds: 2 * 3600, count: 1)]
+        let header = KeyUseSummary.header(uses, now: Self.now, locale: Self.fr)
+        #expect(header == "Utilisée il y a 2\u{A0}h · 1 fois depuis janvier")
+    }
+
+    @Test func header_counts_uses_older_than_a_month() {
+        let uses = [Self.use(agoSeconds: 50 * Self.day, count: 3)]
         let header = KeyUseSummary.header(uses, now: Self.now, locale: Self.fr)
         #expect(header?.hasPrefix("Utilisée ") == true)
-        #expect(header?.contains("·") == false)
+        #expect(header?.hasSuffix(" · 3 fois depuis novembre 2026") == true)
     }
 
     @Test func header_empty_is_nil() {

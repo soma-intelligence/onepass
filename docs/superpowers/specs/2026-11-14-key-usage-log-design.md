@@ -156,7 +156,9 @@ entry per field.
 - FFI: `item_key_uses(vault_id, item_id) -> Vec<FfiKeyUse>`, `clear_key_uses(vault_id, item_id)`,
   and the app-side `record_key_use` for copies and reveals.
 - `ItemDetailView`: a new collapsed section "Utilisation" below the Watchtower section. Header
-  summary: "Utilisée il y a 2 h · 14 fois ce mois". Open: newest first, one row per entry:
+  summary: "Utilisée il y a 2 h · 365 fois depuis mars" (every use since the month of the earliest
+  `first_at`, the year added when it is not this year; an entry's count runs from its first use,
+  so the log holds no per-month count). Open: newest first, one row per entry:
   client · channel · action and field · device · ×count, one SF Symbol per channel. Styled after
   `ItemTimelineView`, loaded the same way as `itemTimeline`.
 - "Effacer le journal" sets `cleared_at` and empties the entries; it syncs like any item write.

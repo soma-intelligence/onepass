@@ -5,31 +5,46 @@ import Foundation
 /// from the log as stored (the client's own words, untrusted): they are joined as plain text, and the
 /// app shows the result with `Text(verbatim:)`, never as Markdown.
 public enum KeyUseSummary {
-    /// The window of "N fois ce mois": the last 30 days, not the calendar month, so the count does
-    /// not drop to zero on the first of the month.
-    static let monthWindow: TimeInterval = 30 * 86_400
-
-    /// "Utilisée il y a 2 h · 14 fois ce mois": the newest use relative to `now`, then the sum of
-    /// the counts of the entries used within the last 30 days (left out when none). Nil when the log
-    /// is empty (the section is hidden). `locale` formats the relative date; it defaults to the
-    /// language the strings are read in.
+    /// "Utilisée il y a 2 h · 365 fois depuis mars": the newest use relative to `now`, then the sum
+    /// of the counts of every entry since the month of the earliest first use. An entry coalesces
+    /// every use of one client on one device for up to a year, so its count runs from its
+    /// `firstAt`: the log cannot tell a count for this month, only one since that month. The year
+    /// is named when it is not the year of `now` ("depuis mars 2026"). Nil when the log is empty
+    /// (the section is hidden). `locale` formats the dates; it defaults to the language the strings
+    /// are read in.
     public static func header(_ uses: [FfiKeyUse], now: Date, locale: Locale? = nil) -> String? {
-        guard let newest = uses.map(\.lastAt).max() else { return nil }
+        guard let newest = uses.map(\.lastAt).max(), let earliest = uses.map(\.firstAt).min() else {
+            return nil
+        }
+        let locale = locale ?? Locale(identifier: VaultKitStrings.language)
         let formatter = RelativeDateTimeFormatter()
-        formatter.locale = locale ?? Locale(identifier: VaultKitStrings.language)
+        formatter.locale = locale
         // `.short`, not `.abbreviated`: in French the abbreviated style drops "il y a" ("-2 h").
         formatter.unitsStyle = .short
         formatter.dateTimeStyle = .named
         // Another device's clock may run ahead: never "dans 3 min".
         let last = min(Date(timeIntervalSince1970: TimeInterval(newest)), now)
         let relative = formatter.localizedString(for: last, relativeTo: now)
-        var parts = [String(localized: "keyUse.lastUsed \(relative)", bundle: VaultKitStrings.bundle)]
-        let since = Int64(now.addingTimeInterval(-monthWindow).timeIntervalSince1970)
-        let month = uses.filter { $0.lastAt >= since }.reduce(0) { $0 + Int($1.count) }
-        if month > 0 {
-            parts.append(String(localized: "keyUse.monthCount \(month)", bundle: VaultKitStrings.bundle))
-        }
-        return parts.joined(separator: " · ")
+        let total = uses.reduce(0) { $0 + Int($1.count) }
+        let start = min(Date(timeIntervalSince1970: TimeInterval(earliest)), now)
+        let times = String(localized: "keyUse.times \(total)", bundle: VaultKitStrings.bundle)
+        let since = String(
+            localized: "keyUse.countSince \(times) \(monthName(start, now: now, locale: locale))",
+            bundle: VaultKitStrings.bundle)
+        return [String(localized: "keyUse.lastUsed \(relative)", bundle: VaultKitStrings.bundle), since]
+            .joined(separator: " · ")
+    }
+
+    /// "mars", or "mars 2026" when `date` is not in the year of `now`.
+    static func monthName(_ date: Date, now: Date, locale: Locale) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+        formatter.setLocalizedDateFormatFromTemplate(sameYear ? "MMMM" : "MMMMy")
+        return formatter.string(from: date)
     }
 
     /// "Claude Code · MCP · révélé Mot de passe · MacBook Air · ×3": client, channel, action and
