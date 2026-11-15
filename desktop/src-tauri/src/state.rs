@@ -33,6 +33,8 @@ pub struct AppState {
     pub sync: crate::sync::SyncEngine,
     /// The pairing in progress on this PC, either side (pairing.rs).
     pub pairing: Mutex<Option<crate::pairing::Pairing>>,
+    /// The contact invitation in progress on this PC, either side (contacts.rs).
+    pub invite: Mutex<Option<crate::contacts::InviteFlow>>,
 }
 
 pub fn now() -> i64 {
@@ -50,6 +52,7 @@ impl AppState {
             ranges: Arc::default(),
             sync: crate::sync::SyncEngine::default(),
             pairing: Mutex::new(None),
+            invite: Mutex::new(None),
             dir,
             sealer: secrets::sealer(),
             session: Mutex::new(None),
@@ -127,6 +130,16 @@ impl AppState {
     pub fn lock(&self) {
         purge_opened();
         self.ranges.clear();
+        // An invitation waiting needs the keys: the invitee's resumes at the
+        // next unlock (contacts.rs).
+        if let Some(f) = self
+            .invite
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            f.cancel();
+        }
         self.pending_export
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

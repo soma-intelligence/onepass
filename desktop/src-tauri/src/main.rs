@@ -7,6 +7,7 @@
 
 mod breach;
 mod commands;
+mod contacts;
 mod device;
 mod dialog;
 mod hello;
@@ -14,6 +15,7 @@ mod iconpack;
 mod pairing;
 mod prefs;
 mod secrets;
+mod sharing_cmds;
 mod shell;
 mod state;
 mod sync;
@@ -21,6 +23,7 @@ mod sync_cmds;
 #[cfg(all(debug_assertions, feature = "test-mailbox"))]
 mod testmailbox;
 mod view;
+mod zones;
 
 use std::time::Duration;
 
@@ -199,6 +202,38 @@ fn main() {
             sync_cmds::kit_devices,
             sync_cmds::answer_kit_device,
             sync_cmds::claim_only_device,
+            sharing_cmds::sharing_state,
+            sharing_cmds::recovery_alerts,
+            sharing_cmds::cancel_recovery,
+            sharing_cmds::contact_invite_create,
+            sharing_cmds::contact_invite_open,
+            sharing_cmds::contact_invite_state,
+            sharing_cmds::contact_invite_cancel,
+            sharing_cmds::rename_contact,
+            sharing_cmds::remove_contact,
+            sharing_cmds::confirm_safety_number,
+            sharing_cmds::add_vault_member,
+            sharing_cmds::set_member_role,
+            sharing_cmds::remove_member,
+            sharing_cmds::leave_shared_vault,
+            sharing_cmds::stop_sharing,
+            sharing_cmds::accept_share_invite,
+            sharing_cmds::decline_share_invite,
+            sharing_cmds::adopt_member_identity,
+            sharing_cmds::send_item,
+            sharing_cmds::accept_received_item,
+            sharing_cmds::decline_received_item,
+            sharing_cmds::create_family,
+            sharing_cmds::invite_to_family,
+            sharing_cmds::accept_family_invite,
+            sharing_cmds::remove_from_family,
+            sharing_cmds::leave_family,
+            sharing_cmds::set_family_role,
+            sharing_cmds::add_family_vault,
+            sharing_cmds::enroll_recovery,
+            sharing_cmds::disable_recovery,
+            sharing_cmds::request_recovery,
+            sharing_cmds::recovery_status,
         ]))
         .run(tauri::generate_context!())
         .expect("OnePass failed to start");

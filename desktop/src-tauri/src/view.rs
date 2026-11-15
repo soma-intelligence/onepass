@@ -60,11 +60,23 @@ pub struct VaultView {
     pub icon: String,
     pub color: String,
     pub item_count: u32,
+    /// A shared vault: this account's role ("read", "write", "manage").
+    pub shared_role: Option<&'static str>,
+    pub shared_owner: bool,
+    pub member_count: u32,
 }
 
 impl From<FfiVault> for VaultView {
     fn from(v: FfiVault) -> Self {
+        let shared = v.shared.as_ref();
         VaultView {
+            shared_role: shared.map(|s| match s.role {
+                onepass_ffi::FfiRole::Read => "read",
+                onepass_ffi::FfiRole::Write => "write",
+                onepass_ffi::FfiRole::Manage => "manage",
+            }),
+            shared_owner: shared.is_some_and(|s| s.owner),
+            member_count: shared.map_or(0, |s| u32::try_from(s.members.len()).unwrap_or(0)),
             id: v.id,
             name: v.meta.name,
             icon: v.meta.icon,

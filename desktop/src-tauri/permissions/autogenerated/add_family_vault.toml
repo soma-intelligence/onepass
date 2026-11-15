@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-add-family-vault"
+description = "Enables the add_family_vault command without any pre-configured scope."
+commands.allow = ["add_family_vault"]
+
+[[permission]]
+identifier = "deny-add-family-vault"
+description = "Denies the add_family_vault command without any pre-configured scope."
+commands.deny = ["add_family_vault"]

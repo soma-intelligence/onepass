@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-confirm-safety-number"
+description = "Enables the confirm_safety_number command without any pre-configured scope."
+commands.allow = ["confirm_safety_number"]
+
+[[permission]]
+identifier = "deny-confirm-safety-number"
+description = "Denies the confirm_safety_number command without any pre-configured scope."
+commands.deny = ["confirm_safety_number"]

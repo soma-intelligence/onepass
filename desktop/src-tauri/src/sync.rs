@@ -66,6 +66,27 @@ pub const WRITES: &[&str] = &[
     "resolve_duplicates",
     "rename_device",
     "revoke_device",
+    "cancel_recovery",
+    "rename_contact",
+    "remove_contact",
+    "confirm_safety_number",
+    "set_member_role",
+    "remove_member",
+    "leave_shared_vault",
+    "stop_sharing",
+    "accept_share_invite",
+    "decline_share_invite",
+    "adopt_member_identity",
+    "send_item",
+    "accept_received_item",
+    "decline_received_item",
+    "create_family",
+    "invite_to_family",
+    "accept_family_invite",
+    "remove_from_family",
+    "leave_family",
+    "set_family_role",
+    "add_family_vault",
 ];
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -260,6 +281,10 @@ fn seeds_path(state: &AppState) -> std::path::PathBuf {
     state.data_dir().join("mailbox.bin")
 }
 
+/// One read-modify-write of `mailbox.bin` at a time (the sync thread, the
+/// zone seed store and the contact invitations all write it).
+static SEEDS_LOCK: Mutex<()> = Mutex::new(());
+
 fn load_seeds(state: &AppState) -> Result<Seeds, String> {
     let bytes = match std::fs::read(seeds_path(state)) {
         Ok(b) => b,
@@ -292,6 +317,7 @@ pub fn seed(state: &AppState, mailbox_id: &str) -> Result<Option<Zeroizing<Vec<u
 }
 
 pub fn store_seed(state: &AppState, mailbox_id: &str, seed: &[u8]) -> Result<(), String> {
+    let _guard = lock(&SEEDS_LOCK);
     let mut seeds = load_seeds(state)?;
     seeds.0.retain(|(id, _)| id != mailbox_id);
     seeds
@@ -300,10 +326,24 @@ pub fn store_seed(state: &AppState, mailbox_id: &str, seed: &[u8]) -> Result<(),
     save_seeds(state, &seeds)
 }
 
-fn delete_seed(state: &AppState, mailbox_id: &str) -> Result<(), String> {
+pub fn delete_seed(state: &AppState, mailbox_id: &str) -> Result<(), String> {
+    let _guard = lock(&SEEDS_LOCK);
     let mut seeds = load_seeds(state)?;
     seeds.0.retain(|(id, _)| id != mailbox_id);
     save_seeds(state, &seeds)
+}
+
+/// A key of `mailbox.bin` and its bytes.
+pub type SeedEntry = (String, Zeroizing<Vec<u8>>);
+
+/// The entries whose key starts with `prefix` (the pending contact
+/// invitations), key and bytes.
+pub fn seeds_with_prefix(state: &AppState, prefix: &str) -> Result<Vec<SeedEntry>, String> {
+    Ok(load_seeds(state)?
+        .0
+        .into_iter()
+        .filter(|(id, _)| id.starts_with(prefix))
+        .collect())
 }
 
 // ---- the setup of a mailbox (MailboxSetup.swift) ----------------------------------
@@ -475,6 +515,8 @@ pub struct SyncEngine {
     tx: Mutex<Option<mpsc::Sender<Msg>>>,
     view: Arc<Mutex<SyncView>>,
     client: SharedClient,
+    /// The shared zones of the account (zones.rs), once its mailbox is open.
+    pub zones: Arc<crate::zones::Zones>,
 }
 
 impl SyncEngine {
@@ -520,6 +562,7 @@ pub fn spawn(handle: AppHandle) {
     *lock(&state.sync.tx) = Some(tx.clone());
     let view = state.sync.view.clone();
     let client = state.sync.client.clone();
+    let zones = state.sync.zones.clone();
     std::thread::Builder::new()
         .name("onepass-sync".into())
         .spawn(move || {
@@ -528,6 +571,9 @@ pub fn spawn(handle: AppHandle) {
                 tx,
                 view,
                 client,
+                zones,
+                zone_wakes: crate::zones::ZoneWakes::default(),
+                resumed: None,
                 wake: None,
                 moved: false,
                 retry_at: None,
@@ -566,6 +612,10 @@ struct Worker {
     tx: mpsc::Sender<Msg>,
     view: Arc<Mutex<SyncView>>,
     client: SharedClient,
+    zones: Arc<crate::zones::Zones>,
+    zone_wakes: crate::zones::ZoneWakes,
+    /// The session the pending contact invitations were resumed for.
+    resumed: Option<usize>,
     wake: Option<Arc<WakeListenerHandle>>,
     moved: bool,
     retry_at: Option<Instant>,
@@ -675,6 +725,61 @@ impl Worker {
             w.stop();
         }
         lock(&self.client).take();
+        self.zone_wakes.stop();
+        lock(&self.zones.client).take();
+    }
+
+    /// The zone round that follows each private round (`ZoneRoundScheduler`):
+    /// the share actions with an unlocked session, then one driver round per
+    /// zone (from the cached seeds while locked). `private_changed`: the
+    /// private round brought changes. True when the core asks for another.
+    fn zone_round(&mut self, private_changed: bool) -> bool {
+        let handle = self.handle.clone();
+        let state = handle.state::<AppState>();
+        let session = state.session();
+        // A link opened before a restart waits for its answer again.
+        if let Some(s) = &session {
+            let ptr = Arc::as_ptr(s) as usize;
+            if self.resumed != Some(ptr) {
+                self.resumed = Some(ptr);
+                crate::contacts::resume_pending(&handle);
+            }
+        }
+        let Some(z) = self.zones.client() else {
+            return false;
+        };
+        let at = now();
+        let report = z.handle.run_round(session.clone(), z.store.clone(), at);
+        debug_log(&format!(
+            "zones zones={} actions={} refusals={} full={} changed={} rerun={}",
+            report.zones.len(),
+            report.actions_done,
+            report.refusals.len(),
+            report.quota_full.len(),
+            report.changed,
+            report.rerun
+        ));
+        *lock(&self.zones.view) = crate::zones::ZoneView::from_report(&report, at);
+        if (report.changed || private_changed)
+            && let Some(s) = &session
+            // A manager's device answers the leave and rotation requests
+            // with a new vault key (`afterSyncRound`).
+            && s.process_rekey_requests(at).is_ok_and(|n| !n.is_empty())
+        {
+            self.debounce_at = Some(Instant::now() + DEBOUNCE);
+        }
+        if report.changed || report.actions_done > 0 {
+            let _ = self.handle.emit("sync-changed", ());
+        }
+        if let Some(after) = report.retry_after_seconds {
+            let t = Instant::now() + Duration::from_secs(u64::from(after));
+            self.retry_at = Some(self.retry_at.map_or(t, |r| r.min(t)));
+        }
+        let tx = self.tx.clone();
+        self.zone_wakes.refresh(&z, || {
+            Arc::new(WakeKick(Mutex::new(tx.clone()))) as Arc<dyn FfiWakeObserver>
+        });
+        report.rerun
     }
 
     fn schedule_retry(&mut self, after: Option<u32>) {
@@ -739,10 +844,17 @@ impl Worker {
             report.rebased.len(),
             report.rerun
         ));
-        if report.changed || !report.rebased.is_empty() {
+        let private_changed = report.changed || !report.rebased.is_empty();
+        if private_changed {
             let _ = self.handle.emit("sync-changed", ());
         }
-        self.apply(&report, name)
+        let rerun = self.apply(&report, name);
+        // The zones follow the private round, in the same run (one at a time).
+        if self.moved {
+            return false;
+        }
+        let zones_rerun = self.zone_round(private_changed);
+        rerun || zones_rerun
     }
 
     /// The setup of a pending account. `Some(home)` once ready.
@@ -804,6 +916,7 @@ impl Worker {
         )
         .ok()?;
         *lock(&self.client) = Some((home.clone(), client.clone()));
+        *lock(&self.zones.client) = crate::zones::ZoneClient::open(&self.handle, home, &seed);
         // No wake channel: rounds still run on writes, unlock and the timer.
         if let Ok(info) = client.wake_info() {
             let observer = Arc::new(WakeKick(Mutex::new(self.tx.clone())));

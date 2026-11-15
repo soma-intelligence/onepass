@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-create-family"
+description = "Enables the create_family command without any pre-configured scope."
+commands.allow = ["create_family"]
+
+[[permission]]
+identifier = "deny-create-family"
+description = "Denies the create_family command without any pre-configured scope."
+commands.deny = ["create_family"]
