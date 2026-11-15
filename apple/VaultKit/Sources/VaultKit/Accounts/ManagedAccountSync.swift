@@ -380,7 +380,10 @@ public enum ManagedAccountResume {
         guard !settings.orgCreator, settings.orgJoinNonce != nil else { return false }
         if settings.orgJoinPosted {
             // Accepted: the nonce has done its job.
-            if org.me?.state == .active { settings.orgJoinNonce = nil }
+            if org.me?.state == .active {
+                settings.orgJoinNonce = nil
+                settings.orgJoinCode = nil
+            }
             return false
         }
         do {
@@ -437,8 +440,9 @@ public enum ManagedAccountResume {
         let invite = FfiOrgInvite(
             serverUrl: "", mailboxId: mailboxID, orgId: state.orgId, accountId: accountID,
             fingerprint: state.fingerprint, nonce: nonce, credentialSeed: Data(), memberToken: Data(), domain: nil)
-        _ = try await org.requestToJoin(
+        let posted = try await org.requestToJoin(
             invite: invite, displayName: displayName, password: password, ownCredential: own)
+        settings.orgJoinCode = posted.codeWords
         settings.orgJoinPosted = true
         settings.orgJoinWaiting = false
         return true

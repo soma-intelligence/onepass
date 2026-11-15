@@ -91,6 +91,8 @@ public final class VaultSettings: @unchecked Sendable {
         static let orgCreator = "onepass.org.creator"
         static let orgJoinWaiting = "onepass.org.joinWaiting"
         static let orgMemberTokenRefused = "onepass.org.memberTokenRefused"
+        static let orgJoinCode = "onepass.org.joinCode"
+        static let orgDomain = "onepass.org.domain"
     }
 
     // MARK: - Managed account (OnePass Business)
@@ -138,6 +140,24 @@ public final class VaultSettings: @unchecked Sendable {
     public var orgMemberTokenRefused: Bool {
         get { defaults.bool(forKey: Key.orgMemberTokenRefused) }
         set { defaults.set(newValue, forKey: Key.orgMemberTokenRefused) }
+    }
+
+    /// The join code (5 words) of the posted join request, which the member reads to an administrator.
+    /// Not secret: the administrator computes the same words from the request. Cleared once accepted.
+    public var orgJoinCode: [String]? {
+        get { defaults.stringArray(forKey: Key.orgJoinCode) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.orgJoinCode) } else { defaults.removeObject(forKey: Key.orgJoinCode) }
+        }
+    }
+
+    /// The organisation's domain as this account last saw it (the invitation's, or the one an
+    /// administrator typed for an invitation): the DNS source line and the DNS record name.
+    public var orgDomain: String? {
+        get { defaults.string(forKey: Key.orgDomain) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.orgDomain) } else { defaults.removeObject(forKey: Key.orgDomain) }
+        }
     }
 
     /// This device was found revoked and its erase has not completed yet (L6): the app shows the

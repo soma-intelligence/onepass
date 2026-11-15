@@ -279,12 +279,16 @@ struct ManagedAccountTests {
             settings: settings, org: joiner, credentials: credentials, displayName: "Bob", password: password))
         #expect(settings.orgJoinPosted)
         #expect(!settings.orgJoinWaiting)
+        // The join code stays on the slot for the Organisation page (the member reads it out).
+        let code = try #require(settings.orgJoinCode)
+        #expect(code.count == 5)
         let own = try #require(try credentials.ownSeed(orgMailboxID: invite.mailboxId))
         #expect(own.withData { Data($0) } == keptSeed)
         #expect(await ManagedAccountResume.run(
             settings: settings, org: joiner, credentials: credentials, displayName: "Bob") == false)
         await owner.refresh()
         #expect(owner.joinRequests.map(\.displayName) == ["Bob"])
+        #expect(owner.joinRequests.first?.codeWords == code)
         #expect(await backend.usesOwnCredential == false)
 
         // Accepted: the next refresh moves to the member's own credential and drops the link's (R33).
@@ -296,6 +300,7 @@ struct ManagedAccountTests {
         #expect(await backend.usesOwnCredential)
         #expect(try credentials.linkSeed() == nil)
         #expect(settings.orgJoinNonce == nil)
+        #expect(settings.orgJoinCode == nil)
     }
 
     /// A creation cut off before its publish: no org mailbox is known, so the org backend of the slot
