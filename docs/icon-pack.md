@@ -29,7 +29,7 @@ L'index du pack porte aussi `names` : le nom de chaque marque (lettres et chiffr
 
 ## Domaines populaires
 
-`--domains FILE` (sur `sites` et sur `build`, répétable) ajoute au pack l'icône des sites d'une liste de domaines populaires, pour que l'app n'ait presque jamais à demander une icône à un site. Un fichier est un texte simple (un domaine par ligne, `#` pour un commentaire) ou un CSV Tranco `rank,domain` (reconnu à sa virgule). Chaque entrée devient son domaine enregistrable, une seule fois, dans l'ordre de la liste. `scripts/icon-pack-domains-fr.txt` est une liste faite à la main de services français (banques, assurances, énergie, opérateurs, administrations, transports, commerces, santé).
+`--domains FILE` (sur `sites` et sur `build`, répétable) ajoute au pack l'icône des sites d'une liste de domaines populaires, pour que l'app n'ait presque jamais à demander une icône à un site. Un fichier est un texte simple (un domaine par ligne, `#` pour un commentaire) ; une ligne avec une virgule (un CSV classé) est refusée. Chaque entrée devient son domaine enregistrable, une seule fois, dans l'ordre de la liste. `scripts/icon-pack-domains-fr.txt` est une liste faite à la main de services français (banques, assurances, énergie, opérateurs, administrations, transports, commerces, santé).
 
 Tout se passe **à la construction**, jamais dans l'app :
 
@@ -38,7 +38,7 @@ Tout se passe **à la construction**, jamais dans l'app :
 
 Le domaine est pris tel qu'il est listé : l'icône est rangée sous ce domaine même quand le site redirige ailleurs, jamais sous la cible de la redirection.
 
-Le pack lui-même ne dit pas qui a fourni la liste : pour un CSV Tranco, `build` demande `--tranco-id` (l'identifiant de la liste sur tranco-list.eu) et `--tranco-date`, et le manifeste les consigne (`tranco`, `id` et `date`) ; le rapport `report.json` ajoute `domains_fetched`, `domains_kept` et `domains_blocked`.
+Le manifeste nomme les listes utilisées (`sources["domain-list"]`) ; le rapport `report.json` ajoute `domains_fetched`, `domains_kept` et `domains_blocked`.
 
 ### Liste d'exclusion
 
@@ -53,7 +53,7 @@ Beaucoup de sites ne montrent pas l'icône de leur marque mais celle du logiciel
 1. `icon_pack.py sites` va aussi chercher l'icône de chaque plateforme de `scripts/icon-pack-platforms.txt` (`--platforms`, par défaut ce fichier, chaîne vide pour aucune ; même chercheur que les marques, 32 px au moins) dans `DIR/platforms/` et `DIR/platforms.json`. La liste est faite à la main, rangée par groupes en commentaires `#` : logiciels de clubs et de salles (Daxko, Club Automation, Mindbody...), créateurs de sites, fournisseurs d'identité, Salesforce, centres d'aide, commerce en ligne, forums et communautés, portails scolaires.
 2. `icon_pack.py build --sites DIR` dessine avec resvg chaque icône de site récupérée (marques `site` de la liste choisie, domaines populaires) et chaque icône de plateforme dans un carré de 128 px, puis en calcule le dHash (64 bits, le même calcul que `IconHash` dans VaultKit, vecteurs communs dans `scripts/testdata/dhash-vectors.json`). Le hachage porte toujours sur le PNG dessiné, jamais sur le fichier téléchargé.
 3. Sont des rejets : le hash de chaque icône de plateforme, et tout hash qu'au moins 3 marques différentes servent (hashes à 6 bits d'écart au plus ; une marque compte une seule fois sur tous ses domaines, `marque.com` et `marque.fr` donnent la même marque `marque`).
-4. Une icône de site proche d'un rejet (6 bits au plus) quitte le pack : le domaine passe à son icône suivante ou n'en a pas. Seul le domaine de la plateforme elle-même garde la sienne. `report.json` donne `rejects` (leur nombre) et `platform_icons_dropped` (les domaines touchés).
+4. Une icône de site proche d'un rejet (6 bits au plus) quitte le pack : le domaine passe à son icône suivante ou n'en a pas. Seul le domaine de la plateforme elle-même garde la sienne, et il entre dans `tenants` : ses sous-domaines (le portail d'un club sur `club.clubautomation.com`) n'en héritent pas. `report.json` donne `rejects` (leur nombre) et `platform_icons_dropped` (les domaines touchés).
 
 L'index porte les rejets dans `rejects` : liste triée, sans doublon, de hashes en 16 chiffres hexadécimaux minuscules. Dans l'app, `SiteIconLoader` calcule le dHash du PNG normalisé qu'il s'apprête à garder (au plus 256 px de côté, jamais le fichier téléchargé) et le refuse s'il est à 6 bits ou moins d'un rejet : il essaie le candidat suivant, et si tous sont refusés le site n'a pas d'icône (échec retenu comme les autres). Une icône de site déjà en cache qui correspond à un rejet arrivé avec un pack plus récent n'est pas montrée non plus : `ItemIconResolver` la vérifie à la lecture, une fois par hôte et par icône, la retire du cache et redemande aussitôt le site, qui passe à son candidat suivant. Un hash peu informatif (moins de 8 ou plus de 56 bits à 1, comme la tuile unie qui donne 0) n'est jamais un rejet et n'est jamais refusé, des deux côtés.
 
@@ -84,7 +84,7 @@ Tests : `python3 -I scripts/test_icon_pack.py` (rendu de bout en bout si `resvg`
 
 ## Publication et mise à jour
 
-`.github/workflows/icon-pack.yml`, chaque lundi dans le dépôt public (ou à la main) : tests, commits amont du jour, construction, signature avec `ICON_PACK_ED_PRIVATE_KEY`, vérification avec la variable `ICON_PACK_ED_PUBLIC_KEY`, attestation de provenance, puis envoi sur la release `icon-pack`. Cette release est une préversion jamais marquée *Latest* : la mise à jour de l'app Mac lit `releases/latest/download/appcast.xml` et ne doit jamais tomber sur elle.
+`.github/workflows/icon-pack.yml`, chaque lundi dans le dépôt public (ou à la main) : tests, commits amont du jour, icônes des sites (`sites --domains scripts/icon-pack-domains-fr.txt`), logos Wikidata (`wikidata`), construction (`build --sites --domains --wikidata --blocklist`), signature avec `ICON_PACK_ED_PRIVATE_KEY`, vérification avec la variable `ICON_PACK_ED_PUBLIC_KEY`, attestation de provenance, puis envoi sur la release `icon-pack`. Cette release est une préversion jamais marquée *Latest* : la mise à jour de l'app Mac lit `releases/latest/download/appcast.xml` et ne doit jamais tomber sur elle.
 
 Dans l'app, `IconPackStore` (VaultKit) prend le plus récent du pack livré dans l'app (de confiance comme le reste de l'app) et du dernier pack téléchargé. Au plus une fois par semaine, il lit le manifeste et sa signature, vérifie la signature avec la clé publique compilée dans l'app (`IconPackStore.publicKey`), puis, si la version est plus grande, télécharge le pack, contrôle taille et SHA-256, le lit en entier et le met en place par un renommage atomique. Une version égale ou plus ancienne est refusée (pas de retour en arrière), une signature fausse ou un pack qui ne correspond pas aussi ; le pack en place reste. Sans clé publique, aucune mise à jour : le pack livré reste seul.
 
@@ -107,11 +107,11 @@ Le binaire (environ 11 Mo) n'est remplacé qu'à une version de l'app, jamais ch
 
 `ItemIconResolver` (VaultKit), utilisé par l'app et par l'extension AutoFill :
 
-1. Icône choisie par la personne pour l'élément. Le cœur la garde (`custom_icon`) mais aucun écran ne la règle et le pont ne l'expose pas encore : le paramètre `chosen` attend ce branchement.
+1. Icône choisie par la personne pour l'élément (menu de l'icône dans l'éditeur, « Choisir une icône… »). Le cœur la garde (`custom_icon`, PNG ou WebP de 64 Ko au plus) et la vérifie à chaque lecture (taille, type, jamais une pièce jointe de l'élément, en-tête du fichier déchiffré) ; le pont l'expose (`customIconId`, `customIconData`). L'app la déchiffre en mémoire seulement (`CustomIconStore`), oubliée au verrouillage, au changement de compte et en arrière-plan ; une vue la relit à chaque image, sans en garder de copie. `ItemIcon` refuse une image qui déclare plus de 1024 px de côté. Celle qui ne se charge pas (pas encore synchronisée) laisse place au reste de cet ordre.
 2. Pack : l'hôte de l'élément, puis ses noms parents jusqu'au domaine enregistrable (jamais le parent d'une plateforme `tenants`). Un hôte couvert par le pack n'est jamais demandé au site, même en préchargement.
 3. Pack, par le titre de l'élément quand c'est le nom d'une marque (« Reddit ») ou une adresse (« reddit.com ») : un élément sans adresse trouve aussi sa marque.
 4. Marque mère par le nom du site : la page d'accueil déjà lue pour l'icône du site donne son nom (`og:site_name`, `application-name`, le `name` du manifeste s'il a été lu, puis le `<title>` jusqu'au premier séparateur). Ce nom, sans un « my » initial ni au plus deux mots génériques finaux (connect, portal, member...), est cherché dans les `names` du pack : « Bay Club Connect » donne Bay Club. Aucune requête en plus.
-5. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 64 px : en dessous, plutôt qu'une image floue étirée, la tuile monogramme. Jamais l'icône d'une plateforme d'hébergement (`rejects`, voir plus haut).
+5. Icône du site lui-même (`SiteIconLoader`), seulement si sa source fait au moins 32 px sur son grand côté (stockée entre 64 et 127 px, une source de 32 à 63 px est dessinée nue à sa taille, jamais étirée) : en dessous, plutôt qu'une image floue, la tuile monogramme. Jamais l'icône d'une plateforme d'hébergement (`rejects`, voir plus haut).
 6. Marque mère par un domaine lié, seulement si le site n'a pas d'icône montrable (aucune, refusée comme plateforme, ou trop petite) : les domaines vers lesquels la page pointe (liens, `canonical`, `og:url`), au plus 5, hors réseaux sociaux, magasins d'apps, CDN, mesure d'audience, paiement et captcha, et seulement le domaine canonique ou un domaine dont le nom commence comme celui du site (4 caractères). Les numéros trouvés sont mis en cache par hôte avec la version du pack, et recherchés à nouveau quand le pack change.
 7. Sinon `ItemIcon` dessine la tuile monogramme (un identifiant qui a un titre) ou l'illustration de la catégorie.
 

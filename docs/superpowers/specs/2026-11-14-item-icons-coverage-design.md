@@ -111,7 +111,7 @@ Apple:
 
 - `ItemIconResolver` gets the chosen bytes from a small cache keyed by item id and icon id
   (loaded once per item, invalidated when the id changes) and passes them as `chosen`, so the list,
-  the item page, AutoFill and the Watch all show it.
+  the item page and AutoFill show it; the Watch keeps the automatic icon.
 - The icon menu shows "Réinitialiser l'icône" when a custom icon is set; it clears it.
 - A custom icon takes priority over the menu's "Icône de la catégorie" choice.
 
