@@ -306,7 +306,7 @@ struct ItemListColumn: View {
                     .background {
                         ToolbarRowProbe(
                             reserved: $rowReserved, room: titleBarRoom,
-                            trigger: [model.selectedItem.map { "\($0)" } ?? "", "\(model.isEditing)", "\(shownCategory.map { "\($0)" } ?? "")"])
+                            trigger: [model.selectedItem.map { "\($0)" } ?? "", "\(model.isEditing)", "\(shownCategory.map { "\($0)" } ?? "")", "\(newItemCompact)"])
                     }
             }
             .sharedBackgroundVisibility(.hidden)
@@ -315,6 +315,7 @@ struct ItemListColumn: View {
                     categoryPill
                     sortMenu
                     newItemButton
+                        .padding(.leading, Theme.Space.xs)
                 }
             }
             .sharedBackgroundVisibility(.hidden)
@@ -408,14 +409,36 @@ struct ItemListColumn: View {
     }
 
     /// The add sheet (common types first, search, every category, import), like ⌘N: the last
-    /// icon of the list's one header row.
+    /// item of the list's one header row, an accent pill "+ Nouvel élément" that folds to an
+    /// accent circle with the bare "+" when the title bar runs short.
     private var newItemButton: some View {
+        newItemButton(labelled: !newItemCompact)
+    }
+
+    /// Below this row width the pill pushes the bar's last items into its overflow menu:
+    /// the label goes and the "+" stays in an accent circle.
+    private var newItemCompact: Bool { (titleBarRoom ?? .infinity) < 700 }
+
+    private func newItemButton(labelled: Bool) -> some View {
         Button {
             model.showNewItemPicker = true
         } label: {
-            Image(systemName: "plus")
+            if labelled {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus").font(.system(size: 13, weight: .bold))
+                    Text("Nouvel élément").lineLimit(1)
+                }
+                .padding(.horizontal, -Theme.Space.xs)
+                .frame(height: 18)
+            } else {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .bold))
+                    .frame(width: 18, height: 18)
+                    .padding(.horizontal, -10)
+            }
         }
-        .buttonStyle(QuietIconButtonStyle())
+        .buttonStyle(AccentCapsuleButtonStyle())
+        .fixedSize()
         .help("browse.newItemN")
         .accessibilityLabel(Text("Nouvel élément"))
         .accessibilityIdentifier("items.new")
