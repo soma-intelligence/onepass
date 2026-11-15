@@ -199,9 +199,9 @@ struct ItemDetailView: View {
                 if locked(item) {
                     repromptSection(item)
                 } else {
-                    if item.trashedAt == nil, !item.archived,
-                        let offer = PasskeyOffer.offer(for: item, report: model.watchtower.report) {
-                        PasskeyOfferBanner(offer: offer) { setWatchtowerExclusion(PasskeyOffer.checkID, excluded: true, item) }
+                    if let offer = SiteSetupOffer.offers(for: item, report: model.watchtower.report).first {
+                        SiteSetupBanner(offer: offer) { setWatchtowerExclusion(offer.kind.rawValue, excluded: true, item) }
+                            .id(offer.kind)
                     }
                     if item.itemType == .document {
                         ForEach(DocumentCard.attachments(of: item), id: \.id) { attachment in
@@ -821,7 +821,7 @@ struct ItemDetailView: View {
         }
     }
 
-    /// "Ignorer" (passkey banner, Watchtower section) or "Rétablir": the check is excluded for this
+    /// "Ignorer" (site setup banner, Watchtower section) or "Rétablir": the check is excluded for this
     /// item, or no longer, saved like an edit. The next report follows.
     private func setWatchtowerExclusion(_ check: String, excluded: Bool, _ item: FfiItem) {
         var changed = item
@@ -1465,30 +1465,6 @@ enum ItemJSON {
     }
 }
 
-// MARK: - Passkey banner
-
-/// A login whose site accepts passkeys and that has none: the last Watchtower report flagged it
-/// (`passkey_available`, from the passkeys directory Watchtower downloads). Without a report, or
-/// when the check did not run, there is no banner (never faked).
-struct PasskeyOffer: Equatable {
-    static let checkID = PasskeySupport.check
-    let host: String
-    /// The site of the item's main address, where its passkey settings live.
-    let url: URL
-
-    static func offer(for item: FfiItem, report: FfiWatchtowerReport?) -> PasskeyOffer? {
-        guard item.itemType == .login, !item.watchtowerExclusions.contains(checkID),
-            !item.loginMethods.contains(.passkey),
-            let report, WatchtowerExclusions.checks(of: item.id, in: report).contains(checkID)
-        else { return nil }
-        let main = item.urls.first { $0.primary } ?? item.urls.first
-        guard let raw = main?.url, let host = URL(string: raw)?.host() ?? URL(string: "https://" + raw)?.host(),
-            let url = URL(string: "https://\(host)")
-        else { return nil }
-        return PasskeyOffer(host: host, url: url)
-    }
-}
-
 /// "Watchtower" in an item's detail: what the last report flagged for this item, each with "Ignorer
 /// pour cet élément", and the checks ignored for it, each with "Rétablir". Hidden when both are empty.
 struct ItemWatchtowerSection: View {
@@ -1547,57 +1523,7 @@ struct ItemWatchtowerSection: View {
     }
 }
 
-/// Purple card at the top of a login: "Passkey disponible", collapsible, with "Utiliser une
-/// passkey" (opens the site's settings) and "Ignorer" (excluded for this item, saved).
-struct PasskeyOfferBanner: View {
-    @Environment(\.openURL) private var openURL
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let offer: PasskeyOffer
-    let onIgnore: () -> Void
-    @State private var expanded = true
-
-    private let purple = Color(red: 0.55, green: 0.36, blue: 0.96)
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.m) {
-            Button {
-                withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: Theme.Space.s) {
-                    Image(systemName: "person.badge.key.fill")
-                    Text("item.passkeyAvailable").font(.headline)
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.caption.weight(.bold))
-                        .rotationEffect(.degrees(expanded ? 0 : -90))
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("item.passkeyOffer.toggle")
-            if expanded {
-                Text("item.supportsPasskeysPasskeyReplaces \(offer.host)")
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: Theme.Space.m) {
-                    Button("item.usePasskey") { openURL(offer.url) }
-                        .buttonStyle(.borderedProminent)
-                        .tint(purple)
-                        .accessibilityIdentifier("item.passkeyOffer.use")
-                    Button("Ignorer", action: onIgnore)
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("item.passkeyOffer.ignore")
-                }
-            }
-        }
-        .padding(Theme.Space.l)
-        .background(purple.opacity(0.16), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).stroke(purple.opacity(0.35)))
-        .accessibilityIdentifier("item.passkeyOffer")
-    }
-}
-
-/// The folds of the detail (dates, passkey offer, document preview). iPhone and iPad take the
+/// The folds of the detail (dates, site setup offer, document preview). iPhone and iPad take the
 /// shared critically damped spring and a fade under Reduce Motion; the Mac keeps its snappy fold.
 enum FoldMotion {
     static func animation(reduceMotion: Bool) -> Animation {
