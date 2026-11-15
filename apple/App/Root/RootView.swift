@@ -97,7 +97,7 @@ struct RootView: View {
                 ImportSheet(credentialExchange: request.token)
             }
             .onOpenURL { url in
-                // The three `onepass://` links and the verification code links; anything else is
+                // The `onepass://` links and the verification code links; anything else is
                 // ignored. A code link waits for the unlock like the others.
                 #if os(macOS)
                 if BrowserBridge.isUnlockLink(url) {
@@ -105,7 +105,11 @@ struct RootView: View {
                     return
                 }
                 #endif
-                if let link = OnePassLink(url: url) {
+                // An organisation invitation first: its link carries secrets the core reads only
+                // once the vault is open.
+                if OrgConsole.isJoinLink(url) {
+                    model.handle(.orgJoin(url.absoluteString))
+                } else if let link = OnePassLink(url: url) {
                     model.open(link)
                 } else if OtpLink.handles(url) {
                     model.handle(.otpLink(url.absoluteString))
@@ -136,6 +140,14 @@ struct RootView: View {
             .sheet(isPresented: Binding(
                 get: { model.showAddAccount }, set: { model.showAddAccount = $0 })) {
                 AddAccountSheet()
+            }
+            // Joining or creating an organisation (an invitation link, or "Add an account"). Shown
+            // over the onboarding of its managed slot once that slot exists.
+            .sheet(item: Binding(get: { model.orgSheet }, set: { model.orgSheet = $0 })) { sheet in
+                switch sheet {
+                case .join(let invite, let look): OrgJoinSheet(invite: invite, look: look)
+                case .create(let look): OrgCreateSheet(look: look)
+                }
             }
             .sheet(isPresented: Binding(
                 get: { model.showAllAccountsSearch && model.accounts.unifiedSearch },

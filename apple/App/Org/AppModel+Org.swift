@@ -12,6 +12,28 @@ struct ManagedOnboarding: Equatable {
 
     let slot: String
     let route: Route
+    /// The member's name typed in "Join an organisation" (`confirmOrgJoin`): the onboarding takes it.
+    var displayName: String?
+}
+
+/// The name and colour of a managed account, chosen in "Add an account".
+struct OrgAccountLook: Equatable {
+    let label: String
+    let color: FfiAccountColor
+}
+
+/// The organisation sheets the root shows: joining (an invitation, or the field to paste one) and
+/// creating (Mac and iPad).
+enum OrgSheet: Identifiable, Equatable {
+    case join(FfiOrgInvite?, OrgAccountLook?)
+    case create(OrgAccountLook?)
+
+    var id: String {
+        switch self {
+        case .join: "join"
+        case .create: "create"
+        }
+    }
 }
 
 extension AppModel {
@@ -21,7 +43,9 @@ extension AppModel {
 
     /// Starts a new organisation: its draft (the org id), a managed slot on `serverURL`, then the sign
     /// up of the onboarding on that slot. Nothing reaches the server before the account exists.
-    func beginOrgCreation(name: String, serverURL: URL, serverInvite: String) throws(AccountsError) {
+    func beginOrgCreation(name: String, serverURL: URL, serverInvite: String, look: OrgAccountLook? = nil)
+        throws(AccountsError)
+    {
         let draft: OrgDraft
         do {
             draft = try OrgDraft()
@@ -29,7 +53,8 @@ extension AppModel {
             throw .directory(VaultError(error))
         }
         let kind = FfiAccountKind.managed(serverUrl: serverURL.absoluteString, orgId: draft.orgId())
-        try beginAddingAccount(kind: kind, label: name, color: .indigo, signIn: false)
+        try beginAddingAccount(
+            kind: kind, label: Self.label(look, default: name), color: look?.color ?? .indigo, signIn: false)
         let slot = accounts.activeSlot
         accounts.session(for: slot)?.environment.settings.orgCreator = true
         orgDraft = draft
@@ -39,13 +64,17 @@ extension AppModel {
     /// Starts joining the organisation of `invite`: the pin plan (MDM, DNS, else first use), a managed
     /// slot, the link's secrets in the keychain, then the pin, before the account exists. Any failure
     /// takes the slot out again.
-    func beginOrgJoin(_ invite: FfiOrgInvite) async throws(OrgActionError) -> FfiOrgState {
+    func beginOrgJoin(_ invite: FfiOrgInvite, look: OrgAccountLook? = nil) async throws(OrgActionError)
+        -> FfiOrgState
+    {
         let plan = await OrgPinResolver(mdm: ManagedOrgConfig.read(), dns: SystemDNSTXTResolver()).plan(for: invite)
-        // Refused before any slot exists.
-        if let refusal = plan.refusal { throw refusal }
+        // Refused before any slot exists, each refusal with what to do about it.
+        if case .refuse(let reason) = plan { throw .other(Self.refusalMessage(reason)) }
         let kind = FfiAccountKind.managed(serverUrl: invite.serverUrl, orgId: invite.orgId)
         do {
-            try beginAddingAccount(kind: kind, label: invite.domain ?? "", color: .indigo, signIn: false)
+            try beginAddingAccount(
+                kind: kind, label: Self.label(look, default: invite.domain ?? ""), color: look?.color ?? .indigo,
+                signIn: false)
         } catch {
             throw .other(error.message)
         }
@@ -57,6 +86,61 @@ extension AppModel {
             cancelOrgJoin()
             throw error
         }
+    }
+
+    /// The member's name typed in "Join an organisation": kept on the slot and handed to the
+    /// onboarding under the sheet, which signs the member up next.
+    func confirmOrgJoin(displayName: String) {
+        guard let slot = managedOnboarding?.slot else { return }
+        accounts.session(for: slot)?.environment.settings.displayName = displayName
+        managedOnboarding?.displayName = displayName
+    }
+
+    /// What a refused pin plan tells the user (before any slot exists).
+    static func refusalMessage(_ reason: OrgPinRefusal) -> String {
+        switch reason {
+        case .mdmInvalid: String(localized: "org.refusal.mdmInvalid")
+        case .mdmMismatch: String(localized: "org.refusal.mdmMismatch")
+        case .dnsMismatch: String(localized: "org.refusal.dnsMismatch")
+        }
+    }
+
+    /// The account's name: the one chosen in "Add an account", else `fallback`.
+    private static func label(_ look: OrgAccountLook?, default fallback: String) -> String {
+        guard let chosen = look?.label, !chosen.isEmpty else { return fallback }
+        return chosen
+    }
+
+    // MARK: - Sheets
+
+    /// Shows an organisation sheet at the root: the sheets the model owns close first (as for a
+    /// verification code link), so it never stacks on Settings. `afterSheet`: the caller's own sheet
+    /// is closing (it is given the same time to leave).
+    func presentOrgSheet(_ sheet: OrgSheet, afterSheet: Bool = false) async {
+        let covered = afterSheet || showSettings || showAddAccount || showGenerator || showNewItemPicker
+            || showImport || orgSheet != nil
+        showSettings = false
+        showAddAccount = false
+        showGenerator = false
+        showNewItemPicker = false
+        showImport = false
+        orgSheet = nil
+        if covered {
+            try? await Task.sleep(for: .milliseconds(700))
+        } else {
+            await Task.yield()
+        }
+        orgSheet = sheet
+    }
+
+    /// An `onepass://org/join` link once the vault is open: its invitation, or `org.join.badLink`.
+    func openOrgJoinLink(_ link: String) async {
+        guard let invite = try? orgInviteParse(link: link, allowLoopbackHttp: MailboxEndpoints.allowsLocalHTTP)
+        else {
+            showToast(String(localized: "org.join.badLink"), kind: .error)
+            return
+        }
+        await presentOrgSheet(.join(invite, nil))
     }
 
     /// The join's settings and keychain items on `slot`, then the pin.

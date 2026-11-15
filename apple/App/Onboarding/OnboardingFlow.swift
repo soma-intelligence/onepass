@@ -1015,6 +1015,10 @@ struct OnboardingFlow: View {
                 model = OnboardingModel(model: app, restoreOnly: false)
             }
         }
+        // "Join an organisation" names the member over this onboarding (its sheet closes on Join).
+        .onChange(of: app.managedOnboarding?.displayName) { _, name in
+            if let name { model?.displayName = name }
+        }
         .onChange(of: app.session.state) { old, new in
             // A lock after the creation or restore unlocked the session (spec 4 point 5).
             if old == .unlocked, new != .unlocked, new != .unlocking { model?.sessionLocked() }

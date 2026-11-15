@@ -35,6 +35,8 @@ final class AppModel {
     }
     /// The managed account being made in the onboarding (its slot, create or join), nil otherwise.
     var managedOnboarding: ManagedOnboarding?
+    /// "Join an organisation" or "Create an organisation", shown by the root (`presentOrgSheet`).
+    var orgSheet: OrgSheet?
     /// The organisation being created, until its publish (it holds the org id and secrets).
     @ObservationIgnored var orgDraft: OrgDraft?
     /// The org session of each managed slot, made on first use (`orgSession(for:)`).
@@ -1168,6 +1170,8 @@ final class AppModel {
     func lock() {
         resetNavigation()
         dropPendingOtpLink()
+        // A join not started yet (its pasted link, or a creation's server code) never outlives a lock.
+        if managedOnboarding == nil { orgSheet = nil }
         session.lock()
     }
 
@@ -1411,7 +1415,7 @@ final class AppModel {
             pendingRouteAt = .now
             pendingRouteExpiry?.cancel()
             pendingRouteExpiry = nil
-            if case .otpLink = route {
+            if route.holdsSecret {
                 pendingRouteExpiry = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(PendingRequest.lifetime + 1))
                     guard !Task.isCancelled else { return }
@@ -1423,10 +1427,10 @@ final class AppModel {
         run(route, freshUnlock: false)
     }
 
-    /// A verification code link waiting for the unlock holds its secret: dropped when the app
-    /// locks or leaves the screen, and once expired.
+    /// A verification code link or an organisation invitation waiting for the unlock holds its
+    /// secret: dropped when the app locks or leaves the screen, and once expired.
     func dropPendingOtpLink() {
-        guard case .otpLink = pendingRoute else { return }
+        guard pendingRoute?.holdsSecret == true else { return }
         pendingRoute = nil
         pendingRouteExpiry?.cancel()
         pendingRouteExpiry = nil
@@ -1446,6 +1450,9 @@ final class AppModel {
                 return
             case .otpLink:
                 showToast(String(localized: "root.verificationCodeLinkExpired"), kind: .error)
+                return
+            case .orgJoin:
+                showToast(String(localized: "org.join.linkExpired"), kind: .error)
                 return
             case .link:
                 break
@@ -1477,6 +1484,8 @@ final class AppModel {
             Task { await copyTotp(ref, freshUnlock: freshUnlock) }
         case .otpLink(let link):
             Task { await presentOtpLink(link, source: .link) }
+        case .orgJoin(let link):
+            Task { await openOrgJoinLink(link) }
         }
     }
 

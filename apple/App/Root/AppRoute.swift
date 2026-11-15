@@ -10,4 +10,17 @@ enum AppRoute: Equatable {
     /// un code" sheet. Holds the secret: never logged; while waiting for the unlock it lasts 2
     /// minutes and is dropped when the app locks or leaves the screen.
     case otpLink(String)
+    /// An `onepass://org/join` invitation, kept as the raw link and read by the core only once the
+    /// vault is open (a bad link then shows `org.join.badLink`). Holds the invitation's credential
+    /// and member token: waits like `otpLink` (2 minutes, dropped on lock or when the app leaves
+    /// the screen).
+    case orgJoin(String)
+
+    /// The route holds a secret: it never waits long, nor past a lock.
+    var holdsSecret: Bool {
+        switch self {
+        case .otpLink, .orgJoin: true
+        case .link, .copyTotp: false
+        }
+    }
 }

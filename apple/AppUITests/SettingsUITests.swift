@@ -91,6 +91,22 @@ final class SettingsUITests: XCTestCase {
         cancel.tap()
     }
 
+    /// Ajouter un compte > organisation: always selectable, it offers joining by invitation; creating
+    /// one is for the devices that sign org changes (Mac and iPad), never an iPhone.
+    func testAddAccountOffersJoinForAnOrganisation() throws {
+        element("account.menu").tap()
+        let panelAdd = element("accounts.add")
+        XCTAssertTrue(panelAdd.waitForExistence(timeout: Self.uiTimeout), "account panel without Ajouter un compte")
+        panelAdd.tap()
+        let managed = element("accounts.add.kind.managed")
+        XCTAssertTrue(managed.waitForExistence(timeout: Self.uiTimeout), "Ajouter un compte without the organisation kind")
+        managed.tap()
+        XCTAssertTrue(element("accounts.add.org.join").waitForExistence(timeout: Self.uiTimeout), "no Join with an invitation")
+        XCTAssertFalse(element("accounts.add.org.create").exists, "an iPhone offers to create an organisation")
+        XCTAssertFalse(element("accounts.add.create").exists, "the managed kind still offers a plain sign up")
+        element("accounts.add.dismiss").tap()
+    }
+
     func testNewVaultFromSettingsShowsInTheList() throws {
         _ = openSettings()
         element("settings.vaults").tap()

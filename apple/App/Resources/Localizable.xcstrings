@@ -654,35 +654,6 @@
         }
       }
     },
-    "accounts.add.kind.managed.unavailable" : {
-      "comment" : "Add Account: why an organization account cannot be added yet.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Coming soon: needs your organization's OnePass server"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Próximamente: requiere el servidor OnePass de tu organización"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bientôt : demande un serveur OnePass à ton organisation"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In arrivo: serve il server OnePass della tua organizzazione"
-          }
-        }
-      }
-    },
     "accounts.add.kind.personal.subtitle" : {
       "comment" : "Add Account: description of a personal account.",
       "localizations" : {
@@ -737,6 +708,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nome e colore"
+          }
+        }
+      }
+    },
+    "accounts.add.org.create" : {
+      "comment" : "Add Account, organisation kind: create one (Mac and iPad).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create an organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear una organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Créer une organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crea un'organizzazione"
+          }
+        }
+      }
+    },
+    "accounts.add.org.join" : {
+      "comment" : "Add Account, organisation kind: join with an invitation link.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Join with an invitation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unirse con una invitación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rejoindre avec une invitation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisciti con un invito"
           }
         }
       }
@@ -34578,6 +34607,615 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tutto pronto, %@"
+          }
+        }
+      }
+    },
+    "org.create.footer" : {
+      "comment" : "Create an organisation: footer, why a second owner matters.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You'll be its first owner. Add a second owner soon so the organisation never depends on one person."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serás su primer propietario. Añade pronto un segundo propietario para que la organización nunca dependa de una sola persona."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu en seras le premier propriétaire. Ajoute vite un deuxième propriétaire pour que l'organisation ne dépende jamais d'une seule personne."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sarai il suo primo proprietario. Aggiungi presto un secondo proprietario così l'organizzazione non dipenderà mai da una sola persona."
+          }
+        }
+      }
+    },
+    "org.create.name" : {
+      "comment" : "Create an organisation: its name.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organisation name"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nombre de la organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nom de l'organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nome dell'organizzazione"
+          }
+        }
+      }
+    },
+    "org.create.server" : {
+      "comment" : "Create an organisation: the organisation server's address.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serveur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server"
+          }
+        }
+      }
+    },
+    "org.create.serverInvite" : {
+      "comment" : "Create an organisation: the code the server operator gave for a new organisation.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server invitation code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de invitación del servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code d'invitation du serveur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice di invito del server"
+          }
+        }
+      }
+    },
+    "org.create.title" : {
+      "comment" : "Create an organisation: title of the sheet (Mac and iPad).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create an organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear una organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Créer une organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crea un'organizzazione"
+          }
+        }
+      }
+    },
+    "org.join.badLink" : {
+      "comment" : "Join an organisation: the invitation link could not be read.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This invitation link isn't valid. Ask your administrator for a new one."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este enlace de invitación no es válido. Pide uno nuevo a tu administrador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce lien d'invitation n'est pas valide. Demande-en un nouveau à ton administrateur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo link di invito non è valido. Chiedine uno nuovo al tuo amministratore."
+          }
+        }
+      }
+    },
+    "org.join.confirm" : {
+      "comment" : "Join an organisation: button that starts the sign up.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Join"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unirse"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rejoindre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisciti"
+          }
+        }
+      }
+    },
+    "org.join.fingerprint" : {
+      "comment" : "Join an organisation: header of the 20 fingerprint words.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organisation fingerprint"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Huella de la organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empreinte de l'organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impronta dell'organizzazione"
+          }
+        }
+      }
+    },
+    "org.join.linkExpired" : {
+      "comment" : "Join an organisation: an invitation link opened while locked waited more than 2 minutes.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This invitation waited too long for the unlock. Open the link again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta invitación esperó demasiado el desbloqueo. Abre el enlace otra vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette invitation a attendu trop longtemps le déverrouillage. Ouvre de nouveau le lien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo invito ha atteso troppo lo sblocco. Apri di nuovo il link."
+          }
+        }
+      }
+    },
+    "org.join.pasteLink" : {
+      "comment" : "Join an organisation: field where the invitation link is pasted.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invitation link"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlace de invitación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lien d'invitation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Link di invito"
+          }
+        }
+      }
+    },
+    "org.join.title" : {
+      "comment" : "Join an organisation: title of the sheet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Join an organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unirse a una organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rejoindre une organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisciti a un'organizzazione"
+          }
+        }
+      }
+    },
+    "org.join.yourName" : {
+      "comment" : "Join an organisation: the member's name shown to the organisation.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your name in the organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu nombre en la organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton nom dans l'organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il tuo nome nell'organizzazione"
+          }
+        }
+      }
+    },
+    "org.refusal.dnsMismatch" : {
+      "comment" : "Join refused: the domain's DNS record names another fingerprint.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This invitation doesn't match the organisation's domain. Don't join, and tell your administrator."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta invitación no coincide con el dominio de la organización. No te unas y avisa a tu administrador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette invitation ne correspond pas au domaine de l'organisation. Ne la rejoins pas et préviens ton administrateur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo invito non corrisponde al dominio dell'organizzazione. Non unirti e avvisa il tuo amministratore."
+          }
+        }
+      }
+    },
+    "org.refusal.mdmInvalid" : {
+      "comment" : "Join refused: the MDM profile's OnePass keys are not usable.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your device's management profile has an invalid OnePass setting. Contact your administrator."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de gestión de tu dispositivo tiene un ajuste de OnePass no válido. Contacta con tu administrador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil de gestion de ton appareil contient un réglage OnePass non valide. Contacte ton administrateur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo di gestione del tuo dispositivo ha un'impostazione OnePass non valida. Contatta il tuo amministratore."
+          }
+        }
+      }
+    },
+    "org.refusal.mdmMismatch" : {
+      "comment" : "Join refused: the invitation names another organisation than the MDM profile.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This invitation is for a different organisation than the one managing this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta invitación es para una organización distinta de la que gestiona este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette invitation est pour une autre organisation que celle qui gère cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo invito è per un'organizzazione diversa da quella che gestisce questo dispositivo."
+          }
+        }
+      }
+    },
+    "org.source.dns" : {
+      "comment" : "Organisation fingerprint: confirmed by the DNS record of the domain (the argument).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmed by the organisation's domain (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmada por el dominio de la organización (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmée par le domaine de l'organisation (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confermata dal dominio dell'organizzazione (%@)"
+          }
+        }
+      }
+    },
+    "org.source.mdm" : {
+      "comment" : "Organisation fingerprint: confirmed by the device's MDM profile.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmed by your device's management profile"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmada por el perfil de gestión de tu dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmée par le profil de gestion de ton appareil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confermata dal profilo di gestione del tuo dispositivo"
+          }
+        }
+      }
+    },
+    "org.source.tofu" : {
+      "comment" : "Organisation fingerprint: taken from the invitation only, not confirmed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not confirmed yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no confirmada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas encore confirmée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non ancora confermata"
+          }
+        }
+      }
+    },
+    "org.source.verified" : {
+      "comment" : "Organisation fingerprint: the user compared the words with an administrator.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You checked it with your administrator"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La comprobaste con tu administrador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu l'as vérifiée avec ton administrateur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'hai verificata con il tuo amministratore"
+          }
+        }
+      }
+    },
+    "org.tofu.markVerified" : {
+      "comment" : "Join an organisation: button, the fingerprint words matched.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I checked the words"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "He comprobado las palabras"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "J'ai vérifié les mots"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ho verificato le parole"
+          }
+        }
+      }
+    },
+    "org.tofu.warning" : {
+      "comment" : "Join an organisation: asks to compare the fingerprint words with an administrator.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify with your administrator: read these words to them and check they see the same ones."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compruébalo con tu administrador: léele estas palabras y asegúrate de que ve las mismas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérifie avec ton administrateur : lis-lui ces mots et assure-toi qu'il voit les mêmes."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifica con il tuo amministratore: leggigli queste parole e controlla che veda le stesse."
           }
         }
       }
