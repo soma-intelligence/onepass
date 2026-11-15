@@ -80,6 +80,8 @@ struct PasswordHistoryView: View {
 
     private func copy(_ value: String) {
         model.session.copy(value, concealed: true)
+        // A former password handed out: a key use (never a use of the item for its counter).
+        model.noteItemKeyUse(ref, action: .copied, field: "password history")
         let text = String(localized: "app.copiedClearedIn90")
         withAnimation(.snappy) { toast = text }
         Task {

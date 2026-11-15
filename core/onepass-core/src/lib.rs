@@ -26,6 +26,7 @@ pub mod generator;
 pub mod icon;
 pub mod id;
 pub mod import;
+pub mod key_use_queue;
 pub mod lineage;
 pub mod lists;
 pub mod mailbox_recovery;

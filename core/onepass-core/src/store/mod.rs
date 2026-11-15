@@ -2,6 +2,7 @@
 //! `Repository` verifies everything it reads back.
 
 pub(crate) mod autofill_sql;
+pub(crate) mod key_use_queue_sql;
 mod memory;
 mod sqlite;
 mod zone;
@@ -320,6 +321,14 @@ pub fn autofill_unsupported() -> Error {
     Error::Store("no autofill history in this store".into())
 }
 
+/// A row of the key-use queue: `(seq, item_tag, sealed row)`.
+pub type KeyUseQueueRow = (i64, [u8; 32], Vec<u8>);
+
+/// A store without a key-use queue (`RecordStore::key_use_queue_put`).
+pub fn key_use_queue_unsupported() -> Error {
+    Error::Store("no key-use queue in this store".into())
+}
+
 fn local_meta_unsupported() -> Error {
     Error::Store("local meta unsupported".into())
 }
@@ -600,6 +609,44 @@ pub trait RecordStore {
     /// Remove every autofill history row: how many there were.
     fn autofill_clear(&mut self) -> Result<usize> {
         Err(autofill_unsupported())
+    }
+
+    /// Whether this store keeps a key-use queue (the methods below).
+    fn keeps_key_use_queue(&self) -> bool {
+        false
+    }
+
+    /// Remove the key-use queue rows of the `replace` seqs, append one
+    /// sealed row under its keyed item tag (`crate::key_use_queue`), then
+    /// keep the newest `keep_total` rows, in one transaction. Device-local:
+    /// never synced, never a record. A store that keeps no queue refuses.
+    fn key_use_queue_put(
+        &mut self,
+        item_tag: &[u8; 32],
+        replace: &[i64],
+        data: &[u8],
+        keep_total: usize,
+    ) -> Result<()> {
+        let _ = (item_tag, replace, data, keep_total);
+        Err(key_use_queue_unsupported())
+    }
+
+    /// The key-use queue rows `(seq, item_tag, data)`, oldest first: those
+    /// of `item_tag`, or all of them.
+    fn key_use_queue_rows(&self, item_tag: Option<&[u8; 32]>) -> Result<Vec<KeyUseQueueRow>> {
+        let _ = item_tag;
+        Err(key_use_queue_unsupported())
+    }
+
+    /// Remove the key-use queue rows of these `seq`s.
+    fn key_use_queue_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let _ = seqs;
+        Err(key_use_queue_unsupported())
+    }
+
+    /// Remove every key-use queue row: how many there were.
+    fn key_use_queue_clear(&mut self) -> Result<usize> {
+        Err(key_use_queue_unsupported())
     }
 
     /// `put_all_if_version`, and remove the local metadata under `key`,

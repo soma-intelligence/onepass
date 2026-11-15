@@ -2,12 +2,13 @@
 //! so they can be tested over any implementation and never reach the
 //! account or the store directly.
 
-use onepass_core::model::Item;
+use onepass_core::model::{Item, KeyUseAction, KeyUseChannel};
 use onepass_core::reference::SecretRef;
 use onepass_core::repo::Repository;
 use onepass_core::store::RecordStore;
 use onepass_core::vault::Vault;
 use onepass_core::{Error, Id};
+use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 /// What the tools learn about a vault.
@@ -67,6 +68,21 @@ pub trait VaultPort {
     fn resolve(&mut self, r: &SecretRef) -> Result<Zeroizing<String>, PortError>;
     /// Stores a new version of an item (or its first one).
     fn save_item(&mut self, vault_id: Id, item: Item) -> Result<(), PortError>;
+    /// Notes one use of an item's key by an MCP client in the item's
+    /// key-use log (best effort: callers ignore the error). `client` is the
+    /// name the client gave at `initialize` and `field` the label of the
+    /// field used (empty for a fill); the core sanitizes both. The default
+    /// records nothing, for a port with no log behind it.
+    fn record_key_use(
+        &mut self,
+        _vault_id: Id,
+        _item_id: Id,
+        _action: KeyUseAction,
+        _client: &str,
+        _field: &str,
+    ) -> Result<(), PortError> {
+        Ok(())
+    }
 }
 
 /// [`VaultPort`] over an unlocked repository.
@@ -110,6 +126,23 @@ impl<S: RecordStore> VaultPort for RepoPort<'_, S> {
     fn save_item(&mut self, vault_id: Id, item: Item) -> Result<(), PortError> {
         let vault = self.vault(vault_id)?;
         Ok(self.0.save_item(&vault, item)?)
+    }
+
+    fn record_key_use(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        action: KeyUseAction,
+        client: &str,
+        field: &str,
+    ) -> Result<(), PortError> {
+        let vault = self.vault(vault_id)?;
+        let u = self
+            .0
+            .this_device_key_use(KeyUseChannel::Mcp, action, client, field);
+        self.0
+            .record_key_use(&vault, item_id, u, OffsetDateTime::now_utc())?;
+        Ok(())
     }
 }
 

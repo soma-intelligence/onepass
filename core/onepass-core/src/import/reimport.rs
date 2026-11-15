@@ -521,6 +521,7 @@ fn archived_copy(e: &Item, vault: Id, now: OffsetDateTime) -> Item {
     c.events.clear();
     c.usage.clear();
     c.usage_forgotten.clear();
+    c.key_uses = Default::default();
     if !c.notes.is_empty() {
         c.notes.push('\n');
     }
@@ -959,6 +960,7 @@ fn convert(e: &Item, mut item: Item) -> Item {
     item.events.clone_from(&e.events);
     item.usage.clone_from(&e.usage);
     item.usage_forgotten.clone_from(&e.usage_forgotten);
+    item.key_uses.clone_from(&e.key_uses);
     item.favorite |= e.favorite;
     if item.color.is_none() {
         item.color.clone_from(&e.color);

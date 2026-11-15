@@ -50,6 +50,8 @@ pub enum BlobKind {
     RecoverySlot = 17,
     /// A device-local autofill history event (`crate::autofill_history`).
     AutofillHistory = 18,
+    /// A device-local key-use queue row (`crate::key_use_queue`).
+    KeyUseQueue = 19,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -309,6 +311,7 @@ mod tests {
             (BlobKind::ItemSend, 16),
             (BlobKind::RecoverySlot, 17),
             (BlobKind::AutofillHistory, 18),
+            (BlobKind::KeyUseQueue, 19),
         ];
         for (kind, code) in all {
             assert_eq!(kind as u8, code);

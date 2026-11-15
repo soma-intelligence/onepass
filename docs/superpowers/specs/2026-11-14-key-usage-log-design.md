@@ -1,6 +1,6 @@
 # Key usage log: who used a secret, where, through which channel
 
-Date: 2026-11-14. Status: design approved in conversation, no code written.
+Date: 2026-11-14. Status: built on branch feat/key-usage-log (commits 80f81f76d..d4f444add), not merged, not pushed.
 
 ## Goal
 
@@ -142,7 +142,6 @@ is logged at debug level and never fails the read, the injection or the signatur
 | MCP | `totp_code` | Totp | `clientInfo.name` |
 | MCP | `fill_in_browser` | Filled | `clientInfo.name` |
 | CLI | `read`, `item get --reveal` | Revealed | parent process name |
-| CLI | `exec` (run) | Injected | parent process name |
 | CLI | `totp` | Totp | parent process name |
 | SSH agent | `sign` | Signed | client code identity |
 | App | copy of a secret field, reveal | Copied / Revealed | app name |
@@ -157,7 +156,9 @@ entry per field.
 - FFI: `item_key_uses(vault_id, item_id) -> Vec<FfiKeyUse>`, `clear_key_uses(vault_id, item_id)`,
   and the app-side `record_key_use` for copies and reveals.
 - `ItemDetailView`: a new collapsed section "Utilisation" below the Watchtower section. Header
-  summary: "Utilisée il y a 2 h · 14 fois ce mois". Open: newest first, one row per entry:
+  summary: "Utilisée il y a 2 h · 365 fois depuis mars" (every use since the month of the earliest
+  `first_at`, the year added when it is not this year; an entry's count runs from its first use,
+  so the log holds no per-month count). Open: newest first, one row per entry:
   client · channel · action and field · device · ×count, one SF Symbol per channel. Styled after
   `ItemTimelineView`, loaded the same way as `itemTimeline`.
 - "Effacer le journal" sets `cleared_at` and empties the entries; it syncs like any item write.
@@ -189,7 +190,7 @@ entry per field.
   opens the item, enum indexes pinned.
 - Merge: union, max and min rules, `cleared_at` tombstone, remote edit wins over a log-only write.
 - Coalescing within the hour, cap of 200, TTL of 365 days, saturating count.
-- Best effort: a failing `record_key_use` never fails `reveal_secret`, `exec` or `sign`.
+- Best effort: a failing `record_key_use` never fails `reveal_secret`, `read` or `sign`.
 - Queue: read-only session queues, write session flushes, cap of 1000, Travel Mode erases.
 - MCP and CLI integration: each entry point of the table records the expected channel, action,
   client and field.

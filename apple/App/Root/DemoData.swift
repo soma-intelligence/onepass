@@ -567,6 +567,13 @@ private struct DemoSeeder {
                 try await session.noteAppUse(vaultID: summary.vaultId, itemID: summary.id)
             }
         }
+        // Gmail's "Utilisation" section: a few in-app key uses (App channel, this device).
+        if let gmail = session.summaries.first(where: { $0.title == "Gmail" }) {
+            for action in [FfiKeyUseAction.revealed, .copied] {
+                try await session.recordAppKeyUse(
+                    vaultID: gmail.vaultId, itemID: gmail.id, action: action, field: "Mot de passe")
+            }
+        }
     }
 
     /// `-OnePassDemoBulkItems <n>`: n more fictional logins over the three vaults, so a large vault

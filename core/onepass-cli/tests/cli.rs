@@ -1651,3 +1651,178 @@ fn an_older_device_bin_opens_and_gains_device_keys() {
     let read = rot.run(&["read", "onepass://Personnel/GitHub/password"]);
     assert_eq!(read.stdout, "hunter2");
 }
+
+// ---------------------------------------------------------------------
+// Key-use log of the commands that print a secret (read, item get
+// --reveal, totp). The harness opens the store itself to look at the log.
+// ---------------------------------------------------------------------
+
+use onepass_core::model::key_use::{KeyUse, KeyUseAction, KeyUseChannel};
+
+/// The key-use entries of the live item `title`, read with the Secret Key
+/// the template account printed.
+fn key_uses(dir: &Path, title: &str) -> Vec<KeyUse> {
+    let key = SecretKey::parse(&shown_key(&template().account.stdout)).unwrap();
+    let store = SqliteStore::open(&dir.join("vault.sqlite")).unwrap();
+    let mut repo = Repository::unlock(store, PASSWORD, &key, DeviceState::default()).unwrap();
+    for v in repo.vaults().unwrap() {
+        for i in repo.items(&v).unwrap() {
+            if i.title == title && i.trashed_at.is_none() {
+                return i.key_use_trailer().entries;
+            }
+        }
+    }
+    panic!("no item titled {title}");
+}
+
+/// Base name of the process that spawned the CLI, which is this test
+/// binary: the CLI reads the path of its parent (macOS) or its `comm`
+/// (Linux), and the harness computes the same value for itself.
+fn harness_name() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/proc/self/comm")
+            .unwrap()
+            .trim()
+            .to_owned()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        std::env::current_exe()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
+#[test]
+fn key_use_read_records_cli_revealed() {
+    let tmp = fresh();
+    let d = tmp.path();
+    let read = run(d, &["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.code, 0, "{}", read.stderr);
+    assert_eq!(read.stdout, "hunter2");
+    let uses = key_uses(d, "GitHub");
+    assert_eq!(uses.len(), 1, "{uses:?}");
+    let u = &uses[0];
+    assert_eq!(u.channel, KeyUseChannel::Cli);
+    assert_eq!(u.action, KeyUseAction::Revealed);
+    assert_eq!(u.field, "Mot de passe");
+    assert_eq!(u.count, 1);
+    // The parent of the spawned CLI is this test binary.
+    assert!(!u.client.is_empty());
+    assert_eq!(u.client, harness_name());
+}
+
+#[test]
+fn key_use_read_of_a_missing_field_records_nothing() {
+    let tmp = fresh();
+    let d = tmp.path();
+    let read = run(d, &["read", "onepass://Personnel/GitHub/nope"]);
+    assert_ne!(read.code, 0);
+    assert!(key_uses(d, "GitHub").is_empty());
+}
+
+#[test]
+fn key_use_item_get_without_reveal_records_nothing() {
+    let tmp = fresh();
+    let d = tmp.path();
+    let get = run(d, &["item", "get", "GitHub"]);
+    assert_eq!(get.code, 0, "{}", get.stderr);
+    assert!(!get.stdout.contains("hunter2"));
+    assert!(key_uses(d, "GitHub").is_empty());
+}
+
+#[test]
+fn key_use_item_get_reveal_records_revealed() {
+    let tmp = fresh();
+    let d = tmp.path();
+    let get = run(d, &["item", "get", "GitHub", "--reveal"]);
+    assert_eq!(get.code, 0, "{}", get.stderr);
+    assert!(get.stdout.contains("hunter2"));
+    let uses = key_uses(d, "GitHub");
+    // One entry for the one secret field; the plain username is no secret.
+    assert_eq!(uses.len(), 1, "{uses:?}");
+    assert_eq!(uses[0].channel, KeyUseChannel::Cli);
+    assert_eq!(uses[0].action, KeyUseAction::Revealed);
+    assert_eq!(uses[0].field, "Mot de passe");
+    assert_eq!(uses[0].client, harness_name());
+}
+
+#[test]
+fn key_use_totp_records_totp() {
+    let tmp = fresh();
+    let d = tmp.path();
+    let made = run(
+        d,
+        &[
+            "item",
+            "create",
+            "login",
+            "--title",
+            "Two",
+            "--field",
+            "username=a",
+            "--field",
+            &format!("totp={TOTP_SECRET}"),
+        ],
+    );
+    assert_eq!(made.code, 0, "{}", made.stderr);
+    let code = run(d, &["totp", "Two"]);
+    assert_eq!(code.code, 0, "{}", code.stderr);
+    let uses = key_uses(d, "Two");
+    assert_eq!(uses.len(), 1, "{uses:?}");
+    assert_eq!(uses[0].channel, KeyUseChannel::Cli);
+    assert_eq!(uses[0].action, KeyUseAction::Totp);
+    assert!(!uses[0].field.is_empty());
+    assert_eq!(uses[0].client, harness_name());
+    // The code itself is not in the log.
+    assert!(!format!("{:?}", uses[0]).contains(code.stdout.trim()));
+}
+
+/// A use the CLI queued (a second read inside the hour) reaches the log at
+/// the start of a later CLI session once it is an hour old: the harness
+/// records two uses three hours ago (the second one queued), then any
+/// command that opens the vault flushes the queue.
+#[test]
+fn key_use_queue_flushed_at_cli_session_start() {
+    let tmp = fresh();
+    let d = tmp.path();
+    {
+        let key = SecretKey::parse(&shown_key(&template().account.stdout)).unwrap();
+        let store = SqliteStore::open(&d.join("vault.sqlite")).unwrap();
+        let mut repo = Repository::unlock(store, PASSWORD, &key, DeviceState::default()).unwrap();
+        let (vault, item) = repo
+            .vaults()
+            .unwrap()
+            .into_iter()
+            .find_map(|v| {
+                let i = repo
+                    .items(&v)
+                    .unwrap()
+                    .into_iter()
+                    .find(|i| i.title == "GitHub")?;
+                Some((v, i.id))
+            })
+            .unwrap();
+        let then = time::OffsetDateTime::now_utc() - time::Duration::hours(3);
+        for at in [then, then + time::Duration::minutes(1)] {
+            let u = repo.this_device_key_use(
+                KeyUseChannel::Cli,
+                KeyUseAction::Revealed,
+                "git",
+                "password",
+            );
+            repo.record_key_use(&vault, item, u, at).unwrap();
+        }
+        assert_eq!(repo.store().key_use_queue_rows(None).unwrap().len(), 1);
+    }
+    assert_eq!(key_uses(d, "GitHub")[0].count, 1);
+    let list = run(d, &["item", "list"]);
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    let uses = key_uses(d, "GitHub");
+    assert_eq!(uses.len(), 1, "{uses:?}");
+    assert_eq!(uses[0].count, 2);
+}

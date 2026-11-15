@@ -1775,6 +1775,46 @@ fn prompt_of(c: &Device) -> Option<RotationPrompt> {
     pending_rotation(&c.store()).unwrap()
 }
 
+/// A use recorded while the rotation waits (the session is read only,
+/// so it is queued under the keys of the identity left) survives the
+/// follow: the flush after it seals the row again under the new keys and
+/// writes it into the item, its count kept.
+#[test]
+fn read_only_key_use_survives_following() {
+    use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
+    let (_server, _a, mut c, f, out, _new_sk) = rotated();
+    c.unlock(&f.sk);
+    assert!(c.repo().pending_prompt().is_some());
+    let v = c.vault();
+    let item = c.items()[0].clone();
+    let u = c.repo().this_device_key_use(
+        KeyUseChannel::Cli,
+        KeyUseAction::Revealed,
+        "zsh",
+        "password",
+    );
+    for m in [0, 5] {
+        let queued = c
+            .repo()
+            .record_key_use(&v, item.id, u.clone(), at(T0 + m * 60))
+            .unwrap();
+        assert!(!queued);
+    }
+    assert_eq!(c.store().key_use_queue_rows(None).unwrap().len(), 1);
+    c.lock();
+
+    let (repo, _, _) = follow_rotation(c.store(), out.head, PASSWORD, &f.others[C].keys).unwrap();
+    c.repo = Some(repo);
+    assert_eq!(c.repo().flush_key_use_queue(at(T0 + 7200)).unwrap(), 1);
+    assert!(c.store().key_use_queue_rows(None).unwrap().is_empty());
+    let got = c.items().into_iter().find(|i| i.id == item.id).unwrap();
+    let t = got.key_use_trailer();
+    assert_eq!(t.entries.len(), 1);
+    assert_eq!(t.entries[0].count, 2);
+    assert_eq!(t.entries[0].first_at, at(T0));
+    assert_eq!(t.entries[0].last_at, at(T0 + 300));
+}
+
 #[test]
 fn honest_follow() {
     let (_server, mut a, mut c, f, out, new_sk) = rotated();

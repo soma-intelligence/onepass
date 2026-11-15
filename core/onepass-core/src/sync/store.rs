@@ -254,6 +254,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(zones::ZONE_SCHEMA).map_err(store_err)?;
     conn.execute_batch(crate::store::autofill_sql::SCHEMA)
         .map_err(store_err)?;
+    conn.execute_batch(crate::store::key_use_queue_sql::SCHEMA)
+        .map_err(store_err)?;
     conn.execute_batch(&format!("PRAGMA user_version = {STORE_USER_VERSION};"))
         .map_err(store_err)?;
     Ok(())
@@ -2107,6 +2109,7 @@ impl SyncStore {
             "zone_pending",
             "zone_staging",
             "zone_fetch",
+            "zone_ancestor",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -2145,6 +2148,7 @@ impl SyncStore {
             "zone_pending",
             "zone_staging",
             "zone_fetch",
+            "zone_ancestor",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -3716,6 +3720,42 @@ impl RecordStore for SyncStore {
         Ok(n)
     }
 
+    fn keeps_key_use_queue(&self) -> bool {
+        true
+    }
+
+    fn key_use_queue_put(
+        &mut self,
+        item_tag: &[u8; 32],
+        replace: &[i64],
+        data: &[u8],
+        keep_total: usize,
+    ) -> Result<()> {
+        let tx = self.write_tx()?;
+        crate::store::key_use_queue_sql::put(&tx, item_tag, replace, data, keep_total)?;
+        tx.commit()
+    }
+
+    fn key_use_queue_rows(
+        &self,
+        item_tag: Option<&[u8; 32]>,
+    ) -> Result<Vec<crate::store::KeyUseQueueRow>> {
+        self.read(|c| crate::store::key_use_queue_sql::rows(c, item_tag))
+    }
+
+    fn key_use_queue_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let tx = self.write_tx()?;
+        crate::store::key_use_queue_sql::delete(&tx, seqs)?;
+        tx.commit()
+    }
+
+    fn key_use_queue_clear(&mut self) -> Result<usize> {
+        let tx = self.write_tx()?;
+        let n = crate::store::key_use_queue_sql::clear(&tx)?;
+        tx.commit()?;
+        Ok(n)
+    }
+
     fn local_meta_keys(&self, prefix: &str) -> Result<Vec<String>> {
         check_local_meta_prefix(prefix)?;
         self.read(|c| {
@@ -3919,6 +3959,7 @@ impl RecordStore for SyncStore {
             "zone_pending",
             "zone_staging",
             "zone_fetch",
+            "zone_ancestor",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])
                 .map_err(store_err)?;
@@ -5716,6 +5757,26 @@ mod tests {
         // Both connections keep working on the same file.
         s.put(rec(vault, RecordKind::Keyset, 1, b"k")).unwrap();
         assert_eq!(other.list(RecordKind::Keyset).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn resets_wipe_kept_shared_ancestors() {
+        for recovery in [false, true] {
+            let mut s = SyncStore::open_in_memory().unwrap();
+            s.conn
+                .execute(
+                    "INSERT INTO zone_ancestor (zone, kind, id, version, data) VALUES (?1, 1, ?2, 1, ?3)",
+                    rusqlite::params![vec![7u8], vec![1u8], b"sealed".to_vec()],
+                )
+                .unwrap();
+            assert_eq!(count(&s, "zone_ancestor"), 1);
+            if recovery {
+                s.reset_for_recovery().unwrap();
+            } else {
+                s.reset().unwrap();
+            }
+            assert_eq!(count(&s, "zone_ancestor"), 0, "recovery: {recovery}");
+        }
     }
 
     #[test]

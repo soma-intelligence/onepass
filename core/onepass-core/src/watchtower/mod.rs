@@ -24,7 +24,7 @@ pub mod sites;
 use std::collections::BTreeMap;
 
 use serde::Serialize;
-use time::Date;
+use time::{Date, OffsetDateTime};
 
 use crate::model::Item;
 
@@ -41,6 +41,11 @@ pub struct Options {
     pub expiry_warning_days: u16,
     /// Age (days) from which a password is "old".
     pub old_password_days: u16,
+    /// Instant of the analysis, for the checks that count in days of idle time.
+    pub now: OffsetDateTime,
+    /// Start of the key-use log (`Repository::key_use_since`). `None` while
+    /// the warm-up is not established: no key is flagged dormant.
+    pub key_use_since: Option<OffsetDateTime>,
 }
 
 impl Options {
@@ -50,7 +55,22 @@ impl Options {
             today,
             expiry_warning_days: 30,
             old_password_days: 365,
+            now: today.midnight().assume_utc(),
+            key_use_since: None,
         }
+    }
+
+    /// Sets the instant of the analysis and the key-use warm-up start, for
+    /// the dormant key check. A failed `key_use_since` read is passed as `None`.
+    pub fn with_key_use(
+        mut self,
+        now: OffsetDateTime,
+        key_use_since: Option<OffsetDateTime>,
+    ) -> Options {
+        self.today = now.to_offset(time::UtcOffset::UTC).date();
+        self.now = now;
+        self.key_use_since = key_use_since;
+        self
     }
 }
 

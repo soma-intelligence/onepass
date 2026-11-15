@@ -471,7 +471,7 @@ mod sync_two_devices_over_mailbox {
         assert!(
             b.dev
                 .repo()
-                .record_usage(&v, x.id, site.clone(), at(T0 + 5), false)
+                .record_usage(&v, x.id, site.clone(), at(T0 + 5), false, "")
                 .unwrap()
         );
         let mut changed = x.clone();

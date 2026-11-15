@@ -182,6 +182,14 @@ import VaultKit
         #expect(d.revealed && d.large)
     }
 
+    @Test func largeOnAShownSecretDoesNotNotifyAgain() {
+        var d = FieldDisclosure()
+        let first = d.reveal(true, isSecret: true)
+        let again = d.showLarge(isSecret: true)
+        #expect(first && !again)
+        #expect(d.revealed && d.large)
+    }
+
     @Test func remaskClosesLarge() {
         var d = FieldDisclosure()
         _ = d.showLarge(isSecret: true)

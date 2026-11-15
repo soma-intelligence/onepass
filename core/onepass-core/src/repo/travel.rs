@@ -229,8 +229,10 @@ impl<S: RecordStore> Repository<S> {
             .chain(item_plan.iter().flat_map(|(_, _, r)| r.iter().cloned()))
             .collect();
         // The autofill history names sites and items of what leaves: it
-        // goes first, and nothing is recorded while travelling.
+        // goes first, and nothing is recorded while travelling. The
+        // key-use queue names items of what leaves too: it goes with it.
         self.clear_autofill_history()?;
+        self.clear_key_use_queue()?;
         self.store.evict_all(&all)?;
         let mut parked = BTreeMap::new();
         for (id, seen, _) in plan {

@@ -143,11 +143,13 @@ struct FieldDisclosure: Equatable {
         return now.timeIntervalSince(at) >= delay
     }
 
-    /// Returns true when the host must be told that the value was revealed.
+    /// Returns true when the host must be told that the value was revealed: only on the masked to
+    /// shown transition, so a value already shown is not reported again.
     mutating func showLarge(isSecret: Bool, now: Date = Date()) -> Bool {
+        let wasShown = revealed
         let notify = isSecret ? reveal(true, isSecret: true, now: now) : false
         large = true
-        return notify
+        return notify && !wasShown
     }
 }
 
