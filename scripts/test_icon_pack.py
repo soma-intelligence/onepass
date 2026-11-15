@@ -14,6 +14,7 @@ import zlib
 import shutil
 import sys
 import functools
+import http.client
 import http.server
 import tempfile
 import threading
@@ -403,6 +404,36 @@ class DomainList(unittest.TestCase):
         index, _ = icon_pack.read_pack((out / manifest["pack"]["file"]).read_bytes())
         report = json.loads((out / "report.json").read_text())
         return manifest, index, report, sizes
+
+    def test_cut_response_skips_the_site_and_is_retried(self):
+        class Cut:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def geturl(self):
+                return "https://cut.test/"
+
+            def read(self, n):
+                raise http.client.IncompleteRead(b"x" * 10)
+
+        with mock.patch("urllib.request.urlopen", return_value=Cut()):
+            with self.assertRaises(ConnectionError):
+                icon_pack.fetch_url("https://cut.test/", 100)
+            record, _ = icon_pack.fetch_domains(["cut.test"], set(), self.none, self.tmp / "sites",
+                                                lambda k, w: self.log.append((k, w)), google=False, jobs=1)
+            self.assertNotIn("cut.test", record)
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) == 1:
+                raise ConnectionError("bad HTTP response: IncompleteRead")
+            return b"ok"
+
+        self.assertEqual(icon_pack.with_retries(flaky, sleep=lambda s: None), b"ok")
 
     def test_lists_plain_and_comments(self):
         a, b, c = self.tmp / "a.txt", self.tmp / "b.txt", self.tmp / "c.csv"
