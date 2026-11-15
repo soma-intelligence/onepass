@@ -93,6 +93,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let orgMemberTokenRefused = "onepass.org.memberTokenRefused"
         static let orgJoinCode = "onepass.org.joinCode"
         static let orgDomain = "onepass.org.domain"
+        static let orgInviteDomain = "onepass.org.inviteDomain"
     }
 
     // MARK: - Managed account (OnePass Business)
@@ -151,12 +152,25 @@ public final class VaultSettings: @unchecked Sendable {
         }
     }
 
-    /// The organisation's domain as this account last saw it (the invitation's, or the one an
-    /// administrator typed for an invitation): the DNS source line and the DNS record name.
+    /// The domain of the invitation this account joined with: the one its DNS pin checked, shown on
+    /// the fingerprint's source line. Never an administrator's typing (`orgInviteDomain`).
     public var orgDomain: String? {
         get { defaults.string(forKey: Key.orgDomain) }
         set {
             if let newValue { defaults.set(newValue, forKey: Key.orgDomain) } else { defaults.removeObject(forKey: Key.orgDomain) }
+        }
+    }
+
+    /// The domain an administrator last typed for an invitation: only a prefill (the next invitation,
+    /// the DNS record name to publish), never shown as checked.
+    public var orgInviteDomain: String? {
+        get { defaults.string(forKey: Key.orgInviteDomain) }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Key.orgInviteDomain)
+            } else {
+                defaults.removeObject(forKey: Key.orgInviteDomain)
+            }
         }
     }
 

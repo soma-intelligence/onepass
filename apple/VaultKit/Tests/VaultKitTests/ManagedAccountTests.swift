@@ -272,11 +272,14 @@ struct ManagedAccountTests {
         let kept = try #require(try credentials.ownSeed(orgMailboxID: invite.mailboxId))
         let keptSeed = kept.withData { Data($0) }
 
-        // The password: posted once, with the same seed (a repost names the same credential).
+        // The password, from the Organisation page after a relaunch (a fresh org session, R34): it
+        // loads the pin, then posts once with the same seed (a repost names the same credential).
         let password = SecretBytes(utf8: testPassword)
         defer { password.wipe() }
+        let relaunched = ManagedAccountResume.session(vault: joinerVault, backend: backend, keys: joinerKeys)
+        #expect(relaunched.phase == .loading)
         #expect(try await ManagedAccountResume.sendJoinRequest(
-            settings: settings, org: joiner, credentials: credentials, displayName: "Bob", password: password))
+            settings: settings, org: relaunched, credentials: credentials, displayName: "Bob", password: password))
         #expect(settings.orgJoinPosted)
         #expect(!settings.orgJoinWaiting)
         // The join code stays on the slot for the Organisation page (the member reads it out).
@@ -301,6 +304,31 @@ struct ManagedAccountTests {
         #expect(try credentials.linkSeed() == nil)
         #expect(settings.orgJoinNonce == nil)
         #expect(settings.orgJoinCode == nil)
+    }
+
+    /// A waiting join whose org can't be read (no pin, server down) posts nothing and says so by
+    /// returning false: the flag stays for the next try, nothing throws.
+    @Test func aWaitingJoinThatCannotPostReturnsFalse() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let vault = h.makeSession()
+        let credentials = ManagedOrgCredentials(keychain: h.keychain, slot: "joiner")
+        h.settings.orgMailboxID = String(repeating: "a", count: 32)
+        h.settings.orgJoinNonce = String(repeating: "0", count: 64)
+        h.settings.orgJoinWaiting = true
+        let backend = ManagedOrgBackend(credentials: credentials, orgMailboxID: String(repeating: "a", count: 32)) { _ in
+            throw OnePassError.MailboxUnavailable(reason: "offline")
+        }
+        let org = ManagedAccountResume.session(
+            vault: vault, backend: backend, keys: ManagedDeviceKeys(keychain: h.keychain, accountID: "none"))
+        let password = SecretBytes(utf8: testPassword)
+        defer { password.wipe() }
+        let posted = try await ManagedAccountResume.sendJoinRequest(
+            settings: h.settings, org: org, credentials: credentials, displayName: "Bob", password: password)
+        #expect(!posted)
+        #expect(org.phase != .ready)
+        #expect(h.settings.orgJoinWaiting)
+        #expect(!h.settings.orgJoinPosted)
     }
 
     /// A creation cut off before its publish: no org mailbox is known, so the org backend of the slot

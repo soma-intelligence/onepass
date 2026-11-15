@@ -34,7 +34,7 @@ struct OrgMemberDetailView: View {
         .settingsPage(LocalizedStringKey(member.map { OrgText.name(of: $0, isMe: isMe) } ?? ""))
         .onAppear { roles = Set(member?.roles ?? []) }
         .onChange(of: member?.roles) { roles = Set(member?.roles ?? []) }
-        .task { ownerKeys = org.isOwner ? await org.ownerKeysAvailable() : false }
+        .task { ownerKeys = canEdit && org.isOwner ? await org.ownerKeysAvailable() : false }
         .sheet(item: $confirmation) { OrgConfirmSheet(confirmation: $0) }
     }
 
@@ -82,13 +82,14 @@ struct OrgMemberDetailView: View {
     @ViewBuilder private func actions(_ member: FfiOrgMember) -> some View {
         Section {
             // R19: an owner removed from the head keeps the Admin bit until someone takes it.
-            if member.formerOwner, member.roles.contains(.admin), !isHeadOwner {
+            if member.formerOwner, member.roles.contains(.admin), !isHeadOwner, !member.state.isRemoved {
                 Button("org.action.removeAdmin") {
                     prepare(.setRoles(accountId: member.accountId, roles: member.roles.filter { $0 != .admin }))
                 }
                 .accessibilityIdentifier("org.member.removeAdmin")
             }
-            if org.isOwner, ownerKeys, member.state == .active, !isHeadOwner {
+            // R10: the owners change only while the head has exactly one owner (quorum 1).
+            if org.isOwner, ownerKeys, member.state == .active, !isHeadOwner, org.state?.owners.count == 1 {
                 Button("org.action.makeOwner") { confirmMakeOwner(member) }
                     .accessibilityIdentifier("org.member.makeOwner")
             }

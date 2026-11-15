@@ -54,7 +54,7 @@ struct OrgInviteSheet: View {
         .frame(minWidth: 460, minHeight: 360)
         #endif
         .interactiveDismissDisabled(busy)
-        .onAppear { if domain.isEmpty { domain = settings.orgDomain ?? "" } }
+        .onAppear { if domain.isEmpty { domain = settings.orgInviteDomain ?? settings.orgDomain ?? "" } }
         .sheet(isPresented: $askPassword) {
             PasswordPromptSheet(title: "org.invite", footer: "settings.confirmWithMasterPassword") { password in
                 do {
@@ -141,6 +141,6 @@ struct OrgInviteSheet: View {
     private func make(password: SecretBytes?) async throws {
         let domain = trimmedDomain
         link = try await org.invite(label: trimmedLabel, domain: domain, password: password)
-        if let domain { settings.orgDomain = domain }
+        if let domain { settings.orgInviteDomain = domain }
     }
 }

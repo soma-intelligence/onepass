@@ -270,13 +270,14 @@ extension AppModel {
     }
 
     /// Posts the join request of `slot` that waits for a presence check (`orgJoinWaiting`, R34), with
-    /// the master password the user typed.
-    func sendJoinRequest(slot: String, password: SecretBytes) async throws(OrgActionError) {
+    /// the master password the user typed. False: nothing was posted (no pending request, or the org
+    /// is not readable yet), nothing thrown.
+    func sendJoinRequest(slot: String, password: SecretBytes) async throws(OrgActionError) -> Bool {
         guard let vault = accounts.session(for: slot), let org = orgSession(for: slot) else {
             throw .other(VaultError.notFound.localizedMessage)
         }
         let settings = vault.environment.settings
-        try await ManagedAccountResume.sendJoinRequest(
+        return try await ManagedAccountResume.sendJoinRequest(
             settings: settings, org: org,
             credentials: ManagedOrgCredentials(keychain: vault.environment.keychain, slot: slot),
             displayName: settings.displayName, password: password)

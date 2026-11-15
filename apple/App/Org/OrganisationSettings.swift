@@ -128,11 +128,14 @@ private struct OrgPage: View {
         .sheet(item: $request) { OrgJoinRequestSheet(org: org, request: $0) }
         .sheet(isPresented: $sendingJoin, onDismiss: { settingsTick += 1 }) {
             PasswordPromptSheet(title: "org.join.send", footer: "settings.confirmWithMasterPassword") { password in
+                let posted: Bool
                 do {
-                    try await model.sendJoinRequest(slot: model.accounts.activeSlot, password: password)
+                    posted = try await model.sendJoinRequest(slot: model.accounts.activeSlot, password: password)
                 } catch {
                     throw VaultError.other(OrgActionError(error).message)
                 }
+                // Nothing was posted (the organisation isn't readable yet): the sheet says so.
+                guard posted else { throw VaultError.other(String(localized: "org.join.notSent")) }
             }
         }
     }
@@ -195,7 +198,7 @@ private struct OrgPage: View {
                 Text(state.name).font(.title3.weight(.semibold))
             }
         }
-        if !settings.orgJoinPosted {
+        if !settings.orgJoinPosted, settings.orgJoinNonce != nil, org.state != nil {
             Section {
                 Button {
                     sendingJoin = true
@@ -206,7 +209,7 @@ private struct OrgPage: View {
             } footer: {
                 Text("org.join.sendFooter")
             }
-        } else {
+        } else if settings.orgJoinPosted {
             Section {
                 if let code = settings.orgJoinCode {
                     OrgCodeWords(words: code)
@@ -224,6 +227,12 @@ private struct OrgPage: View {
                 .accessibilityIdentifier("org.join.waiting")
             } footer: {
                 if let error = org.refreshError { Text(error.message) }
+            }
+        } else {
+            // Not posted and nothing to post from yet (no pin read): pull to try again.
+            Section {
+                Text("org.join.notSent")
+                    .accessibilityIdentifier("org.join.notSent")
             }
         }
     }
@@ -329,7 +338,7 @@ private struct OrgPage: View {
     private func dnsRecord(_ state: FfiOrgState) -> some View {
         Section {
             DisclosureGroup("org.dns.title") {
-                if let domain = settings.orgDomain {
+                if let domain = settings.orgInviteDomain ?? settings.orgDomain {
                     LabeledContent("org.dns.name") {
                         Text(verbatim: "_onepass.\(domain)").font(.callout.monospaced()).textSelection(.enabled)
                     }

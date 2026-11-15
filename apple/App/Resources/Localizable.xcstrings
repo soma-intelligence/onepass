@@ -35897,6 +35897,36 @@
         }
       }
     },
+    "org.join.notSent" : {
+      "comment" : "Joiner: the request could not be posted (the organisation is not readable yet).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your request to join can't be sent yet. Try again in a moment."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu solicitud para unirte aún no se puede enviar. Inténtalo de nuevo en un momento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ta demande d'adhésion ne peut pas encore être envoyée. Réessaie dans un moment."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua richiesta di adesione non può ancora essere inviata. Riprova tra un momento."
+          }
+        }
+      }
+    },
     "org.join.pasteLink" : {
       "comment" : "Join an organisation: field where the invitation link is pasted.",
       "localizations" : {
