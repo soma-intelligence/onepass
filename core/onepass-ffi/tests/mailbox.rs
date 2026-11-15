@@ -32,7 +32,8 @@ fn a_managed_mailbox_off_the_managed_plan_fails_closed() {
     // mailbox, so the setup stops (R16).
     let shim = Shim::start();
     let cred = shim.credential();
-    let err = mailbox_create_managed(shim.endpoint(), cred.seed, vec![7; 32]).unwrap_err();
+    let home = mailbox_create_managed(shim.endpoint(), cred.seed.clone(), vec![7; 32]).unwrap();
+    let err = mailbox_check_managed(shim.endpoint(), cred.seed, home.mailbox_id).unwrap_err();
     assert!(
         matches!(&err, OnePassError::Validation { field, .. } if field == "mailbox plan"),
         "{err:?}"

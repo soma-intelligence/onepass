@@ -1233,6 +1233,7 @@ mod lifecycle {
                 session: created.session,
                 keys,
                 client,
+                own_seed: mailbox_generate_credential().unwrap().seed,
             }
         }
 
@@ -1247,6 +1248,8 @@ mod lifecycle {
         session: Arc<Session>,
         keys: Keys,
         client: Arc<OrgClient>,
+        /// The member's own org mailbox credential, made before the post (R35).
+        own_seed: Vec<u8>,
     }
 
     impl Joiner {
@@ -1257,6 +1260,7 @@ mod lifecycle {
                 self.keys.half(),
                 invite.clone(),
                 name.into(),
+                self.own_seed.clone(),
                 NOW,
             )
         }
@@ -1323,12 +1327,13 @@ mod lifecycle {
         let posted = joiner.post(&invite, MARIE).unwrap();
         let words = posted.code_words.clone();
         assert_eq!(words.len(), 5);
-        // R27: the request names the member's own credential, not the link's.
+        // R27, R35: the request names the credential of the seed the app passed
+        // (its own, kept before the post), not the link's.
         let req = SignedJoinRequest::decode(&org.raw_requests()[0].1).unwrap();
         let link_key = Credential::from_seed(&invite.credential_seed)
             .unwrap()
             .public_key();
-        let own_key = Credential::from_seed(&posted.credential_seed)
+        let own_key = Credential::from_seed(&joiner.own_seed)
             .unwrap()
             .public_key();
         assert_ne!(req.body.mailbox_credential, link_key.to_bytes());
@@ -1652,7 +1657,6 @@ mod lifecycle {
     struct Member {
         invite: FfiOrgInvite,
         joiner: Joiner,
-        posted: FfiJoinPosted,
     }
 
     impl Member {
@@ -1664,7 +1668,7 @@ mod lifecycle {
         fn own_store(&self, org: &Org) -> OrgStore<FakeMailboxClient> {
             let mut c = org
                 .fake
-                .client(Credential::from_seed(&self.posted.credential_seed).unwrap());
+                .client(Credential::from_seed(&self.joiner.own_seed).unwrap());
             c.open(unhex(&self.invite.mailbox_id));
             OrgStore::new(c, org.org_id)
         }
@@ -1722,12 +1726,8 @@ mod lifecycle {
         fn member(&self, name: &str, roles: Vec<FfiOrgRole>) -> Member {
             let (_, invite) = self.invite(name, roles);
             let joiner = self.joiner(&invite);
-            let posted = joiner.post(&invite, name).unwrap();
-            Member {
-                invite,
-                joiner,
-                posted,
-            }
+            joiner.post(&invite, name).unwrap();
+            Member { invite, joiner }
         }
 
         /// A member accepted by the owner with `roles`.
@@ -2433,6 +2433,7 @@ mod lifecycle {
             Some(invite.account_id.clone()),
         )
         .unwrap();
+        let own_seed = mailbox_generate_credential().unwrap().seed;
         let posted = joiner
             .post_join_request(
                 account.session.clone(),
@@ -2440,6 +2441,7 @@ mod lifecycle {
                 keys.half(),
                 invite.clone(),
                 MARIE.into(),
+                own_seed.clone(),
                 NOW,
             )
             .unwrap();
@@ -2462,7 +2464,7 @@ mod lifecycle {
         let own = server
             .client(
                 invite.mailbox_id.clone(),
-                posted.credential_seed,
+                own_seed,
                 invite.org_id.clone(),
                 path("joiner"),
             )
@@ -2529,9 +2531,19 @@ mod lifecycle {
             .create_member_mailbox(cred.seed.clone(), token.clone())
             .unwrap();
         assert_ne!(home.mailbox_id, org.mailbox_id);
-        // One use: a second mailbox with the same token is refused.
+        org.server
+            .check_member_mailbox(cred.seed.clone(), home.mailbox_id.clone())
+            .unwrap();
+        // A retry re-checks the same mailbox (R36).
+        org.server
+            .check_member_mailbox(cred.seed, home.mailbox_id)
+            .unwrap();
+        // One use: a second mailbox with the same token is a clear refusal.
         let other = mailbox_generate_credential().unwrap();
-        assert!(org.server.create_member_mailbox(other.seed, token).is_err());
+        assert!(matches!(
+            org.server.create_member_mailbox(other.seed, token),
+            Err(OnePassError::Validation { field, .. }) if field == "member token"
+        ));
     }
 
     #[test]
@@ -2539,9 +2551,13 @@ mod lifecycle {
         let org = server_org();
         // Not a minted token: this org server gives the org plan.
         let cred = mailbox_generate_credential().unwrap();
+        let home = org
+            .server
+            .create_member_mailbox(cred.seed.clone(), vec![7; 32])
+            .unwrap();
         let err = org
             .server
-            .create_member_mailbox(cred.seed, vec![7; 32])
+            .check_member_mailbox(cred.seed, home.mailbox_id)
             .unwrap_err();
         assert!(
             matches!(&err, OnePassError::Validation { field, .. } if field == "mailbox plan"),

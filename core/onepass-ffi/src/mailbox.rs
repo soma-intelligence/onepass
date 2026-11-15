@@ -421,10 +421,11 @@ pub fn mailbox_create(
 pub(crate) const MANAGED_PLAN_MAX_CREDENTIALS: u16 = 32;
 
 /// Spends the one-use `managed` token (32 bytes, R32) to create the
-/// mailbox of `client`'s credential, then checks the server put it on the
-/// managed row (R16). Any other plan fails closed: the mailbox stays
-/// unused and the setup reports `Validation { field: "mailbox plan" }`
-/// (never `MailboxUnavailable`, which the apps retry as offline).
+/// mailbox of `client`'s credential, and opens it. No plan check here
+/// (`check_managed_mailbox`, R36): the app records the new mailbox first,
+/// so a reply lost between the two is re-checked, never created again. A
+/// token the server does not know (spent, expired, never minted) is
+/// `Validation { field: "member token" }`.
 pub(crate) fn create_managed_mailbox(
     client: &mut dyn MailboxApi,
     token: &[u8],
@@ -432,7 +433,23 @@ pub(crate) fn create_managed_mailbox(
     if token.len() != ORG_INVITE_TOKEN_LEN {
         return Err(invalid("member token"));
     }
-    let created = client.create(Some(token), LABEL)?;
+    let created = match client.create(Some(token), LABEL) {
+        Ok(c) => c,
+        Err(MailboxError::Server(ErrorCode::NotFound)) => {
+            return Err(OnePassError::Validation {
+                field: "member token".into(),
+                reason: "the server does not take this token (spent or expired)".into(),
+            });
+        }
+        Err(e) => return Err(e.into()),
+    };
+    Ok((created.mailbox_id, created.incarnation))
+}
+
+/// Checks that the open mailbox of `client` is on the managed row (R16).
+/// Any other plan fails closed with `Validation { field: "mailbox plan" }`
+/// (never `MailboxUnavailable`, which the apps retry as offline).
+pub(crate) fn check_managed_mailbox(client: &dyn MailboxApi) -> Result<(), OnePassError> {
     let info = client.info()?;
     if info.limits.max_credentials != MANAGED_PLAN_MAX_CREDENTIALS {
         return Err(OnePassError::Validation {
@@ -440,14 +457,15 @@ pub(crate) fn create_managed_mailbox(
             reason: "the server did not put this mailbox on the managed plan".into(),
         });
     }
-    Ok((created.mailbox_id, created.incarnation))
+    Ok(())
 }
 
 /// Create a managed member's own account mailbox on its organisation's
 /// server with the one-use `managed` token `token` (32 bytes: the join
 /// link's, or one the creator minted with `OrgClient::mint_member_token`),
-/// managed by the credential of `credential_seed`. Fails closed when the
-/// server does not put the mailbox on the managed plan (R16).
+/// managed by the credential of `credential_seed`. The app stores the
+/// mailbox id, then calls `mailbox_check_managed` before using it (R16,
+/// R36). A spent or unknown token is `Validation { field: "member token" }`.
 #[uniffi::export]
 pub fn mailbox_create_managed(
     endpoint: FfiMailboxEndpoint,
@@ -464,6 +482,22 @@ pub fn mailbox_create_managed(
         mailbox_id: bytes_hex(&mailbox_id),
         incarnation,
     })
+}
+
+/// Checks that mailbox `mailbox_id` (32 hex), made with
+/// `mailbox_create_managed`, is on the managed plan (R16): fails closed
+/// with `Validation { field: "mailbox plan" }` otherwise.
+#[uniffi::export]
+pub fn mailbox_check_managed(
+    endpoint: FfiMailboxEndpoint,
+    credential_seed: Vec<u8>,
+    mailbox_id: String,
+) -> Result<(), OnePassError> {
+    let seed = Zeroizing::new(credential_seed);
+    let mailbox = self::mailbox_id(&mailbox_id)?;
+    let mut client = MailboxClient::new(endpoint.into(), credential(&seed)?)?;
+    client.open(mailbox);
+    check_managed_mailbox(&client)
 }
 
 /// Join the mailbox a pairing grant names, with its enroll ticket

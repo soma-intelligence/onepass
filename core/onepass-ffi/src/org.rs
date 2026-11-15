@@ -696,12 +696,10 @@ pub struct FfiInviteLink {
 }
 
 /// What `post_join_request` returns: the join code (5 words) the member
-/// reads to the admin, and the seed of the member's own org mailbox
-/// credential (R27), for the keychain.
+/// reads to the admin.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct FfiJoinPosted {
     pub code_words: Vec<String>,
-    pub credential_seed: Vec<u8>,
 }
 
 /// A verified join request waiting for the admin.
@@ -1007,16 +1005,20 @@ impl OrgClient {
     /// The session must be the invited account (`Validation { field:
     /// "account" }`) of a managed genesis naming this org (`Validation {
     /// field: "org" }`) made on this device (R20, `Validation { field:
-    /// "device" }`). The request names the pinned fingerprint and a fresh
-    /// org mailbox credential for the member (R27): the link's credential
-    /// only reads, pins and posts, and never becomes the member's. Its seed
-    /// comes back for the app's keychain; once Active the member reopens
-    /// with it and calls `revoke_own_credential` on the link's client.
+    /// "device" }`). The request names the pinned fingerprint and the
+    /// member's own org mailbox credential, the one of `credential_seed`
+    /// (R27, R35): the app generates it (`mailbox_generate_credential`) and
+    /// keeps it in its keychain BEFORE posting, so a crash after the post
+    /// never loses the key admins grant; a repost passes the same seed. The
+    /// link's credential only reads, pins and posts, and never becomes the
+    /// member's. Once Active the member reopens with its own seed and calls
+    /// `revoke_own_credential` on the link's client.
     /// `display_name`: 1 to 64 bytes of UTF-8, no control or invisible
     /// character (`Validation { field: "display_name" }`). Posting again
-    /// replaces the request (with another credential). Returns the join
-    /// code, the 5 words the member reads to the admin, and the seed.
+    /// replaces the request. Returns the join code, the 5 words the member
+    /// reads to the admin.
     /// `NotFound` before `pin`.
+    #[allow(clippy::too_many_arguments)]
     pub fn post_join_request(
         &self,
         session: Arc<Session>,
@@ -1024,9 +1026,11 @@ impl OrgClient {
         pq: Arc<dyn FfiPqDeviceHalf>,
         invite: FfiOrgInvite,
         display_name: String,
+        credential_seed: Vec<u8>,
         now: i64,
     ) -> Result<FfiJoinPosted, OnePassError> {
         let classical = Zeroizing::new(classical);
+        let own = credential(&Zeroizing::new(credential_seed))?;
         if org_id_of(&invite.org_id)? != self.org_id {
             return Err(validation(
                 "org",
@@ -1079,7 +1083,6 @@ impl OrgClient {
             ));
         }
         let signer = Signer::with_keys(account, device_keys(&classical, pq)?, me)?;
-        let own = fresh_credential()?;
         let body = JoinRequestBody {
             format: ORG_FORMAT,
             org_id: OrgId(self.org_id),
@@ -1099,7 +1102,6 @@ impl OrgClient {
         store.put_join_request(account.0, signed.encode())?;
         Ok(FfiJoinPosted {
             code_words: code.into_iter().collect(),
-            credential_seed: own.seed().to_vec(),
         })
     }
 
