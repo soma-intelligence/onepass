@@ -73,6 +73,24 @@
     "allow-wifi-qr",
     "allow-site-icons",
     "allow-icon-image",
-    "allow-set-site-icons"
+    "allow-set-site-icons",
+    "allow-sync-status",
+    "allow-sync-now",
+    "allow-check-server",
+    "allow-enable-sync",
+    "allow-restore-kit",
+    "allow-rename-device",
+    "allow-revoke-device",
+    "allow-pair-state",
+    "allow-pair-host-start",
+    "allow-pair-host-approve",
+    "allow-pair-join-start",
+    "allow-pair-join-confirm",
+    "allow-pair-join-password",
+    "allow-pair-cancel",
+    "allow-read-kit-image",
+    "allow-kit-devices",
+    "allow-answer-kit-device",
+    "allow-claim-only-device"
   ]
 }

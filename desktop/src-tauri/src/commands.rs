@@ -19,7 +19,7 @@ use crate::secrets::DeviceSecrets;
 use crate::state::{AppState, CLIPBOARD_CLEAR_SECS, now};
 use crate::view::{self, FieldInput, ItemView, SummaryView, UiResult, VaultView};
 
-fn session(state: &AppState) -> UiResult<Arc<Session>> {
+pub(crate) fn session(state: &AppState) -> UiResult<Arc<Session>> {
     state.touch();
     state.session().ok_or_else(|| OnePassError::Locked.into())
 }
@@ -102,13 +102,18 @@ pub struct Created {
     pub secret_key: String,
 }
 
-fn device_name() -> String {
+pub(crate) fn device_name() -> String {
+    // Debug builds: the end-to-end test names its instances on one PC.
+    #[cfg(debug_assertions)]
+    if let Ok(n) = std::env::var("ONEPASS_DEVICE_NAME") {
+        return n;
+    }
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .unwrap_or_else(|_| "PC".into())
 }
 
-fn device_kind() -> FfiDeviceKind {
+pub(crate) fn device_kind() -> FfiDeviceKind {
     if cfg!(windows) {
         FfiDeviceKind::Windows
     } else {
@@ -119,7 +124,13 @@ fn device_kind() -> FfiDeviceKind {
 /// A new account on this device, with device keys (rotation v2) and the
 /// default Argon2id parameters. Undone if `device.bin` cannot be written.
 #[tauri::command]
-pub fn create_account(state: State<'_, AppState>, password: String) -> UiResult<Created> {
+pub fn create_account(
+    state: State<'_, AppState>,
+    password: String,
+    sync: Option<crate::sync_cmds::ChoiceInput>,
+) -> UiResult<Created> {
+    // "Où est rangé mon coffre ?": checked before anything is created.
+    let server = sync.map(crate::sync_cmds::server_of).transpose()?;
     let password = Zeroizing::new(password);
     if password.chars().count() < 10 {
         return Err(view::UiError {
@@ -157,6 +168,12 @@ pub fn create_account(state: State<'_, AppState>, password: String) -> UiResult<
         return Err(e.into());
     }
     state.set_session(created.session);
+    // The mailbox is made in the background (spec D.2, 3): the account is
+    // usable at once, on this PC; the setup resumes until it is done.
+    if let Some(server) = server {
+        crate::sync::set_backend(&state, &crate::sync::Backend::Pending { server })?;
+        state.sync.reset();
+    }
     Ok(Created {
         account_id: created.account_id,
         secret_key: created.secret_key,
@@ -1015,8 +1032,15 @@ pub struct AccountView {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceView {
+    pub id: String,
     pub name: String,
+    /// "windows", "phone", "mac"... (pairing::kind_key).
+    pub kind: &'static str,
+    /// "personal", "shared" or "public".
+    pub mode: &'static str,
     pub added_at: i64,
+    pub revoked: bool,
+    pub revoked_at: Option<i64>,
     pub this_device: bool,
 }
 
@@ -1032,6 +1056,15 @@ pub fn account(state: State<'_, AppState>) -> UiResult<AccountView> {
             .into_iter()
             .map(|d| DeviceView {
                 this_device: me.as_deref() == Some(d.id.as_str()),
+                kind: crate::pairing::kind_key(d.kind),
+                mode: match d.mode {
+                    FfiDeviceMode::Personal => "personal",
+                    FfiDeviceMode::Shared => "shared",
+                    FfiDeviceMode::Public => "public",
+                },
+                revoked: d.revoked,
+                revoked_at: d.revoked_at,
+                id: d.id,
                 name: d.name,
                 added_at: d.added_at,
             })
@@ -1204,7 +1237,9 @@ fn hwnd(window: &tauri::WebviewWindow) -> UiResult<isize> {
 
 /// Runs blocking work (Argon2id, a WinRT wait, a network fetch) off the
 /// event loop's thread.
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> UiResult<T> {
+pub(crate) async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> UiResult<T> {
     tauri::async_runtime::spawn_blocking(f)
         .await
         .map_err(|e| format!("task: {e}").into())
@@ -1351,7 +1386,10 @@ const MAX_IMPORT: u64 = 256 * 1024 * 1024;
 
 /// Checks the master password without opening a session (Argon2id, off the
 /// event loop's thread). `WrongPassword` when it is not the right one.
-async fn confirm_password(state: &AppState, password: Zeroizing<String>) -> UiResult<()> {
+pub(crate) async fn confirm_password(
+    state: &AppState,
+    password: Zeroizing<String>,
+) -> UiResult<()> {
     session(state)?;
     let secrets = state
         .load_secrets()?
@@ -1996,23 +2034,47 @@ pub fn set_vault_travel_safe(
 
 /// Takes the vaults that are not safe for travel off this device. The core
 /// refuses while a change of a leaving vault is not synced: the server copy
-/// is what comes back, so a vault never synced must not leave.
+/// is what comes back, so a vault never synced must not leave. A round runs
+/// first, so a change just made is pushed.
 #[tauri::command]
-pub fn enter_travel(state: State<'_, AppState>) -> UiResult<TravelView> {
-    let s = session(&state)?;
-    s.enter_travel()?;
-    travel_view(&s)
+pub async fn enter_travel(app: tauri::AppHandle) -> UiResult<TravelView> {
+    blocking(move || {
+        let state = tauri::Manager::state::<AppState>(&app);
+        let s = session(&state)?;
+        state.sync.sync_now_blocking(Duration::from_secs(60));
+        s.enter_travel()?;
+        travel_view(&s)
+    })
+    .await?
 }
 
-/// Brings the vaults back: the core checks what the sync fetched again.
+/// The store meta key of the private mailbox cursor (`onepass_sync::CURSOR_KEY`).
+const MAILBOX_CURSOR_KEY: &str = "mailbox.cursor";
+
+/// Brings the vaults back (TravelSettings.exit): the sync fetches from
+/// scratch (the cursor is forgotten), then the core checks what came back
+/// against the manifests this device saw last.
 #[tauri::command]
-pub fn exit_travel(state: State<'_, AppState>) -> UiResult<TravelView> {
-    let s = session(&state)?;
-    if !s.travel_status()?.exiting {
-        s.begin_travel_exit()?;
-    }
-    s.finish_travel_exit()?;
-    travel_view(&s)
+pub async fn exit_travel(app: tauri::AppHandle) -> UiResult<TravelView> {
+    blocking(move || {
+        let state = tauri::Manager::state::<AppState>(&app);
+        let s = session(&state)?;
+        if !s.travel_status()?.exiting {
+            s.begin_travel_exit()?;
+        }
+        {
+            let mut store =
+                onepass_core::sync::SyncStore::open(std::path::Path::new(&state.db_path()))
+                    .map_err(|_| OnePassError::Store)?;
+            store
+                .set_meta(MAILBOX_CURSOR_KEY, &[])
+                .map_err(|_| OnePassError::Store)?;
+        }
+        state.sync.sync_now_blocking(Duration::from_secs(120));
+        s.finish_travel_exit()?;
+        travel_view(&s)
+    })
+    .await?
 }
 
 // ---- duplicates ---------------------------------------------------------------------

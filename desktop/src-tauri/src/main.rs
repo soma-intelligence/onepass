@@ -11,15 +11,65 @@ mod device;
 mod dialog;
 mod hello;
 mod iconpack;
+mod pairing;
 mod prefs;
 mod secrets;
 mod shell;
 mod state;
+mod sync;
+mod sync_cmds;
+#[cfg(all(debug_assertions, feature = "test-mailbox"))]
+mod testmailbox;
 mod view;
 
 use std::time::Duration;
 
 use tauri::Manager;
+
+/// Every command that writes to the store is followed by a sync round
+/// (debounced, sync.rs), wherever the UI calls it from.
+fn after_writes<F>(handler: F) -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static
+where
+    F: Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static,
+{
+    move |invoke| {
+        let command = invoke.message.command().to_owned();
+        let app = invoke.message.webview().app_handle().clone();
+        let handled = handler(invoke);
+        if sync::WRITES.contains(&command.as_str()) {
+            app.state::<state::AppState>().sync.changed();
+        }
+        handled
+    }
+}
+
+/// Debug builds with `test-mailbox` and ONEPASS_TEST_MAILBOX=1: the test
+/// mailbox runs in this process and stands for the OnePass server. Its port
+/// is ONEPASS_TEST_MAILBOX_PORT (else any free one); its URL and the path of
+/// its CA (written next to the vault) are printed.
+#[cfg(all(debug_assertions, feature = "test-mailbox"))]
+fn start_test_mailbox(dir: &std::path::Path) {
+    if std::env::var("ONEPASS_TEST_MAILBOX").as_deref() != Ok("1") {
+        return;
+    }
+    let port = std::env::var("ONEPASS_TEST_MAILBOX_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(0);
+    match testmailbox::start(port) {
+        Ok(base) => {
+            let ca = dir.join("test-mailbox-ca.pem");
+            let _ = std::fs::write(&ca, testmailbox::CA_PEM);
+            println!("test mailbox: {base}");
+            println!("test mailbox CA: {}", ca.display());
+            sync::set_debug_hosted(sync::Server {
+                base_url: base,
+                ca_pem: Some(testmailbox::CA_PEM.into()),
+            });
+        }
+        Err(e) => eprintln!("test mailbox: {e}"),
+    }
+}
 
 fn main() {
     tauri::Builder::default()
@@ -36,8 +86,11 @@ fn main() {
             }
             std::fs::create_dir_all(&dir)?;
             state::purge_opened();
-            let state = state::AppState::new(dir)?;
+            let state = state::AppState::new(dir.clone())?;
             app.manage(state);
+            #[cfg(all(debug_assertions, feature = "test-mailbox"))]
+            start_test_mailbox(&dir);
+            sync::spawn(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 // Like FLAG_SECURE on Android: the window stays out of
                 // screenshots and screen sharing (WDA_EXCLUDEFROMCAPTURE).
@@ -61,7 +114,7 @@ fn main() {
                 window.state::<state::AppState>().lock();
             }
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(after_writes(tauri::generate_handler![
             commands::status,
             commands::create_account,
             commands::unlock,
@@ -128,7 +181,25 @@ fn main() {
             commands::site_icons,
             commands::icon_image,
             commands::set_site_icons,
-        ])
+            sync_cmds::sync_status,
+            sync_cmds::sync_now,
+            sync_cmds::check_server,
+            sync_cmds::enable_sync,
+            sync_cmds::restore_kit,
+            sync_cmds::rename_device,
+            sync_cmds::revoke_device,
+            sync_cmds::pair_state,
+            sync_cmds::pair_host_start,
+            sync_cmds::pair_host_approve,
+            sync_cmds::pair_join_start,
+            sync_cmds::pair_join_confirm,
+            sync_cmds::pair_join_password,
+            sync_cmds::pair_cancel,
+            sync_cmds::read_kit_image,
+            sync_cmds::kit_devices,
+            sync_cmds::answer_kit_device,
+            sync_cmds::claim_only_device,
+        ]))
         .run(tauri::generate_context!())
         .expect("OnePass failed to start");
 }

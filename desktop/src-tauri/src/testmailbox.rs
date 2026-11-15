@@ -225,7 +225,15 @@ fn signer(req: &Req, clients: &mut Registry) -> Result<[u8; 16], MailboxError> {
         let created = (req.method == "POST" && req.target == "/v1/mailboxes")
             .then(|| decode::<CreateMailbox>(&req.body).ok())
             .flatten()
-            .map(|c| CredentialKey::from_bytes(c.public_key));
+            .map(|c| CredentialKey::from_bytes(c.public_key))
+            // An enrollment is signed by the new credential its ticket
+            // names (the fake checks the ticket itself).
+            .or_else(|| {
+                (req.method == "POST" && req.target.ends_with("/credentials"))
+                    .then(|| decode::<Enroll>(&req.body).ok())
+                    .flatten()
+                    .map(|e| CredentialKey::from_bytes(e.ticket.ticket.new_credential_pub))
+            });
         let key = fake
             .credential_key(keyid)
             .or(created)

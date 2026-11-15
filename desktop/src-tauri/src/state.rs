@@ -29,6 +29,10 @@ pub struct AppState {
     pub pending_import: Mutex<Option<(String, Zeroizing<Vec<u8>>)>>,
     /// Have I Been Pwned ranges fetched this session (breach.rs).
     pub ranges: Arc<crate::breach::RangeCache>,
+    /// The sync thread's handle (sync.rs).
+    pub sync: crate::sync::SyncEngine,
+    /// The pairing in progress on this PC, either side (pairing.rs).
+    pub pairing: Mutex<Option<crate::pairing::Pairing>>,
 }
 
 pub fn now() -> i64 {
@@ -44,6 +48,8 @@ impl AppState {
             pending_export: Mutex::new(None),
             pending_import: Mutex::new(None),
             ranges: Arc::default(),
+            sync: crate::sync::SyncEngine::default(),
+            pairing: Mutex::new(None),
             dir,
             sealer: secrets::sealer(),
             session: Mutex::new(None),
@@ -106,6 +112,15 @@ impl AppState {
     pub fn set_session(&self, s: Arc<Session>) {
         self.touch();
         *self.session.lock().unwrap_or_else(PoisonError::into_inner) = Some(s);
+        // Registered under this PC's name and type (a restored device
+        // starts as the default "Appareil"), as the Apple apps do at unlock.
+        if let Some(s) = self.session()
+            && register_if_needed(&s)
+        {
+            self.sync.changed();
+        }
+        // Unlocked: a round with the session (rebase, health, home check).
+        self.sync.kick();
     }
 
     /// Drops the keys: every later call needs an unlock.
@@ -175,4 +190,28 @@ pub fn language() -> &'static str {
             _ => "en",
         }
     }
+}
+
+/// Registers this device in the signed list when it has no entry yet, or
+/// only the default one (`VaultSession.needsRegistration`). True when it
+/// wrote.
+fn register_if_needed(s: &Session) -> bool {
+    use onepass_ffi::{FfiDeviceKind, FfiDeviceMode};
+    let needs = match s.this_device_id() {
+        None => true,
+        Some(_) => s
+            .devices()
+            .ok()
+            .and_then(|d| d.into_iter().find(|d| d.is_this_device))
+            .is_some_and(|me| {
+                !me.revoked && me.name == "Appareil" && me.kind == FfiDeviceKind::Other
+            }),
+    };
+    needs
+        && s.register_this_device(
+            crate::commands::device_name(),
+            crate::commands::device_kind(),
+            FfiDeviceMode::Personal,
+        )
+        .is_ok()
 }

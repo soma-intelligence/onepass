@@ -1864,3 +1864,76 @@ input.check-box {
 .empty-state .glyph {
   margin: 12px auto;
 }
+
+/* ---- sync, restore and pairing --------------------------------------------------------- */
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+  margin: 12px auto;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+.sas {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 16px 0;
+}
+.sas span {
+  width: 44px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--card, rgba(127, 127, 127, 0.12));
+  font: 600 30px/1 ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.pair-code {
+  font: 600 38px/1.1 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 3px;
+  user-select: none;
+}
+.pair-center {
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+}
+.pair-body {
+  min-height: 360px;
+}
+.sync-choice .self-host {
+  margin-top: 14px;
+}
+.sync-choice textarea,
+.self-host textarea {
+  width: 100%;
+  resize: vertical;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+}
+.bar-text.where {
+  align-self: flex-start;
+  font-size: 13px;
+}
+.sync-status .row-title {
+  white-space: normal;
+}
+#host-sas {
+  letter-spacing: 6px;
+  font-size: 22px;
+}

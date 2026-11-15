@@ -132,7 +132,7 @@ interface Report {
 interface Account {
   accountId: string;
   name: string;
-  devices: { name: string; addedAt: number; thisDevice: boolean }[];
+  devices: DeviceInfo[];
 }
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -502,8 +502,8 @@ const introCards = (): { icon: IconName; title: string; body: string }[] => [
     body: t("Pas de compte chez nous. Ton coffre est chiffré sur ton appareil, et même nous ne pouvons pas l'ouvrir.",
       "No account with us. Your vault is encrypted on your device, and even we can't open it.") },
   { icon: "shield_check", title: t("Sur tous tes appareils", "On all your devices"),
-    body: t("Ton coffre reste sur ce PC ; la synchronisation avec tes autres appareils arrive sur Windows.",
-      "Your vault stays on this PC; syncing with your other devices is coming to Windows.") },
+    body: t("Ton coffre chiffré se synchronise avec tes autres appareils, sans compte chez nous.",
+      "Your encrypted vault syncs with your other devices, with no account with us.") },
 ];
 
 function intro(step: number): HTMLElement {
@@ -527,7 +527,6 @@ function intro(step: number): HTMLElement {
 }
 
 function welcome(): HTMLElement {
-  const notYet = () => toast(t("Pas encore disponible sur Windows : il faut d'abord la synchronisation entre appareils.", "Not available on Windows yet: it needs device sync first."));
   const option = (ic: IconName, color: string, title: string, detail: string, onclick: () => void) =>
     h("button", { class: "row", onclick }, tile(ic, color, 36), h("span", { class: "row-text" }, h("span", { class: "row-title" }, title), h("span", { class: "row-sub" }, detail)), icon("chevron_right", 18, "chev"));
   return h(
@@ -543,8 +542,8 @@ function welcome(): HTMLElement {
         "div",
         { class: "card list-card" },
         option("vault_new", "var(--accent)", t("Créer un coffre", "Create a Vault"), t("Première fois sur OnePass", "First time on OnePass"), () => mount(create())),
-        option("person_add", "var(--blue)", t("Ajouter cet appareil", "Add This Device"), t("Avec un QR code, depuis ton autre appareil", "With a QR code from your other device"), notYet),
-        option("restore", "var(--orange)", t("Restaurer avec mon Emergency Kit", "Restore with My Emergency Kit"), t("Aucun autre appareil sous la main", "No other device at hand"), notYet),
+        option("person_add", "var(--blue)", t("Ajouter cet appareil", "Add This Device"), t("Avec un code, depuis ton autre appareil", "With a code from your other device"), () => mount(joinScreen())),
+        option("restore", "var(--orange)", t("Restaurer avec mon Emergency Kit", "Restore with My Emergency Kit"), t("Aucun autre appareil sous la main", "No other device at hand"), () => mount(restoreScreen())),
       ),
     ),
   );
@@ -586,6 +585,11 @@ function create(): HTMLElement {
     if (p) meterBox.append(meter(await call<number>("strength", { password: p }).catch(() => 0)));
   });
   const go = h("button", { class: "capsule prominent", type: "submit" }, t("Créer un coffre", "Create a Vault"));
+  // "Où est rangé mon coffre ?" (D.2, point 1): the OnePass server unless the user picks theirs.
+  const whereLink = h("button", { class: "bar-text where", type: "button", id: "sync-choice" });
+  const whereLabel = () => (whereLink.textContent = t(`Où est rangé mon coffre ? ${choiceName(syncChoice)}`, `Where Is My Vault Kept? ${choiceName(syncChoice)}`));
+  whereLabel();
+  whereLink.addEventListener("click", () => syncChoiceSheet(syncChoice, (c) => ((syncChoice = c), whereLabel())));
   const generate = h(
     "button",
     {
@@ -625,7 +629,7 @@ function create(): HTMLElement {
         go.disabled = true;
         go.textContent = t("Création du coffre...", "Creating Vault...");
         try {
-          const created = await call<{ secretKey: string }>("create_account", { password: a.input.value });
+          const created = await call<{ secretKey: string }>("create_account", { password: a.input.value, sync: syncChoice });
           a.input.value = b.input.value = "";
           if (name.value.trim()) await call("set_profile_name", { name: name.value.trim() }).catch(() => {});
           mount(secretKeyScreen(created.secretKey));
@@ -646,6 +650,7 @@ function create(): HTMLElement {
     h("p", { class: "footnote" }, t("Conseil : cinq mots tirés au hasard (« tapis-orage-girafe-violon-nuage ») sont plus solides et plus faciles à retenir qu'un mot compliqué. « Générer » en tire cinq pour toi.",
       "Tip: five random words (“carpet-storm-giraffe-violin-cloud”) are stronger and easier to remember than one complicated word. “Generate” picks five for you.")),
     h("div", { class: "buttons-row" }, generate, go),
+    whereLink,
     h("button", { class: "bar-text", type: "button", onclick: () => mount(welcome()) }, t("Retour", "Back")),
   );
   queueMicrotask(() => a.input.focus());
@@ -2183,11 +2188,7 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
         h("p", { class: "footnote" }, t("Cet identifiant est imprimé sur ton Emergency Kit.", "This ID is printed on your Emergency Kit."))];
     }
     case "devices": {
-      const acc = await call<Account>("account");
-      return [head, h("div", { class: "card list-card" }, ...acc.devices.map((d) => h("div", { class: "row static" }, tile("key", "#008CB3", 28),
-        h("span", { class: "row-text" }, h("span", { class: "row-title" }, d.name + (d.thisDevice ? t(" (cet appareil)", " (this device)") : "")),
-          h("span", { class: "row-sub" }, t("Ajouté le ", "Added ") + dateTime(d.addedAt)))))),
-        h("p", { class: "footnote" }, t("Ajouter un autre appareil demande la synchronisation, qui arrive sur Windows.", "Adding another device needs sync, which is coming to Windows."))];
+      return devicesPage(head, redraw);
     }
     case "vaults":
       return [head, h("div", { class: "card list-card" },
@@ -2203,7 +2204,7 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
       return note(t("Le remplissage dans les navigateurs (extension et pont natif) arrive sur Windows. En attendant, copie une valeur depuis l'élément : elle est effacée du presse-papiers après 90 secondes.",
         "Filling in browsers (extension and native bridge) is coming to Windows. Meanwhile, copy a value from the item: it is cleared from the clipboard after 90 seconds."));
     case "sync":
-      return note(t("Ton coffre reste sur ce PC. La synchronisation chiffrée avec tes autres appareils arrive sur Windows.", "Your vault stays on this PC. Encrypted sync with your other devices is coming to Windows."));
+      return syncPage(head, redraw);
     case "contacts":
     case "family":
       return note(t("Le partage avec tes contacts et ta famille demande la synchronisation, qui arrive sur Windows.", "Sharing with your contacts and family needs sync, which is coming to Windows."));
@@ -3282,8 +3283,8 @@ interface TravelView {
 
 function travelError(e: unknown): string {
   const d = (e as UiError)?.detail ?? "";
-  if (d.includes("unsynced changes")) return t("Synchronise d'abord : les coffres qui partent doivent être à jour sur le serveur pour revenir. La synchronisation arrive sur Windows ; d'ici là, rien ne quitte ce PC.",
-    "Sync first: the vaults that leave must be up to date on the server to come back. Sync is coming to Windows; until then, nothing leaves this PC.");
+  if (d.includes("unsynced changes")) return t("Synchronise d'abord : les coffres qui partent doivent être à jour sur le serveur pour revenir. Active la synchronisation dans Réglages > Sync, puis réessaie.",
+    "Sync first: the vaults that leave must be up to date on the server to come back. Turn on sync in Settings > Sync, then try again.");
   if (d.includes("nothing leaves")) return t("Rien ne quitterait cet appareil.", "Nothing would leave this device.");
   return message(e);
 }
@@ -3300,6 +3301,7 @@ async function travelPage(head: HTMLElement, redraw: () => void): Promise<Node[]
     ? h("button", { class: "capsule prominent", type: "button", onclick: async () => {
         try {
           await call("exit_travel");
+          await refresh(null);
           toast(t("De retour sur cet appareil", "Back on This Device"));
           redraw();
         } catch (e) {
@@ -3315,6 +3317,7 @@ async function travelPage(head: HTMLElement, redraw: () => void): Promise<Node[]
         confirmSheet(t("Activer le Travel Mode ?", "Turn on Travel Mode?") + " " + (lines.join(" ") || t("Rien ne quitterait cet appareil.", "Nothing would leave this device.")), t("Activer", "Turn On"), async () => {
           try {
             await call("enter_travel");
+            await refresh(null);
             redraw();
           } catch (e) {
             err.textContent = travelError(e);
@@ -3342,8 +3345,8 @@ async function travelPage(head: HTMLElement, redraw: () => void): Promise<Node[]
   ];
   return [head,
     h("div", { class: "card list-card" }, status), h("div", { class: "buttons-row left" }, button), err,
-    h("p", { class: "footnote" }, t("Les coffres retirés restent sur le serveur et sont vérifiés au retour. Sur Windows, le Travel Mode demande la synchronisation : sans elle, OnePass refuse de retirer un coffre qui ne pourrait pas revenir.",
-      "Removed vaults stay on the server and are checked on return. On Windows, Travel Mode needs sync: without it, OnePass refuses to remove a vault that could not come back.")),
+    h("p", { class: "footnote" }, t("Les coffres retirés restent sur le serveur et sont vérifiés au retour. OnePass refuse de retirer un coffre qui ne serait pas encore synchronisé.",
+      "Removed vaults stay on the server and are checked on return. OnePass refuses to remove a vault that isn't synced yet.")),
     h("div", { class: "caps" }, t("Éléments", "Items")),
     itemRows.length ? h("div", { class: "card list-card" }, ...itemRows) : h("p", { class: "secondary" }, t("Aucun élément marqué.", "No marked items.")),
     h("p", { class: "footnote" }, t("Se règle dans chaque élément : Caché en voyage, ou Protection renforcée en voyage.", "Set in each item: Hidden in Travel Mode, or Extra Protection in Travel Mode.")),
@@ -3366,6 +3369,631 @@ function iconsToggle(on: boolean, redraw: () => void): HTMLElement {
   return h("label", { class: "toggle-row", for: "site-icons" }, h("span", {}, t("Icônes des sites", "Website Icons")), box);
 }
 
+
+// ---- sync, Emergency Kit restore, devices and pairing ---------------------------------------
+// The mailbox path of the Apple apps (SyncSettings, SyncChoiceSheet, the
+// RestoreStep, DevicesSettings, HostDeviceSheet, JoinCodeSteps), with their
+// strings.
+
+interface SyncView {
+  backend: "local" | "pending" | "mailbox";
+  server: { hosted: boolean; host: string } | null;
+  state: string;
+  lastSync: number | null;
+  detail: string | null;
+}
+type SyncChoice = { kind: "hosted" } | { kind: "selfHost"; url: string; caPem: string | null };
+
+/** "Où est rangé mon coffre ?" for the next account made here (D.2: the OnePass server by default). */
+let syncChoice: SyncChoice = { kind: "hosted" };
+let syncView: SyncView | null = null;
+/** Redraws the open Settings > Sync page when the status changes. */
+let syncRedraw: (() => void) | null = null;
+
+const hostedName = (): string => t("Serveur OnePass", "OnePass Server");
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+const choiceName = (c: SyncChoice): string => (c.kind === "hosted" ? hostedName() : hostOf(c.url));
+const serverLabel = (v: SyncView): string => (!v.server ? "" : v.server.hosted ? hostedName() : v.server.host);
+
+/** `https`, a host, no user info, query or fragment (`MailboxEndpoints.validate`; the backend checks again). */
+function validUrl(text: string): boolean {
+  const s = text.trim();
+  if (!s || s.length > 256 || /[\s\\]/.test(s)) return false;
+  try {
+    const u = new URL(s);
+    return u.protocol === "https:" && !!u.hostname && !u.username && !u.password && !u.search && !u.hash && !s.includes("?") && !s.includes("#");
+  } catch {
+    return false;
+  }
+}
+
+/** "Synchronisé il y a 3 minutes" (`SyncSettings.agoText`). */
+function agoText(at: number): string {
+  const secs = Date.now() / 1000 - at;
+  if (secs < 45) return t("Synchronisé à l'instant", "Synced Just Now");
+  const rtf = new Intl.RelativeTimeFormat(t("fr", "en"), { numeric: "always" });
+  const mins = Math.round(secs / 60);
+  const rel = mins < 60 ? rtf.format(-mins, "minute") : mins < 1440 ? rtf.format(-Math.round(mins / 60), "hour") : rtf.format(-Math.round(mins / 1440), "day");
+  return t(`Synchronisé ${rel}`, `Synced ${rel}`);
+}
+
+/** The status line of Settings > Sync, its symbol and its tone. */
+function syncLine(v: SyncView): { text: string; icon: IconName; tone: string } {
+  switch (v.state) {
+    case "off":
+      return { text: t("Synchronisation désactivée", "Sync off"), icon: "refresh", tone: "secondary" };
+    case "waitingUnlock":
+      return { text: t("Déverrouille ton coffre pour continuer.", "Unlock your vault to continue."), icon: "lock", tone: "secondary" };
+    case "setupOffline":
+      return { text: t("Impossible de joindre le serveur. Vérifie ta connexion puis réessaie.", "Can't reach the server. Check your connection and try again."), icon: "wifi", tone: "orange" };
+    case "setupFailed":
+      return { text: t("La synchronisation n'a pas abouti, nouvel essai bientôt.", "Sync didn't complete. Trying again soon."), icon: "warning", tone: "red" };
+    case "idle":
+      return v.lastSync
+        ? { text: agoText(v.lastSync), icon: "check_circle", tone: "" }
+        : { text: t("En attente de la première synchronisation", "Waiting for First Sync"), icon: "refresh", tone: "" };
+    case "syncing":
+      return { text: t("Synchronisation en cours", "Syncing"), icon: "refresh", tone: "" };
+    case "offline":
+      return { text: t("Hors ligne", "Offline"), icon: "wifi", tone: "orange" };
+    case "retrying":
+      return { text: t("La synchronisation reprendra dans un instant", "Sync will resume in a moment"), icon: "warning", tone: "red" };
+    case "clockSkew":
+      return { text: t("Vérifie l'heure de l'appareil", "Check the device's time"), icon: "warning", tone: "red" };
+    case "waiting":
+      return { text: t("Synchronisation en attente du serveur", "Sync waiting for the server"), icon: "upload", tone: "secondary" };
+    case "refused":
+      return { text: t(`Données refusées : ${v.detail ?? ""}`, `Data refused: ${v.detail ?? ""}`), icon: "shield_lock", tone: "red" };
+    case "unreadable":
+      return { text: t("Un enregistrement du serveur est illisible", "A record from the server can't be read"), icon: "warning", tone: "red" };
+    case "homeMoved":
+      return { text: t("Ton coffre a changé de serveur", "Your vault moved to another server"), icon: "warning", tone: "red" };
+    default:
+      return { text: v.state, icon: "info", tone: "secondary" };
+  }
+}
+
+function statusRow(v: SyncView): HTMLElement {
+  const line = syncLine(v);
+  const tint = line.tone === "red" ? "var(--red)" : line.tone === "orange" ? "var(--orange)" : line.tone === "secondary" ? "var(--secondary)" : "var(--accent)";
+  const el = h("div", { class: "row static sync-status", id: "sync-status", "data-state": v.state }, icon(line.icon, 22), h("span", { class: "row-text" }, h("span", { class: "row-title" }, line.text)));
+  (el.firstChild as SVGElement).style.color = tint;
+  return el;
+}
+
+/** "Où est rangé mon coffre ?": the OnePass server (default) or the user's own, with "Tester". */
+function syncChoiceSheet(current: SyncChoice, onDone: (c: SyncChoice) => void, title = t("Où est rangé mon coffre ?", "Where Is My Vault Kept?")): void {
+  let option: "hosted" | "selfHost" = current.kind;
+  const url = h("input", { id: "sync-url", placeholder: t("URL de base (https://...)", "Base URL (https://...)"), spellcheck: false, autocomplete: "off", value: current.kind === "selfHost" ? current.url : "" });
+  const ca = h("textarea", { id: "sync-ca", class: "mono", rows: 4, spellcheck: false, placeholder: t("Autorité de certification en PEM (facultatif)", "Certificate authority in PEM (optional)") }) as HTMLTextAreaElement;
+  if (current.kind === "selfHost") ca.value = current.caPem ?? "";
+  const bad = h("p", { class: "footnote error-text" });
+  const result = h("span", { class: "footnote secondary", id: "sync-test-result" });
+  const test = h("button", { class: "capsule", type: "button", id: "sync-test" }, t("Tester", "Test"));
+  const selfBox = h("div", { class: "self-host" }, h("div", { class: "card" }, h("div", { class: "field-box" }, url), h("div", { class: "field-box" }, ca)), h("div", { class: "buttons-row left" }, test, result), bad);
+  const rows = h("div", { class: "card list-card" });
+  const pem = () => ca.value.trim() || null;
+  const s = sheet(title, {
+    action: t("Terminé", "Done"),
+    onAction: (sh) => {
+      if (option === "selfHost") {
+        if (!validUrl(url.value)) {
+          bad.textContent = t("L'adresse doit commencer par https://.", "The address must start with https://.");
+          return;
+        }
+        onDone({ kind: "selfHost", url: url.value.trim(), caPem: pem() });
+      } else {
+        onDone({ kind: "hosted" });
+      }
+      sh.close();
+    },
+  });
+  s.dialog.classList.add("sync-choice");
+  const draw = () => {
+    const row = (value: "hosted" | "selfHost", name: string, detail: string | null) =>
+      h("button", { class: "row", type: "button", "aria-pressed": String(option === value), id: `sync-option-${value}`, onclick: () => ((option = value), draw()) },
+        h("span", { class: "row-text" }, h("span", { class: "row-title" }, name), detail ? h("span", { class: "row-sub" }, detail) : null),
+        option === value ? icon("check", 20, "accent") : null);
+    rows.replaceChildren(
+      row("hosted", hostedName(), t("Hébergé par Soma Labs, chiffré sur ton appareil avant l'envoi", "Hosted by Soma Labs, encrypted on your device before it's sent")),
+      row("selfHost", t("Mon serveur", "My Server"), null),
+    );
+    selfBox.hidden = option !== "selfHost";
+  };
+  url.addEventListener("input", () => {
+    bad.textContent = url.value && !validUrl(url.value) ? t("L'adresse doit commencer par https://.", "The address must start with https://.") : "";
+    result.textContent = "";
+  });
+  test.addEventListener("click", async () => {
+    if (!validUrl(url.value)) {
+      bad.textContent = t("L'adresse doit commencer par https://.", "The address must start with https://.");
+      return;
+    }
+    test.disabled = true;
+    result.textContent = "…";
+    const ok = await call<boolean>("check_server", { url: url.value.trim(), caPem: pem() }).catch(() => false);
+    result.textContent = ok ? t("Le serveur répond.", "The server answers.") : t("Le serveur ne répond pas. Vérifie l'adresse.", "The server doesn't answer. Check the address.");
+    test.disabled = false;
+  });
+  draw();
+  s.body.append(rows, selfBox);
+}
+
+// ---- Settings > Sync -----------------------------------------------------------------------
+
+async function syncPage(head: HTMLElement, redraw: () => void): Promise<Node[]> {
+  const v = await call<SyncView>("sync_status");
+  syncView = v;
+  syncRedraw = redraw;
+  const row = (label: string, value: string, id?: string) => h("div", { class: "row static", id }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, label)), h("span", { class: "secondary" }, value));
+  if (v.backend === "local") {
+    const on = h("button", { class: "capsule prominent", type: "button", id: "enable-sync" }, t("Activer la synchronisation", "Turn On Sync"));
+    const err = h("div", { class: "error", role: "alert" });
+    on.addEventListener("click", () =>
+      syncChoiceSheet({ kind: "hosted" }, async (c) => {
+        try {
+          await call("enable_sync", { choice: c });
+          redraw();
+        } catch (e) {
+          err.textContent = e && (e as UiError).code === "BadUrl" ? t("Cette adresse de serveur n'est pas valide. Elle doit commencer par https://.", "This server address isn't valid. It must start with https://.") : message(e);
+        }
+      }),
+    );
+    return [head, h("div", { class: "card list-card" }, statusRow(v)), h("p", { class: "footnote" }, t("Ton coffre reste sur ce PC. Avec la synchronisation, il est chiffré sur cet appareil avant d'être envoyé à tes autres appareils.", "Your vault stays on this PC. With sync, it is encrypted on this device before it goes to your other devices.")),
+      h("div", { class: "buttons-row left" }, on), err];
+  }
+  const now = h("button", { class: "row", type: "button", id: "sync-now", disabled: v.state === "syncing" }, h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Synchroniser maintenant", "Sync Now"))));
+  now.addEventListener("click", async () => {
+    now.disabled = true;
+    await call("sync_now").catch((e) => toast(message(e)));
+    redraw();
+  });
+  const footer = v.state === "refused" ? t("Rien de ce que le serveur a envoyé n'a été utilisé.", "Nothing the server sent was used.")
+    : v.state === "waiting" ? t("Le serveur a une version plus ancienne. OnePass renvoie la sienne, rien à faire.", "The server has an older version. OnePass sends its own back, nothing to do.")
+    : t("Chiffré avant de quitter l'appareil.", "Encrypted before it leaves the device.");
+  return [head, h("div", { class: "card list-card" }, row(t("Synchronisé avec", "Synced With"), serverLabel(v), "sync-backend"), statusRow(v), now), h("p", { class: "footnote" }, footer)];
+}
+
+// ---- Settings > Devices --------------------------------------------------------------------
+
+interface DeviceInfo {
+  id: string;
+  name: string;
+  kind: string;
+  mode: string;
+  addedAt: number;
+  revoked: boolean;
+  revokedAt: number | null;
+  thisDevice: boolean;
+}
+
+const kindName = (k: string): string =>
+  ({ phone: "iPhone", tablet: "iPad", mac: "Mac", vision: "Apple Vision Pro", android: "Android", windows: "Windows", linux: "Linux" } as Record<string, string>)[k] ?? t("Autre appareil", "Other device");
+const modeName = (m: string): string => (m === "shared" ? t("Partagé", "Shared") : m === "public" ? "Public" : t("Personnel", "Personal"));
+const shortDate = (s: number): string => new Date(s * 1000).toLocaleDateString(t("fr-FR", "en-US"), { day: "numeric", month: "short", year: "numeric" });
+
+async function devicesPage(head: HTMLElement, redraw: () => void): Promise<Node[]> {
+  const acc = await call<Account & { devices: DeviceInfo[] }>("account");
+  const sv = await call<SyncView>("sync_status").catch(() => null);
+  const rows = acc.devices.map((d) => {
+    const sub = d.revoked
+      ? t(`${kindName(d.kind)} · Retiré le ${d.revokedAt ? shortDate(d.revokedAt) : "?"}`, `${kindName(d.kind)} · Removed on ${d.revokedAt ? shortDate(d.revokedAt) : "?"}`)
+      : t(`${kindName(d.kind)} · ${modeName(d.mode)} · ajouté le ${shortDate(d.addedAt)}`, `${kindName(d.kind)} · ${modeName(d.mode)} · added on ${shortDate(d.addedAt)}`);
+    const b = h("button", { class: "row device-row", type: "button", "data-name": d.name },
+      tile("key", d.revoked ? "#8E8E93" : "#008CB3", 28),
+      h("span", { class: "row-text" }, h("span", { class: "row-title" }, d.name), h("span", { class: "row-sub" }, sub)),
+      d.thisDevice ? h("span", { class: "secondary" }, t("Cet appareil", "This device")) : null,
+      icon("more", 18, "chev"));
+    b.addEventListener("click", () => {
+      if (d.revoked) return;
+      const entries: MenuEntry[] = [{ label: t("Renommer", "Rename"), icon: "edit", action: () => renameDevice(d, redraw) }];
+      if (!d.thisDevice) entries.push({ label: t("Retirer cet appareil", "Remove This Device"), icon: "remove_circle", destructive: true, action: () => revokeDevice(d, redraw) });
+      menu(b, entries);
+    });
+    return b;
+  });
+  // Devices restored with the Emergency Kit (spec 7.5): trusted, or refused, from here.
+  const kit = await call<{ awaitingTrust: boolean; asking: { id: string; name: string; kind: string; nameInUse: boolean; rotated: boolean }[] }>("kit_devices").catch(() => null);
+  const askPassword = (title: string, action: string, run: (password: string) => Promise<void>) => {
+    const pw = secretInput("kit-pw", t("Mot de passe maître", "Master Password"), "current-password");
+    const err = h("div", { class: "error", role: "alert" });
+    const s = sheet(title, { action, onAction: async (sh) => {
+      try {
+        await run(pw.input.value);
+        sh.close();
+        redraw();
+      } catch (e) {
+        err.textContent = message(e);
+      }
+    } });
+    s.body.append(pw.box, h("p", { class: "footnote" }, t("Confirme avec ton mot de passe maître.", "Confirm with your master password.")), err);
+    queueMicrotask(() => pw.input.focus());
+  };
+  const kitRows = (kit?.asking ?? []).map((d) => h("div", { class: "row static kit-row" }, tile("restore", "var(--orange)", 28),
+    h("span", { class: "row-text" }, h("span", { class: "row-title" }, d.name), h("span", { class: "row-sub" },
+      d.rotated ? t("A changé les clés sans toi", "Changed the keys without you")
+        : `${kindName(d.kind)} · ${t("restauré par Kit", "restored with the Kit")}${d.nameInUse ? t(" · porte le même nom qu'un de tes appareils", " · has the same name as one of your devices") : ""}`)),
+    d.rotated ? null : h("button", { class: "bar-text", type: "button", onclick: () => askPassword(t(`Faire confiance à ${d.name} ?`, `Trust ${d.name}?`), t("Faire confiance", "Trust"),
+      (password) => call("answer_kit_device", { id: d.id, trust: true, password })) }, t("Faire confiance", "Trust")),
+    d.rotated ? null : h("button", { class: "bar-text destructive", type: "button", onclick: () => void call("answer_kit_device", { id: d.id, trust: false, password: "" }).then(redraw).catch((e) => toast(message(e))) }, t("Refuser", "Refuse"))));
+  const kitSection: Node[] = kitRows.length
+    ? [h("div", { class: "caps" }, t("Restaurés par Kit", "Restored with the Kit")), h("div", { class: "card list-card" }, ...kitRows),
+      h("p", { class: "footnote" }, t("Un appareil restauré avec ton Emergency Kit demande ta confiance. Refuse-le si ce n'est pas toi.", "A device restored with your Emergency Kit asks for your trust. Refuse it if it isn't you."))]
+    : [];
+  const claim: Node[] = kit?.awaitingTrust
+    ? [h("div", { class: "card list-card spaced" }, h("button", { class: "row", type: "button", id: "claim-only", onclick: () => askPassword(t("Je n'ai plus d'autre appareil", "I No Longer Have Another Device"), t("Confirmer", "Confirm"),
+        (password) => call("claim_only_device", { password })) }, icon("key", 22, "accent"), h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Je n'ai plus d'autre appareil", "I No Longer Have Another Device"))))),
+      h("p", { class: "footnote" }, t("Ce PC a été restauré avec ton Emergency Kit : un autre de tes appareils doit lui faire confiance. Sans autre appareil, confirme-le ici.", "This PC was restored with your Emergency Kit: another of your devices must trust it. Without another device, confirm it here."))]
+    : [];
+  const synced = sv?.backend === "mailbox";
+  const add = h("button", { class: "row", type: "button", id: "add-device", disabled: !synced, onclick: () => hostSheet(redraw) }, icon("person_add", 22, "accent"), h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Ajouter un appareil", "Add a Device"))));
+  return [head, h("div", { class: "caps" }, t("Sur ton compte", "On Your Account")), h("div", { class: "card list-card" }, ...rows), h("p", { class: "footnote" }, t("Liste signée par ton compte.", "List signed by your account.")),
+    ...kitSection,
+    ...claim,
+    h("div", { class: "card list-card spaced" }, add),
+    h("p", { class: "footnote" }, synced
+      ? t("Sur le nouvel appareil : « Ajouter cet appareil », puis saisis son code.", "On the new device: “Add This Device”, then type its code.")
+      : t("Connecte-toi à Internet pour finir la mise en place de la synchronisation.", "Connect to the internet to finish setting up sync."))];
+}
+
+function renameDevice(d: DeviceInfo, redraw: () => void): void {
+  const input = h("input", { id: "device-name", value: d.name });
+  const err = h("div", { class: "error", role: "alert" });
+  const s = sheet(t("Renommer", "Rename"), {
+    action: t("Renommer", "Rename"),
+    onAction: async (sh) => {
+      try {
+        await call("rename_device", { id: d.id, name: input.value });
+        sh.close();
+        redraw();
+      } catch (e) {
+        err.textContent = message(e);
+      }
+    },
+  });
+  s.body.append(h("div", { class: "card" }, h("div", { class: "field-box" }, input)), err);
+  queueMicrotask(() => input.select());
+}
+
+function revokeDevice(d: DeviceInfo, redraw: () => void): void {
+  const pw = secretInput("revoke-pw", t("Mot de passe maître", "Master Password"), "current-password");
+  const err = h("div", { class: "error", role: "alert" });
+  const s = sheet(t(`Retirer ${d.name} ?`, `Remove ${d.name}?`), {
+    action: t("Retirer cet appareil", "Remove This Device"),
+    onAction: async (sh) => {
+      try {
+        await call("revoke_device", { id: d.id, password: pw.input.value });
+        sh.close();
+        toast(t(`${d.name} est retiré`, `${d.name} is removed`));
+        redraw();
+      } catch (e) {
+        err.textContent = message(e);
+      }
+    },
+  });
+  (s.dialog.querySelector(".bar-text.bold") as HTMLElement).classList.add("destructive");
+  s.body.append(h("p", { class: "secondary" }, t("Il efface ses données OnePass dès qu'il voit la liste des appareils. Tu pourras l'ajouter de nouveau plus tard.", "It erases its OnePass data as soon as it sees the device list. You can add it again later.")),
+    pw.box, h("p", { class: "footnote" }, t("Confirme avec ton mot de passe maître.", "Confirm with your master password.")), err);
+  queueMicrotask(() => pw.input.focus());
+}
+
+// ---- pairing ---------------------------------------------------------------------------------
+
+interface PairView {
+  role: "host" | "join";
+  step: string;
+  code: string | null;
+  qr: { modules: boolean[]; width: number } | null;
+  expiresAt: number | null;
+  sas: string | null;
+  peerName: string | null;
+  peerKind: string | null;
+  peerConfirmed: boolean;
+  wrongPassword: boolean;
+  error: string | null;
+  detail: string | null;
+}
+
+function pairError(v: PairView): string {
+  switch (v.error) {
+    case "noMailbox":
+      return t("Connecte-toi à Internet pour finir la mise en place de la synchronisation.", "Connect to the internet to finish setting up sync.");
+    case "refused":
+      return t("Ce code n'est pas valable. Vérifie-le, ou demande-en un nouveau sur ton autre appareil.", "This code isn't valid. Check it, or show a new one on your other device.");
+    case "codeRejected":
+      return t("Les codes n'étaient pas identiques : rien n'a été partagé.", "The codes didn't match: nothing was shared.");
+    case "connectionLost":
+      return t("La connexion avec ton autre appareil a été coupée.", "The connection with your other device was lost.");
+    case "timeout":
+      return t("Ton autre appareil n'a pas répondu à temps. Réessaie.", "Your other device didn't answer in time. Try again.");
+    case "offline":
+      return t("Impossible de joindre le serveur. Vérifie ta connexion puis réessaie.", "Can't reach the server. Check your connection and try again.");
+    default:
+      return v.detail ?? t("L'appairage n'a pas abouti", "Pairing didn't go through");
+  }
+}
+
+/** The 6 digits, as `PairingCodeView` draws them. */
+const sasView = (code: string): HTMLElement => h("div", { class: "sas", id: "pair-sas" }, ...code.replace(/\D/g, "").split("").map((c) => h("span", {}, c)));
+
+/** "Ajouter un appareil" (HostDeviceSheet): the code on screen, then the 6 digits, the master password and the grant. */
+function hostSheet(after: () => void): void {
+  let stopped = false;
+  const s = sheet(t("Ajouter un appareil", "Add a Device"), { cancel: t("Annuler", "Cancel") });
+  s.dialog.classList.add("pair-sheet");
+  const body = h("div", { class: "pair-body" });
+  s.body.append(body);
+  const sasIn = h("input", { id: "host-sas", inputmode: "numeric", maxlength: 7, placeholder: "123456", autocomplete: "off", class: "mono center-text" });
+  const pw = secretInput("host-pw", t("Mot de passe maître", "Master Password"), "current-password");
+  const err = h("div", { class: "error", role: "alert" });
+  const approve = h("button", { class: "capsule prominent", type: "button", id: "host-approve" }, t("Les codes sont identiques", "The codes match"));
+  approve.addEventListener("click", async () => {
+    err.textContent = "";
+    approve.disabled = true;
+    try {
+      await call("pair_host_approve", { sas: sasIn.value, password: pw.input.value });
+      pw.input.value = "";
+    } catch (e) {
+      const code = (e as UiError).code;
+      err.textContent = code === "SasMismatch" ? t("Ce n'est pas le code du nouvel appareil. S'il est différent, quelqu'un d'autre essaie de se connecter.", "That isn't the new device's code. If it differs, someone else is trying to connect.") : message(e);
+    }
+    approve.disabled = false;
+  });
+  const differ = h("button", { class: "bar-text destructive", type: "button", id: "host-differ", onclick: () => void call("pair_cancel").then(() => s.close()) }, t("Ils sont différents", "They're different"));
+  let shown = "";
+  const draw = (v: PairView) => {
+    const key = v.step + (v.code ?? "") + (v.peerConfirmed ? "c" : "");
+    if (key === shown) return;
+    shown = key;
+    const center = (...c: Child[]) => h("div", { class: "column pair-center" }, ...c);
+    switch (v.step) {
+      case "connecting":
+        body.replaceChildren(center(h("div", { class: "spinner" }), h("p", { class: "secondary" }, t("Connexion…", "Connecting…"))));
+        break;
+      case "hosting": {
+        const left = Math.max(0, (v.expiresAt ?? 0) - Math.floor(Date.now() / 1000));
+        body.replaceChildren(center(
+          h("h2", {}, t("Sur le nouvel appareil", "On the new device")),
+          h("p", { class: "secondary center-text" }, t("Choisis « Ajouter cet appareil », puis saisis ce code.", "Choose “Add This Device”, then type this code.")),
+          v.qr ? h("div", { class: "qr-large" }, qrSvg(v.qr.modules, v.qr.width, 220)) : null,
+          h("p", { class: "footnote secondary" }, t("Ou saisis ce code", "Or type this code")),
+          h("div", { class: "pair-code", id: "host-code" }, v.code ?? ""),
+          h("p", { class: "footnote secondary" }, t(`Un nouveau code s'affiche toutes les 30 s. Celui-ci reste valable ${left} s.`, `A new code shows every 30 s. This one stays valid for ${left} s.`)),
+          h("p", { class: "footnote secondary" }, t("Ne montre ce code qu'à ton propre appareil, devant toi.", "Show this code only to your own device, in front of you.")),
+        ));
+        break;
+      }
+      case "comparing":
+      case "waitingForPeer":
+        body.replaceChildren(
+          h("div", { class: "card list-card" }, h("div", { class: "row static", id: "host-peer" }, tile("key", "var(--accent)", 36),
+            h("span", { class: "row-text" }, h("span", { class: "row-title bold" }, v.peerName ?? ""), h("span", { class: "row-sub" }, t(`${kindName(v.peerKind ?? "")} · demande un accès ${modeName("personal")}`, `${kindName(v.peerKind ?? "")} · asks for ${modeName("personal")} access`))))),
+          h("p", { class: "footnote" }, t("Il recevra tout ton compte et ta Secret Key, puis te demandera ton mot de passe maître.", "It will receive your whole account and your Secret Key, then ask for your master password.")),
+          h("div", { class: "caps" }, t("Code de vérification", "Verification code")),
+          h("p", { class: "secondary" }, t("Cet appareil n'est pas sur ton réseau : tape les 6 chiffres affichés sur le nouvel appareil.", "This device isn't on your network: type the 6 digits shown on the new device.")),
+          h("div", { class: "card" }, h("div", { class: "field-box" }, sasIn)),
+          pw.box,
+          h("p", { class: "footnote" }, t("Confirme avec ton mot de passe maître.", "Confirm with your master password.")),
+          err,
+          v.step === "waitingForPeer"
+            ? h("p", { class: "secondary", id: "host-waiting" }, t("En attente du nouvel appareil... Confirme que les codes sont identiques sur le nouvel appareil.", "Waiting for the new device... Confirm the codes match on the new device."))
+            : h("div", { class: "buttons-row left" }, approve, differ),
+        );
+        if (v.step === "comparing") queueMicrotask(() => sasIn.focus());
+        break;
+      case "granting":
+        body.replaceChildren(center(h("div", { class: "spinner" }), h("p", { class: "secondary" }, t("Envoi...", "Sending..."))));
+        break;
+      case "done":
+        body.replaceChildren(center(icon("check_circle", 56, "green"), h("h2", { id: "host-done" }, t("Appareil ajouté", "Device added")), h("p", { class: "secondary center-text" }, t("Il te demande maintenant ton mot de passe maître.", "It now asks for your master password."))));
+        break;
+      default:
+        body.replaceChildren(center(icon("warning", 56, "red"), h("h2", {}, t("L'appairage n'a pas abouti", "Pairing didn't go through")), h("p", { class: "secondary center-text", id: "host-error" }, pairError(v))));
+    }
+  };
+  const poll = async () => {
+    if (stopped || !s.dialog.isConnected) {
+      stopped = true;
+      return;
+    }
+    const st = await call<{ active: boolean; view: PairView | null }>("pair_state").catch(() => null);
+    if (st?.view) draw(st.view);
+    if (st?.view && (st.view.step === "done" || st.view.step === "failed")) {
+      (s.dialog.querySelector(".sheet-bar .bar-text") as HTMLElement).textContent = "OK";
+      after();
+      return;
+    }
+    if (st?.view?.step === "hosting") shown = "";
+    window.setTimeout(poll, 500);
+  };
+  s.dialog.addEventListener("close", () => {
+    stopped = true;
+    void call("pair_cancel");
+  });
+  void call("pair_host_start").then(poll).catch((e) => {
+    body.replaceChildren(h("p", { class: "error" }, message(e)));
+  });
+}
+
+/** "Ajouter cet appareil" (JoinCodeSteps): type the code, compare the digits, then the master password. */
+function joinScreen(): HTMLElement {
+  const code = h("input", { id: "join-code", placeholder: "K7QM-4XPR", autocomplete: "off", spellcheck: false, class: "mono" });
+  const err = h("div", { class: "error", role: "alert" });
+  const server = h("button", { class: "bar-text", type: "button", id: "join-server" });
+  let choice: SyncChoice = { kind: "hosted" };
+  const label = () => (server.textContent = t(`Serveur : ${choiceName(choice)}`, `Server: ${choiceName(choice)}`));
+  label();
+  server.addEventListener("click", () => syncChoiceSheet(choice, (c) => ((choice = c), label())));
+  const go = h("button", { class: "capsule prominent", type: "submit", id: "join-go" }, t("Continuer", "Continue"));
+  const pane = h("div", { class: "column left" });
+  const form = h("form", {
+    class: "column left",
+    onsubmit: async (ev: Event) => {
+      ev.preventDefault();
+      err.textContent = "";
+      if (!code.value.trim()) return;
+      go.disabled = true;
+      try {
+        await call("pair_join_start", { code: code.value, server: choice });
+        void follow();
+      } catch (e) {
+        err.textContent = (e as UiError).code === "BadCode" ? t("Ce code n'est pas valable. Vérifie-le, ou demande-en un nouveau sur ton autre appareil.", "This code isn't valid. Check it, or show a new one on your other device.") : message(e);
+        go.disabled = false;
+      }
+    },
+  },
+    h("h1", { class: "big" }, t("Saisis le code", "Type the code")),
+    h("p", { class: "secondary" }, t("Sur ton autre appareil : Réglages > Appareils > Ajouter un appareil. Le code à 8 caractères s'affiche sous le QR code.", "On your other device: Settings > Devices > Add a Device. The 8-character code shows under the QR code.")),
+    h("label", { class: "caps", for: "join-code" }, t("Code d'appairage", "Pairing code")),
+    h("div", { class: "field-box" }, code),
+    err,
+    h("div", { class: "buttons-row" }, go),
+    server,
+    h("button", { class: "bar-text", type: "button", onclick: () => mount(welcome()) }, t("Retour", "Back")),
+  );
+  pane.append(form);
+  const pw = secretInput("join-pw", t("Mot de passe maître", "Master Password"), "current-password");
+  let shown = "";
+  const cancel = h("button", { class: "bar-text", type: "button", onclick: () => void call("pair_cancel").then(() => mount(welcome())) }, t("Annuler", "Cancel"));
+  const follow = async (): Promise<void> => {
+    const st = await call<{ active: boolean; view: PairView | null }>("pair_state").catch(() => null);
+    const v = st?.view;
+    if (!v) return;
+    const key = v.step + (v.wrongPassword ? "!" : "");
+    if (key !== shown) {
+      shown = key;
+      const title = (a: string, b?: string): Node[] => keep(h("h1", { class: "big" }, a), b ? h("p", { class: "secondary" }, b) : null);
+      switch (v.step) {
+        case "connecting":
+          pane.replaceChildren(...title(t("Connexion à ton autre appareil", "Connecting to Your Other Device")), h("div", { class: "spinner" }), cancel);
+          break;
+        case "comparing": {
+          const yes = h("button", { class: "capsule prominent", type: "button", id: "join-match", onclick: () => void call("pair_join_confirm") }, t("Les codes sont identiques", "The codes match"));
+          const no = h("button", { class: "bar-text destructive", type: "button", id: "join-differ", onclick: () => void call("pair_cancel").then(() => mount(welcome())) }, t("Ils sont différents", "They're different"));
+          pane.replaceChildren(...title(t("Compare les codes", "Compare the codes"), t("Le même code doit s'afficher sur ton autre appareil. S'il est différent, quelqu'un d'autre essaie de se connecter.", "The same code must show on your other device. If it differs, someone else is trying to connect.")),
+            sasView(v.sas ?? ""), h("div", { class: "buttons-row" }, yes, no));
+          break;
+        }
+        case "waitingForApproval":
+          pane.replaceChildren(...title(t("En attente de ton autre appareil", "Waiting for your other device"), t("Confirme les codes sur ton autre appareil, puis valide avec ton mot de passe maître.", "Confirm the codes on your other device, then approve with your master password.")), h("div", { class: "spinner" }), cancel);
+          break;
+        case "password":
+        case "importing": {
+          const perr = h("div", { class: "error", role: "alert" }, v.wrongPassword ? t("Mot de passe incorrect. Tu peux réessayer.", "Incorrect password. You can try again.") : "");
+          const ok = h("button", { class: "capsule prominent", type: "submit", id: "join-unlock", disabled: v.step === "importing" }, v.step === "importing" ? t("Déverrouillage...", "Unlocking...") : t("Déverrouiller", "Unlock"));
+          const f = h("form", { class: "column left", onsubmit: (ev: Event) => {
+            ev.preventDefault();
+            if (!pw.input.value) return;
+            void call("pair_join_password", { password: pw.input.value });
+            pw.input.value = "";
+          } }, ...title(t("Ton mot de passe maître", "Your master password"), t("Ton autre appareil a envoyé ton compte. Saisis ton mot de passe maître pour l'ouvrir sur ce PC.", "Your other device sent your account. Enter your master password to open it on this PC.")), pw.box, perr, h("div", { class: "buttons-row" }, ok));
+          pane.replaceChildren(f);
+          queueMicrotask(() => pw.input.focus());
+          break;
+        }
+        case "done":
+          if (v.error === "enrollFailed") toast(t("Ton compte est sur ce PC, mais la synchronisation n'a pas pu être mise en place : ajoute de nouveau cet appareil plus tard.", "Your account is on this PC, but sync could not be set up: add this device again later."));
+          void route();
+          return;
+        default:
+          pane.replaceChildren(...title(t("L'appairage n'a pas abouti", "Pairing didn't go through")), h("p", { class: "error", id: "join-error" }, pairError(v)), h("button", { class: "capsule", type: "button", onclick: () => void call("pair_cancel").then(() => mount(joinScreen())) }, t("Recommencer", "Start Over")));
+          return;
+      }
+    }
+    window.setTimeout(() => void follow(), 400);
+  };
+  queueMicrotask(() => code.focus());
+  return h("div", { class: "center" }, pane);
+}
+
+// ---- Emergency Kit restore (RestoreStep) ----------------------------------------------------
+
+function restoreScreen(): HTMLElement {
+  const key = h("input", { id: "restore-key", placeholder: "A3-XXXXXX-XXXXXX-...", autocomplete: "off", spellcheck: false, class: "mono" });
+  const pw = secretInput("restore-pw", t("Mot de passe maître", "Master Password"), "current-password");
+  const err = h("div", { class: "error", role: "alert" });
+  let choice: SyncChoice = { kind: "hosted" };
+  const server = h("button", { class: "bar-text", type: "button", id: "restore-server" });
+  const label = () => (server.textContent = t(`Serveur : ${choiceName(choice)}`, `Server: ${choiceName(choice)}`));
+  label();
+  server.addEventListener("click", () => syncChoiceSheet(choice, (c) => ((choice = c), label()), t("Mon serveur", "My Server")));
+  const go = h("button", { class: "capsule prominent", type: "submit", id: "restore-go" }, t("Déverrouiller", "Unlock"));
+  // The kit's QR code from an image (a scan, a screenshot of the PDF): the key and a self-host's server.
+  const scan = h("button", { class: "bar-text", type: "button", id: "restore-scan" }, t("Lire le QR code du kit dans une image…", "Read the Kit's QR Code from an Image…"));
+  scan.addEventListener("click", async () => {
+    err.textContent = "";
+    try {
+      const kit = await call<{ secretKey: string; server: string | null } | null>("read_kit_image");
+      if (!kit) return;
+      key.value = kit.secretKey;
+      if (kit.server) {
+        choice = { kind: "selfHost", url: kit.server, caPem: null };
+        label();
+      }
+      pw.input.focus();
+    } catch (e) {
+      err.textContent = (e as UiError).code === "NoKit" ? t("Aucun QR code d'Emergency Kit dans cette image.", "No Emergency Kit QR code in this image.") : message(e);
+    }
+  });
+  const form = h("form", {
+    class: "column left",
+    onsubmit: async (ev: Event) => {
+      ev.preventDefault();
+      err.textContent = "";
+      if (!key.value.trim() || !pw.input.value) return;
+      go.disabled = true;
+      go.textContent = t("Recherche du compte...", "Looking for Your Account...");
+      const password = pw.input.value;
+      pw.input.value = "";
+      try {
+        await call("restore_kit", { secretKey: key.value, password, server: choice });
+        key.value = "";
+        await route();
+      } catch (e) {
+        const code = (e as UiError).code;
+        err.textContent = code === "NotFound" ? t("Aucun compte trouvé pour cette Secret Key. Vérifie-la, ou indique ton serveur.", "No account found for this Secret Key. Check it, or enter your server.")
+          : code === "Offline" ? t("Impossible de joindre le serveur. Vérifie ta connexion puis réessaie.", "Can't reach the server. Check your connection and try again.")
+          : code === "BadKey" ? t("Cette Secret Key n'est pas valide. Vérifie-la sur ton kit.", "This Secret Key isn't valid. Check it on your kit.")
+          : code === "WrongPassword" ? t("Mot de passe incorrect. Tu peux réessayer.", "Incorrect password. You can try again.")
+          : code === "OutdatedKit" ? t("Ce kit n'est plus à jour : utilise le dernier Emergency Kit imprimé.", "This kit is out of date: use the latest Emergency Kit you printed.")
+          : message(e);
+        go.disabled = false;
+        go.textContent = t("Déverrouiller", "Unlock");
+      }
+    },
+  },
+    h("h1", { class: "big" }, t("Utiliser ton Emergency Kit", "Use Your Emergency Kit")),
+    h("p", { class: "secondary" }, t("Tape la Secret Key imprimée sur ton kit. Minuscules, espaces et tirets oubliés sont acceptés.", "Type the Secret Key printed on your kit. Lowercase letters, spaces and missing dashes are fine.")),
+    h("label", { class: "caps", for: "restore-key" }, "Secret Key"),
+    h("div", { class: "field-box" }, key),
+    scan,
+    h("label", { class: "caps", for: "restore-pw" }, t("Mot de passe maître", "Master Password")),
+    pw.box,
+    err,
+    h("div", { class: "buttons-row" }, go),
+    server,
+    h("button", { class: "bar-text", type: "button", onclick: () => mount(welcome()) }, t("Retour", "Back")),
+  );
+  queueMicrotask(() => key.focus());
+  return h("div", { class: "center" }, form);
+}
+
+void listen<SyncView>("sync-status", (e) => {
+  syncView = e.payload;
+  const page = document.querySelector("#sync-status");
+  if (page && syncRedraw) syncRedraw();
+});
+
+void listen("sync-changed", () => {
+  // A round brought changes: the lists and the open item show them.
+  if (document.querySelector(".shell")) void refresh(ui.selected).catch(() => {});
+});
 
 // ---- keyboard and start ------------------------------------------------------------------------------
 
