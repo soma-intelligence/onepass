@@ -70,6 +70,8 @@ class SitePackError(Exception):
 
 
 def _host_allowed(host, domains):
+    if "%" in host:
+        return False
     return any(host == d or host.endswith("." + d) for d in domains)
 
 

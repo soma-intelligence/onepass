@@ -59,11 +59,28 @@ fn bad(what: &'static str) -> Error {
     Error::InvalidFormat(what)
 }
 
+/// A site key or additional domain: lower case, at least two labels of 1 to 63 characters of
+/// `[a-z0-9-]` (alphanumeric at both ends), not a bare IP-like string, and never a public
+/// suffix itself (`com`, `co.uk`, `github.io`), because it joins the recipe URL allow-list.
 fn domain_ok(d: &str) -> bool {
-    !d.is_empty()
-        && d.len() <= MAX_DOMAIN_LEN
-        && d.bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
+    if d.len() > MAX_DOMAIN_LEN || d.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return false;
+    }
+    let mut labels = 0;
+    for label in d.split('.') {
+        let b = label.as_bytes();
+        let edge = |c: u8| c.is_ascii_lowercase() || c.is_ascii_digit();
+        if b.is_empty()
+            || b.len() > 63
+            || !edge(b[0])
+            || !edge(b[b.len() - 1])
+            || !b.iter().all(|&c| edge(c) || c == b'-')
+        {
+            return false;
+        }
+        labels += 1;
+    }
+    labels >= 2 && psl::domain_str(d).is_some()
 }
 
 fn verified_ok(v: Option<&Value>) -> bool {
@@ -139,10 +156,9 @@ fn string_list(v: Option<&Value>) -> Option<Vec<String>> {
 
 fn parse_site(site: &Map<String, Value>, domain: &str) -> Option<PackSite> {
     let twofa = string_list(site.get("twofa"))?;
-    let additional_domains = string_list(site.get("additional_domains"))?;
-    if !additional_domains.iter().all(|d| domain_ok(d)) {
-        return None;
-    }
+    // A bad additional domain is dropped alone: it never joins the allow-list, and the site stays.
+    let mut additional_domains = string_list(site.get("additional_domains"))?;
+    additional_domains.retain(|d| domain_ok(d));
     let passkey = match site.get("passkey") {
         None => None,
         Some(Value::String(s)) if s == "signin" => Some(PasskeyLevel::Signin),

@@ -64,6 +64,7 @@ class Recipes(unittest.TestCase):
         reasons = {n: " ".join(p) for n, p in self.check("invalid")}
         self.assertIn("not https", reasons["goto-http"])
         self.assertIn("not on the site's domains", reasons["goto-lookalike"])
+        self.assertIn("not on the site's domains", reasons["goto-percent-host"])
         self.assertIn("destructive", reasons["click-delete-fr"])
         self.assertIn("final verify", reasons["click-verify-final"])
         self.assertIn("must end with expect_qr", reasons["totp-ends-without-expect-qr"])

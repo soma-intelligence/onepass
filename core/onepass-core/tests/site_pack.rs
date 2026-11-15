@@ -109,6 +109,7 @@ fn goto_host_rules() {
     assert!(recipe(SetupKind::Totp, goto("https://user@example.com/a")).is_err());
     assert!(recipe(SetupKind::Totp, goto("https://evil.io\\@example.com/")).is_err());
     assert!(recipe(SetupKind::Totp, goto("http://example.com/a")).is_err());
+    assert!(recipe(SetupKind::Totp, goto("https://evil.io%2f.example.com/a")).is_err());
     let long = format!("https://example.com/{}", "a".repeat(2040));
     assert!(recipe(SetupKind::Totp, goto(&long)).is_err());
 }
@@ -422,6 +423,7 @@ fn invalid_fixtures_fail_for_their_own_reason() {
         ("goto-http", "goto url"),
         ("goto-lookalike", "goto url"),
         ("goto-other-domain", "goto url"),
+        ("goto-percent-host", "goto url"),
         ("text-entry", "unknown step"),
         ("thirteen-steps", "more than 12"),
         ("timeout-61", "timeout_s"),
@@ -436,5 +438,57 @@ fn invalid_fixtures_fail_for_their_own_reason() {
         let reason =
             run_recipe(&fixtures().join(format!("recipes/invalid/{name}.json"))).unwrap_err();
         assert!(reason.contains(part), "{name}: {reason}");
+    }
+}
+
+fn pack_with_additional(key: &str, extra: &str) -> onepass_core::site_pack::SitePack {
+    let pack = json!({"format":1,"version":7,"sites":{
+        key: {
+            "additional_domains": [extra],
+            "setup_totp": {
+                "url": "https://example.com/s",
+                "verified": {"date":"2026-11-20","browser":"firefox"},
+                "steps": [{"do":"goto","url":"https://evil.example.org/x"},{"do":"expect_qr"}]
+            }
+        },
+        "safe.net": {"twofa": ["totp"]}
+    }});
+    parse(&serde_json::to_vec(&pack).unwrap()).unwrap()
+}
+
+#[test]
+fn public_suffix_additional_domains_do_not_widen_the_allow_list() {
+    for extra in [
+        "com",
+        "co.uk",
+        "github.io",
+        "org",
+        "a..b",
+        "1.2.3.4",
+        "-a.com",
+        "a-.com",
+    ] {
+        let pack = pack_with_additional("example.com", extra);
+        let site = &pack.sites["example.com"];
+        assert!(site.additional_domains.is_empty(), "{extra} was accepted");
+        // The recipe goes to evil.example.org: only a widened allow-list could pass it.
+        assert!(
+            site.setup_totp.as_ref().unwrap().recipe.is_none(),
+            "{extra} widened it"
+        );
+        assert!(pack.sites.contains_key("safe.net"));
+    }
+    // A fine additional domain still works, and a recipe goto to it passes.
+    let pack = pack_with_additional("example.com", "example.org");
+    let setup = pack.sites["example.com"].setup_totp.as_ref().unwrap();
+    assert!(setup.recipe.is_some());
+}
+
+#[test]
+fn public_suffix_site_key_is_skipped() {
+    for key in ["co.uk", "com", "github.io", "localhost", "1.2.3.4"] {
+        let pack = json!({"format":1,"version":7,"sites":{key: {"twofa":["totp"]}, "ok.com": {}}});
+        let pack = parse(&serde_json::to_vec(&pack).unwrap()).unwrap();
+        assert_eq!(pack.sites.keys().collect::<Vec<_>>(), ["ok.com"], "{key}");
     }
 }

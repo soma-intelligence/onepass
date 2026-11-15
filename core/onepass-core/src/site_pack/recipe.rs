@@ -130,7 +130,7 @@ pub fn url_allowed(url: &str, domains: &[&str]) -> bool {
         return false;
     }
     let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-    if authority.contains(['@', ':', '\\', '[', ']']) {
+    if authority.contains(['@', ':', '\\', '[', ']', '%']) {
         return false;
     }
     let host = authority.to_ascii_lowercase();
