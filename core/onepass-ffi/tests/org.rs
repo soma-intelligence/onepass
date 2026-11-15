@@ -798,6 +798,9 @@ mod lifecycle {
         armed: AtomicBool,
         /// The next grant fails (`Offline`), nothing granted.
         fail_grant: AtomicBool,
+        /// A file made unreadable once a grant went through (the device
+        /// then cannot keep what it bound).
+        after_grant: Option<PathBuf>,
     }
 
     impl FailRoster {
@@ -883,7 +886,13 @@ mod lifecycle {
             if self.fail_grant.swap(false, Ordering::SeqCst) {
                 return Err(MailboxError::Offline);
             }
-            self.inner.grant(public_key, role, put_kinds, label)
+            let granted = self.inner.grant(public_key, role, put_kinds, label)?;
+            #[cfg(unix)]
+            if let Some(path) = &self.after_grant {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o000)).unwrap();
+            }
+            Ok(granted)
         }
 
         fn set_role(
@@ -1083,6 +1092,7 @@ mod lifecycle {
             inner: fake.client(Credential::from_seed(&cred.seed).unwrap()),
             armed: AtomicBool::new(true),
             fail_grant: AtomicBool::new(false),
+            after_grant: None,
         };
         let first = draft.publish_with_client(
             Box::new(client),
@@ -1463,7 +1473,7 @@ mod lifecycle {
         // Another display name under the old signature.
         let mut forged = honest.clone();
         forged.body.display_name = "Admin".into();
-        org.store()
+        org.invite_store(&invite)
             .put_join_request(account, forged.encode())
             .unwrap();
         assert_eq!(creator.join_requests().unwrap(), vec![]);
@@ -1476,13 +1486,13 @@ mod lifecycle {
             ..honest.body.clone()
         };
         let signed = sign_join_request(body, &joiner.keys.core()).unwrap();
-        org.store()
+        org.invite_store(&invite)
             .put_join_request(account, signed.encode())
             .unwrap();
         assert_eq!(creator.join_requests().unwrap(), vec![]);
 
         // The honest one again is shown again.
-        org.store()
+        org.invite_store(&invite)
             .put_join_request(account, honest.encode())
             .unwrap();
         assert_eq!(creator.join_requests().unwrap().len(), 1);
@@ -2766,10 +2776,12 @@ mod lifecycle {
         let org = publish(&FakeMailbox::org());
         let x = org.accepted("Xavier", vec![FfiOrgRole::Admin]);
         let x_account: [u8; 16] = unhex(&x.account());
-        // A manager rewrites its own request with garbage: no request
+        // A manager deletes its own request and writes garbage over the
+        // tombstone (it may not overwrite it live, R42): no request
         // verifies for it any more.
-        x.own_store(&org)
-            .put_join_request(x_account, b"garbage".to_vec())
+        let mut own = x.own_store(&org);
+        own.delete_join_request(x_account).unwrap();
+        own.put_join_request(x_account, b"garbage".to_vec())
             .unwrap();
         let out = org
             .edit(FfiRosterEdit::Remove {
@@ -2778,6 +2790,129 @@ mod lifecycle {
             .unwrap();
         assert!(out.server_access_updated);
         assert!(!x.reads(&org));
+    }
+
+    #[test]
+    fn a_manager_cannot_overwrite_its_live_join_request() {
+        let org = publish(&FakeMailbox::org());
+        let x = org.accepted("Xavier", vec![FfiOrgRole::Admin]);
+        let account: [u8; 16] = unhex(&x.account());
+        let put = x
+            .own_store(&org)
+            .put_join_request(account, b"garbage".to_vec());
+        assert_eq!(
+            put.map_err(OnePassError::from),
+            Err(OnePassError::Forbidden)
+        );
+    }
+
+    /// Accepted on a second device (which issued no link, so the link
+    /// credential survives), the member reposts a well formed request
+    /// naming a fresh key with the link (its first writer). The owner's
+    /// device, which never bound a key, removes it: the revoke of the new
+    /// key finds nothing, which is not success (R42).
+    #[test]
+    fn removal_after_a_rewrite_on_a_device_that_never_accepted_is_not_updated() {
+        let org = publish(&FakeMailbox::org());
+        let mut m = org.member(MARIE, vec![]);
+        let (_, second) = org.second_device();
+        let out = org
+            .edit_by(
+                &second,
+                FfiRosterEdit::Accept {
+                    account_id: m.account(),
+                    roles: vec![FfiOrgRole::Admin],
+                },
+            )
+            .unwrap();
+        assert!(out.server_access_updated);
+        assert!(m.manages(&org));
+        let first = m.joiner.own_seed.clone();
+        m.joiner.own_seed = mailbox_generate_credential().unwrap().seed;
+        m.joiner.post(&m.invite, MARIE).unwrap();
+        let out = org
+            .edit(FfiRosterEdit::Remove {
+                account_id: m.account(),
+            })
+            .unwrap();
+        assert!(!out.server_access_updated);
+        m.joiner.own_seed = first;
+        assert!(m.manages(&org), "the bound key is still granted");
+        // A retry from the same device still cannot tell.
+        assert!(!org.creator().update_member_access(m.account()).unwrap());
+        // The device that bound the key revokes it.
+        assert!(second.update_member_access(m.account()).unwrap());
+        assert!(!m.reads(&org));
+    }
+
+    /// An accept whose grant failed leaves the key Pending; removing the
+    /// member then revokes nothing the server knows, which is reported as
+    /// not updated so the app warns (R42).
+    #[test]
+    fn removal_of_a_pending_key_is_not_updated() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.member(MARIE, vec![]);
+        let client = org.open(
+            Box::new(OrgStore::new(
+                FailRoster {
+                    inner: org.client(),
+                    armed: AtomicBool::new(false),
+                    fail_grant: AtomicBool::new(true),
+                    after_grant: None,
+                },
+                org.org_id,
+            )),
+            &org.creator_dir,
+        );
+        let accept = FfiRosterEdit::Accept {
+            account_id: m.account(),
+            roles: vec![],
+        };
+        assert!(!org.edit_by(&client, accept).unwrap().server_access_updated);
+        let out = org
+            .edit_by(
+                &client,
+                FfiRosterEdit::Remove {
+                    account_id: m.account(),
+                },
+            )
+            .unwrap();
+        assert!(!out.server_access_updated);
+        assert!(!m.reads(&org));
+    }
+
+    /// A grant that went through but whose binding access.bin could not
+    /// keep is reported as not updated (the loss is never silent).
+    #[cfg(unix)]
+    #[test]
+    fn a_binding_that_cannot_be_saved_is_not_updated() {
+        use std::os::unix::fs::PermissionsExt;
+        let org = publish(&FakeMailbox::org());
+        let m = org.member(MARIE, vec![]);
+        let access = org.creator_dir.join("access.bin");
+        let client = org.open(
+            Box::new(OrgStore::new(
+                FailRoster {
+                    inner: org.client(),
+                    armed: AtomicBool::new(false),
+                    fail_grant: AtomicBool::new(true),
+                    after_grant: Some(access.clone()),
+                },
+                org.org_id,
+            )),
+            &org.creator_dir,
+        );
+        let accept = FfiRosterEdit::Accept {
+            account_id: m.account(),
+            roles: vec![],
+        };
+        // The grant fails: Pending is kept in access.bin.
+        assert!(!org.edit_by(&client, accept).unwrap().server_access_updated);
+        // The retry grants, then access.bin can no longer be read or kept.
+        let retried = client.update_member_access(m.account());
+        std::fs::set_permissions(&access, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(retried, Ok(false));
+        assert!(m.reads(&org), "the grant itself went through");
     }
 
     #[test]
@@ -2809,6 +2944,7 @@ mod lifecycle {
                     inner: org.client(),
                     armed: AtomicBool::new(false),
                     fail_grant: AtomicBool::new(true),
+                    after_grant: None,
                 },
                 org.org_id,
             )),

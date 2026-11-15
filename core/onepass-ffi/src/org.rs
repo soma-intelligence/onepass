@@ -1317,13 +1317,25 @@ impl OrgClient {
         &self,
         store: &mut dyn OrgStoreApi,
         signer: &Signer,
-        mut edit: impl FnMut(&RosterBody) -> Result<(RosterBody, T), OnePassError>,
+        edit: impl FnMut(&RosterBody) -> Result<(RosterBody, T), OnePassError>,
     ) -> Result<(OrgPin, T), OnePassError> {
+        self.signed_edit_over(store, signer, edit)
+            .map(|(pin, out, _)| (pin, out))
+    }
+
+    /// `signed_edit`, with the roster the edit was finally put over (after
+    /// a rebase, the one that won the seq, not the pin read first).
+    fn signed_edit_over<T>(
+        &self,
+        store: &mut dyn OrgStoreApi,
+        signer: &Signer,
+        mut edit: impl FnMut(&RosterBody) -> Result<(RosterBody, T), OnePassError>,
+    ) -> Result<(OrgPin, T, RosterBody), OnePassError> {
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
         let base = pin.roster().ok_or(OnePassError::NotFound)?.clone();
         let (mine, out) = edit(&base)?;
         match put_edit(store, signer, &pin, &base, mine.clone())? {
-            Ok(()) => return Ok((self.refreshed(store, &pin)?, out)),
+            Ok(()) => return Ok((self.refreshed(store, &pin)?, out, base)),
             Err(OrgStoreError::Taken | OrgStoreError::Contended) => {}
             Err(e) => return Err(e.into()),
         }
@@ -1336,7 +1348,8 @@ impl OrgClient {
             edit(theirs)?
         };
         put_edit(store, signer, &fresh, theirs, next)??;
-        Ok((self.refreshed(store, &fresh)?, out))
+        let over = theirs.clone();
+        Ok((self.refreshed(store, &fresh)?, out, over))
     }
 }
 
@@ -1540,12 +1553,16 @@ fn known_key(e: &MailboxError) -> bool {
 /// - bound here before: that key, whatever the stored request says now
 ///   (`Granted`: `set_role`, else a grant when the server no longer knows
 ///   it, or a revoke; `Pending`: a grant, never a role change, and a
-///   removal leaves it; `Refused`: nothing);
+///   removal revokes it, done only when the revoke applied; `Refused`:
+///   nothing);
 /// - accepted elsewhere: the key of the verified request `joined` (the
 ///   server's first-writer rule and the shared-key check stand behind it),
 ///   as `Granted`, unless this device bound that key to another member.
 ///
-/// An Invited member, or one removed while Invited, never had any.
+/// A revoke the server answers `NotFound` is done only for a `Granted`
+/// key (R42); a binding `access.bin` could not keep is reported as not
+/// updated. An Invited member, or one removed while Invited, never had
+/// any.
 fn follow_access(
     mailbox: &dyn MailboxApi,
     state_dir: &Path,
@@ -1565,15 +1582,18 @@ fn follow_access(
         return Access::default();
     };
     let target = access_of(m);
-    let save = |key: [u8; 32], bound: Bound| {
-        let _ = save_access(
+    // False when the binding could not be kept: the caller reports the
+    // access as not updated, so the loss is never silent.
+    let save = |key: [u8; 32], bound: Bound| -> bool {
+        save_access(
             state_dir,
             LocalAccess {
                 account_id: account,
                 key,
                 bound,
             },
-        );
+        )
+        .is_ok()
     };
     let grant = |key: [u8; 32], role: CredentialRole, kinds: Option<[u8; 32]>| -> Bound {
         match mailbox.grant(key, role, kinds, MEMBER_CREDENTIAL_LABEL) {
@@ -1582,8 +1602,8 @@ fn follow_access(
             Err(_) => Bound::Pending,
         }
     };
-    let granted = |b: Bound| Access {
-        updated: b == Bound::Granted,
+    let granted = |b: Bound, saved: bool| Access {
+        updated: b == Bound::Granted && saved,
         granted: b == Bound::Granted,
     };
     if was_invited {
@@ -1599,8 +1619,8 @@ fn follow_access(
         } else {
             grant(key, role, kinds)
         };
-        save(key, b);
-        return granted(b);
+        let saved = save(key, b);
+        return granted(b, saved);
     }
     let (key, state) = match bound.iter().find(|a| a.account_id == account) {
         Some(a) => (a.key, Some(a.bound)),
@@ -1613,30 +1633,30 @@ fn follow_access(
     let id = CredentialKey::from_bytes(key).id();
     match (state, target) {
         (Some(Bound::Refused), _) => Access::default(),
-        // Never confirmed granted: nothing of this device's to revoke.
-        (Some(Bound::Pending), None) => done,
         (Some(Bound::Pending), Some((role, kinds))) => {
             let b = grant(key, role, kinds);
-            if b != Bound::Pending {
-                save(key, b);
-            }
-            granted(b)
+            let saved = b == Bound::Pending || save(key, b);
+            granted(b, saved)
         }
+        // Removed: the key is revoked. A server that no longer knows it is
+        // done only for a key this device saw granted (R42); a Pending one
+        // (answer lost) or one read from the stored request may name a key
+        // the member never used, so that stays not updated and the app
+        // warns.
         (_, None) => Access {
-            updated: matches!(
-                mailbox.revoke(id),
-                Ok(()) | Err(MailboxError::Server(ErrorCode::NotFound))
-            ),
+            updated: match mailbox.revoke(id) {
+                Ok(()) => true,
+                Err(MailboxError::Server(ErrorCode::NotFound)) => state == Some(Bound::Granted),
+                Err(_) => false,
+            },
             granted: false,
         },
         (_, Some((role, kinds))) => match mailbox.set_role(id, role, kinds) {
             Ok(()) => done,
             Err(MailboxError::Server(ErrorCode::NotFound)) => {
                 let b = grant(key, role, kinds);
-                if state.is_some() && b != Bound::Pending {
-                    save(key, b);
-                }
-                granted(b)
+                let saved = state.is_none() || b == Bound::Pending || save(key, b);
+                granted(b, saved)
             }
             Err(_) => Access::default(),
         },
@@ -1750,19 +1770,21 @@ impl OrgClient {
         let account = parse_id(edit.account_id())?;
         let mut store = lock(&self.store);
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
-        let was_invited = pin
-            .roster()
-            .and_then(|r| r.member(account))
-            .is_some_and(|m| m.state == MemberState::Invited);
         // A feed read failure keeps the requests read so far.
         let _ = self.poll_joins(&mut **store);
         let joined = lock(&self.joins).verified(&pin, &account.0);
-        let (pin, ()) = self.signed_edit(&mut **store, &signer, |prev| {
+        let (pin, (), over) = self.signed_edit_over(&mut **store, &signer, |prev| {
             Ok((
                 next_roster(prev, &edit, signer.account, joined.as_ref(), now)?,
                 (),
             ))
         })?;
+        // Invited in the roster the edit was finally put over: a pin read
+        // before may predate an accept made on another device (the rebase
+        // then removes an Active member).
+        let was_invited = over
+            .member(account)
+            .is_some_and(|m| m.state == MemberState::Invited);
         let mailbox = store.mailbox();
         let access = pin
             .roster()
@@ -1788,6 +1810,9 @@ impl OrgClient {
         let account = parse_id(&account_id)?;
         let mut store = lock(&self.store);
         let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        // The retry acts on the current roster: a pin read before may still
+        // show a member another device removed since (R42).
+        let pin = self.refreshed(&mut **store, &pin)?;
         let m = pin
             .roster()
             .and_then(|r| r.member(account))
