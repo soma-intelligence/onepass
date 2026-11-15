@@ -58,7 +58,7 @@ jobs:
           printf '{' > "$RUNNER_TEMP/sources.json"
           first=1
           for spec in "twofa 2factorauth/twofactorauth master MIT" \
-                      "passkeys 2factorauth/passkeys main CC-BY-4.0"; do
+                      "passkeys 2factorauth/passkeys master CC-BY-4.0"; do
             read -r name repo branch license <<< "$spec"
             commit=$(gh api "repos/$repo/commits/$branch" --jq .sha)
             [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "bad commit for $repo" >&2; exit 1; }
