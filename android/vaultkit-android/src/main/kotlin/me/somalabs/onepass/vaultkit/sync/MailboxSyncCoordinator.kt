@@ -54,7 +54,8 @@ sealed class SyncStatus {
  * ([debounceMs]). While the app is in the foreground the mailbox's wake
  * channel kicks a round on each change made elsewhere, and a round runs every
  * [periodicMs] in case the wake channel is down. Once the account's signed
- * home names another place (`HomeMoved`), no round runs again.
+ * home names another place (`HomeMoved`), no round runs again. The zone
+ * rounds ([zones]) follow each private round.
  *
  * Listeners are called on the round thread.
  */
@@ -66,6 +67,8 @@ class MailboxSyncCoordinator(
     private val retryDelaysMs: List<Long> = RETRY_DELAYS_MS,
     private val periodicMs: Long = 60_000,
     private val wakeStarter: (onWake: () -> Unit) -> (() -> Unit) = { onWake -> realWake(client, onWake) },
+    /** The zone rounds (shared vaults, contacts, family) that follow each private round. */
+    val zones: me.somalabs.onepass.vaultkit.sharing.ZoneRounds? = null,
 ) {
     private val lock = Object()
     private val rounds = Executors.newSingleThreadExecutor { r -> Thread(r, "onepass-sync").apply { isDaemon = true } }
@@ -232,6 +235,8 @@ class MailboxSyncCoordinator(
         }
         if (report.changed || report.rebased.isNotEmpty()) emitRemoteChange()
         apply(report)
+        // The zones follow the private round, in the same run (one at a time).
+        if (!synchronized(lock) { moved || closed }) zones?.afterPrivateRound()
     }
 
     private fun apply(report: FfiRoundReport) {

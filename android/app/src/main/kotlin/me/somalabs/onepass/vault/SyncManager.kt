@@ -25,6 +25,10 @@ import me.somalabs.onepass.vaultkit.sync.RestoreSource
 import me.somalabs.onepass.vaultkit.sync.SyncBackendState
 import me.somalabs.onepass.vaultkit.sync.SyncChoice
 import me.somalabs.onepass.vaultkit.sync.SyncStatus
+import me.somalabs.onepass.core.FfiZoneSeedStore
+import me.somalabs.onepass.core.ZoneSyncHandle
+import me.somalabs.onepass.vaultkit.sharing.FfiZoneSync
+import me.somalabs.onepass.vaultkit.sharing.ZoneRounds
 
 /**
  * The sync of this device's account, for the whole process (the app, the
@@ -48,6 +52,30 @@ class SyncManager private constructor(context: Context) {
         override fun delete(mailboxId: String) = vault.deleteFile(fileOf(mailboxId))
         private fun fileOf(id: String) = "mailbox-" + id.filter { it.isLetterOrDigit() } + ".bin"
     }
+
+    /** Zone credential seeds (shared vaults, contacts, family), each sealed like the mailbox seeds (`zone-<id>.bin`). */
+    private val zoneSeeds = object : FfiZoneSeedStore {
+        override fun get(mailboxId: ByteArray): ByteArray? = runCatching { vault.unsealFile(fileOf(mailboxId)) }.getOrNull()
+        override fun put(mailboxId: ByteArray, seed: ByteArray) {
+            runCatching { vault.sealFile(fileOf(mailboxId), seed) }.onFailure { Log.e(TAG, "zone seed not kept") }
+        }
+        override fun delete(mailboxId: ByteArray) = vault.deleteFile(fileOf(mailboxId))
+        private fun fileOf(id: ByteArray) = "zone-" + id.joinToString("") { "%02x".format(it) } + ".bin"
+    }
+
+    /**
+     * The zone rounds of the account (iOS `ZoneRoundScheduler`): after each
+     * private round of a mailbox account, on their own for an account kept on
+     * this device. Made by [start].
+     */
+    @Volatile var zones: ZoneRounds? = null
+        private set
+    @Volatile var zoneHandle: ZoneSyncHandle? = null
+        private set
+    private val zoneListeners = mutableListOf<() -> Unit>()
+
+    /** A zone round changed the store (invitations, shared vault items, family). Main thread. */
+    fun onZoneChange(l: () -> Unit) = synchronized(this) { zoneListeners += l }
 
     @Volatile var backend: SyncBackendState = SyncBackendState.Local
         private set
@@ -75,10 +103,39 @@ class SyncManager private constructor(context: Context) {
             if (started) return
             started = true
         }
-        vault.onSession { s -> if (s != null) unlocked(s) else coordinator?.sessionLocked() }
+        vault.onSession { s -> if (s != null) unlocked(s) else { coordinator?.sessionLocked(); zones?.sessionLocked() } }
         worker.execute {
+            startZones()
             load()
             vault.session?.let { unlocked(it) }
+        }
+    }
+
+    @Synchronized
+    private fun startZones() {
+        if (zones != null) return
+        val store = runCatching { openSyncStore(vault.dbPath) }.getOrElse {
+            Log.e(TAG, "zone store not opened")
+            return
+        }
+        val handle = ZoneSyncHandle(zoneSeeds, MailboxEndpoints.HOSTED, null)
+        val z = ZoneRounds(FfiZoneSync(handle, store))
+        z.onRemoteChange { main.post { synchronized(this) { zoneListeners.toList() }.forEach { it() } } }
+        zoneHandle = handle
+        zones = z
+        if (foreground) z.enterForeground()
+    }
+
+    /** New zones are made under the account's own mailbox, with this device's credential. */
+    private fun zonesUnder(home: MailboxHome) {
+        val handle = zoneHandle ?: return
+        val seed = runCatching { credentials.seed(home.mailboxId) }.getOrNull() ?: return
+        try {
+            handle.setAccountMailbox(home.endpoint, home.mailboxId, seed)
+        } catch (_: Exception) {
+            Log.w(TAG, "zones not put under the account mailbox")
+        } finally {
+            seed.fill(0)
         }
     }
 
@@ -106,7 +163,8 @@ class SyncManager private constructor(context: Context) {
                 seed.fill(0)
             }
         }
-        val c = MailboxSyncCoordinator(sync, home, serverName(home.baseUrl))
+        zonesUnder(home)
+        val c = MailboxSyncCoordinator(sync, home, serverName(home.baseUrl), zones = zones)
         c.onStatus { s -> setStatus(s) }
         c.onRemoteChange { main.post { synchronized(this) { changeListeners.toList() }.forEach { it() } } }
         coordinator?.close()
@@ -117,7 +175,10 @@ class SyncManager private constructor(context: Context) {
     }
 
     private fun unlocked(s: Session) {
+        zones?.sessionUnlocked(s)
         coordinator?.sessionUnlocked(s)
+        // An account kept on this device has no private round: its zones run on their own.
+        if (coordinator == null) zones?.kick()
         // A setup cut off (offline, app closed) resumes at the next unlock.
         val b = backend
         if (b is SyncBackendState.PendingSetup) worker.execute { runSetup(s, b.choice) }
@@ -126,23 +187,25 @@ class SyncManager private constructor(context: Context) {
     // ---- triggers --------------------------------------------------------------------
 
     fun localChange() {
-        coordinator?.localChangesWritten()
+        coordinator?.localChangesWritten() ?: zones?.kickSoon()
     }
 
     fun enterForeground() {
         foreground = true
         coordinator?.enterForeground()
+        zones?.enterForeground()
     }
 
     fun enterBackground() {
         foreground = false
         coordinator?.enterBackground()
+        zones?.enterBackground()
     }
 
     /** "Synchroniser maintenant": a round, then `done` on the main thread. */
     fun syncNow(done: () -> Unit) {
         worker.execute {
-            coordinator?.syncNow()
+            coordinator?.syncNow() ?: zones?.syncNow()
             main.post(done)
         }
     }
@@ -152,10 +215,10 @@ class SyncManager private constructor(context: Context) {
         if (!started) start()
         val until = System.currentTimeMillis() + 10_000
         while (backend is SyncBackendState.Local && coordinator == null && System.currentTimeMillis() < until) {
-            if (runCatching { openSyncStore(vault.dbPath).use { SyncBackendState.read(it) } }.getOrNull() !is SyncBackendState.Mailbox) return
+            if (runCatching { openSyncStore(vault.dbPath).use { SyncBackendState.read(it) } }.getOrNull() !is SyncBackendState.Mailbox) break
             Thread.sleep(100)
         }
-        coordinator?.syncNow(60_000)
+        coordinator?.syncNow(60_000) ?: run { startZones(); zones?.syncNow(60_000) }
     }
 
     // ---- setup -----------------------------------------------------------------------
