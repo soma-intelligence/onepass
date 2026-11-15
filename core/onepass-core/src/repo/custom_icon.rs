@@ -7,6 +7,8 @@
 //! the item first, then deletes the old chunks, so a crash in between leaves
 //! unreferenced chunks, never a reference without its file.
 
+use std::collections::HashSet;
+
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
@@ -43,6 +45,45 @@ fn check_icon(mime: &str, bytes: &[u8]) -> Result<()> {
     }
 }
 
+/// Chunk ids of every attachment of `item`: an icon reference must never
+/// reach them (read or delete). A malformed attachment reference adds none.
+fn attachment_chunks(item: &Item) -> HashSet<Id> {
+    item.attachments
+        .iter()
+        .flat_map(|a| attachment::chunk_ids(a).unwrap_or_default())
+        .collect()
+}
+
+/// The stored reference is one a set could have written: PNG or WebP, at
+/// most `MAX_CUSTOM_ICON` bytes, and none of its chunks is an attachment's.
+/// Checked on read, since a synced item may carry any reference.
+fn check_reference(item: &Item, r: &AttachmentRef) -> Result<()> {
+    if r.size > MAX_CUSTOM_ICON as u64 {
+        return Err(Error::InvalidFormat("custom icon too large"));
+    }
+    if r.mime != "image/png" && r.mime != "image/webp" {
+        return Err(Error::InvalidFormat("custom icon type"));
+    }
+    let taken = attachment_chunks(item);
+    let ids = attachment::chunk_ids(r)?;
+    if item.attachments.iter().any(|a| a.id == r.id) || ids.iter().any(|id| taken.contains(id)) {
+        return Err(Error::InvalidFormat("custom icon reference"));
+    }
+    Ok(())
+}
+
+/// Chunks of the old icon `old` that are safe to delete: never one an
+/// attachment of `item` still references.
+fn deletable_chunks(item: &Item, old: &AttachmentRef) -> Vec<Id> {
+    let taken = attachment_chunks(item);
+    // A malformed reference deletes nothing, as in `attachments.rs`.
+    attachment::chunk_ids(old)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|id| !taken.contains(id))
+        .collect()
+}
+
 impl<S: RecordStore> Repository<S> {
     fn icon_item(&mut self, vault: &Vault, item_id: Id, use_: Use) -> Result<Item> {
         let loaded = self.served(vault, use_)?;
@@ -66,10 +107,15 @@ impl<S: RecordStore> Repository<S> {
         let (reference, records) = attachment::seal_attachment(vault, ICON_NAME, mime, bytes)?;
         let ids: Vec<Id> = records.iter().map(|r| r.id).collect();
         let zone = vault.zone();
-        let mut old = None;
+        // The previous icon's chunks, never an attachment's.
+        let gone = item
+            .custom_icon
+            .as_ref()
+            .map(|old| deletable_chunks(&item, old))
+            .unwrap_or_default();
         let written = self.put_chunks(zone, records).and_then(|()| {
             let now = OffsetDateTime::now_utc();
-            old = item.custom_icon.replace(reference.clone());
+            item.custom_icon = Some(reference.clone());
             item.record(
                 now,
                 EventKind::FieldChanged {
@@ -83,11 +129,7 @@ impl<S: RecordStore> Repository<S> {
             self.delete_chunks(zone, &ids);
             return Err(e);
         }
-        if let Some(old) = old {
-            // A malformed reference deletes nothing, as in `attachments.rs`.
-            let gone = attachment::chunk_ids(&old).unwrap_or_default();
-            self.delete_chunks(zone, &gone);
-        }
+        self.delete_chunks(zone, &gone);
         Ok(reference)
     }
 
@@ -106,25 +148,30 @@ impl<S: RecordStore> Repository<S> {
             },
         );
         item.updated_at = now;
+        let ids = deletable_chunks(&item, &old);
         self.save_item(vault, item)?;
-        // A malformed reference deletes nothing, as in `attachments.rs`.
-        let ids = attachment::chunk_ids(&old).unwrap_or_default();
         self.delete_chunks(vault.zone(), &ids);
         Ok(())
     }
 
     /// The decrypted bytes of the item's custom icon. `NotFound` when none
-    /// is set or a chunk is missing (not synced yet).
+    /// is set or a chunk is missing (not synced yet). A reference a set
+    /// could not have written (too large, not PNG or WebP, pointing at an
+    /// attachment) or bytes that do not start like their type are refused
+    /// with `InvalidFormat`: a synced item may carry any reference.
     pub fn read_custom_icon(&mut self, vault: &Vault, item_id: Id) -> Result<Zeroizing<Vec<u8>>> {
         self.readable()?;
         let item = self.icon_item(vault, item_id, Use::Read)?;
-        let reference = item.custom_icon.ok_or(Error::NotFound)?;
+        let reference = item.custom_icon.clone().ok_or(Error::NotFound)?;
+        check_reference(&item, &reference)?;
         self.heal_attachment(vault, &reference)?;
         let store = &self.store;
         let zone = vault.zone();
-        attachment::open_attachment(vault, &reference, |id| {
+        let bytes = attachment::open_attachment(vault, &reference, |id| {
             store.get_in(zone, RecordKind::Attachment, id)
-        })
+        })?;
+        check_icon(&reference.mime, &bytes)?;
+        Ok(bytes)
     }
 }
 
@@ -382,6 +429,115 @@ mod tests {
             &repo.read_custom_icon(&a, primary.id).unwrap()[..],
             &png(100)[..]
         );
+    }
+
+    /// Store `reference` as the item's icon without any check, as a synced
+    /// item from another device could.
+    fn forge(repo: &mut Repository<MemoryStore>, v: &Vault, id: Id, reference: AttachmentRef) {
+        let mut item = stored(repo, v, id);
+        item.custom_icon = Some(reference);
+        repo.save_item(v, item).unwrap();
+    }
+
+    #[test]
+    fn read_refuses_oversized_reference() {
+        let (mut repo, v, item) = with_item();
+        let mut r = repo
+            .set_custom_icon(&v, item.id, "image/png", &png(100))
+            .unwrap();
+        r.size = MAX_CUSTOM_ICON as u64 + 1;
+        forge(&mut repo, &v, item.id, r);
+        let e = repo.read_custom_icon(&v, item.id).unwrap_err();
+        assert!(
+            matches!(e, Error::InvalidFormat("custom icon too large")),
+            "{e:?}"
+        );
+    }
+
+    #[test]
+    fn read_refuses_other_mime() {
+        let (mut repo, v, item) = with_item();
+        let mut r = repo
+            .set_custom_icon(&v, item.id, "image/png", &png(100))
+            .unwrap();
+        r.mime = "image/svg+xml".into();
+        forge(&mut repo, &v, item.id, r);
+        let e = repo.read_custom_icon(&v, item.id).unwrap_err();
+        assert!(
+            matches!(e, Error::InvalidFormat("custom icon type")),
+            "{e:?}"
+        );
+    }
+
+    #[test]
+    fn read_checks_magic_of_decrypted_bytes() {
+        let (mut repo, v, item) = with_item();
+        let mut r = repo
+            .set_custom_icon(&v, item.id, "image/png", &png(100))
+            .unwrap();
+        // A PNG file declared as WebP.
+        r.mime = "image/webp".into();
+        forge(&mut repo, &v, item.id, r);
+        let e = repo.read_custom_icon(&v, item.id).unwrap_err();
+        assert!(
+            matches!(e, Error::InvalidFormat("custom icon type")),
+            "{e:?}"
+        );
+    }
+
+    #[test]
+    fn attachment_alias_refused_and_never_deleted() {
+        let (mut repo, v, item) = with_item();
+        let doc = repo
+            .add_attachment(&v, item.id, "scan.png", "image/png", &png(100))
+            .unwrap();
+        forge(&mut repo, &v, item.id, doc.clone());
+        let e = repo.read_custom_icon(&v, item.id).unwrap_err();
+        assert!(
+            matches!(e, Error::InvalidFormat("custom icon reference")),
+            "{e:?}"
+        );
+        // Clearing the alias keeps the attachment's file.
+        repo.clear_custom_icon(&v, item.id).unwrap();
+        assert!(chunk_present(&repo, &doc));
+        assert_eq!(
+            &repo.read_attachment(&v, item.id, doc.id).unwrap()[..],
+            &png(100)[..]
+        );
+        // Replacing an alias keeps it too.
+        forge(&mut repo, &v, item.id, doc.clone());
+        repo.set_custom_icon(&v, item.id, "image/png", &png(120))
+            .unwrap();
+        assert!(chunk_present(&repo, &doc));
+        assert_eq!(
+            &repo.read_custom_icon(&v, item.id).unwrap()[..],
+            &png(120)[..]
+        );
+    }
+
+    #[test]
+    fn alias_of_a_later_chunk_refused() {
+        let (mut repo, v, item) = with_item();
+        let big = vec![1u8; attachment::CHUNK + 10];
+        let doc = repo
+            .add_attachment(&v, item.id, "big.bin", "application/octet-stream", &big)
+            .unwrap();
+        let ids = attachment::chunk_ids(&doc).unwrap();
+        assert!(ids.len() > 1, "needs a second chunk");
+        let r = AttachmentRef {
+            id: ids[1],
+            name: ICON_NAME.into(),
+            size: 100,
+            mime: "image/png".into(),
+        };
+        forge(&mut repo, &v, item.id, r);
+        let e = repo.read_custom_icon(&v, item.id).unwrap_err();
+        assert!(
+            matches!(e, Error::InvalidFormat("custom icon reference")),
+            "{e:?}"
+        );
+        repo.clear_custom_icon(&v, item.id).unwrap();
+        assert!(chunk_present(&repo, &doc));
     }
 
     fn chunk_count(repo: &Repository<MemoryStore>) -> usize {
