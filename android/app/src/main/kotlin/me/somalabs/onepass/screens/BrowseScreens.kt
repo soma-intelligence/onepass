@@ -104,8 +104,14 @@ class BrowseScreens(private val a: MainActivity) {
         val first = a.profileName.split(" ").firstOrNull { it.isNotBlank() }
         val greeting = if (first == null) a.t("Accueil", "Home") else a.t("Bonjour $first", "Hi $first")
         val active = a.active
-        if (active.isEmpty()) return a.rootPage(greeting, large = true, options = null) { addView(firstItemState(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
+        // The sharing notices on top (iPhone `SharingBanners`): a recovery request, invitations, changed keys, received items.
+        val banners = a.sharingScreens.banners()
+        if (active.isEmpty()) return a.rootPage(greeting, large = true, options = null) {
+            banners?.let { addView(it) }
+            addView(firstItemState(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
         return a.rootPage(greeting, large = true, options = { homeOptions() }) {
+            banners?.let { addView(it) }
             addView(tiles(active))
             if (prefs.getBoolean("profile", true)) {
                 active.filter { it.itemType == FfiItemType.IDENTITY }.minByOrNull { it.title.lowercase() }?.let { p ->

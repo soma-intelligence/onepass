@@ -29,6 +29,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Contact invitations (sharing spec 5.3.2): onepass://contact#... or onepass://contact/<host>#... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="onepass" android:host="contact" />
+            </intent-filter>
         </activity>
 
         <!-- AutoFill: the Logins in apps and browsers (fill/). -->

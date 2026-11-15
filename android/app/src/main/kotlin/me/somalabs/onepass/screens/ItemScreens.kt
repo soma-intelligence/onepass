@@ -448,6 +448,10 @@ class ItemScreens(private val a: MainActivity) {
                     run({ s.moveItem(item.id, item.vaultId, others[i].id) }) { a.changed { a.pop() } }
                 }.show()
         }
+        // A copy for a contact (sharing spec 14.2).
+        if (a.sharing.snapshot.contacts.any { it.state is me.somalabs.onepass.core.FfiContactState.Active }) {
+            entries += Triple(R.drawable.ic_share, a.t("Envoyer à un contact", "Send to a Contact")) { a.sharingScreens.sendItem(item) }
+        }
         entries += Triple(R.drawable.ic_duplicate, a.t("Dupliquer", "Duplicate")) {
             run({
                 val n = s.newItem(item.vaultId, item.itemType, item.title + a.t(" (copie)", " (copy)"))

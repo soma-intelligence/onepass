@@ -75,6 +75,10 @@ class MainActivity : Activity() {
     val sync by lazy { me.somalabs.onepass.vault.SyncManager.get(this) }
     val syncScreens by lazy { me.somalabs.onepass.screens.SyncScreens(this) }
     val pairing by lazy { me.somalabs.onepass.screens.PairingScreens(this) }
+    /** Contacts, shared vaults, family (the state for the whole process, the screens). */
+    val sharing by lazy { me.somalabs.onepass.vault.Sharing.get(this) }
+    val sharingScreens by lazy { me.somalabs.onepass.screens.SharingScreens(this) }
+    val familyScreens by lazy { me.somalabs.onepass.screens.FamilyScreens(this) }
 
     enum class Tab { HOME, ITEMS, WATCHTOWER, SEARCH }
 
@@ -105,7 +109,10 @@ class MainActivity : Activity() {
     /** Reloads items and vaults, then [done] (by default, redraws). */
     fun reload(done: () -> Unit = { render() }) {
         val s = vault.session ?: return route()
-        background({ Triple(s.itemSummaries(), s.vaults(), runCatching { s.profile()?.name }.getOrNull().orEmpty()) }) { r ->
+        background({
+            sharing.readNow(s)
+            Triple(s.itemSummaries(), s.vaults(), runCatching { s.profile()?.name }.getOrNull().orEmpty())
+        }) { r ->
             r.onSuccess {
                 summaries = it.first
                 vaults = it.second
@@ -157,11 +164,42 @@ class MainActivity : Activity() {
         // Sync: the coordinator of a mailbox account, the lists reload when changes arrive, the
         // periodic background round.
         sync.start()
-        sync.onRemoteChange { if (!isDestroyed && vault.session != null) reload { renderIfRoot() } }
+        sync.onRemoteChange { afterSyncRound() }
+        // A zone round brought changes (invitations, shared vaults, family): key requests answered, lists read again.
+        sync.onZoneChange { afterSyncRound() }
+        takeLink(intent)
         me.somalabs.onepass.vault.SyncJob.schedule(this)
         // The brand icons, mapped once off the main thread; the lists redraw with them.
         Thread { me.somalabs.onepass.ui.IconPack.load(applicationContext); main.post { if (!isDestroyed) renderIfRoot() } }.start()
         route()
+    }
+
+    /** After a sync round brought changes: the members' key requests answered, then everything read again. */
+    private fun afterSyncRound() {
+        val s = vault.session ?: return
+        if (isDestroyed) return
+        background({ sharing.afterRound(s) }) { reload { renderIfRoot() } }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        takeLink(intent)
+        if (vault.session != null) openPendingLink()
+    }
+
+    /** A contact invitation opened from another app (`onepass://contact/...`): answered once unlocked. */
+    private fun takeLink(intent: android.content.Intent?) {
+        val uri = intent?.data ?: return
+        if (intent.action == android.content.Intent.ACTION_VIEW && uri.scheme == "onepass" && uri.host == "contact") {
+            sharing.pendingLink = uri.toString()
+            intent.data = null
+        }
+    }
+
+    private fun openPendingLink() {
+        val link = sharing.pendingLink ?: return
+        sharing.pendingLink = null
+        sharingScreens.openLink(link)
     }
 
     override fun onStart() {
@@ -203,6 +241,9 @@ class MainActivity : Activity() {
         is OnePassException.WrongPassword -> t("Mot de passe incorrect.", "Wrong password.")
         is OnePassException.Validation -> t("Champ « ${e.field} » : ${e.reason}", "Field “${e.field}”: ${e.reason}")
         is OnePassException.Locked -> t("OnePass est verrouillé.", "OnePass is locked.")
+        is OnePassException.ReadOnlyRole -> t("Tu peux seulement consulter ce coffre.", "You can only view this vault.")
+        is OnePassException.IdentityPending -> t("Un gestionnaire du coffre doit confirmer tes nouvelles clés avant que tu puisses modifier.", "A vault manager must confirm your new keys before you can make changes.")
+        is OnePassException.ContactNotVerified -> t("Vérifie d'abord ce contact en personne ou avec son numéro de sécurité.", "Verify this contact in person or with their safety number first.")
         is OnePassException -> t("Erreur : ", "Error: ") + e.javaClass.simpleName
         else -> t("Erreur : ", "Error: ") + (e.message ?: e.javaClass.simpleName)
     }
@@ -260,6 +301,7 @@ class MainActivity : Activity() {
         noTabs.clear()
         guards.clear()
         watchFetcher.clear()
+        sharing.clear()
         me.somalabs.onepass.screens.Attachments.clearCache(this)
         route()
     }
@@ -276,6 +318,9 @@ class MainActivity : Activity() {
 
     fun openTabs(start: Tab = Tab.HOME) {
         session()?.let { VaultWifi.opened(wifi, it) }
+        // Contact invitations: the replies awaited before a restart, a link opened while locked.
+        sharing.resumePending(profileName.ifBlank { Build.MODEL ?: "Android" })
+        main.post { openPendingLink() }
         stacks.clear()
         noTabs.clear()
         tab = start

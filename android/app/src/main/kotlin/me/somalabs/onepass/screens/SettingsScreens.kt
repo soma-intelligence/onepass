@@ -22,7 +22,7 @@ import me.somalabs.onepass.wifi.SyncReport
 /**
  * Réglages as on iPhone (SettingsView): the account on top, then the pages in
  * grouped cards with their drawn tiles. Pages whose feature Android does not
- * have yet (sharing, crypto tracking) say so plainly.
+ * have yet (crypto tracking) say so plainly.
  */
 class SettingsScreens(private val a: MainActivity) {
     private val ui get() = a.ui
@@ -73,6 +73,8 @@ class SettingsScreens(private val a: MainActivity) {
         "sync" -> a.syncScreens.page()
         "about" -> about()
         "autofill" -> autofill()
+        "contacts" -> a.sharingScreens.contactsPage()
+        "family" -> a.familyScreens.page()
         else -> notYet(p)
     }
 
@@ -138,8 +140,6 @@ class SettingsScreens(private val a: MainActivity) {
         val why = when (p.key) {
             "autofill" -> a.t("Le remplissage automatique d'Android (service Autofill et passkeys) arrive dans une prochaine version. En attendant, copie un identifiant depuis l'élément : il est effacé du presse-papiers après 90 secondes.",
                 "Android AutoFill (the Autofill service and passkeys) comes in a later version. Meanwhile, copy a value from the item: it is cleared from the clipboard after 90 seconds.")
-            "contacts", "family" -> a.t("Le partage avec tes contacts et ta famille arrive sur Android.",
-                "Sharing with your contacts and family is coming to Android.")
             "crypto" -> a.t("Les portefeuilles crypto se rangent déjà comme éléments. Le suivi des soldes arrive sur Android.",
                 "Crypto wallets can already be stored as items. Balance tracking is coming to Android.")
             else -> a.t("Les agents (MCP, ssh-agent) tournent sur ordinateur, pas sur Android.", "Agents (MCP, ssh-agent) run on computers, not on Android.")
@@ -398,6 +398,11 @@ class SettingsScreens(private val a: MainActivity) {
                 addView(ui.inset(ui.card(name)))
                 addView(ui.capsLabel(a.t("Couleur", "Color")))
                 addView(ui.inset(ui.card(swatches)))
+                // "Partage" (sharing spec 10): the members, or "Partager ce coffre".
+                if (v != null) {
+                    addView(ui.capsLabel(a.t("Partage", "Sharing")))
+                    addView(ui.inset(a.sharingScreens.vaultSection(v.id) { d.dismiss() }))
+                }
                 addView(err)
                 if (v != null && a.vaults.size > 1) {
                     addView(ui.inset(ui.card(ui.row(title = a.t("Supprimer le coffre", "Delete Vault"), titleColor = ui.red, chevron = false) {
