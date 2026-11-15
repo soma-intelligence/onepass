@@ -24,7 +24,7 @@ struct AllAccountsSearch: View {
                                 model.perform(.revealInAccount(
                                     profile.slot, ItemRef(vaultID: result.summary.vaultId, itemID: result.summary.id)))
                             } label: {
-                                resultRow(result.summary)
+                                resultRow(result.summary, active: result.account.slot == model.accounts.activeSlot)
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("accounts.search.result.\(result.summary.id)")
@@ -75,9 +75,11 @@ struct AllAccountsSearch: View {
         #endif
     }
 
-    private func resultRow(_ summary: FfiItemSummary) -> some View {
+    /// `active`: the result belongs to the account shown. Another account's chosen icon is not
+    /// read (its vault is not open here): the row shows the automatic icon.
+    private func resultRow(_ summary: FfiItemSummary, active: Bool) -> some View {
         HStack(spacing: 12) {
-            ItemIconSource(summary) { icon in
+            ItemIconSource(summary, chosen: active) { icon in
                 ItemIcon(type: summary.itemType, title: summary.title, siteIcon: icon, size: 32,
                     useCategory: summary.usesCategoryIcon, tint: ItemTint.color(named: summary.color),
                     domain: ItemIconResolver.registrableDomain(summary.primaryUrl))

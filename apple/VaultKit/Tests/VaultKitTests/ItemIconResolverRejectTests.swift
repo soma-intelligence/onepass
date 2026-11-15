@@ -30,11 +30,43 @@ import Testing
         let resolver = ItemIconResolver(
             pack: IconPackStore(baseline: baseline, directory: folder.appendingPathComponent("dl")), site: site,
             enabled: { true })
-        #expect(resolver.cachedIcon(for: "https://portail.gym-exemple.fr/login", title: "Ma salle") == nil)
-        #expect(resolver.cachedIcon(for: "https://portail.gym-exemple.fr/login", title: "Ma salle") == nil)
+        // The cache-only path never hashes on its caller's thread: not hashed yet, it is shown.
+        #expect(resolver.cachedIcon(for: "https://portail.gym-exemple.fr/login", title: "Ma salle") != nil)
         #expect(await resolver.icon(for: "https://portail.gym-exemple.fr", title: "Ma salle") == nil)
+        // Hashed by the task: refused from then on.
+        #expect(resolver.cachedIcon(for: "https://portail.gym-exemple.fr/login", title: "Ma salle") == nil)
         #expect(resolver.cachedIcon(for: "https://www.marque-exemple.fr", title: "Marque") != nil)
         #expect(await resolver.icon(for: "https://www.marque-exemple.fr", title: "Marque") != nil)
+    }
+
+    /// The cache-only path hands the hash to a background task: the hash becomes known without any
+    /// async call of the caller, and the icon is refused from then on.
+    @Test func cachePathHashesInTheBackground() async throws {
+        let (session, _) = SiteIconLoaderTests.makeSession()
+        let platform = SiteIconLoaderTests.patternPNG(seed: 1)
+        StubProtocol.install(host: "app.salle-fond.fr") { request in
+            request.url?.path == "/apple-touch-icon.png" ? .init(body: platform) : .init(status: 404)
+        }
+        let site = SiteIconLoader(
+            cacheDirectory: SiteIconLoaderTests.tempDirectory(), session: session, resolver: StaticResolver(),
+            enabled: { true })
+        #expect(await site.icon(for: "https://app.salle-fond.fr") != nil)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("rejects-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let baseline = folder.appendingPathComponent("pack.bin")
+        let reject = String(format: "%016llx", try SiteIconLoaderTests.rejectHash(platform))
+        try makeIconPack(version: 7, icons: [(Data("x".utf8), 0)], domains: ["autre.fr": 0], rejects: [reject])
+            .write(to: baseline)
+        let resolver = ItemIconResolver(
+            pack: IconPackStore(baseline: baseline, directory: folder.appendingPathComponent("dl")), site: site,
+            enabled: { true })
+        let url = "https://app.salle-fond.fr/login"
+        #expect(resolver.cachedIcon(for: url, title: "") != nil)
+        for _ in 0..<200 where !resolver.isChecked(url) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(resolver.isChecked(url))
+        #expect(resolver.cachedIcon(for: url, title: "") == nil)
     }
 
     /// A refused cached icon is searched again at once: the site's next candidate shows, without

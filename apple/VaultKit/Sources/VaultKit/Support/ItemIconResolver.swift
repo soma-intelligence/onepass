@@ -36,6 +36,8 @@ public final class ItemIconResolver: Sendable {
     /// Per host: the cached site icon last checked against the pack's rejects (and that pack's
     /// version), and whether it was refused. A row asks on every frame: each icon is hashed once.
     private let checked = Mutex<[String: (png: Data, version: Int, rejected: Bool)]>([:])
+    /// Hosts whose cached site icon is being hashed in the background (`notRejected`, sync path).
+    private let hashing = Mutex<Set<String>>([])
 
     public init(
         pack: IconPackStore?, site: SiteIconLoader, custom: CustomIconStore? = nil,
@@ -90,7 +92,7 @@ public final class ItemIconResolver: Sendable {
         if let named = pack?.icon(forTitle: title)?.data { return (named, .pack) }
         guard let url else { return (nil, .monogram) }
         if let parent = parentBrandIcon(for: url, byName: true) { return (parent, .parentBrand) }
-        if let shown = Self.pick(chosen: nil, pack: nil, site: notRejected(site.cachedIcon(for: url), url: url)) {
+        if let shown = Self.pick(chosen: nil, pack: nil, site: notRejected(site.cachedIcon(for: url), url: url, hash: false)) {
             return (shown, .site)
         }
         if let parent = parentBrandIcon(for: url, byName: false) { return (parent, .parentBrand) }
@@ -133,14 +135,17 @@ public final class ItemIconResolver: Sendable {
         return shown ?? parentBrandIcon(for: url, byName: false)
     }
 
-    /// Same, loading the chosen icon from the vault first (`CustomIconStore.prefetch`): a chosen
-    /// icon that does not load gives the automatic one.
+    /// The automatic icon (steps 2 to 7), after loading the chosen icon `key` from the vault into
+    /// `custom` (`CustomIconStore.prefetch`). Never returns the chosen icon: a view keeps what this
+    /// returns in its state and reads the chosen one with `chosenIcon(_:)` at each frame, so a lock
+    /// (`CustomIconStore.removeAll`) leaves no copy of it behind.
     public func icon(for url: String?, title: String, custom key: CustomIconKey?) async -> Data? {
         if let key, let custom { await custom.prefetch(key) }
-        return await icon(for: url, title: title, chosen: chosenIcon(key))
+        return await icon(for: url, title: title, chosen: nil)
     }
 
-    private func chosenIcon(_ key: CustomIconKey?) -> Data? {
+    /// The chosen icon `key` if it is in memory now (`custom`), without waiting.
+    public func chosenIcon(_ key: CustomIconKey?) -> Data? {
         guard let key, let custom else { return nil }
         return custom.cached(key)
     }
@@ -163,11 +168,27 @@ public final class ItemIconResolver: Sendable {
 
     /// `png`, the site icon of `url`, unless it is a hosting platform's icon (the pack's `rejects`):
     /// one cached before the pack had that reject is refused here. Hashed once per host and icon.
-    func notRejected(_ png: Data?, url: String) -> Data? {
+    ///
+    /// `hash` false (the cache-only path, which a view's body calls on the main thread): never
+    /// hashes on the caller's thread. An icon not hashed yet is shown, and hashed in the
+    /// background. Shown rather than hidden because nearly every cached site icon is a real one
+    /// (a reject only catches one cached before the pack knew that platform): hiding would flash
+    /// every such row from monogram to icon once per launch, while the row's task
+    /// (`icon(for:title:)`, which hashes) replaces a refused one within the same moment.
+    func notRejected(_ png: Data?, url: String, hash: Bool = true) -> Data? {
         guard let png, let current = pack?.pack(), !current.rejects.isEmpty else { return png }
         let key = Self.host(of: url) ?? url
         if let memo = checked.withLock({ $0[key] }), memo.version == current.version, memo.png == png {
             return memo.rejected ? nil : png
+        }
+        guard hash else {
+            if hashing.withLock({ $0.insert(key).inserted }) {
+                Task.detached(priority: .utility) { [self] in
+                    _ = notRejected(png, url: url, hash: true)
+                    hashing.withLock { _ = $0.remove(key) }
+                }
+            }
+            return png
         }
         let rejected = IconPack.isRejected(png, by: current.rejects)
         checked.withLock { $0[key] = (png, current.version, rejected) }
@@ -177,6 +198,17 @@ public final class ItemIconResolver: Sendable {
             Task { await site.forget(url) }
         }
         return rejected ? nil : png
+    }
+
+    /// Hashes the cached site icon of `url` against the pack's rejects, off the caller's thread, so
+    /// the cache-only path (`cachedSource`) knows whether it is refused (the Debug report).
+    func checkCachedSiteIcon(for url: String) async {
+        _ = notRejected(site.cachedIcon(for: url), url: url, hash: true)
+    }
+
+    /// The hash of the cached site icon of `url` is known (tests).
+    func isChecked(_ url: String) -> Bool {
+        checked.withLock { $0[Self.host(of: url) ?? url] != nil }
     }
 
     /// The pack icon of the parent brand cached for the host of `url` (`byName` or `byLink`), only

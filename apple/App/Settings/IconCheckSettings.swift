@@ -69,11 +69,11 @@ struct IconCheckSettings: View {
             }
         }
         .settingsPage("Icônes à vérifier")
-        .onAppear(perform: reload)
+        .task { await reload() }
     }
 
-    private func reload() {
-        rows = IconSourceReport.report(model.session.summaries, resolver: model.iconLoader)
+    private func reload() async {
+        rows = await IconSourceReport.report(model.session.summaries, resolver: model.iconLoader)
     }
 
     /// One line per row, `domain<TAB>title<TAB>source`.

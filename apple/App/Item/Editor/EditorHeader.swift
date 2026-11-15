@@ -8,8 +8,9 @@ struct EditorHeader: View {
     @Environment(AppModel.self) private var model
     @Bindable var editor: ItemEditorModel
     var titleFocused: FocusState<Bool>.Binding
-    /// The site's icon, as on the item's page: editing keeps the same picture.
-    @State private var siteIcon: Data?
+    /// The automatic icon, as on the item's page: editing keeps the same picture. The chosen icon
+    /// is read from memory at each frame.
+    @State private var resolved: ResolvedIcon?
     /// "Choisir une icône…": the icon library sheet.
     @State private var choosingIcon = false
 
@@ -23,6 +24,7 @@ struct EditorHeader: View {
     private var primaryURL: String? { (item.urls.first(where: \.primary) ?? item.urls.first)?.url }
     /// The stored chosen icon, unless this edit picked another one or reset it.
     private var customKey: CustomIconKey? { editor.pendingCustomIcon == nil ? CustomIconKey(item) : nil }
+    private var taskID: ItemIconTaskID { ItemIconTaskID(url: primaryURL, title: item.title, custom: customKey) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -33,21 +35,19 @@ struct EditorHeader: View {
                 ) {
                     ItemIcon(
                         type: item.itemType, title: item.title,
-                        siteIcon: editor.pendingIconBytes ?? siteIcon
-                            ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title, custom: customKey),
+                        siteIcon: editor.pendingIconBytes ?? model.iconLoader.shownIcon(taskID, resolved: resolved),
                         size: 64, brand: item.cardBrandName, useCategory: item.iconCategory && !editor.hasCustomIcon,
                         tint: ItemTint.color(named: item.color),
                         domain: ItemIconResolver.registrableDomain(primaryURL))
                         .favoriteBadge(item.favorite, iconSize: 64)
                 }
-                // Follows the website being typed: a new address loads its icon. A chosen icon
-                // comes first, a new one is a new key.
-                .task(id: ItemIconTaskID(url: primaryURL, custom: customKey)) {
-                    siteIcon = await model.iconLoader.icon(
-                        for: primaryURL, title: item.title, custom: customKey)
+                // Follows the website and title being typed: a new address loads its icon. A
+                // chosen icon comes first, a new one is a new key; a reset drops the key, so the
+                // automatic icon shows.
+                .task(id: taskID) {
+                    let id = taskID
+                    resolved = ResolvedIcon(id: id, data: await model.iconLoader.icon(for: id.url, title: id.title, custom: id.custom))
                 }
-                // A reset shows the automatic icon, never the chosen one still in `siteIcon`.
-                .onChange(of: editor.pendingCustomIcon) { siteIcon = nil }
                 .sheet(isPresented: $choosingIcon) {
                     IconLibrarySheet(
                         title: item.title, domain: ItemIconResolver.registrableDomain(primaryURL),

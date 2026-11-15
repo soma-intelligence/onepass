@@ -45,7 +45,7 @@ struct OnePassApp: App {
         .onChange(of: scenePhase) { _, phase in
             model.scenePhaseChanged(phase)
             // Decrypted chosen icons never stay in memory while the app is in the background.
-            if phase == .background { model.iconLoader.custom?.removeAll() }
+            if phase == .background { model.purgeChosenIcons() }
         }
         .commands {
             BrowseCommands(model: model)
@@ -92,7 +92,7 @@ struct OnePassApp: App {
         .onChange(of: scenePhase) { _, phase in
             model.scenePhaseChanged(phase)
             // Decrypted chosen icons never stay in memory while the app is in the background.
-            if phase == .background { model.iconLoader.custom?.removeAll() }
+            if phase == .background { model.purgeChosenIcons() }
         }
         .commands {
             BrowseCommands(model: model)

@@ -9,7 +9,8 @@ struct ItemListRow: View {
     @Environment(AppModel.self) private var model
     private let summary: FfiItemSummary
     private let vaultName: String?
-    @State private var siteIcon: Data?
+    /// The automatic icon the task found (never the chosen one, read from memory at each frame).
+    @State private var resolved: ResolvedIcon?
 
     init(summary: FfiItemSummary, vaultName: String?) {
         self.summary = summary
@@ -27,20 +28,11 @@ struct ItemListRow: View {
         return line.isEmpty ? ItemCategory.of(summary.itemType).singular : line
     }
 
-    /// The icon already on this device (the chosen one first): shown on the first frame, before
-    /// the task answers.
-    private var cachedIcon: Data? {
-        model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
-    }
+    private var taskID: ItemIconTaskID { ItemIconTaskID(summary) }
 
     /// The row draws the icon the person chose (loaded from the vault): the row's accessibility
     /// value says so, and the icon carries `list.row.icon.custom` (UI tests).
-    private var showsCustomIcon: Bool {
-        guard let key = CustomIconKey(summary), let store = model.iconLoader.custom,
-            let chosen = store.cached(key)
-        else { return false }
-        return (siteIcon ?? cachedIcon) == chosen
-    }
+    private var showsCustomIcon: Bool { model.iconLoader.chosenIcon(CustomIconKey(summary)) != nil }
 
     /// The site icon tile: 36 pt on iPhone and iPad, 40 pt on the Mac.
     #if os(iOS)
@@ -53,7 +45,7 @@ struct ItemListRow: View {
 
     var body: some View {
         HStack(spacing: Self.iconSpacing) {
-            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: siteIcon ?? cachedIcon, size: Self.iconSize, brand: summary.cardBrand,
+            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.shownIcon(taskID, resolved: resolved), size: Self.iconSize, brand: summary.cardBrand,
                 useCategory: summary.usesCategoryIcon, tint: ItemTint.color(named: summary.color),
                 domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
                 .accessibilityIdentifier(showsCustomIcon ? "list.row.icon.custom" : "")
@@ -82,9 +74,9 @@ struct ItemListRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityValue(showsCustomIcon ? Text("list.row.customIcon") : Text(verbatim: ""))
         .accessibilityIdentifier("list.row.\(summary.title)")
-        .task(id: ItemIconTaskID(url: summary.primaryUrl, custom: CustomIconKey(summary))) {
-            siteIcon = await model.iconLoader.icon(
-                for: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
+        .task(id: taskID) {
+            let id = taskID
+            resolved = ResolvedIcon(id: id, data: await model.iconLoader.icon(for: id.url, title: id.title, custom: id.custom))
         }
     }
 }
@@ -99,10 +91,40 @@ extension FfiItem {
     var usesCategoryIcon: Bool { iconCategory && CustomIconKey(self) == nil }
 }
 
-/// What an icon task follows: the item's address and its chosen icon (a new one is a new key).
+/// What an icon task follows: the item's address, its title (the pack's brand names) and its chosen
+/// icon (a new one is a new key).
 struct ItemIconTaskID: Equatable {
     let url: String?
+    let title: String
     let custom: CustomIconKey?
+}
+
+extension ItemIconTaskID {
+    init(_ summary: FfiItemSummary) {
+        self.init(url: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
+    }
+}
+
+/// The automatic icon an icon task found, with what it was found for. Never the chosen icon: that
+/// one is read from `CustomIconStore` at each frame, so a lock or sign out (`removeAll`) leaves no
+/// copy in view state.
+struct ResolvedIcon: Equatable {
+    let id: ItemIconTaskID
+    let data: Data?
+    /// Distinct per answer, so a chosen icon that just loaded redraws the view even when the
+    /// automatic icon is unchanged.
+    let answer = UUID()
+}
+
+extension ItemIconResolver {
+    /// What an item's icon view draws: the chosen icon in memory now, else the automatic icon its
+    /// task found for `id` (one found for an older address or title is ignored), else the automatic
+    /// icon already on this device.
+    func shownIcon(_ id: ItemIconTaskID, resolved: ResolvedIcon?) -> Data? {
+        if let chosen = chosenIcon(id.custom) { return chosen }
+        if let resolved, resolved.id == id { return resolved.data }
+        return cachedIcon(for: id.url, title: id.title, custom: nil)
+    }
 }
 
 /// Hands `content` the item's icon already on this device (`ItemIconResolver.cachedIcon`, the
@@ -129,9 +151,11 @@ struct ItemIconSource<Content: View>: View {
 }
 
 extension ItemIconSource {
-    /// The icon of a list row.
-    init(_ summary: FfiItemSummary, @ViewBuilder content: @escaping (Data?) -> Content) {
-        self.init(url: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary), content: content)
+    /// The icon of a list row. `chosen` false: the automatic icon only (a row of another account).
+    init(_ summary: FfiItemSummary, chosen: Bool = true, @ViewBuilder content: @escaping (Data?) -> Content) {
+        self.init(
+            url: summary.primaryUrl, title: summary.title, custom: chosen ? CustomIconKey(summary) : nil,
+            content: content)
     }
 }
 

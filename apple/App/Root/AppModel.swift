@@ -1233,9 +1233,17 @@ final class AppModel {
         } else {
             resetNavigation()
             // Decrypted chosen icons never outlive the unlock; failures marked while locked go too.
-            iconLoader.custom?.removeAll()
+            purgeChosenIcons()
         }
         companion.sessionChanged()
+    }
+
+    /// Forgets every decrypted chosen icon (`CustomIconStore`) and every decoded icon
+    /// (`ItemIcon.purgeCache`): on a lock, an account switch and in the background. Views keep only
+    /// automatic icons in their state, so nothing else holds a chosen icon's bytes.
+    func purgeChosenIcons() {
+        iconLoader.custom?.removeAll()
+        ItemIcon.purgeCache()
     }
 
     /// The last session state seen by `sessionStateChanged`, with its account: an unlock is a change

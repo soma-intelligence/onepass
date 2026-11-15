@@ -17,17 +17,22 @@ public enum IconSource: String, CaseIterable, Sendable {
 }
 
 /// The list behind Debug > "Icônes à vérifier": every login with the source of its icon, so a
-/// wrong logo can be flagged. Reads the caches only (no request) and sends nothing anywhere; like a row,
-/// it may drop a cached site icon that matches a reject.
+/// wrong logo can be flagged. Makes no network request and sends nothing anywhere: it loads the
+/// chosen icons from the vault (so they count as chosen) and hashes the cached site icons against
+/// the pack's rejects (so a refused one counts as refused), then reads the caches.
 public enum IconSourceReport {
     public typealias Row = (domain: String, title: String, source: IconSource)
 
     /// One row per login that is not in the trash, from summaries already loaded. The domain is the
     /// registrable one of the item's address, empty when it has none. Sorted by source (monogram
     /// first), then domain, then title.
-    public static func report(_ summaries: [FfiItemSummary], resolver: ItemIconResolver) -> [Row] {
-        summaries
-            .filter { $0.itemType == .login && $0.trashedAt == nil }
+    public static func report(_ summaries: [FfiItemSummary], resolver: ItemIconResolver) async -> [Row] {
+        let logins = summaries.filter { $0.itemType == .login && $0.trashedAt == nil }
+        if let custom = resolver.custom {
+            for key in logins.compactMap(CustomIconKey.init) { await custom.prefetch(key) }
+        }
+        for url in Set(logins.compactMap(\.primaryUrl)) { await resolver.checkCachedSiteIcon(for: url) }
+        return logins
             .map { summary -> Row in
                 let source = resolver.cachedSource(
                     for: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary)

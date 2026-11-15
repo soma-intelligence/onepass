@@ -256,23 +256,45 @@ struct AutoFillIcon: View {
     let url: String?
     var custom: CustomIconKey? = nil
     var size: CGFloat = 36
-    @State private var icon: Data?
+    /// The automatic icon the task found, with what it was found for. The chosen icon is read
+    /// from the loader's memory at each frame, never kept here.
+    @State private var resolved: Resolved?
 
+    /// What the task follows: a new title can match another brand of the pack.
     private struct TaskID: Equatable {
         let url: String?
+        let title: String
         let custom: CustomIconKey?
     }
 
+    private struct Resolved: Equatable {
+        let id: TaskID
+        let data: Data?
+        /// Distinct per answer: a chosen icon that just loaded redraws the view.
+        let answer = UUID()
+    }
+
+    private var taskID: TaskID { TaskID(url: url, title: title, custom: custom) }
+
+    /// The chosen icon in memory, else the automatic icon found for the current `taskID` (never
+    /// one found for an older address or title), else the one already on this device.
+    private var shown: Data? {
+        guard let loader else { return nil }
+        if let chosen = loader.chosenIcon(custom) { return chosen }
+        if let resolved, resolved.id == taskID { return resolved.data }
+        return loader.cachedIcon(for: url, title: title, custom: nil)
+    }
+
     var body: some View {
-        ItemIcon(type: type, title: title, siteIcon: icon ?? loader?.cachedIcon(for: url, title: title, custom: custom),
-            size: size, domain: ItemIconResolver.registrableDomain(url))
-            .task(id: TaskID(url: url, custom: custom)) {
+        ItemIcon(type: type, title: title, siteIcon: shown, size: size, domain: ItemIconResolver.registrableDomain(url))
+            .task(id: taskID) {
+                let id = taskID
                 guard let loader, url != nil || custom != nil else {
-                    icon = nil
+                    resolved = nil
                     return
                 }
-                let loaded = await loader.icon(for: url, title: title, custom: custom)
-                withAnimation(.easeOut(duration: 0.15)) { icon = loaded }
+                let loaded = await loader.icon(for: id.url, title: id.title, custom: id.custom)
+                withAnimation(.easeOut(duration: 0.15)) { resolved = Resolved(id: id, data: loaded) }
             }
     }
 }

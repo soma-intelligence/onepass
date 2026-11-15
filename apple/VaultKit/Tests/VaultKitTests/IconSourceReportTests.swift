@@ -28,8 +28,8 @@ import Testing
         _ = await resolver.icon(for: "https://members.bayclub-report-test.com/login", title: "")
         _ = await resolver.icon(for: "https://own-icon-report-test.com/", title: "")
 
+        // Not loaded before: the report loads it, so it counts as chosen.
         let chosen = Self.login("Mine", url: "https://mine-report-test.com", icon: "ic1")
-        await store.prefetch(try #require(CustomIconKey(chosen)))
         let items = [
             chosen,
             Self.login("Brand club", url: "https://www.brandclub.com/signin"),
@@ -40,7 +40,7 @@ import Testing
             Self.login("Gone", url: "https://gone-report-test.com", trashed: true),
             Self.login("A note", url: nil, type: .secureNote),
         ]
-        let rows = IconSourceReport.report(items, resolver: resolver)
+        let rows = await IconSourceReport.report(items, resolver: resolver)
         #expect(
             rows.map { "\($0.domain)|\($0.title)|\($0.source.rawValue)" } == [
                 "|No address|monogram",
@@ -53,10 +53,10 @@ import Testing
         #expect(IconSourceReport.text(rows).split(separator: "\n").first == "\tNo address\tmonogram")
     }
 
-    @Test func iconsOffGivesMonogramForEverything() throws {
+    @Test func iconsOffGivesMonogramForEverything() async throws {
         let base = try ItemIconResolverParentBrandTests.make()
         let off = ItemIconResolver(pack: base.pack, site: base.site, enabled: { false })
-        let rows = IconSourceReport.report([Self.login("Brand club", url: "https://brandclub.com")], resolver: off)
+        let rows = await IconSourceReport.report([Self.login("Brand club", url: "https://brandclub.com")], resolver: off)
         #expect(rows.map(\.source) == [.monogram])
     }
 }

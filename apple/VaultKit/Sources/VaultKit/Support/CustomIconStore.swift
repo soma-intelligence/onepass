@@ -141,14 +141,18 @@ public final class CustomIconStore: Sendable {
 
 extension CustomIconStore {
     /// The store of an app or extension: icons read from the vault `session()` returns now (the
-    /// account shown). A locked vault is "not now", never a failure. An extension, with its
-    /// tighter memory, passes a smaller `capacity`.
+    /// account shown). A locked vault, or a vault the account shown does not have (another
+    /// account's, in the all-accounts search), is "not now", never a failure: switching to that
+    /// account later still loads it. An extension, with its tighter memory, passes a smaller
+    /// `capacity`.
     public static func vault(
         _ session: @escaping @MainActor () -> VaultSession, capacity: Int = CustomIconStore.capacity
     ) -> CustomIconStore {
         CustomIconStore(capacity: capacity) { @MainActor key in
+            let current = session()
+            guard current.allVaults.contains(where: { $0.id == key.vaultID }) else { throw CancellationError() }
             do {
-                return try await session().customIconData(itemID: key.itemID, vaultID: key.vaultID)
+                return try await current.customIconData(itemID: key.itemID, vaultID: key.vaultID)
             } catch VaultError.passwordRequired {
                 throw CancellationError()
             }

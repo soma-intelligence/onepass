@@ -187,8 +187,15 @@ private func store(_ counter: LoadCounter, clock: TestClock = TestClock(), capac
         let url = "https://account.withings.com/login"
         // Before the load: the pack icon, on the first frame.
         #expect(icons.cachedIcon(for: url, title: "Withings", custom: key()) == packIcon)
-        #expect(await icons.icon(for: url, title: "Withings", custom: key()) == chosen)
+        // The task gets the automatic icon (views never keep the chosen bytes) and the chosen one
+        // is then in memory, read at each frame.
+        #expect(await icons.icon(for: url, title: "Withings", custom: key()) == packIcon)
+        #expect(icons.chosenIcon(key()) == chosen)
         #expect(icons.cachedIcon(for: url, title: "Withings", custom: key()) == chosen)
+        // A lock forgets it: the automatic icon again.
+        icons.custom?.removeAll()
+        #expect(icons.chosenIcon(key()) == nil)
+        #expect(icons.cachedIcon(for: url, title: "Withings", custom: key()) == packIcon)
         // No key: the automatic icon.
         #expect(icons.cachedIcon(for: url, title: "Withings", custom: nil) == packIcon)
     }
