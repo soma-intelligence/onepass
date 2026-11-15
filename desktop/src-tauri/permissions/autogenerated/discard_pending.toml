@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-discard-pending"
+description = "Enables the discard_pending command without any pre-configured scope."
+commands.allow = ["discard_pending"]
+
+[[permission]]
+identifier = "deny-discard-pending"
+description = "Denies the discard_pending command without any pre-configured scope."
+commands.deny = ["discard_pending"]

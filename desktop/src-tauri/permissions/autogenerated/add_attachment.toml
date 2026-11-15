@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-add-attachment"
+description = "Enables the add_attachment command without any pre-configured scope."
+commands.allow = ["add_attachment"]
+
+[[permission]]
+identifier = "deny-add-attachment"
+description = "Denies the add_attachment command without any pre-configured scope."
+commands.deny = ["add_attachment"]

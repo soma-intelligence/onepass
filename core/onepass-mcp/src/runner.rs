@@ -10,13 +10,21 @@
 //! group: past the timeout the whole group is killed (`SIGKILL`), and so
 //! is whatever the command left running once it exits, so no background
 //! job outlives the run with the injected secrets.
+//!
+//! Windows: [`run`] refuses (`Unsupported`) until the run lives in a Job
+//! Object killed on close (spec 2026-10-30, milestone X3). Without one a
+//! child could leave a process behind with the secrets, which this module
+//! promises never happens.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
+
+use onepass_guard::private::private;
 use std::path::{Path, PathBuf};
 
 use data_encoding::HEXLOWER;
@@ -124,15 +132,23 @@ pub fn resolve_program(
     cwd: Option<&Path>,
     path: Option<&std::ffi::OsStr>,
 ) -> Option<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
+    #[cfg(unix)]
     let executable = |p: &Path| {
+        use std::os::unix::fs::PermissionsExt;
         std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    };
+    // Windows has no execute bit: an `.exe` or `.com` regular file runs.
+    #[cfg(not(unix))]
+    let executable = |p: &Path| {
+        std::fs::metadata(p).is_ok_and(|m| m.is_file())
+            && p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("exe") || e.eq_ignore_ascii_case("com"))
     };
     let base = |p: &Path| match cwd {
         Some(c) if p.is_relative() => c.join(p),
         _ => p.to_path_buf(),
     };
-    let found = if program.contains('/') {
+    let found = if program.contains('/') || (cfg!(windows) && program.contains('\\')) {
         Some(base(Path::new(program))).filter(|p| executable(p))
     } else {
         std::env::split_paths(path?)
@@ -184,8 +200,18 @@ fn program_material(program: &Path, args: &[String], cwd: Option<&Path>) -> Opti
 }
 
 /// Runs `req` and waits for it, at most `req.timeout`.
+#[cfg(unix)]
 pub fn run(req: &RunRequest) -> io::Result<RunOutput> {
     run_with_parent_env(req, std::env::vars_os().collect())
+}
+
+/// Windows: refused, see the module documentation.
+#[cfg(not(unix))]
+pub fn run(_req: &RunRequest) -> io::Result<RunOutput> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "run_with_secrets is not available on this system yet",
+    ))
 }
 
 /// [`run`] with the parent environment given explicitly (the child starts
@@ -199,8 +225,9 @@ fn run_with_parent_env(
         .split_first()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "empty command"))?;
     let mut cmd = Command::new(program);
+    #[cfg(unix)]
+    cmd.process_group(0);
     cmd.args(args)
-        .process_group(0)
         .env_clear()
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -288,16 +315,22 @@ fn run_with_parent_env(
 /// A `0700` temporary directory holding one `0600` file per entry.
 fn secret_dir(files: &[(String, Zeroizing<String>)]) -> io::Result<tempfile::TempDir> {
     let dir = tempfile::Builder::new().prefix("onepass-run-").tempdir()?;
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700))?;
+    }
     for (name, value) in files {
-        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+        if name.is_empty()
+            || name.contains('/')
+            || name.contains('\\')
+            || name == "."
+            || name == ".."
+        {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "bad file name"));
         }
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(dir.path().join(name))?;
+        let mut f =
+            private(OpenOptions::new().write(true).create_new(true)).open(dir.path().join(name))?;
         f.write_all(value.as_bytes())?;
     }
     Ok(dir)
@@ -342,7 +375,35 @@ fn take(c: &Captured) -> (Zeroizing<Vec<u8>>, bool) {
     (std::mem::take(&mut c.0), c.1)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(unix)))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn run_is_refused_until_job_objects() {
+        let req = RunRequest {
+            argv: vec!["cmd.exe".into(), "/C".into(), "exit".into()],
+            env: Vec::new(),
+            files: Vec::new(),
+            cwd: None,
+            timeout: std::time::Duration::from_secs(5),
+        };
+        let e = run(&req).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn resolve_program_finds_an_exe() {
+        let sys = std::env::var_os("SystemRoot").unwrap();
+        let dir = PathBuf::from(&sys).join("System32");
+        let found = resolve_program("cmd.exe", None, Some(dir.as_os_str())).unwrap();
+        assert!(found.ends_with("cmd.exe") || found.ends_with("CMD.EXE"));
+        assert!(resolve_program("no-such-program.exe", None, Some(dir.as_os_str())).is_none());
+    }
+}
+
+// The runs need `/bin/sh` and process groups.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

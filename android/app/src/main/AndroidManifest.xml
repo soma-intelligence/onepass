@@ -1,24 +1,95 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Fingerprint or face unlock (BiometricPrompt). -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Watchtower "Vérifier les fuites": HIBP ranges (5-hex prefixes) and public catalogs, HTTPS only. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- No backup of any kind: the vault and the device secrets stay on
          this device (plan X4, global constraints). -->
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.DayNight"
         android:usesCleartextTraffic="false">
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- AutoFill: the Logins in apps and browsers (fill/). -->
+        <service
+            android:name=".fill.OnePassAutofillService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.autofill"
+                android:resource="@xml/autofill_service" />
+        </service>
+
+        <activity
+            android:name=".fill.FillActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Passkeys and passwords in Android's Credential Manager (passkey/), Android 14+. -->
+        <service
+            android:name=".passkey.OnePassCredentialService"
+            android:enabled="@bool/credential_provider_enabled"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.credentials.CredentialProviderService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.credentials.provider"
+                android:resource="@xml/credential_provider" />
+        </service>
+
+        <activity
+            android:name=".passkey.PasskeyActivity"
+            android:enabled="@bool/credential_provider_enabled"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- The periodic background sync round (vault/SyncJob). -->
+        <service
+            android:name=".vault.SyncJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- One decrypted attachment, lent read only to the app the user
+             picks (per-URI grant); never exported. -->
+        <provider
+            android:name=".AttachmentProvider"
+            android:authorities="${applicationId}.attachments"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

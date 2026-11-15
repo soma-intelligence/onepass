@@ -35,6 +35,11 @@ android {
         create("fdroid") { dimension = "distribution" }
     }
 
+    // The brand icon pack is memory mapped from the assets: kept uncompressed.
+    androidResources {
+        noCompress += listOf("bin")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -44,4 +49,6 @@ android {
 dependencies {
     implementation(project(":vaultkit-android"))
     implementation(project(":wifi"))
+    implementation(project(":autofill"))
+    implementation(project(":credentials"))
 }

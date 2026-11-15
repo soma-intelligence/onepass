@@ -7,6 +7,10 @@
 //!
 //! The hub is one per process: every test here that uses it (any bridge
 //! session or MCP fill) must hold [`one_at_a_time`] for its whole run.
+//!
+//! Unix only: these tests drive the socket hosts (SSH agent, MCP, bridge),
+//! whose Windows named pipes come with milestone X3.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

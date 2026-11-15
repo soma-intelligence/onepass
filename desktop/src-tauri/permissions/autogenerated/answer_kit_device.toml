@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-answer-kit-device"
+description = "Enables the answer_kit_device command without any pre-configured scope."
+commands.allow = ["answer_kit_device"]
+
+[[permission]]
+identifier = "deny-answer-kit-device"
+description = "Denies the answer_kit_device command without any pre-configured scope."
+commands.deny = ["answer_kit_device"]

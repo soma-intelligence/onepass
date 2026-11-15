@@ -796,6 +796,7 @@ fn rebinding_keeps_forwarding_and_refuses_a_direct_connection() {
 }
 
 #[test]
+#[cfg(unix)]
 fn other_uid_is_refused() {
     let mut f = fixture(vec![Decision::AllowOnce]);
     let stranger = PeerInfo {
