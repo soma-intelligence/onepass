@@ -3,5 +3,9 @@
   "setup_totp": {
     "url": "https://my.slack.com/account/settings",
     "steps": []
+  },
+  "setup_passkey": {
+    "url": "https://my.slack.com/account/settings",
+    "steps": []
   }
 }

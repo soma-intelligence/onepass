@@ -3,5 +3,9 @@
   "setup_totp": {
     "url": "https://myaccount.google.com/signinoptions/two-step-verification",
     "steps": []
+  },
+  "setup_passkey": {
+    "url": "https://myaccount.google.com/signinoptions/passkeys",
+    "steps": []
   }
 }
