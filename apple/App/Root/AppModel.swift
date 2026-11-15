@@ -26,6 +26,10 @@ final class AppModel {
     /// approvals) stay on the primary account (ruling P7); the browser bridge serves every unlocked
     /// account, under the primary account's lock (ruling C).
     var session: VaultSession { accounts.active }
+    /// Bumped when the app comes to the front and after an unlock: item icon tasks follow it, so a
+    /// view that stayed on screen through a purge (`purgeChosenIcons`) loads its chosen icon again.
+    /// Never bumped by the purge itself: a load in the background would undo it.
+    private(set) var iconEpoch = 0
     /// The primary account's session.
     var primarySession: VaultSession { accounts.primary }
     @ObservationIgnored let accountLink: AccountModelLink
@@ -745,6 +749,7 @@ final class AppModel {
             // The app in front: the screen is there, whatever notification was missed.
             screenCameBack()
             #endif
+            iconEpoch &+= 1
             biometricAutoPrompt.scenePhaseChanged(.active)
             accounts.scenePhaseChanged(.active)
             // A lock asked by a Control while the app was in the background or not notified.
@@ -1220,6 +1225,8 @@ final class AppModel {
             // placeholder first.
             let urls = session.summaries.compactMap(\.primaryUrl)
             Task(priority: .utility) { [iconLoader] in await iconLoader.prefetch(urls) }
+            // Chosen icons purged at the lock load again in the views still on screen.
+            iconEpoch &+= 1
             resumeMailboxSetup()
             resumeMigration()
             #if os(macOS)

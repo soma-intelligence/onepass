@@ -28,7 +28,7 @@ struct ItemListRow: View {
         return line.isEmpty ? ItemCategory.of(summary.itemType).singular : line
     }
 
-    private var taskID: ItemIconTaskID { ItemIconTaskID(summary) }
+    private var taskID: ItemIconTaskID { ItemIconTaskID(summary, epoch: model.iconEpoch) }
 
     /// The row draws the icon the person chose (loaded from the vault): the row's accessibility
     /// value says so, and the icon carries `list.row.icon.custom` (UI tests).
@@ -91,17 +91,24 @@ extension FfiItem {
     var usesCategoryIcon: Bool { iconCategory && CustomIconKey(self) == nil }
 }
 
-/// What an icon task follows: the item's address, its title (the pack's brand names) and its chosen
-/// icon (a new one is a new key).
+/// What an icon task follows: the item's address, its title (the pack's brand names), its chosen
+/// icon (a new one is a new key) and `AppModel.iconEpoch` (the app back in front or unlocked: a
+/// chosen icon purged meanwhile loads again).
 struct ItemIconTaskID: Equatable {
     let url: String?
     let title: String
     let custom: CustomIconKey?
+    let epoch: Int
+
+    /// Same item icon, whatever the epoch: an automatic icon found before a purge still stands.
+    func sameIcon(as other: ItemIconTaskID) -> Bool {
+        url == other.url && title == other.title && custom == other.custom
+    }
 }
 
 extension ItemIconTaskID {
-    init(_ summary: FfiItemSummary) {
-        self.init(url: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary))
+    init(_ summary: FfiItemSummary, epoch: Int) {
+        self.init(url: summary.primaryUrl, title: summary.title, custom: CustomIconKey(summary), epoch: epoch)
     }
 }
 
@@ -118,11 +125,12 @@ struct ResolvedIcon: Equatable {
 
 extension ItemIconResolver {
     /// What an item's icon view draws: the chosen icon in memory now, else the automatic icon its
-    /// task found for `id` (one found for an older address or title is ignored), else the automatic
-    /// icon already on this device.
+    /// task found for `id` (one found for an older address or title is ignored; one from an older
+    /// epoch stands, so a return to the app never blinks), else the automatic icon already on this
+    /// device.
     func shownIcon(_ id: ItemIconTaskID, resolved: ResolvedIcon?) -> Data? {
         if let chosen = chosenIcon(id.custom) { return chosen }
-        if let resolved, resolved.id == id { return resolved.data }
+        if let resolved, resolved.id.sameIcon(as: id) { return resolved.data }
         return cachedIcon(for: id.url, title: id.title, custom: nil)
     }
 }
@@ -139,13 +147,21 @@ struct ItemIconSource<Content: View>: View {
     /// Bumped when a load settles: the icon is read again.
     @State private var loads = 0
 
+    /// The chosen icon, and `AppModel.iconEpoch`: loaded again after a purge.
+    private struct SourceTaskID: Equatable {
+        let custom: CustomIconKey?
+        let epoch: Int
+    }
+
     var body: some View {
         let _ = loads
         content(model.iconLoader.cachedIcon(for: url, title: title, custom: custom))
-            .task(id: custom) {
-                guard let custom, let store = model.iconLoader.custom, store.cached(custom) == nil else { return }
+            .task(id: SourceTaskID(custom: custom, epoch: model.iconEpoch)) {
+                guard let custom, let store = model.iconLoader.custom else { return }
+                // Also when in memory: asking keeps it among the recently used.
+                let missing = store.cached(custom) == nil
                 await store.prefetch(custom)
-                loads &+= 1
+                if missing { loads &+= 1 }
             }
     }
 }

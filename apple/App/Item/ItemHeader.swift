@@ -20,7 +20,7 @@ struct ItemHeader: View {
     #endif
 
     private var taskID: ItemIconTaskID {
-        ItemIconTaskID(url: primaryURL, title: item.title, custom: CustomIconKey(item))
+        ItemIconTaskID(url: primaryURL, title: item.title, custom: CustomIconKey(item), epoch: model.iconEpoch)
     }
 
     private var iconData: Data? { model.iconLoader.shownIcon(taskID, resolved: resolved) }

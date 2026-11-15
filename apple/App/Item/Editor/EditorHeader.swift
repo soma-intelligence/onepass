@@ -24,7 +24,9 @@ struct EditorHeader: View {
     private var primaryURL: String? { (item.urls.first(where: \.primary) ?? item.urls.first)?.url }
     /// The stored chosen icon, unless this edit picked another one or reset it.
     private var customKey: CustomIconKey? { editor.pendingCustomIcon == nil ? CustomIconKey(item) : nil }
-    private var taskID: ItemIconTaskID { ItemIconTaskID(url: primaryURL, title: item.title, custom: customKey) }
+    private var taskID: ItemIconTaskID {
+        ItemIconTaskID(url: primaryURL, title: item.title, custom: customKey, epoch: model.iconEpoch)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
