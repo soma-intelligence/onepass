@@ -769,15 +769,21 @@ def icon_links(html, base):
 
 def fetch_url(url, limit, headers=None):
     """(bytes, final URL after redirects), https only. `headers` replace or add to the defaults."""
+    import http.client
     import urllib.request
     if not url.startswith("https://"):
         raise IconPackError("not https")
     request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*", **(headers or {})})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        final = response.geturl()
-        if not final.startswith("https://"):
-            raise IconPackError("redirected off https")
-        data = response.read(limit + 1)
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            final = response.geturl()
+            if not final.startswith("https://"):
+                raise IconPackError("redirected off https")
+            data = response.read(limit + 1)
+    except http.client.HTTPException as error:
+        # A cut or malformed response (IncompleteRead, BadStatusLine...) is a connection error:
+        # callers skip the site, and Wikimedia requests are retried.
+        raise ConnectionError(f"bad HTTP response: {type(error).__name__}") from error
     if len(data) > limit:
         raise IconPackError("too large")
     return data, final
