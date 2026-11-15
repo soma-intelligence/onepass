@@ -1937,3 +1937,77 @@ input.check-box {
   letter-spacing: 6px;
   font-size: 22px;
 }
+
+/* ---- sharing (SharingBanners, ContactsView, SafetyNumberView) ---- */
+.badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.orange-badge {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+}
+.green-text {
+  color: var(--green);
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.orange-text {
+  color: var(--orange);
+}
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.banner.warn {
+  flex-direction: column;
+  align-items: flex-start;
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+  margin-bottom: 12px;
+}
+.banner-line {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.banner .row-text {
+  flex: 1;
+}
+.shared-mark {
+  display: inline-flex;
+  margin-left: 4px;
+}
+.safety-number {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  justify-content: center;
+  gap: 8px 18px;
+  font-size: 20px;
+  font-weight: 600;
+  user-select: text;
+}
+.invite-link {
+  word-break: break-all;
+  user-select: text;
+  font-size: 13px;
+}
+#lock-alerts {
+  max-width: 420px;
+}

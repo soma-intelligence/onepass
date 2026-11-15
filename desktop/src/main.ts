@@ -56,6 +56,10 @@ interface Vault {
   icon: string;
   color: string;
   itemCount: number;
+  /** A shared vault: this account's role. */
+  sharedRole: "read" | "write" | "manage" | null;
+  sharedOwner: boolean;
+  memberCount: number;
 }
 interface Summary {
   id: string;
@@ -158,6 +162,14 @@ function message(e: unknown): string {
       return t("Un champ n'est pas valide : ", "A field is not valid: ") + err.detail;
     case "NotFound":
       return t("Élément introuvable.", "Item not found.");
+    case "ContactNotVerified":
+      return t("Vérifie d'abord ce contact en personne ou avec son numéro de sécurité.", "Verify this contact in person or with their safety number first.");
+    case "ReadOnlyRole":
+      return t("Tu peux seulement consulter ce coffre.", "You can only view this vault.");
+    case "IdentityPending":
+      return t("Un gestionnaire du coffre doit confirmer tes nouvelles clés avant que tu puisses modifier.", "A vault manager must confirm your new keys before you can make changes.");
+    case "MembershipFork":
+      return t("Le serveur a montré deux listes de membres différentes.", "The server showed two different member lists.");
     default:
       return err?.detail ?? String(e);
   }
@@ -417,6 +429,7 @@ async function reload(): Promise<void> {
   ui.name = account.name;
   ui.report = null;
   ui.duplicates = await call<DuplicateGroup[]>("duplicate_groups").catch(() => []);
+  await loadSharing();
   await loadSiteIcons();
   void loadReport();
 }
@@ -760,6 +773,7 @@ function lockScreen(status: Status): HTMLElement {
       },
     },
     appIcon(96),
+    h("div", { id: "lock-alerts" }),
     h("h1", {}, t("Déverrouille OnePass", "Unlock OnePass")),
     h("div", { class: "account-capsule" }, monogram("1", "var(--accent)", 26, true), h("span", {}, t("Compte OnePass", "OnePass Account"))),
     box,
@@ -770,7 +784,16 @@ function lockScreen(status: Status): HTMLElement {
         `Auto-lock after ${status.autoLockMinutes} min. Device keys protected by ${status.protection === "dpapi" ? "Windows (DPAPI)" : status.protection}.`)),
   );
   queueMicrotask(() => input.focus());
+  queueMicrotask(() => void showLockAlerts());
   return h("div", { class: "center" }, form);
+}
+
+/** A recovery asked by an organizer shows locked too (spec 11.5). */
+async function showLockAlerts(): Promise<void> {
+  const box = document.getElementById("lock-alerts");
+  if (!box) return;
+  recoveryAlerts = await call<RecoveryAlertInfo[]>("recovery_alerts").catch(() => []);
+  box.replaceChildren(...recoveryAlerts.map((a) => recoveryAlertCard(a, () => void showLockAlerts())));
 }
 
 async function lockNow(): Promise<void> {
@@ -862,7 +885,11 @@ function renderSidebar(): void {
       ...ui.vaults
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((v) => nav(v.name, monogram(v.name.slice(0, 1).toUpperCase(), vaultColor(v.color), 22), live.filter((i) => i.vaultId === v.id).length, { kind: "list", filter: { kind: "vault", id: v.id }, title: v.name })),
+        .map((v) => {
+          const b = nav(v.name, monogram(v.name.slice(0, 1).toUpperCase(), vaultColor(v.color), 22), live.filter((i) => i.vaultId === v.id).length, { kind: "list", filter: { kind: "vault", id: v.id }, title: v.name });
+          if (v.sharedRole) b.querySelector(".nav-label")!.after(h("span", { class: "shared-mark", title: t("Partagé", "Shared") }, icon("share", 14, "secondary")));
+          return b;
+        }),
       h("button", { class: "nav add", onclick: () => vaultEditor(null) }, icon("add", 18, "accent"), h("span", { class: "nav-label accent" }, t("Nouveau coffre", "New Vault"))),
       cats.length ? h("h3", {}, t("Catégories", "Categories")) : null,
       ...cats.map((c) => nav(c.plural, art(c.key, 22), live.filter((i) => i.itemType === c.key).length, { kind: "list", filter: { kind: "category", key: c.key }, title: c.plural })),
@@ -903,6 +930,7 @@ function homePage(): HTMLElement {
       "div",
       { class: "page" },
       h("h1", { class: "large-title" }, title),
+      sharingBanners(),
       h("div", { class: "empty-state" }, fan, h("h2", {}, t("Ton coffre est vide", "Your Vault Is Empty")),
         h("p", { class: "secondary" }, t("Mots de passe, cartes, identités, notes : tout ce que tu ranges ici est chiffré sur tes appareils.", "Passwords, cards, identities, notes: everything you keep here is encrypted on your devices.")),
         h("button", { class: "capsule prominent", onclick: () => newItem() }, t("Créer ton premier élément", "Create Your First Item"))),
@@ -933,6 +961,7 @@ function homePage(): HTMLElement {
     "div",
     { class: "page" },
     h("h1", { class: "large-title" }, title),
+    sharingBanners(),
     h(
       "div",
       { class: "tiles" },
@@ -1117,7 +1146,7 @@ async function renderDetail(): Promise<void> {
   const toolbar = h(
     "div",
     { class: "toolbar" },
-    h("div", { class: "pill" }, ...(item.trashed ? [more] : [star, h("button", { class: "bar-text", onclick: () => void editItem(item, false) }, t("Modifier", "Edit")), more])),
+    h("div", { class: "pill" }, ...(item.trashed ? [more] : ui.vaults.find((v) => v.id === item.vaultId)?.sharedRole === "read" ? [star, more] : [star, h("button", { class: "bar-text", onclick: () => void editItem(item, false) }, t("Modifier", "Edit")), more])),
   );
 
   const vault = ui.vaults.find((v) => v.id === item.vaultId);
@@ -1408,6 +1437,7 @@ function actions(anchor: HTMLElement, item: Item): void {
   const username = item.sections.flatMap((s) => s.fields).find((f) => f.id === "username" || f.kind === "email");
   if (username?.value) entries.push({ label: t("Copier l'identifiant", "Copy Username"), icon: "copy", action: () => void call("copy_field", { ...args, fieldId: username.id }).then(() => toast(t("Copié", "Copied"))) });
   if (ui.vaults.length > 1) entries.push({ label: t("Déplacer…", "Move…"), icon: "folder", action: () => moveSheet(item) });
+  if (sharing.zonesReady) entries.push({ label: t("Envoyer une copie…", "Send a Copy…"), icon: "share", action: () => sendItemSheet(item) });
   entries.push(
     { label: t("Dupliquer", "Duplicate"), icon: "duplicate", action: async () => {
       try {
@@ -2206,8 +2236,9 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
     case "sync":
       return syncPage(head, redraw);
     case "contacts":
+      return contactsPage(head, redraw);
     case "family":
-      return note(t("Le partage avec tes contacts et ta famille demande la synchronisation, qui arrive sur Windows.", "Sharing with your contacts and family needs sync, which is coming to Windows."));
+      return familyPage(head, redraw);
     case "travel":
       return travelPage(head, redraw);
     case "crypto":
@@ -2938,6 +2969,7 @@ function vaultEditor(v: Vault | null, after?: () => void): void {
     },
   });
   s.body.append(h("div", { class: "card" }, name), h("div", { class: "caps" }, t("Couleur", "Color")), h("div", { class: "card" }, swatches), err);
+  if (v) s.body.append(...vaultShareSection(v, () => s.close()));
   if (v && ui.vaults.length > 1) {
     s.body.append(h("div", { class: "card list-card spaced" }, h("button", { class: "row", onclick: () => {
       if (v.itemCount > 0) {
@@ -3993,7 +4025,873 @@ void listen<SyncView>("sync-status", (e) => {
 void listen("sync-changed", () => {
   // A round brought changes: the lists and the open item show them.
   if (document.querySelector(".shell")) void refresh(ui.selected).catch(() => {});
+  else if (document.getElementById("lock-alerts")) void showLockAlerts();
 });
+
+// ---- sharing: contacts, shared vaults, sends, family, recovery ----------------------------------
+// The Apple apps' Sharing and Family screens (sharing spec 5 to 14): every
+// name is the contact book's local name, every role the core's.
+
+type Role = "read" | "write" | "manage";
+interface ContactInfo {
+  accountId: string;
+  name: string;
+  level: "link" | "verified";
+  state: "active" | "keysChanged" | "removed";
+  verifiedAt: number;
+  safetyNumber: string;
+}
+interface MemberInfo {
+  accountId: string;
+  name: string;
+  role: Role;
+  owner: boolean;
+  level: "link" | "verified";
+  keysChanged: boolean;
+  keyPending: boolean;
+}
+interface SharedVaultInfo {
+  vaultId: string;
+  name: string;
+  role: Role;
+  owner: boolean;
+  generation: number;
+  members: MemberInfo[];
+  identityPending: boolean;
+  notConfirmed: number;
+  refused: boolean;
+  full: boolean;
+}
+interface ShareInviteInfo {
+  id: string;
+  vaultNameHint: string | null;
+  fromName: string;
+  role: Role;
+  serverHost: string;
+}
+interface IdentityChangeInfo {
+  accountId: string;
+  name: string;
+  child: string;
+  rotatorName: string | null;
+  revokedNames: string[];
+  issuedAt: number;
+  vaults: string[];
+  offer: "code" | "inPerson" | "forked";
+}
+interface FamilyInfo {
+  familyId: string;
+  members: { accountId: string; name: string; role: "member" | "organizer"; level: string; keysChanged: boolean }[];
+  vaults: string[];
+  iAmOrganizer: boolean;
+  needsSecondOrganizer: boolean;
+}
+interface HelperInfo {
+  member: string;
+  name: string;
+  enrollmentId: string;
+  delaySecs: number;
+}
+interface ReceivedInfo {
+  sendId: string;
+  fromName: string;
+  title: string;
+  kind: string;
+  expiresAt: number;
+}
+interface SharingInfo {
+  zonesReady: boolean;
+  contacts: ContactInfo[];
+  sharedVaults: SharedVaultInfo[];
+  shareInvites: ShareInviteInfo[];
+  identityChanges: IdentityChangeInfo[];
+  family: FamilyInfo | null;
+  familyInvites: { id: string; fromName: string; role: "member" | "organizer" }[];
+  recoveryEnrollment: { enrollmentId: string; organizerName: string; delaySecs: number; createdAt: number; valid: boolean } | null;
+  helpers: HelperInfo[];
+  receivedItems: ReceivedInfo[];
+  seenByFormerMembers: string[];
+}
+interface RecoveryAlertInfo {
+  enrollmentId: string;
+  organizerName: string;
+  releaseAfter: number;
+}
+interface InviteInfo {
+  role: "inviter" | "invitee" | "";
+  step: "" | "creating" | "sharing" | "replying" | "waitingAnswer" | "done" | "failed";
+  link: string | null;
+  expiresAt: number | null;
+  contact: ContactInfo | null;
+  error: string | null;
+  detail: string | null;
+}
+type RecoveryStatus =
+  | { kind: "waiting"; releaseAfter: number }
+  | { kind: "ready" }
+  | { kind: "cancelled"; at: number }
+  | { kind: "replaced" }
+  | { kind: "notEnrolled" };
+
+const EMPTY_SHARING: SharingInfo = {
+  zonesReady: false, contacts: [], sharedVaults: [], shareInvites: [], identityChanges: [], family: null, familyInvites: [],
+  recoveryEnrollment: null, helpers: [], receivedItems: [], seenByFormerMembers: [],
+};
+let sharing: SharingInfo = EMPTY_SHARING;
+let recoveryAlerts: RecoveryAlertInfo[] = [];
+
+async function loadSharing(): Promise<void> {
+  sharing = await call<SharingInfo>("sharing_state").catch(() => EMPTY_SHARING);
+  recoveryAlerts = await call<RecoveryAlertInfo[]>("recovery_alerts").catch(() => []);
+}
+
+const roleName = (r: Role): string => (r === "read" ? t("Lecture", "Read") : r === "write" ? t("Écriture", "Write") : t("Gestion", "Manage"));
+const familyRoleName = (r: string): string => (r === "organizer" ? t("Organisateur", "Organizer") : t("Membre", "Member"));
+const youName = (): string => t("Toi", "You");
+const longDate = (s: number): string => new Date(s * 1000).toLocaleDateString(t("fr-FR", "en-US"), { day: "numeric", month: "long", year: "numeric" });
+const shortTime = (s: number): string => new Date(s * 1000).toLocaleTimeString(t("fr-FR", "en-US"), { hour: "2-digit", minute: "2-digit" });
+
+/** "Non vérifié" next to a contact added by link. */
+const unverifiedBadge = (): HTMLElement => h("span", { class: "badge orange-badge", "data-id": "unverified" }, t("Non vérifié", "Not verified"));
+
+/** The sharing errors of the core, in the Apple apps' words. */
+function sharingMessage(e: unknown): string {
+  switch ((e as UiError)?.code) {
+    case "ContactNotVerified":
+      return t("Vérifie d'abord ce contact en personne ou avec son numéro de sécurité.", "Verify this contact in person or with their safety number first.");
+    case "ReadOnlyRole":
+      return t("Tu peux seulement consulter ce coffre.", "You can only view this vault.");
+    case "IdentityPending":
+      return t("Un gestionnaire du coffre doit confirmer tes nouvelles clés avant que tu puisses modifier.", "A vault manager must confirm your new keys before you can make changes.");
+    case "MembershipFork":
+      return t("Le serveur a montré deux listes de membres différentes.", "The server showed two different member lists.");
+    case "NoSync":
+      return t("Le partage passe par la synchronisation : active-la dans Réglages > Sync.", "Sharing goes through sync: turn it on in Settings > Sync.");
+    case "BadLink":
+      return t("Ce n'est pas un lien d'invitation OnePass.", "This isn't a OnePass invitation link.");
+    case "BadCode":
+      return t("Saisis les 6 chiffres.", "Type the 6 digits.");
+    default:
+      return message(e);
+  }
+}
+
+function contactRow(c: ContactInfo, onclick?: () => void, trailing?: Node | null): HTMLElement {
+  const kids: Child[] = [monogram(initials(c.name), "var(--accent)", 30, true), h("span", { class: "row-text" }, h("span", { class: "row-title" }, c.name)),
+    c.level === "link" ? unverifiedBadge() : null, trailing ?? null];
+  return onclick
+    ? h("button", { class: "row contact-row", type: "button", "data-name": c.name, onclick }, ...kids, icon("chevron_right", 18, "chev"))
+    : h("div", { class: "row static contact-row", "data-name": c.name }, ...kids);
+}
+
+/** An error line under a sheet, as `SharingErrorSection` shows it. */
+const errorLine = (): HTMLElement => h("div", { class: "error", role: "alert" });
+
+// ---- banners (SharingBanners) --------------------------------------------------------------------
+
+function recoveryAlertCard(a: RecoveryAlertInfo, after: () => void): HTMLElement {
+  const err = h("p", { class: "footnote red-text" });
+  const cancel = h("button", { class: "bar-text destructive", type: "button", id: "recovery-cancel" }, t("Annuler la récupération", "Cancel recovery"));
+  cancel.addEventListener("click", async () => {
+    cancel.disabled = true;
+    try {
+      await call("cancel_recovery", { enrollmentId: a.enrollmentId });
+      after();
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+      cancel.disabled = false;
+    }
+  });
+  return h("div", { class: "banner warn", id: "recovery-alert" },
+    h("div", { class: "banner-line" }, icon("shield_lock", 22, "orange"),
+      h("span", { id: "recovery-alert-message" }, t(`${a.organizerName} a demandé à récupérer ton compte. Ce sera possible le ${longDate(a.releaseAfter)} à ${shortTime(a.releaseAfter)}. Si ce n'est pas toi, annule.`,
+        `${a.organizerName} asked to recover your account. It will be possible on ${longDate(a.releaseAfter)} at ${shortTime(a.releaseAfter)}. If this isn't you, cancel.`))),
+    cancel, err);
+}
+
+function sharingBanners(): HTMLElement | null {
+  const rows: Node[] = recoveryAlerts.map((a) => recoveryAlertCard(a, () => void refresh(undefined)));
+  const row = (id: string, text: string, ic: IconName, open: () => void) =>
+    h("button", { class: "banner", type: "button", id: `banner-${id}`, onclick: open }, icon(ic, 20, "accent"), h("span", { class: "row-text" }, text), icon("chevron_right", 16, "chev"));
+  if (sharing.shareInvites.length) rows.push(row("invites", t(`Invitations à un coffre : ${sharing.shareInvites.length}`, `Vault invitations: ${sharing.shareInvites.length}`), "person_add", () => shareInvitesSheet()));
+  if (sharing.identityChanges.length) rows.push(row("identity", t(`Clés changées : ${sharing.identityChanges.length}`, `Changed keys: ${sharing.identityChanges.length}`), "key", () => identitySheet()));
+  if (sharing.receivedItems.length) rows.push(row("received", t(`Éléments reçus : ${sharing.receivedItems.length}`, `Received items: ${sharing.receivedItems.length}`), "upload", () => receivedSheet()));
+  if (sharing.familyInvites.length) rows.push(row("family", t(`Rejoindre la famille de ${sharing.familyInvites[0]!.fromName}`, `Join ${sharing.familyInvites[0]!.fromName}'s family`), "person_add", () => openSettings("family")));
+  return rows.length ? h("div", { class: "banners" }, ...rows) : null;
+}
+
+/** After a sharing write: the lists, the sidebar and the open page again. */
+async function afterSharing(redraw?: () => void): Promise<void> {
+  await refresh(ui.selected);
+  redraw?.();
+}
+
+// ---- Settings > Contacts (ContactsView) ------------------------------------------------------------
+
+async function contactsPage(head: HTMLElement, redraw: () => void): Promise<Node[]> {
+  await loadSharing();
+  const s = sharing;
+  const list = s.contacts.length
+    ? s.contacts.map((c) => contactRow(c, () => contactSheet(c, redraw)))
+    : [h("div", { class: "row static" }, h("span", { class: "row-text secondary" }, t("Aucun contact. Ajoute quelqu'un en personne ou par lien.", "No contacts. Add someone in person or by link.")))];
+  const add = h("button", { class: "row", type: "button", id: "contacts-add-link", onclick: () => inviteSheet(redraw) }, icon("link", 22, "accent"),
+    h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Ajouter par lien", "Add by link"))));
+  const waiting: Node[] = [];
+  const countRow = (id: string, label: string, n: number, open: () => void) =>
+    h("button", { class: "row", type: "button", id, onclick: open }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, label)), h("span", { class: "secondary" }, String(n)), icon("chevron_right", 18, "chev"));
+  if (s.shareInvites.length) waiting.push(countRow("contacts-invites", t("Invitations", "Invitations"), s.shareInvites.length, () => shareInvitesSheet(redraw)));
+  if (s.receivedItems.length) waiting.push(countRow("contacts-received", t("Éléments reçus", "Received items"), s.receivedItems.length, () => receivedSheet(redraw)));
+  if (s.identityChanges.length) waiting.push(countRow("contacts-identity", t("Clés changées", "Changed keys"), s.identityChanges.length, () => identitySheet(redraw)));
+  return keep(head,
+    h("div", { class: "card list-card", id: "contacts-list" }, ...list),
+    h("div", { class: "caps" }, t("Ajouter un contact", "Add a contact")),
+    h("div", { class: "card list-card" }, add),
+    h("p", { class: "footnote" }, s.zonesReady
+      ? t("Le lien expire après 24 heures. Un contact ajouté par lien n'a que la lecture tant qu'il n'est pas vérifié.", "The link expires after 24 hours. A contact added by link only gets Read until verified.")
+      : t("Le partage passe par la synchronisation : active-la dans Réglages > Sync.", "Sharing goes through sync: turn it on in Settings > Sync.")),
+    waiting.length ? h("div", { class: "card list-card spaced" }, ...waiting) : null);
+}
+
+/** "Ajouter par lien": make a link to send, or paste the one a contact sent. */
+function inviteSheet(after: () => void): void {
+  let stopped = false;
+  const s = sheet(t("Ajouter par lien", "Add by link"), { cancel: t("Annuler", "Cancel") });
+  const body = h("div", {});
+  s.body.append(body);
+  const err = errorLine();
+  const paste = h("input", { id: "invite-link-in", placeholder: "onepass://contact#…", spellcheck: false, autocomplete: "off", class: "mono" });
+  const create = h("button", { class: "row", type: "button", id: "invite-create" }, icon("link", 22, "accent"), h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Créer un lien", "Create link"))));
+  const open = h("button", { class: "capsule prominent", type: "button", id: "invite-open" }, t("Ouvrir le lien", "Open link"));
+  const start = async (cmd: string, args?: Record<string, unknown>) => {
+    err.textContent = "";
+    try {
+      await call(cmd, args);
+      void poll();
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+    }
+  };
+  create.addEventListener("click", () => void start("contact_invite_create"));
+  open.addEventListener("click", () => void start("contact_invite_open", { link: paste.value }));
+  body.append(
+    h("div", { class: "card list-card" }, create),
+    h("p", { class: "footnote" }, t("Le lien expire après 24 heures. Un contact ajouté par lien n'a que la lecture tant qu'il n'est pas vérifié.", "The link expires after 24 hours. A contact added by link only gets Read until verified.")),
+    h("div", { class: "caps" }, t("Tu as reçu un lien ?", "Received a link?")),
+    h("div", { class: "card" }, h("div", { class: "field-box" }, paste)),
+    h("div", { class: "buttons-row left" }, open),
+    err);
+  let shown = "";
+  const draw = (v: InviteInfo) => {
+    const key = v.step + (v.link ?? "") + (v.error ?? "");
+    if (key === shown) return;
+    shown = key;
+    const waitingLine = h("div", { class: "row static", id: "invite-waiting" }, icon("hourglass", 22, "secondary"), h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("En attente de la réponse…", "Waiting for a reply…"))));
+    switch (v.step) {
+      case "creating":
+      case "replying":
+        body.replaceChildren(h("div", { class: "column pair-center" }, h("div", { class: "spinner" })));
+        break;
+      case "sharing": {
+        const copy = h("button", { class: "capsule prominent", type: "button", id: "invite-copy" }, icon("copy", 18), t("Copier le lien", "Copy link"));
+        copy.addEventListener("click", async () => {
+          await navigator.clipboard.writeText(v.link ?? "").catch(() => {});
+          toast(t("Lien copié", "Link copied"));
+        });
+        body.replaceChildren(
+          h("div", { class: "caps" }, t("Envoyer le lien", "Send link")),
+          h("div", { class: "card pad" }, h("div", { class: "mono invite-link", id: "invite-link" }, v.link ?? "")),
+          h("div", { class: "buttons-row left" }, copy),
+          h("p", { class: "footnote" }, t("Envoie ce lien à ton contact par le moyen de ton choix. Il expire après 24 heures.", "Send this link to your contact any way you like. It expires after 24 hours.")),
+          h("div", { class: "card list-card" }, waitingLine));
+        break;
+      }
+      case "waitingAnswer":
+        body.replaceChildren(h("div", { class: "card list-card" }, waitingLine));
+        break;
+      case "done":
+        if (v.contact) body.replaceChildren(h("div", { class: "card list-card", id: "invite-done" }, contactRow(v.contact)),
+          h("p", { class: "footnote" }, t("Ajouté par lien. Compare le numéro de sécurité pour le vérifier.", "Added by link. Compare the safety number to verify.")));
+        break;
+      case "failed": {
+        const text = v.error === "expired" ? t("L'invitation a expiré. Envoie un nouveau lien.", "The invitation expired. Send a new link.")
+          : v.error === "offline" ? t("Connecte-toi à Internet pour terminer l'ajout de ce contact.", "Connect to the internet to finish adding this contact.")
+          : v.error === "badLink" ? t("Ce n'est pas un lien d'invitation OnePass.", "This isn't a OnePass invitation link.")
+          : v.error === "own" ? t("Ce lien vient de ton propre compte.", "This link comes from your own account.")
+          : v.error === "noSync" ? sharingMessage({ code: "NoSync" })
+          : v.detail ?? t("L'ajout n'a pas abouti.", "Adding didn't go through.");
+        body.replaceChildren(h("div", { class: "column pair-center" }, icon("warning", 48, "red"), h("p", { class: "secondary center-text", id: "invite-error" }, text)));
+        break;
+      }
+    }
+  };
+  const poll = async () => {
+    if (stopped || !s.dialog.isConnected) return;
+    const v = await call<InviteInfo>("contact_invite_state").catch(() => null);
+    if (v && v.step) draw(v);
+    if (v?.step === "done" || v?.step === "failed") {
+      (s.dialog.querySelector(".sheet-bar .bar-text") as HTMLElement).textContent = "OK";
+      after();
+      return;
+    }
+    window.setTimeout(poll, 700);
+  };
+  s.dialog.addEventListener("close", () => {
+    stopped = true;
+  });
+  // A flow already running (a link opened before): its state again.
+  void call<InviteInfo>("contact_invite_state").then((v) => {
+    if (v.step && v.step !== "done" && v.step !== "failed") void poll();
+  });
+  queueMicrotask(() => paste.focus());
+}
+
+/** One contact (ContactDetailView): level, safety number, rename, remove. */
+function contactSheet(c: ContactInfo, after: () => void): void {
+  const s = sheet(c.name, { cancel: t("Fermer", "Close") });
+  const err = errorLine();
+  const name = h("input", { id: "contact-name", value: c.name });
+  const rename = h("button", { class: "bar-text", type: "button" }, t("Renommer", "Rename"));
+  rename.addEventListener("click", async () => {
+    try {
+      await call("rename_contact", { accountId: c.accountId, name: name.value });
+      s.close();
+      after();
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+    }
+  });
+  const level = c.level === "link" ? unverifiedBadge() : h("span", { class: "green-text", id: "contact-verified" }, icon("check_circle", 16), " ", t("Vérifié", "Verified"));
+  const compare = h("button", { class: "row", type: "button", id: "contact-compare", onclick: () => safetySheet(c, () => (s.close(), after())) },
+    h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Comparer le numéro de sécurité", "Compare safety number"))), icon("chevron_right", 18, "chev"));
+  const remove = h("button", { class: "row", type: "button", id: "contact-remove", onclick: () =>
+    confirmSheet(t(`Retirer ${c.name} de tes contacts ? Ses partages avec toi s'arrêtent.`, `Remove ${c.name} from your contacts? Their shares with you stop.`), t("Retirer", "Remove"), async () => {
+      try {
+        await call("remove_contact", { accountId: c.accountId });
+        s.close();
+        after();
+      } catch (e) {
+        err.textContent = sharingMessage(e);
+      }
+    }) }, h("span", { class: "row-text" }, h("span", { class: "row-title destructive" }, t("Retirer le contact", "Remove contact"))));
+  s.body.append(...keep(
+    h("div", { class: "card list-card" }, h("div", { class: "row static" }, monogram(initials(c.name), "var(--accent)", 36, true), h("span", { class: "row-text" }, h("span", { class: "row-title bold" }, c.name)), level)),
+    c.level === "link" ? h("p", { class: "footnote" }, t("Ajouté par lien. Compare le numéro de sécurité pour le vérifier.", "Added by link. Compare the safety number to verify.")) : null,
+    c.level === "link" ? h("div", { class: "card list-card" }, compare) : null,
+    c.state === "keysChanged" ? h("p", { class: "footnote orange-text" }, t("Ses clés ont changé", "Their keys changed")) : null,
+    h("div", { class: "caps" }, t("Nom", "Name")),
+    h("div", { class: "card" }, h("div", { class: "field-box" }, name)),
+    h("div", { class: "buttons-row left" }, rename),
+    h("p", { class: "footnote" }, t("Ce nom reste sur tes appareils.", "This name stays on your devices.")),
+    h("div", { class: "card list-card spaced" }, remove),
+    err));
+}
+
+/** "Comparer le numéro de sécurité" (SafetyNumberView). */
+function safetySheet(c: ContactInfo, after: () => void): void {
+  const err = errorLine();
+  const s = sheet(t("Comparer le numéro de sécurité", "Compare safety number"), { cancel: t("Annuler", "Cancel") });
+  const groups = c.safetyNumber.split(/\s+/).filter(Boolean);
+  const match = h("button", { class: "row", type: "button", id: "safety-match" }, h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Les numéros sont identiques", "The numbers match"))));
+  match.addEventListener("click", async () => {
+    match.disabled = true;
+    try {
+      await call("confirm_safety_number", { accountId: c.accountId, shown: c.safetyNumber });
+      s.close();
+      toast(t(`${c.name} est vérifié`, `${c.name} is verified`));
+      after();
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+      match.disabled = false;
+    }
+  });
+  s.body.append(
+    h("div", { class: "caps" }, t("Numéro de sécurité", "Safety number")),
+    h("div", { class: "card pad" }, h("div", { class: "safety-number mono", id: "safety-number" }, ...groups.map((g) => h("span", {}, g)))),
+    h("p", { class: "footnote" }, t(`Compare ce numéro avec celui affiché chez ${c.name}, de vive voix ou par appel.`, `Compare this number with the one ${c.name} sees, in person or on a call.`)),
+    h("div", { class: "card list-card" }, match),
+    err);
+}
+
+// ---- invitations, received items, changed keys --------------------------------------------------------
+
+function shareInvitesSheet(after?: () => void): void {
+  const s = sheet(t("Invitations", "Invitations"), { cancel: "OK" });
+  const err = errorLine();
+  const act = async (cmd: string, id: string) => {
+    try {
+      await call(cmd, { inviteId: id });
+      s.close();
+      await afterSharing(after);
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+    }
+  };
+  s.body.append(...sharing.shareInvites.map((i) => h("div", { class: "card list-card spaced share-invite" },
+    h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, i.vaultNameHint
+      ? t(`${i.fromName} t'invite dans « ${i.vaultNameHint} ».`, `${i.fromName} invites you to "${i.vaultNameHint}".`)
+      : t(`${i.fromName} t'invite dans un coffre.`, `${i.fromName} invites you to a vault.`)))),
+    h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Rôle", "Role"))), h("span", { class: "secondary" }, roleName(i.role))),
+    h("button", { class: "row", type: "button", id: "invite-accept", onclick: () => void act("accept_share_invite", i.id) }, h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Rejoindre", "Join")))),
+    h("button", { class: "row", type: "button", onclick: () => void act("decline_share_invite", i.id) }, h("span", { class: "row-text" }, h("span", { class: "row-title destructive" }, t("Refuser", "Decline")))))), err);
+}
+
+function receivedSheet(after?: () => void): void {
+  const s = sheet(t("Éléments reçus", "Received items"), { cancel: "OK" });
+  const err = errorLine();
+  const writable = ui.vaults.filter((v) => v.sharedRole !== "read");
+  const into = h("select", { id: "received-into" }, ...writable.map((v) => h("option", { value: v.id }, v.name)));
+  const act = async (run: () => Promise<unknown>) => {
+    try {
+      await run();
+      s.close();
+      await afterSharing(after);
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+    }
+  };
+  s.body.append(
+    h("div", { class: "card list-card" }, h("label", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Dans le coffre", "Into vault"))), into)),
+    ...sharing.receivedItems.map((r) => h("div", { class: "card list-card spaced received-item" },
+      h("div", { class: "row static" }, art(r.kind, 30), h("span", { class: "row-text" }, h("span", { class: "row-title" }, r.title), h("span", { class: "row-sub" }, t(`De ${r.fromName}`, `From ${r.fromName}`)))),
+      h("button", { class: "row", type: "button", id: "received-keep", onclick: () => void act(() => call("accept_received_item", { sendId: r.sendId, into: into.value })) }, h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Garder", "Keep")))),
+      h("button", { class: "row", type: "button", onclick: () => void act(() => call("decline_received_item", { sendId: r.sendId })) }, h("span", { class: "row-text" }, h("span", { class: "row-title destructive" }, t("Refuser", "Decline")))))),
+    err);
+}
+
+function identityMessage(c: IdentityChangeInfo): string {
+  const date = longDate(c.issuedAt);
+  if (c.offer === "forked") return t(`Deux appareils de ${c.name} se sont retirés l'un l'autre. Lequel a-t-elle encore en main ?`, `Two of ${c.name}'s devices removed each other. Which one do they still have?`);
+  if (c.offer === "inPerson") return t(`Les clés de ${c.name} ont changé le ${date}. Pour lui rendre l'accès, vérifiez-vous en personne avec le QR.`, `${c.name}'s keys changed on ${date}. To give them access again, verify each other in person with the QR code.`);
+  if (c.rotatorName && c.revokedNames.length) {
+    const removed = new Intl.ListFormat(t("fr", "en"), { type: "conjunction" }).format(c.revokedNames);
+    return t(`Les clés de ${c.name} ont changé le ${date} (${c.rotatorName} a retiré ${removed}). Demande-lui le code affiché sur son iPhone.`, `${c.name}'s keys changed on ${date} (${c.rotatorName} removed ${removed}). Ask them for the code shown on their iPhone.`);
+  }
+  return t(`Les clés de ${c.name} ont changé le ${date}. Demande-lui le code affiché sur son iPhone.`, `${c.name}'s keys changed on ${date}. Ask them for the code shown on their iPhone.`);
+}
+
+function identitySheet(after?: () => void): void {
+  const s = sheet(t("Clés changées", "Changed keys"), { cancel: "OK" });
+  const err = errorLine();
+  s.body.append(...sharing.identityChanges.map((c) => {
+    const code = h("input", { inputmode: "numeric", maxlength: 6, placeholder: t("Code à 6 chiffres", "6-digit code"), class: "mono" });
+    const confirm = h("button", { class: "bar-text", type: "button" }, t("Confirmer", "Confirm"));
+    confirm.addEventListener("click", async () => {
+      try {
+        await call("adopt_member_identity", { accountId: c.accountId, child: c.child, code: code.value });
+        s.close();
+        await afterSharing(after);
+      } catch (e) {
+        err.textContent = sharingMessage(e);
+      }
+    });
+    return h("div", { class: "card pad spaced" }, h("p", {}, identityMessage(c)),
+      c.offer === "code" ? h("div", { class: "field-box" }, code) : h("p", { class: "footnote" }, t("La vérification en personne n'est pas encore disponible sur Windows : faites-la depuis un iPhone ou un Mac.", "In-person verification isn't available on Windows yet: do it from an iPhone or a Mac.")),
+      c.offer === "code" ? h("div", { class: "buttons-row left" }, confirm) : null);
+  }), err);
+}
+
+// ---- shared vaults (ShareVaultSheet, MembersView, RemoveMemberSheet) --------------------------------------
+
+/** "Partage" in the vault editor: the members, or "Partager ce coffre". */
+function vaultShareSection(v: Vault, close: () => void): Node[] {
+  const shared = sharing.sharedVaults.find((x) => x.vaultId === v.id);
+  const row = shared
+    ? h("button", { class: "row", type: "button", id: "vault-members", onclick: () => (close(), membersSheet(v.id)) }, icon("person_add", 22, "accent"),
+        h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Membres", "Members")), h("span", { class: "row-sub" }, `${shared.members.length} · ${roleName(shared.role)}`)), icon("chevron_right", 18, "chev"))
+    : h("button", { class: "row", type: "button", id: "vault-share", onclick: () => (close(), shareVaultSheet(v.id)) }, icon("share", 22, "accent"),
+        h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Partager ce coffre", "Share this vault"))));
+  return [h("div", { class: "caps" }, t("Partage", "Sharing")), h("div", { class: "card list-card" }, row)];
+}
+
+/** Pick a contact and a role (ShareVaultSheet): a contact added by link gets Read only. */
+function shareVaultSheet(vaultId: string, after?: () => void): void {
+  const members = new Set(sharing.sharedVaults.find((x) => x.vaultId === vaultId)?.members.map((m) => m.accountId) ?? []);
+  const contacts = sharing.contacts.filter((c) => c.state === "active" && !members.has(c.accountId));
+  let chosen: ContactInfo | null = null;
+  let role: Role = "read";
+  const err = errorLine();
+  const list = h("div", { class: "card list-card", id: "share-contacts" });
+  const roles = h("div", { class: "segmented", id: "share-role" });
+  const foot = h("p", { class: "footnote" });
+  const draw = () => {
+    list.replaceChildren(...(contacts.length ? contacts.map((c) => contactRow(c, undefined, chosen?.accountId === c.accountId ? icon("check", 20, "accent") : null))
+      : [h("div", { class: "row static" }, h("span", { class: "row-text secondary" }, t("Aucun contact. Ajoute d'abord un contact dans Réglages > Contacts.", "No contacts. First add one in Settings > Contacts.")))]));
+    for (const [i, el] of [...list.querySelectorAll(".contact-row")].entries()) {
+      el.addEventListener("click", () => {
+        chosen = contacts[i]!;
+        if (chosen.level === "link") role = "read";
+        draw();
+      });
+      (el as HTMLElement).style.cursor = "pointer";
+    }
+    const offered: Role[] = chosen?.level === "link" ? ["read"] : ["read", "write", "manage"];
+    roles.replaceChildren(...offered.map((r) => h("button", { type: "button", class: r === role ? "on" : "", "data-role": r, onclick: () => ((role = r), draw()) }, roleName(r))));
+    foot.textContent = chosen?.level === "link" ? t("Un contact non vérifié n'a que la lecture.", "A contact that is not verified only gets Read.") : "";
+  };
+  draw();
+  const s = sheet(t("Ajouter un membre", "Add member"), {
+    action: t("Partager", "Share"),
+    onAction: async (sh) => {
+      if (!chosen) return;
+      const bar = sh.dialog.querySelector(".bar-text.bold") as HTMLButtonElement;
+      bar.disabled = true;
+      err.textContent = "";
+      try {
+        await call("add_vault_member", { vaultId, contact: chosen.accountId, role });
+        sh.close();
+        await afterSharing(after);
+        toast(t("Invitation envoyée", "Invitation sent"));
+      } catch (e) {
+        err.textContent = sharingMessage(e);
+      }
+      bar.disabled = false;
+    },
+  });
+  s.body.append(h("div", { class: "caps" }, "Contacts"), list, h("div", { class: "caps" }, t("Rôle", "Role")), roles, foot, err);
+}
+
+function membersSheet(vaultId: string): void {
+  const s = sheet(t("Membres", "Members"), { cancel: "OK" });
+  const draw = async () => {
+    await loadSharing();
+    const v = sharing.sharedVaults.find((x) => x.vaultId === vaultId);
+    if (!v) {
+      s.close();
+      return;
+    }
+    const manages = v.role === "manage";
+    const err = errorLine();
+    const act = async (run: () => Promise<unknown>, close = false) => {
+      err.textContent = "";
+      try {
+        await run();
+        await refresh(ui.selected);
+        if (close) s.close();
+        else void draw();
+      } catch (e) {
+        err.textContent = sharingMessage(e);
+      }
+    };
+    const rows = v.members.map((m) => {
+      const me = !m.name;
+      const name = me ? youName() : m.name;
+      const sub = [roleName(m.role), m.owner ? t("Propriétaire", "Owner") : ""].filter(Boolean).join(" · ");
+      const menuBtn = manages && !m.owner && !me
+        ? h("button", { class: "icon-button member-menu", type: "button", title: t("Actions", "Actions"), "data-name": m.name }, icon("more_circle", 20, "accent"))
+        : null;
+      menuBtn?.addEventListener("click", () => menu(menuBtn, [
+        ...(["read", "write", "manage"] as Role[]).filter((r) => r === "read" || m.level !== "link").map((r) => ({
+          label: roleName(r) + (r === m.role ? " ✓" : ""), icon: "person_add" as IconName, action: () => void act(() => call("set_member_role", { vaultId, accountId: m.accountId, role: r })) })),
+        "separator",
+        { label: t("Retirer", "Remove"), icon: "remove_circle", destructive: true, action: () => removeMemberSheet(v, m, () => void draw()) },
+      ]));
+      return h("div", { class: "row static member-row", "data-name": name }, monogram(initials(name), me ? "#8E8E93" : "var(--accent)", 30, true),
+        h("span", { class: "row-text" }, h("span", { class: "row-title" }, name), h("span", { class: "row-sub" }, sub),
+          m.keysChanged ? h("span", { class: "row-sub orange-text" }, t("Ses clés ont changé", "Their keys changed")) : null),
+        m.level === "link" && !me ? unverifiedBadge() : null, menuBtn);
+    });
+    const add = manages ? h("button", { class: "row", type: "button", id: "members-add", onclick: () => shareVaultSheet(vaultId, () => void draw()) }, icon("person_add", 22, "accent"),
+      h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Ajouter un membre", "Add member")))) : null;
+    const actions: Node[] = [];
+    if (v.owner && v.members.length === 1) actions.push(h("button", { class: "row", type: "button", id: "vault-stop-sharing", onclick: () => void act(() => call("stop_sharing", { vaultId }), true) },
+      h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Arrêter le partage", "Stop sharing")))));
+    if (!v.owner) actions.push(h("button", { class: "row", type: "button", id: "vault-leave", onclick: () => confirmSheet(t(`Quitter le coffre « ${v.name} » ?`, `Leave the vault “${v.name}”?`), t("Quitter le coffre", "Leave vault"),
+      () => void act(() => call("leave_shared_vault", { vaultId }), true)) }, h("span", { class: "row-text" }, h("span", { class: "row-title destructive" }, t("Quitter le coffre", "Leave vault")))));
+    s.body.replaceChildren(...keep(
+      h("div", { class: "card list-card", id: "members-list" }, ...rows, add),
+      v.notConfirmed ? h("p", { class: "footnote" }, t(`Pas encore confirmé : ${v.notConfirmed}`, `Not confirmed yet: ${v.notConfirmed}`)) : null,
+      v.identityPending ? h("p", { class: "footnote" }, icon("hourglass", 14), " ", t("Des clés changées attendent ta confirmation.", "Changed keys wait for your confirmation.")) : null,
+      v.refused ? h("p", { class: "footnote red-text" }, t(`Le serveur refuse l'accès à ${v.name}.`, `The server refuses access to ${v.name}.`)) : null,
+      v.full ? h("p", { class: "footnote red-text" }, t("Stockage du coffre partagé plein", "Shared vault storage full")) : null,
+      actions.length ? h("div", { class: "card list-card spaced" }, ...actions) : null,
+      err));
+  };
+  void draw();
+}
+
+function removeMemberSheet(v: SharedVaultInfo, m: MemberInfo, after: () => void): void {
+  const err = errorLine();
+  const s = sheet(t("Retirer", "Remove"), { cancel: t("Annuler", "Cancel") });
+  const removeBtn = h("button", { class: "row", type: "button", id: "member-remove-confirm" }, h("span", { class: "row-text" }, h("span", { class: "row-title destructive" }, t("Retirer", "Remove"))));
+  removeBtn.addEventListener("click", async () => {
+    removeBtn.disabled = true;
+    try {
+      const seen = await call<number>("remove_member", { vaultId: v.vaultId, accountId: m.accountId });
+      await refresh(ui.selected);
+      after();
+      const change = h("button", { class: "row", type: "button", id: "removal-change", onclick: () => {
+        s.close();
+        closeAllSheets();
+        go({ kind: "list", filter: { kind: "ids", ids: sharing.seenByFormerMembers }, title: t("Vus par un ancien membre", "Seen by a former member") });
+      } }, h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Changer les mots de passe", "Change passwords"))));
+      s.body.replaceChildren(
+        h("div", { class: "card pad" }, h("p", { id: "removal-prompt" }, t(`${m.name} ne verra plus rien de nouveau dans ${v.name}. Il a pu garder ce qu'il a déjà vu : ${seen} mots de passe. Les changer ?`,
+          `${m.name} won't see anything new in ${v.name}. They may have kept what they already saw: ${seen} passwords. Change them?`))),
+        h("div", { class: "card list-card" }, change, h("button", { class: "row", type: "button", onclick: () => s.close() }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Plus tard", "Later"))))));
+      await loadSharing();
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+      removeBtn.disabled = false;
+    }
+  });
+  s.body.append(h("div", { class: "card pad" }, h("p", {}, t(`Retirer ${m.name} du coffre ?`, `Remove ${m.name} from the vault?`))),
+    h("p", { class: "footnote" }, t("Le coffre reçoit une nouvelle clé. Ce que ce membre a déjà vu reste vu.", "The vault gets a new key. What this member already saw stays seen.")),
+    h("div", { class: "card list-card" }, removeBtn), err);
+}
+
+function closeAllSheets(): void {
+  for (const d of [...document.querySelectorAll("dialog[open]")]) {
+    (d as HTMLDialogElement).close();
+    d.remove();
+  }
+}
+
+/** "Envoyer à un contact": a copy of the item, kept until the date picked (30 days at most). */
+function sendItemSheet(item: Item): void {
+  const contacts = sharing.contacts.filter((c) => c.state === "active");
+  let chosen: ContactInfo | null = null;
+  let days = 7;
+  const err = errorLine();
+  const list = h("div", { class: "card list-card", id: "send-contacts" });
+  const span = h("div", { class: "segmented", id: "send-days" });
+  const draw = () => {
+    list.replaceChildren(...(contacts.length ? contacts.map((c) => contactRow(c, undefined, chosen?.accountId === c.accountId ? icon("check", 20, "accent") : null))
+      : [h("div", { class: "row static" }, h("span", { class: "row-text secondary" }, t("Aucun contact. Ajoute d'abord un contact dans Réglages > Contacts.", "No contacts. First add one in Settings > Contacts.")))]));
+    for (const [i, el] of [...list.querySelectorAll(".contact-row")].entries()) {
+      el.addEventListener("click", () => ((chosen = contacts[i]!), draw()));
+      (el as HTMLElement).style.cursor = "pointer";
+    }
+    span.replaceChildren(...[1, 7, 30].map((d) => h("button", { type: "button", class: d === days ? "on" : "", onclick: () => ((days = d), draw()) },
+      d === 1 ? t("1 jour", "1 day") : t(`${d} jours`, `${d} days`))));
+  };
+  draw();
+  const s = sheet(t("Envoyer une copie", "Send a copy"), {
+    action: t("Envoyer", "Send"),
+    onAction: async (sh) => {
+      if (!chosen) return;
+      try {
+        await call("send_item", { vaultId: item.vaultId, itemId: item.id, to: chosen.accountId, days });
+        sh.close();
+        toast(t(`Copie envoyée à ${chosen.name}`, `Copy sent to ${chosen.name}`));
+      } catch (e) {
+        err.textContent = sharingMessage(e);
+      }
+    },
+  });
+  s.body.append(h("p", { class: "secondary" }, t(`Une copie de « ${item.title} » : ton contact la garde dans un de ses coffres ou la refuse.`, `A copy of “${item.title}”: your contact keeps it in one of their vaults or declines it.`)),
+    h("div", { class: "caps" }, "Contacts"), list, h("div", { class: "caps" }, t("Disponible pendant", "Available for")), span, err);
+}
+
+// ---- Settings > Famille (FamilyView) ---------------------------------------------------------------------
+
+async function familyPage(head: HTMLElement, redraw: () => void): Promise<Node[]> {
+  await loadSharing();
+  const s = sharing;
+  const err = errorLine();
+  const act = async (run: () => Promise<unknown>) => {
+    err.textContent = "";
+    try {
+      await run();
+      await refresh(ui.selected);
+      redraw();
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+    }
+  };
+  const invites = s.familyInvites.length
+    ? h("div", { class: "card list-card spaced" }, ...s.familyInvites.map((i) => h("button", { class: "row", type: "button", id: "family-join", onclick: () => void act(() => call("accept_family_invite", { inviteId: i.id })) },
+        icon("person_add", 22, "accent"), h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t(`Rejoindre la famille de ${i.fromName}`, `Join ${i.fromName}'s family`)), h("span", { class: "row-sub" }, familyRoleName(i.role))))))
+    : null;
+  const f = s.family;
+  if (!f) {
+    return keep(head,
+      h("div", { class: "card pad notyet" }, settingsArt("family", 44), h("p", { class: "secondary" }, t("Aucune famille pour l'instant. Une famille partage un coffre et peut aider à récupérer un compte.", "No family yet. A family shares a vault and can help recover an account."))),
+      h("div", { class: "card list-card spaced" }, h("button", { class: "row", type: "button", id: "family-create", disabled: !s.zonesReady, onclick: (ev: Event) => {
+        const b = ev.currentTarget as HTMLButtonElement;
+        b.disabled = true;
+        b.querySelector(".row-title")!.textContent = t("Création de la famille…", "Creating the family…");
+        void act(() => call("create_family", { vaultName: t("Famille", "Family") }));
+      } },
+        icon("add", 22, "accent"), h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Créer une famille", "Create a family"))))),
+      s.zonesReady ? null : h("p", { class: "footnote" }, sharingMessage({ code: "NoSync" })),
+      invites, err);
+  }
+  const members: HTMLElement[] = f.members.map((m) => {
+    const me = !m.name;
+    const name = me ? youName() : m.name;
+    const more = f.iAmOrganizer && !me ? h("button", { class: "icon-button family-menu", type: "button", "data-name": m.name, title: t("Actions", "Actions") }, icon("more_circle", 20, "accent")) : null;
+    more?.addEventListener("click", () => menu(more, [
+      m.role === "organizer"
+        ? { label: t("Membre", "Member"), icon: "person_add", action: () => void act(() => call("set_family_role", { accountId: m.accountId, role: "member" })) }
+        : { label: t("Organisateur", "Organizer"), icon: "person_add", action: () => void act(() => call("set_family_role", { accountId: m.accountId, role: "organizer" })) },
+      "separator",
+      { label: t("Retirer", "Remove"), icon: "remove_circle", destructive: true, action: () => confirmSheet(t(`Retirer ${m.name} de la famille ?`, `Remove ${m.name} from the family?`), t("Retirer", "Remove"),
+        () => void act(() => call("remove_from_family", { accountId: m.accountId }))) },
+    ]));
+    return h("div", { class: "row static family-member", "data-name": name }, monogram(initials(name), me ? "#8E8E93" : "var(--accent)", 30, true),
+      h("span", { class: "row-text" }, h("span", { class: "row-title" }, name)), h("span", { class: "secondary" }, familyRoleName(m.role)), more);
+  });
+  if (f.iAmOrganizer) members.push(h("button", { class: "row", type: "button", id: "family-invite", onclick: () => familyInviteSheet(redraw) }, icon("person_add", 22, "accent"),
+    h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Inviter dans la famille", "Invite to family")))));
+  const familyVaults = ui.vaults.filter((v) => f.vaults.includes(v.id));
+  const personal = ui.vaults.filter((v) => !v.sharedRole);
+  const vaultRows: Node[] = familyVaults.map((v) => h("div", { class: "row static family-vault" }, monogram(v.name.slice(0, 1).toUpperCase(), vaultColor(v.color), 28), h("span", { class: "row-text" }, h("span", { class: "row-title" }, v.name))));
+  if (personal.length) {
+    const add = h("button", { class: "row", type: "button", id: "family-add-vault" }, icon("add", 22, "accent"), h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Donner un coffre à la famille", "Give a vault to the family"))));
+    add.addEventListener("click", () => menu(add, personal.map((v) => ({ label: v.name, icon: "folder" as IconName, action: () => void act(() => call("add_family_vault", { vaultId: v.id })) }))));
+    vaultRows.push(add);
+  }
+  const recovery: Node[] = [];
+  const e = s.recoveryEnrollment;
+  if (e) {
+    recovery.push(h("div", { class: "row static", id: "recovery-enrolled" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Organisateur choisi", "Chosen organizer"))), h("span", { class: "secondary" }, e.organizerName)));
+    recovery.push(h("button", { class: "row", type: "button", onclick: () => passwordSheet(t("Désactiver la récupération", "Turn off recovery"), t("Désactiver", "Turn off"), (password) => call("disable_recovery", { password }), redraw) },
+      h("span", { class: "row-text" }, h("span", { class: "row-title destructive" }, t("Désactiver la récupération", "Turn off recovery")))));
+  } else if (!f.iAmOrganizer) {
+    recovery.push(h("button", { class: "row", type: "button", id: "recovery-enroll", onclick: () => enrollSheet(f, redraw) }, h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Récupération par un organisateur", "Recovery by an organizer"))), icon("chevron_right", 18, "chev")));
+  }
+  const helpers = s.helpers.map((hp) => h("button", { class: "row helper-row", type: "button", "data-name": hp.name, onclick: () => helperSheet(hp, redraw) },
+    h("span", { class: "row-text" }, h("span", { class: "row-title" }, t(`${hp.name} t'a choisi pour l'aider à récupérer son compte.`, `${hp.name} chose you to help recover their account.`))), icon("chevron_right", 18, "chev")));
+  const sole = f.members.filter((m) => m.role === "organizer").length === 1 && f.iAmOrganizer;
+  const leave = sole && f.members.length > 1 ? null : h("button", { class: "row", type: "button", id: "family-leave", onclick: () => confirmSheet(t("Quitter la famille ?", "Leave the family?"), t("Quitter", "Leave"), () => void act(() => call("leave_family"))) },
+    h("span", { class: "row-text" }, h("span", { class: "row-title destructive" }, t("Quitter la famille", "Leave the family"))));
+  return keep(head,
+    f.needsSecondOrganizer ? h("div", { class: "banner warn", id: "family-second" }, h("div", { class: "banner-line" }, icon("warning", 20, "orange"), h("span", {}, t("Ajoute un deuxième organisateur pour que la famille ne dépende pas d'une seule personne.", "Add a second organizer so the family does not depend on one person.")))) : null,
+    h("div", { class: "caps" }, t("Membres", "Members")),
+    h("div", { class: "card list-card", id: "family-members" }, ...members),
+    vaultRows.length ? h("div", { class: "caps" }, t("Coffres", "Vaults")) : null,
+    vaultRows.length ? h("div", { class: "card list-card" }, ...vaultRows) : null,
+    recovery.length ? h("div", { class: "caps" }, t("Récupération du compte", "Account recovery")) : null,
+    recovery.length ? h("div", { class: "card list-card" }, ...recovery) : null,
+    helpers.length ? h("div", { class: "card list-card spaced" }, ...helpers) : null,
+    invites,
+    leave ? h("div", { class: "card list-card spaced" }, leave) : null,
+    err);
+}
+
+function familyInviteSheet(after: () => void): void {
+  const s = sheet(t("Inviter dans la famille", "Invite to family"));
+  const err = errorLine();
+  const members = new Set(sharing.family?.members.map((m) => m.accountId) ?? []);
+  const verified = sharing.contacts.filter((c) => c.state === "active" && !members.has(c.accountId));
+  const invite = async (c: ContactInfo, role: string) => {
+    try {
+      await call("invite_to_family", { contact: c.accountId, role });
+      s.close();
+      toast(t("Invitation envoyée", "Invitation sent"));
+      after();
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+    }
+  };
+  s.body.append(h("div", { class: "card list-card", id: "family-invite-list" }, ...(verified.length ? verified.map((c) => {
+    const row = contactRow(c);
+    row.append(h("button", { class: "bar-text family-as-member", type: "button", onclick: () => void invite(c, "member") }, t("Membre", "Member")),
+      h("button", { class: "bar-text", type: "button", disabled: c.level === "link", onclick: () => void invite(c, "organizer") }, t("Organisateur", "Organizer")));
+    return row;
+  }) : [h("div", { class: "row static" }, h("span", { class: "row-text secondary" }, t("Aucun contact. Ajoute d'abord un contact dans Réglages > Contacts.", "No contacts. First add one in Settings > Contacts.")))])), err);
+}
+
+/** A sheet that asks the master password, then runs `run`. */
+function passwordSheet(title: string, action: string, run: (password: string) => Promise<unknown>, after: () => void, intro?: Node): void {
+  const pw = secretInput("share-pw", t("Mot de passe principal", "Master password"), "current-password");
+  const err = errorLine();
+  const s = sheet(title, { action, onAction: async (sh) => {
+    try {
+      await run(pw.input.value);
+      pw.input.value = "";
+      sh.close();
+      after();
+    } catch (e) {
+      err.textContent = sharingMessage(e);
+    }
+  } });
+  s.body.append(...keep(intro, pw.box, err));
+  queueMicrotask(() => pw.input.focus());
+}
+
+/** RecoveryEnrollView: the organizer, the delay, the risk sentence confirmed, then the master password. */
+function enrollSheet(f: FamilyInfo, after: () => void): void {
+  const organizers = f.members.filter((m) => m.role === "organizer" && m.name);
+  let organizer = organizers[0]?.accountId ?? "";
+  let days = 3;
+  const err = errorLine();
+  const pick = h("select", { id: "enroll-organizer" }, ...organizers.map((o) => h("option", { value: o.accountId }, o.name)));
+  const daysLabel = h("span", { class: "row-title" });
+  const minus = h("button", { class: "icon-button", type: "button", "aria-label": "-" }, "−");
+  const plus = h("button", { class: "icon-button", type: "button", "aria-label": "+" }, "+");
+  const risk = h("p", { id: "enroll-risk" });
+  const understood = h("input", { type: "checkbox", class: "switch", id: "enroll-understood" });
+  const pw = secretInput("enroll-pw", t("Mot de passe principal", "Master password"), "current-password");
+  const pwBox = h("div", {}, pw.box);
+  const draw = () => {
+    daysLabel.textContent = t(`Délai : ${days} jours`, `Delay: ${days} days`);
+    const name = organizers.find((o) => o.accountId === organizer)?.name ?? "";
+    risk.textContent = t(`${name} et quelqu'un qui aurait ton Emergency Kit pourraient ensemble ouvrir ton coffre.`, `${name} and someone with your Emergency Kit could open your vault together.`);
+    pwBox.hidden = !understood.checked;
+  };
+  pick.addEventListener("change", () => ((organizer = pick.value), draw()));
+  minus.addEventListener("click", () => ((days = Math.max(1, days - 1)), draw()));
+  plus.addEventListener("click", () => ((days = Math.min(7, days + 1)), draw()));
+  understood.addEventListener("change", draw);
+  const s = sheet(t("Récupération par un organisateur", "Recovery by an organizer"), {
+    action: t("Activer", "Turn on"),
+    onAction: async (sh) => {
+      if (!understood.checked || !pw.input.value || !organizer) return;
+      try {
+        await call("enroll_recovery", { organizer, days, password: pw.input.value });
+        pw.input.value = "";
+        sh.close();
+        after();
+      } catch (e) {
+        err.textContent = sharingMessage(e);
+      }
+    },
+  });
+  s.body.append(
+    h("div", { class: "card list-card" },
+      h("label", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Organisateur", "Organizer"))), pick),
+      h("div", { class: "row static" }, h("span", { class: "row-text" }, daysLabel), minus, plus)),
+    h("div", { class: "card pad spaced" }, risk, h("label", { class: "toggle-row", for: "enroll-understood" }, h("span", { class: "row-text" }, t("J'ai compris", "I understand")), understood)),
+    pwBox, err);
+  draw();
+}
+
+/** RecoveryHelperView: the organizer asks, the delay runs, then the handover in person. */
+function helperSheet(hp: HelperInfo, after: () => void): void {
+  const s = sheet(t("Récupération du compte", "Account recovery"), { cancel: "OK" });
+  const draw = async () => {
+    const st = await call<RecoveryStatus>("recovery_status", { member: hp.member }).catch(() => ({ kind: "notEnrolled" }) as RecoveryStatus);
+    const head = h("div", { class: "card pad" }, h("p", {}, t(`${hp.name} t'a choisi pour l'aider à récupérer son compte.`, `${hp.name} chose you to help recover their account.`)));
+    const err = errorLine();
+    let part: Node[];
+    if (st.kind === "waiting") {
+      part = [h("div", { class: "card pad", id: "helper-waiting" }, h("p", {}, t(`Possible à partir du ${longDate(st.releaseAfter)} à ${shortTime(st.releaseAfter)}.`, `Possible from ${longDate(st.releaseAfter)} at ${shortTime(st.releaseAfter)}.`)))];
+    } else if (st.kind === "ready") {
+      part = [h("p", { class: "footnote" }, t("Le délai est passé. Scanne le code affiché sur le nouvel appareil du membre, en face à face.", "The delay is over. Scan the code on the member's new device, face to face.")),
+        h("p", { class: "footnote" }, t("La remise en face à face se fait depuis un iPhone : la version Windows ne lit pas encore les codes des autres appareils.", "The face-to-face handover happens from an iPhone: the Windows version can't read other devices' codes yet."))];
+    } else if (st.kind === "cancelled") {
+      part = [h("div", { class: "card pad" }, h("p", { class: "secondary", id: "helper-cancelled" }, t("Le membre a annulé la récupération.", "The member cancelled the recovery.")))];
+    } else {
+      const pw = secretInput("helper-pw", t("Mot de passe principal", "Master password"), "current-password");
+      const req = h("button", { class: "row", type: "button", id: "helper-request" }, h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Demander la récupération", "Request recovery"))));
+      req.addEventListener("click", async () => {
+        try {
+          await call("request_recovery", { member: hp.member, password: pw.input.value });
+          pw.input.value = "";
+          after();
+          void draw();
+        } catch (e) {
+          err.textContent = sharingMessage(e);
+        }
+      });
+      part = [pw.box, h("div", { class: "card list-card spaced" }, req),
+        h("p", { class: "footnote" }, t("Le membre est prévenu sur tous ses appareils et peut annuler pendant le délai.", "The member is told on all their devices and can cancel during the delay."))];
+    }
+    s.body.replaceChildren(head, ...part, err);
+  };
+  void draw();
+}
 
 // ---- keyboard and start ------------------------------------------------------------------------------
 
