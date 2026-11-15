@@ -78,6 +78,12 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- The periodic background sync round (vault/SyncJob). -->
+        <service
+            android:name=".vault.SyncJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- One decrypted attachment, lent read only to the app the user
              picks (per-URI grant); never exported. -->
         <provider

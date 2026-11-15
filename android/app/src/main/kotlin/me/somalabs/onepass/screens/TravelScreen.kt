@@ -16,9 +16,12 @@ import me.somalabs.onepass.ui.Ios
  * device), what leaves with them and what stays guarded (`travel_plan`,
  * `travel_item_plan`, `travel_status`).
  *
- * Turning it on is refused here: the vaults that leave come back through
- * sync (`begin_travel_exit` lets the sync fetch them, `finish_travel_exit`
- * checks them), and Android has no sync yet, so they could not return.
+ * Turning it on is refused here: the vaults that leave come back through a
+ * fetch from scratch (`begin_travel_exit`, then `finish_travel_exit`). On
+ * iCloud the app resets its change token; a mailbox account's cursor lives
+ * under a store key the FFI does not reach (`mailbox.cursor`, outside the
+ * `sync.` namespace of `SyncStoreHandle`), so an Android device could not
+ * bring them back. It stays off until the core exposes that refetch.
  */
 class TravelScreen(private val a: MainActivity) {
     private val ui get() = a.ui
@@ -59,10 +62,10 @@ class TravelScreen(private val a: MainActivity) {
             addView(ui.footnote(if (parts.isEmpty()) a.t("Rien ne quitterait cet appareil.", "Nothing would leave this device.") else parts.joinToString(" ")))
 
             addView(ui.inset(ui.card(ui.row(title = a.t("Activer le Travel Mode", "Turn On Travel Mode"), titleColor = ui.tertiary, chevron = false) {
-                a.toast(a.t("Il faut d'abord la synchronisation sur Android.", "Android needs sync first."))
+                a.toast(a.t("Pas encore disponible sur Android.", "Not available on Android yet."))
             }), top = Ios.Space.L))
-            addView(ui.footnote(a.t("Les coffres retirés reviennent par la synchronisation, qui arrive sur Android : en attendant, le Travel Mode ne s'active pas sur cet appareil. Tu peux déjà choisir ce qui partirait.",
-                "Removed vaults come back through sync, which is coming to Android: until then, Travel Mode does not turn on on this device. You can already choose what would leave.")))
+            addView(ui.footnote(a.t("Au retour, les coffres retirés reviennent par une synchronisation complète, qu'Android ne sait pas encore lancer avec ton serveur : en attendant, le Travel Mode ne s'active pas sur cet appareil. Tu peux déjà choisir ce qui partirait.",
+                "On your return, removed vaults come back through a full sync that Android can't start with your server yet: until then, Travel Mode does not turn on on this device. You can already choose what would leave.")))
 
             // Which vault stays.
             addView(ui.capsLabel(a.t("Sûr en voyage", "Safe for Travel")))

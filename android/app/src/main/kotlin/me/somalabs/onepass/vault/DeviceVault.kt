@@ -150,8 +150,10 @@ class DeviceVault private constructor(private val context: Context) {
     }
 
     fun lock() {
+        val had = session != null
         session?.lock()
         session = null
+        if (had) sessionListeners.forEach { runCatching { it(null) } }
     }
 
     fun touch() {
@@ -170,6 +172,102 @@ class DeviceVault private constructor(private val context: Context) {
     private fun opened(s: Session) {
         session = s
         touch()
+        sessionListeners.forEach { runCatching { it(s) } }
+    }
+
+    /** Called with each session opened here, and with null on each lock (the sync follows). */
+    private val sessionListeners = java.util.concurrent.CopyOnWriteArrayList<(Session?) -> Unit>()
+
+    fun onSession(l: (Session?) -> Unit) {
+        sessionListeners += l
+    }
+
+    // ---- sync and pairing -----------------------------------------------------------
+
+    /** The Secret Key of this device's account (mailbox setup, pairing grant). Unlocked only. */
+    fun secretKey(): String {
+        if (session == null) error("locked")
+        val secrets = read() ?: error("no device file")
+        try {
+            return secrets.secretKey
+        } finally {
+            secrets.wipe()
+        }
+    }
+
+    /** This device's keys (pairing: `introduce`, `accept_kit_restored`); the caller wipes `classical`. */
+    fun deviceKeys(): me.somalabs.onepass.vaultkit.pairing.DeviceKeys {
+        if (session == null) error("locked")
+        val secrets = read() ?: error("no device file")
+        try {
+            return me.somalabs.onepass.vaultkit.pairing.DeviceKeys(secrets.classical.copyOf(), openSoftwarePqHalf(secrets.pq))
+        } finally {
+            secrets.wipe()
+        }
+    }
+
+    /** New device keys and random seed, before a restore or a pairing creates this device's account. */
+    class NewDevice(val classical: ByteArray, val pq: ByteArray, val seed: ByteArray) {
+        val keys get() = me.somalabs.onepass.vaultkit.pairing.DeviceKeys(classical.copyOf(), openSoftwarePqHalf(pq))
+        fun wipe() { classical.fill(0); pq.fill(0); seed.fill(0) }
+    }
+
+    fun newDevice(): NewDevice {
+        val seed = newDeviceRngSeed()
+        setDeviceRngSeed(seed)
+        return NewDevice(generateClassicalDeviceKeys(), generateSoftwarePqHalf(), seed)
+    }
+
+    /**
+     * After a restore from the Emergency Kit or a pairing: keeps this
+     * device's secrets (the Secret Key received or typed, the keys of
+     * `device`) and opens `s`. On failure the store is emptied again.
+     */
+    fun adopt(s: Session, secretKey: String, device: NewDevice) {
+        try {
+            write(Secrets(s.accountId(), secretKey, device.classical, device.pq, device.seed))
+        } catch (e: Exception) {
+            s.lock()
+            runCatching { resetStore(dbPath) }
+            throw e
+        }
+        opened(s)
+    }
+
+    /** A store a restore or a pairing filled without finishing: emptied, so the welcome screen shows again. */
+    fun discardUnfinished() {
+        if (session == null && !deviceFile.exists()) runCatching { resetStore(dbPath) }
+    }
+
+    /** Seals `plain` into `name` in the vault folder with the device's Keystore key (mailbox seeds). */
+    fun sealFile(name: String, plain: ByteArray) {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        cipher.updateAAD(BLOB_AAD + name.toByteArray())
+        val sealed = cipher.doFinal(plain)
+        val tmp = File(dir, "$name.tmp")
+        tmp.outputStream().use { out ->
+            out.write(cipher.iv.size)
+            out.write(cipher.iv)
+            out.write(sealed)
+            out.fd.sync()
+        }
+        if (!tmp.renameTo(File(dir, name))) error("cannot write $name")
+    }
+
+    fun unsealFile(name: String): ByteArray? {
+        val f = File(dir, name)
+        if (!f.exists()) return null
+        val all = f.readBytes()
+        val ivLen = all[0].toInt()
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, all.copyOfRange(1, 1 + ivLen)))
+        cipher.updateAAD(BLOB_AAD + name.toByteArray())
+        return cipher.doFinal(all, 1 + ivLen, all.size - 1 - ivLen)
+    }
+
+    fun deleteFile(name: String) {
+        File(dir, name).delete()
     }
 
     // ---- device.bin ---------------------------------------------------------------
@@ -286,6 +384,7 @@ class DeviceVault private constructor(private val context: Context) {
         private const val KEY_ALIAS = "onepass.device.v1"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private val AAD = "onepass/android/device/v1".toByteArray()
+        private val BLOB_AAD = "onepass/android/blob/v1/".toByteArray()
 
         @Volatile
         private var instance: DeviceVault? = null

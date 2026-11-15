@@ -70,8 +70,8 @@ class AccessScreens(private val a: MainActivity) {
             "Pas de compte chez nous. Ton coffre est chiffré sur ton appareil, et même nous ne pouvons pas l'ouvrir.",
             "No account with us. Your vault is encrypted on your device, and even we can't open it."),
         IntroCard(R.drawable.ic_shield_check, "Sur tous tes appareils", "On all your devices",
-            "Ton coffre reste sur cet appareil ; la synchronisation avec tes autres appareils arrive sur Android.",
-            "Your vault stays on this device; syncing with your other devices is coming to Android."),
+            "Ton coffre chiffré te suit sur tes autres appareils, et ton Emergency Kit le restaure si tu les perds.",
+            "Your encrypted vault follows you on your other devices, and your Emergency Kit restores it if you lose them."),
     )
 
     fun intro(step: Int = 0): View {
@@ -104,14 +104,13 @@ class AccessScreens(private val a: MainActivity) {
         addView(appIcon(88))
         addView(ui.text(a.t("Bienvenue dans OnePass", "Welcome to OnePass"), 28f, ui.label, 700).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(24), 0, ui.dp(6)) })
         addView(ui.text(a.t("Comment veux-tu commencer ?", "How would you like to start?"), 17f, ui.secondary).apply { gravity = Gravity.CENTER })
-        val notYet = a.t("Pas encore disponible sur Android : il faut d'abord la synchronisation entre appareils.", "Not available on Android yet: it needs device sync first.")
         full(ui.card(
             ui.row(icon = ui.symbolTile(R.drawable.ic_vault_new, ui.accent, 36), title = a.t("Créer un coffre", "Create a Vault"),
                 subtitle = a.t("Première fois sur OnePass", "First time on OnePass"), minHeightDp = 68) { a.showFull { create() } },
             ui.row(icon = ui.symbolTile(R.drawable.ic_person_add, ui.blue, 36), title = a.t("Ajouter cet appareil", "Add This Device"),
-                subtitle = a.t("Avec un QR code, depuis ton autre appareil", "With a QR code from your other device"), minHeightDp = 68) { a.toast(notYet) },
+                subtitle = a.t("Avec un code, depuis ton autre appareil", "With a code from your other device"), minHeightDp = 68) { a.showFull { a.pairing.joinPage { a.showFull { welcome() } } } },
             ui.row(icon = ui.symbolTile(R.drawable.ic_restore, ui.orange, 36), title = a.t("Restaurer avec mon Emergency Kit", "Restore with My Emergency Kit"),
-                subtitle = a.t("Aucun autre appareil sous la main", "No other device at hand"), minHeightDp = 68) { a.toast(notYet) },
+                subtitle = a.t("Aucun autre appareil sous la main", "No other device at hand"), minHeightDp = 68) { a.showFull { restore(missingKey = false) } },
         ), top = 32)
     }
 
@@ -154,6 +153,14 @@ class AccessScreens(private val a: MainActivity) {
         full(box2, 12)
         val err = ui.text("", 14f, ui.red).apply { setPadding(ui.dp(4), ui.dp(8), ui.dp(4), 0) }
         full(err)
+        val server = ui.row(title = a.t("Où est rangé mon coffre ?", "Where Is My Vault Kept?"), value = a.syncScreens.choiceName(syncChoice)).apply { background = ui.rounded(ui.card, 14, ui.hairline) }
+        server.setOnClickListener {
+            a.syncScreens.choiceSheet(syncChoice, allowLocal = true) { c ->
+                syncChoice = c
+                ((server.getChildAt(1)) as? TextView)?.text = a.syncScreens.choiceName(c)
+            }
+        }
+        full(server, 12)
         full(ui.text(a.t("Conseil : cinq mots tirés au hasard (« tapis-orage-girafe-violon-nuage ») sont plus solides et plus faciles à retenir qu'un mot compliqué. « Générer » en tire cinq pour toi.",
             "Tip: five random words (“carpet-storm-giraffe-violin-cloud”) are stronger and easier to remember than one complicated word. “Generate” picks five for you."), 13f, ui.secondary), 12)
         fun drawMeter() {
@@ -192,8 +199,12 @@ class AccessScreens(private val a: MainActivity) {
                     val chars = p1.toCharArray()
                     val first = name.text.toString().trim()
                     pw.text.clear(); pw2.text.clear()
+                    val choice = syncChoice
                     a.background({
                         val key = a.vault.create(chars, Build.MODEL ?: "Android")
+                        // The mailbox setup runs in the background; offline, it resumes at each unlock.
+                        a.sync.prepareNewAccount(choice)
+                        if (choice != me.somalabs.onepass.vaultkit.sync.SyncChoice.Local) a.sync.enable(choice) { }
                         if (first.isNotEmpty()) runCatching { a.vault.session?.setProfile(first, ByteArray(0)) }
                         key
                     }) { r ->
@@ -235,6 +246,107 @@ class AccessScreens(private val a: MainActivity) {
         val next = ui.capsule(a.t("Continuer", "Continue")) { a.openTabs() }.apply { isEnabled = false; alpha = 0.45f }
         noted.setOnCheckedChangeListener { _, on -> next.isEnabled = on; next.alpha = if (on) 1f else 0.45f }
         full(next, 16)
+    }
+
+    /** Where a new account syncs: the OnePass server by default, as on iPhone. */
+    private var syncChoice: me.somalabs.onepass.vaultkit.sync.SyncChoice = me.somalabs.onepass.vaultkit.sync.SyncChoice.DEFAULT
+
+    /**
+     * "Utiliser ton Emergency Kit" (spec D.4, 7.5): the Secret Key typed, the
+     * master password, the kit's server. The account is found by its locator
+     * (the kit's server, then the OnePass server), fetched with the recovery
+     * credential, opened with `restore_from_kit` and new device keys; this
+     * device then gets its own mailbox credential and syncs. `missingKey`:
+     * the store holds an account whose device secrets are gone.
+     */
+    fun restore(missingKey: Boolean): View = page {
+        gravity = Gravity.START
+        addView(ui.text(a.t("Utiliser ton Emergency Kit", "Use Your Emergency Kit"), 28f, ui.label, 700))
+        addView(ui.text(a.t("Tape la Secret Key imprimée sur ton kit. Minuscules, espaces et tirets oubliés sont acceptés.",
+            "Type the Secret Key printed on your kit. Lowercase letters, spaces and missing dashes are fine."), 16f, ui.secondary).apply { setPadding(0, ui.dp(8), 0, 0) })
+        if (missingKey) addView(ui.text(a.t("Les secrets de cet appareil sont introuvables. Saisis ta Secret Key depuis ton Emergency Kit.",
+            "This device's secrets are missing. Enter your Secret Key from your Emergency Kit."), 15f, ui.secondary).apply { setPadding(0, ui.dp(12), 0, 0) })
+        val key = a.syncScreens.codeField("XXXX-XXXX-XXXX-...").apply { contentDescription = "Secret Key" }
+        full(ui.text("Secret Key", 13f, ui.secondary, 600).apply { setPadding(ui.dp(4), 0, 0, ui.dp(6)) }, 24)
+        full(ui.card(key))
+        val (box, pw) = secretField(a.t("Mot de passe maître", "Master Password"))
+        full(box, 16)
+        var kit: me.somalabs.onepass.vaultkit.sync.SyncChoice = me.somalabs.onepass.vaultkit.sync.SyncChoice.Hosted
+        val server = ui.row(title = a.t("Serveur", "Server"), value = a.syncScreens.choiceName(kit)).apply { background = ui.rounded(ui.card, 14, ui.hairline) }
+        server.setOnClickListener {
+            a.syncScreens.choiceSheet(kit, allowLocal = false) { c ->
+                kit = c
+                ((server.getChildAt(1)) as? TextView)?.text = a.syncScreens.choiceName(c)
+            }
+        }
+        if (!missingKey) {
+            full(server, 16)
+            full(ui.text(a.t("Le serveur imprimé sur ton kit, s'il y en a un.", "The server printed on your kit, if any."), 13f, ui.secondary).apply { setPadding(ui.dp(4), ui.dp(6), 0, 0) })
+        }
+        val err = ui.text("", 14f, ui.red).apply { setPadding(ui.dp(4), ui.dp(12), ui.dp(4), 0) }
+        full(err)
+        lateinit var go: TextView
+        go = ui.capsule(a.t("Déverrouiller", "Unlock")) {
+            val typed = key.text.toString()
+            val password = pw.text.toString()
+            if (typed.isBlank() || password.isEmpty()) return@capsule
+            val sk = try {
+                me.somalabs.onepass.core.normalizeSecretKey(typed)
+            } catch (e: Exception) {
+                err.text = a.t("Format de Secret Key incorrect : 53 caractères attendus (lettres et chiffres).", "Incorrect Secret Key format: 53 characters expected (letters and digits).")
+                return@capsule
+            }
+            go.isEnabled = false
+            err.setTextColor(ui.secondary)
+            err.text = a.t("Recherche de ton compte...", "Looking for your account...")
+            val endpoint = (kit as? me.somalabs.onepass.vaultkit.sync.SyncChoice.SelfHost)?.let { me.somalabs.onepass.core.FfiMailboxEndpoint(it.url, it.extraCaPem) }
+            pw.text.clear()
+            a.background({
+                if (missingKey) {
+                    restoreHere(sk, password)
+                    return@background null
+                }
+                when (val found = a.sync.locate(sk, endpoint)) {
+                    is me.somalabs.onepass.vaultkit.sync.RestoreSource.Found -> {
+                        a.main.post { err.text = a.t("Restauration du coffre...", "Restoring the vault...") }
+                        a.sync.restore(found.home, sk, password)
+                        null
+                    }
+                    me.somalabs.onepass.vaultkit.sync.RestoreSource.NotFound -> a.t("Aucun compte trouvé pour cette Secret Key. Vérifie-la, ou indique ton serveur.", "No account found for this Secret Key. Check it, or enter your server.")
+                    is me.somalabs.onepass.vaultkit.sync.RestoreSource.Offline -> a.t("Impossible de joindre le serveur. Vérifie ta connexion puis réessaie.", "Can't reach the server. Check your connection and try again.")
+                }
+            }) { r ->
+                go.isEnabled = true
+                err.setTextColor(ui.red)
+                r.onSuccess { message ->
+                    if (message == null) {
+                        key.text.clear()
+                        a.openTabs()
+                    } else err.text = message
+                }.onFailure {
+                    err.text = when (it) {
+                        is me.somalabs.onepass.core.OnePassException.WrongPassword -> a.t("Cette Secret Key ne correspond pas à ce compte, ou le mot de passe est faux.", "This Secret Key doesn't match this account, or the password is wrong.")
+                        is me.somalabs.onepass.core.OnePassException.MailboxUnavailable -> a.t("Impossible de joindre le serveur. Vérifie ta connexion puis réessaie.", "Can't reach the server. Check your connection and try again.")
+                        is me.somalabs.onepass.core.OnePassException.OutdatedKit -> a.t("Ce kit n'est plus à jour : les clés du compte ont changé depuis. Utilise ton dernier Emergency Kit.", "This kit is out of date: the account's keys changed since. Use your latest Emergency Kit.")
+                        else -> a.message(it)
+                    }
+                }
+            }
+        }
+        full(go, 24)
+        if (!missingKey) full(a.link(a.t("Retour", "Back")) { a.showFull { welcome() } }.apply { gravity = Gravity.CENTER }, 8)
+    }
+
+    /** The account is in the store but this device's secrets are gone: the kit opens it in place. */
+    private fun restoreHere(secretKey: String, password: String) {
+        val device = a.vault.newDevice()
+        try {
+            val session = me.somalabs.onepass.core.restoreFromKit(a.vault.dbPath, password, secretKey, device.classical, device.keys.pq,
+                me.somalabs.onepass.vault.SyncManager.deviceName(), me.somalabs.onepass.core.FfiDeviceKind.ANDROID, me.somalabs.onepass.core.FfiDeviceMode.PERSONAL)
+            a.vault.adopt(session, secretKey, device)
+        } finally {
+            device.wipe()
+        }
     }
 
     private fun showKeyboard(e: EditText) {

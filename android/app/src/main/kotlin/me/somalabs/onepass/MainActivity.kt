@@ -71,6 +71,10 @@ class MainActivity : Activity() {
     val duplicates by lazy { me.somalabs.onepass.screens.DuplicatesScreen(this) }
     val travel by lazy { me.somalabs.onepass.screens.TravelScreen(this) }
     val backups by lazy { me.somalabs.onepass.screens.BackupScreens(this) }
+    /** The sync of this device's account (shared with the AutoFill service and the periodic job). */
+    val sync by lazy { me.somalabs.onepass.vault.SyncManager.get(this) }
+    val syncScreens by lazy { me.somalabs.onepass.screens.SyncScreens(this) }
+    val pairing by lazy { me.somalabs.onepass.screens.PairingScreens(this) }
 
     enum class Tab { HOME, ITEMS, WATCHTOWER, SEARCH }
 
@@ -115,9 +119,10 @@ class MainActivity : Activity() {
         }
     }
 
-    /** After a change to the vault: Wi-Fi networks follow, the lists reload. */
+    /** After a change to the vault: Wi-Fi networks follow, the sync sends it (debounced), the lists reload. */
     fun changed(done: () -> Unit = { render() }) {
         VaultWifi.changed(wifi)
+        sync.localChange()
         reload(done)
     }
 
@@ -149,6 +154,11 @@ class MainActivity : Activity() {
         }
         setContentView(root)
         me.somalabs.onepass.screens.Attachments.clearCache(this)
+        // Sync: the coordinator of a mailbox account, the lists reload when changes arrive, the
+        // periodic background round.
+        sync.start()
+        sync.onRemoteChange { if (!isDestroyed && vault.session != null) reload { renderIfRoot() } }
+        me.somalabs.onepass.vault.SyncJob.schedule(this)
         // The brand icons, mapped once off the main thread; the lists redraw with them.
         Thread { me.somalabs.onepass.ui.IconPack.load(applicationContext); main.post { if (!isDestroyed) renderIfRoot() } }.start()
         route()
@@ -157,6 +167,12 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         if (vault.lockIfIdle()) lockNow()
+        sync.enterForeground()
+    }
+
+    override fun onStop() {
+        sync.enterBackground()
+        super.onStop()
     }
 
     override fun onUserInteraction() {
@@ -228,7 +244,7 @@ class MainActivity : Activity() {
                 DeviceVault.State.EMPTY -> showFull { access.intro() }
                 DeviceVault.State.LOCKED -> showFull { access.lock() }
                 DeviceVault.State.UNLOCKED -> openTabs()
-                DeviceVault.State.NO_DEVICE_FILE -> showFull { access.problem(t("Les secrets de cet appareil sont introuvables. La restauration par l'Emergency Kit arrive dans une prochaine version.", "This device's secrets are missing. Restoring from the Emergency Kit comes in a later version.")) }
+                DeviceVault.State.NO_DEVICE_FILE -> showFull { access.restore(missingKey = true) }
                 DeviceVault.State.MISSING -> showFull { access.problem(t("Le compte de cet appareil a disparu du coffre. C'est une anomalie d'intégrité : OnePass ne crée pas de compte par-dessus.", "This device's account is gone from the vault. That is an integrity fault: OnePass does not create an account over it.")) }
                 null -> showFull { access.problem(message(r.exceptionOrNull()!!)) }
             }

@@ -21,8 +21,8 @@ import me.somalabs.onepass.wifi.SyncReport
 
 /**
  * Réglages as on iPhone (SettingsView): the account on top, then the pages in
- * grouped cards with their drawn tiles. Pages whose feature needs what Android
- * does not have yet (sync between devices, sharing) say so plainly.
+ * grouped cards with their drawn tiles. Pages whose feature Android does not
+ * have yet (sharing, crypto tracking) say so plainly.
  */
 class SettingsScreens(private val a: MainActivity) {
     private val ui get() = a.ui
@@ -69,7 +69,8 @@ class SettingsScreens(private val a: MainActivity) {
         "security" -> security()
         "vaults" -> vaults()
         "accounts" -> accounts()
-        "devices" -> devices()
+        "devices" -> a.pairing.devices()
+        "sync" -> a.syncScreens.page()
         "about" -> about()
         "autofill" -> autofill()
         else -> notYet(p)
@@ -137,12 +138,8 @@ class SettingsScreens(private val a: MainActivity) {
         val why = when (p.key) {
             "autofill" -> a.t("Le remplissage automatique d'Android (service Autofill et passkeys) arrive dans une prochaine version. En attendant, copie un identifiant depuis l'élément : il est effacé du presse-papiers après 90 secondes.",
                 "Android AutoFill (the Autofill service and passkeys) comes in a later version. Meanwhile, copy a value from the item: it is cleared from the clipboard after 90 seconds.")
-            "sync" -> a.t("Ton coffre reste sur cet appareil. La synchronisation chiffrée avec tes autres appareils arrive sur Android.",
-                "Your vault stays on this device. Encrypted sync with your other devices is coming to Android.")
-            "contacts", "family" -> a.t("Le partage avec tes contacts et ta famille demande la synchronisation, qui arrive sur Android.",
-                "Sharing with your contacts and family needs sync, which is coming to Android.")
-            "travel" -> a.t("Travel Mode retire de l'appareil les coffres non sûrs pour un voyage. Il arrive sur Android avec la synchronisation.",
-                "Travel Mode removes the vaults not safe for travel from the device. It comes to Android with sync.")
+            "contacts", "family" -> a.t("Le partage avec tes contacts et ta famille arrive sur Android.",
+                "Sharing with your contacts and family is coming to Android.")
             "crypto" -> a.t("Les portefeuilles crypto se rangent déjà comme éléments. Le suivi des soldes arrive sur Android.",
                 "Crypto wallets can already be stored as items. Balance tracking is coming to Android.")
             else -> a.t("Les agents (MCP, ssh-agent) tournent sur ordinateur, pas sur Android.", "Agents (MCP, ssh-agent) run on computers, not on Android.")
@@ -349,17 +346,6 @@ class SettingsScreens(private val a: MainActivity) {
         addView(ui.capsLabel(a.t("Compte OnePass", "OnePass Account")))
         addView(ui.inset(ui.card(ui.row(title = a.t("Identifiant", "ID"), subtitle = id, chevron = false) { a.copy(id, false) })))
         addView(ui.footnote(a.t("Cet identifiant est imprimé sur ton Emergency Kit.", "This ID is printed on your Emergency Kit.")))
-    }
-
-    private fun devices(): View = a.pushedPage(a.t("Appareils", "Devices"), largeTitle = true) {
-        val list = runCatching { a.vault.session?.devices().orEmpty() }.getOrDefault(emptyList())
-        val me = runCatching { a.vault.session?.thisDeviceId() }.getOrNull()
-        val df = DateFormat.getDateInstance(DateFormat.LONG)
-        addView(ui.inset(ui.card(*list.map { d ->
-            ui.row(icon = ui.symbolTile(R.drawable.ic_key, Color.rgb(0, 140, 179)), title = d.name + if (d.id == me) a.t(" (cet appareil)", " (this device)") else "",
-                subtitle = a.t("Ajouté le ", "Added ") + df.format(Date(d.addedAt * 1000)), chevron = false)
-        }.toTypedArray()), top = Ios.Space.S))
-        addView(ui.footnote(a.t("Ajouter un autre appareil demande la synchronisation, qui arrive sur Android.", "Adding another device needs sync, which is coming to Android.")))
     }
 
     // ---- Coffres ----------------------------------------------------------------------------------------
