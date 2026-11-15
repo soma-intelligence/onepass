@@ -1,17 +1,28 @@
 //! The join requests an org client has read (R2): the change feed cursor
 //! and the live requests by account id, kept in memory between polls, and
-//! what each one proved against the pin (checked once per pinned roster).
+//! what each one proved against the pin (checked again whenever the pinned
+//! roster or the set of requests changed).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use num_bigint::BigUint;
 use onepass_core::generator::Wordlist;
 use onepass_core::org::{
-    MemberState, OrgPin, SignedJoinRequest, VerifiedJoin, join_code_of, member_kem_hash,
-    verify_join_request,
+    MAX_JOIN_GENESIS_BYTES, MemberState, OrgPin, SignedJoinRequest, VerifiedJoin, join_code_of,
+    member_kem_hash, verify_join_request,
 };
 use onepass_mailbox::ChangeFeed;
 use onepass_mailbox::org::{JoinFeedDelta, join_record_id};
+
+/// Room for everything of a join request but its genesis: the fixed fields,
+/// one device's public keys, a display name of `MAX_DISPLAY_NAME_BYTES`, the
+/// account KEM key and the hybrid signature (about 9 KiB today), with
+/// margin for the encoding.
+const JOIN_FIXED_MAX: usize = 16 * 1024;
+
+/// The largest join request a member can post: anything longer is dropped
+/// before it is cached (a hostile writer cannot fill memory with it).
+pub(crate) const JOIN_REQUEST_MAX: usize = MAX_JOIN_GENESIS_BYTES + JOIN_FIXED_MAX;
 
 /// The feed cursor and the live requests. A fresh client starts with a full
 /// fetch; a `reset` delta (expired cursor, new incarnation) rebuilds it.
@@ -22,6 +33,9 @@ pub(super) struct JoinCache {
 
 struct Cached {
     bytes: Vec<u8>,
+    /// The mailbox credential the request names, when it decodes as the
+    /// request of the account it is stored under.
+    credential: Option<[u8; 32]>,
     /// The verdict and the roster seq of the pin it was reached under.
     verdict: Option<(u64, Verdict)>,
 }
@@ -30,7 +44,8 @@ struct Cached {
 #[derive(Clone)]
 pub(super) enum Verdict {
     /// Not verifiable (bad signature or shape, another account's invitation,
-    /// a credential that is no Ed25519 key, ...): counted nowhere.
+    /// a credential that is no Ed25519 key or that another roster member's
+    /// request names too, ...): counted nowhere.
     Dropped,
     /// A verified request of an Invited member, waiting for the admin.
     Invited {
@@ -53,8 +68,11 @@ impl JoinCache {
 
     /// Applies what the feed returned since the cursor. A tombstone names a
     /// record id only: it is matched with `join_record_id` over the accounts
-    /// held.
+    /// held. A request longer than `JOIN_REQUEST_MAX` is dropped (and any
+    /// older one of that account with it). Any change judges every request
+    /// again (a credential may now be named twice, or no longer).
     pub(super) fn apply(&mut self, org_id: &[u8; 16], delta: JoinFeedDelta) {
+        let changed = delta.reset || !delta.removed.is_empty() || !delta.upserts.is_empty();
         if delta.reset {
             self.live.clear();
         }
@@ -63,26 +81,64 @@ impl JoinCache {
                 .retain(|account, _| join_record_id(org_id, account) != *id);
         }
         for (account, bytes) in delta.upserts {
+            if bytes.len() > JOIN_REQUEST_MAX {
+                self.live.remove(&account);
+                continue;
+            }
+            let credential = SignedJoinRequest::decode(&bytes)
+                .ok()
+                .filter(|r| r.body.account_id.0 == account)
+                .map(|r| r.body.mailbox_credential);
             self.live.insert(
                 account,
                 Cached {
                     bytes,
+                    credential,
                     verdict: None,
                 },
             );
+        }
+        if changed {
+            for c in self.live.values_mut() {
+                c.verdict = None;
+            }
         }
     }
 
     pub(super) fn remove(&mut self, account: &[u8; 16]) {
         self.live.remove(account);
+        for c in self.live.values_mut() {
+            c.verdict = None;
+        }
+    }
+
+    /// The credentials named by the stored requests of two or more roster
+    /// members, whatever their state (R38 (b)): none of those requests is
+    /// believed, so a member cannot have another one's key moved by naming
+    /// it. A request outside the roster names nothing here (anyone holding
+    /// a link credential could post one).
+    fn shared(&self, pin: &OrgPin) -> HashSet<[u8; 32]> {
+        let Some(roster) = pin.roster() else {
+            return HashSet::new();
+        };
+        let mut seen = HashSet::new();
+        let mut shared = HashSet::new();
+        for (account, c) in &self.live {
+            let Some(key) = c.credential else { continue };
+            if roster.members.iter().any(|m| m.account_id.0 == *account) && !seen.insert(key) {
+                shared.insert(key);
+            }
+        }
+        shared
     }
 
     /// Every live request with its verdict under `pin` (computed when the
-    /// pinned roster changed since the last look).
+    /// pinned roster or the requests changed since the last look).
     pub(super) fn verdicts(&mut self, pin: &OrgPin) -> Vec<Verdict> {
+        let shared = self.shared(pin);
         self.live
             .iter_mut()
-            .map(|(account, c)| c.verdict(pin, account))
+            .map(|(account, c)| c.verdict(pin, account, &shared))
             .collect()
     }
 
@@ -90,7 +146,8 @@ impl JoinCache {
     /// Invited with the roster's identity and KEM hash), from the requests
     /// read so far; `None` when there is none or it was dropped.
     pub(super) fn verified(&mut self, pin: &OrgPin, account: &[u8; 16]) -> Option<VerifiedJoin> {
-        match self.live.get_mut(account)?.verdict(pin, account) {
+        let shared = self.shared(pin);
+        match self.live.get_mut(account)?.verdict(pin, account, &shared) {
             Verdict::Invited { joined, .. } | Verdict::Member(joined) => Some(joined),
             Verdict::Dropped => None,
         }
@@ -112,12 +169,15 @@ impl JoinCache {
 
 impl Cached {
     /// The verdict under `pin`, judged again once the pinned roster moved.
-    fn verdict(&mut self, pin: &OrgPin, account: &[u8; 16]) -> Verdict {
+    fn verdict(&mut self, pin: &OrgPin, account: &[u8; 16], shared: &HashSet<[u8; 32]>) -> Verdict {
         let seq = pin.roster_seq().unwrap_or(0);
         match &self.verdict {
             Some((at, v)) if *at == seq => v.clone(),
             _ => {
-                let v = judge(pin, account, &self.bytes);
+                let v = match self.credential {
+                    Some(key) if shared.contains(&key) => Verdict::Dropped,
+                    _ => judge(pin, account, &self.bytes),
+                };
                 self.verdict = Some((seq, v.clone()));
                 v
             }
@@ -233,6 +293,36 @@ pub(super) fn ed25519_point_ok(bytes: &[u8; 32]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oversized_requests_are_never_cached() {
+        let org = [1u8; 16];
+        let (a, b) = ([2u8; 16], [3u8; 16]);
+        let mut cache = JoinCache::new();
+        cache.apply(
+            &org,
+            JoinFeedDelta {
+                upserts: vec![
+                    (a, vec![0; JOIN_REQUEST_MAX]),
+                    (b, vec![0; JOIN_REQUEST_MAX + 1]),
+                ],
+                removed: vec![],
+                reset: true,
+            },
+        );
+        assert!(cache.live.contains_key(&a));
+        assert!(!cache.live.contains_key(&b));
+        // An oversized rewrite drops the older request of that account too.
+        cache.apply(
+            &org,
+            JoinFeedDelta {
+                upserts: vec![(a, vec![0; JOIN_REQUEST_MAX + 1])],
+                removed: vec![],
+                reset: false,
+            },
+        );
+        assert!(cache.live.is_empty());
+    }
 
     #[test]
     fn ed25519_points() {

@@ -345,30 +345,34 @@ mod lifecycle {
         fake: FakeMailbox,
         owner: Owner,
         created: FfiOrgCreated,
+        /// The org mailbox's managing credential the publish was given (R39).
+        seed: Vec<u8>,
         org_id: [u8; 16],
         _dirs: TempDir,
         creator_dir: PathBuf,
     }
 
+    /// A publish with a fresh managing credential: its outcome and the seed.
     fn publish_draft(
         draft: &OrgDraft,
         fake: &FakeMailbox,
         owner: &Owner,
         state_dir: &Path,
-    ) -> Result<FfiOrgCreated, OnePassError> {
+    ) -> Result<(FfiOrgCreated, Vec<u8>), OnePassError> {
         let cred = mailbox_generate_credential().unwrap();
         let client = fake.client(Credential::from_seed(&cred.seed).unwrap());
-        draft.publish_with_client(
-            Box::new(client),
-            cred.seed,
-            "org-invite".into(),
-            owner.session.clone(),
-            owner.keys.classical.clone(),
-            owner.keys.half(),
-            ORG_NAME.into(),
-            state_dir.to_string_lossy().into_owned(),
-            NOW,
-        )
+        draft
+            .publish_with_client(
+                Box::new(client),
+                "org-invite".into(),
+                owner.session.clone(),
+                owner.keys.classical.clone(),
+                owner.keys.half(),
+                ORG_NAME.into(),
+                state_dir.to_string_lossy().into_owned(),
+                NOW,
+            )
+            .map(|created| (created, cred.seed))
     }
 
     fn publish(fake: &FakeMailbox) -> Org {
@@ -376,12 +380,13 @@ mod lifecycle {
         let owner = Owner::new(&draft.org_id());
         let dirs = TempDir::new().unwrap();
         let creator_dir = dirs.path().join("creator");
-        let created = publish_draft(&draft, fake, &owner, &creator_dir).unwrap();
+        let (created, seed) = publish_draft(&draft, fake, &owner, &creator_dir).unwrap();
         Org {
             fake: fake.clone(),
             org_id: unhex(&draft.org_id()),
             owner,
             created,
+            seed,
             _dirs: dirs,
             creator_dir,
         }
@@ -390,9 +395,7 @@ mod lifecycle {
     impl Org {
         /// A client of the org mailbox with the creator's credential.
         fn client(&self) -> FakeMailboxClient {
-            let mut c = self
-                .fake
-                .client(Credential::from_seed(&self.created.credential_seed).unwrap());
+            let mut c = self.fake.client(Credential::from_seed(&self.seed).unwrap());
             c.open(unhex(&self.created.mailbox_id));
             c
         }
@@ -537,7 +540,10 @@ mod lifecycle {
         assert!(!m.former_owner);
         assert_eq!(m.devices.len(), 1);
         assert_eq!(m.devices[0].fingerprint.len(), 64);
-        assert_eq!(org.created.credential_seed.len(), 32);
+        // The org mailbox's one credential is the one of the seed the app
+        // gave (R39), and it manages the mailbox.
+        assert_eq!(org.client().info().unwrap().usage.credentials, 1);
+        assert_eq!(org.client().create_org_invite(1, 1).unwrap().len(), 32);
         // The pin on disk says the same.
         let reopened = org.open(Box::new(org.store()), &org.creator_dir);
         assert_eq!(reopened.state().unwrap().as_ref(), Some(s));
@@ -790,6 +796,8 @@ mod lifecycle {
     struct FailRoster {
         inner: FakeMailboxClient,
         armed: AtomicBool,
+        /// The next grant fails (`Offline`), nothing granted.
+        fail_grant: AtomicBool,
     }
 
     impl FailRoster {
@@ -872,6 +880,9 @@ mod lifecycle {
             put_kinds: Option<[u8; 32]>,
             label: &[u8],
         ) -> Result<CredentialId, MailboxError> {
+            if self.fail_grant.swap(false, Ordering::SeqCst) {
+                return Err(MailboxError::Offline);
+            }
             self.inner.grant(public_key, role, put_kinds, label)
         }
 
@@ -1071,10 +1082,10 @@ mod lifecycle {
         let client = FailRoster {
             inner: fake.client(Credential::from_seed(&cred.seed).unwrap()),
             armed: AtomicBool::new(true),
+            fail_grant: AtomicBool::new(false),
         };
         let first = draft.publish_with_client(
             Box::new(client),
-            cred.seed.clone(),
             "org-invite".into(),
             owner.session.clone(),
             owner.keys.classical.clone(),
@@ -1089,8 +1100,7 @@ mod lifecycle {
         );
         assert!(!state_dir.join("pin.bin").exists());
         // Resumed: the client passed now is never used (no second mailbox).
-        let created = publish_draft(&draft, &fake, &owner, &state_dir).unwrap();
-        assert_eq!(created.credential_seed, cred.seed);
+        let (created, _) = publish_draft(&draft, &fake, &owner, &state_dir).unwrap();
         assert_eq!(created.state.roster_seq, 1);
         assert_eq!(created.state.source, FfiPinSource::Tofu { verified: true });
         let org = Org {
@@ -1098,6 +1108,8 @@ mod lifecycle {
             org_id: unhex(&draft.org_id()),
             owner,
             created,
+            // The first call's credential manages the mailbox.
+            seed: cred.seed,
             _dirs: dirs,
             creator_dir: state_dir,
         };
@@ -1278,7 +1290,7 @@ mod lifecycle {
         assert_eq!(invite.account_id, link.account_id);
         assert_eq!(invite.nonce.len(), 32);
         assert_eq!(invite.member_token.len(), 32);
-        assert_ne!(invite.credential_seed, org.created.credential_seed);
+        assert_ne!(invite.credential_seed, org.seed);
         // The roster moved to seq 2 with the Invited member, no role.
         let s = org.creator().state().unwrap().unwrap();
         assert_eq!(s.roster_seq, 2);
@@ -2089,9 +2101,16 @@ mod lifecycle {
             member_of(&out.state, &account_id).state,
             FfiMemberState::Active
         );
+        // Writes join requests again, but never over its own, which the
+        // link's credential wrote first (R38 (a)).
         m.own_store(&org)
-            .put_join_request(account, request)
+            .put_join_request([0x99; 16], request.clone())
             .unwrap();
+        let put = m.own_store(&org).put_join_request(account, request);
+        assert_eq!(
+            put.map_err(OnePassError::from),
+            Err(OnePassError::Forbidden)
+        );
 
         let out = org
             .edit(FfiRosterEdit::Remove {
@@ -2371,9 +2390,11 @@ mod lifecycle {
         let owner = Owner::new(&draft.org_id());
         let dirs = TempDir::new().unwrap();
         let path = |name: &str| dirs.path().join(name).to_string_lossy().into_owned();
+        let seed = mailbox_generate_credential().unwrap().seed;
         let created = server
             .draft_publish(
                 draft.clone(),
+                seed.clone(),
                 owner.session.clone(),
                 owner.keys.classical.clone(),
                 owner.keys.half(),
@@ -2385,7 +2406,7 @@ mod lifecycle {
         let admin = server
             .client(
                 created.mailbox_id.clone(),
-                created.credential_seed.clone(),
+                seed.clone(),
                 draft.org_id(),
                 path("admin"),
             )
@@ -2492,9 +2513,11 @@ mod lifecycle {
         let owner = Owner::new(&draft.org_id());
         let dirs = TempDir::new().unwrap();
         let dir = dirs.path().join("admin").to_string_lossy().into_owned();
+        let seed = mailbox_generate_credential().unwrap().seed;
         let created = server
             .draft_publish(
                 draft.clone(),
+                seed.clone(),
                 owner.session.clone(),
                 owner.keys.classical.clone(),
                 owner.keys.half(),
@@ -2504,12 +2527,7 @@ mod lifecycle {
             )
             .unwrap();
         let admin = server
-            .client(
-                created.mailbox_id.clone(),
-                created.credential_seed.clone(),
-                draft.org_id(),
-                dir,
-            )
+            .client(created.mailbox_id.clone(), seed, draft.org_id(), dir)
             .unwrap();
         ServerOrg {
             server,
@@ -2607,5 +2625,267 @@ mod lifecycle {
             )
             .unwrap();
         assert_eq!(joiner.mint_member_token(), Err(OnePassError::Forbidden));
+    }
+
+    // ---- final review fixes: member credentials (R38) --------------------------------
+
+    impl Member {
+        /// The member's own credential manages the org mailbox (mints a
+        /// member token, a manager-only call).
+        fn manages(&self, org: &Org) -> bool {
+            self.own_store(org).create_member_invite(1).is_ok()
+        }
+
+        /// The member's own credential reads the org mailbox.
+        fn reads(&self, org: &Org) -> bool {
+            self.own_store(org).roster(1).is_ok()
+        }
+    }
+
+    impl Org {
+        /// A member invited and posted whose request names `victim`'s own
+        /// credential key (the request carries only the public key: the
+        /// victim's seed is a shortcut to build the same bytes).
+        fn copycat(&self, name: &str, victim: &Member) -> Member {
+            let (_, invite) = self.invite(name, vec![]);
+            let mut joiner = self.joiner(&invite);
+            joiner.own_seed = victim.joiner.own_seed.clone();
+            joiner.post(&invite, name).unwrap();
+            Member { invite, joiner }
+        }
+    }
+
+    #[test]
+    fn a_request_naming_another_members_credential_is_not_believed() {
+        let org = publish(&FakeMailbox::org());
+        let x = org.accepted("Xavier", vec![FfiOrgRole::Admin]);
+        assert!(x.manages(&org));
+        let m = org.copycat("Mallory", &x);
+        let credentials = org.credential_count();
+        // Two roster members name one key: neither request verifies (R38 (b)).
+        assert!(org.creator().join_requests().unwrap().is_empty());
+        let accept = FfiRosterEdit::Accept {
+            account_id: m.account(),
+            roles: vec![],
+        };
+        assert_eq!(org.edit(accept.clone()), Err(OnePassError::NotFound));
+        let (_, second) = org.second_device();
+        assert_eq!(org.edit_by(&second, accept), Err(OnePassError::NotFound));
+        assert!(x.manages(&org));
+        // Nothing granted (the link's credential may be gone).
+        assert!(org.credential_count() <= credentials);
+    }
+
+    #[test]
+    fn a_copied_credential_is_never_moved_by_the_copier_s_edits() {
+        let org = publish(&FakeMailbox::org());
+        let x = org.accepted("Xavier", vec![FfiOrgRole::Admin]);
+        // X's own request is gone (a manager may delete it): the copy is the
+        // only request naming its key, and it verifies.
+        let x_account: [u8; 16] = unhex(&x.account());
+        x.own_store(&org).delete_join_request(x_account).unwrap();
+        let m = org.copycat("Mallory", &x);
+        let credentials = org.credential_count();
+        let account_id = m.account();
+        let (_, second) = org.second_device();
+        let edits = [
+            FfiRosterEdit::Accept {
+                account_id: account_id.clone(),
+                roles: vec![],
+            },
+            FfiRosterEdit::SetRoles {
+                account_id: account_id.clone(),
+                roles: vec![FfiOrgRole::Auditor],
+            },
+            FfiRosterEdit::Suspend {
+                account_id: account_id.clone(),
+            },
+            FfiRosterEdit::Reactivate {
+                account_id: account_id.clone(),
+            },
+        ];
+        // Accepted by a device that never bound X's key: the server already
+        // knows it, so the grant fails and nothing is moved from there on.
+        for edit in edits {
+            let out = org.edit_by(&second, edit).unwrap();
+            assert!(!out.server_access_updated);
+            assert!(x.manages(&org));
+            assert!(!second.update_member_access(account_id.clone()).unwrap());
+        }
+        // The device that accepted X knows that key is X's.
+        let out = org
+            .edit(FfiRosterEdit::SetRoles {
+                account_id: account_id.clone(),
+                roles: vec![],
+            })
+            .unwrap();
+        assert!(!out.server_access_updated);
+        assert!(x.manages(&org));
+        let out = org
+            .edit_by(
+                &second,
+                FfiRosterEdit::Remove {
+                    account_id: account_id.clone(),
+                },
+            )
+            .unwrap();
+        assert!(!out.server_access_updated);
+        assert!(!org.creator().update_member_access(account_id).unwrap());
+        assert!(x.manages(&org));
+        // Nothing granted (the link's credential may be gone).
+        assert!(org.credential_count() <= credentials);
+    }
+
+    #[test]
+    fn a_copied_credential_is_refused_by_the_device_that_bound_it() {
+        let org = publish(&FakeMailbox::org());
+        let x = org.accepted("Xavier", vec![FfiOrgRole::Admin]);
+        let x_account: [u8; 16] = unhex(&x.account());
+        x.own_store(&org).delete_join_request(x_account).unwrap();
+        let m = org.copycat("Mallory", &x);
+        let credentials = org.credential_count();
+        let out = org.accept(&m, vec![]).unwrap();
+        assert!(!out.server_access_updated);
+        for edit in [
+            FfiRosterEdit::Suspend {
+                account_id: m.account(),
+            },
+            FfiRosterEdit::Remove {
+                account_id: m.account(),
+            },
+        ] {
+            assert!(!org.edit(edit).unwrap().server_access_updated);
+            assert!(x.manages(&org));
+        }
+        // Nothing granted (the link's credential may be gone).
+        assert!(org.credential_count() <= credentials);
+    }
+
+    #[test]
+    fn removal_revokes_the_bound_credential_whatever_the_request_says() {
+        let org = publish(&FakeMailbox::org());
+        let x = org.accepted("Xavier", vec![FfiOrgRole::Admin]);
+        let x_account: [u8; 16] = unhex(&x.account());
+        // A manager rewrites its own request with garbage: no request
+        // verifies for it any more.
+        x.own_store(&org)
+            .put_join_request(x_account, b"garbage".to_vec())
+            .unwrap();
+        let out = org
+            .edit(FfiRosterEdit::Remove {
+                account_id: x.account(),
+            })
+            .unwrap();
+        assert!(out.server_access_updated);
+        assert!(!x.reads(&org));
+    }
+
+    #[test]
+    fn a_limited_member_cannot_rewrite_its_join_request() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.accepted(MARIE, vec![]);
+        let account: [u8; 16] = unhex(&m.account());
+        let put = m
+            .own_store(&org)
+            .put_join_request(account, b"garbage".to_vec());
+        assert_eq!(
+            put.map_err(OnePassError::from),
+            Err(OnePassError::Forbidden)
+        );
+        let s = org.creator().refresh().unwrap();
+        assert_eq!(
+            member_of(&s, &m.account()).display_name.as_deref(),
+            Some(MARIE)
+        );
+    }
+
+    #[test]
+    fn a_failed_grant_keeps_the_link_and_a_retry_grants() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.member(MARIE, vec![]);
+        let client = org.open(
+            Box::new(OrgStore::new(
+                FailRoster {
+                    inner: org.client(),
+                    armed: AtomicBool::new(false),
+                    fail_grant: AtomicBool::new(true),
+                },
+                org.org_id,
+            )),
+            &org.creator_dir,
+        );
+        let out = org
+            .edit_by(
+                &client,
+                FfiRosterEdit::Accept {
+                    account_id: m.account(),
+                    roles: vec![],
+                },
+            )
+            .unwrap();
+        assert!(!out.server_access_updated);
+        assert_eq!(
+            member_of(&out.state, &m.account()).state,
+            FfiMemberState::Active
+        );
+        // The member still reads with the link's credential, not its own.
+        assert!(org.invite_store(&m.invite).roster(1).is_ok());
+        assert!(!m.reads(&org));
+        assert!(client.update_member_access(m.account()).unwrap());
+        assert!(m.reads(&org));
+        assert!(org.invite_store(&m.invite).roster(1).is_err());
+        // Later edits move that credential.
+        let out = org
+            .edit(FfiRosterEdit::SetRoles {
+                account_id: m.account(),
+                roles: vec![FfiOrgRole::Admin],
+            })
+            .unwrap();
+        assert!(out.server_access_updated);
+        assert!(m.manages(&org));
+    }
+
+    #[test]
+    fn update_member_access_needs_a_roster_member() {
+        let org = publish(&FakeMailbox::org());
+        assert_eq!(
+            org.creator().update_member_access("ab".repeat(16)),
+            Err(OnePassError::NotFound)
+        );
+        // The creator itself: nothing bound, no request: not updated.
+        assert!(!org.creator().update_member_access(org.account()).unwrap());
+    }
+
+    #[test]
+    fn secrets_stay_out_of_debug() {
+        let org = publish(&FakeMailbox::org());
+        let (link, invite) = org.invite(MARIE, vec![]);
+        let seed = hex(&invite.credential_seed);
+        let token = hex(&invite.member_token);
+        for text in [format!("{invite:?}"), format!("{link:?}")] {
+            assert!(!text.contains(&seed) && !text.contains(&token), "{text}");
+            assert!(!text.contains("onepass://"), "{text}");
+        }
+        assert!(format!("{invite:?}").contains(&invite.account_id));
+    }
+
+    #[test]
+    fn join_requests_stay_under_the_cache_bound() {
+        let org = publish(&FakeMailbox::org());
+        let m = org.member(MARIE, vec![]);
+        let account: [u8; 16] = unhex(&m.account());
+        let (_, bytes) = org
+            .raw_requests()
+            .into_iter()
+            .find(|(a, _)| *a == account)
+            .unwrap();
+        let req = SignedJoinRequest::decode(&bytes).unwrap();
+        // Everything but the genesis, with a longest display name.
+        let fixed = bytes.len() - req.body.account_genesis.len() - MARIE.len()
+            + onepass_core::org::MAX_DISPLAY_NAME_BYTES;
+        assert!(
+            fixed + onepass_core::org::MAX_JOIN_GENESIS_BYTES <= onepass_ffi::ORG_JOIN_REQUEST_MAX,
+            "fixed part {fixed}"
+        );
     }
 }

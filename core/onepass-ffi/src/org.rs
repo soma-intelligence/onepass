@@ -31,7 +31,8 @@ use onepass_core::sync::SyncStore;
 use onepass_core::{Id, IntegrityError};
 use onepass_mailbox::org::ORG_JOIN_KIND;
 use onepass_mailbox::{
-    CredentialKey, MailboxApi, MailboxClient, OrgStore, OrgStoreApi, OrgStoreError,
+    CredentialKey, ErrorCode, MailboxApi, MailboxClient, MailboxError, OrgStore, OrgStoreApi,
+    OrgStoreError,
 };
 use onepass_mailbox_proto::{CredentialRole, put_kinds_of};
 use zeroize::Zeroizing;
@@ -44,11 +45,18 @@ use crate::rotation::{FfiPqDeviceHalf, device_keys};
 use crate::session::Session;
 use crate::types::{FfiCreatedAccount, FfiKdfParams};
 use join::{JoinCache, Verdict};
-use pinstore::{LocalInvite, add_invite, load_invites, load_pin, pin_lock, save_pin};
+use pinstore::{
+    Bound, LocalAccess, LocalInvite, add_invite, load_access, load_invites, load_pin, pin_lock,
+    save_access, save_pin,
+};
 
 pub use invite::{org_invite_encode, org_invite_parse};
 #[cfg(feature = "dev-fast-kdf")]
 pub use testing::TestOrgServer;
+/// The largest join request an org client keeps (tests only).
+#[cfg(feature = "dev-fast-kdf")]
+#[doc(hidden)]
+pub const ORG_JOIN_REQUEST_MAX: usize = join::JOIN_REQUEST_MAX;
 
 /// A role of an organization member (a member holds a set of them).
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -120,8 +128,9 @@ pub struct FfiOrgState {
     pub members: Vec<FfiOrgMember>,
 }
 
-/// The content of a join link (see `invite`).
-#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+/// The content of a join link (see `invite`). `Debug` leaves out the
+/// credential seed and the member token.
+#[derive(uniffi::Record, Clone, PartialEq, Eq)]
 pub struct FfiOrgInvite {
     pub server_url: String,
     /// 32 hex.
@@ -138,6 +147,22 @@ pub struct FfiOrgInvite {
     /// 32 bytes: the one-use `managed` mailbox token.
     pub member_token: Vec<u8>,
     pub domain: Option<String>,
+}
+
+impl std::fmt::Debug for FfiOrgInvite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FfiOrgInvite")
+            .field("server_url", &self.server_url)
+            .field("mailbox_id", &self.mailbox_id)
+            .field("org_id", &self.org_id)
+            .field("account_id", &self.account_id)
+            .field("fingerprint", &bytes_hex(&self.fingerprint))
+            .field("nonce", &bytes_hex(&self.nonce))
+            .field("credential_seed", &"<redacted>")
+            .field("member_token", &"<redacted>")
+            .field("domain", &self.domain)
+            .finish()
+    }
 }
 
 fn fpr_array(fingerprint: &[u8]) -> Result<[u8; 32], OnePassError> {
@@ -356,14 +381,12 @@ fn advance(
     Ok(pin.advance(lineage, &rosters)?)
 }
 
-/// What `OrgDraft::publish` returns. `credential_seed`: the seed of the
-/// org mailbox's managing credential, for the app's keychain (never kept
-/// on the Rust side).
+/// What `OrgDraft::publish` returns. No secret: the org mailbox's managing
+/// credential is the one of the seed the app passed (R39).
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct FfiOrgCreated {
     /// 32 hex.
     pub mailbox_id: String,
-    pub credential_seed: Vec<u8>,
     pub state: FfiOrgState,
 }
 
@@ -392,7 +415,6 @@ enum Stage {
 /// whose records or pin are not all written yet.
 struct Pending {
     client: Box<dyn MailboxApi>,
-    credential_seed: Zeroizing<Vec<u8>>,
     mailbox_id: [u8; 16],
     genesis: Vec<u8>,
     roster: Vec<u8>,
@@ -410,9 +432,8 @@ struct Signed {
     pin: OrgPin,
 }
 
-/// A mailbox client holding a fresh credential, and that credential's seed.
-type Connect<'a> =
-    Box<dyn FnOnce() -> Result<(Box<dyn MailboxApi>, Zeroizing<Vec<u8>>), OnePassError> + 'a>;
+/// A mailbox client holding the org mailbox's managing credential.
+type Connect<'a> = Box<dyn FnOnce() -> Result<Box<dyn MailboxApi>, OnePassError> + 'a>;
 
 #[uniffi::export]
 impl OrgDraft {
@@ -430,7 +451,11 @@ impl OrgDraft {
     }
 
     /// Creates the org mailbox on `endpoint` from the one-use org-plan
-    /// `server_invite` with a fresh credential, then writes the genesis
+    /// `server_invite` with the credential of `credential_seed` (R39: the
+    /// app generates it with `mailbox_generate_credential` and keeps it in
+    /// its keychain BEFORE calling, so the creator never holds a manager
+    /// credential only in memory; it becomes the creator's own org mailbox
+    /// credential), then writes the genesis
     /// (generation 0, this account its single owner with this device), the
     /// founding roster (seq 1, this account Active with `Owner`) and the
     /// owner keyset sealed to this account, and pins the org in
@@ -451,6 +476,7 @@ impl OrgDraft {
         &self,
         endpoint: FfiMailboxEndpoint,
         server_invite: String,
+        credential_seed: Vec<u8>,
         session: Arc<Session>,
         classical: Vec<u8>,
         pq: Arc<dyn FfiPqDeviceHalf>,
@@ -459,12 +485,11 @@ impl OrgDraft {
         now: i64,
     ) -> Result<FfiOrgCreated, OnePassError> {
         let classical = Zeroizing::new(classical);
+        let seed = Zeroizing::new(credential_seed);
         let connect: Connect<'_> = Box::new(move || {
-            let credential = fresh_credential()?;
-            let seed = credential.seed();
             let client: Box<dyn MailboxApi> =
-                Box::new(MailboxClient::new(endpoint.into(), credential)?);
-            Ok((client, seed))
+                Box::new(MailboxClient::new(endpoint.into(), credential(&seed)?)?);
+            Ok(client)
         });
         self.publish_on(
             connect,
@@ -507,9 +532,9 @@ impl OrgDraft {
                 let created = self
                     .sign(&keyset, session, classical, pq, name, now)
                     .and_then(|signed| {
-                        let (mut client, credential_seed) = connect()?;
+                        let mut client = connect()?;
                         let created = client.create(Some(server_invite.as_bytes()), LABEL)?;
-                        Ok((signed, client, credential_seed, created.mailbox_id))
+                        Ok((signed, client, created.mailbox_id))
                     });
                 match created {
                     // Nothing exists anywhere yet: the draft stays fresh.
@@ -517,9 +542,8 @@ impl OrgDraft {
                         *stage = Stage::Fresh(keyset.secrets);
                         return Err(e);
                     }
-                    Ok((signed, client, credential_seed, mailbox_id)) => Box::new(Pending {
+                    Ok((signed, client, mailbox_id)) => Box::new(Pending {
                         client,
-                        credential_seed,
                         mailbox_id,
                         genesis: signed.genesis,
                         roster: signed.roster,
@@ -614,7 +638,6 @@ impl OrgDraft {
     ) -> Result<FfiOrgCreated, (Box<Pending>, OnePassError)> {
         let Pending {
             client,
-            credential_seed,
             mailbox_id,
             genesis,
             roster,
@@ -632,13 +655,11 @@ impl OrgDraft {
         match done {
             Ok(()) => Ok(FfiOrgCreated {
                 mailbox_id: bytes_hex(&mailbox_id),
-                credential_seed: credential_seed.to_vec(),
                 state: view(&pin, &HashMap::new()),
             }),
             Err(e) => Err((
                 Box::new(Pending {
                     client: store.into_api(),
-                    credential_seed,
                     mailbox_id,
                     genesis,
                     roster,
@@ -655,13 +676,12 @@ impl OrgDraft {
 #[cfg(feature = "dev-fast-kdf")]
 impl OrgDraft {
     /// `publish` over a test mailbox client (`FakeMailbox`, no TLS) holding
-    /// the credential of `credential_seed`.
+    /// the org mailbox's managing credential.
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub fn publish_with_client(
         &self,
         client: Box<dyn MailboxApi>,
-        credential_seed: Vec<u8>,
         server_invite: String,
         session: Arc<Session>,
         classical: Vec<u8>,
@@ -671,8 +691,7 @@ impl OrgDraft {
         now: i64,
     ) -> Result<FfiOrgCreated, OnePassError> {
         let classical = Zeroizing::new(classical);
-        let seed = Zeroizing::new(credential_seed);
-        let connect: Connect<'_> = Box::new(move || Ok((client, seed)));
+        let connect: Connect<'_> = Box::new(move || Ok(client));
         self.publish_on(
             connect,
             &server_invite,
@@ -688,11 +707,20 @@ impl OrgDraft {
 
 /// What `create_invite` returns: the join link to hand over (it carries the
 /// invite credential seed and the member token: share it, never store it)
-/// and the invited account id (32 hex).
-#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+/// and the invited account id (32 hex). `Debug` leaves out the link.
+#[derive(uniffi::Record, Clone, PartialEq, Eq)]
 pub struct FfiInviteLink {
     pub link: String,
     pub account_id: String,
+}
+
+impl std::fmt::Debug for FfiInviteLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FfiInviteLink")
+            .field("link", &"<redacted>")
+            .field("account_id", &self.account_id)
+            .finish()
+    }
 }
 
 /// What `post_join_request` returns: the join code (5 words) the member
@@ -1181,8 +1209,9 @@ impl OrgClient {
 
     /// Deletes the join request of `account_id` (32 hex) and, when this
     /// device issued the invitation, revokes its link credential (best
-    /// effort, R27). The roster is untouched: the invitation stands until
-    /// its Invited member is removed.
+    /// effort, R27). The roster is untouched: the invitation stands (and its
+    /// member token stays valid until it expires) until its Invited member
+    /// is removed, a signed edit the app offers apart.
     pub fn decline_join_request(&self, account_id: String) -> Result<(), OnePassError> {
         let account = parse_id(&account_id)?;
         let mut store = lock(&self.store);
@@ -1387,6 +1416,8 @@ pub struct FfiEditSummary {
 
 /// What `edit_roster` returns: the pinned state after the edit, and
 /// whether the member's org mailbox access now follows the roster (R29).
+/// False: the roster edit stands, the server access does not follow yet;
+/// the app says so and offers `update_member_access` (R38 (e)).
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct FfiEditOutcome {
     pub state: FfiOrgState,
@@ -1482,32 +1513,144 @@ fn access_of(m: &OrgMember) -> Option<(CredentialRole, Option<[u8; 32]>)> {
     }
 }
 
-/// Moves the member's own org mailbox credential (`joined`'s
-/// `mailbox_credential`) to what its entry `m` gives. `granted`: the
-/// credential was granted before (it is granted on acceptance only).
-/// True once the server holds that access; false on any failure.
+/// What `follow_access` did.
+#[derive(Clone, Copy, Default)]
+struct Access {
+    /// The server holds the access the roster entry gives.
+    updated: bool,
+    /// This call granted the member's credential: the link credential can
+    /// go (R38 (d)).
+    granted: bool,
+}
+
+/// The server refused a grant because it already knows that key (in this
+/// mailbox or another, even revoked).
+fn known_key(e: &MailboxError) -> bool {
+    matches!(e, MailboxError::Server(ErrorCode::Malformed))
+}
+
+/// Moves the member's own org mailbox credential to what its roster entry
+/// `m` gives (R29), from what this device knows of it (R38):
+///
+/// - accepting it here (`was_invited` and `m` Active): the key of the
+///   verified request `joined` is granted and bound in `access.bin`
+///   (`Granted`; `Refused` when the server or another bound member already
+///   holds that key, never moved from here; `Pending` on any other
+///   failure, granted by the next update);
+/// - bound here before: that key, whatever the stored request says now
+///   (`Granted`: `set_role`, else a grant when the server no longer knows
+///   it, or a revoke; `Pending`: a grant, never a role change, and a
+///   removal leaves it; `Refused`: nothing);
+/// - accepted elsewhere: the key of the verified request `joined` (the
+///   server's first-writer rule and the shared-key check stand behind it),
+///   as `Granted`, unless this device bound that key to another member.
+///
+/// An Invited member, or one removed while Invited, never had any.
 fn follow_access(
     mailbox: &dyn MailboxApi,
+    state_dir: &Path,
     m: &OrgMember,
     joined: Option<&VerifiedJoin>,
-    granted: bool,
-) -> bool {
-    if m.state == MemberState::Invited || (!granted && m.state != MemberState::Active) {
-        // Never granted, nothing to follow (an invitation withdrawn).
-        return true;
+    was_invited: bool,
+) -> Access {
+    let done = Access {
+        updated: true,
+        granted: false,
+    };
+    if m.state == MemberState::Invited || (was_invited && m.state != MemberState::Active) {
+        return done;
     }
-    let Some(key) = joined.map(|j| *j.mailbox_credential()) else {
-        return false;
+    let account = m.account_id.0;
+    let Ok(bound) = load_access(state_dir) else {
+        return Access::default();
+    };
+    let target = access_of(m);
+    let save = |key: [u8; 32], bound: Bound| {
+        let _ = save_access(
+            state_dir,
+            LocalAccess {
+                account_id: account,
+                key,
+                bound,
+            },
+        );
+    };
+    let grant = |key: [u8; 32], role: CredentialRole, kinds: Option<[u8; 32]>| -> Bound {
+        match mailbox.grant(key, role, kinds, MEMBER_CREDENTIAL_LABEL) {
+            Ok(_) => Bound::Granted,
+            Err(e) if known_key(&e) => Bound::Refused,
+            Err(_) => Bound::Pending,
+        }
+    };
+    let granted = |b: Bound| Access {
+        updated: b == Bound::Granted,
+        granted: b == Bound::Granted,
+    };
+    if was_invited {
+        let (Some(key), Some((role, kinds))) = (joined.map(|j| *j.mailbox_credential()), target)
+        else {
+            return Access::default();
+        };
+        let taken = bound
+            .iter()
+            .any(|a| a.account_id != account && a.key == key);
+        let b = if taken {
+            Bound::Refused
+        } else {
+            grant(key, role, kinds)
+        };
+        save(key, b);
+        return granted(b);
+    }
+    let (key, state) = match bound.iter().find(|a| a.account_id == account) {
+        Some(a) => (a.key, Some(a.bound)),
+        // A key this device bound to another member is never this one's.
+        None => match joined.map(|j| *j.mailbox_credential()) {
+            Some(key) if !bound.iter().any(|a| a.key == key) => (key, None),
+            _ => return Access::default(),
+        },
     };
     let id = CredentialKey::from_bytes(key).id();
-    match access_of(m) {
-        None => mailbox.revoke(id).is_ok(),
-        Some((role, kinds)) if granted => mailbox.set_role(id, role, kinds).is_ok(),
-        Some((role, kinds)) => {
-            mailbox
-                .grant(key, role, kinds, MEMBER_CREDENTIAL_LABEL)
-                .is_ok()
-                || mailbox.set_role(id, role, kinds).is_ok()
+    match (state, target) {
+        (Some(Bound::Refused), _) => Access::default(),
+        // Never confirmed granted: nothing of this device's to revoke.
+        (Some(Bound::Pending), None) => done,
+        (Some(Bound::Pending), Some((role, kinds))) => {
+            let b = grant(key, role, kinds);
+            if b != Bound::Pending {
+                save(key, b);
+            }
+            granted(b)
+        }
+        (_, None) => Access {
+            updated: matches!(
+                mailbox.revoke(id),
+                Ok(()) | Err(MailboxError::Server(ErrorCode::NotFound))
+            ),
+            granted: false,
+        },
+        (_, Some((role, kinds))) => match mailbox.set_role(id, role, kinds) {
+            Ok(()) => done,
+            Err(MailboxError::Server(ErrorCode::NotFound)) => {
+                let b = grant(key, role, kinds);
+                if state.is_some() && b != Bound::Pending {
+                    save(key, b);
+                }
+                granted(b)
+            }
+            Err(_) => Access::default(),
+        },
+    }
+}
+
+impl OrgClient {
+    /// Revokes the link credentials of the invitations this device issued
+    /// to `account` (best effort).
+    fn revoke_links(&self, mailbox: &dyn MailboxApi, account: Id) {
+        if let Ok(invites) = load_invites(&self.state_dir) {
+            for i in invites.iter().filter(|i| i.account_id == account.0) {
+                let _ = mailbox.revoke(i.credential_id);
+            }
         }
     }
 }
@@ -1582,13 +1725,18 @@ impl OrgClient {
     /// rebased once, then `Conflict`. The join feed is read first (an
     /// `Accept` needs the member's verified request: `NotFound`).
     ///
-    /// Then the member's own org mailbox credential (its join request's)
-    /// follows the roster (R29): `Manage` for Owner, Admin or UserManager,
-    /// else `Write` on join requests only; Suspended `Read`; Removed
-    /// revoked. Any failure there only clears `server_access_updated`. An
-    /// `Accept` or any `Remove` also revokes the link's credential when this
-    /// device issued the invitation (best effort; a removed member that
-    /// never dropped it loses it too). `NotFound` before `pin`.
+    /// Then the member's own org mailbox credential follows the roster
+    /// (R29): `Manage` for Owner, Admin or UserManager, else `Write` on join
+    /// requests only; Suspended `Read`; Removed revoked. Which credential
+    /// (R38): an `Accept` grants and binds the key of the verified request
+    /// in `access.bin`; later edits move that bound key (never a key a
+    /// request names afterwards), and on a device that did not accept the
+    /// member, the key its verified request names. Any failure there only
+    /// clears `server_access_updated` (`update_member_access` retries). The
+    /// link's credential, when this device issued the invitation, is
+    /// revoked once the member's credential is granted, and by any
+    /// `Remove` (best effort; a removed member that never dropped it loses
+    /// it too). `NotFound` before `pin`.
     pub fn edit_roster(
         &self,
         session: Arc<Session>,
@@ -1619,17 +1767,40 @@ impl OrgClient {
         let access = pin
             .roster()
             .and_then(|r| r.member(account))
-            .is_some_and(|m| follow_access(mailbox, m, joined.as_ref(), !was_invited));
-        let drops_link = was_invited || matches!(edit, FfiRosterEdit::Remove { .. });
-        if drops_link && let Ok(invites) = load_invites(&self.state_dir) {
-            for i in invites.iter().filter(|i| i.account_id == account.0) {
-                let _ = mailbox.revoke(i.credential_id);
-            }
+            .map(|m| follow_access(mailbox, &self.state_dir, m, joined.as_ref(), was_invited))
+            .unwrap_or_default();
+        if access.granted || matches!(edit, FfiRosterEdit::Remove { .. }) {
+            self.revoke_links(mailbox, account);
         }
         Ok(FfiEditOutcome {
             state: self.show(&pin),
-            server_access_updated: access,
+            server_access_updated: access.updated,
         })
+    }
+
+    /// Makes the org mailbox access of `account_id` (32 hex) follow its
+    /// entry in the pinned roster again, with no roster edit: the retry the
+    /// app offers when an edit answered `server_access_updated: false` (R38
+    /// (e)). Same rules as after `edit_roster`. True once the server holds
+    /// that access. `NotFound` before `pin` or for an account not in the
+    /// roster.
+    pub fn update_member_access(&self, account_id: String) -> Result<bool, OnePassError> {
+        let account = parse_id(&account_id)?;
+        let mut store = lock(&self.store);
+        let pin = self.load()?.ok_or(OnePassError::NotFound)?;
+        let m = pin
+            .roster()
+            .and_then(|r| r.member(account))
+            .ok_or(OnePassError::NotFound)?
+            .clone();
+        let _ = self.poll_joins(&mut **store);
+        let joined = lock(&self.joins).verified(&pin, &account.0);
+        let mailbox = store.mailbox();
+        let access = follow_access(mailbox, &self.state_dir, &m, joined.as_ref(), false);
+        if access.granted || matches!(m.state, MemberState::Removed { .. }) {
+            self.revoke_links(mailbox, account);
+        }
+        Ok(access.updated)
     }
 
     /// The owner keyset sealed to this account opens with its KEM secret
@@ -1831,11 +2002,10 @@ impl OrgClient {
                 .iter()
                 .filter(|o| o.account_id != signer.account)
             {
-                if let (Some(m), Some(joined)) = (
-                    r.member(o.account_id),
-                    joins.verified(&pin, &o.account_id.0),
-                ) {
-                    let _ = follow_access(store.mailbox(), m, Some(&joined), true);
+                if let Some(m) = r.member(o.account_id) {
+                    let joined = joins.verified(&pin, &o.account_id.0);
+                    let _ =
+                        follow_access(store.mailbox(), &self.state_dir, m, joined.as_ref(), false);
                 }
             }
         }

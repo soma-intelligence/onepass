@@ -1,6 +1,7 @@
 //! The pinned organisation on disk: `pin.bin` in the app's state folder for
-//! that org, `OrgPin::encode` (no serde), and `invites.bin`, the
-//! invitations this device issued. Each file is written whole to a
+//! that org, `OrgPin::encode` (no serde), `invites.bin`, the invitations
+//! this device issued, and `access.bin`, the member credentials this
+//! device bound on acceptance (R38). Each file is written whole to a
 //! temporary file in the same folder, then renamed over the old one: a
 //! crash or a refused update leaves the previous file byte for byte. The
 //! folder is private (0700 on Unix).
@@ -17,6 +18,8 @@ use crate::error::{OnePassError, invalid};
 const PIN_FILE: &str = "pin.bin";
 const INVITES_FILE: &str = "invites.bin";
 const INVITES_VERSION: u8 = 1;
+const ACCESS_FILE: &str = "access.bin";
+const ACCESS_VERSION: u8 = 1;
 
 static PIN_LOCK: Mutex<()> = Mutex::new(());
 
@@ -110,6 +113,91 @@ pub(crate) fn add_invite(dir: &Path, invite: LocalInvite) -> Result<(), OnePassE
     let mut bytes = vec![INVITES_VERSION];
     bytes.extend(postcard::to_allocvec(&rows).map_err(|_| OnePassError::Store)?);
     write_atomic(dir, INVITES_FILE, &bytes).map_err(|_| OnePassError::Store)
+}
+
+/// Where a member's own org mailbox credential stands for this device (R38
+/// (c), (d)), as bound when this device accepted the member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Bound {
+    /// The grant has not been confirmed yet (it failed, or its answer was
+    /// lost): the next update grants, never changes a role.
+    Pending,
+    /// Granted by the server: later updates change its role or revoke it.
+    Granted,
+    /// The server already knew the key when this device granted it: it is
+    /// not this member's to move, and this device never touches it.
+    Refused,
+}
+
+/// A member credential this device bound when it accepted the member: the
+/// public key from its verified join request at that time, and where the
+/// grant stands. Later edits use it, never a request read again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LocalAccess {
+    pub(crate) account_id: [u8; 16],
+    pub(crate) key: [u8; 32],
+    pub(crate) bound: Bound,
+}
+
+/// `access.bin`: `[ACCESS_VERSION] || postcard(Vec<(account_id, key,
+/// bound)>)`, bound 0 pending, 1 granted, 2 refused.
+type AccessRow = ([u8; 16], [u8; 32], u8);
+
+/// The bound credentials in `dir`, empty when there is no file. A file that
+/// does not decode is refused (`InvalidInput`), never replaced silently.
+pub(crate) fn load_access(dir: &Path) -> Result<Vec<LocalAccess>, OnePassError> {
+    let bytes = match fs::read(dir.join(ACCESS_FILE)) {
+        Ok(b) => b,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err(OnePassError::Store),
+    };
+    let bad = || invalid("access file");
+    let rest = match bytes.split_first() {
+        Some((&ACCESS_VERSION, rest)) => rest,
+        _ => return Err(bad()),
+    };
+    let (rows, tail) = postcard::take_from_bytes::<Vec<AccessRow>>(rest).map_err(|_| bad())?;
+    if !tail.is_empty() {
+        return Err(bad());
+    }
+    rows.into_iter()
+        .map(|(account_id, key, bound)| {
+            let bound = match bound {
+                0 => Bound::Pending,
+                1 => Bound::Granted,
+                2 => Bound::Refused,
+                _ => return Err(bad()),
+            };
+            Ok(LocalAccess {
+                account_id,
+                key,
+                bound,
+            })
+        })
+        .collect()
+}
+
+/// Puts `access` in `access.bin` in `dir`, in place of the account's
+/// previous row (atomic, under the pin lock).
+pub(crate) fn save_access(dir: &Path, access: LocalAccess) -> Result<(), OnePassError> {
+    let _lock = pin_lock();
+    let mut all = load_access(dir)?;
+    all.retain(|a| a.account_id != access.account_id);
+    all.push(access);
+    let rows: Vec<AccessRow> = all
+        .into_iter()
+        .map(|a| {
+            let bound = match a.bound {
+                Bound::Pending => 0,
+                Bound::Granted => 1,
+                Bound::Refused => 2,
+            };
+            (a.account_id, a.key, bound)
+        })
+        .collect();
+    let mut bytes = vec![ACCESS_VERSION];
+    bytes.extend(postcard::to_allocvec(&rows).map_err(|_| OnePassError::Store)?);
+    write_atomic(dir, ACCESS_FILE, &bytes).map_err(|_| OnePassError::Store)
 }
 
 fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {

@@ -2,8 +2,9 @@
 //! mailbox server in process for the Swift tests (R15). One `FakeMailbox`
 //! on the org plan, shared by every client made here; no HTTP, no TLS.
 //!
-//! A join, as the app does it: the admin `draft_publish`es, opens
-//! `client(created.mailbox_id, created.credential_seed, ..)` and calls
+//! A join, as the app does it: the admin `draft_publish`es with a seed from
+//! `mailbox_generate_credential` (R39), opens `client(created.mailbox_id,
+//! that seed, ..)` and calls
 //! `create_invite`; the link names `LOOPBACK_URL`, so it parses with
 //! `org_invite_parse(link, true)`. The joiner opens `client(invite.mailbox_id,
 //! invite.credential_seed, invite.org_id, ..)`, pins `Tofu { verified:
@@ -23,9 +24,7 @@ use super::invite::LOOPBACK_URL;
 use super::{FfiOrgCreated, OrgClient, OrgDraft, org_id_of};
 use crate::convert::bytes_hex;
 use crate::error::OnePassError;
-use crate::mailbox::{
-    FfiMailboxHome, check_managed_mailbox, create_managed_mailbox, fresh_credential,
-};
+use crate::mailbox::{FfiMailboxHome, check_managed_mailbox, create_managed_mailbox};
 use crate::rotation::FfiPqDeviceHalf;
 use crate::session::Session;
 
@@ -53,12 +52,13 @@ impl TestOrgServer {
         SERVER_INVITE.into()
     }
 
-    /// `OrgDraft::publish` on this server, with a fresh org mailbox
-    /// credential (its seed comes back in `FfiOrgCreated`).
+    /// `OrgDraft::publish` on this server, the org mailbox managed by the
+    /// credential of `credential_seed` (R39).
     #[allow(clippy::too_many_arguments)]
     pub fn draft_publish(
         &self,
         draft: Arc<OrgDraft>,
+        credential_seed: Vec<u8>,
         session: Arc<Session>,
         classical: Vec<u8>,
         pq: Arc<dyn FfiPqDeviceHalf>,
@@ -67,12 +67,10 @@ impl TestOrgServer {
         now: i64,
     ) -> Result<FfiOrgCreated, OnePassError> {
         let classical = Zeroizing::new(classical);
-        let credential = fresh_credential()?;
-        let seed = credential.seed();
-        let client = self.fake.client(credential);
+        let seed = Zeroizing::new(credential_seed);
+        let client = self.fake.client(Credential::from_seed(&seed)?);
         draft.publish_with_client(
             Box::new(client),
-            seed.to_vec(),
             SERVER_INVITE.into(),
             session,
             classical.to_vec(),
