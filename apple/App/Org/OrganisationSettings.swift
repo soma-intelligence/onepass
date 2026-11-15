@@ -299,7 +299,9 @@ private struct OrgPage: View {
                 NavigationLink {
                     OrgMemberDetailView(org: org, accountID: member.accountId)
                 } label: {
-                    OrgMemberRow(member: member, isMe: member.accountId == org.me?.accountId)
+                    OrgMemberRow(
+                        member: member, isMe: member.accountId == org.me?.accountId,
+                        accessPending: org.serverAccessPending.contains(member.accountId))
                 }
             }
         } header: {

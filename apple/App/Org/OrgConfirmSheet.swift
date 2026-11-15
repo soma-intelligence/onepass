@@ -16,6 +16,8 @@ struct OrgConfirmation: Identifiable {
     /// The core rules let this device sign it (else the sheet says so and offers nothing).
     var allowed = true
     var destructive = false
+    /// A line under the summary on what the change leaves as it is.
+    var note: String?
     /// Signs and sends the change. `nil`: biometrics first; the sheet asks the master password when
     /// they can't answer (`OrgActionError.passwordRequired`) and calls again with it.
     let perform: @MainActor (SecretBytes?) async throws -> Void
@@ -84,6 +86,13 @@ struct OrgConfirmSheet: View {
                         ForEach(confirmation.rows, id: \.self) { row in
                             LabeledContent(row.label, value: row.value)
                         }
+                    }
+                }
+                if let note = confirmation.note {
+                    Section {
+                        Text(note)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 if !confirmation.allowed {

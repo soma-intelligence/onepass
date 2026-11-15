@@ -34611,6 +34611,96 @@
         }
       }
     },
+    "org.access.notUpdated" : {
+      "comment" : "A member's roster change is signed but the org server did not take the new access.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server access not updated"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acceso al servidor sin actualizar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accès serveur pas mis à jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accesso al server non aggiornato"
+          }
+        }
+      }
+    },
+    "org.access.notUpdated.footer" : {
+      "comment" : "Footer under the server access warning on a member's page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The change is signed, but the server hasn't applied it yet. Try again once you're online."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El cambio está firmado, pero el servidor aún no lo ha aplicado. Vuelve a intentarlo cuando tengas conexión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La modification est signée, mais le serveur ne l'a pas encore appliquée. Réessaie quand tu es en ligne."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La modifica è firmata, ma il server non l'ha ancora applicata. Riprova quando sei online."
+          }
+        }
+      }
+    },
+    "org.access.retry" : {
+      "comment" : "Button: update a member's server access again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reintentar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessayer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riprova"
+          }
+        }
+      }
+    },
     "org.action.accept" : {
       "comment" : "Accepts a join request.",
       "extractionState" : "manual",
@@ -34955,6 +35045,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rifiuta la richiesta di %@"
+          }
+        }
+      }
+    },
+    "org.confirm.decline.linkStays" : {
+      "comment" : "Note in the decline confirmation: declining does not withdraw the invitation link.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The invitation link stays usable until it expires or the member is removed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El enlace de invitación sigue siendo válido hasta que caduque o se elimine al miembro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le lien d'invitation reste utilisable jusqu'à son expiration ou jusqu'au retrait du membre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il link di invito resta utilizzabile finché non scade o il membro non viene rimosso."
           }
         }
       }

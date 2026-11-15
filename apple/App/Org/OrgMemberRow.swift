@@ -6,6 +6,8 @@ import VaultKit
 struct OrgMemberRow: View {
     let member: FfiOrgMember
     let isMe: Bool
+    /// The last edit's server access did not go through (`OrgSession.serverAccessPending`).
+    var accessPending = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -14,6 +16,11 @@ struct OrgMemberRow: View {
                     .font(.body.weight(.medium))
                     .lineLimit(1)
                 Spacer(minLength: 8)
+                if accessPending {
+                    Image(systemName: "exclamationmark.icloud")
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel(Text("org.access.notUpdated"))
+                }
                 Text(OrgText.state(member.state))
                     .font(.footnote)
                     .foregroundStyle(OrgText.stateColor(member.state))

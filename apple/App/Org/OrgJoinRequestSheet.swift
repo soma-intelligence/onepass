@@ -82,6 +82,7 @@ struct OrgJoinRequestSheet: View {
         let request = request
         confirmation = OrgConfirmation(
             title: String(localized: "org.confirm.decline \(request.displayName)"), destructive: true,
+            note: String(localized: "org.confirm.decline.linkStays"),
             perform: { [org] password in try await org.decline(request, password: password) })
     }
 }

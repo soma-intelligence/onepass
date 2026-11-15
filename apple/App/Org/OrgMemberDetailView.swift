@@ -14,6 +14,7 @@ struct OrgMemberDetailView: View {
     @State private var errorMessage: String?
     @State private var ownerKeys = false
     @State private var preparing = false
+    @State private var retrying = false
 
     /// The roles a manager toggles here; Owner is shown read only, the others stay as they are.
     private static let toggled: [FfiOrgRole] = [.admin, .userManager, .policyManager, .auditor]
@@ -24,6 +25,22 @@ struct OrgMemberDetailView: View {
 
     /// Changes are made on a Mac or an iPad, by an account that manages members, never on itself.
     private var canEdit: Bool { OrgConsole.isConsoleDevice && org.canManageMembers && !isMe }
+
+    /// The roster edit is signed but the server did not take the member's access: try again (R38 (e)).
+    private func retryAccess() {
+        retrying = true
+        errorMessage = nil
+        Task {
+            defer { retrying = false }
+            do {
+                if try await org.retryServerAccess(accountID: accountID) == false {
+                    errorMessage = String(localized: "org.access.notUpdated")
+                }
+            } catch {
+                errorMessage = OrgActionError(error).message
+            }
+        }
+    }
 
     var body: some View {
         Form {
@@ -39,6 +56,17 @@ struct OrgMemberDetailView: View {
     }
 
     @ViewBuilder private func content(_ member: FfiOrgMember) -> some View {
+        if org.serverAccessPending.contains(member.accountId) {
+            Section {
+                Label("org.access.notUpdated", systemImage: "exclamationmark.icloud")
+                    .foregroundStyle(.orange)
+                Button("org.access.retry", action: retryAccess)
+                    .disabled(retrying)
+                    .accessibilityIdentifier("org.member.retryAccess")
+            } footer: {
+                Text("org.access.notUpdated.footer")
+            }
+        }
         Section {
             LabeledContent("org.summary.state") {
                 Text(OrgText.state(member.state)).foregroundStyle(OrgText.stateColor(member.state))
