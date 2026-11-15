@@ -29,7 +29,8 @@ public struct CustomIconKey: Hashable, Sendable {
 
 /// The icons people chose for their items, decrypted from the vault and kept in memory only.
 ///
-/// - At most `capacity` icons; the least recently used one leaves first.
+/// - At most `capacity` icons; the least recently asked for (`prefetch`, which every view's task
+///   calls) leaves first. `cached` is read at each frame and leaves the order alone.
 /// - A load that fails (not synced yet, damaged, deleted) marks its key failed for `retryDelay`:
 ///   rows show the automatic icon meanwhile and nothing asks the vault again in a loop. A load that
 ///   throws `CancellationError` ("not now": the vault is locked) is not a failure.
@@ -71,13 +72,10 @@ public final class CustomIconStore: Sendable {
         self.load = load
     }
 
-    /// The icon if it is in memory, without waiting.
+    /// The icon if it is in memory, without waiting. Cheap: no reordering (views call it at each
+    /// frame).
     public func cached(_ key: CustomIconKey) -> Data? {
-        state.withLock { state in
-            guard let data = state.icons[key] else { return nil }
-            state.touch(key)
-            return data
-        }
+        state.withLock { $0.icons[key] }
     }
 
     /// Loads the icon into memory unless it is there, already loading, or failed less than
@@ -85,7 +83,10 @@ public final class CustomIconStore: Sendable {
     public func prefetch(_ key: CustomIconKey) async {
         let instant = now()
         let task: Task<Void, Never>? = state.withLock { state in
-            if state.icons[key] != nil { return nil }
+            if state.icons[key] != nil {
+                state.touch(key)
+                return nil
+            }
             if let failed = state.failedAt[key], instant - failed < Self.retryDelay { return nil }
             if let running = state.loading[key] { return running }
             let generation = state.generation

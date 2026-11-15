@@ -125,8 +125,10 @@ private func store(_ counter: LoadCounter, clock: TestClock = TestClock(), capac
         let icons = store(counter, capacity: 2)
         await icons.prefetch(key("a"))
         await icons.prefetch(key("b"))
-        // "a" is read again: "b" is now the least recently used.
+        // A frame's read leaves the order alone; "a" asked for again makes "b" the oldest.
         #expect(icons.cached(key("a")) != nil)
+        await icons.prefetch(key("a"))
+        #expect(counter.count(key("a")) == 1)
         await icons.prefetch(key("c"))
         #expect(icons.cached(key("a")) != nil)
         #expect(icons.cached(key("b")) == nil)
