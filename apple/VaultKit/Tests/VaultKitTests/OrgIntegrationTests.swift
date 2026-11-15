@@ -45,11 +45,12 @@ struct OrgIntegrationTests {
             ownerHarness, ownerVault, name: "Alice", orgID: orgID, accountID: nil)
         try await ownerVault.enrollBiometrics(password: testPassword)
         let pair = try ownerKeys.deviceKeys()
+        let ownerSeed = try mailboxGenerateCredential().seed
         let created = try server.draftPublish(
-            draft: draft, session: try #require(ownerVault.coreSession), classical: pair.classical, pq: pair.pq,
-            name: "Acme", stateDir: ownerDir, now: Self.now())
+            draft: draft, credentialSeed: ownerSeed, session: try #require(ownerVault.coreSession),
+            classical: pair.classical, pq: pair.pq, name: "Acme", stateDir: ownerDir, now: Self.now())
         let ownerClient = try server.client(
-            mailboxId: created.mailboxId, credentialSeed: created.credentialSeed, orgId: orgID, stateDir: ownerDir)
+            mailboxId: created.mailboxId, credentialSeed: ownerSeed, orgId: orgID, stateDir: ownerDir)
         let owner = OrgSession(vault: ownerVault, backend: FfiOrgBackend(client: ownerClient), keys: ownerKeys)
         await owner.load()
         #expect(owner.phase == .ready)

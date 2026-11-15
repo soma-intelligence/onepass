@@ -319,7 +319,7 @@ public final class AccountSessions {
         let keychain = primary.environment.keychain
         ManagedDeviceKeys.discardPending(keychain: keychain, slot: slot)
         if let accountID { try? ManagedDeviceKeys(keychain: keychain, accountID: accountID).delete() }
-        ManagedOrgCredentials(keychain: keychain, slot: slot).deleteAll(orgMailboxID: settings.orgMailboxID)
+        ManagedOrgCredentials(keychain: keychain, slot: slot).deleteAll()
         let mailboxes = MailboxCredentialStore(keychain: keychain)
         try? mailboxes.delete(mailboxID: MailboxSetup.pendingCredentialID(slot: slot))
         for mailboxID in accountMailboxIDs(slot) { try? mailboxes.delete(mailboxID: mailboxID) }

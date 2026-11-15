@@ -73,13 +73,14 @@ public actor ManagedAccountSync: SyncTrigger {
 /// - `org.link.<slot>`: the join link's credential seed, while the member is not accepted yet;
 /// - `org.memberToken.<slot>`: the one-use `managed` token of the account mailbox, until that mailbox
 ///   exists (a setup cut off resumes with it);
-/// - the member's own org mailbox credential seed (made and stored before the join request, R35, or
-///   the creator's `FfiOrgCreated.credentialSeed`), in `MailboxCredentialStore` under the org mailbox
-///   id.
+/// - `org.own.<slot>`: the member's own org mailbox credential seed, made and stored before the join
+///   request (R35) or, for the creator, before the publish (R39). Keyed by slot (R40): two slots of
+///   one org on this device never share or delete each other's.
 /// Seeds come back as `SecretBytes` for the caller to wipe.
 public struct ManagedOrgCredentials: Sendable {
     public static func linkKey(slot: String) -> String { "org.link.\(slot)" }
     public static func tokenKey(slot: String) -> String { "org.memberToken.\(slot)" }
+    public static func ownKey(slot: String) -> String { "org.own.\(slot)" }
 
     private let keychain: any KeychainStore
     private let slot: String
@@ -97,19 +98,34 @@ public struct ManagedOrgCredentials: Sendable {
     public func storeMemberToken(_ token: SecretBytes) throws { try write(token, Self.tokenKey(slot: slot)) }
     public func deleteMemberToken() throws { try keychain.delete(Self.tokenKey(slot: slot)) }
 
-    public func ownSeed(orgMailboxID: String) throws -> SecretBytes? {
-        try MailboxCredentialStore(keychain: keychain).seed(mailboxID: orgMailboxID)
+    public func ownSeed() throws -> SecretBytes? { try read(Self.ownKey(slot: slot)) }
+
+    /// Readable after the first unlock, like the mailbox credentials (`MailboxCredentialStore`).
+    public func storeOwnSeed(_ seed: SecretBytes) throws {
+        try seed.withData { try keychain.writeAfterFirstUnlock(Self.ownKey(slot: slot), $0) }
     }
 
-    public func storeOwnSeed(_ seed: SecretBytes, orgMailboxID: String) throws {
-        try MailboxCredentialStore(keychain: keychain).store(seed: seed, mailboxID: orgMailboxID)
+    /// The stored own seed, else a new one (`mailbox_generate_credential`) stored first: a creator
+    /// publishes (R39) and a joiner posts (R35) only with a seed the keychain already holds, and a
+    /// retry names the same credential.
+    public func ownSeedStoringNew() throws -> SecretBytes {
+        if let stored = try ownSeed() { return stored }
+        var seed = try mailboxGenerateCredential().seed
+        let made = SecretBytes(taking: &seed)
+        do {
+            try storeOwnSeed(made)
+        } catch {
+            made.wipe()
+            throw error
+        }
+        return made
     }
 
     /// Every item of the slot (the account leaves this device). Quiet: a missing item is fine.
-    public func deleteAll(orgMailboxID: String?) {
+    public func deleteAll() {
         try? deleteLinkSeed()
         try? deleteMemberToken()
-        if let orgMailboxID { try? MailboxCredentialStore(keychain: keychain).delete(mailboxID: orgMailboxID) }
+        try? keychain.delete(Self.ownKey(slot: slot))
     }
 
     private func read(_ key: String) throws -> SecretBytes? {
@@ -132,16 +148,14 @@ public actor ManagedOrgBackend: OrgBackend {
     public typealias Open = @Sendable (_ seed: Data) throws -> OrgClient
 
     private let credentials: ManagedOrgCredentials
-    private let orgMailboxID: String
     private let open: Open
     private var current: FfiOrgBackend?
     private var onLink = false
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "org")
 
-    public init(credentials: ManagedOrgCredentials, orgMailboxID: String, open: @escaping Open) {
+    public init(credentials: ManagedOrgCredentials, open: @escaping Open) {
         self.credentials = credentials
-        self.orgMailboxID = orgMailboxID
         self.open = open
     }
 
@@ -159,7 +173,7 @@ public actor ManagedOrgBackend: OrgBackend {
         if let link {
             current = try make(link)
             onLink = true
-        } else if let own = try credentials.ownSeed(orgMailboxID: orgMailboxID) {
+        } else if let own = try credentials.ownSeed() {
             current = try make(own)
             onLink = false
         } else {
@@ -170,7 +184,7 @@ public actor ManagedOrgBackend: OrgBackend {
 
     /// While on the link's credential: the member's own, if the server takes it now.
     private func switchToOwn() async -> FfiOrgState? {
-        guard onLink, let own = try? credentials.ownSeed(orgMailboxID: orgMailboxID),
+        guard onLink, let own = try? credentials.ownSeed(),
             let candidate = try? make(own), let state = try? await candidate.refresh()
         else { return nil }
         do {
@@ -214,6 +228,10 @@ public actor ManagedOrgBackend: OrgBackend {
 
     public func declineJoinRequest(accountID: String) async throws {
         try await client().declineJoinRequest(accountID: accountID)
+    }
+
+    public func updateMemberAccess(accountID: String) async throws -> Bool {
+        try await client().updateMemberAccess(accountID: accountID)
     }
 
     public func summarize(session: Session, keys: DeviceKeyPair, edit: FfiRosterEdit) async throws -> FfiEditSummary {
@@ -268,6 +286,7 @@ public struct UnfinishedOrgBackend: OrgBackend {
     }
     public func revokeOwnCredential() async throws { throw OnePassError.NotFound }
     public func declineJoinRequest(accountID: String) async throws { throw OnePassError.NotFound }
+    public func updateMemberAccess(accountID: String) async throws -> Bool { throw OnePassError.NotFound }
     public func summarize(session: Session, keys: DeviceKeyPair, edit: FfiRosterEdit) async throws -> FfiEditSummary {
         throw OnePassError.NotFound
     }
@@ -352,8 +371,8 @@ public enum ManagedAccountResume {
     public static func backend(
         settings: VaultSettings, credentials: ManagedOrgCredentials, open: @escaping ManagedOrgBackend.Open
     ) -> (any OrgBackend)? {
-        if let mailboxID = settings.orgMailboxID {
-            return ManagedOrgBackend(credentials: credentials, orgMailboxID: mailboxID, open: open)
+        if settings.orgMailboxID != nil {
+            return ManagedOrgBackend(credentials: credentials, open: open)
         }
         return settings.orgCreator ? UnfinishedOrgBackend() : nil
     }
@@ -424,13 +443,7 @@ public enum ManagedAccountResume {
         else { return false }
         let own: SecretBytes
         do {
-            if let stored = try credentials.ownSeed(orgMailboxID: mailboxID) {
-                own = stored
-            } else {
-                var seed = try mailboxGenerateCredential().seed
-                own = SecretBytes(taking: &seed)
-                try credentials.storeOwnSeed(own, orgMailboxID: mailboxID)
-            }
+            own = try credentials.ownSeedStoringNew()
         } catch {
             throw .keysUnavailable
         }

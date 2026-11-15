@@ -18,6 +18,9 @@ public protocol OrgBackend: Sendable {
     /// Revokes the credential this backend's client holds (a member drops the link's, R27).
     func revokeOwnCredential() async throws
     func declineJoinRequest(accountID: String) async throws
+    /// Brings `accountID`'s server access in line with the roster again (the retry after an edit whose
+    /// outcome said `serverAccessUpdated == false`, R38 (e)). True when a credential was granted.
+    func updateMemberAccess(accountID: String) async throws -> Bool
     func summarize(session: Session, keys: DeviceKeyPair, edit: FfiRosterEdit) async throws -> FfiEditSummary
     func edit(session: Session, keys: DeviceKeyPair, edit: FfiRosterEdit, now: Int64) async throws -> FfiEditOutcome
     func createInvite(
@@ -75,6 +78,10 @@ public struct FfiOrgBackend: OrgBackend {
 
     public func declineJoinRequest(accountID: String) async throws {
         try await CoreThread.run { [client] in try client.declineJoinRequest(accountId: accountID) }
+    }
+
+    public func updateMemberAccess(accountID: String) async throws -> Bool {
+        try await CoreThread.run { [client] in try client.updateMemberAccess(accountId: accountID) }
     }
 
     public func summarize(session: Session, keys: DeviceKeyPair, edit: FfiRosterEdit) async throws -> FfiEditSummary {

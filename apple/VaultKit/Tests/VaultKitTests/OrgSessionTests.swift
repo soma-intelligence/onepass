@@ -78,6 +78,14 @@ actor FakeOrgBackend: OrgBackend {
 
     func declineJoinRequest(accountID: String) async throws { record("decline") }
 
+    var accessUpdated = true
+    func script(accessUpdated: Bool) { self.accessUpdated = accessUpdated }
+
+    func updateMemberAccess(accountID: String) async throws -> Bool {
+        record("updateMemberAccess")
+        return accessUpdated
+    }
+
     func summarize(session: Session, keys: DeviceKeyPair, edit: FfiRosterEdit) async throws -> FfiEditSummary {
         record("summarize")
         return FfiEditSummary(
@@ -88,7 +96,7 @@ actor FakeOrgBackend: OrgBackend {
     func edit(session: Session, keys: DeviceKeyPair, edit: FfiRosterEdit, now: Int64) async throws -> FfiEditOutcome {
         record("edit")
         if let editError { throw editError }
-        return FfiEditOutcome(state: try refreshed.get(), serverAccessUpdated: true)
+        return FfiEditOutcome(state: try refreshed.get(), serverAccessUpdated: accessUpdated)
     }
 
     func createInvite(
@@ -184,6 +192,34 @@ struct OrgSessionTests {
         _ = try await f.org.apply(.suspend(accountId: Self.otherID), password: nil)
         #expect(await f.backend.writes == ["summarize@0", "edit@1"])
         #expect(f.harness.presence.biometricPrompts == 1)
+    }
+
+    @Test func serverAccessNotUpdatedStaysPendingUntilARetryTakes() async throws {
+        let f = try await OrgFixture.make(roles: [.admin])
+        defer { f.cleanUp() }
+        await f.backend.script(accessUpdated: false)
+        let outcome = try await f.org.apply(.remove(accountId: Self.otherID), password: nil)
+        #expect(!outcome.serverAccessUpdated)
+        #expect(f.org.serverAccessPending == [Self.otherID])
+
+        #expect(try await f.org.retryServerAccess(accountID: Self.otherID) == false)
+        #expect(f.org.serverAccessPending == [Self.otherID])
+
+        await f.backend.script(accessUpdated: true)
+        #expect(try await f.org.retryServerAccess(accountID: Self.otherID))
+        #expect(f.org.serverAccessPending.isEmpty)
+        // The retry signs nothing: no second presence prompt.
+        #expect(f.harness.presence.biometricPrompts == 1)
+        #expect(await f.backend.writes == ["summarize@0", "edit@1", "updateMemberAccess@1", "updateMemberAccess@1"])
+    }
+
+    @Test func aMemberCannotRetryServerAccess() async throws {
+        let f = try await OrgFixture.make(roles: [])
+        defer { f.cleanUp() }
+        await #expect(throws: OrgActionError.notAllowed) {
+            try await f.org.retryServerAccess(accountID: Self.otherID)
+        }
+        #expect(await f.backend.writes.isEmpty)
     }
 
     @Test func refusedPresenceWritesNothing() async throws {

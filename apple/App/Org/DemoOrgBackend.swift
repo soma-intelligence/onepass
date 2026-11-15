@@ -39,6 +39,8 @@ actor DemoOrgBackend: OrgBackend {
         requests.removeAll { $0.accountId == accountID }
     }
 
+    func updateMemberAccess(accountID: String) async throws -> Bool { false }
+
     func summarize(session: Session, keys: DeviceKeyPair, edit: FfiRosterEdit) async throws -> FfiEditSummary {
         let (id, after) = Self.target(of: edit)
         let request = requests.first { $0.accountId == id }

@@ -20,19 +20,32 @@ extension VaultSession {
 
     /// Publishes `draft` on the organisation's server with this unlocked managed account (its creator)
     /// signing with `keys`: the org mailbox is made with `serverInvite`, the genesis, roster and owner
-    /// keyset are written, and the pin is kept in `stateDir`. The returned credential seed is the
-    /// creator's own org mailbox credential, for the keychain. `VaultError.passwordRequired` while locked.
+    /// keyset are written, and the pin is kept in `stateDir`. The org mailbox's managing credential is
+    /// the creator's own org seed in `credentials`, made and stored in the keychain before the publish
+    /// (R39), so the server never knows a manager credential the device could lose; a retry reuses it.
+    /// `VaultError.passwordRequired` while locked.
     public func publishOrg(
         _ draft: OrgDraft, endpoint: FfiMailboxEndpoint, serverInvite: String, keys: DeviceKeyPair, name: String,
-        stateDir: String
+        stateDir: String, credentials: ManagedOrgCredentials
     ) async throws -> FfiOrgCreated {
         guard let core = coreSession else { throw VaultError.passwordRequired }
         let now = Int64(Date().timeIntervalSince1970)
-        return try await CoreThread.run {
-            try draft.publish(
-                endpoint: endpoint, serverInvite: serverInvite, session: core, classical: keys.classical, pq: keys.pq,
-                name: name, stateDir: stateDir, now: now)
+        return try await Self.publishWithStoredSeed(credentials: credentials) { seed in
+            try await CoreThread.run {
+                try draft.publish(
+                    endpoint: endpoint, serverInvite: serverInvite, credentialSeed: seed, session: core,
+                    classical: keys.classical, pq: keys.pq, name: name, stateDir: stateDir, now: now)
+            }
         }
+    }
+
+    /// `publish` with the creator's own org seed: the stored one, else a new one stored first (R39).
+    static func publishWithStoredSeed<Created>(
+        credentials: ManagedOrgCredentials, publish: (Data) async throws -> Created
+    ) async throws -> Created {
+        let seed = try credentials.ownSeedStoringNew()
+        defer { seed.wipe() }
+        return try await publish(seed.withData { Data($0) })
     }
 }
 

@@ -122,6 +122,9 @@ public final class OrgSession {
     public private(set) var joinRequests: [FfiJoinRequest] = []
     /// The last refresh failed without a refusal (offline, server down). Nil after a good one.
     public private(set) var refreshError: OrgActionError?
+    /// Accounts whose last edit was signed but whose org mailbox access the server did not take
+    /// (R38 (e)): the app says so and offers `retryServerAccess`.
+    public private(set) var serverAccessPending: Set<String> = []
 
     @ObservationIgnored private let vault: VaultSession
     @ObservationIgnored private let backend: any OrgBackend
@@ -269,8 +272,35 @@ public final class OrgSession {
             try await backend.edit(session: session, keys: pair, edit: edit, now: at)
         }
         state = outcome.state
+        let target = Self.account(of: edit)
+        if outcome.serverAccessUpdated {
+            serverAccessPending.remove(target)
+        } else {
+            serverAccessPending.insert(target)
+        }
         await refresh()
         return outcome
+    }
+
+    /// Tries again to make `accountID`'s org mailbox access follow the roster (R38 (e)). Signs
+    /// nothing, so no presence check. True once the server holds it; false keeps the account pending.
+    @discardableResult
+    public func retryServerAccess(accountID: String) async throws(OrgActionError) -> Bool {
+        guard canManageMembers else { throw .notAllowed }
+        let updated = try await mapped { try await backend.updateMemberAccess(accountID: accountID) }
+        if updated {
+            serverAccessPending.remove(accountID)
+        } else {
+            serverAccessPending.insert(accountID)
+        }
+        return updated
+    }
+
+    private static func account(of edit: FfiRosterEdit) -> String {
+        switch edit {
+        case .accept(let id, _), .setRoles(let id, _): id
+        case .suspend(let id), .reactivate(let id), .remove(let id): id
+        }
     }
 
     public func decline(_ request: FfiJoinRequest, password: SecretBytes?) async throws(OrgActionError) {

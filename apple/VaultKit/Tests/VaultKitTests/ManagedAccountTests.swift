@@ -120,14 +120,14 @@ struct ManagedAccountTests {
         try ManagedDeviceKeys.adoptPending(keychain: h.keychain, slot: slot, accountID: accountID)
         session.environment.settings.orgMailboxID = mailboxID
         let credentials = ManagedOrgCredentials(keychain: h.keychain, slot: slot)
-        try credentials.storeOwnSeed(SecretBytes(copying: Data(repeating: 3, count: 32)), orgMailboxID: mailboxID)
+        try credentials.storeOwnSeed(SecretBytes(copying: Data(repeating: 3, count: 32)))
         try credentials.storeLinkSeed(SecretBytes(copying: Data(repeating: 4, count: 32)))
         let unrelated = MailboxCredentialStore.key(mailboxID: String(repeating: "ef", count: 16))
         try h.keychain.write(unrelated, Data([9]))
 
         try h.accounts.remove(slot)
         #expect(try h.keychain.read(ManagedDeviceKeys.key(accountID: accountID)) == nil)
-        #expect(try credentials.ownSeed(orgMailboxID: mailboxID) == nil)
+        #expect(try credentials.ownSeed() == nil)
         #expect(try credentials.linkSeed() == nil)
         #expect(try h.keychain.read(unrelated) == Data([9]))
         #expect(h.accounts.profiles.count == 1)
@@ -152,7 +152,7 @@ struct ManagedAccountTests {
             (String(repeating: "cd", count: 16), String(repeating: "aa", count: 16), String(repeating: "bb", count: 16))
         session.environment.settings.orgMailboxID = orgMailbox
         let credentials = ManagedOrgCredentials(keychain: h.keychain, slot: slot)
-        try credentials.storeOwnSeed(SecretBytes(copying: Data(repeating: 3, count: 32)), orgMailboxID: orgMailbox)
+        try credentials.storeOwnSeed(SecretBytes(copying: Data(repeating: 3, count: 32)))
         try credentials.storeLinkSeed(SecretBytes(copying: Data(repeating: 4, count: 32)))
         try credentials.storeMemberToken(SecretBytes(copying: Data(repeating: 5, count: 32)))
         let mailboxes = MailboxCredentialStore(keychain: h.keychain)
@@ -176,7 +176,7 @@ struct ManagedAccountTests {
         try relaunched.remove(slot)
         #expect(try h.keychain.read(ManagedDeviceKeys.key(accountID: accountID)) == nil)
         #expect(try h.keychain.read(ManagedDeviceKeys.pendingKey(slot: slot)) == nil)
-        #expect(try credentials.ownSeed(orgMailboxID: orgMailbox) == nil)
+        #expect(try credentials.ownSeed() == nil)
         #expect(try credentials.linkSeed() == nil)
         #expect(try credentials.memberToken() == nil)
         for id in [homeMailbox, setupMailbox, pendingID] { #expect(try mailboxes.seed(mailboxID: id) == nil) }
@@ -184,6 +184,53 @@ struct ManagedAccountTests {
         #expect(try mailboxes.seed(mailboxID: MailboxSetup.pendingID) != nil)
         #expect(VaultSettings(defaults: h.defaults, scope: slot).orgMailboxID == nil)
         #expect(!FileManager.default.fileExists(atPath: dbURL.path))
+    }
+
+    /// Two slots of one org on this device (same org mailbox): each keeps its own seed under its slot,
+    /// and removing one leaves the other's (R40).
+    @Test func ownSeedsAreKeptPerSlot() async throws {
+        let h = try AccountsHarness()
+        defer { h.cleanUp() }
+        h.accounts.serverAvailable = { OrgServers.isUsable($0, allowHTTP: false) }
+        let kind = FfiAccountKind.managed(serverUrl: "https://onepass.example.org", orgId: Self.orgID)
+        let mailboxID = String(repeating: "cd", count: 16)
+        var slots: [String] = []
+        for (name, byte) in [("Bob", UInt8(3)), ("Carol", UInt8(7))] {
+            let slot = try h.accounts.beginAdding(kind: kind, label: name, color: .indigo)
+            try await h.createAccount(in: slot, name: name)
+            try #require(h.accounts.session(for: slot)).environment.settings.orgMailboxID = mailboxID
+            try ManagedOrgCredentials(keychain: h.keychain, slot: slot)
+                .storeOwnSeed(SecretBytes(copying: Data(repeating: byte, count: 32)))
+            slots.append(slot)
+        }
+        let kept = ManagedOrgCredentials(keychain: h.keychain, slot: slots[1])
+        #expect(try ManagedOrgCredentials(keychain: h.keychain, slot: slots[0]).ownSeed()?.withData { Data($0) }
+            == Data(repeating: 3, count: 32))
+
+        try h.accounts.remove(slots[0])
+        #expect(try ManagedOrgCredentials(keychain: h.keychain, slot: slots[0]).ownSeed() == nil)
+        #expect(try kept.ownSeed()?.withData { Data($0) } == Data(repeating: 7, count: 32))
+    }
+
+    /// The creator's own org seed is in the keychain before the publish is called (R39), and a retry
+    /// after a failed publish names the same credential.
+    @Test func publishSeesItsSeedAlreadyStored() async throws {
+        let keychain = InMemoryKeychain()
+        let credentials = ManagedOrgCredentials(keychain: keychain, slot: "creator")
+        #expect(try credentials.ownSeed() == nil)
+        struct Cut: Error {}
+        var first: Data?
+        await #expect(throws: Cut.self) {
+            _ = try await VaultSession.publishWithStoredSeed(credentials: credentials) { seed in
+                first = seed
+                #expect(try credentials.ownSeed()?.withData { Data($0) } == seed)
+                throw Cut()
+            }
+        }
+        let stored = try #require(first)
+        #expect(stored.count == 32)
+        let reused = try await VaultSession.publishWithStoredSeed(credentials: credentials) { seed in seed }
+        #expect(reused == stored)
     }
 
     // MARK: - Resume
@@ -221,14 +268,15 @@ struct ManagedAccountTests {
         let ownerKeys = try await Self.managedAccount(ownerHarness, ownerVault, name: "Alice", orgID: orgID, accountID: nil)
         try await ownerVault.enrollBiometrics(password: testPassword)
         let pair = try ownerKeys.deviceKeys()
-        let created = try server.draftPublish(
-            draft: draft, session: try #require(ownerVault.coreSession), classical: pair.classical, pq: pair.pq,
-            name: "Acme", stateDir: ownerDir, now: Self.now())
+        let ownerCredentials = ManagedOrgCredentials(keychain: ownerHarness.keychain, slot: "owner")
+        let created = try await VaultSession.publishWithStoredSeed(credentials: ownerCredentials) { seed in
+            try server.draftPublish(
+                draft: draft, credentialSeed: seed, session: try #require(ownerVault.coreSession),
+                classical: pair.classical, pq: pair.pq, name: "Acme", stateDir: ownerDir, now: Self.now())
+        }
         ownerHarness.settings.orgCreator = true
         ownerHarness.settings.orgMailboxID = created.mailboxId
-        let ownerCredentials = ManagedOrgCredentials(keychain: ownerHarness.keychain, slot: "owner")
-        try ownerCredentials.storeOwnSeed(SecretBytes(copying: created.credentialSeed), orgMailboxID: created.mailboxId)
-        let ownerBackend = ManagedOrgBackend(credentials: ownerCredentials, orgMailboxID: created.mailboxId) { seed in
+        let ownerBackend = ManagedOrgBackend(credentials: ownerCredentials) { seed in
             try server.client(mailboxId: created.mailboxId, credentialSeed: seed, orgId: orgID, stateDir: ownerDir)
         }
         let owner = ManagedAccountResume.session(vault: ownerVault, backend: ownerBackend, keys: ownerKeys)
@@ -241,7 +289,7 @@ struct ManagedAccountTests {
         // The joiner keeps the link's seed, pins, makes its account, then is cut off before posting.
         let credentials = ManagedOrgCredentials(keychain: joinerHarness.keychain, slot: "joiner")
         try credentials.storeLinkSeed(SecretBytes(copying: invite.credentialSeed))
-        let backend = ManagedOrgBackend(credentials: credentials, orgMailboxID: invite.mailboxId) { seed in
+        let backend = ManagedOrgBackend(credentials: credentials) { seed in
             try server.client(mailboxId: invite.mailboxId, credentialSeed: seed, orgId: invite.orgId, stateDir: joinerDir)
         }
         let settings = joinerHarness.settings
@@ -269,7 +317,7 @@ struct ManagedAccountTests {
                 settings: settings, org: joiner, credentials: credentials, displayName: "Bob", password: wrong)
         }
         #expect(!settings.orgJoinPosted)
-        let kept = try #require(try credentials.ownSeed(orgMailboxID: invite.mailboxId))
+        let kept = try #require(try credentials.ownSeed())
         let keptSeed = kept.withData { Data($0) }
 
         // The password, from the Organisation page after a relaunch (a fresh org session, R34): it
@@ -285,7 +333,7 @@ struct ManagedAccountTests {
         // The join code stays on the slot for the Organisation page (the member reads it out).
         let code = try #require(settings.orgJoinCode)
         #expect(code.count == 5)
-        let own = try #require(try credentials.ownSeed(orgMailboxID: invite.mailboxId))
+        let own = try #require(try credentials.ownSeed())
         #expect(own.withData { Data($0) } == keptSeed)
         #expect(await ManagedAccountResume.run(
             settings: settings, org: joiner, credentials: credentials, displayName: "Bob") == false)
@@ -316,7 +364,7 @@ struct ManagedAccountTests {
         h.settings.orgMailboxID = String(repeating: "a", count: 32)
         h.settings.orgJoinNonce = String(repeating: "0", count: 64)
         h.settings.orgJoinWaiting = true
-        let backend = ManagedOrgBackend(credentials: credentials, orgMailboxID: String(repeating: "a", count: 32)) { _ in
+        let backend = ManagedOrgBackend(credentials: credentials) { _ in
             throw OnePassError.MailboxUnavailable(reason: "offline")
         }
         let org = ManagedAccountResume.session(

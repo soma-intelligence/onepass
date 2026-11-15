@@ -284,7 +284,8 @@ extension AppModel {
     }
 
     /// The org of a creation: published with the account's session and device keys, the org mailbox
-    /// credential kept as this account's own, then a member token for its own mailbox. A failure
+    /// credential made on this device and kept in the keychain as this account's own before the
+    /// publish (R39), then a member token for its own mailbox. A failure
     /// leaves the creation unfinished (not resumed, plan deviation 15).
     private func publishOrg(slot: String, name: String, serverInvite: String) async -> Bool {
         guard let vault = accounts.session(for: slot), let draft = orgDraft,
@@ -295,12 +296,11 @@ extension AppModel {
         let settings = vault.environment.settings
         do {
             let pair = try ManagedDeviceKeys(keychain: keychain, accountID: accountID).deviceKeys()
-            var created = try await vault.publishOrg(
-                draft, endpoint: FfiMailboxEndpoint(baseUrl: serverURL, extraCaPem: nil), serverInvite: serverInvite,
-                keys: pair, name: name, stateDir: Self.orgStateDirectory(vault).path)
-            settings.orgMailboxID = created.mailboxId
             let credentials = ManagedOrgCredentials(keychain: keychain, slot: slot)
-            try credentials.storeOwnSeed(SecretBytes(taking: &created.credentialSeed), orgMailboxID: created.mailboxId)
+            let created = try await vault.publishOrg(
+                draft, endpoint: FfiMailboxEndpoint(baseUrl: serverURL, extraCaPem: nil), serverInvite: serverInvite,
+                keys: pair, name: name, stateDir: Self.orgStateDirectory(vault).path, credentials: credentials)
+            settings.orgMailboxID = created.mailboxId
             orgDraft = nil
             // The unfinished org made before the publish: remade on the org mailbox.
             orgSessions[slot] = nil
