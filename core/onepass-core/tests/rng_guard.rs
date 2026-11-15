@@ -66,6 +66,14 @@ const ALLOWED: &[(&str, usize, &str)] = &[
          outside randomness (Ed25519 and ECDSA keys use the hedged source)",
     ),
     (
+        "apple/VaultKit/Sources/VaultKit/Org/ManagedDeviceKeys.swift",
+        2,
+        "the post-quantum half of a managed account's device keys: Secure Enclave ML-DSA-87 and \
+         ML-KEM-1024 keys are generated inside the enclave, which takes no outside randomness; \
+         the software fallback (simulator, unsigned builds, tests) keeps the same CryptoKit path. \
+         The classical half comes from the hedged source through the core",
+    ),
+    (
         "core/onepass-ssh-agent/src/openssh.rs",
         1,
         "OpenSSH check integer of an unencrypted key file: not a secret",
