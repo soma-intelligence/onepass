@@ -105,7 +105,9 @@ impl QueuedKeyUse {
 
 /// The keys of the queue of one account: sealing, and the keyed item tag.
 /// Derived from the account's KEM secret, so a key rotation leaves the old
-/// rows unreadable (they are dropped at the next read).
+/// rows unreadable under the new keys: `flush_key_use_queue` reseals them
+/// first with the retired keys (`rekey_key_use_queue`), and drops only the
+/// rows no key opens.
 pub struct QueueKeys {
     seal: SymmetricKey,
     tag: SymmetricKey,

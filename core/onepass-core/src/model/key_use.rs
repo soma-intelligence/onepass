@@ -139,8 +139,9 @@ impl KeyUseTrailer {
     }
 
     /// Record `count` uses of `u`, the latest at `at`. Coalesces into the
-    /// entry with the same key (labels sanitized first), clamps `at` and any
-    /// stored `last_at` in the future to `now`, then prunes.
+    /// entry with the same key (labels sanitized first), clamps `at`, any
+    /// stored `last_at` and a `cleared_at` in the future to `now`, then
+    /// prunes.
     pub fn note(&mut self, u: &KeyUseInput, count: u32, at: OffsetDateTime, now: OffsetDateTime) {
         let at = at.min(now);
         self.clamp(now);
@@ -197,12 +198,15 @@ impl KeyUseTrailer {
         self.cleared_at = Some(now);
     }
 
-    /// A clock that ran ahead must not freeze an entry as "recent".
+    /// A clock that ran ahead must not freeze an entry as "recent", nor
+    /// set a tombstone in the future that would prune every new use until
+    /// real time catches up.
     fn clamp(&mut self, now: OffsetDateTime) {
         for e in &mut self.entries {
             e.last_at = e.last_at.min(now);
             e.first_at = e.first_at.min(e.last_at);
         }
+        self.cleared_at = self.cleared_at.map(|c| c.min(now));
     }
 }
 
@@ -312,6 +316,19 @@ mod tests {
         t.note(&input("k"), 1, T + Duration::days(1), T + secs(5));
         assert_eq!(t.entries[0].last_at, T + secs(5));
         assert!(t.due(&input("k"), T + secs(5) + secs(3600)));
+    }
+
+    #[test]
+    fn note_clamps_a_future_clear_to_now() {
+        let mut t = KeyUseTrailer::default();
+        // Cleared on a device whose clock ran a day ahead.
+        t.clear(T + Duration::days(1));
+        t.note(&input("k"), 1, T, T);
+        assert_eq!(t.cleared_at, Some(T));
+        // The next use is kept, not pruned until real time catches up.
+        t.note(&input("k"), 1, T + secs(5), T + secs(5));
+        assert_eq!(t.entries.len(), 1);
+        assert_eq!(t.cleared_at, Some(T));
     }
 
     #[test]
