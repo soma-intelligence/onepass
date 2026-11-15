@@ -1,0 +1,15 @@
+{
+  "GitHub": {
+    "domain": "github.com",
+    "tfa": [
+      "u2f",
+      "totp",
+      "sms",
+      "custom-software"
+    ],
+    "documentation": "https://docs.github.com/authentication/securing-your-account-with-two-factor-authentication-2fa",
+    "additional-domains": [
+      "github.io"
+    ]
+  }
+}

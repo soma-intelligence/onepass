@@ -1,0 +1,48 @@
+{
+  "kind": "setup_totp",
+  "domains": [
+    "example.com"
+  ],
+  "steps": [
+    {
+      "do": "goto",
+      "url": "https://example.com/settings/security"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "expect_qr"
+    }
+  ]
+}

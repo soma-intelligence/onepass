@@ -1,0 +1,26 @@
+{
+  "kind": "setup_passkey",
+  "domains": [
+    "example.com"
+  ],
+  "steps": [
+    {
+      "do": "goto",
+      "url": "https://accounts.example.com/passkeys"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "click",
+      "role": "button",
+      "name": [
+        "Add a passkey",
+        "Create a passkey"
+      ]
+    },
+    {
+      "do": "expect_passkey_prompt"
+    }
+  ]
+}

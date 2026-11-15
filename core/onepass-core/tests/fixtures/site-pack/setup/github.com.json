@@ -1,0 +1,47 @@
+{
+  "domain": "github.com",
+  "additional_domains": [
+    "githubusercontent.com"
+  ],
+  "setup_totp": {
+    "url": "https://github.com/settings/security",
+    "verified": {
+      "date": "2026-11-20",
+      "browser": "chromium"
+    },
+    "steps": [
+      {
+        "do": "goto",
+        "url": "https://github.com/settings/security"
+      },
+      {
+        "do": "reauth"
+      },
+      {
+        "do": "click",
+        "role": "button",
+        "name": [
+          "Enable two-factor"
+        ]
+      },
+      {
+        "do": "click",
+        "role": "radio",
+        "name": [
+          "Authenticator app"
+        ]
+      },
+      {
+        "do": "expect_qr"
+      }
+    ]
+  },
+  "setup_passkey": {
+    "url": "https://github.com/settings/security",
+    "verified": {
+      "date": "2026-11-20",
+      "browser": "chromium"
+    },
+    "steps": []
+  }
+}
