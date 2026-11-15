@@ -86,6 +86,10 @@ pub const CASES: &[(&str, Case)] = &[
     ("weak_keys_refused", weak_keys_refused),
     ("reader_commit_forbidden", reader_commit_forbidden),
     ("limited_writer_kinds", limited_writer_kinds),
+    (
+        "join_request_keeps_its_first_writer",
+        join_request_keeps_its_first_writer,
+    ),
     ("manager_changes_role", manager_changes_role),
     ("locate_finds_mailbox", locate_finds_mailbox),
     ("abandoned_mailbox_is_gone", abandoned_mailbox_is_gone),
@@ -1020,6 +1024,67 @@ fn limited_writer_kinds(t: &mut dyn ConformanceTarget) {
     applied(
         a.commit(vec![put(9, 1, None, b"owner")]),
         "the owner writes kind 5",
+    );
+}
+
+/// A writer limited by `put_kinds` replaces a live join request (kind 32)
+/// only when it wrote it first: another limited writer is `Forbidden` and
+/// its whole batch writes nothing. A manager is not bound and leaves the
+/// first writer in place; once deleted, the key is anyone's again.
+fn join_request_keeps_its_first_writer(t: &mut dyn ConformanceTarget) {
+    let a = owner(t);
+    let join = Some(put_kinds_of(&[32]));
+    let l1 = granted(t, a.as_ref(), CredentialRole::Write, join);
+    let l2 = granted(t, a.as_ref(), CredentialRole::Write, join);
+    let at = |n: u32, expected: Option<u64>, data: &[u8]| CommitOp {
+        kind: 32,
+        id: id(n),
+        version: 1,
+        op: Op::Put {
+            expected,
+            body: Body::Inline(data.to_vec()),
+        },
+    };
+    assert_eq!(
+        applied(l1.commit(vec![at(1, None, b"l1")]), "first put"),
+        vec![Some(1)]
+    );
+    assert_eq!(
+        applied(l1.commit(vec![at(1, Some(1), b"l1 again")]), "own rewrite"),
+        vec![Some(2)]
+    );
+    forbidden(
+        l2.commit(vec![at(1, Some(2), b"l2")]),
+        "another limited writer",
+    );
+    forbidden(
+        l2.commit(vec![at(2, None, b"new"), at(1, Some(2), b"l2")]),
+        "a batch with another's join request",
+    );
+    assert!(
+        a.record(32, id(2)).expect("read").is_none(),
+        "the batch wrote nothing"
+    );
+    applied(a.commit(vec![at(1, Some(2), b"manager")]), "a manager");
+    forbidden(
+        l2.commit(vec![at(1, Some(3), b"l2")]),
+        "still bound to the first writer",
+    );
+    applied(l1.commit(vec![at(1, Some(3), b"l1")]), "the first writer");
+    let gone = CommitOp {
+        kind: 32,
+        id: id(1),
+        version: 2,
+        op: Op::Delete,
+    };
+    applied(a.commit(vec![gone]), "the manager deletes it");
+    applied(
+        l2.commit(vec![at(1, None, b"l2")]),
+        "a put over the tombstone",
+    );
+    forbidden(
+        l1.commit(vec![at(1, Some(6), b"l1")]),
+        "the old first writer",
     );
 }
 

@@ -14,7 +14,8 @@
 //! writer limited to `put_kinds` puts only those kinds and deletes nothing,
 //! only a manager grants, changes roles, approves tickets and revokes
 //! another credential, an owner is revoked only by itself and never
-//! demoted, the last manager stays; a limited writer announces blobs),
+//! demoted, the last manager stays; a limited writer announces blobs and
+//! replaces a live join request only when it wrote it first),
 //! locators (set by a manager, the two latest kept per mailbox, shared
 //! freely between mailboxes, looked up without a key: up to 8 live
 //! mailboxes, oldest registration first) and abandoning a mailbox (its
@@ -87,7 +88,7 @@ pub const FAKE_BASE_URL: &str = "https://mailbox.fake.invalid/functions/v1/mailb
 /// Where the fake's signed Storage URLs point (never fetched).
 const FAKE_STORAGE: &str = "https://storage.fake.invalid/object/";
 
-use crate::org::is_immutable_kind;
+use crate::org::{ORG_JOIN_KIND, is_immutable_kind};
 
 /// Quota cost of a tombstone, bytes (`TOMBSTONE_COST` of the commit SQL).
 const TOMBSTONE_COST: i64 = 128;
@@ -174,6 +175,9 @@ struct Row {
     version: u64,
     /// `None`: a tombstone.
     body: Option<Body>,
+    /// The credential whose put created the key or landed on a tombstone
+    /// (`records.first_writer` in SQL); kept by rewrites and deletes.
+    first_writer: Option<CredentialId>,
 }
 
 impl Row {
@@ -647,6 +651,20 @@ impl State {
         {
             return refused(ErrorCode::Forbidden);
         }
+        // A limited writer replaces a live join request only when it wrote
+        // it first (migration 20261114130000).
+        if put_kinds.is_some()
+            && ops.iter().any(|o| {
+                matches!(o.op, Op::Put { .. })
+                    && o.kind == ORG_JOIN_KIND
+                    && mbx
+                        .records
+                        .get(&(o.kind, o.id))
+                        .is_some_and(|r| r.body.is_some() && r.first_writer != Some(*caller))
+            })
+        {
+            return refused(ErrorCode::Forbidden);
+        }
         if ops.len() > limits.max_commit_ops as usize {
             return refused(ErrorCode::TooLarge);
         }
@@ -775,12 +793,17 @@ impl State {
             if let Some(Body::Blob { sha256, .. }) = &body {
                 mbx.blobs.get_mut(sha256).expect("checked").refs += 1;
             }
+            let first_writer = match mbx.records.get(&key) {
+                Some(r) if r.body.is_some() => r.first_writer,
+                _ => Some(*caller),
+            };
             let old = mbx.records.insert(
                 key,
                 Row {
                     seq,
                     version: o.version,
                     body,
+                    first_writer,
                 },
             );
             mbx.undo.push((seq, key, old.clone()));
@@ -1550,6 +1573,7 @@ impl FaultHandle {
                     seq,
                     version: record.version,
                     body: record.body.clone(),
+                    first_writer: None,
                 },
             );
             mbx.undo.push((seq, key, old));
