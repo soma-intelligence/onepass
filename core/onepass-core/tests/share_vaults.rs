@@ -2000,3 +2000,72 @@ fn reader_key_use_is_queued_until_promoted() {
         .unwrap();
     assert_eq!(got.key_use_trailer().entries.len(), 1);
 }
+
+/// Carol's pending key-use write loses the race to Bob's real edit: the
+/// rebase merges her log into Bob's item, it never puts her copy back.
+#[test]
+fn shared_key_use_write_never_beats_a_member_edit() {
+    use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Write);
+    let item = items[0].id;
+    let vc = shared(&mut c.dev, id);
+    let u = c.dev.repo().this_device_key_use(
+        KeyUseChannel::Mcp,
+        KeyUseAction::Revealed,
+        "Claude Code",
+        "password",
+    );
+    assert!(c.dev.repo().record_key_use(&vc, item, u, at(NOW)).unwrap());
+    let vb = shared(&mut b.dev, id);
+    let mut renamed = b
+        .dev
+        .repo()
+        .items(&vb)
+        .unwrap()
+        .into_iter()
+        .find(|i| i.id == item)
+        .unwrap();
+    renamed.title = "Rotated".into();
+    b.dev.repo().save_item(&vb, renamed).unwrap();
+    b.sync(&mut zs);
+    settle(&mut zs, &mut [&mut c, &mut a, &mut b]);
+    for x in [&mut a, &mut b, &mut c] {
+        let v = shared(&mut x.dev, id);
+        let got = x
+            .dev
+            .repo()
+            .items(&v)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.id == item)
+            .unwrap();
+        assert_eq!(got.title, "Rotated");
+        assert_eq!(got.key_use_trailer().entries.len(), 1);
+    }
+}
+
+/// Carol's pending key-use write loses the race to Bob's deletion: the
+/// item stays deleted.
+#[test]
+fn shared_key_use_write_never_resurrects_a_member_deletion() {
+    use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Write);
+    let item = items[0].id;
+    let vc = shared(&mut c.dev, id);
+    let u = c.dev.repo().this_device_key_use(
+        KeyUseChannel::Mcp,
+        KeyUseAction::Revealed,
+        "Claude Code",
+        "password",
+    );
+    assert!(c.dev.repo().record_key_use(&vc, item, u, at(NOW)).unwrap());
+    let vb = shared(&mut b.dev, id);
+    b.dev.repo().delete_item(&vb, item).unwrap();
+    b.sync(&mut zs);
+    settle(&mut zs, &mut [&mut c, &mut a, &mut b]);
+    for x in [&mut a, &mut b, &mut c] {
+        let v = shared(&mut x.dev, id);
+        let got = x.dev.repo().items(&v).unwrap();
+        assert!(got.iter().all(|i| i.id != item));
+    }
+}

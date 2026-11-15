@@ -808,7 +808,7 @@ impl Repository<SyncStore> {
 /// and the key-use log of both (`merge_key_uses`), its own `updated_at`
 /// unchanged. `None` when the remote wins and the merges change nothing in
 /// it: nothing to write.
-fn resolve(local: &Item, remote: Item, local_wins: bool) -> Option<Item> {
+pub(crate) fn resolve(local: &Item, remote: Item, local_wins: bool) -> Option<Item> {
     let usage = merge_trailers(&local.usage_trailer(), &remote.usage_trailer());
     let keys = merge_key_uses(&local.key_use_trailer(), &remote.key_use_trailer());
     if local_wins {
@@ -828,7 +828,7 @@ fn resolve(local: &Item, remote: Item, local_wins: bool) -> Option<Item> {
 
 /// `local` differs from `ancestor` in its usage memory and key-use log
 /// only: both are memory, never a real edit.
-fn usage_only(local: &Item, ancestor: &Item) -> bool {
+pub(crate) fn usage_only(local: &Item, ancestor: &Item) -> bool {
     let mut base = ancestor.clone();
     base.set_usage_trailer(local.usage_trailer());
     base.set_key_use_trailer(local.key_use_trailer());
