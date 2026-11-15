@@ -41,6 +41,7 @@ pub mod remote_unlock;
 pub mod repo;
 pub mod send;
 pub mod share;
+pub mod site_pack;
 pub mod site_password;
 pub mod store;
 pub mod sync;

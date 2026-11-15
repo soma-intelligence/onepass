@@ -299,3 +299,10 @@ path = "fuzz_targets/recovery_message.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "site_pack"
+path = "fuzz_targets/site_pack.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,19 @@
+{
+  "created": "2026-11-15T18:28:52+00:00",
+  "format": 1,
+  "pack": {
+    "file": "onepass-sites-2026112001.json",
+    "sha256": "bb1c002abe32bd6b745bc21ffa1b3c1662d811ad7e98ac8666a97ded563b5b60",
+    "size": 995
+  },
+  "sites": 4,
+  "sources": {
+    "passkeys": {
+      "commit": "1111111111111111111111111111111111111111"
+    },
+    "twofa": {
+      "commit": "0000000000000000000000000000000000000000"
+    }
+  },
+  "version": 2026112001
+}
