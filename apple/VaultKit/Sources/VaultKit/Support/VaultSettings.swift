@@ -85,6 +85,43 @@ public final class VaultSettings: @unchecked Sendable {
         static let autofillTip = "onepass.autofillTipDismissed"
         static let revokedErase = "onepass.revokedErasePending"
         static let revokedLocked = "onepass.revokedLocked"
+        static let orgMailboxID = "onepass.org.mailboxID"
+        static let orgJoinNonce = "onepass.org.joinNonce"
+        static let orgJoinPosted = "onepass.org.joinPosted"
+        static let orgCreator = "onepass.org.creator"
+    }
+
+    // MARK: - Managed account (OnePass Business)
+
+    /// The org mailbox (32 hex) of this managed account's organisation, known once the org is created
+    /// or the join link is read.
+    public var orgMailboxID: String? {
+        get { defaults.string(forKey: Key.orgMailboxID) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.orgMailboxID) } else { defaults.removeObject(forKey: Key.orgMailboxID) }
+        }
+    }
+
+    /// The invitation nonce (64 hex) of the join link, kept while the join is pending: a join request
+    /// cut off before it was posted is rebuilt from it at the next unlock.
+    public var orgJoinNonce: String? {
+        get { defaults.string(forKey: Key.orgJoinNonce) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.orgJoinNonce) } else { defaults.removeObject(forKey: Key.orgJoinNonce) }
+        }
+    }
+
+    /// The join request reached the org server (it is posted once).
+    public var orgJoinPosted: Bool {
+        get { defaults.bool(forKey: Key.orgJoinPosted) }
+        set { defaults.set(newValue, forKey: Key.orgJoinPosted) }
+    }
+
+    /// This account created its organisation (an interrupted creation is not resumed: it shows as
+    /// unfinished).
+    public var orgCreator: Bool {
+        get { defaults.bool(forKey: Key.orgCreator) }
+        set { defaults.set(newValue, forKey: Key.orgCreator) }
     }
 
     /// This device was found revoked and its erase has not completed yet (L6): the app shows the

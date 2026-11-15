@@ -381,9 +381,12 @@ final class FakeMailboxProvisioning: MailboxProvisioning {
         var failNext: [String: Error] = [:]
         var openedSeeds: [Data] = []
         var located: [String: [String]] = [:]
+        var tokens: [Data] = []
     }
     private let state = Mutex(State())
     let sync = FakeMailboxSync()
+    /// The tokens `createManaged` received.
+    var tokens: [Data] { state.withLock { $0.tokens } }
 
     var calls: [String] { state.withLock { $0.calls } }
     var mailboxesCreated: Int { state.withLock { $0.created } }
@@ -414,6 +417,16 @@ final class FakeMailboxProvisioning: MailboxProvisioning {
         try enter("create")
         let n = state.withLock { s -> Int in
             s.created += 1
+            return s.created
+        }
+        return FfiMailboxHome(baseUrl: endpoint.baseUrl, mailboxId: String(format: "%032x", n), incarnation: 1)
+    }
+
+    func createManaged(_ endpoint: FfiMailboxEndpoint, seed: Data, token: Data) async throws -> FfiMailboxHome {
+        try enter("createManaged")
+        let n = state.withLock { s -> Int in
+            s.created += 1
+            s.tokens.append(token)
             return s.created
         }
         return FfiMailboxHome(baseUrl: endpoint.baseUrl, mailboxId: String(format: "%032x", n), incarnation: 1)

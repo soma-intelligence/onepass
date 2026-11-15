@@ -118,30 +118,30 @@
       }
     },
     "accounts.error.serverUnavailable" : {
-      "comment" : "Add account sheet: a managed (organisation) account cannot be created yet.",
+      "comment" : "Add account sheet: the managed (organisation) account names a server address that is not valid.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This account connects to your organization's server, which isn't available in this version yet."
+            "value" : "This organisation's server address isn't valid."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta cuenta se conecta al servidor de tu organización, que aún no está disponible en esta versión."
+            "value" : "La dirección del servidor de esta organización no es válida."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce compte se connecte au serveur de ton organisation, qui n'est pas encore disponible dans cette version."
+            "value" : "L'adresse du serveur de cette organisation n'est pas valide."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo account si collega al server della tua organizzazione, che non è ancora disponibile in questa versione."
+            "value" : "L'indirizzo del server di questa organizzazione non è valido."
           }
         }
       }

@@ -9,6 +9,9 @@ public protocol MailboxProvisioning: Sendable {
     func generateCredential() async throws -> FfiMailboxCredential
     /// A new mailbox on `endpoint`, managed by the credential of `seed`.
     func create(_ endpoint: FfiMailboxEndpoint, seed: Data, invite: String?) async throws -> FfiMailboxHome
+    /// A managed member's own mailbox on its organisation's server, made with the one-use `managed`
+    /// token (32 bytes) and checked to be on the managed plan (R16, R32).
+    func createManaged(_ endpoint: FfiMailboxEndpoint, seed: Data, token: Data) async throws -> FfiMailboxHome
     /// The sync client of `home`, signed by the credential of `seed`.
     func open(_ home: MailboxHome, seed: Data) async throws -> any MailboxSyncing
     /// The mailboxes registered under `locator` on `endpoint` (hex ids, oldest first).
@@ -34,6 +37,10 @@ public struct FfiMailboxProvisioning: MailboxProvisioning {
 
     public func create(_ endpoint: FfiMailboxEndpoint, seed: Data, invite: String?) async throws -> FfiMailboxHome {
         try await CoreThread.run { try mailboxCreate(endpoint: endpoint, credentialSeed: seed, invite: invite) }
+    }
+
+    public func createManaged(_ endpoint: FfiMailboxEndpoint, seed: Data, token: Data) async throws -> FfiMailboxHome {
+        try await CoreThread.run { try mailboxCreateManaged(endpoint: endpoint, credentialSeed: seed, token: token) }
     }
 
     public func open(_ home: MailboxHome, seed: Data) async throws -> any MailboxSyncing {
@@ -91,20 +98,25 @@ public actor MailboxSetup {
     private let credentials: MailboxCredentialStore
     private let store: SyncStoreHandle
     private let hosted: URL?
+    /// A managed account's one-use `managed` token: the mailbox is made with it (nil: personal path).
+    private let memberToken: SecretBytes?
     /// Tests: stop (as a crash would) right after this step is recorded.
     var interruptAfter: Step?
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "mailbox-setup")
 
-    /// `hosted`: the OnePass server of this build (`MailboxEndpoints.hosted()`).
+    /// `hosted`: the OnePass server of this build (`MailboxEndpoints.hosted()`). `memberToken`: for a
+    /// managed account only, the token its mailbox is created with on the organisation's server (the
+    /// caller wipes it after the run).
     public init(
         provisioning: any MailboxProvisioning, credentials: MailboxCredentialStore, store: SyncStoreHandle,
-        hosted: URL? = MailboxEndpoints.hosted()
+        hosted: URL? = MailboxEndpoints.hosted(), memberToken: SecretBytes? = nil
     ) {
         self.provisioning = provisioning
         self.credentials = credentials
         self.store = store
         self.hosted = hosted
+        self.memberToken = memberToken
     }
 
     func setInterruptAfter(_ step: Step?) { interruptAfter = step }
@@ -178,7 +190,14 @@ public actor MailboxSetup {
             guard let seed = try credentials.seed(mailboxID: Self.pendingID) else {
                 throw OnePassError.InvalidInput(what: "mailbox credential")
             }
-            let created = try await provisioning.create(endpoint, seed: seed.withData { Data($0) }, invite: nil)
+            let seedData = seed.withData { Data($0) }
+            let created: FfiMailboxHome
+            if let memberToken {
+                created = try await provisioning.createManaged(
+                    endpoint, seed: seedData, token: memberToken.withData { Data($0) })
+            } else {
+                created = try await provisioning.create(endpoint, seed: seedData, invite: nil)
+            }
             try credentials.store(seed: seed, mailboxID: created.mailboxId)
             try credentials.delete(mailboxID: Self.pendingID)
             p.mailboxID = created.mailboxId

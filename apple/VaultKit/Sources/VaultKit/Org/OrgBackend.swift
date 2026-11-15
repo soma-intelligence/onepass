@@ -64,6 +64,11 @@ public struct FfiOrgBackend: OrgBackend {
         try await CoreThread.run { [client] in try client.revokeOwnCredential() }
     }
 
+    /// A one-use `managed` token for the creator's own account mailbox (R32, manager credential only).
+    public func mintMemberToken() async throws -> Data {
+        try await CoreThread.run { [client] in try client.mintMemberToken() }
+    }
+
     public func declineJoinRequest(accountID: String) async throws {
         try await CoreThread.run { [client] in try client.declineJoinRequest(accountId: accountID) }
     }

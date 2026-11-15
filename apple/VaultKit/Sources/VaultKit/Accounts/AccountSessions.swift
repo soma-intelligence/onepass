@@ -4,8 +4,8 @@ import os
 
 /// Why an account operation was refused.
 public enum AccountsError: Error, Equatable, Sendable {
-    /// A managed account needs its organisation's server, which this version cannot reach yet
-    /// (multi-account spec 3.1, ruling P11).
+    /// A managed account needs its organisation's server, and the kind names no usable one
+    /// (`OrgServers.isUsable`).
     case serverUnavailable
     /// The directory could not be written or holds no such account.
     case directory(VaultError)
@@ -68,7 +68,7 @@ public final class AccountSessions {
     @ObservationIgnored public let store: AccountDirectoryStore
     @ObservationIgnored private let makeEnvironment: EnvironmentFactory
     @ObservationIgnored private let settingsDefaults: UserDefaults
-    /// Whether a server can hold a managed account of this kind (none in this version).
+    /// Whether a server can hold a managed account of this kind (the app: `OrgServers.isUsable`).
     @ObservationIgnored public var serverAvailable: (FfiAccountKind) -> Bool = { _ in false }
     /// Told each time a session of an added account is made (the app plugs its sync).
     @ObservationIgnored public var sessionCreated: ((String, VaultSession) -> Void)?
@@ -217,7 +217,7 @@ public final class AccountSessions {
     // MARK: - Adding
 
     /// Makes a slot and its empty session (`noAccount`) for the sign up or sign in that follows. A managed
-    /// account is refused while no server can hold it.
+    /// account is refused unless `serverAvailable` accepts its server.
     public func beginAdding(kind: FfiAccountKind, label: String, color: FfiAccountColor) throws(AccountsError)
         -> String
     {
@@ -311,6 +311,14 @@ public final class AccountSessions {
         discard(slot, accountID: accountID)
     }
 
+    /// A managed slot's device keys (pending or adopted) and its org credentials (R33).
+    private func discardManaged(_ slot: String, accountID: String?, settings: VaultSettings?) {
+        let keychain = primary.environment.keychain
+        ManagedDeviceKeys.discardPending(keychain: keychain, slot: slot)
+        if let accountID { try? ManagedDeviceKeys(keychain: keychain, accountID: accountID).delete() }
+        ManagedOrgCredentials(keychain: keychain, slot: slot).deleteAll(orgMailboxID: settings?.orgMailboxID)
+    }
+
     private func discard(_ slot: String, accountID: String?) {
         let session = sessions[slot]
         session?.lock()
@@ -318,6 +326,11 @@ public final class AccountSessions {
             let environment = session.environment
             try? SecretKeyVault(keychain: environment.keychain).remove(accountID: accountID)
             environment.biometrics.disable(accountID: accountID)
+        }
+        if profile(slot)?.isManaged == true {
+            // Read before the settings go: the device keys and the org credentials of the slot (the
+            // keychain is shared by every account).
+            discardManaged(slot, accountID: accountID, settings: session?.environment.settings)
         }
         session?.environment.settings.removeAll()
         sessionRemoved?(slot)

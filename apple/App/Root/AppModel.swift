@@ -33,6 +33,14 @@ final class AppModel {
     var addingAccount: AddingAccount? {
         didSet { if addingAccount == nil { signInAccountID = nil; signInNeedsAccountID = false } }
     }
+    /// The managed account being made in the onboarding (its slot, create or join), nil otherwise.
+    var managedOnboarding: ManagedOnboarding?
+    /// The organisation being created, until its publish (it holds the org id and secrets).
+    @ObservationIgnored var orgDraft: OrgDraft?
+    /// The org session of each managed slot, made on first use (`orgSession(for:)`).
+    @ObservationIgnored var orgSessions: [String: OrgSession] = [:]
+    /// The org client of each managed slot, under its org session.
+    @ObservationIgnored var orgBackends: [String: ManagedOrgBackend] = [:]
     /// Signing in to an added account: the account id of its Emergency Kit (scanned from a version 2
     /// QR code, or typed from the printed kit), which names its iCloud zone (ruling P8).
     var signInAccountID: String?
@@ -355,12 +363,13 @@ final class AppModel {
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
         let accountLink = AccountModelLink()
         self.accountLink = accountLink
+        let directory = AccountDirectoryStore(folder: environment.databaseURL.deletingLastPathComponent())
         accounts = AccountSessions(
-            store: AccountDirectoryStore(folder: environment.databaseURL.deletingLastPathComponent()),
+            store: directory,
             primary: session, defaults: environment.settings.baseDefaults,
             makeEnvironment: Self.accountEnvironment(
                 primary: environment, remote: storeSplit ? nil : remote,
-                containerIdentifier: Self.cloudKitContainer, link: accountLink))
+                containerIdentifier: Self.cloudKitContainer, link: accountLink, store: directory))
         #if os(iOS)
         #if ONEPASS_CLOUDKIT
         let remoteChannel: (any RemoteChannel)? = demo == nil && !isolated ? CloudKitRemoteChannel(containerIdentifier: Self.cloudKitContainer) : nil
@@ -410,6 +419,7 @@ final class AppModel {
         #if DEBUG
         demoPreparing = demo != nil && session.state == .noAccount
         #endif
+        accounts.serverAvailable = { OrgServers.isUsable($0) }
         accountLink.model = self
     }
 
@@ -661,7 +671,8 @@ final class AppModel {
 
     /// At unlock: a migration cut after its claim finishes its upload.
     private func resumeMigration() {
-        guard let migration = mailboxMigration() else { return }
+        // A managed account's sync is its own (`resumeManagedAccount`), never the primary state.
+        guard activeProfile?.isManaged != true, let migration = mailboxMigration() else { return }
         Task {
             if case .done(let home) = await session.resumeMigration(migration) {
                 syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
@@ -673,7 +684,8 @@ final class AppModel {
     /// A setup cut off (offline, app quit) resumes at the next unlock, with the Secret Key from
     /// this device's keychain.
     private func resumeMailboxSetup() {
-        guard pendingSetupChoice != nil, let accountID = settings.accountID else { return }
+        guard activeProfile?.isManaged != true, pendingSetupChoice != nil, let accountID = settings.accountID
+        else { return }
         let vault = SecretKeyVault(keychain: session.environment.keychain)
         guard let key = try? vault.loadBytes(accountID: accountID) else { return }
         Task { await runMailboxSetup(secretKey: key) }
@@ -707,7 +719,7 @@ final class AppModel {
 
     /// The mailbox client of an account on a OnePass server, signed by this device's credential.
     /// Without its seed (Keychain restored elsewhere, item deleted) nothing syncs and the log says so.
-    private static func openMailbox(
+    static func openMailbox(
         home: MailboxHome, databaseURL: URL, keychain: any KeychainStore, serverName: String
     ) -> MailboxSyncCoordinator? {
         do {
@@ -1215,6 +1227,10 @@ final class AppModel {
             Task(priority: .utility) { [iconLoader] in await iconLoader.prefetch(urls) }
             resumeMailboxSetup()
             resumeMigration()
+            if activeProfile?.isManaged == true {
+                let slot = accounts.activeSlot
+                Task { await resumeManagedAccount(slot) }
+            }
             #if os(macOS)
             returnToBrowserIfAsked()
             #endif

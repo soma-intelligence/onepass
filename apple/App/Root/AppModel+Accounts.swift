@@ -10,6 +10,8 @@ final class AccountModelLink {
     weak var model: AppModel?
     /// The sync of each added account, by slot.
     var syncs: [String: AccountSync] = [:]
+    /// The sync of each managed account (its mailbox on the org server), by slot.
+    var managedSyncs: [String: ManagedAccountSync] = [:]
 }
 
 /// An account being added: its slot, the account shown before, and whether the user signs in to an
@@ -28,13 +30,30 @@ extension AppModel {
     /// is published to the system identity store (ruling P6).
     static func accountEnvironment(
         primary: VaultEnvironment, remote: (any RemoteRecordStore)?, containerIdentifier: String,
-        link: AccountModelLink
+        link: AccountModelLink, store: AccountDirectoryStore
     ) -> AccountSessions.EnvironmentFactory {
         { slot, url, settings in
             var environment = primary
             environment.databaseURL = url
             environment.settings = settings
             environment.identityStore = NoIdentityStore()
+            // A managed account syncs with its own mailbox on the org server, whatever the build's
+            // iCloud flag (outside `#if ONEPASS_CLOUDKIT`).
+            // The kind from the directory file (the model may not be linked yet at launch).
+            if case .managed? = (try? store.load())?.entries.first(where: { $0.slot == slot })?.kind {
+                let sync = ManagedAccountSync()
+                link.managedSyncs[slot] = sync
+                environment.sync = sync
+                if let store = try? openSyncStore(dbPath: url.path),
+                    case .mailbox(let home)? = try? SyncBackendState.readNow(store: store)
+                {
+                    let keychain = primary.keychain
+                    Task { @MainActor in
+                        link.model?.attachManagedMailbox(home: home, databaseURL: url, keychain: keychain, slot: slot)
+                    }
+                }
+                return environment
+            }
             #if ONEPASS_CLOUDKIT
             if remote != nil {
                 let path = url.path
@@ -144,7 +163,8 @@ extension AppModel {
     // MARK: - Adding
 
     /// Starts adding an account: its slot, then the sign up (or the Emergency Kit sign in) of the
-    /// onboarding on that account. A managed account is refused while no server can hold it.
+    /// onboarding on that account. A managed account is refused unless its server is usable
+    /// (`OrgServers.isUsable`).
     func beginAddingAccount(kind: FfiAccountKind, label: String, color: FfiAccountColor, signIn: Bool)
         throws(AccountsError)
     {
@@ -170,7 +190,7 @@ extension AppModel {
         onboardingStart = nil
         switchAccount(to: adding.previous)
         stopAccountTasks(adding.slot)
-        accountLink.syncs[adding.slot] = nil
+        forgetAccountLinks(adding.slot)
         accounts.cancelAdding(adding.slot)
     }
 
@@ -190,7 +210,7 @@ extension AppModel {
         } catch {
             if error == .alreadyOnDevice {
                 stopAccountTasks(adding.slot)
-                accountLink.syncs[adding.slot] = nil
+                forgetAccountLinks(adding.slot)
                 switchAccount(to: adding.previous)
             }
             showToast(error.message, kind: .error)
@@ -202,12 +222,21 @@ extension AppModel {
         do {
             if accounts.activeSlot == slot { switchAccount(to: AccountDirectoryStore.primarySlot) }
             stopAccountTasks(slot)
-            accountLink.syncs[slot] = nil
+            forgetAccountLinks(slot)
             try accounts.remove(slot)
             settingsChanged()
         } catch {
             showToast(error.message, kind: .error)
         }
+    }
+
+    /// The sync and org objects the app holds for `slot`.
+    private func forgetAccountLinks(_ slot: String) {
+        accountLink.syncs[slot] = nil
+        accountLink.managedSyncs[slot] = nil
+        orgSessions[slot] = nil
+        orgBackends[slot] = nil
+        if managedOnboarding?.slot == slot { managedOnboarding = nil }
     }
 
     private func stopAccountTasks(_ slot: String) {

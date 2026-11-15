@@ -17,4 +17,36 @@ extension VaultSession {
                 name: device.name, kind: device.kind, mode: device.mode, orgId: orgID, accountId: accountID)
         }
     }
+
+    /// Publishes `draft` on the organisation's server with this unlocked managed account (its creator)
+    /// signing with `keys`: the org mailbox is made with `serverInvite`, the genesis, roster and owner
+    /// keyset are written, and the pin is kept in `stateDir`. The returned credential seed is the
+    /// creator's own org mailbox credential, for the keychain. `VaultError.passwordRequired` while locked.
+    public func publishOrg(
+        _ draft: OrgDraft, endpoint: FfiMailboxEndpoint, serverInvite: String, keys: DeviceKeyPair, name: String,
+        stateDir: String
+    ) async throws -> FfiOrgCreated {
+        guard let core = coreSession else { throw VaultError.passwordRequired }
+        let now = Int64(Date().timeIntervalSince1970)
+        return try await CoreThread.run {
+            try draft.publish(
+                endpoint: endpoint, serverInvite: serverInvite, session: core, classical: keys.classical, pq: keys.pq,
+                name: name, stateDir: stateDir, now: now)
+        }
+    }
+}
+
+extension OrgPinPlan {
+    /// The error `OrgSession.pin` throws for this plan when it refuses it, nil for a plan that pins: lets
+    /// a caller stop before it makes anything for the organisation.
+    public var refusal: OrgActionError? {
+        switch self {
+        case .refuse(.mdmInvalid):
+            .other(String(localized: "org.error.mdmInvalid", bundle: VaultKitStrings.bundle))
+        case .refuse:
+            .refused(.pinMismatch)
+        case .pin:
+            nil
+        }
+    }
 }

@@ -138,6 +138,32 @@ struct MailboxSetupTests {
         #expect(EmergencyKit.qrPayload(secretKey: key) == "onepass-kit:1:" + key.replacingOccurrences(of: "-", with: ""))
     }
 
+    @Test func managedSetupSpendsTheTokenOnTheOrgServer() async throws {
+        let f = try Fixture()
+        let org = URL(string: "https://onepass.example.org/functions/v1/mailbox")!
+        let token = Data(repeating: 7, count: 32)
+        let setup = MailboxSetup(
+            provisioning: f.provisioning, credentials: f.credentials, store: f.store, hosted: nil,
+            memberToken: SecretBytes(copying: token))
+        let outcome = await setup.run(session: f.session, choice: .selfHost(url: org, extraCAPEM: nil), secretKey: f.secretKey)
+        guard case .ready(let home) = outcome else { Issue.record("\(outcome)"); return }
+        #expect(home.baseURL == org)
+        #expect(f.provisioning.calls == ["credential", "createManaged", "open"])
+        #expect(f.provisioning.tokens == [token])
+    }
+
+    @Test func aMailboxOffTheManagedPlanFailsTheSetup() async throws {
+        let f = try Fixture()
+        f.provisioning.failNext(
+            "createManaged", OnePassError.Validation(field: "mailbox plan", reason: "not the managed plan"))
+        let setup = MailboxSetup(
+            provisioning: f.provisioning, credentials: f.credentials, store: f.store, hosted: nil,
+            memberToken: SecretBytes(copying: Data(repeating: 7, count: 32)))
+        let org = URL(string: "https://onepass.example.org/functions/v1/mailbox")!
+        let outcome = await setup.run(session: f.session, choice: .selfHost(url: org, extraCAPEM: nil), secretKey: f.secretKey)
+        guard case .failed = outcome else { Issue.record("\(outcome)"); return }
+    }
+
     @Test func selfHostURLValidated() async throws {
         let f = try Fixture()
         let bad = URL(string: "ftp://vault.example.org")!
