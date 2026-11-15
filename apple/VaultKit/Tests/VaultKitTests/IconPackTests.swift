@@ -295,6 +295,16 @@ struct ItemIconResolverTests {
         #expect(pack.icon(forHost: "old.reddit.com")?.data == mark)
     }
 
+    /// A hosting platform of `icon-pack-platforms.txt` is a tenant (`icon_pack.py`): a club's portal
+    /// on it gets no platform logo by host, the platform's own site keeps it.
+    @Test func platformSubdomainsDoNotInheritThePlatformLogo() throws {
+        let pack = try IconPack(data: makeIconPack(
+            version: 7, icons: [(red, 0)], domains: ["clubautomation.com": 0], tenants: ["clubautomation.com"]))
+        #expect(pack.icon(forHost: "club.clubautomation.com") == nil)
+        #expect(pack.icon(forHost: "clubautomation.com")?.data == red)
+        #expect(pack.icon(forHost: "www.clubautomation.com")?.data == red)
+    }
+
     @Test func titlesFindTheirBrand() throws {
         let pack = try IconPack(data: makeIconPack(
             version: 7, icons: [(red, 0), (mark, 0)], domains: ["reddit.com": 0, "burgerking.com": 1],
