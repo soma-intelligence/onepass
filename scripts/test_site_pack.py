@@ -65,6 +65,7 @@ class Recipes(unittest.TestCase):
         self.assertIn("not https", reasons["goto-http"])
         self.assertIn("not on the site's domains", reasons["goto-lookalike"])
         self.assertIn("not on the site's domains", reasons["goto-percent-host"])
+        self.assertIn("not on the site's domains", reasons["goto-backslash-host"])
         self.assertIn("destructive", reasons["click-delete-fr"])
         self.assertIn("final verify", reasons["click-verify-final"])
         self.assertIn("must end with expect_qr", reasons["totp-ends-without-expect-qr"])
@@ -77,6 +78,10 @@ class Recipes(unittest.TestCase):
         self.assertNotEqual(v("setup_totp", step("https://notexample.com/x"), ["example.com"]), [])
         self.assertNotEqual(v("setup_totp", step("https://user@example.com/x"), ["example.com"]), [])
         self.assertNotEqual(v("setup_totp", step("https://example.com:8443/x"), ["example.com"]), [])
+        self.assertNotEqual(v("setup_totp", step("https://example.com:/x"), ["example.com"]), [])
+        self.assertNotEqual(v("setup_totp", step("https://evil.com\\.example.com/x"), ["example.com"]), [])
+        self.assertNotEqual(v("setup_totp", step("https://example.com/a\tb"), ["example.com"]), [])
+        self.assertNotEqual(v("setup_totp", step("https://[::1].example.com/x"), ["example.com"]), [])
 
     def test_destructive_words_are_whole_words(self):
         v = site_pack.validate_recipe
@@ -161,6 +166,24 @@ class Build(unittest.TestCase):
         self.assertIn("example.com.json", err.getvalue())
         self.assertIn("destructive word 'delete'", err.getvalue())
         self.assertFalse((root / "out" / "onepass-sites-1.json").exists())
+
+    @unittest.skipUnless(has_openssl(), "needs OpenSSL 3 (set OPENSSL=...)")
+    def test_verify_refuses_a_signed_pack_with_a_bad_recipe(self):
+        tmp = self.tmp()
+        bad = {"format": 1, "version": 3, "sites": {"example.com": {"additional_domains": [], "setup_totp": {
+            "url": "https://example.com/security", "verified": {"date": "2026-11-20", "browser": "safari"},
+            "steps": [{"do": "click", "role": "button", "name": ["Delete account"]}, {"do": "expect_qr"}]}}}}
+        data = site_pack.pack_bytes(bad)
+        (tmp / "onepass-sites-3.json").write_bytes(data)
+        manifest = tmp / "site-pack-manifest.json"
+        manifest.write_text(json.dumps({"format": 1, "version": 3, "sites": 1, "pack": {
+            "file": "onepass-sites-3.json", "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}}))
+        os.environ["SITE_PACK_ED_PRIVATE_KEY"] = base64.b64encode(RFC_SEED).decode()
+        self.addCleanup(os.environ.pop, "SITE_PACK_ED_PRIVATE_KEY", None)
+        self.assertEqual(site_pack.main(["sign", "--manifest", str(manifest)]), 0)
+        public = base64.b64encode(RFC_PUBLIC).decode()
+        with self.assertRaisesRegex(site_pack.SitePackError, "destructive"):
+            site_pack.verify_files(manifest, tmp / "onepass-sites-3.json", public)
 
     def test_map_file_name_must_match_domain(self):
         root = self.tmp()

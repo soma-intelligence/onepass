@@ -52128,50 +52128,6 @@
         }
       }
     },
-    "Tes mots de passe ne quittent jamais l'appareil. Pour chacun, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres mots de passe, et compare le reste ici. Les catalogues publics de 2fa.directory (double authentification et passkeys) et la liste des sites piratés de Have I Been Pwned sont téléchargés en entier et gardés une semaine. Désactivé, Watchtower ne fait aucune requête réseau." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your passwords never leave the device. For each one, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of other passwords, and compares the rest here. The public 2fa.directory catalogs (two-factor authentication and passkeys) and Have I Been Pwned's list of breached sites are downloaded whole and kept for a week. When off, Watchtower makes no network request."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tus contraseñas nunca salen del dispositivo. Para cada una, OnePass envía a Have I Been Pwned los 5 primeros caracteres de su hash SHA-1, compartidos con cientos de otras contraseñas, y compara el resto aquí. Los catálogos públicos de 2fa.directory (autenticación de doble factor y llaves de acceso) y la lista de sitios con filtraciones de Have I Been Pwned se descargan enteros y se guardan una semana. Desactivado, Watchtower no hace ninguna solicitud de red."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le tue password non lasciano mai il dispositivo. Per ciascuna, OnePass invia a Have I Been Pwned i primi 5 caratteri del suo hash SHA-1, condivisi con centinaia di altre password, e confronta il resto qui. I cataloghi pubblici di 2fa.directory (autenticazione a due fattori e passkey) e l'elenco dei siti violati di Have I Been Pwned vengono scaricati per intero e conservati per una settimana. Se disattivato, Watchtower non fa alcuna richiesta di rete."
-          }
-        }
-      }
-    },
-    "Tes mots de passe ne quittent jamais l'appareil. Pour chacun, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres mots de passe, et compare le reste ici. Les catalogues publics de 2fa.directory (double authentification et passkeys) sont téléchargés en entier et gardés une semaine. Désactivé, Watchtower ne fait aucune requête réseau." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your passwords never leave the device. For each one, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared by hundreds of other passwords, and compares the rest here. The public 2fa.directory catalogs (two-factor and passkeys) are downloaded whole and kept for a week. When off, Watchtower makes no network request."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tus contraseñas nunca salen del dispositivo. Para cada una, OnePass envía a Have I Been Pwned los 5 primeros caracteres de su hash SHA-1, compartidos con cientos de otras contraseñas, y compara el resto aquí. Los catálogos públicos de 2fa.directory (doble factor y llaves de acceso) se descargan enteros y se guardan una semana. Desactivado, Watchtower no hace ninguna solicitud de red."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le tue password non lasciano mai il dispositivo. Per ciascuna, OnePass invia a Have I Been Pwned i primi 5 caratteri del suo hash SHA-1, condivisi con centinaia di altre password, e confronta il resto qui. I cataloghi pubblici di 2fa.directory (due fattori e passkey) vengono scaricati per intero e conservati per una settimana. Se disattivato, Watchtower non fa alcuna richiesta di rete."
-          }
-        }
-      }
-    },
     "Titre, site, identifiant, tag" : {
       "localizations" : {
         "en" : {

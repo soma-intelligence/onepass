@@ -29,7 +29,6 @@ import json
 import os
 import re
 import sys
-import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -69,29 +68,25 @@ class SitePackError(Exception):
     pass
 
 
-def _host_allowed(host, domains):
-    if "%" in host:
-        return False
-    return any(host == d or host.endswith("." + d) for d in domains)
-
-
 def _url_problem(url, domains):
-    """None when `url` is https on one of `domains` (or a subdomain), else the reason."""
+    """None when `url` is https on one of `domains` (or a subdomain), else the reason.
+
+    Mirrors url_allowed in core/onepass-core/src/site_pack/recipe.rs byte for byte."""
     if not isinstance(url, str) or not url:
         return "url is not a non-empty string"
     if len(url.encode("utf-8")) > MAX_URL_BYTES:
         return "url is longer than 2048 bytes"
-    try:
-        parts = urllib.parse.urlsplit(url)
-        port = parts.port
-    except ValueError:
-        return "url does not parse"
-    if parts.scheme != "https":
+    if not all(0x21 <= b <= 0x7E for b in url.encode("utf-8")):
+        return "url has a byte outside printable ASCII"
+    scheme, sep, rest = url.partition("://")
+    if not sep or scheme.lower() != "https":
         return "url is not https"
-    if parts.username is not None or parts.password is not None or port is not None:
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
+    if "@" in authority or ":" in authority:
         return "url carries credentials or a port"
-    host = (parts.hostname or "").lower().rstrip(".")
-    if not host or not _host_allowed(host, [d.lower() for d in domains]):
+    host = authority.lower().rstrip(".")
+    if any(c in authority for c in "\\[]%") or not host or not any(
+            host == d.lower() or host.endswith("." + d.lower()) for d in domains):
         return f"url host {host or '(none)'} is not on the site's domains"
     return None
 

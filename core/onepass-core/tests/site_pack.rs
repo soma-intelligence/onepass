@@ -420,6 +420,7 @@ fn invalid_fixtures_fail_for_their_own_reason() {
         ("click-pay", "destructive"),
         ("click-verify-final", "final verify"),
         ("empty-name", "name is not"),
+        ("goto-backslash-host", "goto url"),
         ("goto-http", "goto url"),
         ("goto-lookalike", "goto url"),
         ("goto-other-domain", "goto url"),

@@ -78,12 +78,20 @@ public actor SitePackStore {
         return (data, version)
     }
 
+    /// Reads the stored pack into memory (never mapped, so the file changing or shrinking after
+    /// verification cannot alter or fault the verified bytes), refusing a file over the cap.
+    private static func readPack(_ url: URL) -> Data? {
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? Int.max
+        guard size <= maxPackBytes else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
     /// The stored trio, only when it verifies again under the compiled key.
     private func downloaded() -> (data: Data, version: UInt64)? {
         guard let key,
             let manifest = try? Data(contentsOf: directory.appending(path: Self.manifestName)),
             let signature = try? Data(contentsOf: directory.appending(path: Self.signatureName)),
-            let data = try? Data(contentsOf: directory.appending(path: Self.packName), options: .mappedIfSafe),
+            let data = Self.readPack(directory.appending(path: Self.packName)),
             let version = try? verifySitePack(manifest: manifest, signature: signature, pack: data, publicKey: key)
         else { return nil }
         return (data, version)

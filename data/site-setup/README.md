@@ -9,7 +9,7 @@ offer 2FA and passkeys) comes from the 2FA Directory and 2factorauth/passkeys ch
 ```json
 {
   "domain": "github.com",
-  "additional_domains": ["githubusercontent.com"],
+  "additional_domains": ["githubassets.com"],
   "setup_totp": {
     "url": "https://github.com/settings/security",
     "verified": { "date": "2026-11-20", "browser": "chromium" },
@@ -47,7 +47,7 @@ names the file and the rule.
 | Ending | A `setup_totp` recipe ends with `expect_qr` and never contains `expect_passkey_prompt`; a `setup_passkey` recipe ends with `expect_passkey_prompt` and never contains `expect_qr`. |
 
 Additional domains: a site's own domain is never another site's additional domain, and a
-domain several sites claim goes to the first of them in sorted order.
+domain several sites claim goes to the first of them in sorted order. An additional domain that is a public suffix is dropped.
 
 The same recipe fixtures serve the Python build and the Rust core:
 `core/onepass-core/tests/fixtures/site-pack/recipes/{valid,invalid}`.

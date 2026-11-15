@@ -1,0 +1,15 @@
+{
+  "kind": "setup_totp",
+  "domains": [
+    "github.com"
+  ],
+  "steps": [
+    {
+      "do": "goto",
+      "url": "https://evil.com\\.github.com/x"
+    },
+    {
+      "do": "expect_qr"
+    }
+  ]
+}

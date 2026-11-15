@@ -417,3 +417,13 @@ Each wave ships alone and gets its own plan.
 - The Safari handoff has never run on a device.
 - The shape of the QR on the twenty sites (image, canvas, SVG, frame) is not verified; it needs
   signed-in sessions.
+- `additional_domains` live in the signed pack and partly come from unreviewed upstream data. A
+  stolen signing key could list evil.com as an additional domain of bank.com and send `goto` and
+  the settings URL there. Before recipes run (waves 3 and 4), `goto` hosts must be limited to the
+  site's own registrable domain, or to additional domains that come from the in-repo map (marked
+  in the pack).
+- Recipe click names are not Unicode-normalised (decomposed accents, homoglyphs), and `css` can
+  target another element than the checked name. Before wave 4, normalise names with NFKC and
+  re-check the accessible name of the element actually clicked.
+- The item banner shows only once a Watchtower report exists in the session. The owner decides
+  whether an offline, site-only pass runs at unlock.
