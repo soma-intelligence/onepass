@@ -295,6 +295,9 @@ struct WatchtowerCard: Identifiable {
     let color: Color
     let source: Source
 
+    /// The card's drawn icon in Assets (Watchtower/watchtower-<id>), in the settings icons' style.
+    var artwork: String { "watchtower-\(id)" }
+
     func itemIDs(in report: FfiWatchtowerReport) -> Set<String> {
         Set(report.checks.filter { checks.contains($0.check) }.flatMap(\.itemIds))
     }
@@ -468,7 +471,7 @@ struct WatchtowerCardView: View {
                         alert ? AnyShapeStyle(.white)
                             : unavailable == nil && !ids.isEmpty ? AnyShapeStyle(card.color) : AnyShapeStyle(.secondary))
                 Spacer()
-                PageTile(symbol: card.symbol, color: alert ? .white.opacity(0.22) : card.color, size: 28)
+                WatchtowerArtwork(card: card, size: 40, onWash: alert)
             }
             Text(card.title).font(.headline).foregroundStyle(alert ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             Text(unavailable ?? card.message)
@@ -550,5 +553,23 @@ struct BreachSettingCard: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
+    }
+}
+
+/// A Watchtower card's drawn icon, like the settings pages' icons. On the red alert wash it sits
+/// on a pale disc so the red artwork keeps its edge.
+struct WatchtowerArtwork: View {
+    let card: WatchtowerCard
+    var size: CGFloat = 28
+    var onWash = false
+
+    var body: some View {
+        Image(card.artwork)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
+            .padding(onWash ? size * 0.14 : 0)
+            .background { if onWash { Circle().fill(.white.opacity(0.92)) } }
+            .accessibilityHidden(true)
     }
 }

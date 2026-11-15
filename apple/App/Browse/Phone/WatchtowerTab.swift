@@ -226,10 +226,7 @@ private struct PhoneWatchtowerCard: View {
                             .font(.system(size: 44, weight: .bold, design: .rounded))
                             .monospacedDigit()
                         Spacer()
-                        Image(systemName: card.symbol)
-                            .font(.system(size: 30, weight: .semibold))
-                            .opacity(0.35)
-                            .accessibilityHidden(true)
+                        WatchtowerArtwork(card: card, size: 34, onWash: true)
                     }
                     Text(card.title).font(.headline)
                     Text(card.message)
@@ -305,7 +302,7 @@ private struct ClearChecksCard: View {
                     // Starts at the row title: padding, the 26 pt tile, spacing.
                     if index > 0 { Divider().padding(.leading, Theme.Space.l + 26 + Theme.Space.m) }
                     HStack(spacing: Theme.Space.m) {
-                        PageTile(symbol: card.symbol, color: card.color, size: 26)
+                        WatchtowerArtwork(card: card, size: 26)
                         VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                             Text(card.title).font(.subheadline.weight(.medium))
                             if let note = note(card) {

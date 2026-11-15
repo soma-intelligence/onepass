@@ -1503,7 +1503,7 @@ struct ItemWatchtowerSection: View {
     @ViewBuilder private func line(check: String, ignored: Bool) -> some View {
         if let card = WatchtowerCard.of(check: check) {
             HStack(spacing: Theme.Space.m) {
-                PageTile(symbol: card.symbol, color: ignored ? .gray : card.color, size: 26)
+                WatchtowerArtwork(card: card, size: 26).saturation(ignored ? 0 : 1)
                 VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(card.title).font(.subheadline.weight(.medium))
                     Text(ignored ? String(localized: "item.ignoredForItem") : card.message)
