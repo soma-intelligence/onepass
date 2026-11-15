@@ -3184,12 +3184,16 @@ name = "onepass-desktop"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "aws-lc-rs",
  "base64 0.22.1",
  "onepass-core",
  "onepass-ffi",
+ "onepass-mailbox",
+ "onepass-mailbox-proto",
  "postcard",
  "qrcode",
  "rfd",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",
