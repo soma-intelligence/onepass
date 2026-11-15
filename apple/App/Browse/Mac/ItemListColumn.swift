@@ -303,6 +303,9 @@ struct ItemListColumn: View {
                 // less what the bar's other items take (`ToolbarRowProbe`).
                 searchField
                     .frame(width: titleBarRoom.map { max(180, $0 - rowReserved) } ?? 210)
+                    // When the bar's other items change (a deleted item has fewer), the field eases
+                    // to its new width instead of jumping.
+                    .animation(.easeInOut(duration: 0.2), value: rowReserved)
                     .background {
                         ToolbarRowProbe(
                             reserved: $rowReserved, room: titleBarRoom,

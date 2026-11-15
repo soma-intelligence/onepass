@@ -219,6 +219,13 @@ struct PageColumn: View {
 /// Third column: the new item's editor, the selected item, or an empty state.
 struct DetailColumn: View {
     @Environment(AppModel.self) private var model
+    #if os(macOS)
+    /// The item on screen and its preloaded contents. A click loads the next item first and swaps
+    /// only then, crossfading: never an empty frame with a spinner, no wash and no bar items (the
+    /// title bar's row would shrink and grow back).
+    @State private var shownRef: ItemRef?
+    @State private var preloaded: FfiItem?
+    #endif
 
     var body: some View {
         #if os(macOS)
@@ -239,10 +246,22 @@ struct DetailColumn: View {
             .headerFade()
             #endif
         } else if let ref = model.selectedItem {
+            #if os(macOS)
+            ZStack {
+                if let shownRef {
+                    ItemDetailView(ref: shownRef, preloaded: preloaded)
+                        .id(shownRef)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: shownRef)
+            .task(id: ref) { await show(ref) }
+            #else
             ItemDetailView(ref: ref).id(ref)
                 #if os(iOS)
                 .headerFade()
                 #endif
+            #endif
         } else {
             // The vault picture alone carries the empty state; the words stay for VoiceOver.
             VaultIllustration(size: 340, tint: Theme.accent)
@@ -251,4 +270,15 @@ struct DetailColumn: View {
                 .accessibilityLabel(Text("browse.noItemSelectedChoose"))
         }
     }
+
+    #if os(macOS)
+    /// Reads the item, then puts it on screen. A failed read still swaps: the detail shows its error.
+    private func show(_ ref: ItemRef) async {
+        guard ref != shownRef else { return }
+        let item = try? await model.session.loadItem(vaultID: ref.vaultID, itemID: ref.itemID)
+        guard !Task.isCancelled, model.selectedItem == ref else { return }
+        preloaded = item
+        shownRef = ref
+    }
+    #endif
 }

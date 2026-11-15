@@ -61,9 +61,12 @@ struct ItemDetailView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
 
-    init(ref: ItemRef, standalone: Bool = false) {
+    /// `preloaded`: the item already read by the caller (the Mac detail column loads the next item
+    /// before it swaps views), so the first frame is the item, not a spinner without wash or bar.
+    init(ref: ItemRef, standalone: Bool = false, preloaded: FfiItem? = nil) {
         self.ref = ref
         self.standalone = standalone
+        _item = State(initialValue: preloaded?.id == ref.itemID ? preloaded : nil)
     }
 
     private var editingHere: Bool { !standalone && model.editing }
@@ -169,7 +172,10 @@ struct ItemDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Self.sectionSpacing) {
                 #if os(iOS) || os(macOS)
-                ItemHeader(item: item) { identity = (item.id, identityColor(item, icon: $0)) }
+                ItemHeader(item: item) { icon in
+                    // The icon's tint replaces the category's: eased, never a jump.
+                    withAnimation(.easeInOut(duration: 0.25)) { identity = (item.id, identityColor(item, icon: icon)) }
+                }
                     .id(item.id)
                     .padding(.horizontal, Theme.Space.xs)
                     .padding(.bottom, Theme.Space.xs)

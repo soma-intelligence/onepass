@@ -45,6 +45,17 @@ enum Snapshot {
                     await capture(directory, "mac-toolbar-\(size)-\(suffix)")
                 }
             }
+            // A click on another item, frame by frame: the old detail stays until the new one is
+            // read, then they crossfade (no spinner frame, no bar items gone).
+            mainWindow?.setFrame(NSRect(x: -4000, y: 80, width: 1280, height: 820), display: true)
+            if let next = model.session.summaries.first(where: { $0.title == "Amex Platinum" }),
+               let window = mainWindow {
+                model.selectedItem = ItemRef(vaultID: next.vaultId, itemID: next.id)
+                for frame in 0..<8 {
+                    try? await Task.sleep(for: .milliseconds(40))
+                    render(window, directory, "mac-toolbar-switch-\(frame)")
+                }
+            }
             NSApp.terminate(nil)
             return
         }
