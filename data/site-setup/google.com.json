@@ -1,0 +1,7 @@
+{
+  "domain": "google.com",
+  "setup_totp": {
+    "url": "https://myaccount.google.com/signinoptions/two-step-verification",
+    "steps": []
+  }
+}
