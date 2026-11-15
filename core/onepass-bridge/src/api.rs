@@ -632,6 +632,18 @@ pub enum Request {
         #[serde(with = "agent_result")]
         result: std::result::Result<FillWire, String>,
     },
+    /// Open and sign in (`pending.rs`): the item of the pending sign-in the
+    /// app recorded for this page's site, taken once. `origin` and
+    /// `top_origin`: the browser's origins of the frame and of its top
+    /// frame, which must be the same `https` origin. Served locked too
+    /// (only an item id comes back); `item_id` is `null` when there is
+    /// nothing to take. A host that predates it answers `invalid`, which
+    /// the extension reads as nothing.
+    TakeSignIn {
+        id: u64,
+        origin: String,
+        top_origin: String,
+    },
 }
 
 impl Request {
@@ -677,7 +689,8 @@ impl Request {
             | Self::PasskeyCreate { id, .. }
             | Self::AgentWait { id }
             | Self::AgentProbeResult { id, .. }
-            | Self::AgentFillResult { id, .. } => *id,
+            | Self::AgentFillResult { id, .. }
+            | Self::TakeSignIn { id, .. } => *id,
         }
     }
 
@@ -724,6 +737,7 @@ impl Request {
             Self::AgentWait { .. } => "agent_wait",
             Self::AgentProbeResult { .. } => "agent_probe_result",
             Self::AgentFillResult { .. } => "agent_fill_result",
+            Self::TakeSignIn { .. } => "take_sign_in",
         }
     }
 
@@ -769,7 +783,8 @@ impl Request {
             | Self::ClientInfo { .. }
             | Self::AgentWait { .. }
             | Self::AgentProbeResult { .. }
-            | Self::AgentFillResult { .. } => None,
+            | Self::AgentFillResult { .. }
+            | Self::TakeSignIn { .. } => None,
         }
     }
 
@@ -1261,6 +1276,10 @@ pub enum Response {
     TotpSaved {
         status: TotpSaveStatus,
         item_id: String,
+    },
+    /// `take_sign_in`: the pending item, or `null`.
+    SignIn {
+        item_id: Option<String>,
     },
     Generate {
         password: SecretString,

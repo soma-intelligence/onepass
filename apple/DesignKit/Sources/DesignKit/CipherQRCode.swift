@@ -407,7 +407,7 @@ public struct CipherQRCode: View {
     VStack(spacing: 16) {
         CipherQRCode(stage: stage, expiresAt: Date().addingTimeInterval(30)).frame(width: 260)
         HStack {
-            Button("QR") { stage = .code("OPPAIR1:preview-\(Int.random(in: 0...999))-preview-preview-preview-preview") }
+            Button("QR") { stage = .code("OPPAIR1:preview-\(Int(Date().timeIntervalSince1970) % 1000)-preview-preview-preview-preview") }
             Button("Connexion") { stage = .connecting }
             Button("Code") { stage = .verify("482913") }
         }

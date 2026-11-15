@@ -20,6 +20,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use onepass_bridge::pending::PendingStore;
 use onepass_bridge::service::{VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::account::Auk;
@@ -96,6 +97,8 @@ pub struct RepoVault<S: RecordStore> {
     /// Journal for the cause of a failed request (the reply only says
     /// `internal`). Error messages of the core carry no data.
     log: Option<Log>,
+    /// Open and sign in: pending sign-ins (`sign-in` subcommand).
+    pending: Option<PendingStore>,
 }
 
 fn bridge_error(e: Error) -> BridgeError {
@@ -125,7 +128,13 @@ impl<S: RecordStore> RepoVault<S> {
             refresh: None,
             lock_path: None,
             log: None,
+            pending: None,
         }
+    }
+
+    /// Open and sign in: take pending sign-ins from `dir` (`data_dir`).
+    pub fn set_pending_dir(&mut self, dir: PathBuf) {
+        self.pending = Some(PendingStore::new(dir));
     }
 
     /// Start locked: `status` reports locked until `unlock`.
@@ -313,6 +322,14 @@ impl<S: RecordStore> RepoVault<S> {
 }
 
 impl<S: RecordStore> VaultAccess for RepoVault<S> {
+    fn take_pending_sign_in(&mut self, origin: &str, top_origin: &str, now: u64) -> Option<Id> {
+        let id = self.pending.as_ref()?.take(origin, top_origin, now)?;
+        if let Some(log) = &self.log {
+            log.line("open and sign in: pending sign-in taken");
+        }
+        Some(id)
+    }
+
     fn status(&self) -> VaultStatus {
         let vaults = match (&self.repo, self.is_locked()) {
             (Some(repo), false) => {

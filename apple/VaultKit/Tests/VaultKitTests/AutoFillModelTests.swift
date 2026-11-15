@@ -1051,7 +1051,7 @@ struct AutoFillModelTests {
 
     /// A fill the core does not write (same Login again within the hour) neither posts
     /// `store-changed`, nor tells the sync layer, nor republishes the identities.
-    @Test func throttledUseNeitherPostsNorRepublishes() async throws {
+    @Test(.tags(.slow)) func throttledUseNeitherPostsNorRepublishes() async throws {
         let store = InMemoryIdentityStore()
         let f = try Fixture(identityStore: store)
         defer { f.cleanUp() }

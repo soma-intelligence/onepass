@@ -209,7 +209,7 @@ struct PairingFlowTests {
 
     /// Over the real local network transport (loopback): "Ils sont différents" on the approver ends
     /// with that reason on the approver, not with "La connexion a été coupée" from its own close.
-    @Test(.timeLimit(.minutes(2))) func approverRejectKeepsItsReasonOverLocalNetwork() async throws {
+    @Test(.tags(.slow), .timeLimit(.minutes(2))) func approverRejectKeepsItsReasonOverLocalNetwork() async throws {
         let f = try await PairingFixture(server: false)
         defer { f.cleanUp() }
         let n = PairingNewcomerFlow(

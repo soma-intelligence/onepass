@@ -503,6 +503,7 @@ targets:
         excludes:
           - "AutoFillUITests.swift"
           - "SafariAutofillUITests.swift"
+          - "OpenAndSignInUITests.swift"
     dependencies:
       - target: OnePass
     settings:
@@ -702,6 +703,7 @@ targets:
     platform: iOS
     sources:
       - path: AppUITests/SafariAutofillUITests.swift
+      - path: AppUITests/OpenAndSignInUITests.swift
     dependencies:
       - target: AutoFillHost
     settings:
