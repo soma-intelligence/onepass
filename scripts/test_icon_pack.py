@@ -924,8 +924,9 @@ class Wikidata(unittest.TestCase):
         import urllib.error
         attempts, waits = [], []
 
-        def flaky(url, limit, headers=None):
+        def flaky(url, limit, headers=None, timeout=20):
             attempts.append(headers)
+            self.assertEqual(timeout, icon_pack.WIKI_TIMEOUT)
             if len(attempts) == 1:
                 raise urllib.error.HTTPError(url, 429, "slow down", {"Retry-After": "7"}, None)
             if len(attempts) == 2:
@@ -942,7 +943,7 @@ class Wikidata(unittest.TestCase):
         import socket
         errors = [urllib.error.URLError("reset"), socket.timeout("slow"), TimeoutError("slow")]
 
-        def shaky(url, limit, headers=None):
+        def shaky(url, limit, headers=None, timeout=20):
             if errors:
                 raise errors.pop(0)
             return b"fine", url
@@ -951,7 +952,7 @@ class Wikidata(unittest.TestCase):
             self.assertEqual(icon_pack.wiki_get("https://query.wikidata.org/sparql", 10, sleep=waits.append), b"fine")
         self.assertEqual(waits, [2, 4, 8])
 
-        def down(url, limit, headers=None):
+        def down(url, limit, headers=None, timeout=20):
             raise urllib.error.URLError("no route")
         waits.clear()
         with mock.patch.object(icon_pack, "fetch_url", side_effect=down):
@@ -960,7 +961,7 @@ class Wikidata(unittest.TestCase):
         self.assertEqual(len(waits), icon_pack.RETRY_ATTEMPTS - 1)
         waits.clear()
 
-        def missing(url, limit, headers=None):
+        def missing(url, limit, headers=None, timeout=20):
             raise urllib.error.HTTPError(url, 404, "gone", {}, None)
         with mock.patch.object(icon_pack, "fetch_url", side_effect=missing):
             with self.assertRaises(urllib.error.HTTPError):
@@ -1015,7 +1016,7 @@ class Wikidata(unittest.TestCase):
 
     def test_cut_or_oversized_answers_become_page_errors(self):
         good = json.dumps({"results": {"bindings": []}}).encode()
-        answers = [b'{"results": {"bindi', icon_pack.IconPackError("too large"), b"[1", b"[1"]
+        answers = [b'{"results": {"bindi', icon_pack.IconPackError("too large"), b"[1", TimeoutError("timed out")]
         calls = []
 
         def fetcher(url, limit, accept="*/*"):
@@ -1024,12 +1025,12 @@ class Wikidata(unittest.TestCase):
             if isinstance(answer, Exception):
                 raise answer
             return answer
-        # Page 1: cut, then too large: an error. Page 2: cut twice: an error, two in a row, so the run
+        # Page 1: cut, then too large: an error. Page 2: cut, then timed out: an error, two in a row, so the run
         # stops and still writes its record.
         record = icon_pack.fetch_wikidata(self.tmp / "w", icon_pack.Blocklist(), [], fetcher=fetcher, page_size=2)
         self.assertEqual(len(calls), 4)
         self.assertEqual(record["page_errors"], ["sparql offset 0: too large",
-                                                 "sparql offset 2: Expecting ',' delimiter: line 1 column 3 (char 2)"])
+                                                 "sparql offset 2: timed out"])
         # One retry is enough when the second answer is whole.
         answers[:] = [b'{"results": {"bindi', good]
         calls.clear()

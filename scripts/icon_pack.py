@@ -767,7 +767,7 @@ def icon_links(html, base):
     return found, manifest
 
 
-def fetch_url(url, limit, headers=None):
+def fetch_url(url, limit, headers=None, timeout=20):
     """(bytes, final URL after redirects), https only. `headers` replace or add to the defaults."""
     import http.client
     import urllib.request
@@ -775,7 +775,7 @@ def fetch_url(url, limit, headers=None):
         raise IconPackError("not https")
     request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*", **(headers or {})})
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             final = response.geturl()
             if not final.startswith("https://"):
                 raise IconPackError("redirected off https")
@@ -1286,6 +1286,7 @@ COMMONS_JSON_LIMIT = 4 * 1024 * 1024
 # The per-icon download caps of the other sources: SVG text, and a raster image as `site_icon` takes it.
 MAX_RASTER_BYTES = 2 * 1024 * 1024
 RETRY_ATTEMPTS = 5
+WIKI_TIMEOUT = 60
 RETRY_MAX_WAIT = 300
 # Commons LicenseShortName values kept: public domain and CC0 only (no per-icon attribution).
 KEPT_LICENSE = re.compile(r"public domain|pd|pd-[a-z0-9._-]+|cc0|cc0[ -]1\.0", re.I)
@@ -1352,7 +1353,8 @@ def with_retries(call, sleep=None, attempts=RETRY_ATTEMPTS):
 
 def wiki_get(url, limit, accept="*/*", sleep=None):
     """GET from a Wikimedia host through `fetch_url` (https only), with WIKI_UA and retries."""
-    return with_retries(lambda: fetch_url(url, limit, {"User-Agent": WIKI_UA, "Accept": accept})[0], sleep)
+    # A SPARQL page can take tens of seconds on a busy endpoint.
+    return with_retries(lambda: fetch_url(url, limit, {"User-Agent": WIKI_UA, "Accept": accept}, WIKI_TIMEOUT)[0], sleep)
 
 
 def wikidata_query(limit, offset):
@@ -1504,12 +1506,13 @@ def fetch_wikidata(out, blocklist, platforms, fetcher=None, page_size=WIKIDATA_P
     page_errors = []
 
     def read_json(url, limit, accept, what):
-        """The parsed response, asked twice at most when it is cut short (bad JSON on a 200) or over
-        the cap; None (and a page error) when the second answer is no better."""
+        """The parsed response, asked twice at most when it is cut short (bad JSON on a 200), over
+        the cap or not answered after the fetcher's own retries (timeout, connection); None (and a
+        page error) when the second answer is no better."""
         for attempt in range(2):
             try:
                 return json.loads(fetcher(url, limit, accept))
-            except (ValueError, IconPackError) as error:
+            except (ValueError, IconPackError, OSError) as error:
                 if attempt == 1:
                     page_errors.append(f"{what}: {str(error)[:200]}")
         return None
