@@ -304,7 +304,7 @@ fn detail_text(d: &Detail) -> String {
         Detail::KeyBits { algorithm, bits } => format!("{algorithm} {bits} bits"),
         Detail::Age { days } => format!("{days} days"),
         Detail::Duplicate { other } => format!("duplicate of {other}"),
-        Detail::Site { documentation } => match documentation {
+        Detail::Site { documentation, .. } => match documentation {
             Some(url) => format!("documentation: {url}"),
             None => String::new(),
         },
@@ -547,13 +547,19 @@ mod tests {
         );
         assert_eq!(
             detail_text(&Detail::Site {
-                documentation: Some("https://example.com/2fa".into())
+                documentation: Some("https://example.com/2fa".into()),
+                host: "example.com".into(),
+                settings_url: None,
+                recipe: false,
             }),
             "documentation: https://example.com/2fa"
         );
         assert_eq!(
             detail_text(&Detail::Site {
-                documentation: None
+                documentation: None,
+                host: "example.com".into(),
+                settings_url: None,
+                recipe: false,
             }),
             ""
         );

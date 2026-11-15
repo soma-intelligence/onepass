@@ -181,6 +181,12 @@ pub enum Detail {
     /// Where the site documents its 2FA or passkey setup.
     Site {
         documentation: Option<String>,
+        /// The item host that matched.
+        host: String,
+        /// Settings page of the setup block for this check.
+        settings_url: Option<String>,
+        /// The setup block carries a recipe.
+        recipe: bool,
     },
 }
 

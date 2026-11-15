@@ -297,7 +297,7 @@ mod tests {
             breach_catalog: None,
         };
         let dir = sites(&options).unwrap();
-        assert!(dir.lookup("exemple.fr").unwrap().totp);
+        assert!(dir.lookup("exemple.fr").unwrap().1.totp);
     }
 
     #[test]
