@@ -1,23 +1,22 @@
 -- OnePass mailbox: a join request is rewritten only by the credential that
--- wrote it first (OnePass Business plan C, ruling R38 (a)).
+-- wrote it first (OnePass Business plan C, rulings R38 (a) and R42).
 --
 -- An organisation member could copy another member's mailbox credential
 -- into its own join request, or rewrite its own request once accepted, and
 -- so steer the org mailbox access that admins derive from the stored
--- requests. A writer limited by put_kinds (an invitation link's credential,
--- a member's own Write credential) may no longer replace a live kind 32 row
--- that another credential wrote first.
+-- requests. No credential (manager included) may replace a live kind 32
+-- row that another credential wrote first; a manager may still delete it
+-- (Decline), and the member posts again.
 --   records             new column first_writer (credential id, 16 bytes,
 --                       null for rows written before this migration). Set
 --                       by api_commit when a put creates the key or lands
 --                       on a tombstone; kept by rewrites and deletes.
 --   api_commit          under the mailbox lock, after the put_kinds check: a
---                       put of kind 32 by a writer with put_kinds on a live
---                       row whose first_writer is not the caller (null
---                       included, fail closed) is the in-band `forbidden`;
---                       the whole batch writes nothing. A manager (role 3)
---                       and an unlimited writer are not bound. Everything
---                       else is the api_commit of 20261113120000.
+--                       put of kind 32 on a live row whose first_writer is
+--                       not the caller (null included, fail closed) is the
+--                       in-band `forbidden`, whatever the caller's role; the
+--                       whole batch writes nothing. Deletes are unchanged.
+--                       Everything else is the api_commit of 20261113120000.
 --
 -- Replaced (same signature and grants): api_commit. New, owner only:
 -- _writer_bound_kind. New column: records.first_writer.
@@ -198,9 +197,9 @@ begin
                 select 1 from unnest(p_kinds, p_ops) as o (k, op)
                 where o.op = 2 or get_bit(v_put_kinds, o.k) = 0) then
             v_err := 'forbidden';
-        elsif v_put_kinds is not null and exists (
-                -- A limited writer never replaces a live join request
-                -- another credential wrote first (or one of unknown writer).
+        elsif exists (
+                -- No caller replaces a live join request another
+                -- credential wrote first (or one of unknown writer), R42.
                 select 1 from unnest(p_kinds, p_ids, p_ops) as o (k, i, op)
                 join onepass_mailbox.records r on r.mailbox_id = p_mailbox and r.kind = o.k and r.id = o.i
                 where o.op = 1 and onepass_mailbox._writer_bound_kind(o.k) and not r.deleted

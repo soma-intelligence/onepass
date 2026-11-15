@@ -651,18 +651,17 @@ impl State {
         {
             return refused(ErrorCode::Forbidden);
         }
-        // A limited writer replaces a live join request only when it wrote
-        // it first (migration 20261114130000).
-        if put_kinds.is_some()
-            && ops.iter().any(|o| {
-                matches!(o.op, Op::Put { .. })
-                    && o.kind == ORG_JOIN_KIND
-                    && mbx
-                        .records
-                        .get(&(o.kind, o.id))
-                        .is_some_and(|r| r.body.is_some() && r.first_writer != Some(*caller))
-            })
-        {
+        // Any caller, manager included, replaces a live join request only
+        // when it wrote it first (migration 20261114130000, R42). Deletes
+        // are not bound.
+        if ops.iter().any(|o| {
+            matches!(o.op, Op::Put { .. })
+                && o.kind == ORG_JOIN_KIND
+                && mbx
+                    .records
+                    .get(&(o.kind, o.id))
+                    .is_some_and(|r| r.body.is_some() && r.first_writer != Some(*caller))
+        }) {
             return refused(ErrorCode::Forbidden);
         }
         if ops.len() > limits.max_commit_ops as usize {

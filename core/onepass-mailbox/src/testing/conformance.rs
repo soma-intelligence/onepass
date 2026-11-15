@@ -1027,10 +1027,10 @@ fn limited_writer_kinds(t: &mut dyn ConformanceTarget) {
     );
 }
 
-/// A writer limited by `put_kinds` replaces a live join request (kind 32)
-/// only when it wrote it first: another limited writer is `Forbidden` and
-/// its whole batch writes nothing. A manager is not bound and leaves the
-/// first writer in place; once deleted, the key is anyone's again.
+/// A live join request (kind 32) is replaced only by the credential that
+/// wrote it first: any other caller, a manager or an unlimited writer
+/// included (R42), is `Forbidden` and its whole batch writes nothing. A
+/// manager may delete it; once deleted, the key is anyone's again.
 fn join_request_keeps_its_first_writer(t: &mut dyn ConformanceTarget) {
     let a = owner(t);
     let join = Some(put_kinds_of(&[32]));
@@ -1065,12 +1065,16 @@ fn join_request_keeps_its_first_writer(t: &mut dyn ConformanceTarget) {
         a.record(32, id(2)).expect("read").is_none(),
         "the batch wrote nothing"
     );
-    applied(a.commit(vec![at(1, Some(2), b"manager")]), "a manager");
-    forbidden(
-        l2.commit(vec![at(1, Some(3), b"l2")]),
-        "still bound to the first writer",
+    // R42: a manager and an unlimited writer are bound too.
+    let w = granted(t, a.as_ref(), CredentialRole::Write, None);
+    forbidden(a.commit(vec![at(1, Some(2), b"manager")]), "a manager");
+    forbidden(w.commit(vec![at(1, Some(2), b"w")]), "an unlimited writer");
+    assert_eq!(
+        a.record(32, id(1)).expect("read").map(|r| r.seq),
+        Some(2),
+        "the refused rewrites wrote nothing"
     );
-    applied(l1.commit(vec![at(1, Some(3), b"l1")]), "the first writer");
+    applied(l1.commit(vec![at(1, Some(2), b"l1")]), "the first writer");
     let gone = CommitOp {
         kind: 32,
         id: id(1),
@@ -1083,7 +1087,7 @@ fn join_request_keeps_its_first_writer(t: &mut dyn ConformanceTarget) {
         "a put over the tombstone",
     );
     forbidden(
-        l1.commit(vec![at(1, Some(6), b"l1")]),
+        l1.commit(vec![at(1, Some(5), b"l1")]),
         "the old first writer",
     );
 }

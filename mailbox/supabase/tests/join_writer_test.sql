@@ -1,6 +1,6 @@
 -- A join request (kind 32) is rewritten only by the credential that wrote it
--- first, when the writer is limited by put_kinds (migration 20261114130000,
--- plan C ruling R38 (a)). Starts as the harness superuser, inside a
+-- first, whatever the caller's role; a manager may still delete it
+-- (migration 20261114130000, plan C rulings R38 (a) and R42). Starts as the harness superuser, inside a
 -- transaction the harness rolls back; calls under test run as
 -- onepass_mailbox_api, state is read back as the superuser.
 
@@ -102,46 +102,48 @@ select onepass_test.ok(
     (select s from jw_r3) = 'forbidden' and onepass_test.jw_row(32, 7) is null,
     'forbidden_rewrite_fails_the_whole_batch');
 
--- A manager and an unlimited writer are not bound; the first writer stays.
+-- A manager and an unlimited writer are bound too (R42): forbidden, nothing
+-- written, the first writer stays.
 set local role onepass_mailbox_api;
 create temporary table jw_r4 on commit drop as
-select onepass_test.jw_put('m', 32, 1, 2, '\x03') as a, onepass_test.jw_put('w', 32, 1, 3, '\x04') as b;
-create temporary table jw_r5 on commit drop as select onepass_test.jw_put('l2', 32, 1, 4, '\x05') as s;
+select onepass_test.jw_put('m', 32, 1, 2, '\x03') as a, onepass_test.jw_put('w', 32, 1, 2, '\x04') as b;
 reset role;
 select onepass_test.ok(
-    (select a = 'ok' and b = 'ok' from jw_r4) and (select s from jw_r5) = 'forbidden'
-    and (onepass_test.jw_row(32, 1)).data = '\x04'
+    (select a = 'forbidden' and b = 'forbidden' from jw_r4)
+    and (onepass_test.jw_row(32, 1)).data = '\x02'
+    and (onepass_test.jw_row(32, 1)).seq = 2
     and (onepass_test.jw_row(32, 1)).first_writer = onepass_test.jw_cid('l1'),
-    'manager_and_unlimited_writer_rewrite_first_writer_kept');
+    'manager_and_unlimited_writer_cannot_rewrite_a_join_request');
 
--- A new key is anyone's first; after a delete the key starts again.
+-- A new key is anyone's first; a manager deletes another's request, then
+-- the key starts again.
 set local role onepass_mailbox_api;
 create temporary table jw_r6 on commit drop as
-select onepass_test.jw_put('l2', 32, 2, null, '\x21') as a, onepass_test.jw_put('l1', 32, 2, 5, '\x22') as b,
+select onepass_test.jw_put('l2', 32, 2, null, '\x21') as a, onepass_test.jw_put('l1', 32, 2, 3, '\x22') as b,
        onepass_test.jw_del('m', 32, 2) as c, onepass_test.jw_put('l1', 32, 2, null, '\x23') as d,
-       onepass_test.jw_put('l2', 32, 2, 7, '\x24') as e;
+       onepass_test.jw_put('l2', 32, 2, 5, '\x24') as e;
 reset role;
 select onepass_test.ok(
     (select a = 'ok' and b = 'forbidden' and c = 'ok' and d = 'ok' and e = 'forbidden' from jw_r6)
     and (onepass_test.jw_row(32, 2)).data = '\x23'
     and (onepass_test.jw_row(32, 2)).first_writer = onepass_test.jw_cid('l1'),
-    'put_over_a_tombstone_takes_a_new_first_writer');
+    'manager_deletes_and_a_put_over_the_tombstone_takes_a_new_first_writer');
 
--- A row of unknown writer (from before the migration) binds every limited
--- writer.
+-- A row of unknown writer (from before the migration) binds every caller.
 update onepass_mailbox.records set first_writer = null
 where mailbox_id = onepass_test.jw_mbx() and kind = 32 and id = onepass_test.nonce(1);
 set local role onepass_mailbox_api;
-create temporary table jw_r7 on commit drop as select onepass_test.jw_put('l1', 32, 1, 4, '\x06') as s;
+create temporary table jw_r7 on commit drop as
+select onepass_test.jw_put('l1', 32, 1, 2, '\x06') as a, onepass_test.jw_put('m', 32, 1, 2, '\x07') as b;
 reset role;
-select onepass_test.ok((select s from jw_r7) = 'forbidden' and (onepass_test.jw_row(32, 1)).data = '\x04',
-    'unknown_first_writer_binds_limited_writers');
+select onepass_test.ok((select a = 'forbidden' and b = 'forbidden' from jw_r7) and (onepass_test.jw_row(32, 1)).data = '\x02',
+    'unknown_first_writer_binds_every_caller');
 
 -- Other kinds are unchanged: a limited writer rewrites a kind 14 row it did
 -- not write.
 set local role onepass_mailbox_api;
 create temporary table jw_r8 on commit drop as
-select onepass_test.jw_put('w', 14, 3, null, '\x31') as a, onepass_test.jw_put('k', 14, 3, 8, '\x32') as b;
+select onepass_test.jw_put('w', 14, 3, null, '\x31') as a, onepass_test.jw_put('k', 14, 3, 6, '\x32') as b;
 reset role;
 select onepass_test.ok((select a = 'ok' and b = 'ok' from jw_r8) and (onepass_test.jw_row(14, 3)).data = '\x32',
     'other_kinds_are_not_writer_bound');
