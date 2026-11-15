@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use onepass_ffi::watchtower::{FfiPwnedStatus, FfiRangeResponse, FfiWatchtowerOptions};
+use onepass_ffi::watchtower::{
+    FfiPwnedStatus, FfiRangeResponse, FfiWatchtowerOptions, site_pack_version, verify_site_pack,
+};
 use onepass_ffi::*;
 use tempfile::TempDir;
 
@@ -68,6 +70,7 @@ fn options(ranges: Option<Vec<FfiRangeResponse>>) -> FfiWatchtowerOptions {
         passkeys_directory: None,
         excluded_vault_ids: vec![],
         breach_catalog: None,
+        site_pack: None,
     }
 }
 
@@ -127,20 +130,203 @@ fn breach_lookup_runs_in_two_passes_with_prefixes_only() {
     assert!(second.score < first.score);
 }
 
+const SIGNED: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../onepass-core/tests/fixtures/site-pack/signed/"
+);
+
+fn signed(name: &str) -> Vec<u8> {
+    std::fs::read(format!("{SIGNED}{name}")).unwrap()
+}
+
+fn signed_key() -> Vec<u8> {
+    let text = String::from_utf8(signed("public-key.b64")).unwrap();
+    data_encoding::BASE64
+        .decode(text.trim().as_bytes())
+        .unwrap()
+}
+
+fn signed_pack() -> Vec<u8> {
+    signed("onepass-sites-2026112001.json")
+}
+
+fn link<'a>(
+    report: &'a watchtower::FfiWatchtowerReport,
+    check: &str,
+) -> &'a [watchtower::FfiSiteLink] {
+    &report
+        .checks
+        .iter()
+        .find(|c| c.check == check)
+        .unwrap()
+        .site_links
+}
+
 #[test]
-fn sites_directory_enables_2fa_and_passkey_checks() {
+fn site_pack_enables_2fa_and_passkey_checks() {
     let fx = fixture();
-    let item = login(&fx, "A", "Tq7#vLr9-pXw2!mZ8kEa-Hs4", "https://exemple.fr");
+    let item = login(&fx, "A", "Tq7#vLr9-pXw2!mZ8kEa-Hs4", "https://dropbox.com");
     let mut opts = options(None);
-    opts.twofa_directory = Some(br#"{"exemple.fr":{"methods":["totp"]}}"#.to_vec());
-    opts.passkeys_directory = Some(br#"{"exemple.fr":{"passwordless":"allowed"}}"#.to_vec());
+    opts.site_pack = Some(signed_pack());
     let report = fx.session.watchtower_report(opts).unwrap();
     assert!(report.sites_checked);
-    assert_eq!(ids(&report, "missing_2fa"), std::slice::from_ref(&item.id));
     assert_eq!(
         ids(&report, "passkey_available"),
         std::slice::from_ref(&item.id)
     );
+    // dropbox.com lists no 2FA method in the pack.
+    assert!(ids(&report, "missing_2fa").is_empty());
+
+    let other = login(&fx, "B", "Tq7#vLr9-pXw2!mZ8kEa-Hs4", "https://ovh.com");
+    let mut opts = options(None);
+    opts.site_pack = Some(signed_pack());
+    let report = fx.session.watchtower_report(opts).unwrap();
+    assert_eq!(ids(&report, "missing_2fa"), std::slice::from_ref(&other.id));
+}
+
+#[test]
+fn site_pack_wins_over_the_old_documents() {
+    let fx = fixture();
+    login(&fx, "A", "Tq7#vLr9-pXw2!mZ8kEa-Hs4", "https://exemple.fr");
+    let mut opts = options(None);
+    opts.twofa_directory = Some(br#"{"exemple.fr":{"methods":["totp"]}}"#.to_vec());
+    opts.site_pack = Some(signed_pack());
+    let report = fx.session.watchtower_report(opts).unwrap();
+    assert!(ids(&report, "missing_2fa").is_empty());
+    // Without a pack the old documents still work.
+    let mut opts = options(None);
+    opts.twofa_directory = Some(br#"{"exemple.fr":{"methods":["totp"]}}"#.to_vec());
+    let report = fx.session.watchtower_report(opts).unwrap();
+    assert!(report.sites_checked);
+    assert_eq!(ids(&report, "missing_2fa").len(), 1);
+}
+
+#[test]
+fn site_links_carry_host_urls_and_recipe() {
+    let fx = fixture();
+    let gh = login(
+        &fx,
+        "G",
+        "Tq7#vLr9-pXw2!mZ8kEa-Hs4",
+        "https://github.com/login",
+    );
+    let ovh = login(&fx, "O", "Tq7#vLr9-pXw2!mZ8kEa-Hs4", "https://ovh.com");
+    let mut opts = options(None);
+    opts.site_pack = Some(signed_pack());
+    let report = fx.session.watchtower_report(opts).unwrap();
+
+    let twofa = link(&report, "missing_2fa");
+    let mut want = vec![gh.id.clone(), ovh.id.clone()];
+    want.sort();
+    assert_eq!(
+        twofa.iter().map(|l| l.item_id.clone()).collect::<Vec<_>>(),
+        want
+    );
+    let gh_link = twofa.iter().find(|l| l.item_id == gh.id).unwrap();
+    assert_eq!(gh_link.host, "github.com");
+    assert_eq!(
+        gh_link.settings_url.as_deref(),
+        Some("https://github.com/settings/security")
+    );
+    assert!(
+        gh_link
+            .help_url
+            .as_deref()
+            .unwrap()
+            .starts_with("https://docs.github.com/")
+    );
+    assert!(gh_link.has_recipe);
+    let ovh_link = twofa.iter().find(|l| l.item_id == ovh.id).unwrap();
+    assert_eq!(ovh_link.settings_url, None);
+    assert_eq!(ovh_link.help_url, None);
+    assert!(!ovh_link.has_recipe);
+
+    // The passkey setup block of github.com has a URL and no steps.
+    let keys = link(&report, "passkey_available");
+    assert_eq!(keys.len(), 1);
+    let k = keys.first().unwrap();
+    assert_eq!(k.item_id, gh.id);
+    assert_eq!(
+        k.settings_url.as_deref(),
+        Some("https://github.com/settings/security")
+    );
+    assert!(!k.has_recipe);
+    // Other checks carry no links.
+    assert!(link(&report, "weak").is_empty());
+}
+
+#[test]
+fn bad_site_pack_means_no_site_checks() {
+    let fx = fixture();
+    login(&fx, "A", "Tq7#vLr9-pXw2!mZ8kEa-Hs4", "https://github.com");
+    let mut opts = options(None);
+    opts.site_pack = Some(b"not json".to_vec());
+    let report = fx.session.watchtower_report(opts).unwrap();
+    assert!(!report.sites_checked);
+    assert!(ids(&report, "missing_2fa").is_empty());
+    assert!(link(&report, "missing_2fa").is_empty());
+}
+
+#[test]
+fn verify_site_pack_accepts_the_signed_vector() {
+    let version = verify_site_pack(
+        signed("site-pack-manifest.json"),
+        signed("site-pack-manifest.json.sig"),
+        signed_pack(),
+        signed_key(),
+    )
+    .unwrap();
+    assert_eq!(version, 2026112001);
+    assert_eq!(site_pack_version(signed_pack()).unwrap(), 2026112001);
+}
+
+#[test]
+fn verify_site_pack_refuses_tampering() {
+    let manifest = signed("site-pack-manifest.json");
+    let sig = signed("site-pack-manifest.json.sig");
+    let key = signed_key();
+    let integrity = |r: Result<u64, OnePassError>| matches!(r, Err(OnePassError::Integrity { kind }) if kind == "site_pack");
+
+    // One byte of the pack changed: size kept, hash differs.
+    let mut pack = signed_pack();
+    let at = pack.iter().position(|b| *b == b'g').unwrap();
+    pack[at] = b'h';
+    assert!(integrity(verify_site_pack(
+        manifest.clone(),
+        sig.clone(),
+        pack,
+        key.clone()
+    )));
+    // A pack of another size.
+    let mut longer = signed_pack();
+    longer.push(b' ');
+    assert!(integrity(verify_site_pack(
+        manifest.clone(),
+        sig.clone(),
+        longer,
+        key.clone()
+    )));
+    // A manifest that was not signed.
+    let mut forged = manifest.clone();
+    forged.push(b' ');
+    assert!(integrity(verify_site_pack(
+        forged,
+        sig.clone(),
+        signed_pack(),
+        key.clone()
+    )));
+    // Another key.
+    assert!(integrity(verify_site_pack(
+        manifest,
+        sig,
+        signed_pack(),
+        vec![7u8; 32]
+    )));
+    // A bundled pack that is not a pack.
+    assert!(matches!(
+        site_pack_version(b"nope".to_vec()),
+        Err(OnePassError::InvalidInput { what }) if what == "site_pack"
+    ));
 }
 
 #[test]

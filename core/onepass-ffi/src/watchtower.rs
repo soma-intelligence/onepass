@@ -26,10 +26,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use onepass_core::generator;
 use onepass_core::model::{FieldValue, Item};
+use onepass_core::site_pack;
 use onepass_core::watchtower::{
-    BreachCatalog, Check, Options, PwnedStatus, RangeSource, SiteDirectory, Sources, analyze,
+    BreachCatalog, Check, Detail, Options, PwnedStatus, RangeSource, SiteDirectory, Sources,
+    analyze,
 };
-use onepass_core::{Error, Id};
+use onepass_core::{Error, Id, IntegrityError};
 use time::OffsetDateTime;
 
 use crate::convert::{id_hex, parse_id};
@@ -58,6 +60,7 @@ pub struct FfiWatchtowerOptions {
     /// at hand; a prefix without one is reported in `missing_prefixes`.
     pub ranges: Option<Vec<FfiRangeResponse>>,
     /// 2fa.directory v4 `all.json`. Without it, `missing_2fa` does not run.
+    /// Ignored when `site_pack` parses; goes away with the Swift callers.
     pub twofa_directory: Option<Vec<u8>>,
     /// passkeys-api v1 `all.json`, merged into the 2FA directory (or alone).
     pub passkeys_directory: Option<Vec<u8>>,
@@ -66,6 +69,11 @@ pub struct FfiWatchtowerOptions {
     /// Have I Been Pwned `/api/v3/breaches` (the whole public catalog).
     /// Without it, or when it does not parse, `breached_site` does not run.
     pub breach_catalog: Option<Vec<u8>>,
+    /// A site pack (`site_pack::parse` format), already verified by the
+    /// caller. When it parses it is the only site source (the two documents
+    /// above are ignored); when it does not, no site check runs.
+    #[uniffi(default = None)]
+    pub site_pack: Option<Vec<u8>>,
 }
 
 /// Breach lookup outcome.
@@ -86,6 +94,23 @@ pub struct FfiWatchtowerCheck {
     pub findings: u32,
     /// Distinct items concerned, without hyphens, sorted.
     pub item_ids: Vec<String>,
+    /// Where each item of `missing_2fa` and `passkey_available` can set the
+    /// feature up, one per item, sorted by item id. Empty for other checks.
+    #[uniffi(default = [])]
+    pub site_links: Vec<FfiSiteLink>,
+}
+
+/// The site facts behind one `missing_2fa` or `passkey_available` finding.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiSiteLink {
+    /// Item id, without hyphens.
+    pub item_id: String,
+    /// The item host that matched the pack.
+    pub host: String,
+    pub settings_url: Option<String>,
+    pub help_url: Option<String>,
+    /// The pack carries a non-empty recipe for this check.
+    pub has_recipe: bool,
 }
 
 #[derive(uniffi::Record, Debug, Clone)]
@@ -125,6 +150,13 @@ impl RangeSource for HeldRanges {
 }
 
 fn sites(options: &FfiWatchtowerOptions) -> Option<SiteDirectory> {
+    if let Some(bytes) = options.site_pack.as_deref() {
+        // A pack that does not parse means no site checks, never an error.
+        return site_pack::parse(bytes)
+            .ok()
+            .map(|pack| SiteDirectory::from_site_pack(&pack))
+            .filter(|d| !d.is_empty());
+    }
     let mut dir = match options.twofa_directory.as_deref() {
         Some(json) => SiteDirectory::from_2fa_directory(json).ok(),
         None => None,
@@ -204,19 +236,45 @@ pub(crate) fn report(
         },
     );
     let mut by_check: BTreeMap<Check, (u32, BTreeSet<Id>)> = BTreeMap::new();
+    let mut links: BTreeMap<Check, BTreeMap<Id, FfiSiteLink>> = BTreeMap::new();
     for f in &core.findings {
         let entry = by_check.entry(f.check).or_default();
         entry.0 = entry.0.saturating_add(1);
         entry.1.insert(f.item_id);
+        if let Detail::Site {
+            documentation,
+            host,
+            settings_url,
+            recipe,
+        } = &f.detail
+        {
+            links
+                .entry(f.check)
+                .or_default()
+                .entry(f.item_id)
+                .or_insert_with(|| FfiSiteLink {
+                    item_id: id_hex(f.item_id),
+                    host: host.clone(),
+                    settings_url: settings_url.clone(),
+                    help_url: documentation.clone(),
+                    has_recipe: *recipe,
+                });
+        }
     }
     let checks = Check::ALL
         .iter()
         .map(|check| {
             let (findings, ids) = by_check.remove(check).unwrap_or_default();
+            let mut site_links: Vec<FfiSiteLink> = links
+                .remove(check)
+                .map(|m| m.into_values().collect())
+                .unwrap_or_default();
+            site_links.sort_by(|a, b| a.item_id.cmp(&b.item_id));
             FfiWatchtowerCheck {
                 check: check.id().to_owned(),
                 findings,
                 item_ids: ids.into_iter().map(id_hex).collect(),
+                site_links,
             }
         })
         .collect();
@@ -269,6 +327,40 @@ impl Session {
     }
 }
 
+/// Verifies a downloaded site pack against the manifest, its signature and
+/// the 32-byte Ed25519 `public_key`, and returns its version. A bad
+/// signature, size or hash is `Integrity { kind: "site_pack" }`; a pack that
+/// is signed but malformed is `InvalidInput { what: "site_pack" }`.
+#[uniffi::export]
+pub fn verify_site_pack(
+    manifest: Vec<u8>,
+    signature: Vec<u8>,
+    pack: Vec<u8>,
+    public_key: Vec<u8>,
+) -> Result<u64, OnePassError> {
+    match site_pack::verify_signed(&manifest, &signature, &pack, &public_key) {
+        Ok(parsed) => Ok(parsed.version),
+        Err(Error::Integrity(IntegrityError::Signature | IntegrityError::ManifestItemMismatch)) => {
+            Err(OnePassError::Integrity {
+                kind: "site_pack".to_owned(),
+            })
+        }
+        Err(_) => Err(OnePassError::InvalidInput {
+            what: "site_pack".to_owned(),
+        }),
+    }
+}
+
+/// Version of an already verified pack (the bundled copy or the cache).
+#[uniffi::export]
+pub fn site_pack_version(pack: Vec<u8>) -> Result<u64, OnePassError> {
+    site_pack::parse(&pack)
+        .map(|p| p.version)
+        .map_err(|_| OnePassError::InvalidInput {
+            what: "site_pack".to_owned(),
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,6 +387,7 @@ mod tests {
             passkeys_directory: Some(b"not json".to_vec()),
             excluded_vault_ids: vec![],
             breach_catalog: None,
+            site_pack: None,
         };
         let dir = sites(&options).unwrap();
         assert!(dir.lookup("exemple.fr").unwrap().1.totp);
@@ -313,6 +406,7 @@ mod tests {
             passkeys_directory: None,
             excluded_vault_ids: vec![],
             breach_catalog: None,
+            site_pack: None,
         };
         let count = |since| {
             let r = report(std::slice::from_ref(&key), &options, since);

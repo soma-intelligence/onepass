@@ -786,22 +786,17 @@ fn watchtower_online_uses_fake_curl() {
         )
         .unwrap();
     }
-    fs::write(
-        fake.path().join(curl_fake_name(
-            false,
-            "https://api.2fa.directory/v4/all.json",
-        )),
-        r#"{"one.example.com": {"methods": ["totp"]}}"#,
-    )
-    .unwrap();
-    fs::write(
-        fake.path().join(curl_fake_name(
-            false,
-            "https://passkeys-api.2fa.directory/v1/all.json",
-        )),
-        r#"{"two.example.org": {"passwordless": "allowed"}}"#,
-    )
-    .unwrap();
+    // The old site catalogs have answers, and must never be fetched.
+    for url in [
+        "https://api.2fa.directory/v4/all.json",
+        "https://passkeys-api.2fa.directory/v1/all.json",
+    ] {
+        fs::write(
+            fake.path().join(curl_fake_name(false, url)),
+            r#"{"one.example.com": {"methods": ["totp"]}}"#,
+        )
+        .unwrap();
+    }
     // No answer for the breach catalog: that source is absent, reported.
 
     let mut c = onepass(tmp.path());
@@ -811,8 +806,9 @@ fn watchtower_online_uses_fake_curl() {
     assert_no_password(&out);
     let report = json(&out);
     assert_eq!(report["pwned"], "checked", "{}", out.stderr);
-    assert_eq!(report["sites_checked"], true);
+    assert_eq!(report["sites_checked"], false);
     assert_eq!(report["breaches_checked"], false);
+    assert!(!out.stderr.contains("directory"), "{}", out.stderr);
     assert!(
         out.stderr.contains("breach catalog unavailable"),
         "{}",
@@ -824,11 +820,9 @@ fn watchtower_online_uses_fake_curl() {
         "{checks:?}"
     );
     assert!(
-        checks.contains(&("missing_2fa".into(), "Reuse One".into())),
-        "{checks:?}"
-    );
-    assert!(
-        checks.contains(&("passkey_available".into(), "Reuse Two".into())),
+        !checks
+            .iter()
+            .any(|(c, _)| c == "missing_2fa" || c == "passkey_available"),
         "{checks:?}"
     );
 
@@ -840,6 +834,86 @@ fn watchtower_online_uses_fake_curl() {
     let report = json(&output(c));
     assert_eq!(report["pwned"], "unavailable");
     assert_eq!(report["sites_checked"], false);
+}
+
+#[test]
+fn watchtower_site_pack_option() {
+    let tmp = watchtower_dir();
+    let pack = tempfile::tempdir().unwrap();
+    let file = pack.path().join("pack.json");
+    fs::write(
+        &file,
+        r#"{"format":1,"version":7,"sites":{
+            "example.com":{"twofa":["totp"],"passkey":"signin",
+              "help":"https://example.com/help",
+              "setup_totp":{"url":"https://example.com/security","steps":[],
+                "verified":{"date":"2026-11-20","browser":"chromium"}}}}}"#,
+    )
+    .unwrap();
+    let out = run(
+        tmp.path(),
+        &[
+            "watchtower",
+            "--offline",
+            "--site-pack",
+            path_str(&file),
+            "--json",
+        ],
+    );
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let report = json(&out);
+    assert_eq!(report["sites_checked"], true);
+    let checks = checks_of(&report);
+    assert!(
+        checks.contains(&("missing_2fa".into(), "Reuse One".into())),
+        "{checks:?}"
+    );
+    assert!(
+        checks.contains(&("passkey_available".into(), "Reuse One".into())),
+        "{checks:?}"
+    );
+    let finding = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["check"] == "missing_2fa")
+        .unwrap();
+    assert_eq!(
+        finding["detail"]["settings_url"],
+        "https://example.com/security"
+    );
+    assert_eq!(finding["detail"]["recipe"], false);
+
+    let text = run(
+        tmp.path(),
+        &["watchtower", "--offline", "--site-pack", path_str(&file)],
+    );
+    assert_eq!(text.code, 0, "{}", text.stderr);
+    assert!(
+        text.stdout
+            .contains("settings: https://example.com/security"),
+        "{}",
+        text.stdout
+    );
+    assert!(
+        text.stdout
+            .contains("documentation: https://example.com/help"),
+        "{}",
+        text.stdout
+    );
+
+    // A file that is not a pack is a usage error.
+    fs::write(&file, "nope").unwrap();
+    let bad = run(
+        tmp.path(),
+        &["watchtower", "--offline", "--site-pack", path_str(&file)],
+    );
+    assert_eq!(bad.code, 1, "{}", bad.stderr);
+    assert!(
+        bad.stderr.contains("not a valid site pack"),
+        "{}",
+        bad.stderr
+    );
 }
 
 // ---- backup ----
