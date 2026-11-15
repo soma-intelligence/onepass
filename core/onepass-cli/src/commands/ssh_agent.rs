@@ -217,6 +217,7 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
         Arc::new(SystemClock),
     );
     guards.throttle = Throttle::new(limits);
+    let flusher = session.clone();
     let agent = Agent::new(
         SessionKeys(session, travel_changed.clone()),
         approver,
@@ -244,6 +245,12 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
             while !stop.load(Ordering::SeqCst) {
                 if SIGNALED.load(Ordering::SeqCst) || travel_changed.load(Ordering::SeqCst) {
                     stop.store(true, Ordering::SeqCst);
+                }
+                // The hourly key-use flush, under the session's own lock
+                // and the data directory lock as any request; a session
+                // busy with a request is tried again at the next poll.
+                if let Ok(mut s) = flusher.try_lock() {
+                    s.flush_key_uses_if_due();
                 }
                 thread::sleep(SIGNAL_POLL);
             }

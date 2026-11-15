@@ -1781,3 +1781,48 @@ fn key_use_totp_records_totp() {
     // The code itself is not in the log.
     assert!(!format!("{:?}", uses[0]).contains(code.stdout.trim()));
 }
+
+/// A use the CLI queued (a second read inside the hour) reaches the log at
+/// the start of a later CLI session once it is an hour old: the harness
+/// records two uses three hours ago (the second one queued), then any
+/// command that opens the vault flushes the queue.
+#[test]
+fn key_use_queue_flushed_at_cli_session_start() {
+    let tmp = fresh();
+    let d = tmp.path();
+    {
+        let key = SecretKey::parse(&shown_key(&template().account.stdout)).unwrap();
+        let store = SqliteStore::open(&d.join("vault.sqlite")).unwrap();
+        let mut repo = Repository::unlock(store, PASSWORD, &key, DeviceState::default()).unwrap();
+        let (vault, item) = repo
+            .vaults()
+            .unwrap()
+            .into_iter()
+            .find_map(|v| {
+                let i = repo
+                    .items(&v)
+                    .unwrap()
+                    .into_iter()
+                    .find(|i| i.title == "GitHub")?;
+                Some((v, i.id))
+            })
+            .unwrap();
+        let then = time::OffsetDateTime::now_utc() - time::Duration::hours(3);
+        for at in [then, then + time::Duration::minutes(1)] {
+            let u = repo.this_device_key_use(
+                KeyUseChannel::Cli,
+                KeyUseAction::Revealed,
+                "git",
+                "password",
+            );
+            repo.record_key_use(&vault, item, u, at).unwrap();
+        }
+        assert_eq!(repo.store().key_use_queue_rows(None).unwrap().len(), 1);
+    }
+    assert_eq!(key_uses(d, "GitHub")[0].count, 1);
+    let list = run(d, &["item", "list"]);
+    assert_eq!(list.code, 0, "{}", list.stderr);
+    let uses = key_uses(d, "GitHub");
+    assert_eq!(uses.len(), 1, "{uses:?}");
+    assert_eq!(uses[0].count, 2);
+}
