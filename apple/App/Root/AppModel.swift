@@ -109,8 +109,9 @@ final class AppModel {
     /// "Voir les éléments" of a Watchtower card: the list shows only these items (within
     /// `selection`, set to `.all`). Cleared by any other filter, a reveal or a lock.
     var watchtowerFilter: WatchtowerListFilter?
-    /// Watchtower report, computed off the main actor and kept until the data changes.
-    let watchtower = WatchtowerModel()
+    /// Watchtower report, computed off the main actor and kept until the data changes. Its site
+    /// checks read the site pack shipped in the app, or a newer signed one (docs/site-pack.md).
+    let watchtower = WatchtowerModel(sitePack: .live())
     /// Watch-only crypto balances of this account (spec 2026-11-02-crypto-watch). Emptied on lock.
     let cryptoWatch = CryptoWatch()
     /// "Are you travelling?" (spec 2026-11-02): learned places and the suggestion card.
@@ -414,6 +415,9 @@ final class AppModel {
         let icons = ItemIconResolver.live(settings: settings, custom: .vault { accounts.active })
         iconLoader = icons
         Task(priority: .utility) { await icons.maintainPack() }
+        // The site pack: a newer signed one at most once a week (never while its key is empty).
+        let sitePack = watchtower.sitePack
+        Task(priority: .utility) { await sitePack.refreshIfDue() }
         onboardingInProgress = session.state == .noAccount
         #if DEBUG
         demoPreparing = demo != nil && session.state == .noAccount

@@ -73,6 +73,7 @@
 		3BA390E406586A30AE2B1F1A /* SafeExitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01023E7F8B52E18C675B84F /* SafeExitViews.swift */; };
 		3DA9195F5E3C77FBE22E96EE /* HomeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5A4B3BD06C13AC7742D5DB /* HomeTab.swift */; };
 		3DE3CD55A4E8F4D47BBB186A /* TotpFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30039937E6F1542ACCE29B1D /* TotpFieldView.swift */; };
+		42700330B6EEC92BE7F45846 /* site-pack-manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = B6C0F7A8465CB2F22FBD375B /* site-pack-manifest.json */; };
 		4399475D3738EE8A726DE3BF /* OpenItemIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82760DEA71118ECB0D50446 /* OpenItemIntent.swift */; };
 		4465F72DEE3CAF7791B626F7 /* AccountChangeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDEA14A7E048E4F8837BDCA3 /* AccountChangeViews.swift */; };
 		45A42F714F279F1DECDF9060 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */; };
@@ -122,6 +123,7 @@
 		727572DCA29C624F6444CEEA /* SecretKeyScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */; };
 		7345B42DF21289CAABCA9089 /* VerifyContactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8235DE3F072DFB74641CC857 /* VerifyContactView.swift */; };
 		7465E409D50F89C2A535D645 /* AddPasskeyRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 218BF8191B2971D4ABBF3136 /* AddPasskeyRow.swift */; };
+		75AF7B61E81E77C5EF6CB528 /* onepass-sites.json in Resources */ = {isa = PBXBuildFile; fileRef = 57436CC6E87230730DA7FD2C /* onepass-sites.json */; };
 		77FD6100C463E6E202E2BD5A /* ItemEditorCardsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F681C8DC392DDAAA87C6219 /* ItemEditorCardsUITests.swift */; };
 		7A2B262E6969EE52D3FC0950 /* HostDeviceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C58541193889A75520499FE /* HostDeviceSheet.swift */; };
 		7AEA699FF3A88E00762246B2 /* EditorFieldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A28B0CFB737900012034BCE /* EditorFieldRow.swift */; };
@@ -467,6 +469,7 @@
 		530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEditorView.swift; sourceTree = "<group>"; };
 		556B5099E4A3256C41665C0F /* AccountMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountMenu.swift; sourceTree = "<group>"; };
 		568C27B38A48EE4F4ABCA00E /* WatchSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSettings.swift; sourceTree = "<group>"; };
+		57436CC6E87230730DA7FD2C /* onepass-sites.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "onepass-sites.json"; sourceTree = "<group>"; };
 		5979D283AD9B5116090CBA97 /* AddOtpSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddOtpSheet.swift; sourceTree = "<group>"; };
 		598C991D4D92485187F7DEBE /* ProfileUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileUITests.swift; sourceTree = "<group>"; };
 		5AAC5B8D38B4E80005624A80 /* CryptoSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoSettingsView.swift; sourceTree = "<group>"; };
@@ -550,6 +553,7 @@
 		B0C4A8E1F604636FF7658971 /* ShareVaultSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareVaultSheet.swift; sourceTree = "<group>"; };
 		B19AE94E6DFF90D6CABA8FD0 /* OnePassAutoFillUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OnePassAutoFillUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B6B6A1BAE0385A425AE55355 /* ItemZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemZoom.swift; sourceTree = "<group>"; };
+		B6C0F7A8465CB2F22FBD375B /* site-pack-manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "site-pack-manifest.json"; sourceTree = "<group>"; };
 		B7437BA2319C70755833CE44 /* OnePassSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OnePassSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B74B4BE394EB0A39B876CC0C /* ContactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactDetailView.swift; sourceTree = "<group>"; };
 		B8903B2CB9AEB2C38323B4CE /* AuditLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditLogView.swift; sourceTree = "<group>"; };
@@ -802,6 +806,7 @@
 				1BED4344A4AEAF8C1EBD5F94 /* NotificationService */,
 				6EFD3AF6EFDA445E47D0BC4C /* Packages */,
 				44509439EFA49F75D0DD1D1C /* SafariExtension */,
+				5B8EBD7EA9109D165F32F58F /* SitePack */,
 				5B8625C49FA65D1ED7468A5D /* Watch */,
 				69E6280029A59E04F4E9890E /* WatchWidgets */,
 				0509E2F506F523BC7E788AE2 /* Widgets */,
@@ -903,6 +908,15 @@
 			path = Watch;
 			sourceTree = "<group>";
 		};
+		5B8EBD7EA9109D165F32F58F /* SitePack */ = {
+			isa = PBXGroup;
+			children = (
+				57436CC6E87230730DA7FD2C /* onepass-sites.json */,
+				B6C0F7A8465CB2F22FBD375B /* site-pack-manifest.json */,
+			);
+			path = SitePack;
+			sourceTree = "<group>";
+		};
 		61037CBF9FBBBB926778B242 /* AppUITests */ = {
 			isa = PBXGroup;
 			children = (
@@ -912,8 +926,8 @@
 				8F681C8DC392DDAAA87C6219 /* ItemEditorCardsUITests.swift */,
 				DBF81D20C93E4B1F689F36D2 /* NoSaveSheetUITests.swift */,
 				A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */,
-				598C991D4D92485187F7DEBE /* ProfileUITests.swift */,
 				EE0A6F20B1C5A245D948C3C8 /* OpenAndSignInUITests.swift */,
+				598C991D4D92485187F7DEBE /* ProfileUITests.swift */,
 				5F1DA7C34CAC80C98F527B6B /* RunThroughUITests.swift */,
 				9EAD071C36B97EE03055B24A /* SafariAutofillUITests.swift */,
 				52A4C3E0C0617CEAB04F1977 /* SaveSheetWatch.swift */,
@@ -1667,6 +1681,8 @@
 				45A42F714F279F1DECDF9060 /* Localizable.xcstrings in Resources */,
 				A4381FA9F265F6360D1A4C49 /* PrivacyInfo.xcprivacy in Resources */,
 				D830BB8FBE565123BF120EC6 /* onepass-icons.bin in Resources */,
+				75AF7B61E81E77C5EF6CB528 /* onepass-sites.json in Resources */,
+				42700330B6EEC92BE7F45846 /* site-pack-manifest.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

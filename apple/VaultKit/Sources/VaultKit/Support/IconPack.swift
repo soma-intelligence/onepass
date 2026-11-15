@@ -509,22 +509,8 @@ public actor IconPackStore {
         return .updated(version: fresh.version)
     }
 
-    /// Written beside its place, then renamed over it: a reader sees the old pack or the new one.
     private func swapIn(_ data: Data) -> Bool {
-        let target = downloaded
-        let temporary = directory.appending(path: ".\(Self.packName).\(UUID().uuidString)")
-        do {
-            try data.write(to: temporary, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-            if FileManager.default.fileExists(atPath: target.path()) {
-                _ = try FileManager.default.replaceItemAt(target, withItemAt: temporary)
-            } else {
-                try FileManager.default.moveItem(at: temporary, to: target)
-            }
-            return true
-        } catch {
-            try? FileManager.default.removeItem(at: temporary)
-            return false
-        }
+        (try? PackDownload.swapIn(data, as: Self.packName, in: directory)) != nil
     }
 
     private func touch(_ url: URL) {
@@ -535,18 +521,8 @@ public actor IconPackStore {
         }
     }
 
-    /// HTTPS GET, 200 only, at most `limit` bytes (the declared length is checked first, the
-    /// downloaded file after).
     private func get(_ url: URL, limit: Int) async -> Data? {
-        guard url.scheme == "https",
-            let (file, response) = try? await session.download(from: url),
-            let http = response as? HTTPURLResponse, http.statusCode == 200,
-            http.expectedContentLength <= Int64(limit)
-        else { return nil }
-        defer { try? FileManager.default.removeItem(at: file) }
-        guard let size = (try? FileManager.default.attributesOfItem(atPath: file.path())[.size]) as? Int, size <= limit
-        else { return nil }
-        return try? Data(contentsOf: file)
+        try? await PackDownload.get(url, limit: limit, session: session)
     }
 
     /// No cookies, no cache, and time for a pack of a few megabytes on a slow line.

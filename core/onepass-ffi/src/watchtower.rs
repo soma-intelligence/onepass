@@ -59,19 +59,14 @@ pub struct FfiWatchtowerOptions {
     /// `None`: breach lookups off (status `disabled`). `Some`: the responses
     /// at hand; a prefix without one is reported in `missing_prefixes`.
     pub ranges: Option<Vec<FfiRangeResponse>>,
-    /// 2fa.directory v4 `all.json`. Without it, `missing_2fa` does not run.
-    /// Ignored when `site_pack` parses; goes away with the Swift callers.
-    pub twofa_directory: Option<Vec<u8>>,
-    /// passkeys-api v1 `all.json`, merged into the 2FA directory (or alone).
-    pub passkeys_directory: Option<Vec<u8>>,
     /// Vaults left out of the analysis (hidden on this device).
     pub excluded_vault_ids: Vec<String>,
     /// Have I Been Pwned `/api/v3/breaches` (the whole public catalog).
     /// Without it, or when it does not parse, `breached_site` does not run.
     pub breach_catalog: Option<Vec<u8>>,
     /// A site pack (`site_pack::parse` format), already verified by the
-    /// caller. When it parses it is the only site source (the two documents
-    /// above are ignored); when it does not, no site check runs.
+    /// caller: the only source of `missing_2fa` and `passkey_available`.
+    /// Without it, or when it does not parse, no site check runs.
     #[uniffi(default = None)]
     pub site_pack: Option<Vec<u8>>,
 }
@@ -150,25 +145,12 @@ impl RangeSource for HeldRanges {
 }
 
 fn sites(options: &FfiWatchtowerOptions) -> Option<SiteDirectory> {
-    if let Some(bytes) = options.site_pack.as_deref() {
-        // A pack that does not parse means no site checks, never an error.
-        return site_pack::parse(bytes)
-            .ok()
-            .map(|pack| SiteDirectory::from_site_pack(&pack))
-            .filter(|d| !d.is_empty());
-    }
-    let mut dir = match options.twofa_directory.as_deref() {
-        Some(json) => SiteDirectory::from_2fa_directory(json).ok(),
-        None => None,
-    };
-    if let Some(json) = options.passkeys_directory.as_deref() {
-        let mut target = dir.take().unwrap_or_default();
-        // A bad passkey document leaves the 2FA one usable.
-        if target.add_passkeys_directory(json).is_ok() || !target.is_empty() {
-            dir = Some(target);
-        }
-    }
-    dir.filter(|d| !d.is_empty())
+    // A pack that does not parse means no site checks, never an error.
+    let bytes = options.site_pack.as_deref()?;
+    site_pack::parse(bytes)
+        .ok()
+        .map(|pack| SiteDirectory::from_site_pack(&pack))
+        .filter(|d| !d.is_empty())
 }
 
 fn strength_levels(items: &[Item]) -> Vec<u32> {
@@ -378,22 +360,6 @@ mod tests {
     }
 
     #[test]
-    fn bad_passkeys_document_keeps_the_2fa_directory() {
-        let options = FfiWatchtowerOptions {
-            expiry_warning_days: 30,
-            old_password_days: 365,
-            ranges: None,
-            twofa_directory: Some(br#"{"exemple.fr":{"methods":["totp"]}}"#.to_vec()),
-            passkeys_directory: Some(b"not json".to_vec()),
-            excluded_vault_ids: vec![],
-            breach_catalog: None,
-            site_pack: None,
-        };
-        let dir = sites(&options).unwrap();
-        assert!(dir.lookup("exemple.fr").unwrap().1.totp);
-    }
-
-    #[test]
     fn dormant_check_is_listed_and_waits_for_the_warm_up() {
         use onepass_core::model::{ItemType, new_item};
         let mut key = new_item(ItemType::ApiCredential, Id([1; 16]), "Key");
@@ -402,8 +368,6 @@ mod tests {
             expiry_warning_days: 30,
             old_password_days: 365,
             ranges: None,
-            twofa_directory: None,
-            passkeys_directory: None,
             excluded_vault_ids: vec![],
             breach_catalog: None,
             site_pack: None,

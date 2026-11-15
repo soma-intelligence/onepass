@@ -422,6 +422,28 @@
         }
       }
     },
+    "Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine. Désactivé, aucune requête réseau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The list of breached sites is downloaded whole and kept for a week. When off, no network request."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para cada contraseña, OnePass envía a Have I Been Pwned los 5 primeros caracteres de su hash SHA-1, compartidos con cientos de otras, y compara el resto aquí. La lista de sitios con filtraciones se descarga entera y se guarda una semana. Desactivado, no hay ninguna solicitud de red."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per ogni password, OnePass invia a Have I Been Pwned i primi 5 caratteri del suo hash SHA-1, condivisi con centinaia di altre, e confronta il resto qui. L'elenco dei siti violati viene scaricato per intero e conservato per una settimana. Se disattivato, nessuna richiesta di rete."
+          }
+        }
+      }
+    },
     "account.panel.scanCode" : {
       "comment" : "Account panel: scan a verification code",
       "localizations" : {
@@ -9451,35 +9473,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attiva «Verifica violazioni» per scaricare l'elenco dei siti violati."
-          }
-        }
-      }
-    },
-    "browse.turnOnCheckFor2" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn on “Check for breaches” to download the site catalog."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activa «Buscar filtraciones» para descargar el catálogo de sitios."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Active « Vérifier les fuites » pour télécharger le catalogue des sites."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Attiva «Verifica violazioni» per scaricare il catalogo dei siti."
           }
         }
       }
@@ -33991,28 +33984,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Più categorie"
-          }
-        }
-      }
-    },
-    "Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. Les catalogues de 2fa.directory et la liste des sites piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune requête réseau." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The 2fa.directory catalogs and the list of breached sites are downloaded whole and kept for a week. When off, no network request."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Para cada contraseña, OnePass envía a Have I Been Pwned los 5 primeros caracteres de su hash SHA-1, compartidos con cientos de otras, y compara el resto aquí. Los catálogos de 2fa.directory y la lista de sitios con filtraciones se descargan enteros y se guardan una semana. Desactivado, no hay ninguna solicitud de red."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Per ogni password, OnePass invia a Have I Been Pwned i primi 5 caratteri del suo hash SHA-1, condivisi con centinaia di altre, e confronta il resto qui. I cataloghi di 2fa.directory e l'elenco dei siti violati vengono scaricati per intero e conservati per una settimana. Se disattivato, nessuna richiesta di rete."
           }
         }
       }

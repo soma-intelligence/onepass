@@ -94,6 +94,12 @@ targets:
       # from the containing app, or from the copy the app puts in the App Group.
       - path: IconPack/onepass-icons.bin
         buildPhase: resources
+      # Site pack (docs/site-pack.md), shipped once in the app: Watchtower's 2FA and passkey checks
+      # read it, or a newer signed one SitePackStore downloads. The manifest records its sources.
+      - path: SitePack/onepass-sites.json
+        buildPhase: resources
+      - path: SitePack/site-pack-manifest.json
+        buildPhase: resources
     dependencies:
       - package: VaultKit
         product: VaultKit

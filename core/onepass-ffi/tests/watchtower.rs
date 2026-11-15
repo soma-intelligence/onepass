@@ -66,8 +66,6 @@ fn options(ranges: Option<Vec<FfiRangeResponse>>) -> FfiWatchtowerOptions {
         expiry_warning_days: 30,
         old_password_days: 365,
         ranges,
-        twofa_directory: None,
-        passkeys_directory: None,
         excluded_vault_ids: vec![],
         breach_catalog: None,
         site_pack: None,
@@ -182,23 +180,6 @@ fn site_pack_enables_2fa_and_passkey_checks() {
     opts.site_pack = Some(signed_pack());
     let report = fx.session.watchtower_report(opts).unwrap();
     assert_eq!(ids(&report, "missing_2fa"), std::slice::from_ref(&other.id));
-}
-
-#[test]
-fn site_pack_wins_over_the_old_documents() {
-    let fx = fixture();
-    login(&fx, "A", "Tq7#vLr9-pXw2!mZ8kEa-Hs4", "https://exemple.fr");
-    let mut opts = options(None);
-    opts.twofa_directory = Some(br#"{"exemple.fr":{"methods":["totp"]}}"#.to_vec());
-    opts.site_pack = Some(signed_pack());
-    let report = fx.session.watchtower_report(opts).unwrap();
-    assert!(ids(&report, "missing_2fa").is_empty());
-    // Without a pack the old documents still work.
-    let mut opts = options(None);
-    opts.twofa_directory = Some(br#"{"exemple.fr":{"methods":["totp"]}}"#.to_vec());
-    let report = fx.session.watchtower_report(opts).unwrap();
-    assert!(report.sites_checked);
-    assert_eq!(ids(&report, "missing_2fa").len(), 1);
 }
 
 #[test]

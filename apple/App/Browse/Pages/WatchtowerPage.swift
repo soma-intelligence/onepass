@@ -314,9 +314,8 @@ struct WatchtowerCard: Identifiable {
             case .checked, .partial: return nil
             }
         case .sites:
-            return report.sitesChecked ? nil
-                : checkBreaches ? String(localized: "browse.siteCatalogNotDownloaded")
-                : String(localized: "browse.turnOnCheckFor2")
+            // The site pack ships in the app: these checks never wait for "Vérifier les fuites".
+            return report.sitesChecked ? nil : String(localized: "browse.siteCatalogNotDownloaded")
         case .breachCatalog:
             return breachCatalog ? nil
                 : checkBreaches ? String(localized: "browse.breachListNotDownloaded")
@@ -513,9 +512,8 @@ struct BreachSettingCard: View {
                         Text("""
                             Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers \
                             caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et \
-                            compare le reste ici. Les catalogues de 2fa.directory et la liste des sites \
-                            piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune \
-                            requête réseau.
+                            compare le reste ici. La liste des sites piratés est téléchargée en entier \
+                            et gardée une semaine. Désactivé, aucune requête réseau.
                             """)
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
