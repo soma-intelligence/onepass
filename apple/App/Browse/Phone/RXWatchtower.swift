@@ -55,14 +55,24 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                     .rxFont(.calloutMedium)
                     .foregroundStyle(RX.Palette.textSecondary.color)
             }
-            Spacer()
-            if let score {
-                ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
-                    RXGlassGlyph(systemImage: "square.and.arrow.up")
+            Spacer(minLength: RX.Space.s)
+            // The shield art of the mock, top right, with the share button on its corner.
+            ZStack(alignment: .topTrailing) {
+                Image("rx-watch-shield")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 120, height: 120)
+                    .padding(.top, RX.Space.s)
+                    .padding(.trailing, RX.Space.l)
+                    .accessibilityHidden(true)
+                if let score {
+                    ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
+                        RXGlassGlyph(systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .accessibilityLabel(Text("browse.shareMyScore"))
+                    .accessibilityIdentifier("watchtower.share")
                 }
-                .buttonStyle(PressableButtonStyle())
-                .accessibilityLabel(Text("browse.shareMyScore"))
-                .accessibilityIdentifier("watchtower.share")
             }
         }
         .padding(.top, RX.Space.s)
@@ -82,12 +92,23 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                 let ids = card.itemIDs(in: report)
                 NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck)) {
                     RXAlertCard(
-                        title: Text(card.title), message: Text(card.message),
-                        systemImage: "exclamationmark", count: ids.count, positive: false, chevron: true)
+                        title: Self.alertTitle(card, count: ids.count), message: Text(card.message),
+                        systemImage: "exclamationmark", positive: false, chevron: true)
                 }
                 .buttonStyle(PressableButtonStyle())
                 .accessibilityIdentifier("watchtower.show.\(card.id)")
             }
+        }
+    }
+
+    /// "1 exposed account": a plural entry per red check (never a figure glued to a title).
+    private static func alertTitle(_ card: WatchtowerCard, count: Int) -> Text {
+        switch card.id {
+        case "compromised": Text("rx.watchtower.alert.compromised \(count)")
+        case "breached_site": Text("rx.watchtower.alert.breachedSite \(count)")
+        case "provider_exposed": Text("rx.watchtower.alert.providerExposed \(count)")
+        case "expiring": Text("rx.watchtower.alert.expiring \(count)")
+        default: Text(card.title)
         }
     }
 
@@ -163,8 +184,6 @@ private struct RXAlertCard: View {
     let title: Text
     let message: Text
     let systemImage: String
-    /// Shown in the white disc in place of the glyph.
-    var count: Int? = nil
     let positive: Bool
     let chevron: Bool
 
@@ -173,13 +192,8 @@ private struct RXAlertCard: View {
             ? [Color(red: 0x2B / 255, green: 0xB6 / 255, blue: 0x73 / 255), Color(red: 0x11 / 255, green: 0x93 / 255, blue: 0x58 / 255)]
             : [Color(red: 0xF0 / 255, green: 0x62 / 255, blue: 0x5F / 255), Color(red: 0xD9 / 255, green: 0x3C / 255, blue: 0x3F / 255)]
         HStack(spacing: 14) {
-            Group {
-                if let count {
-                    Text(count, format: .number).font(.system(size: 18, weight: .bold)).monospacedDigit()
-                } else {
-                    Image(systemName: systemImage).font(.system(size: 20, weight: .bold))
-                }
-            }
+            Image(systemName: systemImage)
+                .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(colors[1])
                 .frame(width: 44, height: 44)
                 .background(.white, in: Circle())
