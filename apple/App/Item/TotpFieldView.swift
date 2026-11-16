@@ -8,8 +8,53 @@ struct TotpCodeView: View {
     let secret: String
     var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// RX look: the big monospaced code and the 40 pt timer ring of the mock.
+    @Environment(\.rxCards) private var rxCards
 
     var body: some View {
+        #if os(iOS)
+        if rxCards, !compact {
+            rxBody
+        } else {
+            classicBody
+        }
+        #else
+        classicBody
+        #endif
+    }
+
+    /// The RX code: "538 262" in the Mono code typography, the seconds left in a ring on the right.
+    private var rxBody: some View {
+        TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
+            if let code = Self.code(secret, at: context.date) {
+                let exact = Self.exactRemaining(period: code.period, at: context.date)
+                HStack {
+                    Text(verbatim: Self.spaced(code.code))
+                        .rxFont(.monoCode)
+                        .foregroundStyle(Theme.RX.Palette.textPrimary.color)
+                        .contentTransition(.numericText())
+                        .animation(.snappy(duration: 0.35), value: code.code)
+                        .accessibilityLabel(Text("term.oneTimeCode"))
+                        .accessibilityValue(Text(verbatim: code.code))
+                    Spacer(minLength: Theme.RX.Space.s)
+                    RXTimerRing(remaining: Int(code.remaining), fraction: exact / Double(max(code.period, 1)))
+                }
+            } else {
+                Text("item.invalidSecretPasteBase32")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// "538262" gives "538  262" (two spaces, the mock's gap); other lengths are split in halves.
+    static func spaced(_ code: String) -> String {
+        guard code.count >= 6 else { return code }
+        let half = code.index(code.startIndex, offsetBy: code.count / 2)
+        return String(code[..<half]) + "  " + String(code[half...])
+    }
+
+    private var classicBody: some View {
         // Every frame while shown, so the ring drains smoothly; once a second with Reduce Motion.
         TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
             if let code = Self.code(secret, at: context.date) {
@@ -50,6 +95,31 @@ struct TotpCodeView: View {
         guard code.count >= 6 else { return code }
         let half = code.index(code.startIndex, offsetBy: code.count / 2)
         return String(code[..<half]) + " • " + String(code[half...])
+    }
+}
+
+/// The RX countdown: a faint track, the accent arc draining, the seconds in the middle; red over
+/// the last five seconds.
+private struct RXTimerRing: View {
+    let remaining: Int
+    let fraction: Double
+
+    var body: some View {
+        let color = remaining <= 5 ? Theme.RX.Palette.negative.color : Theme.RX.Palette.accent.color
+        ZStack {
+            Circle().stroke(Theme.RX.Palette.textTertiary.color.opacity(0.4), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: min(max(fraction, 0), 1))
+                .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text(remaining, format: .number)
+                .rxFont(.footnoteBold)
+                .monospacedDigit()
+                .foregroundStyle(remaining <= 5 ? color : Theme.RX.Palette.accentText.color)
+        }
+        .frame(width: 40, height: 40)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("encore \(remaining) secondes"))
     }
 }
 

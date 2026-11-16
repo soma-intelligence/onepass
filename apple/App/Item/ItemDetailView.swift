@@ -73,6 +73,15 @@ struct ItemDetailView: View {
 
     private var editingHere: Bool { !standalone && model.editing }
 
+    /// The RX centred header: iPhone and iPad with the switch on (the Mac keeps its own header).
+    private var rxHeader: Bool {
+        #if os(iOS)
+        rxDesign
+        #else
+        false
+        #endif
+    }
+
     private var session: VaultSession { model.session }
 
     var body: some View {
@@ -174,7 +183,7 @@ struct ItemDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Self.sectionSpacing) {
                 #if os(iOS) || os(macOS)
-                ItemHeader(item: item) { icon in
+                ItemHeader(item: item, centered: rxHeader) { icon in
                     // The icon's tint replaces the category's: eased, never a jump.
                     withAnimation(.easeInOut(duration: 0.25)) { identity = (item.id, identityColor(item, icon: icon)) }
                 }
@@ -216,6 +225,9 @@ struct ItemDetailView: View {
                         }
                     }
                     content(item)
+                    #if os(iOS)
+                    if rxDesign { rxSecurityCard(item) }
+                    #endif
                     ItemAttachmentsSection(item: item, editable: item.trashedAt == nil && !standalone) {
                         self.item = $0
                     }
@@ -291,10 +303,12 @@ struct ItemDetailView: View {
     }
 
     #if os(iOS)
-    /// RX: the four quick actions of the mock under the header: copy the password, open the
-    /// website, share, edit. An action the item cannot do is left out.
+    /// RX: the quick actions of the mock under the header: copy the password, copy the current
+    /// one-time code, open the website, share. An action the item cannot do is left out.
     @ViewBuilder private func rxQuickActions(_ item: FfiItem) -> some View {
-        let password = item.sections.flatMap(\.fields).first { $0.kind == .password && !$0.value.text.isEmpty }
+        let fields = item.sections.flatMap(\.fields)
+        let password = fields.first { $0.kind == .password && !$0.value.text.isEmpty }
+        let otp = fields.first { if case .otp(let v) = $0.value { !v.isEmpty } else { false } }
         let site = signInURL(item).flatMap(FieldValueView.openable)
         let ref = ItemRef(vaultID: item.vaultId, itemID: item.id)
         QuickActionRow {
@@ -304,16 +318,27 @@ struct ItemDetailView: View {
                     model.noteItemUse(ref, action: .copied, field: password.label)
                     model.showToast(String(localized: "app.copiedClearedIn90"))
                 } label: {
-                    QuickActionLabel(Text("rx.item.action.password"), systemImage: "doc.on.doc.fill")
+                    QuickActionLabel(Text("rx.item.action.password"), systemImage: "square.on.square")
                 }
                 .accessibilityIdentifier("rx.item.copyPassword")
+            }
+            if let otp, item.trashedAt == nil {
+                Button {
+                    guard let code = TotpCodeView.code(otp.value.text, at: Date()) else { return }
+                    session.copy(code.code, concealed: true)
+                    model.noteItemUse(ref, action: .copied, field: otp.label)
+                    model.showToast(String(localized: "app.copiedClearedIn90"))
+                } label: {
+                    QuickActionLabel(Text("rx.item.action.code"), systemImage: "clock.badge.checkmark")
+                }
+                .accessibilityIdentifier("rx.item.copyCode")
             }
             if let site {
                 Button {
                     model.noteItemUse(ref, action: nil, field: "")
                     openURL(site)
                 } label: {
-                    QuickActionLabel(Text("rx.item.action.open"), systemImage: "safari.fill")
+                    QuickActionLabel(Text("rx.item.action.open"), systemImage: "globe")
                 }
                 .accessibilityIdentifier("rx.item.open")
             }
@@ -321,14 +346,37 @@ struct ItemDetailView: View {
                 QuickActionLabel(Text("common.share"), systemImage: "square.and.arrow.up")
             }
             .accessibilityIdentifier("rx.item.share")
-            if !isReadOnly(item) {
-                Button { startEditing(item) } label: {
-                    QuickActionLabel(Text("common.edit"), systemImage: "pencil")
-                }
-                .accessibilityIdentifier("rx.item.edit")
-            }
         }
         .buttonStyle(PressableButtonStyle())
+    }
+
+    /// RX: the Security card of the mock for an item with a password: its strength, its passkey
+    /// (saved, or available on a site that accepts one), the date it last changed.
+    @ViewBuilder private func rxSecurityCard(_ item: FfiItem) -> some View {
+        let fields = item.sections.flatMap(\.fields)
+        if let password = fields.first(where: { $0.kind == .password && !$0.value.text.isEmpty }) {
+            let hasPasskey = fields.contains { $0.kind == .passkey && !$0.value.isBlank }
+            let canAdd = !hasPasskey && item.itemType == .login
+                && PasskeySupport.siteAccepts(item, report: model.watchtower.report)
+            RXCard {
+                RXCardHeader(Text("Sécurité"))
+                RXMenuRow(
+                    Text("rx.item.strength"), systemImage: "checkmark.shield.fill",
+                    value: Text(StrengthMeter.label(forBits: PasswordStrength.estimatedBits(password.value.text))),
+                    chevron: false)
+                if hasPasskey || canAdd {
+                    RXMenuRow(
+                        Text("rx.item.passkey"), systemImage: "person.badge.key.fill",
+                        value: Text(hasPasskey ? "rx.item.passkey.saved" : "rx.item.passkey.available"),
+                        badge: canAdd ? Text("rx.item.badge.new") : nil, chevron: false)
+                }
+                RXMenuRow(
+                    Text("rx.item.lastChanged"), systemImage: "arrow.triangle.2.circlepath",
+                    value: Text(Date(timeIntervalSince1970: TimeInterval(item.updatedAt)), format: .dateTime.day().month()),
+                    chevron: false)
+            }
+            .accessibilityIdentifier("rx.item.security")
+        }
     }
     #endif
 
