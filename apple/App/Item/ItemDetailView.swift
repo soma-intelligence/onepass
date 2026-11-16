@@ -29,6 +29,8 @@ struct ItemDetailView: View {
     @State private var loadError: String?
     /// Where the websites card sits among the free sections (per device, set by the editor).
     @AppStorage(EditorLayout.websitesSlotKey) private var websitesSlot = 0
+    /// The RX look (Réglages > Général > Nouveau design): quick actions under the header, RX cards.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     @State private var actionError: String?
     @State private var confirmDelete = false
     // Reprompt.
@@ -184,6 +186,11 @@ struct ItemDetailView: View {
                     .padding(.horizontal, Theme.Space.xs)
                     .padding(.bottom, Theme.Space.xs)
                 #endif
+                #if os(iOS)
+                if rxDesign, !locked(item), item.trashedAt == nil {
+                    rxQuickActions(item)
+                }
+                #endif
                 if let actionError {
                     EditorCard {
                         Label(actionError, systemImage: "exclamationmark.triangle.fill")
@@ -246,6 +253,7 @@ struct ItemDetailView: View {
         .background(alignment: .top) { identityWash(item) }
         #endif
         .groupedScreen()
+        .environment(\.rxCards, rxDesign)
         .environment(\.openURL, OpenURLAction { url in
             // Links in notes and fields open only on a tap, and only web or mail links.
             ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") ? .systemAction : .discarded
@@ -281,6 +289,48 @@ struct ItemDetailView: View {
         }
         .simultaneousGesture(TapGesture().onEnded { session.noteActivity() })
     }
+
+    #if os(iOS)
+    /// RX: the four quick actions of the mock under the header: copy the password, open the
+    /// website, share, edit. An action the item cannot do is left out.
+    @ViewBuilder private func rxQuickActions(_ item: FfiItem) -> some View {
+        let password = item.sections.flatMap(\.fields).first { $0.kind == .password && !$0.value.text.isEmpty }
+        let site = signInURL(item).flatMap(FieldValueView.openable)
+        let ref = ItemRef(vaultID: item.vaultId, itemID: item.id)
+        QuickActionRow {
+            if let password {
+                Button {
+                    session.copy(password.value.text, concealed: true)
+                    model.noteItemUse(ref, action: .copied, field: password.label)
+                    model.showToast(String(localized: "app.copiedClearedIn90"))
+                } label: {
+                    QuickActionLabel(Text("rx.item.action.password"), systemImage: "doc.on.doc.fill")
+                }
+                .accessibilityIdentifier("rx.item.copyPassword")
+            }
+            if let site {
+                Button {
+                    model.noteItemUse(ref, action: nil, field: "")
+                    openURL(site)
+                } label: {
+                    QuickActionLabel(Text("rx.item.action.open"), systemImage: "safari.fill")
+                }
+                .accessibilityIdentifier("rx.item.open")
+            }
+            ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
+                QuickActionLabel(Text("common.share"), systemImage: "square.and.arrow.up")
+            }
+            .accessibilityIdentifier("rx.item.share")
+            if !isReadOnly(item) {
+                Button { startEditing(item) } label: {
+                    QuickActionLabel(Text("common.edit"), systemImage: "pencil")
+                }
+                .accessibilityIdentifier("rx.item.edit")
+            }
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+    #endif
 
     private func banner(_ text: LocalizedStringKey, systemImage: String) -> some View {
         Label(text, systemImage: systemImage)

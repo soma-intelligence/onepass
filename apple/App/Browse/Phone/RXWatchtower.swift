@@ -40,6 +40,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
             }
             BreachSettingCard()
         }
+        .environment(\.rxCards, true)
     }
 
     /// "Watchtower" (Large title) over "Security score", the share button on the right.

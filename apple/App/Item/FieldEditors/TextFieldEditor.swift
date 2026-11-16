@@ -44,8 +44,25 @@ struct EditorLabel: View {
 struct EditorCard<Content: View>: View {
     @ViewBuilder var content: Content
     @Environment(\.colorScheme) private var scheme
+    /// The RX look: the card token at radius 24, no hairline, no shadow.
+    @Environment(\.rxCards) private var rxCards
 
     var body: some View {
+        #if os(iOS)
+        if rxCards {
+            VStack(alignment: .leading, spacing: 0) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.RX.Palette.cardBackground.color,
+                            in: .rect(cornerRadius: Theme.RX.Radius.card, style: .continuous))
+        } else {
+            classic
+        }
+        #else
+        classic
+        #endif
+    }
+
+    private var classic: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
             #if os(iOS)
@@ -283,3 +300,9 @@ private func contentType(_ kind: FfiFieldType) -> UITextContentType? {
     }
 }
 #endif
+
+extension EnvironmentValues {
+    /// Cards drawn in the RX look (Theme.RX): set by the screens that have it while the switch is on.
+    @Entry var rxCards = false
+}
+
