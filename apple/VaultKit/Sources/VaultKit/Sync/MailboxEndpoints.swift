@@ -4,8 +4,9 @@ import Foundation
 public enum MailboxEndpoints {
     /// Info.plist key of the hosted instance's base URL.
     public static let infoKey = "OnePassMailboxURL"
-    /// The local Supabase stack, accepted by Debug builds only.
-    public static let localDebugURL = URL(string: "http://127.0.0.1:54321/functions/v1/mailbox")!
+    /// The local Supabase stack, accepted by Debug builds only: the mailbox function of
+    /// `mailbox/supabase/config.toml` (`[api]` port), the URL the core's join links allow too.
+    public static let localDebugURL = URL(string: "http://127.0.0.1:57421/functions/v1/mailbox")!
 
     public static var hostedName: String {
         String(localized: "sync.server.hosted", bundle: VaultKitStrings.bundle)

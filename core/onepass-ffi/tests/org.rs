@@ -8,7 +8,7 @@ use onepass_ffi::{
 };
 
 const SERVER: &str = "https://mailbox.example.com/functions/v1/mailbox";
-const LOOPBACK: &str = "http://127.0.0.1:54321/functions/v1/mailbox";
+const LOOPBACK: &str = "http://127.0.0.1:57421/functions/v1/mailbox";
 
 fn sample_invite() -> FfiOrgInvite {
     FfiOrgInvite {
@@ -186,8 +186,31 @@ fn loopback_http_only_when_allowed() {
     assert_eq!(got.server_url, LOOPBACK);
     assert!(refused(org_invite_parse(link, false)));
     // Only that exact URL.
-    let other = "http%3A%2F%2F127.0.0.1%3A54322%2Ffunctions%2Fv1%2Fmailbox";
+    let other = "http%3A%2F%2F127.0.0.1%3A54321%2Ffunctions%2Fv1%2Fmailbox";
     assert!(refused(org_invite_parse(link_with("s", Some(other)), true)));
+}
+
+/// The plain-http server a link may name is the mailbox function of this
+/// repository's local stack (`mailbox/supabase/config.toml`, `[api]` port),
+/// so an org made against that stack hands out links that parse.
+#[test]
+fn loopback_is_the_local_stack_of_this_repo() {
+    let config = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../mailbox/supabase/config.toml"
+    ))
+    .unwrap();
+    let api = config.split("\n[api]\n").nth(1).unwrap();
+    let port = api
+        .lines()
+        .take_while(|l| !l.starts_with('['))
+        .find_map(|l| l.strip_prefix("port = "))
+        .unwrap()
+        .trim();
+    let url = format!("http://127.0.0.1:{port}/functions/v1/mailbox");
+    let enc = url.replace(':', "%3A").replace('/', "%2F");
+    let got = org_invite_parse(link_with("s", Some(&enc)), true).unwrap();
+    assert_eq!(got.server_url, url);
 }
 
 // ---- create, pin and verify (Task 2) -----------------------------------------------
