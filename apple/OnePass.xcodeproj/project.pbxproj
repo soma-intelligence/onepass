@@ -64,6 +64,7 @@
 		29FC439915D5B752F395D5E2 /* ItemsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */; };
 		2D6A4275912F83F19E16AA05 /* CryptoSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AAC5B8D38B4E80005624A80 /* CryptoSettingsView.swift */; };
 		2E2A86CDE42259837AD6756F /* KitShareController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95190D978CCD258D8EDDE9FB /* KitShareController.swift */; };
+		317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA37D294EA87B1E34D803C3D /* RXHome.swift */; };
 		3247164F181A54CAFFD132A5 /* GeneratorProfileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18CB70C246AF39BB3009C194 /* GeneratorProfileRow.swift */; };
 		34BB13688B8E23925412FBBD /* SharingBanners.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D2E7145A55971E67D14F50E /* SharingBanners.swift */; };
 		3590802262EF3AA389F7A464 /* MainCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CFF82E6E14142CF8F5C65CB /* MainCard.swift */; };
@@ -603,6 +604,7 @@
 		C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoveMemberSheet.swift; sourceTree = "<group>"; };
 		C83485D924585FA30495DE07 /* SplitBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitBrowseView.swift; sourceTree = "<group>"; };
 		C89189A5B59E73F9B657D77B /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
+		CA37D294EA87B1E34D803C3D /* RXHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXHome.swift; sourceTree = "<group>"; };
 		CB8A13F593BFE7B0EEFA8FFE /* OrgConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgConsole.swift; sourceTree = "<group>"; };
 		CEB25B0FC46CD5AF0BE37BC2 /* SharingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingUITests.swift; sourceTree = "<group>"; };
 		CFF11DA958080038BA1B310F /* IntegrityFailureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrityFailureView.swift; sourceTree = "<group>"; };
@@ -1228,6 +1230,7 @@
 				B6B6A1BAE0385A425AE55355 /* ItemZoom.swift */,
 				4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */,
 				7907A548EB7701F8B71580BB /* ProfileView.swift */,
+				CA37D294EA87B1E34D803C3D /* RXHome.swift */,
 				AB2329A5202B5AB8206A7CD1 /* RXWatchtower.swift */,
 				75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */,
 				0D2CBC8A40BF965B7FA9A227 /* WatchtowerTab.swift */,
@@ -2133,6 +2136,7 @@
 				0792B9A17998C8FFA5C457A9 /* PublicSessionMonitor.swift in Sources */,
 				399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */,
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
+				317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */,
 				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
 				20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,

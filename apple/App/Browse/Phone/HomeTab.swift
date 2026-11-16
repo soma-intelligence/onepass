@@ -26,6 +26,8 @@ struct HomeTab: View {
     @AppStorage("onepass.home.showsFrequent", store: AppModel.browseDefaults) private var showsFrequent = true
     // Shown only when a crypto wallet carries watch data (spec 2026-11-02-crypto-watch).
     @AppStorage("onepass.home.showsCrypto", store: AppModel.browseDefaults) private var showsCrypto = true
+    /// The RX look (Réglages > Général > Nouveau design): the score banner in place of the tiles.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     // Loaded here: a banner with nothing to show is an empty view, and an empty view never runs its task.
     @State private var duplicates = DuplicatesLoader()
@@ -43,13 +45,17 @@ struct HomeTab: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Space.l) {
+                        // RX: the score banner on top, in place of the four tiles.
+                        if rxDesign { RXHomeHero(itemCount: counts.all) }
                         // Banners: these are list sections elsewhere, plain blocks here.
                         SyncRefusalSection()
                         AccountChangedSection()
                         // Under the search, above Tous les éléments and Favoris (spec 2026-11-03-duplicates).
                         if !searchActive { DuplicatesBanner(loader: duplicates) }
                         SharingBanners(horizontalPadding: 0)
-                        tiles(all: counts.all, favorites: counts.favorites)
+                        if !rxDesign {
+                            tiles(all: counts.all, favorites: counts.favorites)
+                        }
                         if model.travel.showsCard, !searchActive {
                             TravelSuggestionCard()
                                 .padding(Theme.Space.l)
@@ -91,7 +97,14 @@ struct HomeTab: View {
                     .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
                     .padding(.bottom, Theme.Space.xl)
                 }
-                .background(PhoneBackground())
+                .background {
+                    if rxDesign {
+                        Theme.RX.Palette.pageBackground.color.ignoresSafeArea()
+                    } else {
+                        PhoneBackground()
+                    }
+                }
+                .environment(\.rxCards, rxDesign)
                 .task(id: session.summariesRevision) { await duplicates.load(session) }
             }
         }
@@ -602,7 +615,21 @@ extension View {
 /// The card's surface: the cell color, clipped to the card radius, a hairline, and the light-only
 /// card shadow.
 private struct PhoneCardSurface: ViewModifier {
-    func body(content: Content) -> some View {
+    /// RX look: the card token at radius 24, no hairline, no shadow.
+    @Environment(\.rxCards) private var rxCards
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if rxCards {
+            let shape = RoundedRectangle(cornerRadius: Theme.RX.Radius.card, style: .continuous)
+            content
+                .background(Theme.RX.Palette.cardBackground.color, in: shape)
+                .clipShape(shape)
+        } else {
+            classic(content)
+        }
+    }
+
+    private func classic(_ content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous)
         return content
             .background(Theme.card, in: shape)
