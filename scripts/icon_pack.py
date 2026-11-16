@@ -54,7 +54,9 @@ license are kept only when it is permissive and needs no attribution in the UI),
 (CC0-1.0), 2FA Directory (MIT). Logos stay trademarks of their owners.
 
 Rasterizer: resvg (no scripting, no network; --resources-dir is an empty folder so no local
-file is read). WebP: cwebp -lossless. Standard library only otherwise.
+file is read). WebP: cwebp -lossless; an icon over --max-icon-bytes (MAX_ICON_BYTES) is encoded
+again with loss, and one still over it is refused, so the domain moves to its next candidate (a
+hand-picked one is kept lossy). Standard library only otherwise.
 """
 
 import argparse
@@ -86,6 +88,10 @@ FLAG_DOMAIN_LIST = 2
 DOMAIN_SIZE = 128
 MIN_DOMAIN_PIXELS = 128
 MAX_SVG_BYTES = 512 * 1024
+# The pack ships inside the app: 25,000 icons fit about 60 MB only at about 6 KB each. A detailed
+# crest or a photo is over it, and reads poorly in a small tile anyway.
+MAX_ICON_BYTES = 6 * 1024
+LOSSY = ["-q", "80", "-alpha_q", "90", "-m", "6", "-sharp_yuv"]
 # Marks within this width to height ratio fit a square tile; wider ones are wordmarks.
 SQUARE = (0.6, 1.6)
 # A hand-picked wordmark ("Aēsop") may be this wide for 1 high, no wider.
@@ -1767,7 +1773,7 @@ def tiled(svg, size, color):
             f'<rect width="{size}" height="{size}" fill="#{color}"/>').encode() + body + b"</svg>"
 
 
-def render(candidate, size, resvg, cwebp, work):
+def render(candidate, size, resvg, cwebp, work, max_bytes=None):
     svg = squared(candidate.svg, size, candidate.fill)
     if candidate.tile:
         svg = tiled(svg, size, candidate.tile)
@@ -1809,7 +1815,18 @@ def render(candidate, size, resvg, cwebp, work):
                              str(webp)], capture_output=True, timeout=120)
     if result.returncode != 0 or not webp.exists():
         raise IconPackError("cwebp failed: " + result.stderr.decode(errors="replace").strip()[:200])
-    return webp.read_bytes()
+    data = webp.read_bytes()
+    if max_bytes is None or len(data) <= max_bytes:
+        return data
+    webp.unlink()
+    result = subprocess.run([cwebp, "-quiet", *LOSSY, "-metadata", "none", str(png), "-o", str(webp)],
+                            capture_output=True, timeout=120)
+    if result.returncode != 0 or not webp.exists():
+        raise IconPackError("cwebp failed: " + result.stderr.decode(errors="replace").strip()[:200])
+    lossy = webp.read_bytes()
+    if len(lossy) > max_bytes and not candidate.curated:
+        raise IconPackError(f"too-heavy: {len(lossy)} bytes with loss, over {max_bytes}")
+    return min(data, lossy, key=len)
 
 
 def brand_names(picked, domains):
@@ -1959,7 +1976,8 @@ def build(args):
             if not hasattr(local, "work"):
                 local.work = Path(tempfile.mkdtemp(dir=tmp))
             try:
-                return render(candidate, candidate.size or args.size, args.resvg, args.cwebp, local.work), None
+                return render(candidate, candidate.size or args.size, args.resvg, args.cwebp, local.work,
+                              args.max_icon_bytes or None), None
             except (IconPackError, subprocess.TimeoutExpired) as error:
                 return None, f"{candidate.name}: {error}"
 
@@ -2094,6 +2112,7 @@ def main(argv=None):
     b.add_argument("--sources", required=True)
     b.add_argument("--version", required=True, type=int)
     b.add_argument("--size", type=int, default=256)
+    b.add_argument("--max-icon-bytes", type=int, default=MAX_ICON_BYTES, help="0 keeps every icon lossless")
     b.add_argument("--out", required=True)
     b.add_argument("--resvg", default="resvg")
     b.add_argument("--cwebp", default="cwebp")

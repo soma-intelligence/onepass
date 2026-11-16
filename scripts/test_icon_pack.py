@@ -310,6 +310,29 @@ class Collect(unittest.TestCase):
 
     @unittest.skipUnless((os.environ.get("RESVG") or shutil.which("resvg")) and shutil.which("cwebp"),
                          "needs resvg and cwebp")
+    def test_heavy_icon_is_encoded_with_loss_then_refused(self):
+        resvg, cwebp = os.environ.get("RESVG") or shutil.which("resvg"), shutil.which("cwebp")
+        noisy = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs>'
+                 b'<linearGradient id="a" x2="1" y2="1"><stop offset="0" stop-color="#e33"/>'
+                 b'<stop offset=".5" stop-color="#3a7"/><stop offset="1" stop-color="#36e"/></linearGradient>'
+                 b'<radialGradient id="b" cx=".3" cy=".7" r=".8"><stop offset="0" stop-color="#ff0"/>'
+                 b'<stop offset="1" stop-color="#0ff" stop-opacity="0"/></radialGradient></defs>'
+                 b'<rect width="48" height="48" fill="url(#a)"/><circle cx="24" cy="24" r="22" fill="url(#b)"/></svg>')
+        work = self.tmp / "work"
+        work.mkdir()
+        mark = icon_pack.Candidate(icon_pack.RANK_WIKIDATA, "wikidata", noisy, name="wikidata:Q1")
+        lossless = icon_pack.render(mark, 256, resvg, cwebp, work)
+        self.assertEqual(lossless[12:16], b"VP8L")
+        lossy = icon_pack.render(mark, 256, resvg, cwebp, work, max_bytes=len(lossless) - 1)
+        self.assertLess(len(lossy), len(lossless))
+        self.assertNotIn(b"VP8L", lossy[:64])
+        with self.assertRaisesRegex(icon_pack.IconPackError, "too-heavy"):
+            icon_pack.render(mark, 256, resvg, cwebp, work, max_bytes=100)
+        mark.curated = True
+        self.assertEqual(icon_pack.render(mark, 256, resvg, cwebp, work, max_bytes=100), lossy)
+
+    @unittest.skipUnless((os.environ.get("RESVG") or shutil.which("resvg")) and shutil.which("cwebp"),
+                         "needs resvg and cwebp")
     def test_build_end_to_end(self):
         sources = self.tmp / "sources.json"
         sources.write_text("{}")
@@ -389,7 +412,7 @@ class DomainList(unittest.TestCase):
         curated_path.write_text(json.dumps(curated or {"brands": []}))
         sizes = {}
 
-        def fake(candidate, size, resvg, cwebp, work):
+        def fake(candidate, size, resvg, cwebp, work, max_bytes=None):
             sizes[candidate.name] = size
             return b"RIFF" + candidate.name.encode()
 
