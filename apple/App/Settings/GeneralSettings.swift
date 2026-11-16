@@ -38,6 +38,7 @@ struct GeneralSettings: View {
             #endif
             #if os(iOS)
             AppearanceSection()
+            RXDesignSection()
             AppIconSection()
             #endif
             Section {
@@ -162,6 +163,21 @@ private struct AppearanceSection: View {
             .sensoryFeedback(.selection, trigger: stored)
         } header: {
             Text("settings.general.appearance")
+        }
+    }
+}
+
+/// Nouveau design: the RX look (photo heroes, grouped cards, glass buttons) on Réglages, Watchtower,
+/// the item detail and Accueil. A preview, off by default, stored on this device only.
+private struct RXDesignSection: View {
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var isOn = RXDesign.launchDefault
+
+    var body: some View {
+        Section {
+            Toggle("rx.settings.toggle", isOn: $isOn)
+                .accessibilityIdentifier("settings.rxDesign")
+        } footer: {
+            Text("rx.settings.footer")
         }
     }
 }
