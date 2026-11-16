@@ -55,8 +55,8 @@ license are kept only when it is permissive and needs no attribution in the UI),
 
 Rasterizer: resvg (no scripting, no network; --resources-dir is an empty folder so no local
 file is read). WebP: cwebp -lossless; an icon over --max-icon-bytes (MAX_ICON_BYTES) is encoded
-again with loss, and one still over it is refused, so the domain moves to its next candidate (a
-hand-picked one is kept lossy). Standard library only otherwise.
+again with loss; a Wikidata logo still over it is refused, so the domain moves to its next
+candidate (an icon from any other source is kept with loss). Standard library only otherwise.
 """
 
 import argparse
@@ -1824,7 +1824,7 @@ def render(candidate, size, resvg, cwebp, work, max_bytes=None):
     if result.returncode != 0 or not webp.exists():
         raise IconPackError("cwebp failed: " + result.stderr.decode(errors="replace").strip()[:200])
     lossy = webp.read_bytes()
-    if len(lossy) > max_bytes and not candidate.curated:
+    if len(lossy) > max_bytes and candidate.source == "wikidata":
         raise IconPackError(f"too-heavy: {len(lossy)} bytes with loss, over {max_bytes}")
     return min(data, lossy, key=len)
 

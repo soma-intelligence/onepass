@@ -310,7 +310,7 @@ class Collect(unittest.TestCase):
 
     @unittest.skipUnless((os.environ.get("RESVG") or shutil.which("resvg")) and shutil.which("cwebp"),
                          "needs resvg and cwebp")
-    def test_heavy_icon_is_encoded_with_loss_then_refused(self):
+    def test_heavy_wikidata_logo_is_encoded_with_loss_then_refused(self):
         resvg, cwebp = os.environ.get("RESVG") or shutil.which("resvg"), shutil.which("cwebp")
         noisy = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs>'
                  b'<linearGradient id="a" x2="1" y2="1"><stop offset="0" stop-color="#e33"/>'
@@ -328,7 +328,7 @@ class Collect(unittest.TestCase):
         self.assertNotIn(b"VP8L", lossy[:64])
         with self.assertRaisesRegex(icon_pack.IconPackError, "too-heavy"):
             icon_pack.render(mark, 256, resvg, cwebp, work, max_bytes=100)
-        mark.curated = True
+        mark.source = "simple-icons"
         self.assertEqual(icon_pack.render(mark, 256, resvg, cwebp, work, max_bytes=100), lossy)
 
     @unittest.skipUnless((os.environ.get("RESVG") or shutil.which("resvg")) and shutil.which("cwebp"),
