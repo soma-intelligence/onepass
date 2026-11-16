@@ -49,6 +49,7 @@
 		202111EEBD135C59DC7E515D /* OnePassWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		20334980004F71AF3327D0EB /* SignInRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B49CB23CF87AA07996315C6 /* SignInRow.swift */; };
 		2055202225034EAB82503783 /* MacWifi.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D10599D0904E67A521ADAA /* MacWifi.swift */; };
+		20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2329A5202B5AB8206A7CD1 /* RXWatchtower.swift */; };
 		22300EE0A3C12E327C3E2B41 /* SyncChoiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ECDDE937D4E4BDE4D69A1F3 /* SyncChoiceSheet.swift */; };
 		2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */; };
 		23057CC4E6C58D81940A688A /* VaultsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */; };
@@ -572,6 +573,7 @@
 		A9CD2D4CA386C947DB696B2C /* TravelReminderCenter+System.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TravelReminderCenter+System.swift"; sourceTree = "<group>"; };
 		AADC8BC0D910001EC096242B /* GlanceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceProvider.swift; sourceTree = "<group>"; };
 		AAF78448AAEC42C44F2E16FB /* ItemEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEntity.swift; sourceTree = "<group>"; };
+		AB2329A5202B5AB8206A7CD1 /* RXWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXWatchtower.swift; sourceTree = "<group>"; };
 		AF35143E318DDE2E8D4F84CE /* PageComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageComponents.swift; sourceTree = "<group>"; };
 		AF91253BDC4BD15D61A7EF70 /* RecoveryHelperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryHelperView.swift; sourceTree = "<group>"; };
 		B0C4A8E1F604636FF7658971 /* ShareVaultSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareVaultSheet.swift; sourceTree = "<group>"; };
@@ -1226,6 +1228,7 @@
 				B6B6A1BAE0385A425AE55355 /* ItemZoom.swift */,
 				4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */,
 				7907A548EB7701F8B71580BB /* ProfileView.swift */,
+				AB2329A5202B5AB8206A7CD1 /* RXWatchtower.swift */,
 				75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */,
 				0D2CBC8A40BF965B7FA9A227 /* WatchtowerTab.swift */,
 			);
@@ -2131,6 +2134,7 @@
 				399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */,
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
 				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
+				20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,
 				15FB8F91DBC0162C7EBD40AC /* ReceivedItemsView.swift in Sources */,
 				C500D24FF75EEF70D090DF1D /* RecoverWithHelpView.swift in Sources */,

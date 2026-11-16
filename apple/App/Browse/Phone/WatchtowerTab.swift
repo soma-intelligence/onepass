@@ -12,62 +12,31 @@ struct WatchtowerTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.horizontalSizeClass) private var sizeClass
 
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+
     private var watchtower: WatchtowerModel { model.watchtower }
 
     var body: some View {
         let score = watchtower.report.map { Int($0.score) }
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Space.l) {
-                VStack(spacing: Theme.Space.l) {
-                    PhoneScoreGauge(score: score)
-                        .padding(.top, Theme.Space.xs)
-                    if let score {
-                        ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
-                            Label("browse.shareMyScore", systemImage: "square.and.arrow.up")
-                                .font(.subheadline.weight(.semibold))
-                                .padding(.horizontal, Theme.Space.xs)
-                                .frame(minHeight: 30)
-                        }
-                        .buttonStyle(.glass)
-                        .accessibilityIdentifier("watchtower.share")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                VStack(alignment: .leading, spacing: Theme.Space.s) {
-                    Text("browse.watchtowerFindsPasswordsTo")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    statusLine
-                }
-                .padding(.horizontal, Theme.Space.xs)
-                scanCard
-                if let report = watchtower.report {
-                    StrengthCard(levels: report.strength.map(Int.init))
-                    let flagged = WatchtowerCard.all.filter { Self.isFlagged($0, in: report) }
-                    ForEach(flagged) { card in
-                        PhoneWatchtowerCard(card: card, count: card.itemIDs(in: report).count, ids: card.itemIDs(in: report))
-                    }
-                    let seen = model.seenByFormerMemberIDs
-                    if !seen.isEmpty {
-                        PhoneWatchtowerCard(card: .seenByFormerMember, count: seen.count, ids: seen)
-                    }
-                    CryptoPhraseAlertCard()
-                    let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
-                    if !clear.isEmpty {
-                        ClearChecksCard(
-                            cards: clear, report: report, checkBreaches: watchtower.checkBreaches,
-                            breachCatalog: watchtower.breachCatalogUsed)
-                    }
-                }
-                BreachSettingCard()
+            if rxDesign {
+                RXWatchtowerContent(score: score, scanCard: scanCard, statusLine: statusLine)
+                    .padding(.horizontal, Theme.RX.Space.gutter)
+                    .padding(.bottom, Theme.Space.xl)
+                    .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
+            } else {
+                classicContent(score: score)
             }
-            .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
-            .padding(.bottom, Theme.Space.xl)
-            .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
         }
-        .background(PhoneBackground())
-        .navigationTitle("Watchtower")
+        .background {
+            if rxDesign {
+                Theme.RX.Palette.pageBackground.color.ignoresSafeArea()
+            } else {
+                PhoneBackground()
+            }
+        }
+        // RX: the page draws its own large title.
+        .navigationTitle(rxDesign ? "" : "Watchtower")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             PhoneRootToolbar()
@@ -80,6 +49,58 @@ struct WatchtowerTab: View {
         .onChange(of: watchtower.checkBreaches) { watchtower.refreshIfNeeded(model.session) }
         .onChange(of: model.session.hiddenVaultIDs) { watchtower.refreshIfNeeded(model.session) }
         .accessibilityIdentifier("page.watchtower")
+    }
+
+    /// The classic layout (the RX look off).
+    private func classicContent(score: Int?) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.l) {
+            VStack(spacing: Theme.Space.l) {
+                PhoneScoreGauge(score: score)
+                    .padding(.top, Theme.Space.xs)
+                if let score {
+                    ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
+                        Label("browse.shareMyScore", systemImage: "square.and.arrow.up")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, Theme.Space.xs)
+                            .frame(minHeight: 30)
+                    }
+                    .buttonStyle(.glass)
+                    .accessibilityIdentifier("watchtower.share")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                Text("browse.watchtowerFindsPasswordsTo")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                statusLine
+            }
+            .padding(.horizontal, Theme.Space.xs)
+            scanCard
+            if let report = watchtower.report {
+                StrengthCard(levels: report.strength.map(Int.init))
+                let flagged = WatchtowerCard.all.filter { Self.isFlagged($0, in: report) }
+                ForEach(flagged) { card in
+                    PhoneWatchtowerCard(card: card, count: card.itemIDs(in: report).count, ids: card.itemIDs(in: report))
+                }
+                let seen = model.seenByFormerMemberIDs
+                if !seen.isEmpty {
+                    PhoneWatchtowerCard(card: .seenByFormerMember, count: seen.count, ids: seen)
+                }
+                CryptoPhraseAlertCard()
+                let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
+                if !clear.isEmpty {
+                    ClearChecksCard(
+                        cards: clear, report: report, checkBreaches: watchtower.checkBreaches,
+                        breachCatalog: watchtower.breachCatalogUsed)
+                }
+            }
+            BreachSettingCard()
+        }
+        .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
+        .padding(.bottom, Theme.Space.xl)
+        .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
     }
 
     /// A check with items to look at (a check whose source did not run counts as clear here; the
@@ -284,7 +305,7 @@ private struct PhoneWatchtowerCard: View {
 }
 
 /// The checks with nothing to report: one row each, a green check, or why there is no figure.
-private struct ClearChecksCard: View {
+struct ClearChecksCard: View {
     let cards: [WatchtowerCard]
     let report: FfiWatchtowerReport
     let checkBreaches: Bool
