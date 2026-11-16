@@ -1,3 +1,4 @@
+import CoreText
 import SwiftUI
 import Testing
 @testable import DesignKit
@@ -61,6 +62,24 @@ struct RXTokensTests {
         #expect(RX.Typography.headline.weight == .semibold)
         #expect(RX.Typography.bodyMedium.weight == .medium)
         #expect(RX.Typography.display.weight == .bold)
+    }
+
+    @Test func bundlesInter() throws {
+        #expect(RX.Inter.isAvailable)
+        let font = CTFontCreateWithName("Inter" as CFString, 17, nil)
+        #expect(CTFontCopyFamilyName(font) as String == "Inter")
+        // The Latin subset covers French, English, Spanish and Italian.
+        let text = "çœéñ€àèìòù¿¡’« »"
+        var glyphs = [CGGlyph](repeating: 0, count: text.utf16.count)
+        #expect(CTFontGetGlyphsForCharacters(font, Array(text.utf16), &glyphs, glyphs.count))
+        // The typographies resolve to Inter at their weight, the code to the system face.
+        let context = EnvironmentValues().fontResolutionContext
+        let headline = RX.Typography.headline.font(size: 17).resolve(in: context).ctFont
+        #expect(CTFontCopyFamilyName(headline) as String == "Inter")
+        let code = RX.Typography.monoCode.font(size: 28).resolve(in: context).ctFont
+        #expect(CTFontCopyFamilyName(code) as String != "Inter")
+        let licence = try #require(RX.Inter.licenceURL)
+        #expect(try String(contentsOf: licence, encoding: .utf8).contains("SIL OPEN FONT LICENSE Version 1.1"))
     }
 
     @Test func cssWeights() {

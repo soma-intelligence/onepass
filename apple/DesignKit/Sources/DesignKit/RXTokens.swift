@@ -1,3 +1,4 @@
+import CoreText
 import SwiftUI
 #if os(iOS) || os(visionOS)
 import UIKit
@@ -266,10 +267,36 @@ extension Theme {
                 max(size * (lineHeight - 1.2), 0)
             }
 
-            /// The font at `size` (the scaled size of the typography).
+            /// The font at `size` (the scaled size of the typography, so Dynamic Type is already in
+            /// it): Inter as in the Penpot file, the system monospaced face for the code (Geist Mono
+            /// is not bundled). The system face stands in if Inter could not be registered.
             public func font(size: CGFloat) -> Font {
-                .system(size: size, weight: weight, design: self == .monoCode ? .monospaced : .default)
+                if self != .monoCode, Theme.RX.Inter.isAvailable {
+                    return .custom(Theme.RX.Inter.family, fixedSize: size).weight(weight)
+                }
+                return .system(size: size, weight: weight, design: self == .monoCode ? .monospaced : .default)
             }
+        }
+
+        /// Inter 4 (variable, opsz and wght axes, Latin subset), bundled with its SIL Open Font
+        /// Licence (Resources/Fonts/Inter-OFL.txt). Registered for this process on first use.
+        public enum Inter {
+            public static let family = "Inter"
+
+            /// The SIL Open Font Licence text shipped with the font.
+            public static var licenceURL: URL? {
+                Bundle.module.url(forResource: "Inter-OFL", withExtension: "txt")
+            }
+
+            /// True once the bundled font is registered (or was already).
+            public static let isAvailable: Bool = {
+                guard let url = Bundle.module.url(forResource: "InterVariable", withExtension: "ttf") else { return false }
+                var error: Unmanaged<CFError>?
+                if CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) { return true }
+                // Already registered (a second bundle or a previous call) still counts.
+                let code = error.map { CFErrorGetCode($0.takeRetainedValue()) }
+                return code == CTFontManagerError.alreadyRegistered.rawValue
+            }()
         }
     }
 }
