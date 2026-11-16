@@ -246,6 +246,7 @@
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
 		E04761763662B47771A1A831 /* LockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D40167C0D7679C74A6D594D /* LockView.swift */; };
 		E0F05CC1047E16590D806097 /* TagEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0629736662C4143CF229997B /* TagEditor.swift */; };
+		E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A896751814517F3556294B /* RXMacWatchtower.swift */; };
 		E1DE2AFB91E7CB2AE9BC0003 /* PairingPasswordStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7F408977317BA9B16FDD68 /* PairingPasswordStep.swift */; };
 		E1F9ECC90A514F5FE2FE9875 /* AllAccountsSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A106C3614367687097B3B54C /* AllAccountsSearch.swift */; };
 		E3994E68351E59E6E7D53126 /* SiteSetupBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D838BBE555FF15937D141DE6 /* SiteSetupBanner.swift */; };
@@ -400,6 +401,7 @@
 		00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WifiAutoController.swift; sourceTree = "<group>"; };
 		013A476F2676DCA4286E22C9 /* VaultKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VaultKit; path = VaultKit; sourceTree = SOURCE_ROOT; };
 		0151B9E949BF8C50E53F3176 /* BarcodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeEditor.swift; sourceTree = "<group>"; };
+		01A896751814517F3556294B /* RXMacWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacWatchtower.swift; sourceTree = "<group>"; };
 		047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelDetection.swift; sourceTree = "<group>"; };
 		0629736662C4143CF229997B /* TagEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditor.swift; sourceTree = "<group>"; };
 		0678ACD447C474D9C9FA95CA /* AppModel+Accounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Accounts.swift"; sourceTree = "<group>"; };
@@ -827,6 +829,7 @@
 				9119720BF7C06235BF6ED5AC /* ItemListRow.swift */,
 				1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */,
 				4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */,
+				01A896751814517F3556294B /* RXMacWatchtower.swift */,
 				F0B70DA81485FABCED6D9346 /* Sidebar.swift */,
 				C83485D924585FA30495DE07 /* SplitBrowseView.swift */,
 			);
@@ -2141,6 +2144,7 @@
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
 				317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */,
 				B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */,
+				E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */,
 				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
 				20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,

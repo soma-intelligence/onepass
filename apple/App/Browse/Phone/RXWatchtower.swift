@@ -1,7 +1,8 @@
-#if os(iOS)
 import DesignKit
 import SwiftUI
 import VaultKit
+
+#if os(iOS)
 
 /// Watchtower in the RX look (Penpot "iPhone · Watchtower"), with the score gauge kept in place of
 /// the mock's line chart (owner decision): the title and share button, the gauge, one alert card per
@@ -92,23 +93,12 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                 let ids = card.itemIDs(in: report)
                 NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck)) {
                     RXAlertCard(
-                        title: Self.alertTitle(card, count: ids.count), message: Text(card.message),
+                        title: RXWatchtowerText.alertTitle(card, count: ids.count), message: Text(card.message),
                         systemImage: "exclamationmark", positive: false, chevron: true)
                 }
                 .buttonStyle(PressableButtonStyle())
                 .accessibilityIdentifier("watchtower.show.\(card.id)")
             }
-        }
-    }
-
-    /// "1 exposed account": a plural entry per red check (never a figure glued to a title).
-    private static func alertTitle(_ card: WatchtowerCard, count: Int) -> Text {
-        switch card.id {
-        case "compromised": Text("rx.watchtower.alert.compromised \(count)")
-        case "breached_site": Text("rx.watchtower.alert.breachedSite \(count)")
-        case "provider_exposed": Text("rx.watchtower.alert.providerExposed \(count)")
-        case "expiring": Text("rx.watchtower.alert.expiring \(count)")
-        default: Text(card.title)
         }
     }
 
@@ -164,8 +154,25 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
     }
 }
 
+#endif
+
+/// The RX Watchtower texts shared by the iPhone tab and the Mac page.
+enum RXWatchtowerText {
+    /// "1 exposed account": a plural entry per red check (never a figure glued to a title).
+    static func alertTitle(_ card: WatchtowerCard, count: Int) -> Text {
+        switch card.id {
+        case "compromised": Text("rx.watchtower.alert.compromised \(count)")
+        case "breached_site": Text("rx.watchtower.alert.breachedSite \(count)")
+        case "provider_exposed": Text("rx.watchtower.alert.providerExposed \(count)")
+        case "expiring": Text("rx.watchtower.alert.expiring \(count)")
+        default: Text(card.title)
+        }
+    }
+
+}
+
 /// The checks the stat tiles show, with the disc of the mock.
-private struct RXWatchtowerStat {
+struct RXWatchtowerStat {
     let id: String
     let label: LocalizedStringKey
     let symbol: String
@@ -180,7 +187,7 @@ private struct RXWatchtowerStat {
 
 /// The alert card of the mock: a red (or green) wash, a white disc with the glyph, the title
 /// (Headline) and one line (Footnote), all white.
-private struct RXAlertCard: View {
+struct RXAlertCard: View {
     let title: Text
     let message: Text
     let systemImage: String
@@ -223,4 +230,3 @@ private struct RXAlertCard: View {
         .accessibilityElement(children: .combine)
     }
 }
-#endif

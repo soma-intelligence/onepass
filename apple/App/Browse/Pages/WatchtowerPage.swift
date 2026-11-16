@@ -6,47 +6,31 @@ import VaultKit
 /// Everything comes from the core's report (`WatchtowerModel`); nothing is shown before it.
 struct WatchtowerPage: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     private var watchtower: WatchtowerModel { model.watchtower }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                PageHeader(
-                    title: "Watchtower", symbol: "shield.lefthalf.filled", color: Theme.accent,
-                    message: String(localized: "browse.watchtowerFindsPasswordsTo")
-                ) {
-                    ScoreGauge(score: watchtower.report.map { Int($0.score) })
-                }
-                statusLine
-                if let report = watchtower.report {
-                    StrengthCard(levels: report.strength.map(Int.init))
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 14)], spacing: 14) {
-                        ForEach(WatchtowerCard.all) { card in
-                            WatchtowerCardView(
-                                card: card, report: report, checkBreaches: watchtower.checkBreaches,
-                                breachCatalog: watchtower.breachCatalogUsed
-                            ) {
-                                model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report), check: card.siteCheck)
-                            }
-                        }
-                        let seen = model.seenByFormerMemberIDs
-                        if !seen.isEmpty {
-                            WatchtowerCardView(
-                                card: .seenByFormerMember, report: report, checkBreaches: watchtower.checkBreaches,
-                                breachCatalog: watchtower.breachCatalogUsed, itemIDs: seen
-                            ) {
-                                model.showWatchtowerItems(title: WatchtowerCard.seenByFormerMember.title, itemIDs: seen)
-                            }
-                        }
-                    }
-                }
-                BreachSettingCard()
+            #if os(macOS)
+            if rxDesign {
+                RXMacWatchtowerContent(statusLine: statusLine)
+                    .padding(.horizontal, Theme.RX.Space.xl)
+                    .padding(.vertical, Theme.RX.Space.l)
+                    .frame(maxWidth: 864, alignment: .leading)
+                    .frame(maxWidth: .infinity)
+            } else {
+                classic
             }
-            .padding(28)
-            .frame(maxWidth: 1100, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            #else
+            classic
+            #endif
         }
+        #if os(macOS)
+        .background {
+            if rxDesign { Theme.RX.Palette.pageBackground.color.ignoresSafeArea() }
+        }
+        #endif
         .navigationTitle("Watchtower")
         .toolbar {
             ToolbarItem {
@@ -66,6 +50,45 @@ struct WatchtowerPage: View {
         .onChange(of: watchtower.checkBreaches) { watchtower.refreshIfNeeded(model.session) }
         .onChange(of: model.session.hiddenVaultIDs) { watchtower.refreshIfNeeded(model.session) }
         .accessibilityIdentifier("page.watchtower")
+    }
+
+    /// The classic page (the RX look off): header with the gauge, strength, the cards grid.
+    private var classic: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            PageHeader(
+                title: "Watchtower", symbol: "shield.lefthalf.filled", color: Theme.accent,
+                message: String(localized: "browse.watchtowerFindsPasswordsTo")
+            ) {
+                ScoreGauge(score: watchtower.report.map { Int($0.score) })
+            }
+            statusLine
+            if let report = watchtower.report {
+                StrengthCard(levels: report.strength.map(Int.init))
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 14)], spacing: 14) {
+                    ForEach(WatchtowerCard.all) { card in
+                        WatchtowerCardView(
+                            card: card, report: report, checkBreaches: watchtower.checkBreaches,
+                            breachCatalog: watchtower.breachCatalogUsed
+                        ) {
+                            model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report), check: card.siteCheck)
+                        }
+                    }
+                    let seen = model.seenByFormerMemberIDs
+                    if !seen.isEmpty {
+                        WatchtowerCardView(
+                            card: .seenByFormerMember, report: report, checkBreaches: watchtower.checkBreaches,
+                            breachCatalog: watchtower.breachCatalogUsed, itemIDs: seen
+                        ) {
+                            model.showWatchtowerItems(title: WatchtowerCard.seenByFormerMember.title, itemIDs: seen)
+                        }
+                    }
+                }
+            }
+            BreachSettingCard()
+        }
+        .padding(28)
+        .frame(maxWidth: 1100, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder private var statusLine: some View {
