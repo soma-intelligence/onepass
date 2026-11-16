@@ -593,6 +593,94 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
     }
 }
 
+// MARK: Tab bar
+
+/// One tab of `RXTabBar`.
+public struct RXTab<ID: Hashable>: Identifiable {
+    public let id: ID
+    let title: Text
+    let systemImage: String
+    let accessibilityIdentifier: String
+
+    public init(id: ID, title: Text, systemImage: String, accessibilityIdentifier: String) {
+        self.id = id
+        self.title = title
+        self.systemImage = systemImage
+        self.accessibilityIdentifier = accessibilityIdentifier
+    }
+}
+
+/// The floating tab bar of the mock: a pill of tabs (glyph over a Caption label, the selected one on
+/// a soft fill in the accent) and a separate round search button, both on the tab bar glass.
+/// Each tab is a button with the selected trait; the labels scale with Dynamic Type.
+public struct RXTabBar<ID: Hashable>: View {
+    let tabs: [RXTab<ID>]
+    @Binding var selection: ID
+    let searchLabel: Text
+    let onSearch: () -> Void
+
+    public init(tabs: [RXTab<ID>], selection: Binding<ID>, searchLabel: Text, onSearch: @escaping () -> Void) {
+        self.tabs = tabs
+        _selection = selection
+        self.searchLabel = searchLabel
+        self.onSearch = onSearch
+    }
+
+    public var body: some View {
+        HStack(spacing: RX.Space.l) {
+            HStack(spacing: 0) {
+                ForEach(tabs) { tab in
+                    let selected = tab.id == selection
+                    Button {
+                        selection = tab.id
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: tab.systemImage)
+                                .font(.system(size: 20, weight: .semibold))
+                                .symbolVariant(selected ? .fill : .none)
+                                .frame(height: 24)
+                            tab.title
+                                .rxFont(.caption)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .foregroundStyle(selected ? RX.Palette.accentText.color : RX.Palette.textPrimary.color)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background {
+                            if selected { Capsule().fill(RX.Palette.tabActive.color) }
+                        }
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+                    .accessibilityIdentifier(tab.accessibilityIdentifier)
+                }
+            }
+            .padding(6)
+            .background(glass(Capsule()))
+            Button(action: onSearch) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(RX.Palette.textPrimary.color)
+                    .frame(width: RX.Metrics.tabBarHeight, height: RX.Metrics.tabBarHeight)
+                    .background(glass(Circle()))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(searchLabel)
+            .accessibilityIdentifier("rx.tab.search")
+        }
+        .padding(.horizontal, RX.Space.gutter)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func glass<S: Shape>(_ shape: S) -> some View {
+        shape.fill(.ultraThinMaterial)
+            .overlay(shape.fill(RX.Palette.tabBar.color))
+            .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
+    }
+}
+
 #Preview("RX blocks") {
     ScrollView {
         VStack(spacing: 16) {

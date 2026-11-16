@@ -63,6 +63,38 @@ struct PhoneTabsView: View {
     /// The unfolded iPhone: an item opens in the detail half beside the tabs, never in a tab's
     /// stack, so the selection belongs to that half and the stacks never follow it.
     private var besideDetail: Bool { foldDrag != nil }
+    /// The RX look (Réglages > Général > Nouveau design).
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+
+    /// RX on an iPhone (not an iPad, not the unfolded layout): the floating capsule and round search
+    /// button of the mock replace the system tab bar. The search tab keeps the system bar, whose
+    /// search field lives in it.
+    private var customBar: Bool {
+        rxDesign && UIDevice.current.userInterfaceIdiom == .phone && !besideDetail
+    }
+
+    /// The system tab bar of a stack: hidden under the custom bar, and while an editor is open.
+    private func systemBar(_ which: PhoneTab, editing: Bool = false) -> Visibility {
+        if editing { return .hidden }
+        return customBar && which != .search ? .hidden : .automatic
+    }
+
+    private var rxTabBar: some View {
+        RXTabBar(
+            tabs: [
+                RXTab(id: PhoneTab.home, title: Text("Accueil"), systemImage: "house", accessibilityIdentifier: "tab.home"),
+                RXTab(id: PhoneTab.items, title: Text("Éléments"), systemImage: "list.bullet.rectangle.portrait",
+                      accessibilityIdentifier: "tab.items"),
+                RXTab(id: PhoneTab.watchtower, title: Text(verbatim: "Watchtower"), systemImage: "checkmark.shield",
+                      accessibilityIdentifier: "tab.watchtower"),
+            ],
+            selection: $tab, searchLabel: Text("common.search")
+        ) {
+            tab = .search
+        }
+        .padding(.bottom, Theme.RX.Space.xs)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
 
     /// A tab's label: the outline symbol, its filled form when the tab is selected.
     private func tabLabel(_ title: LocalizedStringKey, _ symbol: String, _ value: PhoneTab) -> some View {
@@ -104,6 +136,11 @@ struct PhoneTabsView: View {
         // button on the right of the three tabs, and its field opens at the bottom.
         .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("browse.searchItems"))
         .tabViewSearchActivation(.searchTabSelection)
+        .overlay(alignment: .bottom) {
+            if customBar, tab != .search, !model.isEditing {
+                rxTabBar
+            }
+        }
         .tabBarMinimizeBehavior(.onScrollDown)
         // A search is only ever shown on its own tab, whatever presented it.
         .onChange(of: searching) { _, presented in
@@ -170,6 +207,7 @@ struct PhoneTabsView: View {
             // same way (one shared modifier, never a copy per screen).
             root()
                 .headerFade()
+                .toolbar(systemBar(which), for: .tabBar)
                 .navigationDestination(for: PhoneRoute.self) { route in
                     Group {
                         switch route {
@@ -189,12 +227,15 @@ struct PhoneTabsView: View {
                             ItemDetailView(ref: ref)
                                 .id(ref)
                                 .itemZoomDestination(ref, in: itemZoom)
-                                .toolbar(model.isEditing ? .hidden : .visible, for: .tabBar)
+                                .toolbar(systemBar(which, editing: model.isEditing), for: .tabBar)
                         }
                     }
                     .headerFade()
+                    .toolbar(systemBar(which, editing: model.isEditing), for: .tabBar)
                 }
         }
+        // Room under the content for the floating bar.
+        .safeAreaPadding(.bottom, customBar && which != .search ? Theme.RX.Metrics.tabBarHeight + Theme.RX.Space.s : 0)
         .environment(\.itemZoomNamespace, itemZoom)
         .environment(\.inPhoneTabs, true)
         .environment(\.pushPhoneRoute) { route in
