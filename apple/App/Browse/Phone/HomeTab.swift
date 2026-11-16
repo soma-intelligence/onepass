@@ -42,20 +42,22 @@ struct HomeTab: View {
         Group {
             if counts.all == 0 {
                 firstItemState
+            } else if rxDesign {
+                RXHomePage(itemCount: counts.all, recents: recents, favorites: favorites) {
+                    rxExtras(frequent: frequent)
+                }
+                .environment(\.rxCards, true)
+                .task(id: session.summariesRevision) { await duplicates.load(session) }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Space.l) {
-                        // RX: the score banner on top, in place of the four tiles.
-                        if rxDesign { RXHomeHero(itemCount: counts.all) }
                         // Banners: these are list sections elsewhere, plain blocks here.
                         SyncRefusalSection()
                         AccountChangedSection()
                         // Under the search, above Tous les éléments and Favoris (spec 2026-11-03-duplicates).
                         if !searchActive { DuplicatesBanner(loader: duplicates) }
                         SharingBanners(horizontalPadding: 0)
-                        if !rxDesign {
-                            tiles(all: counts.all, favorites: counts.favorites)
-                        }
+                        tiles(all: counts.all, favorites: counts.favorites)
                         if model.travel.showsCard, !searchActive {
                             TravelSuggestionCard()
                                 .padding(Theme.Space.l)
@@ -97,14 +99,7 @@ struct HomeTab: View {
                     .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
                     .padding(.bottom, Theme.Space.xl)
                 }
-                .background {
-                    if rxDesign {
-                        Theme.RX.Palette.pageBackground.color.ignoresSafeArea()
-                    } else {
-                        PhoneBackground()
-                    }
-                }
-                .environment(\.rxCards, rxDesign)
+                .background(PhoneBackground())
                 .task(id: session.summariesRevision) { await duplicates.load(session) }
             }
         }
@@ -122,6 +117,33 @@ struct HomeTab: View {
                     Toggle("crypto.title", systemImage: "bitcoinsign.circle", isOn: $showsCrypto)
                 }
             }
+        }
+    }
+
+    /// RX: the classic cards under Récents, Favoris and Coffres (banners, tips, the cards picked in
+    /// the options), in the classic order.
+    @ViewBuilder private func rxExtras(frequent: [FfiItemSummary]) -> some View {
+        SyncRefusalSection()
+        AccountChangedSection()
+        if !searchActive { DuplicatesBanner(loader: duplicates) }
+        SharingBanners(horizontalPadding: 0)
+        if model.travel.showsCard, !searchActive {
+            TravelSuggestionCard().padding(Theme.Space.l).phoneCard()
+        }
+        if model.showsAutoFillTip, !searchActive {
+            AutoFillTipCard().padding(Theme.Space.l).phoneCard()
+        }
+        if model.showsSafariSetupCard, !searchActive {
+            SafariSetupCard().padding(Theme.Space.l).phoneCard()
+        }
+        if showsNearby { HomeNearbyCard() }
+        if showsCrypto { HomeCryptoCard() }
+        if showsProfile { HomeProfileCard(summary: session.mainIdentity) }
+        if showsFrequent, !frequent.isEmpty {
+            HomeListCard(
+                title: "home.frequentlyUsed", symbol: "chart.bar.fill", color: .teal,
+                isOpen: $frequentOpen, items: frequent, list: nil,
+                emptyText: "browse.itemsUsedAppearHere", id: "home.frequent")
         }
     }
 
