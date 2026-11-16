@@ -10,6 +10,9 @@
 #       open signup switched off in the database (with it on, a create
 #       ignores the invite and takes plan selfhost). Prints the invite, for
 #       ONEPASS_MAILBOX_E2E_INVITE.
+#   mailbox/scripts/e2e-admin.sh org-invite
+#       An invite of plan `org` with one use (an organisation's mailbox).
+#       core/onepass-ffi/tests/org_e2e.rs calls it once per org it publishes.
 #   mailbox/scripts/e2e-admin.sh reset-rate
 #       Empties the rate windows. Every conformance case creates mailboxes,
 #       and one address gets 5 creations a day (spec 4.9).
@@ -58,6 +61,16 @@ delete from onepass_mailbox.settings where name = 'open_signup';
 SQL
         echo "$invite"
         ;;
+    org-invite)
+        # One use of plan `org` (seed.sql), for an organisation's mailbox
+        # (core/onepass-ffi/tests/org_e2e.rs).
+        invite="e2e-org-$(openssl rand -hex 16)"
+        sql supabase_admin >/dev/null <<SQL
+insert into onepass_mailbox.invites (token_hash, plan, uses_left, expires_at)
+values (extensions.digest(convert_to('${invite}', 'UTF8'), 'sha256'), 'org', 1, now() + interval '1 day');
+SQL
+        echo "$invite"
+        ;;
     reset-rate)
         sql supabase_admin -c 'delete from onepass_mailbox.rate' >/dev/null
         ;;
@@ -72,7 +85,7 @@ SQL
         sql postgres -c 'select onepass_mailbox.maintenance()' >/dev/null
         ;;
     *)
-        echo "usage: $0 setup | reset-rate | purge <mailbox hex>" >&2
+        echo "usage: $0 setup | org-invite | reset-rate | purge <mailbox hex>" >&2
         exit 2
         ;;
 esac
