@@ -155,10 +155,14 @@ struct RXMacHome: View {
                     Button { open(summary) } label: {
                         VStack(spacing: RX.Space.s) {
                             RXSummaryIcon(summary: summary, size: 52)
+                            // Two lines, centred, so a long title wraps instead of being cut.
                             Text(summary.title)
                                 .rxFont(.footnote)
                                 .foregroundStyle(RX.Palette.textPrimary.color)
-                                .lineLimit(1)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2, reservesSpace: true)
+                                .minimumScaleFactor(0.85)
+                                .padding(.horizontal, 2)
                         }
                         .frame(maxWidth: .infinity)
                     }
