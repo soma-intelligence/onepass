@@ -43,6 +43,27 @@ enum Snapshot {
             return
         }
 
+        // `-OnePassSnapshotOnly rx` (with `-OnePassRX YES`): the RX look on the Mac, Accueil, an
+        // item and Watchtower, light then dark.
+        if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "rx" {
+            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: appearance)
+                model.selectedItem = nil
+                model.page = .home
+                try? await Task.sleep(for: .seconds(2))
+                await capture(directory, "mac-rx-home-\(suffix)")
+                model.showItems(.all)
+                model.selectedItem = login.map { ItemRef(vaultID: $0.vaultId, itemID: $0.id) }
+                await capture(directory, "mac-rx-item-\(suffix)")
+                model.selectedItem = nil
+                model.page = .watchtower
+                try? await Task.sleep(for: .seconds(2))
+                await capture(directory, "mac-rx-watchtower-\(suffix)")
+            }
+            NSApp.terminate(nil)
+            return
+        }
+
         // `-OnePassSnapshotOnly toolbar`: the list's header row (search, filter, sort, the
         // "Nouvel élément" pill) wide then narrow, where the pill folds to its "+", light then dark.
         if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "toolbar" {

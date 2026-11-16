@@ -73,9 +73,9 @@ struct ItemDetailView: View {
 
     private var editingHere: Bool { !standalone && model.editing }
 
-    /// The RX centred header: iPhone and iPad with the switch on (the Mac keeps its own header).
+    /// The RX centred header: iPhone, iPad and Mac with the switch on.
     private var rxHeader: Bool {
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         rxDesign
         #else
         false
@@ -195,7 +195,7 @@ struct ItemDetailView: View {
                     .padding(.horizontal, Theme.Space.xs)
                     .padding(.bottom, Theme.Space.xs)
                 #endif
-                #if os(iOS)
+                #if os(iOS) || os(macOS)
                 if rxDesign, !locked(item), item.trashedAt == nil {
                     rxQuickActions(item)
                 }
@@ -225,7 +225,7 @@ struct ItemDetailView: View {
                         }
                     }
                     content(item)
-                    #if os(iOS)
+                    #if os(iOS) || os(macOS)
                     if rxDesign { rxSecurityCard(item) }
                     #endif
                     ItemAttachmentsSection(item: item, editable: item.trashedAt == nil && !standalone) {
@@ -302,7 +302,7 @@ struct ItemDetailView: View {
         .simultaneousGesture(TapGesture().onEnded { session.noteActivity() })
     }
 
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
     /// RX: the quick actions of the mock under the header: copy the password, copy the current
     /// one-time code, open the website, share. An action the item cannot do is left out.
     @ViewBuilder private func rxQuickActions(_ item: FfiItem) -> some View {
@@ -347,7 +347,11 @@ struct ItemDetailView: View {
             }
             .accessibilityIdentifier("rx.item.share")
         }
+        #if os(iOS)
         .buttonStyle(PressableButtonStyle())
+        #else
+        .buttonStyle(.plain)
+        #endif
     }
 
     /// RX: the Security card of the mock for an item with a password: its strength, its passkey

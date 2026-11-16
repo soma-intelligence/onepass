@@ -12,7 +12,7 @@ struct TotpCodeView: View {
     @Environment(\.rxCards) private var rxCards
 
     var body: some View {
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         if rxCards, !compact {
             rxBody
         } else {

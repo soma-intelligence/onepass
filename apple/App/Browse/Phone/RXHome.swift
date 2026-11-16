@@ -1,7 +1,8 @@
-#if os(iOS)
 import DesignKit
 import SwiftUI
 import VaultKit
+
+#if os(iOS)
 
 /// Accueil in the RX look (Penpot "iPhone · Home"): a full-bleed photo hero under the status bar
 /// (account menu, search pill, Watchtower and new item glass buttons, the security score, four
@@ -179,9 +180,11 @@ struct RXHomePage<Extras: View>: View {
     }
 }
 
-/// An item of the RX Home: its icon (loaded like the list rows), the title, the subtitle, and when
-/// it was last used.
-private struct RXSummaryRow: View {
+#endif
+
+/// An item of the RX Home (iPhone and Mac): its icon (loaded like the list rows), the title, the
+/// subtitle, and when it was last used.
+struct RXSummaryRow: View {
     let summary: FfiItemSummary
 
     var body: some View {
@@ -197,7 +200,7 @@ private struct RXSummaryRow: View {
 }
 
 /// The icon of an item summary, as the list rows load it.
-private struct RXSummaryIcon: View {
+struct RXSummaryIcon: View {
     @Environment(AppModel.self) private var model
     let summary: FfiItemSummary
     let size: CGFloat
@@ -217,6 +220,7 @@ private struct RXSummaryIcon: View {
     }
 }
 
+#if os(iOS)
 /// The security score over the photo: the label with the item count, the figure over 100, the
 /// status pill. Tapping it opens Watchtower.
 struct RXHomeScore: View {

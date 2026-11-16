@@ -20,6 +20,7 @@ struct Sidebar: View {
     @State private var duplicates = DuplicatesLoader()
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     #if os(macOS)
     /// Height of the window's title bar and toolbar, which the sidebar column does not report as
     /// a safe area (macOS 26): the account header starts below it.
@@ -132,6 +133,12 @@ struct Sidebar: View {
             }
             #endif
             Section {
+                #if os(macOS)
+                // The RX look's Accueil (Penpot "Mac · Home"), first while the switch is on.
+                if rxDesign || model.page == .home {
+                    pageRow("rx.mac.home", symbol: "house.fill", color: Theme.accent, page: .home, id: "sidebar.home")
+                }
+                #endif
                 row("Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent, count: counts.all,
                     filter: .all, id: "library.all")
                 row("Favoris", symbol: "star.fill", color: Self.favoritesColor, count: counts.favorites,

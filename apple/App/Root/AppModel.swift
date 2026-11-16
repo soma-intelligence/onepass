@@ -2152,6 +2152,8 @@ enum BrowsePage: Hashable {
     case duplicates
     /// Profil (spec 2026-11-14-profile-account-security): opened from the account panel.
     case profile
+    /// Accueil of the RX look on the Mac (`RXMacHome`), a sidebar row only while the switch is on.
+    case home
 }
 
 /// The items a Watchtower card shows in the list, under the card's title.

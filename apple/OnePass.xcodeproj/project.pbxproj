@@ -204,6 +204,7 @@
 		B716F92C9616BABA814C0AF7 /* OnePassCore in Frameworks */ = {isa = PBXBuildFile; productRef = 451A77F800231FE2450B58B4 /* OnePassCore */; };
 		B79C51D23F0756ECAC48EBCE /* CompanionLink in Frameworks */ = {isa = PBXBuildFile; productRef = 958DAB1110F5AA509D48EAC7 /* CompanionLink */; };
 		B79CBE1CA10296A11E15570C /* HotspotInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFF1217DA8BF36DC3AA5A9E /* HotspotInstaller.swift */; };
+		B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */; };
 		B847A67A6921D12461A050AB /* SafariSetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */; };
 		BB3901D1319A800CA20F27D9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 29816FC64123CECF0063156E /* PrivacyInfo.xcprivacy */; };
 		BBD33D1A14745D3CC8C23455 /* CryptoCoinView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98AB73D4EBAF2F2ABEB4135 /* CryptoCoinView.swift */; };
@@ -479,6 +480,7 @@
 		49841660587A002A57EE289D /* PublicSessionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicSessionMonitor.swift; sourceTree = "<group>"; };
 		4A28B0CFB737900012034BCE /* EditorFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorFieldRow.swift; sourceTree = "<group>"; };
 		4B7F408977317BA9B16FDD68 /* PairingPasswordStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPasswordStep.swift; sourceTree = "<group>"; };
+		4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacHome.swift; sourceTree = "<group>"; };
 		4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyNumberEditor.swift; sourceTree = "<group>"; };
 		4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassSafariMobile.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4FAA14239035AEBB97155D9B /* DevicesSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesSettings.swift; sourceTree = "<group>"; };
@@ -824,6 +826,7 @@
 				EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */,
 				9119720BF7C06235BF6ED5AC /* ItemListRow.swift */,
 				1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */,
+				4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */,
 				F0B70DA81485FABCED6D9346 /* Sidebar.swift */,
 				C83485D924585FA30495DE07 /* SplitBrowseView.swift */,
 			);
@@ -2137,6 +2140,7 @@
 				399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */,
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
 				317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */,
+				B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */,
 				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
 				20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,
