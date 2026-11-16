@@ -153,6 +153,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsPage] = SettingsView.initialPath
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     /// Screenshots (Debug): `-OnePassDemoSettingsPage <page>` opens that page.
     private static var initialPath: [SettingsPage] {
@@ -168,53 +169,19 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            List {
-                Section {
-                    NavigationLink {
-                        ProfileSettings()
-                    } label: {
-                        SettingsAccountHeader()
+            #if os(iOS)
+            if rxDesign {
+                RXSettingsHome()
+                    .navigationDestination(for: SettingsPage.self) { page in
+                        page.content
+                            .toolbar { doneItem }
                     }
-                    .accessibilityIdentifier("settings.account")
-                }
-                Section {
-                    row(.general)
-                    row(.security)
-                    row(.autofill)
-                    row(.sync)
-                }
-                Section {
-                    row(.accounts)
-                    row(.vaults)
-                    row(.contacts)
-                    row(.family)
-                    row(.organisation)
-                    row(.devices)
-                    row(.travel)
-                    row(.crypto)
-                    #if os(iOS)
-                    watchRow
-                    agentsRow
-                    #endif
-                }
-                Section {
-                    row(.about)
-                    #if DEBUG
-                    row(.iconCheck)
-                    #endif
-                } footer: {
-                    Text("settings.onepassOpenSourceAgpl")
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, Theme.Space.s)
-                }
+            } else {
+                classicList
             }
-            .settingsPage("Réglages")
-            .navigationDestination(for: SettingsPage.self) { page in
-                page.content
-                    // "OK" on every page: opened straight on one (Profil), it still closes the sheet.
-                    .toolbar { doneItem }
-            }
-            .toolbar { doneItem }
+            #else
+            classicList
+            #endif
         }
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
@@ -227,6 +194,57 @@ struct SettingsView: View {
                 path = [request]
             }
         }
+    }
+
+    /// The classic grouped list (the RX look off).
+    private var classicList: some View {
+        List {
+            Section {
+                NavigationLink {
+                    ProfileSettings()
+                } label: {
+                    SettingsAccountHeader()
+                }
+                .accessibilityIdentifier("settings.account")
+            }
+            Section {
+                row(.general)
+                row(.security)
+                row(.autofill)
+                row(.sync)
+            }
+            Section {
+                row(.accounts)
+                row(.vaults)
+                row(.contacts)
+                row(.family)
+                row(.organisation)
+                row(.devices)
+                row(.travel)
+                row(.crypto)
+                #if os(iOS)
+                watchRow
+                agentsRow
+                #endif
+            }
+            Section {
+                row(.about)
+                #if DEBUG
+                row(.iconCheck)
+                #endif
+            } footer: {
+                Text("settings.onepassOpenSourceAgpl")
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Theme.Space.s)
+            }
+        }
+        .settingsPage("Réglages")
+        .navigationDestination(for: SettingsPage.self) { page in
+            page.content
+                // "OK" on every page: opened straight on one (Profil), it still closes the sheet.
+                .toolbar { doneItem }
+        }
+        .toolbar { doneItem }
     }
 
     private var doneItem: some ToolbarContent {

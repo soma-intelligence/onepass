@@ -268,6 +268,7 @@
 		F40BBE052065BF7A31B7C236 /* ItemListRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9119720BF7C06235BF6ED5AC /* ItemListRow.swift */; };
 		F44F6C0E0EFB3EA752AB6B93 /* CoinIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 470584D1B48820546C712920 /* CoinIcon.swift */; };
 		F5E7599D30A18148EE9AD7D7 /* OnePassWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5C3BD94740BA327E299532A /* RXSettingsView.swift */; };
 		F7E347F60EB684704FAD9336 /* CryptoPortfolioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681C202A7F456BC917F549CE /* CryptoPortfolioView.swift */; };
 		F7ED18E1061488E44AB2E8F5 /* GlanceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 55B85CDB4BCDFD6D0AE89FF0 /* GlanceKit */; };
 		F9F1D47BCFAE40F3A44CC777 /* OnePassWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70D198370DE24CFF6A929681 /* OnePassWatchApp.swift */; };
@@ -611,6 +612,7 @@
 		D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWidgetsBundle.swift; sourceTree = "<group>"; };
 		D51DD280F66567FADAA93DDD /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D53F785E56AE55B95035986B /* CompanionKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompanionKit; path = CompanionKit; sourceTree = SOURCE_ROOT; };
+		D5C3BD94740BA327E299532A /* RXSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSettingsView.swift; sourceTree = "<group>"; };
 		D6DA50BEC5F27CE8D01F0A5D /* AutoFillHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoFillHostApp.swift; sourceTree = "<group>"; };
 		D838BBE555FF15937D141DE6 /* SiteSetupBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteSetupBanner.swift; sourceTree = "<group>"; };
 		D8FA3E9BC65D3B546BAAE33A /* TextInsertionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInsertionView.swift; sourceTree = "<group>"; };
@@ -1266,6 +1268,7 @@
 				6578DD1A294793BBA2E5AB8A /* IconCheckSettings.swift */,
 				2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */,
 				0D982919CC9E366DCF914D57 /* MigrationSheet.swift */,
+				D5C3BD94740BA327E299532A /* RXSettingsView.swift */,
 				1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */,
 				73396E5534184EF7CE76A170 /* SecuritySettings.swift */,
 				DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */,
@@ -2127,6 +2130,7 @@
 				0792B9A17998C8FFA5C457A9 /* PublicSessionMonitor.swift in Sources */,
 				399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */,
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
+				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,
 				15FB8F91DBC0162C7EBD40AC /* ReceivedItemsView.swift in Sources */,
 				C500D24FF75EEF70D090DF1D /* RecoverWithHelpView.swift in Sources */,
