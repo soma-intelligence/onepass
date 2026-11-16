@@ -1,0 +1,64 @@
+# Hosting platforms: software that serves many brands' sites, member portals or log-in pages,
+# often with the platform's own favicon (a gym member portal showing its club software's icon).
+# `icon_pack.py sites` fetches each one's icon into OUT/platforms at build time; `build` ships the
+# dHash of each as a reject, and the app never shows a site icon that matches one as a brand's logo.
+# One registrable domain per line, `#` for a comment. The platform's own domain keeps its icon.
+
+# Gym, club and studio software
+daxko.com
+clubautomation.com
+mindbodyonline.com
+abcfitness.com
+clubready.com
+zenplanner.com
+wodify.com
+glofox.com
+marianatek.com
+clubessential.com
+
+# Site builders and CMS
+wix.com
+squarespace.com
+wordpress.com
+weebly.com
+webflow.com
+jimdo.com
+strikingly.com
+hubspot.com
+
+# Identity providers and single sign-on
+okta.com
+auth0.com
+onelogin.com
+pingidentity.com
+duosecurity.com
+
+# Salesforce sites and portals
+salesforce.com
+force.com
+
+# Help desks
+zendesk.com
+freshdesk.com
+freshworks.com
+helpscout.net
+
+# E-commerce
+shopify.com
+bigcommerce.com
+ecwid.com
+squareup.com
+
+# Community and forum hosts
+discourse.org
+circle.so
+mightynetworks.com
+khoros.com
+
+# School and learning portals
+instructure.com
+blackboard.com
+schoology.com
+powerschool.com
+d2l.com
+moodle.com

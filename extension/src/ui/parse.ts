@@ -1,6 +1,20 @@
 // Validation of service worker replies before rendering. A malformed reply
 // renders as an internal error, never partially.
-import type { FormKind, GhostMetrics, ProviderId, MenuPreview, SaveOutcome, SuggestionPreview } from "../shared/messages";
+import type {
+  FormKind,
+  GhostMetrics,
+  ProviderId,
+  MenuPreview,
+  SaveOutcome,
+  SetupCandidate,
+  SetupCardState,
+  SetupCodesResult,
+  SetupRefusal,
+  SetupSaveResult,
+  SetupScanResult,
+  SuggestionPreview,
+} from "../shared/messages";
+import { SETUP_REFUSALS } from "../shared/messages";
 import {
   CHAIN_PHASES,
   CUSTOM_MAX_LENGTH,
@@ -483,3 +497,74 @@ export const parseGhostInit = (v: unknown): (SuggestionPreview & { metrics: Ghos
       },
     };
   });
+
+// ---- two-factor setup (setup.html, the popup's scan) ----
+
+const setupCandidate = (v: unknown): SetupCandidate => {
+  const o = obj(v);
+  return { itemId: str(o.itemId, 128), title: str(o.title), username: str(o.username), hasTotp: bool(o.hasTotp), associated: bool(o.associated) };
+};
+
+/** `setup_init` and `setup_paste`: issuer and account, the logins offered, never a seed. */
+export const parseSetupState = (v: unknown): SetupCardState | null =>
+  guard(() => {
+    const o = obj(v);
+    const candidates = list(o.candidates, setupCandidate, 200);
+    const selected = o.selected === null ? null : str(o.selected, 128);
+    if (selected !== null && !candidates.some((c) => c.itemId === selected)) throw new Bad();
+    const out: SetupCardState = {
+      mode: oneOf<SetupCardState["mode"]>(o.mode, ["confirm", "paste", "codes"]),
+      issuer: str(o.issuer),
+      account: str(o.account),
+      candidates,
+      selected,
+      mismatch: bool(o.mismatch),
+    };
+    if (o.codeCount !== undefined) {
+      const n = num(o.codeCount);
+      if (!Number.isInteger(n) || n < 0 || n > 64) throw new Bad();
+      out.codeCount = n;
+    }
+    return out;
+  });
+
+/** `setup_paste` with a key the worker refused. */
+export const parsePasteRefused = (v: unknown): { error: "invalid" } | null => guard(() => ({ error: oneOf<"invalid">(obj(v).error, ["invalid"]) }));
+
+/** A refusal's reason: required with `refused`, never elsewhere; an unknown code fails the parse. */
+const setupReason = (status: string, v: unknown): SetupRefusal | undefined => {
+  if (status !== "refused") {
+    if (v !== undefined) throw new Bad();
+    return undefined;
+  }
+  return oneOf<SetupRefusal>(v, SETUP_REFUSALS);
+};
+
+export const parseSetupSave = (v: unknown): SetupSaveResult | null =>
+  guard(() => {
+    const o = obj(v);
+    const out: SetupSaveResult = { status: oneOf<SetupSaveResult["status"]>(o.status, ["saved", "same", "exists", "replaced", "locked", "refused"]) };
+    const reason = setupReason(out.status, o.reason);
+    if (reason !== undefined) out.reason = reason;
+    if (o.code !== undefined) {
+      const code = str(o.code, 16);
+      if (!/^\d{4,10}$/.test(code)) throw new Bad();
+      const remaining = num(o.remaining);
+      if (remaining < 0 || remaining > 300) throw new Bad();
+      out.code = code;
+      out.remaining = Math.round(remaining);
+    }
+    return out;
+  });
+
+export const parseSetupCodes = (v: unknown): SetupCodesResult | null =>
+  guard(() => {
+    const o = obj(v);
+    const out: SetupCodesResult = { status: oneOf<SetupCodesResult["status"]>(o.status, ["saved", "locked", "refused"]) };
+    const reason = setupReason(out.status, o.reason);
+    if (reason !== undefined) out.reason = reason;
+    return out;
+  });
+
+export const parseSetupScan = (v: unknown): SetupScanResult | null =>
+  guard(() => ({ status: oneOf<SetupScanResult["status"]>(obj(v).status, ["card", "none", "unavailable"]) }));

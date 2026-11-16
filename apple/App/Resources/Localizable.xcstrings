@@ -422,6 +422,28 @@
         }
       }
     },
+    "Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine. Désactivé, aucune requête réseau." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The list of breached sites is downloaded whole and kept for a week. When off, no network request."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para cada contraseña, OnePass envía a Have I Been Pwned los 5 primeros caracteres de su hash SHA-1, compartidos con cientos de otras, y compara el resto aquí. La lista de sitios con filtraciones se descarga entera y se guarda una semana. Desactivado, no hay ninguna solicitud de red."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per ogni password, OnePass invia a Have I Been Pwned i primi 5 caratteri del suo hash SHA-1, condivisi con centinaia di altre, e confronta il resto qui. L'elenco dei siti violati viene scaricato per intero e conservato per una settimana. Se disattivato, nessuna richiesta di rete."
+          }
+        }
+      }
+    },
     "account.panel.scanCode" : {
       "comment" : "Account panel: scan a verification code",
       "localizations" : {
@@ -7213,6 +7235,35 @@
         }
       }
     },
+    "browse.merge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionar…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionner…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisci…"
+          }
+        }
+      }
+    },
     "browse.moveToTrash" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9451,35 +9502,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attiva «Verifica violazioni» per scaricare l'elenco dei siti violati."
-          }
-        }
-      }
-    },
-    "browse.turnOnCheckFor2" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn on “Check for breaches” to download the site catalog."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activa «Buscar filtraciones» para descargar el catálogo de sitios."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Active « Vérifier les fuites » pour télécharger le catalogue des sites."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Attiva «Verifica violazioni» per scaricare il catalogo dei siti."
           }
         }
       }
@@ -14472,6 +14494,122 @@
         }
       }
     },
+    "editor.icon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icono"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icône"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icona"
+          }
+        }
+      }
+    },
+    "editor.icon.choose" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an icon…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir un icono…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir une icône…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli un'icona…"
+          }
+        }
+      }
+    },
+    "editor.icon.reset" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset icon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restablecer el icono"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réinitialiser l'icône"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristina l'icona"
+          }
+        }
+      }
+    },
+    "editor.iconNotSaved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The item is saved, but not its icon. Try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El elemento se ha guardado, pero no su icono. Vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'élément est enregistré, mais pas son icône. Réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'elemento è stato salvato, ma non la sua icona. Riprova."
+          }
+        }
+      }
+    },
     "home.frequentlyUsed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14526,6 +14664,354 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usati di recente"
+          }
+        }
+      }
+    },
+    "iconLibrary.clearSearch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear search"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar la búsqueda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer la recherche"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella la ricerca"
+          }
+        }
+      }
+    },
+    "iconLibrary.color %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couleur %lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colore %lld"
+          }
+        }
+      }
+    },
+    "iconLibrary.image.choose" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an image…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir una imagen…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir une image…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli un'immagine…"
+          }
+        }
+      }
+    },
+    "iconLibrary.image.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A centered square of up to 256 px, without its metadata."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un cuadrado centrado de hasta 256 px, sin sus metadatos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un carré centré de 256 px au plus, sans ses métadonnées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un quadrato centrato fino a 256 px, senza i suoi metadati."
+          }
+        }
+      }
+    },
+    "iconLibrary.image.tooLarge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image too large, choose a simpler one."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imagen demasiado pesada, elige una más sencilla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image trop lourde, choisis-en une plus simple."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immagine troppo pesante, scegline una più semplice."
+          }
+        }
+      }
+    },
+    "iconLibrary.image.unreadable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image couldn't be read."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer esta imagen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette image n'a pas pu être lue."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere questa immagine."
+          }
+        }
+      }
+    },
+    "iconLibrary.noResults" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No logo found."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encontró ningún logotipo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun logo trouvé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun logo trovato."
+          }
+        }
+      }
+    },
+    "iconLibrary.search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search for a brand or website"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar una marca o un sitio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher une marque ou un site"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca un marchio o un sito"
+          }
+        }
+      }
+    },
+    "iconLibrary.tab.icons" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icons"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iconos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icônes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icone"
+          }
+        }
+      }
+    },
+    "iconLibrary.tab.image" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imagen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immagine"
+          }
+        }
+      }
+    },
+    "iconLibrary.tab.logos" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logos"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logotipos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loghi"
+          }
+        }
+      }
+    },
+    "iconLibrary.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an icon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir un icono"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir une icône"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli un'icona"
           }
         }
       }
@@ -27463,6 +27949,35 @@
         }
       }
     },
+    "item.openAndSignIn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open and Sign In"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir e iniciar sesión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir et se connecter"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri e accedi"
+          }
+        }
+      }
+    },
     "item.openInBrowser" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27546,6 +28061,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apri in una nuova finestra"
+          }
+        }
+      }
+    },
+    "item.openSettings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir les réglages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri impostazioni"
           }
         }
       }
@@ -28797,6 +29341,35 @@
         }
       }
     },
+    "item.seeHow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "See How"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver cómo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voir comment"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scopri come"
+          }
+        }
+      }
+    },
     "item.separator" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28971,6 +29544,35 @@
         }
       }
     },
+    "item.signInHintSafari" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on the OnePass Safari extension to sign in automatically."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa la extensión de Safari de OnePass para iniciar sesión automáticamente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active l'extension Safari de OnePass pour te connecter automatiquement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva l'estensione Safari di OnePass per accedere automaticamente."
+          }
+        }
+      }
+    },
     "item.signInWith" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -29025,6 +29627,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Accede con"
+          }
+        }
+      }
+    },
+    "item.siteOffersTwoFactor" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This site offers two-factor authentication."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este sitio ofrece la verificación en dos pasos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce site propose la double authentification."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo sito offre l'autenticazione a due fattori."
           }
         }
       }
@@ -29257,6 +29888,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Titolo %1$@, nella cassaforte %2$@."
+          }
+        }
+      }
+    },
+    "item.twoFactorAvailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two-Factor Authentication Available"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificación en dos pasos disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Double authentification disponible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autenticazione a due fattori disponibile"
           }
         }
       }
@@ -29866,6 +30526,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anno"
+          }
+        }
+      }
+    },
+    "list.row.customIcon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom icon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icono personalizado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icône personnalisée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icona personalizzata"
           }
         }
       }
@@ -33444,28 +34133,6 @@
         }
       }
     },
-    "Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. Les catalogues de 2fa.directory et la liste des sites piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune requête réseau." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The 2fa.directory catalogs and the list of breached sites are downloaded whole and kept for a week. When off, no network request."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Para cada contraseña, OnePass envía a Have I Been Pwned los 5 primeros caracteres de su hash SHA-1, compartidos con cientos de otras, y compara el resto aquí. Los catálogos de 2fa.directory y la lista de sitios con filtraciones se descargan enteros y se guardan una semana. Desactivado, no hay ninguna solicitud de red."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Per ogni password, OnePass invia a Have I Been Pwned i primi 5 caratteri del suo hash SHA-1, condivisi con centinaia di altre, e confronta il resto qui. I cataloghi di 2fa.directory e l'elenco dei siti violati vengono scaricati per intero e conservati per una settimana. Se disattivato, nessuna richiesta di rete."
-          }
-        }
-      }
-    },
     "Pour te suggérer le bon compte, le système reçoit les domaines et les identifiants de tes Logins, jamais tes mots de passe, codes ou clés. Désactivées, plus rien n'est transmis : tu choisis alors le compte avec la touche clé du clavier." : {
       "localizations" : {
         "en" : {
@@ -33572,6 +34239,564 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Profilo"
+          }
+        }
+      }
+    },
+    "profile.account.id" : {
+      "comment" : "Profile, Account card: account ID (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account ID"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID de la cuenta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID du compte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID account"
+          }
+        }
+      }
+    },
+    "profile.account.idCopied" : {
+      "comment" : "Profile: toast after copying the account ID",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID copied"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID copié"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID copiato"
+          }
+        }
+      }
+    },
+    "profile.account.kind" : {
+      "comment" : "Profile, Account card: kind of account (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo"
+          }
+        }
+      }
+    },
+    "profile.account.sync" : {
+      "comment" : "Profile, Account card: sync (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchronisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizzazione"
+          }
+        }
+      }
+    },
+    "profile.account.title" : {
+      "comment" : "Profile: Account card title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuenta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        }
+      }
+    },
+    "profile.account.workDomains" : {
+      "comment" : "Profile, Account card: work domains (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Work domains"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dominios de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Domaines pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Domini di lavoro"
+          }
+        }
+      }
+    },
+    "profile.security.analyzing" : {
+      "comment" : "Profile, Security card: Watchtower report being computed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyzing…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analizando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analisi…"
+          }
+        }
+      }
+    },
+    "profile.security.change" : {
+      "comment" : "Profile, Security card: change the master password",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambia"
+          }
+        }
+      }
+    },
+    "profile.security.device" : {
+      "comment" : "Profile, Security card: personal or shared device (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Device"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appareil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo"
+          }
+        }
+      }
+    },
+    "profile.security.noIssues" : {
+      "comment" : "Profile, Security card: Watchtower found nothing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No issues"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún problema"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun problème"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun problema"
+          }
+        }
+      }
+    },
+    "profile.security.passkeyCount %lld" : {
+      "comment" : "Profile, Security card: number of items holding a passkey",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementos"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld élément"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld éléments"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementi"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "profile.security.passkeys" : {
+      "comment" : "Profile, Security card: passkeys (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkeys"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkeys"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkeys"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey"
+          }
+        }
+      }
+    },
+    "profile.security.password" : {
+      "comment" : "Profile, Security card: master password (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Master password"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña maestra"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mot de passe principal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password principale"
+          }
+        }
+      }
+    },
+    "profile.security.title" : {
+      "comment" : "Profile: Security card title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seguridad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sécurité"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicurezza"
+          }
+        }
+      }
+    },
+    "profile.security.unavailable" : {
+      "comment" : "Profile, Security card: Watchtower could not run; tap opens Watchtower to retry",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unavailable, tap to retry"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No disponible, toca para reintentar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indisponible, touche pour réessayer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non disponibile, tocca per riprovare"
+          }
+        }
+      }
+    },
+    "profile.security.unlock" : {
+      "comment" : "Profile, Security card: unlock method and auto-lock (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloqueo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déverrouillage"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocco"
+          }
+        }
+      }
+    },
+    "profile.security.watchtower" : {
+      "comment" : "Profile, Security card: Watchtower (label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchtower"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchtower"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchtower"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchtower"
           }
         }
       }
@@ -43081,6 +44306,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Post-quantistica"
+          }
+        }
+      }
+    },
+    "settings.about.dataSources" : {
+      "comment" : "Réglages > À propos: licences of the bundled site data (site pack)",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Site data: 2FA Directory (MIT) and Passkeys Directory (CC BY 4.0)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos de sitios: 2FA Directory (MIT) y Passkeys Directory (CC BY 4.0)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Données des sites : 2FA Directory (MIT) et Passkeys Directory (CC BY 4.0)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dati dei siti: 2FA Directory (MIT) e Passkeys Directory (CC BY 4.0)."
           }
         }
       }
@@ -53577,50 +54831,6 @@
         }
       }
     },
-    "Tes mots de passe ne quittent jamais l'appareil. Pour chacun, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres mots de passe, et compare le reste ici. Les catalogues publics de 2fa.directory (double authentification et passkeys) et la liste des sites piratés de Have I Been Pwned sont téléchargés en entier et gardés une semaine. Désactivé, Watchtower ne fait aucune requête réseau." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your passwords never leave the device. For each one, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of other passwords, and compares the rest here. The public 2fa.directory catalogs (two-factor authentication and passkeys) and Have I Been Pwned's list of breached sites are downloaded whole and kept for a week. When off, Watchtower makes no network request."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tus contraseñas nunca salen del dispositivo. Para cada una, OnePass envía a Have I Been Pwned los 5 primeros caracteres de su hash SHA-1, compartidos con cientos de otras contraseñas, y compara el resto aquí. Los catálogos públicos de 2fa.directory (autenticación de doble factor y llaves de acceso) y la lista de sitios con filtraciones de Have I Been Pwned se descargan enteros y se guardan una semana. Desactivado, Watchtower no hace ninguna solicitud de red."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le tue password non lasciano mai il dispositivo. Per ciascuna, OnePass invia a Have I Been Pwned i primi 5 caratteri del suo hash SHA-1, condivisi con centinaia di altre password, e confronta il resto qui. I cataloghi pubblici di 2fa.directory (autenticazione a due fattori e passkey) e l'elenco dei siti violati di Have I Been Pwned vengono scaricati per intero e conservati per una settimana. Se disattivato, Watchtower non fa alcuna richiesta di rete."
-          }
-        }
-      }
-    },
-    "Tes mots de passe ne quittent jamais l'appareil. Pour chacun, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres mots de passe, et compare le reste ici. Les catalogues publics de 2fa.directory (double authentification et passkeys) sont téléchargés en entier et gardés une semaine. Désactivé, Watchtower ne fait aucune requête réseau." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your passwords never leave the device. For each one, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared by hundreds of other passwords, and compares the rest here. The public 2fa.directory catalogs (two-factor and passkeys) are downloaded whole and kept for a week. When off, Watchtower makes no network request."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tus contraseñas nunca salen del dispositivo. Para cada una, OnePass envía a Have I Been Pwned los 5 primeros caracteres de su hash SHA-1, compartidos con cientos de otras contraseñas, y compara el resto aquí. Los catálogos públicos de 2fa.directory (doble factor y llaves de acceso) se descargan enteros y se guardan una semana. Desactivado, Watchtower no hace ninguna solicitud de red."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le tue password non lasciano mai il dispositivo. Per ciascuna, OnePass invia a Have I Been Pwned i primi 5 caratteri del suo hash SHA-1, condivisi con centinaia di altre password, e confronta il resto qui. I cataloghi pubblici di 2fa.directory (due fattori e passkey) vengono scaricati per intero e conservati per una settimana. Se disattivato, Watchtower non fa alcuna richiesta di rete."
-          }
-        }
-      }
-    },
     "Titre, site, identifiant, tag" : {
       "localizations" : {
         "en" : {
@@ -54453,6 +55663,615 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "casseforti"
+          }
+        }
+      }
+    },
+    "editor.icon.category" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Category icon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icono de la categoría"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icône de la catégorie"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icona della categoria"
+          }
+        }
+      }
+    },
+    "editor.icon.color" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couleur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colore"
+          }
+        }
+      }
+    },
+    "editor.icon.noColor" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguno"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuno"
+          }
+        }
+      }
+    },
+    "editor.icon.site" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Website icon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icono del sitio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icône du site"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icona del sito"
+          }
+        }
+      }
+    },
+    "editor.otp.chooseImage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an image…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir una imagen…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir une image…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli un'immagine…"
+          }
+        }
+      }
+    },
+    "editor.otp.dropImage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop an image of the QR code here"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suelta aquí una imagen del código QR"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dépose ici une image du QR code"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trascina qui un'immagine del codice QR"
+          }
+        }
+      }
+    },
+    "editor.otp.notOtp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This QR code doesn't hold a one-time password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este código QR no contiene un código de un solo uso."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce QR code ne contient pas de code à usage unique."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo codice QR non contiene un codice monouso."
+          }
+        }
+      }
+    },
+    "editor.otp.paste" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pegar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coller"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incolla"
+          }
+        }
+      }
+    },
+    "editor.otp.scan" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan a QR code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanear un código QR"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanner un QR code"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansiona un codice QR"
+          }
+        }
+      }
+    },
+    "editor.otp.scanTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification QR code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código QR de verificación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR code de vérification"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice QR di verifica"
+          }
+        }
+      }
+    },
+    "editor.otp.several" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This QR code holds several accounts: use “Add a code”."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este código QR contiene varias cuentas: usa «Añadir un código»."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce QR code contient plusieurs comptes : utilise « Ajouter un code »."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo codice QR contiene più account: usa «Aggiungi un codice»."
+          }
+        }
+      }
+    },
+    "editor.reorder.down" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move down"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bajar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descendre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sposta giù"
+          }
+        }
+      }
+    },
+    "editor.reorder.label %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sposta %@"
+          }
+        }
+      }
+    },
+    "editor.reorder.up" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move up"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monter"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sposta su"
+          }
+        }
+      }
+    },
+    "editor.section.addField" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "add a field"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "añadir un campo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ajouter un champ"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aggiungi un campo"
+          }
+        }
+      }
+    },
+    "editor.section.name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Section name"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nombre de la sección"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nom de la section"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nome della sezione"
+          }
+        }
+      }
+    },
+    "editor.section.new" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New section"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva sección"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvelle section"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuova sezione"
+          }
+        }
+      }
+    },
+    "editor.section.remove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete the section"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar la sección"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer la section"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina la sezione"
+          }
+        }
+      }
+    },
+    "editor.section.removeTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete the section?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar la sección?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer la section ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminare la sezione?"
+          }
+        }
+      }
+    },
+    "editor.signIn.remove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop signing in with this account"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de iniciar sesión con esta cuenta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne plus se connecter avec ce compte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non accedere più con questo account"
+          }
+        }
+      }
+    },
+    "editor.signInWith" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sign in with"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iniciar sesión con"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "se connecter avec"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "accedi con"
           }
         }
       }
@@ -56789,6 +58608,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cassaforte"
+          }
+        }
+      }
+    },
+    "travel.reminder.eve.body" : {
+      "comment" : "Notification the evening before a planned trip (body).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember to turn on Travel Mode before the border."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recuerda activar Travel Mode antes de la frontera."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pense à activer le Travel Mode avant la frontière."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricorda di attivare Travel Mode prima della frontiera."
+          }
+        }
+      }
+    },
+    "travel.reminder.eve.title" : {
+      "comment" : "Notification the evening before a planned trip (title).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You Leave Tomorrow"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te vas mañana"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu pars demain"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parti domani"
+          }
+        }
+      }
+    },
+    "travel.reminder.go.body" : {
+      "comment" : "Notification three hours before a planned trip leaves (body).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open OnePass to turn on Travel Mode."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para activar Travel Mode."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre OnePass pour activer le Travel Mode."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per attivare Travel Mode."
+          }
+        }
+      }
+    },
+    "travel.reminder.go.title" : {
+      "comment" : "Notification three hours before a planned trip leaves (title).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leaving in 3 Hours"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sales en 3 horas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Départ dans 3 heures"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partenza tra 3 ore"
           }
         }
       }
@@ -60383,6 +62322,122 @@
         }
       }
     },
+    "merge.pick.done %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merged into “%@”"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionado en «%@»"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionné dans « %@ »"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unito in «%@»"
+          }
+        }
+      }
+    },
+    "merge.pick.keep" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garder"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantieni"
+          }
+        }
+      }
+    },
+    "merge.pick.merge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionner"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisci"
+          }
+        }
+      }
+    },
+    "merge.pick.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge Two Items"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionar dos elementos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fusionner deux éléments"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unisci due elementi"
+          }
+        }
+      }
+    },
     "menu.app.checkForUpdates" : {
       "comment" : "Mac app menu (OnePass), after About: checks GitHub for a newer version (Sparkle)",
       "localizations" : {
@@ -60649,6 +62704,516 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sei in viaggio?"
+          }
+        }
+      }
+    },
+    "travel.trip.title" : {
+      "comment" : "Card title when a planned trip is about to start.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Trip Starts"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu viaje empieza"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton voyage commence"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il tuo viaggio inizia"
+          }
+        }
+      }
+    },
+    "travel.trip.body" : {
+      "comment" : "Card body when a planned trip is about to start.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on Travel Mode before the border, while you still have a connection."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa Travel Mode antes de la frontera, mientras tengas conexión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active le Travel Mode avant la frontière, tant que tu as du réseau."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva Travel Mode prima della frontiera, finché hai rete."
+          }
+        }
+      }
+    },
+    "travel.timezone.title" : {
+      "comment" : "Card title when the device changed time zone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Time Zone"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva zona horaria"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveau fuseau horaire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuovo fuso orario"
+          }
+        }
+      }
+    },
+    "travel.timezone.body" : {
+      "comment" : "Card body when the device changed time zone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your device changed time zone. Are you travelling?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu dispositivo cambió de zona horaria. ¿Estás de viaje?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton appareil a changé de fuseau horaire. Tu voyages ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il tuo dispositivo ha cambiato fuso orario. Sei in viaggio?"
+          }
+        }
+      }
+    },
+    "travel.auto.failed %@" : {
+      "comment" : "Orange line on the trip card when the automatic entry failed. %@ is the reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode could not turn on: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode no se pudo activar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le Travel Mode n'a pas pu s'activer : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Travel Mode non si è potuto attivare: %@"
+          }
+        }
+      }
+    },
+    "settings.travel.trips.header" : {
+      "comment" : "Settings > Travel Mode section header for planned trips.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trips"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viajes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voyages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viaggi"
+          }
+        }
+      }
+    },
+    "settings.travel.trips.footer" : {
+      "comment" : "Settings > Travel Mode, under the planned trips.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass reminds you the evening before and 3 hours before you leave. Your trips stay on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass te lo recuerda la víspera y 3 horas antes de la salida. Tus viajes se quedan en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass te le rappelle la veille et 3 heures avant le départ. Tes voyages restent sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass te lo ricorda la sera prima e 3 ore prima della partenza. I tuoi viaggi restano su questo dispositivo."
+          }
+        }
+      }
+    },
+    "settings.travel.addTrip" : {
+      "comment" : "Button that opens the trip editor.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a Trip"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir un viaje"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un voyage"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi un viaggio"
+          }
+        }
+      }
+    },
+    "trip.start" : {
+      "comment" : "Trip editor, departure date and time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Departure"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Départ"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partenza"
+          }
+        }
+      }
+    },
+    "trip.end" : {
+      "comment" : "Trip editor, return date.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Return"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regreso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ritorno"
+          }
+        }
+      }
+    },
+    "trip.auto" : {
+      "comment" : "Trip editor switch: enter Travel Mode on its own.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On Automatically"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar automáticamente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activer automatiquement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva automaticamente"
+          }
+        }
+      }
+    },
+    "trip.auto.footer" : {
+      "comment" : "Trip editor, explains the automatic switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At the first unlock from 3 hours before departure, once you confirm it's you."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En el primer desbloqueo a partir de 3 horas antes de la salida, tras confirmar tu identidad."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au premier déverrouillage à partir de 3 heures avant le départ, après confirmation de ton identité."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al primo sblocco a partire da 3 ore prima della partenza, dopo aver confermato la tua identità."
+          }
+        }
+      }
+    },
+    "trip.save" : {
+      "comment" : "Trip editor save button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salva"
+          }
+        }
+      }
+    },
+    "trip.error.endBeforeStart" : {
+      "comment" : "Trip editor error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The return must be after the departure."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El regreso debe ser después de la salida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le retour doit être après le départ."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il ritorno deve essere dopo la partenza."
+          }
+        }
+      }
+    },
+    "trip.error.tooMany" : {
+      "comment" : "Trip editor error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "16 trips at most."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "16 viajes como máximo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "16 voyages au plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al massimo 16 viaggi."
+          }
+        }
+      }
+    },
+    "trip.error.unreadable" : {
+      "comment" : "Trip editor error: the trips file cannot be read yet (device locked).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your trips can't be read right now. Unlock the device and try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus viajes no se pueden leer ahora mismo. Desbloquea el dispositivo y vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tes voyages ne sont pas lisibles pour l'instant. Déverrouille l'appareil et réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I tuoi viaggi non si possono leggere ora. Sblocca il dispositivo e riprova."
+          }
+        }
+      }
+    },
+    "trip.error.ended" : {
+      "comment" : "Trip editor error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This trip is already over."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este viaje ya terminó."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce voyage est déjà fini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo viaggio è già finito."
           }
         }
       }
@@ -61260,25 +63825,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When you seem to be travelling, OnePass suggests it. Your places stay on this device."
+            "value" : "When you seem to be travelling (place or time zone), OnePass suggests it. Everything stays on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuando parece que viajas, OnePass te lo sugiere. Tus lugares se quedan en este dispositivo."
+            "value" : "Cuando parece que viajas (lugar o zona horaria), OnePass te lo sugiere. Todo se queda en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quand tu sembles en voyage, OnePass te le propose. Tes lieux restent sur cet appareil."
+            "value" : "Quand tu sembles en voyage (lieu ou fuseau horaire), OnePass te le propose. Tout reste sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quando sembri in viaggio, OnePass te lo suggerisce. I tuoi luoghi restano su questo dispositivo."
+            "value" : "Quando sembri in viaggio (luogo o fuso orario), OnePass te lo suggerisce. Tutto resta su questo dispositivo."
           }
         }
       }
@@ -61718,6 +64283,434 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "aggiungi una passkey"
+          }
+        }
+      }
+    },
+    "Icônes à vérifier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icons to check"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iconos por revisar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icone da verificare"
+          }
+        }
+      }
+    },
+    "Choisie" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chosen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegido"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scelta"
+          }
+        }
+      }
+    },
+    "Pack" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pack"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pack"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pack"
+          }
+        }
+      }
+    },
+    "Marque mère" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parent brand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marca matriz"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marchio principale"
+          }
+        }
+      }
+    },
+    "Site" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Site"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitio"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sito"
+          }
+        }
+      }
+    },
+    "Monogramme" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monogram"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monograma"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monogramma"
+          }
+        }
+      }
+    },
+    "Toutes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutte"
+          }
+        }
+      }
+    },
+    "Source" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Origen"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Origine"
+          }
+        }
+      }
+    },
+    "Identifiants" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logins"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicios de sesión"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessi"
+          }
+        }
+      }
+    },
+    "Aucun identifiant à afficher" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No logins to show"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún inicio de sesión que mostrar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun accesso da mostrare"
+          }
+        }
+      }
+    },
+    "item.keyUses" : {
+      "comment" : "Item detail: title of the key-use log section (who used the item's secrets).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilizzo"
+          }
+        }
+      }
+    },
+    "item.keyUses.clear" : {
+      "comment" : "Item detail, key-use log: button that empties the log.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear log"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar el registro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer le journal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella il registro"
+          }
+        }
+      }
+    },
+    "item.keyUses.clear.message" : {
+      "comment" : "Item detail, key-use log: message of the confirmation before emptying the log.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The log is emptied on every device that sees this vault."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El registro se vacía en todos los dispositivos que ven esta bóveda."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le journal est vidé sur tous les appareils qui voient ce coffre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il registro viene svuotato su tutti i dispositivi che vedono questa cassaforte."
+          }
+        }
+      }
+    },
+    "item.keyUses.clear.title" : {
+      "comment" : "Item detail, key-use log: title of the confirmation before emptying the log.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear the usage log?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Borrar el registro de uso?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer le journal d'utilisation ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancellare il registro di utilizzo?"
+          }
+        }
+      }
+    },
+    "sharing.share.keyUsesVisible" : {
+      "comment" : "Share sheet footnote: the key-use log of shared items is visible to members.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Members can see when and from which device shared items are used."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los miembros ven cuándo y desde qué dispositivo se usan los elementos compartidos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les membres voient quand et depuis quel appareil les éléments partagés sont utilisés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I membri vedono quando e da quale dispositivo vengono usati gli elementi condivisi."
+          }
+        }
+      }
+    },
+    "browse.dormantKeys" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dormant keys"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claves inactivas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clés inutilisées"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiavi inutilizzate"
+          }
+        }
+      }
+    },
+    "browse.keysUnusedOver90" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API and SSH keys unused for over 90 days. Revoke them with the provider, then archive the item."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claves API y SSH sin usar desde hace más de 90 días. Revócalas con el proveedor y archiva el elemento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clés API et SSH inutilisées depuis plus de 90 jours. Révoque-les chez le fournisseur puis archive l'élément."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiavi API e SSH inutilizzate da più di 90 giorni. Revocale presso il fornitore, poi archivia l'elemento."
           }
         }
       }

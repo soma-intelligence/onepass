@@ -1,0 +1,7 @@
+{
+  "domain": "microsoft.com",
+  "setup_totp": {
+    "url": "https://account.microsoft.com/security",
+    "steps": []
+  }
+}

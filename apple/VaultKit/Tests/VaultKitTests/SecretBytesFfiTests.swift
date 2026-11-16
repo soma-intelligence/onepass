@@ -6,7 +6,7 @@ import Testing
 /// Task 7 part B: the master password and the Secret Key cross the FFI as bytes; the buffers stay the
 /// caller's (wiped by it), and the byte paths behave like the `String` ones did.
 @MainActor
-@Suite("Secrets cross the FFI as bytes", .timeLimit(.minutes(2)))
+@Suite("Secrets cross the FFI as bytes", .tags(.slow), .timeLimit(.minutes(2)))
 struct SecretBytesFfiTests {
     @Test func byteCallsCreateUnlockVerifyAndLeaveTheCallersBuffer() async throws {
         let h = try SessionHarness()

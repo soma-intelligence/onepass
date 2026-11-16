@@ -10,7 +10,7 @@ use onepass_core::model::{FieldValue, Item, ItemType, SshKeyValue, new_item};
 use onepass_guard::{AuditLog, SignedAuditSink};
 use onepass_ssh_agent::keys::{AgentKey, KeyError, KeyType, is_encrypted};
 use onepass_ssh_agent::{
-    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of,
+    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of, note_signed_in,
     serve_with_stack, ssh_keys_of,
 };
 use time::OffsetDateTime;
@@ -66,6 +66,14 @@ impl KeySource for SessionKeys {
             })
             .map_err(|e| e.to_string())?;
         out.unwrap_or_else(|| Err("item not found".into()))
+    }
+
+    fn note_signed(&mut self, item_id: &str, field: &str, client: &str) {
+        // Best effort: a use that cannot be recorded never fails a signature.
+        let _ = self.0.with(|repo| {
+            note_signed_in(repo, item_id, field, client);
+            Ok(())
+        });
     }
 }
 
@@ -425,5 +433,56 @@ mod tests {
         new.hosts.pop();
         new.comment = Some("a\u{1b}[2J".into());
         assert!(check_new(&new).is_err());
+    }
+
+    #[test]
+    fn note_signed_writes_a_signed_key_use() {
+        use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("onepass.db").to_string_lossy().into_owned();
+        let kdf = crate::FfiKdfParams {
+            m_kib: 8192,
+            t: 1,
+            p: 1,
+        };
+        let session = crate::create_account_with_kdf(path, "Cafe-etoile".into(), kdf)
+            .unwrap()
+            .session;
+        let vault_id = session.vaults().unwrap()[0].id.clone();
+        let key = session
+            .generate_ssh_key(
+                FfiSshKeyType::Ed25519,
+                FfiNewSshKey {
+                    vault_id,
+                    title: "Github".into(),
+                    hosts: Vec::new(),
+                    use_in_agent: true,
+                    confirm_each_use: false,
+                    comment: None,
+                },
+            )
+            .unwrap();
+        let mut source = SessionKeys(session.clone(), Arc::new(AtomicBool::new(false)));
+        source.note_signed(&key, "Private key", "ssh");
+        // An unknown item is ignored.
+        source.note_signed(&onepass_core::Id::new().to_string(), "Private key", "ssh");
+
+        let entries = session
+            .with(|repo| {
+                let mut out = Vec::new();
+                for v in repo.vaults()? {
+                    for i in repo.items(&v)? {
+                        out.extend(i.key_use_trailer().entries);
+                    }
+                }
+                Ok(out)
+            })
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].channel, KeyUseChannel::SshAgent);
+        assert_eq!(entries[0].action, KeyUseAction::Signed);
+        assert_eq!(entries[0].field, "Private key");
+        assert_eq!(entries[0].client, "ssh");
     }
 }

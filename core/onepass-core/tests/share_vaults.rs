@@ -1851,6 +1851,63 @@ fn shared_attachment_written_in_zone_and_read_by_member() {
     assert_eq!(chunk_rows(&mut zs, id), 0);
 }
 
+fn png() -> Vec<u8> {
+    let mut b = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    b.resize(64, 3);
+    b
+}
+
+#[test]
+fn shared_item_delete_and_move_carry_custom_icon() {
+    let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
+    let va = shared(&mut a.dev, id);
+    let item = login(id, "doc", 800);
+    a.dev.repo().save_item(&va, item.clone()).unwrap();
+    a.dev
+        .repo()
+        .set_custom_icon(&va, item.id, "image/png", &png())
+        .unwrap();
+    let personal = a.dev.vault_named("Personnel");
+    let mine = login(personal.id, "mine", 801);
+    a.dev.repo().save_item(&personal, mine.clone()).unwrap();
+    a.dev
+        .repo()
+        .set_custom_icon(&personal, mine.id, "image/png", &png())
+        .unwrap();
+    a.dev.repo().move_item(mine.id, &personal, &va).unwrap();
+    assert!(
+        a.dev
+            .store()
+            .list(RecordKind::Attachment)
+            .unwrap()
+            .is_empty()
+    );
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    let vc = shared(&mut c.dev, id);
+    assert_eq!(
+        &c.dev.repo().read_custom_icon(&vc, mine.id).unwrap()[..],
+        &png()[..]
+    );
+    let before = chunk_rows(&mut zs, id);
+    a.dev.repo().delete_item(&va, item.id).unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    assert!(chunk_rows(&mut zs, id) < before);
+    let va = shared(&mut a.dev, id);
+    a.dev.repo().move_item(mine.id, &va, &personal).unwrap();
+    assert_eq!(
+        &a.dev.repo().read_custom_icon(&personal, mine.id).unwrap()[..],
+        &png()[..]
+    );
+    a.dev.repo().delete_item(&personal, mine.id).unwrap();
+    assert!(
+        a.dev
+            .store()
+            .list(RecordKind::Attachment)
+            .unwrap()
+            .is_empty()
+    );
+}
+
 #[test]
 fn shared_item_delete_and_move_carry_chunks() {
     let (mut zs, mut a, mut b, mut c, id, _) = trio(Role::Read);
@@ -1900,4 +1957,115 @@ fn shared_item_delete_and_move_carry_chunks() {
     );
     settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
     assert_eq!(chunk_rows(&mut zs, id), 0);
+}
+
+/// A member who only reads a shared vault cannot write a key use into
+/// its items: the use is queued, not lost, and not an error. Once a
+/// manager raises the role, the flush writes it.
+#[test]
+fn reader_key_use_is_queued_until_promoted() {
+    use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Read);
+    let vc = shared(&mut c.dev, id);
+    let item = items[0].id;
+    let u = c.dev.repo().this_device_key_use(
+        KeyUseChannel::Mcp,
+        KeyUseAction::Revealed,
+        "Claude Code",
+        "password",
+    );
+    let written = c.dev.repo().record_key_use(&vc, item, u, at(NOW)).unwrap();
+    assert!(!written);
+    assert_eq!(c.dev.store().key_use_queue_rows(None).unwrap().len(), 1);
+    // Still a reader: the flush keeps the row, without error.
+    assert_eq!(c.dev.repo().flush_key_use_queue(at(NOW + 7200)).unwrap(), 0);
+    assert_eq!(c.dev.store().key_use_queue_rows(None).unwrap().len(), 1);
+
+    let carol = account_id(&mut c.dev);
+    a.dev
+        .repo()
+        .set_role(id, carol, Role::Write, NOW + 3)
+        .unwrap();
+    settle(&mut zs, &mut [&mut a, &mut b, &mut c]);
+    assert_eq!(c.dev.repo().flush_key_use_queue(at(NOW + 7200)).unwrap(), 1);
+    assert!(c.dev.store().key_use_queue_rows(None).unwrap().is_empty());
+    let vc = shared(&mut c.dev, id);
+    let got = c
+        .dev
+        .repo()
+        .items(&vc)
+        .unwrap()
+        .into_iter()
+        .find(|i| i.id == item)
+        .unwrap();
+    assert_eq!(got.key_use_trailer().entries.len(), 1);
+}
+
+/// Carol's pending key-use write loses the race to Bob's real edit: the
+/// rebase merges her log into Bob's item, it never puts her copy back.
+#[test]
+fn shared_key_use_write_never_beats_a_member_edit() {
+    use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Write);
+    let item = items[0].id;
+    let vc = shared(&mut c.dev, id);
+    let u = c.dev.repo().this_device_key_use(
+        KeyUseChannel::Mcp,
+        KeyUseAction::Revealed,
+        "Claude Code",
+        "password",
+    );
+    assert!(c.dev.repo().record_key_use(&vc, item, u, at(NOW)).unwrap());
+    let vb = shared(&mut b.dev, id);
+    let mut renamed = b
+        .dev
+        .repo()
+        .items(&vb)
+        .unwrap()
+        .into_iter()
+        .find(|i| i.id == item)
+        .unwrap();
+    renamed.title = "Rotated".into();
+    b.dev.repo().save_item(&vb, renamed).unwrap();
+    b.sync(&mut zs);
+    settle(&mut zs, &mut [&mut c, &mut a, &mut b]);
+    for x in [&mut a, &mut b, &mut c] {
+        let v = shared(&mut x.dev, id);
+        let got = x
+            .dev
+            .repo()
+            .items(&v)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.id == item)
+            .unwrap();
+        assert_eq!(got.title, "Rotated");
+        assert_eq!(got.key_use_trailer().entries.len(), 1);
+    }
+}
+
+/// Carol's pending key-use write loses the race to Bob's deletion: the
+/// item stays deleted.
+#[test]
+fn shared_key_use_write_never_resurrects_a_member_deletion() {
+    use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
+    let (mut zs, mut a, mut b, mut c, id, items) = trio(Role::Write);
+    let item = items[0].id;
+    let vc = shared(&mut c.dev, id);
+    let u = c.dev.repo().this_device_key_use(
+        KeyUseChannel::Mcp,
+        KeyUseAction::Revealed,
+        "Claude Code",
+        "password",
+    );
+    assert!(c.dev.repo().record_key_use(&vc, item, u, at(NOW)).unwrap());
+    let vb = shared(&mut b.dev, id);
+    b.dev.repo().delete_item(&vb, item).unwrap();
+    b.sync(&mut zs);
+    settle(&mut zs, &mut [&mut c, &mut a, &mut b]);
+    for x in [&mut a, &mut b, &mut c] {
+        let v = shared(&mut x.dev, id);
+        let got = x.dev.repo().items(&v).unwrap();
+        assert!(got.iter().all(|i| i.id != item));
+    }
 }

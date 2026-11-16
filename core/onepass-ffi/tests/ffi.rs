@@ -1001,6 +1001,69 @@ fn otp_link_accounts_reads_one_link_and_a_migration() {
     assert!(otp_link_accounts("onepass://item/x".into()).is_err());
 }
 
+fn otp_of(item: &FfiItem) -> String {
+    item.sections
+        .iter()
+        .flat_map(|s| s.fields.iter())
+        .find(|f| f.id == "totp")
+        .and_then(|f| match &f.value {
+            FfiFieldValue::Otp { value } => Some(value.clone()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn attach_otp_adds_keeps_conflicts_and_replaces() {
+    let f = fixture();
+    let item = f
+        .session
+        .new_item(f.vault_id.clone(), FfiItemType::Login, "Atlas".into())
+        .unwrap();
+    let a =
+        "otpauth://totp/Atlas:ada?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Atlas".to_string();
+    let b =
+        "otpauth://totp/Atlas:ada?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Atlas".to_string();
+
+    let r = attach_otp(item, a.clone(), false, "Old".into()).unwrap();
+    assert_eq!(r.outcome, FfiOtpAttach::Added);
+    assert_eq!(otp_of(&r.item), a);
+
+    let r = attach_otp(r.item, a.clone(), false, "Old".into()).unwrap();
+    assert_eq!(r.outcome, FfiOtpAttach::Same);
+
+    let r = attach_otp(r.item, b.clone(), false, "Old".into()).unwrap();
+    assert_eq!(r.outcome, FfiOtpAttach::Conflict);
+    assert_eq!(otp_of(&r.item), a);
+
+    let r = attach_otp(r.item, b.clone(), true, "Old".into()).unwrap();
+    assert_eq!(r.outcome, FfiOtpAttach::Replaced);
+    assert_eq!(otp_of(&r.item), b);
+    let prev = r
+        .item
+        .sections
+        .iter()
+        .flat_map(|s| s.fields.iter())
+        .find(|f| f.id == previous_otp_field_prefix() + "1")
+        .expect("previous code kept");
+    assert_eq!(prev.label, "Old");
+}
+
+#[test]
+fn attach_otp_refuses_a_note_and_a_bad_value() {
+    let f = fixture();
+    let note = f
+        .session
+        .new_item(f.vault_id.clone(), FfiItemType::SecureNote, "N".into())
+        .unwrap();
+    assert!(attach_otp(note, "JBSWY3DPEHPK3PXP".into(), true, "Old".into()).is_err());
+    let login = f
+        .session
+        .new_item(f.vault_id.clone(), FfiItemType::Login, "L".into())
+        .unwrap();
+    assert!(attach_otp(login, "not a seed !!".into(), true, "Old".into()).is_err());
+}
+
 #[test]
 fn generator_and_catalog_helpers() {
     let pw = generate_password(FfiPasswordRecipe::Characters {
@@ -2328,6 +2391,53 @@ fn attachment_add_read_remove_through_the_session() {
 }
 
 #[test]
+fn custom_icon_set_read_clear_through_the_session() {
+    let fx = fixture();
+    let item = saved_login(&fx, "Mot-de-passe-Atlas-7");
+    assert_eq!(item.custom_icon_id, None);
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.extend_from_slice(b"icone fictive");
+    let with = fx
+        .session
+        .set_custom_icon(
+            fx.vault_id.clone(),
+            item.id.clone(),
+            "image/png".into(),
+            png.clone(),
+        )
+        .unwrap();
+    let icon_id = with.custom_icon_id.clone().expect("icon id");
+    assert_eq!(with.attachment_count, 0);
+    assert_eq!(
+        fx.session
+            .custom_icon_data(fx.vault_id.clone(), item.id.clone())
+            .unwrap(),
+        png
+    );
+    let listed = fx.session.item_summaries().unwrap();
+    assert_eq!(listed[0].custom_icon_id.as_deref(), Some(icon_id.as_str()));
+    // An edit from the editor keeps the icon.
+    let mut edited = fx
+        .session
+        .item(fx.vault_id.clone(), item.id.clone())
+        .unwrap();
+    edited.title = "Atlas renommé".into();
+    edited.custom_icon_id = None;
+    let saved = fx.session.save_item(edited).unwrap();
+    assert_eq!(saved.custom_icon_id.as_deref(), Some(icon_id.as_str()));
+    let cleared = fx
+        .session
+        .clear_custom_icon(fx.vault_id.clone(), item.id.clone())
+        .unwrap();
+    assert_eq!(cleared.custom_icon_id, None);
+    assert!(
+        fx.session
+            .custom_icon_data(fx.vault_id.clone(), item.id.clone())
+            .is_err()
+    );
+}
+
+#[test]
 fn profile_round_trips_and_stays_hidden() {
     let fx = fixture();
     assert_eq!(fx.session.profile().unwrap(), None);
@@ -2400,11 +2510,11 @@ fn app_use_counts_in_the_summary_and_keeps_updated_at() {
     assert_eq!((before.uses, before.last_use_at), (0, None));
     let once = fx
         .session
-        .note_app_use(item.vault_id.clone(), item.id.clone())
+        .note_app_use(item.vault_id.clone(), item.id.clone(), None, String::new())
         .unwrap();
     let twice = fx
         .session
-        .note_app_use(item.vault_id.clone(), item.id.clone())
+        .note_app_use(item.vault_id.clone(), item.id.clone(), None, String::new())
         .unwrap();
     assert_eq!((once.uses, twice.uses), (1, 2));
     assert!(twice.last_use_at.is_some());
@@ -2470,4 +2580,174 @@ fn card_summary_carries_last4_never_the_number() {
         .find(|s| s.item_type == FfiItemType::SecureNote)
         .unwrap();
     assert_eq!(note.card_last4, None);
+}
+
+// ---- key-use log (app and AutoFill) ----------------------------------------
+
+mod key_use {
+    use super::*;
+
+    fn app_use(fx: &Fixture, item: &FfiItem, action: FfiKeyUseAction, field: &str) {
+        fx.session
+            .note_app_use(
+                item.vault_id.clone(),
+                item.id.clone(),
+                Some(action),
+                field.into(),
+            )
+            .unwrap();
+    }
+
+    fn uses(fx: &Fixture, item: &FfiItem) -> Vec<FfiKeyUse> {
+        fx.session
+            .item_key_uses(item.vault_id.clone(), item.id.clone())
+            .unwrap()
+    }
+
+    #[test]
+    fn note_app_use_records_copied_with_field() {
+        let fx = fixture();
+        let item = saved_login(&fx, "Motdepasse-tres-long-42");
+        app_use(&fx, &item, FfiKeyUseAction::Copied, "password");
+        let log = uses(&fx, &item);
+        assert_eq!(log.len(), 1, "{log:?}");
+        let u = &log[0];
+        assert_eq!(
+            (
+                u.channel,
+                u.action,
+                u.client.as_str(),
+                u.field.as_str(),
+                u.count
+            ),
+            (
+                FfiKeyUseChannel::App,
+                FfiKeyUseAction::Copied,
+                "OnePass",
+                "password",
+                1
+            )
+        );
+        assert!(u.first_at > 0 && u.first_at == u.last_at);
+        // Never a value.
+        assert!(!format!("{log:?}").contains("Motdepasse"));
+        // A website opened counts as an app use, not a key use.
+        let s = fx
+            .session
+            .note_app_use(item.vault_id.clone(), item.id.clone(), None, String::new())
+            .unwrap();
+        assert_eq!(s.uses, 2);
+        assert_eq!(uses(&fx, &item).len(), 1);
+    }
+
+    #[test]
+    fn app_key_use_of_a_reveal_leaves_the_use_counter() {
+        let fx = fixture();
+        let item = saved_login(&fx, "Motdepasse-tres-long-42");
+        let before = fx.session.item_summaries().unwrap().remove(0);
+        assert!(
+            fx.session
+                .record_app_key_use(
+                    item.vault_id.clone(),
+                    item.id.clone(),
+                    FfiKeyUseAction::Revealed,
+                    "password".into(),
+                )
+                .unwrap()
+        );
+        let after = fx.session.item_summaries().unwrap().remove(0);
+        assert_eq!(
+            (after.uses, after.last_use_at),
+            (before.uses, before.last_use_at)
+        );
+        let log = uses(&fx, &item);
+        assert_eq!(log.len(), 1, "{log:?}");
+        assert_eq!(
+            (log[0].channel, log[0].action, log[0].field.as_str()),
+            (FfiKeyUseChannel::App, FfiKeyUseAction::Revealed, "password")
+        );
+    }
+
+    #[test]
+    fn autofill_fill_records_filled() {
+        let fx = fixture();
+        let mut item = saved_login(&fx, "Motdepasse-tres-long-42");
+        item.urls = vec![FfiUrl {
+            label: String::new(),
+            url: "https://example.com".into(),
+            rule: FfiMatchRule::Domain,
+            primary: false,
+        }];
+        let item = fx.session.save_item(item).unwrap();
+        assert!(
+            fx.session
+                .note_autofill_use(
+                    format!("{}:{}", item.vault_id, item.id),
+                    "example.com".into(),
+                    Vec::new(),
+                )
+                .unwrap()
+        );
+        let log = uses(&fx, &item);
+        assert_eq!(log.len(), 1, "{log:?}");
+        let u = &log[0];
+        assert_eq!(
+            (
+                u.channel,
+                u.action,
+                u.client.as_str(),
+                u.field.as_str(),
+                u.count
+            ),
+            (
+                FfiKeyUseChannel::AutoFill,
+                FfiKeyUseAction::Filled,
+                "",
+                "",
+                1
+            )
+        );
+    }
+
+    #[test]
+    fn item_key_uses_newest_first() {
+        let fx = fixture();
+        let item = saved_login(&fx, "Motdepasse-tres-long-42");
+        let pause = || std::thread::sleep(std::time::Duration::from_millis(1100));
+        app_use(&fx, &item, FfiKeyUseAction::Copied, "password");
+        pause();
+        app_use(&fx, &item, FfiKeyUseAction::Revealed, "password");
+        pause();
+        app_use(&fx, &item, FfiKeyUseAction::Copied, "username");
+        let log = uses(&fx, &item);
+        let order: Vec<(FfiKeyUseAction, &str)> =
+            log.iter().map(|u| (u.action, u.field.as_str())).collect();
+        assert_eq!(
+            order,
+            [
+                (FfiKeyUseAction::Copied, "username"),
+                (FfiKeyUseAction::Revealed, "password"),
+                (FfiKeyUseAction::Copied, "password"),
+            ]
+        );
+        assert!(log.windows(2).all(|w| w[0].last_at >= w[1].last_at));
+    }
+
+    #[test]
+    fn clear_key_uses_empties() {
+        let fx = fixture();
+        let item = saved_login(&fx, "Motdepasse-tres-long-42");
+        app_use(&fx, &item, FfiKeyUseAction::Totp, "one-time password");
+        assert_eq!(uses(&fx, &item).len(), 1);
+        let before = fx.session.item_summaries().unwrap().remove(0);
+        fx.session
+            .clear_key_uses(item.vault_id.clone(), item.id.clone())
+            .unwrap();
+        assert!(uses(&fx, &item).is_empty());
+        let after = fx.session.item_summaries().unwrap().remove(0);
+        assert_eq!(
+            (after.uses, after.updated_at),
+            (before.uses, before.updated_at)
+        );
+    }
 }

@@ -181,7 +181,10 @@ pub fn otp_field_of(item: &Item) -> Result<&Field> {
     }
 }
 
-fn locate<'a>(item: &'a Item, r: &SecretRef) -> Result<&'a Field> {
+/// The field `r` designates within `item`, by the rules of `resolve`
+/// (id, then label; `totp` is the item's one OTP field). `NotFound` when
+/// none matches. Lets callers name the field they handed out.
+pub fn locate<'a>(item: &'a Item, r: &SecretRef) -> Result<&'a Field> {
     let all: Vec<&Section> = item.sections.iter().collect();
     let found = match &r.section {
         None if r.field.eq_ignore_ascii_case("totp") => Some(otp_field_of(item)?),

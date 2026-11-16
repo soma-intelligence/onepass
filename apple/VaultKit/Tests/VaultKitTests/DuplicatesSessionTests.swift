@@ -100,4 +100,50 @@ struct DuplicatesSessionTests {
         #expect(session.summaries.first { $0.id == c.id }?.trashedAt != nil)
         #expect(try await session.duplicateGroups().isEmpty)
     }
+
+    @Test func aPickedPairGroupsWithTheChosenPrimaryAndMerges() async throws {
+        let (h, session) = try await unlocked()
+        defer { h.cleanUp() }
+        let a = try await login(session, "Reddit", user: "camille", password: "Premier-Mot-1")
+        let b = try await login(session, "Apple", user: "camille@icloud.com", password: "Second-Mot-2")
+        let keys = [a, b].map { FfiItemKey(vaultId: $0.vaultId, itemId: $0.id) }
+        let summaries = session.summaries.filter { [a.id, b.id].contains($0.id) }
+        #expect(MergePickRule.offers(summaries))
+
+        let group = try await session.duplicateGroup(for: keys, primary: keys[1])
+        #expect(group.signals.isEmpty)
+        #expect(group.copies.first?.summary.id == b.id)
+        let swapped = try await session.duplicateGroup(for: keys, primary: keys[0])
+        #expect(swapped.copies.first?.summary.id == a.id)
+
+        try await session.mergeDuplicates(
+            primary: keys[0], others: [keys[1]], answers: [], primaryTitle: "Reddit")
+        #expect(session.summaries.first { $0.id == b.id }?.archived == true)
+        // Archived now: no longer offered, and the core refuses it too.
+        #expect(!MergePickRule.offers(session.summaries.filter { [a.id, b.id].contains($0.id) }))
+        await #expect(throws: (any Error).self) { try await session.duplicateGroup(for: keys) }
+    }
+
+    @Test func mergeIsOfferedOnlyForTwoLiveItemsOfOneType() async throws {
+        let (h, session) = try await unlocked()
+        defer { h.cleanUp() }
+        let a = try await login(session, "A", user: "a", password: "Premier-Mot-1")
+        let b = try await login(session, "B", user: "b", password: "Second-Mot-2")
+        let c = try await login(session, "C", user: "c", password: "Troisieme-Mot-3")
+        var note = try session.newItem(type: .secureNote, vaultID: session.allVaults[0].id)
+        note.title = "Note"
+        for s in note.sections.indices {
+            for f in note.sections[s].fields.indices where note.sections[s].fields[f].id == "content" {
+                note.sections[s].fields[f].value = .text(value: "texte")
+            }
+        }
+        let n = try await session.save(note)
+        func pick(_ ids: [String]) -> [FfiItemSummary] { session.summaries.filter { ids.contains($0.id) } }
+        #expect(MergePickRule.offers(pick([a.id, b.id])))
+        #expect(!MergePickRule.offers(pick([a.id])))
+        #expect(!MergePickRule.offers(pick([a.id, b.id, c.id])))
+        #expect(!MergePickRule.offers(pick([a.id, n.id])))
+        try await session.trashDuplicates([FfiItemKey(vaultId: c.vaultId, itemId: c.id)])
+        #expect(!MergePickRule.offers(pick([a.id, c.id])))
+    }
 }

@@ -570,6 +570,11 @@ export class SaveFlow {
     return (this.filled.get(tabId) ?? []).some((f) => f.site === site && f.kind === kind && now - f.at <= FILLED_TTL_MS && (itemId === undefined || f.itemId === itemId));
   }
 
+  /** The login OnePass last filled in `tabId` on the site of `origin`, if still recent (the setup card's target). */
+  lastLoginFilled(tabId: number, origin: string): string | null {
+    return this.lastFilled(tabId, origin, "login");
+  }
+
   /** The last item of `kind` OnePass filled in `tabId` on the site of `origin`, if still recent. */
   private lastFilled(tabId: number, origin: string, kind: FilledKind): string | null {
     const site = parseOrigin(origin)?.site;

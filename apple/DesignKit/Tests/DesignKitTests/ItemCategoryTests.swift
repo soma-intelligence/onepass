@@ -24,6 +24,70 @@ import VaultKit
         #expect(ItemCategory.all.allSatisfy { $0.hex <= 0xFFFFFF })
     }
 
+    /// A 64 px opaque square as PNG data, a stand-in site icon.
+    static func pngIcon() throws -> Data {
+        let context = try #require(CGContext(
+            data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        let image = try #require(context.makeImage())
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return data as Data
+    }
+
+    @Test func categoryChoiceIgnoresSiteIcon() throws {
+        let png = try Self.pngIcon()
+        #expect(ItemIcon(type: .login, title: "Atlas", siteIcon: png).showsSiteIcon)
+        #expect(!ItemIcon(type: .login, title: "Atlas", siteIcon: png, useCategory: true).showsSiteIcon)
+    }
+
+    /// The monogram tile takes its color from the domain, not the title: two items of one site
+    /// match in a list whatever their names.
+    @MainActor @Test func monogramColorFollowsDomain() {
+        let a = ItemIcon(type: .login, title: "Atlas perso", siteIcon: nil, domain: "atlas-cloud.example")
+        let b = ItemIcon(type: .login, title: "Zephyr travail", siteIcon: nil, domain: "atlas-cloud.example")
+        #expect(a.monogramColor(dark: false) != nil)
+        #expect(a.monogramColor(dark: false) == b.monogramColor(dark: false))
+        #expect(a.monogramColor(dark: true) == b.monogramColor(dark: true))
+        let index = MonogramStyle.colorIndex(seed: "atlas-cloud.example")
+        #expect(a.monogramColor(dark: false) == MonogramStyle.palette[index].light)
+        #expect(a.monogramColor(dark: true) == MonogramStyle.palette[index].dark)
+    }
+
+    /// No domain: the title is the seed. The item's own color wins over the palette.
+    @MainActor @Test func monogramColorFallsBackToTitleAndTint() {
+        let byTitle = ItemIcon(type: .login, title: "Atlas", siteIcon: nil)
+        #expect(byTitle.monogramColor(dark: false) == MonogramStyle.palette[MonogramStyle.colorIndex(seed: "Atlas")].light)
+        let tinted = ItemIcon(type: .login, title: "Atlas", siteIcon: nil, tint: .orange, domain: "atlas.example")
+        #expect(tinted.monogramColor(dark: false) == .orange)
+        // No letter anywhere: the category artwork, no monogram tile.
+        #expect(ItemIcon(type: .login, title: "", siteIcon: nil).monogramColor(dark: false) == nil)
+        #expect(ItemIcon(type: .login, title: "🔑", siteIcon: nil).monogramColor(dark: false) == nil)
+        // Not a login: no monogram unless tinted.
+        #expect(ItemIcon(type: .secureNote, title: "Atlas", siteIcon: nil).monogramColor(dark: false) == nil)
+        // The category artwork chosen: no domain color.
+        #expect(ItemIcon(type: .login, title: "Atlas", siteIcon: nil, useCategory: true).monogramColor(dark: false) == nil)
+    }
+
+    /// A letter from the domain when the title has none.
+    @MainActor @Test func monogramLetterFromDomain() {
+        #expect(ItemIcon(type: .login, title: "🔑", siteIcon: nil, domain: "zephyr.example").monogram == "Z")
+        #expect(ItemIcon(type: .login, title: "atlas", siteIcon: nil, domain: "zephyr.example").monogram == "A")
+    }
+
+    @Test func tintNames() {
+        for name in ["blue", "green", "orange", "purple", "pink", "teal", "indigo", "graphite"] {
+            #expect(ItemTint.color(named: name) != nil)
+        }
+        #expect(ItemTint.color(named: "nope") == nil)
+        #expect(ItemTint.color(named: nil) == nil)
+        #expect(ItemTint.names.count == 8)
+    }
+
     @Test func orderMatchesCore() {
         #expect(ItemCategory.all.map(\.type) == itemTypes().map(\.itemType))
     }
@@ -78,6 +142,36 @@ import VaultKit
         #expect(ItemIcon.decode(Data([1, 2, 3])) == nil)
         #expect(ItemIcon.decode(Data()) == nil)
     }
+
+    /// A plain red PNG of `width` x `height` pixels (compresses to a few KB however large).
+    static func blank(width: Int, height: Int) throws -> Data {
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let image = try #require(context.makeImage())
+        let out = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return out as Data
+    }
+
+    @Test func refusesADeclaredSideOver1024() throws {
+        #expect(ItemIcon.decode(try Self.blank(width: 1024, height: 1024)) != nil)
+        #expect(ItemIcon.decode(try Self.blank(width: 1025, height: 8)) == nil)
+        #expect(ItemIcon.decode(try Self.blank(width: 8, height: 4000)) == nil)
+        #expect(ItemIcon.prepared(try Self.blank(width: 2048, height: 2048)) == nil)
+    }
+
+    @Test func purgeEmptiesThePreparedCache() throws {
+        let data = try Self.blank(width: 64, height: 64)
+        #expect(ItemIcon.prepared(data) != nil)
+        #expect(ItemIcon.isCached(data))
+        ItemIcon.purgeCache()
+        #expect(!ItemIcon.isCached(data))
+    }
 }
 
 @Suite struct FieldDisclosureTests {
@@ -85,6 +179,14 @@ import VaultKit
         var d = FieldDisclosure()
         let n = d.showLarge(isSecret: true)
         #expect(n)
+        #expect(d.revealed && d.large)
+    }
+
+    @Test func largeOnAShownSecretDoesNotNotifyAgain() {
+        var d = FieldDisclosure()
+        let first = d.reveal(true, isSecret: true)
+        let again = d.showLarge(isSecret: true)
+        #expect(first && !again)
         #expect(d.revealed && d.large)
     }
 

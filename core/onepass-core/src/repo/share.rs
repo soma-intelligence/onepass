@@ -829,7 +829,7 @@ impl<S: RecordStore> Repository<S> {
         );
         // Its attachments' chunks go in the same transaction.
         if let Ok(item) = vault.open_item(rec) {
-            for r in &item.attachments {
+            for r in crate::attachment::files_of(&item) {
                 for id in crate::attachment::chunk_ids(r).unwrap_or_default() {
                     if self
                         .store
@@ -862,7 +862,7 @@ impl<S: RecordStore> Repository<S> {
         // The attachments' chunks change zone with the item, re-wrapped
         // for `to`, in the same transaction.
         if let Ok(item) = from.open_item(&rec) {
-            for r in &item.attachments {
+            for r in crate::attachment::files_of(&item) {
                 for id in crate::attachment::chunk_ids(r).unwrap_or_default() {
                     let Some(chunk) = self.store.get_in(from.zone(), RecordKind::Attachment, id)?
                     else {

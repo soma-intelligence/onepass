@@ -47,7 +47,8 @@ struct PasskeyRegistrationView: View {
                             choice(.item(vaultID: candidate.vaultId, itemID: candidate.itemId)) {
                                 AutoFillRow(
                                     type: .login, title: String(localized: "views.addTo \(candidate.title)"),
-                                    detail: candidate.user, url: candidate.url
+                                    detail: candidate.user, url: candidate.url,
+                                    custom: session.customIconKey(itemID: candidate.itemId, vaultID: candidate.vaultId)
                                 ) {
                                     AutoFillChoiceMark(selected: target == .item(vaultID: candidate.vaultId, itemID: candidate.itemId))
                                 }

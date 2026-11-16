@@ -1,0 +1,8 @@
+{
+  "GitHub": {
+    "domain": "github.com",
+    "passwordless": "allowed",
+    "mfa": "allowed",
+    "documentation": "https://docs.github.com/authentication/passkeys"
+  }
+}

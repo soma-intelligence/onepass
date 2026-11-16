@@ -21,13 +21,13 @@ export const FRAME_WIDTH = 360;
  * room their shadows need. The ghost takes its field's box, at most this wide
  * (ruling R3: a very wide field gets a narrower ghost, from its left edge).
  */
-export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 430, save: 340, ghost: 600 };
+export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 430, save: 340, ghost: 600, setup: 340 };
 /**
  * Largest frame heights: each page asks for its content height (a resize
  * message vouched by the worker) and scrolls inside past these. The ghost
  * takes its field's height, at most this tall.
  */
-export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 560, overlay: 440, save: 520, ghost: 120 };
+export const FRAME_HEIGHT: Readonly<Record<FrameKind, number>> = { menu: 560, overlay: 440, save: 520, ghost: 120, setup: 520 };
 /** On a narrow touch screen the menu is a bottom sheet, up to this tall (the unlock sheet fits). */
 export const SHEET_HEIGHT = 560;
 /** The bottom sheet only below this window width (iPhone, Slide Over, narrow Split View); wider, the menu follows its field. */
@@ -121,7 +121,13 @@ export function glyphPaint(theme: GlyphTheme, focus: boolean): { color: string; 
     : { color: tk["glyph-rest"] ?? "", background: "transparent" };
 }
 
-const PAGE_OF: Readonly<Record<FrameKind, string>> = { menu: "menu.html", overlay: "overlay.html", save: "save.html", ghost: "ghost.html" };
+const PAGE_OF: Readonly<Record<FrameKind, string>> = {
+  menu: "menu.html",
+  overlay: "overlay.html",
+  save: "save.html",
+  ghost: "ghost.html",
+  setup: "setup.html",
+};
 const EXTENSION_SCHEMES: ReadonlySet<string> = new Set(["chrome-extension:", "moz-extension:", "safari-web-extension:"]);
 const TOKEN_HASH = /^#[A-Za-z0-9_-]{22}$/;
 
@@ -876,19 +882,20 @@ export function createFrames(opts: FramesOptions): Frames {
         // inside scrolls (an open length panel must not hang below the viewport).
         else if (kind === "menu" && top + height > vh - EDGE) height = Math.max(FRAME_MIN_HEIGHT, vh - EDGE - top);
       }
-    } else if (kind === "save" && touch) {
+    } else if ((kind === "save" || kind === "setup") && touch) {
       // Touch (iPhone, iPad): centered at the top of what the user sees. Safari's own bars and
       // the keyboard leave the visual viewport, never the layout one; no other manager's box
       // stacks in a corner there.
       const v = visible();
       left = Math.max(EDGE, Math.round((w - width) / 2));
       top = Math.max(0, Math.round(v.top)) + EDGE;
-    } else if (kind === "save" && opts.occupants) {
+    } else if ((kind === "save" || kind === "setup") && opts.occupants) {
       // Another manager's prompt in the corner: below it, or to its left.
       const taken = opts.occupants();
       if (taken.length > 0) ({ left, top } = stackInCorner({ left, top }, { width, height }, taken, { w, h: vh }, CARD_GAP, EDGE));
     }
-    iframe.classList.toggle("quiet", kind === "save");
+    // The setup card sits where the save card does and looks like it.
+    iframe.classList.toggle("quiet", kind === "save" || kind === "setup");
     iframe.classList.toggle("top-center", kind === "overlay");
     iframe.classList.toggle("bare", kind === "overlay");
     iframe.classList.toggle("sheet", asSheet);

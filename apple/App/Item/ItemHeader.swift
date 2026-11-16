@@ -9,7 +9,8 @@ struct ItemHeader: View {
     let item: FfiItem
     /// Tells the detail which icon data the header draws, so the identity wash follows it.
     var onIcon: (Data?) -> Void = { _ in }
-    @State private var siteIcon: Data?
+    /// The automatic icon the task found (the chosen one is read from memory at each frame).
+    @State private var resolved: ResolvedIcon?
 
     /// The site icon tile: 56 pt on iPhone and iPad, 64 pt on the Mac.
     #if os(iOS)
@@ -18,7 +19,11 @@ struct ItemHeader: View {
     private static let iconSize: CGFloat = 64
     #endif
 
-    private var iconData: Data? { siteIcon ?? model.iconLoader.cachedIcon(for: primaryURL, title: item.title) }
+    private var taskID: ItemIconTaskID {
+        ItemIconTaskID(url: primaryURL, title: item.title, custom: CustomIconKey(item), epoch: model.iconEpoch)
+    }
+
+    private var iconData: Data? { model.iconLoader.shownIcon(taskID, resolved: resolved) }
 
     private var vault: FfiVault? { model.session.allVaults.first { $0.id == item.vaultId } }
 
@@ -49,7 +54,9 @@ struct ItemHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Space.l) {
-            ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: Self.iconSize, brand: item.cardBrandName)
+            ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: Self.iconSize, brand: item.cardBrandName,
+                useCategory: item.usesCategoryIcon, tint: ItemTint.color(named: item.color),
+                domain: ItemIconResolver.registrableDomain(primaryURL))
                 .favoriteBadge(item.favorite, iconSize: Self.iconSize)
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
@@ -84,12 +91,9 @@ struct ItemHeader: View {
             Spacer(minLength: 0)
         }
         .onChange(of: iconData, initial: true) { _, data in onIcon(data) }
-        .task(id: primaryURL) {
-            guard let url = primaryURL else {
-                siteIcon = nil
-                return
-            }
-            siteIcon = await model.iconLoader.icon(for: url, title: item.title)
+        .task(id: taskID) {
+            let id = taskID
+            resolved = ResolvedIcon(id: id, data: await model.iconLoader.icon(for: id.url, title: id.title, custom: id.custom))
         }
     }
 }

@@ -8,8 +8,8 @@ import VaultKit
 enum PhoneRoute: Hashable {
     case list(ItemFilter)
     case item(ItemRef)
-    /// The items flagged by a Watchtower card.
-    case watchtower(title: String, itemIDs: Set<String>)
+    /// The items flagged by a Watchtower card; `check` is its site check (`WatchtowerCard.siteCheck`).
+    case watchtower(title: String, itemIDs: Set<String>, check: String?)
     /// The Crypto screen (watch-only balances) and one coin of it.
     case crypto
     case cryptoCoin(String)
@@ -29,12 +29,17 @@ enum PhoneTab: String, Hashable {
 }
 
 extension EnvironmentValues {
+    /// The view is on a tab stack of the iPhone (pushes and tab switches work there).
+    @Entry var inPhoneTabs = false
     /// Switches the iPhone tab bar to a tab.
     @Entry var openPhoneTab: @MainActor (PhoneTab) -> Void = { _ in }
     /// The iPhone search is presented: Accueil keeps its banners for when it is really on screen.
     @Entry var phoneSearchActive = false
     /// Pushes a screen on the visible tab's stack (Profil > "Modifier l'identité").
     @Entry var pushPhoneRoute: @MainActor (PhoneRoute) -> Void = { _ in }
+    /// Closes the Profil sheet of the unfolded iPhone, then runs the closure (Réglages present
+    /// from the root, so only once the sheet is gone). Nil when the Profil is not a sheet.
+    @Entry var closeProfileSheet: (@MainActor (@escaping @MainActor () -> Void) -> Void)?
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
@@ -53,6 +58,11 @@ struct PhoneTabsView: View {
     @State private var searching = false
     /// Choosing Rechercher opens its field (off for the demo captures of the list).
     @State private var openSearchOnSelect = true
+    /// Set by the unfolded layout, where these tabs fill the left half.
+    @Environment(\.itemDragStarted) private var foldDrag
+    /// The unfolded iPhone: an item opens in the detail half beside the tabs, never in a tab's
+    /// stack, so the selection belongs to that half and the stacks never follow it.
+    private var besideDetail: Bool { foldDrag != nil }
 
     /// A tab's label: the outline symbol, its filled form when the tab is selected.
     private func tabLabel(_ title: LocalizedStringKey, _ symbol: String, _ value: PhoneTab) -> some View {
@@ -112,8 +122,10 @@ struct PhoneTabsView: View {
             // `isPresented` back: a search still "presented" here came back later over the other
             // tab (field and keyboard over Accueil, tab bar hidden). It ends with its tab.
             if newTab != .search, searching { searching = false }
-            let ref = paths[newTab]?.last?.itemRef
-            if model.selectedItem != ref { model.perform(.select(ref)) }
+            if !besideDetail {
+                let ref = paths[newTab]?.last?.itemRef
+                if model.selectedItem != ref { model.perform(.select(ref)) }
+            }
             model.session.noteActivity()
         }
         // Moving in a tab counts as activity (no tap gesture over the tabs, see `BrowseRoot`).
@@ -121,7 +133,7 @@ struct PhoneTabsView: View {
         // The detail cleared or moved the selection (trash, move, new vault on save), or a new
         // item was saved: the visible stack follows.
         .onChange(of: model.selectedItem) { old, new in
-            follow(selection: new, previous: old)
+            if !besideDetail { follow(selection: new, previous: old) }
         }
         // "Nouvel élément" goes to the vault whose list is open in the visible tab.
         .onChange(of: browsedVault, initial: true) { _, vault in
@@ -135,7 +147,11 @@ struct PhoneTabsView: View {
             model.browseReveal = nil
             switch reveal {
             case .item(let ref):
-                paths[.items] = [.item(ref)]
+                if besideDetail {
+                    model.selectedItem = ref
+                } else {
+                    paths[.items] = [.item(ref)]
+                }
                 tab = .items
             case .search:
                 paths[.search] = []
@@ -159,8 +175,8 @@ struct PhoneTabsView: View {
                         switch route {
                         case .list(let filter):
                             CategoryListView(filter: filter)
-                        case .watchtower(let title, let itemIDs):
-                            WatchtowerItemsList(title: title, itemIDs: itemIDs)
+                        case .watchtower(let title, let itemIDs, let check):
+                            WatchtowerItemsList(title: title, itemIDs: itemIDs, check: check)
                         case .crypto:
                             CryptoPortfolioView()
                         case .cryptoCoin(let coin):
@@ -180,6 +196,7 @@ struct PhoneTabsView: View {
                 }
         }
         .environment(\.itemZoomNamespace, itemZoom)
+        .environment(\.inPhoneTabs, true)
         .environment(\.pushPhoneRoute) { route in
             paths[which, default: []].append(route)
             // As the path binding does: the top item of the visible stack is the selection.
@@ -192,7 +209,7 @@ struct PhoneTabsView: View {
             get: { paths[which] ?? [] },
             set: { newPath in
                 paths[which] = newPath
-                guard which == tab else { return }
+                guard which == tab, !besideDetail else { return }
                 let ref = newPath.last?.itemRef
                 if model.selectedItem != ref { model.perform(.select(ref)) }
             })
@@ -289,7 +306,7 @@ struct PhoneTabsView: View {
             }
         }
         // `-OnePassDemoItem <title>` selected an item before this view appeared: open its detail.
-        if defaults.string(forKey: "OnePassDemoItem") != nil, let ref = model.selectedItem {
+        if defaults.string(forKey: "OnePassDemoItem") != nil, !besideDetail, let ref = model.selectedItem {
             tab = .items
             paths[.items, default: []].append(.item(ref))
         }
@@ -340,7 +357,7 @@ extension EnvironmentValues {
     @Entry var itemDragStarted: (@MainActor (ItemRef) -> Void)?
 }
 
-/// The unfolded iPhone (spec "iPhone pliable"): the item list and the detail side by side, the
+/// The unfolded iPhone (spec "iPhone pliable"): the phone's tabs and the detail side by side, the
 /// fold's seam between them. On unfold the open item slides out from the seam. Dragging a row
 /// raises a tray of vaults and a star at the bottom: drop to move or to mark as favorite.
 struct FoldSplitView: View {
@@ -356,15 +373,10 @@ struct FoldSplitView: View {
             // Two plain panes, not a split view: an iPhone-sized split view slides its list over
             // the detail and dims it; here both halves stay put on either side of the fold.
             HStack(spacing: 0) {
-                NavigationStack {
-                    ItemListColumn()
-                        // The account menu (Réglages, Importer, Verrouiller) as on the folded phone.
-                        .toolbar {
-                            ToolbarItem(placement: .topBarLeading) { AccountMenu() }
-                                .sharedBackgroundVisibility(.hidden)
-                        }
-                }
-                .frame(width: half)
+                // The folded phone's tabs (Accueil, Éléments, Watchtower, Rechercher) in the left
+                // half: an item they show opens in the right half instead of on their stack.
+                PhoneTabsView()
+                    .frame(width: half)
                 DetailColumn()
                     .frame(width: proxy.size.width - half)
                     // Out from the seam: from the hinge toward the right edge.
@@ -501,6 +513,27 @@ enum FoldDrag {
     static let prefix = "onepass-item:"
 
     static func payload(_ ref: ItemRef) -> String { prefix + ref.vaultID + "/" + ref.itemID }
+}
+
+/// An item's row in the phone tabs: pushes the item's detail on the tab's stack, or on the
+/// unfolded iPhone opens it in the detail half beside the tabs and can be dragged to the tray.
+struct PhoneItemLink<Label: View>: View {
+    @Environment(\.itemDragStarted) private var foldDrag
+    let ref: ItemRef
+    let label: Label
+
+    init(ref: ItemRef, @ViewBuilder label: () -> Label) {
+        self.ref = ref
+        self.label = label()
+    }
+
+    var body: some View {
+        if foldDrag != nil {
+            label.modifier(ItemRowDrag(ref: ref))
+        } else {
+            NavigationLink(value: PhoneRoute.item(ref)) { label }
+        }
+    }
 }
 
 /// List rows of the unfolded layout: open on tap, draggable to the tray (elsewhere unchanged).

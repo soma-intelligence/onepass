@@ -25,8 +25,8 @@ use onepass_guard::{
 use onepass_peer::{CodeIdentity, identify_pid, identity_of_file, parent_pid};
 use onepass_ssh_agent::keys::AgentKey;
 use onepass_ssh_agent::{
-    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of, serve,
-    ssh_client_record, ssh_keys_of,
+    Agent, AgentConfig, AgentGuards, KeyInfo, KeySource, bind_socket, load_key_of, note_signed_in,
+    serve, ssh_client_record, ssh_keys_of,
 };
 
 use super::ssh_key::AGENT_SOCKET;
@@ -114,6 +114,14 @@ impl KeySource for SessionKeys {
 
     fn load(&mut self, item_id: &str) -> Result<AgentKey, String> {
         self.with(|repo| Ok(load_key_of(repo, item_id)))?
+    }
+
+    fn note_signed(&mut self, item_id: &str, field: &str, client: &str) {
+        // Best effort: a use that cannot be recorded never fails a signature.
+        let _ = self.with(|repo| {
+            note_signed_in(repo, item_id, field, client);
+            Ok(())
+        });
     }
 }
 
@@ -209,6 +217,7 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
         Arc::new(SystemClock),
     );
     guards.throttle = Throttle::new(limits);
+    let flusher = session.clone();
     let agent = Agent::new(
         SessionKeys(session, travel_changed.clone()),
         approver,
@@ -236,6 +245,12 @@ pub fn run(ctx: &Ctx, args: SshAgentArgs) -> Result<(), CliError> {
             while !stop.load(Ordering::SeqCst) {
                 if SIGNALED.load(Ordering::SeqCst) || travel_changed.load(Ordering::SeqCst) {
                     stop.store(true, Ordering::SeqCst);
+                }
+                // The hourly key-use flush, under the session's own lock
+                // and the data directory lock as any request; a session
+                // busy with a request is tried again at the next poll.
+                if let Ok(mut s) = flusher.try_lock() {
+                    s.flush_key_uses_if_due();
                 }
                 thread::sleep(SIGNAL_POLL);
             }

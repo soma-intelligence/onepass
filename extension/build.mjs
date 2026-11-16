@@ -22,7 +22,7 @@ import { generate as generateDesignTokens } from "./scripts/gen-design-tokens.mj
 
 const root = dirname(fileURLToPath(import.meta.url));
 const BROWSERS = ["chromium", "firefox", "safari"];
-const UI_PAGES = ["popup", "menu", "overlay", "save", "passkey", "ghost"];
+const UI_PAGES = ["popup", "menu", "overlay", "save", "passkey", "ghost", "setup"];
 
 const CLASSIFIERS = ["heuristic", "gbm", "encoder"];
 const DEFAULT_CSP = "script-src 'self'; object-src 'none'";
@@ -120,6 +120,14 @@ async function buildBrowser(browser, dev, e2e = false, devHost = false, dist = j
     define: { ...common.define, __PASSKEY_RELAY__: "true" },
     entryPoints: [join(root, "src/content/passkey.ts")],
     outfile: join(out, "passkey-relay.js"),
+    format: "iife",
+  });
+  // On-demand scanner for two-factor setup QR codes: injected by the popup into the
+  // current tab, in no manifest's content_scripts (it carries the QR decoder).
+  await esbuild({
+    ...common,
+    entryPoints: [join(root, "src/content/setup/scan.ts")],
+    outfile: join(out, "setup-scan.js"),
     format: "iife",
   });
   for (const page of UI_PAGES) {

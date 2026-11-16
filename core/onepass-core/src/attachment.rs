@@ -34,7 +34,7 @@ use crate::crypto::key::SymmetricKey;
 use crate::error::{Error, Result};
 use crate::format::ITEM_SCHEMA;
 use crate::id::Id;
-use crate::model::AttachmentRef;
+use crate::model::{AttachmentRef, Item};
 use crate::store::{Record, RecordKind};
 use crate::vault::Vault;
 
@@ -97,6 +97,13 @@ pub fn chunk_count(size: u64) -> Result<u32> {
         return Err(Error::InvalidFormat("attachment too large"));
     }
     u32::try_from(size.div_ceil(CHUNK).max(1)).map_err(|_| Error::InvalidFormat("attachment size"))
+}
+
+/// Every file the item keeps chunks for: its attachments and its custom
+/// icon. Every path that moves, copies, re-seals or deletes an item's
+/// chunks walks this, so the icon follows the item.
+pub fn files_of(item: &Item) -> impl Iterator<Item = &AttachmentRef> {
+    item.attachments.iter().chain(item.custom_icon.as_ref())
 }
 
 /// The record ids of every chunk of `r`.

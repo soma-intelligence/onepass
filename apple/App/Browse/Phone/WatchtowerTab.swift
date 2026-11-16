@@ -218,7 +218,7 @@ private struct PhoneWatchtowerCard: View {
     let ids: Set<String>
 
     var body: some View {
-        NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids)) {
+        NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck)) {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     HStack(alignment: .top) {
@@ -226,10 +226,7 @@ private struct PhoneWatchtowerCard: View {
                             .font(.system(size: 44, weight: .bold, design: .rounded))
                             .monospacedDigit()
                         Spacer()
-                        Image(systemName: card.symbol)
-                            .font(.system(size: 30, weight: .semibold))
-                            .opacity(0.35)
-                            .accessibilityHidden(true)
+                        WatchtowerArtwork(card: card, size: 34, onWash: true)
                     }
                     Text(card.title).font(.headline)
                     Text(card.message)
@@ -305,7 +302,7 @@ private struct ClearChecksCard: View {
                     // Starts at the row title: padding, the 26 pt tile, spacing.
                     if index > 0 { Divider().padding(.leading, Theme.Space.l + 26 + Theme.Space.m) }
                     HStack(spacing: Theme.Space.m) {
-                        PageTile(symbol: card.symbol, color: card.color, size: 26)
+                        WatchtowerArtwork(card: card, size: 26)
                         VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                             Text(card.title).font(.subheadline.weight(.medium))
                             if let note = note(card) {
@@ -340,16 +337,20 @@ struct WatchtowerItemsList: View {
     @Environment(AppModel.self) private var model
     let title: String
     let itemIDs: Set<String>
+    /// The card's site check: its rows carry the setup button (`WatchtowerSetupRow`).
+    let check: String?
 
     var body: some View {
         let items = model.session.items(filter: .all, query: "", sort: .title).filter { itemIDs.contains($0.id) }
         let showVault = model.session.vaults.count > 1
         List {
             ForEach(items, id: \.id) { summary in
-                NavigationLink(value: PhoneRoute.item(ItemRef(vaultID: summary.vaultId, itemID: summary.id))) {
-                    ItemListRow(
-                        summary: summary,
-                        vaultName: showVault ? model.session.allVaults.first { $0.id == summary.vaultId }?.meta.name : nil)
+                WatchtowerSetupRow(itemID: summary.id, check: check) {
+                    PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
+                        ItemListRow(
+                            summary: summary,
+                            vaultName: showVault ? model.session.allVaults.first { $0.id == summary.vaultId }?.meta.name : nil)
+                    }
                 }
                 .itemZoomSource(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
             }

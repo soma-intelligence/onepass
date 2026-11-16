@@ -11,6 +11,8 @@ struct SecretFieldEditor: View {
     @Environment(AppModel.self) private var model
     let field: FfiField
     @Binding var value: FfiFieldValue
+    /// The live code under a one-time password. The editor's card rows leave it to the item page.
+    var showsLiveCode = true
     @Environment(\.requestGenerator) private var requestGenerator
     @State private var revealed = false
     #if os(iOS) || os(visionOS)
@@ -67,9 +69,13 @@ struct SecretFieldEditor: View {
                     .accessibilityLabel(Text("Scanner un QR code"))
                     .accessibilityIdentifier("editor.scanOtp.\(field.id)")
                 }
+                #elseif os(macOS)
+                if field.kind == .otp {
+                    OtpScanButton { value = .otp(value: $0) }
+                }
                 #endif
             }
-            if field.kind == .otp, !value.text.isEmpty {
+            if field.kind == .otp, showsLiveCode, !value.text.isEmpty {
                 if captured {
                     Text(verbatim: FieldRow.mask).font(.callout.monospacedDigit())
                 } else {

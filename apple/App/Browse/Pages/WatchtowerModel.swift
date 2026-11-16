@@ -7,10 +7,11 @@ import os
 /// Runs Watchtower off the main actor and keeps the last report until the data it was made from
 /// changes (summaries, hidden vaults, the breach setting). Emptied on lock.
 ///
-/// With "Vérifier les fuites" on: an offline pass first (shown at once), then the HIBP ranges of
-/// the prefixes that pass asked for, the 2FA and passkey catalogs and the HIBP breach catalog, then
-/// the final pass. Off: nothing leaves the device, and the catalogs are used only if a copy is
-/// already on disk.
+/// The 2FA and passkey checks read the site pack (`SitePackStore`) in both passes, whatever the
+/// breach setting: it is on the device already. With "Vérifier les fuites" on: an offline pass
+/// first (shown at once), then the HIBP ranges of the prefixes that pass asked for and the HIBP
+/// breach catalog, then the final pass. Off: nothing leaves the device, and the breach catalog is
+/// used only if a copy is already on disk.
 ///
 /// With "Me prévenir" on, each finished report goes through `WatchtowerAlerts`: new compromised
 /// passwords, breached sites, exposed sign-in accounts and expirations become one local notification
@@ -42,6 +43,8 @@ final class WatchtowerModel {
     @ObservationIgnored private var computedFor: Key?
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private let fetcher = WatchtowerFetcher()
+    /// The site pack in use, built once by `AppModel`, which also refreshes it.
+    @ObservationIgnored let sitePack: SitePackStore
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "watchtower")
 
     private static let breachKey = "onepass.watchtower.checkBreaches"
@@ -83,6 +86,10 @@ final class WatchtowerModel {
         }
     }
 
+    init(sitePack: SitePackStore) {
+        self.sitePack = sitePack
+    }
+
     var isRunning: Bool {
         switch phase {
         case .analyzing, .checkingBreaches: true
@@ -98,7 +105,8 @@ final class WatchtowerModel {
         run(session, key: key)
     }
 
-    /// "Analyser à nouveau": the catalogs on disk stay, the ranges in memory too (an hour at most).
+    /// "Analyser à nouveau": the breach catalog on disk stays, the ranges in memory too (an hour at
+    /// most).
     func refresh(_ session: VaultSession) {
         guard session.state == .unlocked else { return }
         let key = Key(revision: session.summariesRevision, hidden: session.hiddenVaultIDs, breaches: checkBreaches)
@@ -146,14 +154,15 @@ final class WatchtowerModel {
         computedFor = key
         phase = .analyzing
         let fetcher = fetcher
+        let sitePack = sitePack
         running = Task { [weak self] in
             do {
-                // Offline pass: local checks, the catalogs already on disk, the prefixes to fetch.
-                let cached = await fetcher.siteDirectories(allowNetwork: false)
+                // Offline pass: local checks, the site pack, the breach catalog already on disk, the
+                // prefixes to fetch.
+                let sites = await sitePack.pack()
                 let cachedBreaches = await fetcher.breachCatalog(allowNetwork: false)
                 let first = try await session.watchtowerReport(
-                    ranges: key.breaches ? [] : nil, twofaDirectory: cached.twofa, passkeysDirectory: cached.passkeys,
-                    breachCatalog: cachedBreaches)
+                    ranges: key.breaches ? [] : nil, sitePack: sites, breachCatalog: cachedBreaches)
                 guard let self, !Task.isCancelled else { return }
                 self.report = first
                 self.breachCatalogUsed = cachedBreaches != nil
@@ -163,7 +172,6 @@ final class WatchtowerModel {
                     return
                 }
                 self.phase = .checkingBreaches(done: 0, total: first.missingPrefixes.count)
-                async let sites = fetcher.siteDirectories(allowNetwork: true)
                 async let breaches = fetcher.breachCatalog(allowNetwork: true)
                 let ranges = await fetcher.ranges(for: first.missingPrefixes) { done, total in
                     Task { @MainActor [weak self] in
@@ -171,12 +179,10 @@ final class WatchtowerModel {
                         self.phase = .checkingBreaches(done: done, total: total)
                     }
                 }
-                let directories = await sites
                 let catalog = await breaches
                 guard !Task.isCancelled else { return }
                 let second = try await session.watchtowerReport(
-                    ranges: ranges, twofaDirectory: directories.twofa, passkeysDirectory: directories.passkeys,
-                    breachCatalog: catalog)
+                    ranges: ranges, sitePack: sites, breachCatalog: catalog)
                 guard !Task.isCancelled else { return }
                 self.report = second
                 self.breachCatalogUsed = catalog != nil

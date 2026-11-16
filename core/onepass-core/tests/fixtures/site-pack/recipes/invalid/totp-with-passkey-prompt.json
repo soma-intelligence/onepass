@@ -1,0 +1,18 @@
+{
+  "kind": "setup_totp",
+  "domains": [
+    "example.com"
+  ],
+  "steps": [
+    {
+      "do": "goto",
+      "url": "https://example.com/settings/security"
+    },
+    {
+      "do": "expect_passkey_prompt"
+    },
+    {
+      "do": "expect_qr"
+    }
+  ]
+}

@@ -34,7 +34,7 @@ struct CategoryListView: View {
             }
             ForEach(items, id: \.id) { summary in
                 let ref = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
-                NavigationLink(value: PhoneRoute.item(ref)) {
+                PhoneItemLink(ref: ref) {
                     ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
                 }
                 .itemZoomSource(ref)

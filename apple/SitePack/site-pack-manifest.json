@@ -1,0 +1,25 @@
+{
+  "created": "2026-11-15T20:06:35+00:00",
+  "format": 1,
+  "pack": {
+    "file": "onepass-sites-2026111501.json",
+    "sha256": "67af143f5d22df45e1e4eada6182b04f7797ee4ba20e27e4aaabe81782906526",
+    "size": 295428
+  },
+  "sites": 2589,
+  "sources": {
+    "passkeys": {
+      "archive_sha256": "0adf813711a06f3900e8e08b5294b4c0f0797439b89c26e940ed728e7b3cbbb1",
+      "commit": "ede77017c46bbdcf2a7366f3aee325162ce2edef",
+      "license": "CC-BY-4.0",
+      "repository": "2factorauth/passkeys"
+    },
+    "twofa": {
+      "archive_sha256": "25edb7984039d2259bcb99d9e98ff1637c46c387856005408093850fe0442b8d",
+      "commit": "9b39477ccf259f022f694b4f14ed79c529b1039d",
+      "license": "MIT",
+      "repository": "2factorauth/twofactorauth"
+    }
+  },
+  "version": 2026111501
+}

@@ -1,0 +1,182 @@
+{
+ "batchcomplete": true,
+ "query": {
+  "normalized": [
+   {
+    "fromencoded": false,
+    "from": "File:unsafe.svg",
+    "to": "File:Unsafe.svg"
+   }
+  ],
+  "pages": [
+   {
+    "ns": 6,
+    "title": "File:Acme logo 2015.svg",
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "size": 107,
+      "width": 24,
+      "height": 24,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/84/Acme_logo_2015.svg?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=original",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Acme_logo_2015.svg",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=1",
+      "sha1": "95ca7e4f59fc244e907adf736135355ce94b1659",
+      "mime": "image/svg+xml",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "Public domain",
+        "source": "commons-desc-page",
+        "hidden": ""
+       }
+      }
+     }
+    ]
+   },
+   {
+    "ns": 6,
+    "title": "File:Sharealike.svg",
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "size": 99,
+      "width": 24,
+      "height": 24,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/d5/Sharealike.svg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Sharealike.svg",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=1",
+      "sha1": "76fffd16a962e10c0189181fceeb2973dbb3387b",
+      "mime": "image/svg+xml",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "CC BY-SA 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+       }
+      }
+     }
+    ]
+   },
+   {
+    "ns": 6,
+    "title": "File:Widemark.svg",
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "size": 98,
+      "width": 1000,
+      "height": 200,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b7/Widemark.svg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Widemark.svg",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=1",
+      "sha1": "b76d1c74d9d97521c0eea35564c9b138d646270e",
+      "mime": "image/svg+xml",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "Public domain",
+        "source": "commons-desc-page",
+        "hidden": ""
+       }
+      }
+     }
+    ]
+   },
+   {
+    "ns": 6,
+    "title": "File:Unsafe.svg",
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "size": 117,
+      "width": 24,
+      "height": 24,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/5b/Unsafe.svg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Unsafe.svg",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=1",
+      "sha1": "f6445cb14d0510af1fcda706ddc85131bc4c6e38",
+      "mime": "image/svg+xml",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "PD-textlogo",
+        "source": "commons-desc-page",
+        "hidden": ""
+       }
+      }
+     }
+    ]
+   },
+   {
+    "ns": 6,
+    "title": "File:Withings logo.svg",
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "size": 107,
+      "width": 24,
+      "height": 24,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b1/Withings_logo.svg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Withings_logo.svg",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=1",
+      "sha1": "7f2c0c6295907942295aeec2298f464bae083285",
+      "mime": "image/svg+xml",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "CC0",
+        "source": "commons-desc-page",
+        "hidden": ""
+       }
+      }
+     }
+    ]
+   },
+   {
+    "ns": 6,
+    "title": "File:Air Canada.png",
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "size": 667,
+      "width": 256,
+      "height": 256,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/66/Air_Canada.png",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Air_Canada.png",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=1",
+      "sha1": "9f8b7a8b178cfda96155d14e9dc25ea1099a4df4",
+      "mime": "image/png",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "PD-shape",
+        "source": "commons-desc-page",
+        "hidden": ""
+       }
+      }
+     }
+    ]
+   },
+   {
+    "ns": 6,
+    "title": "File:Tampered.svg",
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "size": 92,
+      "width": 24,
+      "height": 24,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/ef/Tampered.svg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Tampered.svg",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=1",
+      "sha1": "375533e2f2af3d5c0ee82d1232453644985dd311",
+      "mime": "image/svg+xml",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "Public domain",
+        "source": "commons-desc-page",
+        "hidden": ""
+       }
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -22,10 +22,11 @@ use onepass_core::generator::{self, CharsetOptions, PassphraseOptions, Wordlist}
 use onepass_core::model::checks::luhn_valid;
 use onepass_core::model::usage::{SiteUsage, associated_pick_key, form_shape_hash};
 use onepass_core::model::{
-    Address, EventKind, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PENDING_TAG,
-    PasswordHistoryEntry, WEAK_BY_SITE_TAG, new_item, validate,
+    Address, EventKind, Field, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod,
+    MatchRule, PENDING_TAG, PasswordHistoryEntry, Section, WEAK_BY_SITE_TAG, new_item, validate,
 };
 use onepass_core::site_password::{GenerationReport, PasswordContext, Profile, generate_for};
+use onepass_core::totp::{OtpAttach, attach_otp, parse_otpauth};
 use onepass_core::webauthn;
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -35,7 +36,7 @@ use crate::agent::{AgentHub, AgentKind, AgentListener, WAIT_TIMEOUT};
 use crate::api::{
     AddressIn, AgentJobWire, CredentialStatus, Ctx, ErrorBody, Extra, FillField, FillKind,
     PasskeySummary, Recipe, RecipeKind, RecipeProfile, Reply, Request, Response, SecretString,
-    Step, Summary, SummaryKind, VaultEntry, agent_error,
+    Step, Summary, SummaryKind, TotpSaveStatus, VaultEntry, agent_error,
 };
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
@@ -62,6 +63,21 @@ pub const SECRET_LIMIT: usize = 60;
 pub const SECRET_WINDOW: u64 = 60;
 /// Label of the URL of a login saved from the extension.
 const SAVED_URL_LABEL: &str = "site web";
+/// Longest `otpauth://` URI `save_totp` takes.
+const MAX_OTP_URI: usize = 2048;
+/// Longest label of a field `save_totp` or `save_recovery_codes` writes.
+const MAX_FIELD_LABEL: usize = 40;
+/// Label of a replaced seed when the extension sends none (the apps' own).
+const PREVIOUS_OTP_LABEL: &str = "Ancien code";
+/// Field of a Login holding the site's recovery codes, one per line.
+const RECOVERY_CODES_FIELD: &str = "recovery_codes";
+/// Its label when the extension sends none.
+const RECOVERY_CODES_LABEL: &str = "Codes de récupération";
+/// Recovery codes `save_recovery_codes` takes at most.
+const MAX_RECOVERY_CODES: usize = 32;
+/// Section of the fields added outside a template (as `attach_otp` does).
+const CUSTOM_SECTION_ID: &str = "custom";
+const CUSTOM_SECTION_LABEL: &str = "Champs perso";
 /// Most steps `note_fill` takes for one fill.
 const MAX_STEPS: usize = 16;
 /// Longest site `forget_site` takes (a DNS name).
@@ -216,6 +232,13 @@ pub trait VaultAccess {
     ) -> Result<BTreeMap<Id, i64>> {
         let _ = (site, client, now);
         Ok(BTreeMap::new())
+    }
+    /// Open and sign in (`crate::pending`): take the pending sign-in of
+    /// page `origin` (top frame `top_origin`) at `now`, once. A host without
+    /// a pending store has none.
+    fn take_pending_sign_in(&mut self, origin: &str, top_origin: &str, now: u64) -> Option<Id> {
+        let _ = (origin, top_origin, now);
+        None
     }
 }
 
@@ -620,6 +643,17 @@ impl<V: VaultAccess> Service<V> {
         Ok(q)
     }
 
+    /// The match of a login a setup write (`save_totp`,
+    /// `save_recovery_codes`) may touch: the page's exact host or its
+    /// domain only. An associated match is refused outright, even after a
+    /// pick in this session (spec: the seed goes to a login of the page).
+    fn setup_match(item: &Item, page: &Origin) -> OpResult<MatchQuality> {
+        match item_match(item, page).ok_or(AppErrorCode::OriginMismatch)? {
+            MatchQuality::Associated => Err(AppErrorCode::NotAllowed),
+            q => Ok(q),
+        }
+    }
+
     /// A login was served on the user's pick while it was an associated
     /// match: remembered for the rest of the session (`picked`).
     fn note_pick(&mut self, item: &Item, page: &Origin, q: MatchQuality, ctx: Ctx) {
@@ -720,6 +754,20 @@ impl<V: VaultAccess> Service<V> {
             (_, Some(_)) => return Err(AppErrorCode::Invalid),
             _ => {}
         }
+        // The setup context opens its two writes, the list of the page's
+        // logins and the code fill (`fill_login` checks its fields), nothing
+        // else.
+        if req.ctx() == Some(Ctx::Setup)
+            && !matches!(
+                req,
+                Request::SaveTotp { .. }
+                    | Request::SaveRecoveryCodes { .. }
+                    | Request::ListForOrigin { .. }
+                    | Request::FillLogin { .. }
+            )
+        {
+            return Err(AppErrorCode::NotAllowed);
+        }
         match req {
             Request::Status { .. } => {
                 let s = self.vault.status();
@@ -738,6 +786,13 @@ impl<V: VaultAccess> Service<V> {
                     .map_err(app_code)?;
                 return Ok(Response::Unlock { locked: !unlocked });
             }
+            // Only an item id, never a value: served locked too, so the
+            // extension can ask for the unlock that the sign-in needs.
+            Request::TakeSignIn {
+                origin: o,
+                top_origin,
+                ..
+            } => return self.take_sign_in(o, top_origin, now),
             // Not a vault value: served locked too.
             Request::FillSalt { .. } => {
                 return Ok(Response::Salt {
@@ -806,7 +861,8 @@ impl<V: VaultAccess> Service<V> {
             | Request::FillSalt { .. }
             | Request::AgentWait { .. }
             | Request::AgentProbeResult { .. }
-            | Request::AgentFillResult { .. } => Err(AppErrorCode::Internal),
+            | Request::AgentFillResult { .. }
+            | Request::TakeSignIn { .. } => Err(AppErrorCode::Internal),
             Request::Vaults { origin: o, .. } => self.vaults(o.as_deref()),
             Request::ListForOrigin { origin: o, .. } => self.list_for_origin(o),
             Request::Search { ctx, query, .. } => self.search(*ctx, query),
@@ -958,6 +1014,37 @@ impl<V: VaultAccess> Service<V> {
                 pending,
                 ..
             } => self.update_password(*ctx, item_id, o, password, *weak_by_site, *pending, now),
+            Request::SaveTotp {
+                ctx,
+                origin: o,
+                uri,
+                item_id,
+                vault_id,
+                title,
+                username,
+                replace,
+                previous_label,
+                ..
+            } => {
+                let save = TotpSave {
+                    uri,
+                    item_id: item_id.as_deref(),
+                    vault_id,
+                    title,
+                    username,
+                    replace: *replace,
+                    previous_label,
+                };
+                self.save_totp(*ctx, o, save, now)
+            }
+            Request::SaveRecoveryCodes {
+                ctx,
+                origin: o,
+                item_id,
+                codes,
+                label,
+                ..
+            } => self.save_recovery_codes(*ctx, item_id, o, codes, label, now),
             Request::ConfirmPending {
                 ctx,
                 item_id,
@@ -1265,6 +1352,30 @@ impl<V: VaultAccess> Service<V> {
         Ok(ticket.totp)
     }
 
+    /// `take_sign_in`: same `https` origin in the frame and the top frame,
+    /// else `cross_site_frame` (nothing is taken). Unlocked, an item that
+    /// is no longer an eligible Login is not given.
+    fn take_sign_in(&mut self, o: &str, top: &str, now: u64) -> OpResult<Response> {
+        let page = origin(o)?;
+        let top_page = origin(top)?;
+        if page.origin_string() != top_page.origin_string() {
+            return Err(AppErrorCode::CrossSiteFrame);
+        }
+        let Some(id) = self.vault.take_pending_sign_in(o, top, now) else {
+            return Ok(Response::SignIn { item_id: None });
+        };
+        if !self.vault.status().locked {
+            match self.eligible_item(&id.to_string()) {
+                Ok((_, item)) if item.item_type == ItemType::Login => {}
+                _ => return Ok(Response::SignIn { item_id: None }),
+            }
+        }
+        self.record("take_sign_in", id, Some(o), Ctx::Chain, now);
+        Ok(Response::SignIn {
+            item_id: Some(id.to_string()),
+        })
+    }
+
     fn fill_login(
         &mut self,
         ctx: Ctx,
@@ -1274,6 +1385,10 @@ impl<V: VaultAccess> Service<V> {
         fields: &[FillField],
         now: u64,
     ) -> OpResult<Response> {
+        // The setup card fills the code it just saved, nothing more.
+        if ctx == Ctx::Setup && fields != [FillField::Totp] {
+            return Err(AppErrorCode::NotAllowed);
+        }
         let page = origin(o)?;
         let (_, item) = self.eligible_item(item_id)?;
         if item.item_type != ItemType::Login {
@@ -1800,6 +1915,140 @@ impl<V: VaultAccess> Service<V> {
             p.version = version;
         }
         self.record("update_password", id, Some(o), ctx, now);
+        Ok(Response::Empty {})
+    }
+
+    /// Write only: a scanned TOTP seed on a Login of the page, or on a new
+    /// Login of the page. The seed never goes back to the extension.
+    fn save_totp(&mut self, ctx: Ctx, o: &str, t: TotpSave<'_>, now: u64) -> OpResult<Response> {
+        setup_ctx(ctx)?;
+        let page = origin(o)?;
+        self.take_secret_slot(now)?;
+        let label = field_label(t.previous_label, PREVIOUS_OTP_LABEL)?;
+        let uri = otp_uri(t.uri)?;
+        let Some(item_id) = t.item_id else {
+            return self.new_totp_login(ctx, o, &page, &t, uri, &label, now);
+        };
+        let (_, mut item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Login {
+            return Err(AppErrorCode::NotFound);
+        }
+        Self::setup_match(&item, &page)?;
+        self.reprompt(&item, Some(&page))?;
+        let status = match attach_otp(&mut item, uri, t.replace, &label)
+            .map_err(|_| AppErrorCode::Invalid)?
+        {
+            OtpAttach::Added => TotpSaveStatus::Saved,
+            OtpAttach::Same => TotpSaveStatus::Same,
+            OtpAttach::Conflict => TotpSaveStatus::Exists,
+            OtpAttach::Replaced => TotpSaveStatus::Replaced,
+        };
+        let id = item.id;
+        if matches!(status, TotpSaveStatus::Saved | TotpSaveStatus::Replaced) {
+            item.updated_at = unix(now);
+            validate(&item).map_err(|_| AppErrorCode::Invalid)?;
+            self.save(item.vault_id, item)?;
+        }
+        self.record("save_totp", id, Some(o), ctx, now);
+        Ok(Response::TotpSaved {
+            status,
+            item_id: id.to_string(),
+        })
+    }
+
+    /// `save_totp` without an item: a new Login of the page holding the
+    /// seed, for a username the card names.
+    #[allow(clippy::too_many_arguments)]
+    fn new_totp_login(
+        &mut self,
+        ctx: Ctx,
+        o: &str,
+        page: &Origin,
+        t: &TotpSave<'_>,
+        uri: &str,
+        label: &str,
+        now: u64,
+    ) -> OpResult<Response> {
+        let username = t.username.trim();
+        if username.is_empty() {
+            return Err(AppErrorCode::Invalid);
+        }
+        let vault_id = self.known_vault(t.vault_id, page)?;
+        // Bounded like a field label: length and control characters.
+        let title = field_label(t.title, page.host())?;
+        let mut item = new_item(ItemType::Login, vault_id, &title);
+        set_value(&mut item, "username", FieldValue::Text(username.to_owned()))?;
+        item.urls.push(ItemUrl {
+            label: SAVED_URL_LABEL.to_owned(),
+            url: page.origin_string(),
+            rule: MatchRule::Domain,
+            primary: true,
+        });
+        attach_otp(&mut item, uri, false, label).map_err(|_| AppErrorCode::Invalid)?;
+        validate(&item).map_err(|_| AppErrorCode::Invalid)?;
+        let id = item.id;
+        self.save(vault_id, item)?;
+        self.record("save_totp", id, Some(o), ctx, now);
+        Ok(Response::TotpSaved {
+            status: TotpSaveStatus::Saved,
+            item_id: id.to_string(),
+        })
+    }
+
+    /// Write only: the site's recovery codes into the concealed field
+    /// `recovery_codes` of a Login of the page, replacing its value. The
+    /// field is not for autofill: the extension cannot reveal it.
+    fn save_recovery_codes(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        o: &str,
+        codes: &SecretString,
+        label: &str,
+        now: u64,
+    ) -> OpResult<Response> {
+        setup_ctx(ctx)?;
+        let page = origin(o)?;
+        self.take_secret_slot(now)?;
+        let blank_label = label.trim().is_empty();
+        let label = field_label(label, RECOVERY_CODES_LABEL)?;
+        let value = recovery_codes(codes)?;
+        let (_, mut item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Login {
+            return Err(AppErrorCode::NotFound);
+        }
+        Self::setup_match(&item, &page)?;
+        self.reprompt(&item, Some(&page))?;
+        // A blank label keeps the one an existing field already has.
+        let label = match item.field(RECOVERY_CODES_FIELD) {
+            Some(f) if blank_label => f.label.clone(),
+            _ => label,
+        };
+        let field = Field {
+            id: RECOVERY_CODES_FIELD.to_owned(),
+            label,
+            kind: FieldType::Concealed,
+            value: FieldValue::Concealed(value),
+            required: false,
+            repeatable: false,
+            autofill: false,
+        };
+        match item.field_mut(RECOVERY_CODES_FIELD) {
+            Some(f) => *f = field,
+            None => match item.sections.iter_mut().find(|s| s.id == CUSTOM_SECTION_ID) {
+                Some(sec) => sec.fields.push(field),
+                None => item.sections.push(Section {
+                    id: CUSTOM_SECTION_ID.to_owned(),
+                    label: CUSTOM_SECTION_LABEL.to_owned(),
+                    fields: vec![field],
+                }),
+            },
+        }
+        item.updated_at = unix(now);
+        validate(&item).map_err(|_| AppErrorCode::Invalid)?;
+        let id = item.id;
+        self.save(item.vault_id, item)?;
+        self.record("save_recovery_codes", id, Some(o), ctx, now);
         Ok(Response::Empty {})
     }
 
@@ -2709,6 +2958,17 @@ struct NewLogin<'a> {
     tags: &'a [String],
 }
 
+/// Input of `save_totp`.
+struct TotpSave<'a> {
+    uri: &'a SecretString,
+    item_id: Option<&'a str>,
+    vault_id: &'a str,
+    title: &'a str,
+    username: &'a str,
+    replace: bool,
+    previous_label: &'a str,
+}
+
 /// A card typed in a page, for `save_card`.
 struct NewCard<'a> {
     vault_id: &'a str,
@@ -2829,6 +3089,69 @@ fn save_ctx(ctx: Ctx) -> OpResult<()> {
         return Err(AppErrorCode::NotAllowed);
     }
     Ok(())
+}
+
+/// Only `setup` (the QR scan's card) writes a seed or recovery codes.
+fn setup_ctx(ctx: Ctx) -> OpResult<()> {
+    if ctx != Ctx::Setup {
+        return Err(AppErrorCode::NotAllowed);
+    }
+    Ok(())
+}
+
+/// A label the extension sends for a field it writes: `default` when
+/// blank, `invalid` beyond `MAX_FIELD_LABEL` characters or with a control
+/// character.
+fn field_label(label: &str, default: &str) -> OpResult<String> {
+    if label.chars().count() > MAX_FIELD_LABEL || label.chars().any(char::is_control) {
+        return Err(AppErrorCode::Invalid);
+    }
+    Ok(match label.trim() {
+        "" => default.to_owned(),
+        l => l.to_owned(),
+    })
+}
+
+/// A scanned seed: an `otpauth://totp/` URI with a secret, at most
+/// `MAX_OTP_URI` bytes, that core parses. Never a bare key, an HOTP or a
+/// migration URI.
+fn otp_uri(uri: &SecretString) -> OpResult<&str> {
+    const TOTP: &str = "otpauth://totp/";
+    let uri = uri.expose().trim();
+    if uri.len() > MAX_OTP_URI
+        || !uri
+            .get(..TOTP.len())
+            .is_some_and(|h| h.eq_ignore_ascii_case(TOTP))
+    {
+        return Err(AppErrorCode::Invalid);
+    }
+    parse_otpauth(uri).map_err(|_| AppErrorCode::Invalid)?;
+    Ok(uri)
+}
+
+/// Recovery codes, one per line: 1 to `MAX_RECOVERY_CODES` non-blank lines,
+/// each 4 to 64 characters of `[A-Za-z0-9-]` once trimmed, joined by `\n`.
+fn recovery_codes(codes: &SecretString) -> OpResult<Zeroizing<String>> {
+    let raw = codes.expose();
+    // Never grows past `raw`: no reallocation leaves a copy behind.
+    let mut out = Zeroizing::new(String::with_capacity(raw.len()));
+    let mut n = 0;
+    for line in raw.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        n += 1;
+        let ok = (4..=64).contains(&line.len())
+            && line.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
+        if n > MAX_RECOVERY_CODES || !ok {
+            return Err(AppErrorCode::Invalid);
+        }
+        if n > 1 {
+            out.push('\n');
+        }
+        out.push_str(line);
+    }
+    if n == 0 {
+        return Err(AppErrorCode::Invalid);
+    }
+    Ok(out)
 }
 
 /// Digits of a typed card number (spaces and dashes dropped): 12 to 19

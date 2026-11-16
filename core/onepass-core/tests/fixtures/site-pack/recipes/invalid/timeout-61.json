@@ -1,0 +1,23 @@
+{
+  "kind": "setup_totp",
+  "domains": [
+    "example.com"
+  ],
+  "steps": [
+    {
+      "do": "goto",
+      "url": "https://example.com/settings/security"
+    },
+    {
+      "do": "wait_for",
+      "role": "button",
+      "name": [
+        "Next"
+      ],
+      "timeout_s": 61
+    },
+    {
+      "do": "expect_qr"
+    }
+  ]
+}

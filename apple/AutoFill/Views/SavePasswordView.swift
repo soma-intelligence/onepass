@@ -34,13 +34,18 @@ struct SavePasswordView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     AutoFillHeader(
-                        type: .login, iconTitle: updating?.title ?? title, url: serviceURL, title: heading,
+                        type: .login, iconTitle: updating?.title ?? title, url: serviceURL,
+                        custom: updating.flatMap { session.customIconKey(itemID: $0.itemId, vaultID: $0.vaultId) },
+                        title: heading,
                         subtitle: request.typedService.shownName)
                         .padding(.bottom, 14)
                     if let updating {
                         AutoFillLabel("views.itemUpdated")
                         AutoFillCardRows {
-                            AutoFillRow(type: .login, title: updating.title, detail: updating.user, url: updating.url) {
+                            AutoFillRow(
+                                type: .login, title: updating.title, detail: updating.user, url: updating.url,
+                                custom: session.customIconKey(itemID: updating.itemId, vaultID: updating.vaultId)
+                            ) {
                                 EmptyView()
                             }
                         }

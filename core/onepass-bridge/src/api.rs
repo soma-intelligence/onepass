@@ -67,6 +67,11 @@ pub enum Ctx {
     /// 2026-11-07-agent-browser-fill 5). Accepted for `plan_fill`,
     /// `fill_login` and `fill_card` only, each with `agent_request`.
     Agent,
+    /// Two-factor setup: the QR scan's confirmation card (spec
+    /// 2026-11-13-two-factor-passkey-setup 1). Accepted by `save_totp`,
+    /// `save_recovery_codes`, `list_for_origin`, and `fill_login` with
+    /// `fields` exactly `[totp]`.
+    Setup,
 }
 
 impl Ctx {
@@ -79,6 +84,7 @@ impl Ctx {
             Self::Chain => "chain",
             Self::Passkey => "passkey",
             Self::Agent => "agent",
+            Self::Setup => "setup",
         }
     }
 }
@@ -399,6 +405,43 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         pending: bool,
     },
+    /// Write only: a TOTP seed scanned on the page goes on a Login, and is
+    /// never read back. With `item_id`, that Login of the page; without,
+    /// a new Login of the page in `vault_id` (the first vault of the
+    /// routed account when empty), titled `title` (the page's host when
+    /// empty), for `username` (required). `replace`: a different stored
+    /// seed is replaced, kept as `previous_otp_<n>` labelled
+    /// `previous_label`. Context `setup` only.
+    SaveTotp {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        uri: SecretString,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
+        #[serde(default)]
+        vault_id: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        username: String,
+        #[serde(default)]
+        replace: bool,
+        #[serde(default)]
+        previous_label: String,
+    },
+    /// Write only: the site's recovery codes, one per line, into the
+    /// concealed field `recovery_codes` of a Login of the page, replacing
+    /// its value. Context `setup` only.
+    SaveRecoveryCodes {
+        id: u64,
+        ctx: Ctx,
+        origin: String,
+        item_id: String,
+        codes: SecretString,
+        #[serde(default)]
+        label: String,
+    },
     /// A pending Login (tag `onepass:pending`) whose form was sent: the tag
     /// drops, `username` (when not blank) replaces the stored one.
     ConfirmPending {
@@ -589,6 +632,18 @@ pub enum Request {
         #[serde(with = "agent_result")]
         result: std::result::Result<FillWire, String>,
     },
+    /// Open and sign in (`pending.rs`): the item of the pending sign-in the
+    /// app recorded for this page's site, taken once. `origin` and
+    /// `top_origin`: the browser's origins of the frame and of its top
+    /// frame, which must be the same `https` origin. Served locked too
+    /// (only an item id comes back); `item_id` is `null` when there is
+    /// nothing to take. A host that predates it answers `invalid`, which
+    /// the extension reads as nothing.
+    TakeSignIn {
+        id: u64,
+        origin: String,
+        top_origin: String,
+    },
 }
 
 impl Request {
@@ -613,6 +668,8 @@ impl Request {
             | Self::CheckIdentity { id, .. }
             | Self::SaveIdentity { id, .. }
             | Self::UpdatePassword { id, .. }
+            | Self::SaveTotp { id, .. }
+            | Self::SaveRecoveryCodes { id, .. }
             | Self::ConfirmPending { id, .. }
             | Self::UndoSave { id, .. }
             | Self::DiscardPending { id, .. }
@@ -632,7 +689,8 @@ impl Request {
             | Self::PasskeyCreate { id, .. }
             | Self::AgentWait { id }
             | Self::AgentProbeResult { id, .. }
-            | Self::AgentFillResult { id, .. } => *id,
+            | Self::AgentFillResult { id, .. }
+            | Self::TakeSignIn { id, .. } => *id,
         }
     }
 
@@ -657,6 +715,8 @@ impl Request {
             Self::CheckIdentity { .. } => "check_identity",
             Self::SaveIdentity { .. } => "save_identity",
             Self::UpdatePassword { .. } => "update_password",
+            Self::SaveTotp { .. } => "save_totp",
+            Self::SaveRecoveryCodes { .. } => "save_recovery_codes",
             Self::ConfirmPending { .. } => "confirm_pending",
             Self::UndoSave { .. } => "undo_save",
             Self::DiscardPending { .. } => "discard_pending",
@@ -677,6 +737,7 @@ impl Request {
             Self::AgentWait { .. } => "agent_wait",
             Self::AgentProbeResult { .. } => "agent_probe_result",
             Self::AgentFillResult { .. } => "agent_fill_result",
+            Self::TakeSignIn { .. } => "take_sign_in",
         }
     }
 
@@ -698,6 +759,8 @@ impl Request {
             | Self::CheckIdentity { ctx, .. }
             | Self::SaveIdentity { ctx, .. }
             | Self::UpdatePassword { ctx, .. }
+            | Self::SaveTotp { ctx, .. }
+            | Self::SaveRecoveryCodes { ctx, .. }
             | Self::ConfirmPending { ctx, .. }
             | Self::UndoSave { ctx, .. }
             | Self::DiscardPending { ctx, .. }
@@ -720,7 +783,8 @@ impl Request {
             | Self::ClientInfo { .. }
             | Self::AgentWait { .. }
             | Self::AgentProbeResult { .. }
-            | Self::AgentFillResult { .. } => None,
+            | Self::AgentFillResult { .. }
+            | Self::TakeSignIn { .. } => None,
         }
     }
 
@@ -915,6 +979,11 @@ pub struct Summary {
     /// accounts; left out otherwise. An older extension ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+    /// An identity's e-mail address (not secret, like a login's identifier in
+    /// `subtitle`): what an email-only sign-up step offers. Left out for other
+    /// kinds and when the identity has none. An older extension ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1009,6 +1078,20 @@ pub enum CredentialStatus {
     /// A pending Login of the site (tag `onepass:pending`) holds this very
     /// password, whatever its username: confirm it, never save a second one.
     Pending,
+}
+
+/// `save_totp` outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TotpSaveStatus {
+    /// The Login had no seed (or is new): stored.
+    Saved,
+    /// The Login holds this very seed: nothing written.
+    Same,
+    /// The Login holds another seed and `replace` was false: nothing written.
+    Exists,
+    /// The other seed was kept as `previous_otp_<n>`, the new one stored.
+    Replaced,
 }
 
 /// A field of a plan group.
@@ -1188,6 +1271,15 @@ pub enum Response {
     },
     ItemId {
         item_id: String,
+    },
+    /// `save_totp`.
+    TotpSaved {
+        status: TotpSaveStatus,
+        item_id: String,
+    },
+    /// `take_sign_in`: the pending item, or `null`.
+    SignIn {
+        item_id: Option<String>,
     },
     Generate {
         password: SecretString,
@@ -1528,6 +1620,48 @@ mod tests {
             41,
             "save_identity",
         );
+    }
+
+    #[test]
+    fn request_json_round_trip_save_totp() {
+        let r = round_trip(
+            r#"{"id":40,"op":"save_totp","ctx":"setup","origin":"https://atlas-cloud.test","uri":"otpauth://totp/A?secret=JBSWY3DPEHPK3PXP","item_id":"x","vault_id":"","title":"","username":"","replace":true,"previous_label":"Old code"}"#,
+            40,
+            "save_totp",
+        );
+        assert_eq!(r.ctx(), Some(Ctx::Setup));
+        assert!(!format!("{r:?}").contains("JBSWY3DPEHPK3PXP"));
+        // A new login: no item id, the rest defaults.
+        let r: Request = serde_json::from_str(
+            r#"{"id":41,"op":"save_totp","ctx":"setup","origin":"https://atlas-cloud.test","uri":"otpauth://totp/A?secret=JBSWY3DPEHPK3PXP","username":"ada"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            r,
+            Request::SaveTotp {
+                item_id: None,
+                replace: false,
+                ..
+            }
+        ));
+        let saved = Response::TotpSaved {
+            status: TotpSaveStatus::Exists,
+            item_id: "x".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(saved).unwrap(),
+            json!({"status":"exists","item_id":"x"})
+        );
+    }
+
+    #[test]
+    fn request_json_round_trip_save_recovery_codes() {
+        let r = round_trip(
+            r#"{"id":42,"op":"save_recovery_codes","ctx":"setup","origin":"https://atlas-cloud.test","item_id":"x","codes":"abcd-1234\nefgh-5678","label":""}"#,
+            42,
+            "save_recovery_codes",
+        );
+        assert!(!format!("{r:?}").contains("abcd"));
     }
 
     #[test]
@@ -2121,6 +2255,7 @@ mod tests {
             match_quality: None,
             associated: false,
             account: None,
+            email: None,
         };
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["match"], Value::Null);
@@ -2134,12 +2269,14 @@ mod tests {
             match_quality: Some(MatchQuality::Associated),
             associated: true,
             account: Some("Soma Labs".into()),
+            email: Some("alex@atlas.dev".into()),
             ..s
         };
         let v = serde_json::to_value(&tagged).unwrap();
         assert_eq!(v["match"], "domain");
         assert_eq!(v["associated"], true);
         assert_eq!(v["account"], "Soma Labs");
-        assert_eq!(v.as_object().unwrap().len(), 14);
+        assert_eq!(v["email"], "alex@atlas.dev");
+        assert_eq!(v.as_object().unwrap().len(), 15);
     }
 }

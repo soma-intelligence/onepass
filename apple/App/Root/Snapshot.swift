@@ -43,6 +43,34 @@ enum Snapshot {
             return
         }
 
+        // `-OnePassSnapshotOnly toolbar`: the list's header row (search, filter, sort, the
+        // "Nouvel élément" pill) wide then narrow, where the pill folds to its "+", light then dark.
+        if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "toolbar" {
+            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: appearance)
+                model.editing = false
+                model.selection = .all
+                model.selectedItem = login.map { ItemRef(vaultID: $0.vaultId, itemID: $0.id) }
+                for (size, width) in [("wide", CGFloat(1280)), ("medium", CGFloat(1000)), ("narrow", CGFloat(820))] {
+                    mainWindow?.setFrame(NSRect(x: -4000, y: 80, width: width, height: 820), display: true)
+                    await capture(directory, "mac-toolbar-\(size)-\(suffix)")
+                }
+            }
+            // A click on another item, frame by frame: the old detail stays until the new one is
+            // read, then they crossfade (no spinner frame, no bar items gone).
+            mainWindow?.setFrame(NSRect(x: -4000, y: 80, width: 1280, height: 820), display: true)
+            if let next = model.session.summaries.first(where: { $0.title == "Amex Platinum" }),
+               let window = mainWindow {
+                model.selectedItem = ItemRef(vaultID: next.vaultId, itemID: next.id)
+                for frame in 0..<8 {
+                    try? await Task.sleep(for: .milliseconds(40))
+                    render(window, directory, "mac-toolbar-switch-\(frame)")
+                }
+            }
+            NSApp.terminate(nil)
+            return
+        }
+
         // `-OnePassSnapshotOnly cards`: Cartes bancaires with the Amex selected, light then dark.
         if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "cards" {
             let amex = model.session.summaries.first { $0.title == "Amex Platinum" }

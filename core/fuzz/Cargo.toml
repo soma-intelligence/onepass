@@ -349,3 +349,10 @@ path = "fuzz_targets/org_join_frame.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "site_pack"
+path = "fuzz_targets/site_pack.rs"
+test = false
+doc = false
+bench = false

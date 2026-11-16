@@ -150,6 +150,9 @@ extension AppModel {
             showToast(error.message, kind: .error)
             return
         }
+        // The account left keeps none of its decrypted chosen icons here, even when the one shown
+        // is already unlocked (`sessionStateChanged` purges only on a lock).
+        purgeChosenIcons()
         sessionStateChanged(session.state)
     }
 

@@ -18,6 +18,7 @@ import UIKit
 struct ItemDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let ref: ItemRef
     /// Shown in its own window ("Ouvrir dans une nouvelle fenêtre"): read only, "Modifier" goes back
@@ -26,6 +27,8 @@ struct ItemDetailView: View {
 
     @State private var item: FfiItem?
     @State private var loadError: String?
+    /// Where the websites card sits among the free sections (per device, set by the editor).
+    @AppStorage(EditorLayout.websitesSlotKey) private var websitesSlot = 0
     @State private var actionError: String?
     @State private var confirmDelete = false
     // Reprompt.
@@ -45,6 +48,9 @@ struct ItemDetailView: View {
     @State private var showDates = false
     /// Timeline of the footer, loaded with the item (labels and dates only, never a value).
     @State private var timeline: [FfiTimelineEvent] = []
+    /// Key-use log of the "Utilisation" section, tagged with its item so a switch never shows the
+    /// previous item's log (newest first; labels, clients and devices only, never a value).
+    @State private var keyUses: (itemID: String, uses: [FfiKeyUse]) = ("", [])
     /// "Copier en JSON" asks first: the JSON holds every secret of the item.
     @State private var confirmCopyJSON = false
     /// The identity color of the item shown (iPhone and iPad), computed once when the header
@@ -55,9 +61,12 @@ struct ItemDetailView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
 
-    init(ref: ItemRef, standalone: Bool = false) {
+    /// `preloaded`: the item already read by the caller (the Mac detail column loads the next item
+    /// before it swaps views), so the first frame is the item, not a spinner without wash or bar.
+    init(ref: ItemRef, standalone: Bool = false, preloaded: FfiItem? = nil) {
         self.ref = ref
         self.standalone = standalone
+        _item = State(initialValue: preloaded?.id == ref.itemID ? preloaded : nil)
     }
 
     private var editingHere: Bool { !standalone && model.editing }
@@ -141,14 +150,15 @@ struct ItemDetailView: View {
             category: ItemCategory.of(item.itemType).color)
     }
 
-    /// A 30% tall wash from the top edge (status bar included). Flat fallback is no wash at all.
+    /// Two soft glows from the top corners (status bar included), in a box 58% of the screen tall.
+    /// Flat fallback is no wash at all.
     private func identityWash(_ item: FfiItem) -> some View {
         let color = identity.flatMap { $0.id == item.id ? $0.color : nil } ?? identityColor(item, icon: nil)
+        let glows = Theme.Wash.identityGlows(color, dark: colorScheme == .dark)
         return Color.clear
-            .containerRelativeFrame(.vertical) { height, _ in height * 0.30 }
-            .washBackground(
-                Theme.Wash.identity(color, dark: colorScheme == .dark), flat: .clear, in: Rectangle()
-            )
+            .containerRelativeFrame(.vertical) { height, _ in height * 0.58 }
+            .washBackground(glows.trailing, flat: .clear, in: Rectangle())
+            .washBackground(glows.leading, flat: .clear, in: Rectangle())
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -162,7 +172,10 @@ struct ItemDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Self.sectionSpacing) {
                 #if os(iOS) || os(macOS)
-                ItemHeader(item: item) { identity = (item.id, identityColor(item, icon: $0)) }
+                ItemHeader(item: item) { icon in
+                    // The icon's tint replaces the category's: eased, never a jump.
+                    withAnimation(.easeInOut(duration: 0.25)) { identity = (item.id, identityColor(item, icon: icon)) }
+                }
                     .id(item.id)
                     .padding(.horizontal, Theme.Space.xs)
                     .padding(.bottom, Theme.Space.xs)
@@ -186,9 +199,9 @@ struct ItemDetailView: View {
                 if locked(item) {
                     repromptSection(item)
                 } else {
-                    if item.trashedAt == nil, !item.archived,
-                        let offer = PasskeyOffer.offer(for: item, report: model.watchtower.report) {
-                        PasskeyOfferBanner(offer: offer) { setWatchtowerExclusion(PasskeyOffer.checkID, excluded: true, item) }
+                    if let offer = SiteSetupOffer.offers(for: item, report: model.watchtower.report).first {
+                        SiteSetupBanner(offer: offer) { setWatchtowerExclusion(offer.kind.rawValue, excluded: true, item) }
+                            .id(offer.kind)
                     }
                     if item.itemType == .document {
                         ForEach(DocumentCard.attachments(of: item), id: \.id) { attachment in
@@ -204,6 +217,13 @@ struct ItemDetailView: View {
                             setWatchtowerExclusion(check, excluded: excluded, item)
                         }
                     }
+                    KeyUseSection(
+                        uses: keyUses.itemID == item.id ? keyUses.uses : [],
+                        editable: item.trashedAt == nil && !standalone,
+                        reload: { await loadKeyUses(item) },
+                        clear: { await clearKeyUses(item) }
+                    )
+                    .id(item.id)
                 }
                 footer(item)
             }
@@ -269,6 +289,61 @@ struct ItemDetailView: View {
             .padding(.horizontal, Theme.Space.l)
     }
 
+    /// One section's card: its small capitals label and its filled fields (a login's first card
+    /// also carries its sign-in account and "Ajouter une passkey").
+    @ViewBuilder private func sectionCard(
+        _ section: FfiSection, item: FfiItem, loginCardID: String?, signIn: (provider: String, accountItemID: String)?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            if !section.label.isEmpty {
+                // Small bold capitals above each card ("IDENTIFICATION", "ADRESSE").
+                Text(section.displayLabel(itemType: item.itemType).uppercased())
+                    .font(.caption.weight(.bold))
+                    .tracking(0.6)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, Theme.Space.l)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            EditorCard {
+                // A Document's files have their own preview card at the top.
+                let isLoginCard = section.id == loginCardID
+                // A login that signs in through a provider shows that account in place of its username.
+                let fields = section.fields.filter {
+                    !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file)
+                        && !(isLoginCard && signIn != nil && $0.id == "username")
+                }
+                if isLoginCard, let signIn {
+                    SignInWithRow(provider: signIn.provider, accountItemID: signIn.accountItemID)
+                }
+                ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+                    if index > 0 || (isLoginCard && signIn != nil) { CardDivider() }
+                    FieldValueView(field: field, itemType: item.itemType) { showToast($0) }
+                }
+                // Only for a site known to accept passkeys: elsewhere the row would open a site
+                // with nothing to enroll. The editor keeps the row for every login.
+                if isLoginCard, item.trashedAt == nil, !item.archived,
+                    PasskeySupport.siteAccepts(item, report: model.watchtower.report)
+                {
+                    if signIn != nil || !fields.isEmpty { CardDivider() }
+                    AddPasskeyRow(item: item) { showToast(String(localized: "item.addWebsiteFirst")) }
+                }
+            }
+        }
+    }
+
+    /// The websites, in a card like the fields and the notes around it, rows split by hairlines.
+    @ViewBuilder private func websitesCard(_ item: FfiItem) -> some View {
+        if !item.urls.isEmpty {
+            EditorCard {
+                ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
+                    if index > 0 { CardDivider() }
+                    WebsiteRow(url: url, index: index, signInItemID: signInItemID(item)) { showToast($0) }
+                        .padding(.vertical, Theme.Space.s)
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func content(_ item: FfiItem) -> some View {
         // A login's first card always shows: its sign-in account (and "Ajouter une passkey" when the
         // site accepts passkeys) live there.
@@ -278,42 +353,11 @@ struct ItemDetailView: View {
             $0.id == loginCardID
                 || $0.fields.contains { !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file) }
         }
-        ForEach(sections, id: \.id) { section in
-            VStack(alignment: .leading, spacing: Theme.Space.s) {
-                if !section.label.isEmpty {
-                    // Small bold capitals above each card ("IDENTIFICATION", "ADRESSE").
-                    Text(section.displayLabel(itemType: item.itemType).uppercased())
-                        .font(.caption.weight(.bold))
-                        .tracking(0.6)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, Theme.Space.l)
-                        .accessibilityAddTraits(.isHeader)
-                }
-                EditorCard {
-                    // A Document's files have their own preview card at the top.
-                    let isLoginCard = section.id == loginCardID
-                    // A login that signs in through a provider shows that account in place of its username.
-                    let fields = section.fields.filter {
-                        !$0.value.isBlank && !(item.itemType == .document && $0.kind == .file)
-                            && !(isLoginCard && signIn != nil && $0.id == "username")
-                    }
-                    if isLoginCard, let signIn {
-                        SignInWithRow(provider: signIn.provider, accountItemID: signIn.accountItemID)
-                    }
-                    ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-                        if index > 0 || (isLoginCard && signIn != nil) { CardDivider() }
-                        FieldValueView(field: field, itemType: item.itemType) { showToast($0) }
-                    }
-                    // Only for a site known to accept passkeys: elsewhere the row would open a site
-                    // with nothing to enroll. The editor keeps the row for every login.
-                    if isLoginCard, item.trashedAt == nil, !item.archived,
-                        PasskeySupport.siteAccepts(item, report: model.watchtower.report)
-                    {
-                        if signIn != nil || !fields.isEmpty { CardDivider() }
-                        AddPasskeyRow(item: item) { showToast(String(localized: "item.addWebsiteFirst")) }
-                    }
-                }
-            }
+        // Template sections first; the websites card and the free sections follow in the editor's
+        // order (spec 2026-11-13: the websites card's place is a per-device preference).
+        let free = Set(ItemDraft(item: item).freeSectionIDs)
+        ForEach(sections.filter { !free.contains($0.id) }, id: \.id) { section in
+            sectionCard(section, item: item, loginCardID: loginCardID, signIn: signIn)
         }
         // The join code sits right under the network's fields, before websites, notes and tags.
         if item.itemType == .router, let payload = WifiQR.payload(for: item) {
@@ -327,13 +371,15 @@ struct ItemDetailView: View {
         if item.itemType == .cryptoWallet, !standalone {
             CryptoWalletWatchCard(item: item) { self.item = $0 }
         }
-        if !item.urls.isEmpty {
-            // A card like the fields and the notes around it, rows split by hairlines.
-            EditorCard {
-                ForEach(Array(item.urls.enumerated()), id: \.offset) { index, url in
-                    if index > 0 { CardDivider() }
-                    WebsiteRow(url: url, index: index) { showToast($0) }
-                        .padding(.vertical, Theme.Space.s)
+        let slots = EditorLayout.shownSlots(
+            freeSectionIDs: ItemDraft(item: item).freeSectionIDs, shown: Set(sections.map(\.id)),
+            websitesSlot: websitesSlot)
+        ForEach(slots, id: \.self) { slot in
+            switch slot {
+            case .websites: websitesCard(item)
+            case .section(let id):
+                if let section = sections.first(where: { $0.id == id }) {
+                    sectionCard(section, item: item, loginCardID: loginCardID, signIn: signIn)
                 }
             }
         }
@@ -431,6 +477,27 @@ struct ItemDetailView: View {
             guard showDates, !locked(item) else { return }
             timeline = (try? await session.itemTimeline(vaultID: item.vaultId, itemID: item.id)) ?? []
         }
+        // The "Utilisation" section's log: same trigger as the timeline, whatever the fold (the
+        // section is hidden when the log is empty), and after a remote or extension write.
+        .task(id: KeyUsesKey(item: item, unlocked: !locked(item), remote: model.remoteRevision,
+                             external: session.externalChangeRevision)) {
+            await loadKeyUses(item)
+        }
+    }
+
+    private func loadKeyUses(_ item: FfiItem) async {
+        guard !locked(item) else { return }
+        let uses = (try? await session.itemKeyUses(vaultID: item.vaultId, itemID: item.id)) ?? []
+        keyUses = (item.id, uses)
+    }
+
+    private func clearKeyUses(_ item: FfiItem) async {
+        do {
+            try await session.clearKeyUses(vaultID: item.vaultId, itemID: item.id)
+        } catch {
+            showToast(VaultError(error).localizedMessage)
+        }
+        await loadKeyUses(item)
     }
 
     static func historyLabel(_ count: UInt32) -> String {
@@ -647,6 +714,13 @@ struct ItemDetailView: View {
                 Divider()
             }
             #endif
+            if let itemID = signInItemID(item), let site = signInURL(item) {
+                Button("item.openAndSignIn", systemImage: "person.badge.key") {
+                    WebsiteRow.openAndSignIn(itemID: itemID, rawURL: site, openURL: openURL) { showToast($0) }
+                }
+                .accessibilityIdentifier("item.openAndSignIn")
+                Divider()
+            }
             Button(
                 item.favorite ? "Retirer des favoris" : "Ajouter aux favoris",
                 systemImage: item.favorite ? "star.slash" : "star"
@@ -710,6 +784,8 @@ struct ItemDetailView: View {
     private func copyJSON(_ item: FfiItem) {
         guard !locked(item), let json = ItemJSON.string(item) else { return }
         session.copy(json, concealed: true)
+        // Secrets handed out: a key use (never a use of the item for its counter).
+        model.noteItemKeyUse(ItemRef(vaultID: item.vaultId, itemID: item.id), action: .copied, field: "JSON")
         model.showToast(String(localized: "item.jsonCopiedClearedIn"))
     }
 
@@ -745,7 +821,7 @@ struct ItemDetailView: View {
         }
     }
 
-    /// "Ignorer" (passkey banner, Watchtower section) or "Rétablir": the check is excluded for this
+    /// "Ignorer" (site setup banner, Watchtower section) or "Rétablir": the check is excluded for this
     /// item, or no longer, saved like an edit. The next report follows.
     private func setWatchtowerExclusion(_ check: String, excluded: Bool, _ item: FfiItem) {
         var changed = item
@@ -847,6 +923,18 @@ struct ItemDetailView: View {
 
     private func showToast(_ text: String) {
         model.showToast(text)
+    }
+
+    /// Open and sign in applies to a login in use (not in the trash), by its id.
+    private func signInItemID(_ item: FfiItem) -> String? {
+        item.itemType == .login && item.trashedAt == nil ? item.id : nil
+    }
+
+    /// The website "Ouvrir et se connecter" opens from the actions menu: the primary one, else the
+    /// first that is a web page.
+    private func signInURL(_ item: FfiItem) -> String? {
+        let pages = item.urls.filter { FieldValueView.openable($0.url) != nil }
+        return (pages.first(where: \.primary) ?? pages.first)?.url
     }
 }
 
@@ -1157,6 +1245,25 @@ private struct ItemPlacesCard: View {
 
 // MARK: - Timeline
 
+/// Reloads the key-use log when the item changes, is unlocked, or a remote or extension write lands.
+private struct KeyUsesKey: Equatable {
+    let id: String
+    let vaultID: String
+    let updatedAt: Int64
+    let unlocked: Bool
+    let remote: Int
+    let external: Int
+
+    init(item: FfiItem, unlocked: Bool, remote: Int, external: Int) {
+        id = item.id
+        vaultID = item.vaultId
+        updatedAt = item.updatedAt
+        self.unlocked = unlocked
+        self.remote = remote
+        self.external = external
+    }
+}
+
 /// Reloads the timeline when the item changes or the footer opens.
 private struct TimelineKey: Equatable {
     let id: String
@@ -1358,30 +1465,6 @@ enum ItemJSON {
     }
 }
 
-// MARK: - Passkey banner
-
-/// A login whose site accepts passkeys and that has none: the last Watchtower report flagged it
-/// (`passkey_available`, from the passkeys directory Watchtower downloads). Without a report, or
-/// when the check did not run, there is no banner (never faked).
-struct PasskeyOffer: Equatable {
-    static let checkID = PasskeySupport.check
-    let host: String
-    /// The site of the item's main address, where its passkey settings live.
-    let url: URL
-
-    static func offer(for item: FfiItem, report: FfiWatchtowerReport?) -> PasskeyOffer? {
-        guard item.itemType == .login, !item.watchtowerExclusions.contains(checkID),
-            !item.loginMethods.contains(.passkey),
-            let report, WatchtowerExclusions.checks(of: item.id, in: report).contains(checkID)
-        else { return nil }
-        let main = item.urls.first { $0.primary } ?? item.urls.first
-        guard let raw = main?.url, let host = URL(string: raw)?.host() ?? URL(string: "https://" + raw)?.host(),
-            let url = URL(string: "https://\(host)")
-        else { return nil }
-        return PasskeyOffer(host: host, url: url)
-    }
-}
-
 /// "Watchtower" in an item's detail: what the last report flagged for this item, each with "Ignorer
 /// pour cet élément", and the checks ignored for it, each with "Rétablir". Hidden when both are empty.
 struct ItemWatchtowerSection: View {
@@ -1415,6 +1498,8 @@ struct ItemWatchtowerSection: View {
                     }
                 }
             }
+            // A container: the identifier names the section, its buttons keep their own.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("item.watchtower")
         }
     }
@@ -1422,7 +1507,7 @@ struct ItemWatchtowerSection: View {
     @ViewBuilder private func line(check: String, ignored: Bool) -> some View {
         if let card = WatchtowerCard.of(check: check) {
             HStack(spacing: Theme.Space.m) {
-                PageTile(symbol: card.symbol, color: ignored ? .gray : card.color, size: 26)
+                WatchtowerArtwork(card: card, size: 26).saturation(ignored ? 0 : 1)
                 VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(card.title).font(.subheadline.weight(.medium))
                     Text(ignored ? String(localized: "item.ignoredForItem") : card.message)
@@ -1440,57 +1525,7 @@ struct ItemWatchtowerSection: View {
     }
 }
 
-/// Purple card at the top of a login: "Passkey disponible", collapsible, with "Utiliser une
-/// passkey" (opens the site's settings) and "Ignorer" (excluded for this item, saved).
-struct PasskeyOfferBanner: View {
-    @Environment(\.openURL) private var openURL
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let offer: PasskeyOffer
-    let onIgnore: () -> Void
-    @State private var expanded = true
-
-    private let purple = Color(red: 0.55, green: 0.36, blue: 0.96)
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.m) {
-            Button {
-                withAnimation(FoldMotion.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: Theme.Space.s) {
-                    Image(systemName: "person.badge.key.fill")
-                    Text("item.passkeyAvailable").font(.headline)
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.caption.weight(.bold))
-                        .rotationEffect(.degrees(expanded ? 0 : -90))
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("item.passkeyOffer.toggle")
-            if expanded {
-                Text("item.supportsPasskeysPasskeyReplaces \(offer.host)")
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: Theme.Space.m) {
-                    Button("item.usePasskey") { openURL(offer.url) }
-                        .buttonStyle(.borderedProminent)
-                        .tint(purple)
-                        .accessibilityIdentifier("item.passkeyOffer.use")
-                    Button("Ignorer", action: onIgnore)
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("item.passkeyOffer.ignore")
-                }
-            }
-        }
-        .padding(Theme.Space.l)
-        .background(purple.opacity(0.16), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).stroke(purple.opacity(0.35)))
-        .accessibilityIdentifier("item.passkeyOffer")
-    }
-}
-
-/// The folds of the detail (dates, passkey offer, document preview). iPhone and iPad take the
+/// The folds of the detail (dates, site setup offer, document preview). iPhone and iPad take the
 /// shared critically damped spring and a fade under Reduce Motion; the Mac keeps its snappy fold.
 enum FoldMotion {
     static func animation(reduceMotion: Bool) -> Animation {

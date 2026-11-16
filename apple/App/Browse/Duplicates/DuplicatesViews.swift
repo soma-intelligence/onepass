@@ -490,11 +490,12 @@ private struct DuplicateGroupHeader: View {
     var body: some View {
         if let primary {
             HStack(spacing: 12) {
-                ItemIcon(
-                    type: primary.summary.itemType, title: primary.summary.title,
-                    siteIcon: model.iconLoader.cachedIcon(
-                        for: primary.summary.primaryUrl, title: primary.summary.title),
-                    size: iconSize, brand: primary.summary.cardBrand)
+                ItemIconSource(primary.summary) { icon in
+                    ItemIcon(
+                        type: primary.summary.itemType, title: primary.summary.title, siteIcon: icon,
+                        size: iconSize, brand: primary.summary.cardBrand,
+                        domain: ItemIconResolver.registrableDomain(primary.summary.primaryUrl))
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(primary.summary.title)
                         .font(.body.weight(.semibold))
@@ -1005,6 +1006,142 @@ extension DuplicatesText {
         case .passkey(let p): p.rpId
         case .file(let f): f.name
         case .itemLink, .empty: ""
+        }
+    }
+}
+
+// MARK: - Merge two picked items (Mac list)
+
+/// Two rows the user picked in the Mac list, merged through the same review as a found group:
+/// which item stays ("Garder"), the lines that differ with a choice on each conflict, then the core's
+/// merge (the other copy archived intact with its note).
+struct MergePickSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let refs: [ItemRef]
+    var onMerged: () -> Void = {}
+
+    @State private var group: FfiDuplicateGroup?
+    /// The id of the item that stays; nil until the core's suggestion arrives.
+    @State private var keptID: String?
+    /// Subject to the item id of the copy whose value wins ("" keeps both notes).
+    @State private var answers: [String: String] = [:]
+    @State private var busy = false
+
+    private var keys: [FfiItemKey] { refs.map { FfiItemKey(vaultId: $0.vaultID, itemId: $0.itemID) } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("merge.pick.title")
+                .font(.title2.weight(.semibold))
+            if let group {
+                content(group)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 160)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 620, idealWidth: 720)
+        .task(id: keptID) { await load() }
+        .accessibilityIdentifier("merge.pick")
+    }
+
+    @ViewBuilder private func content(_ group: FfiDuplicateGroup) -> some View {
+        Picker("merge.pick.keep", selection: Binding(
+            get: { keptID ?? group.copies.first?.summary.id ?? "" },
+            set: { keptID = $0 })
+        ) {
+            ForEach(group.copies.filter(\.writable), id: \.summary.id) { copy in
+                Text(verbatim: copy.summary.title.isEmpty ? copy.vaultName : copy.summary.title)
+                    .tag(copy.summary.id)
+            }
+        }
+        .pickerStyle(.segmented)
+        .disabled(busy)
+        .accessibilityIdentifier("merge.pick.keep")
+        DuplicateGroupHeader(group: group, iconSize: 40)
+        if group.rows.contains(where: { $0.kind == .conflict }) {
+            Text(verbatim: DuplicatesText.question(group))
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(verbatim: DuplicatesText.additions(group))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        ScrollView {
+            DuplicateDiffTable(
+                group: group, layout: .page, answer: { answer(group, $0) },
+                choose: { row, id in answers[row.subject] = id })
+        }
+        .frame(maxHeight: 420)
+        Text("duplicates.review.footer")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        HStack {
+            Spacer()
+            Button("common.cancel", role: .cancel) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+            Button {
+                merge(group)
+            } label: {
+                HStack(spacing: 6) {
+                    if busy { ProgressView().controlSize(.small) }
+                    Text("merge.pick.merge")
+                }
+            }
+            .buttonStyle(.glassProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(busy || group.copies.first?.writable != true)
+            .accessibilityIdentifier("merge.pick.merge")
+        }
+        .controlSize(.large)
+    }
+
+    private func load() async {
+        let primary = keys.first { $0.itemId == keptID }
+        do {
+            let found = try await model.session.duplicateGroup(for: keys, primary: primary)
+            // Answers name item ids: they stay right whichever copy is kept.
+            group = found
+            if keptID == nil { keptID = found.copies.first?.summary.id }
+        } catch {
+            model.showToast(VaultError(error).localizedMessage, kind: .error)
+            dismiss()
+        }
+    }
+
+    /// The user's answer, else the core's default ("" for two notes kept together).
+    private func answer(_ group: FfiDuplicateGroup, _ row: FfiDuplicateRow) -> String {
+        if let chosen = answers[row.subject] { return chosen }
+        guard let w = row.winner, Int(w) < group.copies.count else { return "" }
+        return group.copies[Int(w)].summary.id
+    }
+
+    private func merge(_ group: FfiDuplicateGroup) {
+        guard let primary = group.copies.first else { return }
+        let picks: [FfiDuplicateChoice] = group.rows.filter { !$0.subject.isEmpty }.compactMap { row in
+            let id = answer(group, row)
+            if id.isEmpty { return row.subject == "notes" ? FfiDuplicateChoice(subject: row.subject, fromItemId: nil) : nil }
+            return FfiDuplicateChoice(subject: row.subject, fromItemId: id)
+        }
+        let titleFrom = picks.first { $0.subject == "title" }?.fromItemId
+        let title = group.copies.first { $0.summary.id == titleFrom }?.summary.title ?? primary.summary.title
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await model.session.mergeDuplicates(
+                    primary: primary.key, others: group.copies.dropFirst().filter(\.writable).map(\.key),
+                    answers: picks, primaryTitle: title)
+                model.showToast(String(localized: "merge.pick.done \(title)"))
+                onMerged()
+                dismiss()
+            } catch {
+                model.showToast(VaultError(error).localizedMessage, kind: .error)
+            }
         }
     }
 }

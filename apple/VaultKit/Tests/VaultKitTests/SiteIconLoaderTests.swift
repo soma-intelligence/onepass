@@ -1031,4 +1031,208 @@ extension SiteIconLoaderTests {
         await loader.settle()
         #expect(StubProtocol.requests(host: "logo-neuf.exemple.fr").count == requests)
     }
+
+    // MARK: Platform icons
+
+    /// An opaque PNG of 9 x 8 gray blocks drawn from `seed`: two seeds hash far apart.
+    static func patternPNG(seed: UInt64, side: Int = 192) -> Data {
+        var state = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        func next() -> CGFloat {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return CGFloat(state >> 56) / 255
+        }
+        let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        for row in 0..<8 {
+            for column in 0..<9 {
+                let gray = next()
+                context.setFillColor(red: gray, green: gray, blue: gray, alpha: 1)
+                let x0 = column * side / 9, x1 = (column + 1) * side / 9
+                let y0 = row * side / 8, y1 = (row + 1) * side / 8
+                context.fill(CGRect(x: x0, y: side - y1, width: x1 - x0, height: y1 - y0))
+            }
+        }
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        CGImageDestinationFinalize(destination)
+        return data as Data
+    }
+
+    /// The reject of an icon: the dHash of the PNG the loader would keep for it.
+    static func rejectHash(_ source: Data) throws -> UInt64 {
+        let decoded = try #require(SiteIconLoader.decodeIcon(source))
+        return try #require(IconHash.dHash(decoded.png))
+    }
+
+    @Test func patternsHashFarApart() throws {
+        let a = try Self.rejectHash(Self.patternPNG(seed: 1)), b = try Self.rejectHash(Self.patternPNG(seed: 2))
+        #expect(IconHash.distance(a, b) > IconPack.rejectDistance)
+    }
+
+    /// The site's best candidate is its hosting platform's icon (a reject): the next one is kept.
+    @Test func platformIconIsRefusedForTheNextCandidate() async throws {
+        let (session, _) = Self.makeSession()
+        let platform = Self.patternPNG(seed: 1), brand = Self.patternPNG(seed: 2)
+        let reject = try Self.rejectHash(platform)
+        let html = #"<link rel="icon" href="/vendor.png" sizes="512x512"><link rel="icon" href="/club.png" sizes="192x192">"#
+        StubProtocol.install(host: "portail.club-exemple.fr") { request in
+            switch request.url?.path {
+            case "", "/": .init(body: Data(html.utf8))
+            case "/vendor.png": .init(body: platform)
+            case "/club.png": .init(body: brand)
+            default: .init(status: 404)
+            }
+        }
+        let loader = SiteIconLoader(
+            cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true },
+            rejects: { [0x0123_4567_89AB_CDEF, reject] })
+        let png = try #require(await loader.icon(for: "https://portail.club-exemple.fr/connexion"))
+        let kept = try #require(IconHash.dHash(png))
+        #expect(IconHash.distance(kept, try Self.rejectHash(brand)) == 0)
+        #expect(IconHash.distance(kept, reject) > IconPack.rejectDistance)
+        let paths = StubProtocol.requests(host: "portail.club-exemple.fr").compactMap(\.url?.path)
+        #expect(paths.contains("/vendor.png"))
+        #expect(paths.contains("/club.png"))
+    }
+
+    /// A flat icon hashes 0, which says nothing about it: never refused, not even by a reject of 0
+    /// (an older or hand-edited pack).
+    @Test func flatIconIsNeverRefused() async throws {
+        let (session, _) = Self.makeSession()
+        let flat = Self.pngData(side: 64)
+        #expect(IconHash.dHash(try #require(SiteIconLoader.decodeIcon(flat)).png) == 0)
+        #expect(!IconPack.isRejected(flat, by: [0]))
+        StubProtocol.install(host: "uni.exemple.fr") { request in
+            request.url?.path == "/apple-touch-icon.png" ? .init(body: flat) : .init(status: 404)
+        }
+        let pack = try IconPack(data: makeIconPack(
+            version: 2, icons: [(Data("x".utf8), 0)], domains: ["autre.fr": 0], rejects: ["0000000000000000"]))
+        #expect(pack.rejects == [0])
+        let loader = SiteIconLoader(
+            cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true },
+            rejects: { pack.rejects })
+        #expect(await loader.icon(for: "https://uni.exemple.fr") != nil)
+    }
+
+    /// Every candidate is the platform's icon: no icon, and the failure is remembered.
+    @Test func allCandidatesRefusedGivesNoIcon() async throws {
+        let (session, _) = Self.makeSession()
+        let platform = Self.patternPNG(seed: 1)
+        let reject = try Self.rejectHash(platform)
+        StubProtocol.install(host: "membres.salle-exemple.fr") { request in
+            switch request.url?.path {
+            case "", "/": .init(body: Data(#"<link rel="icon" href="/vendor.png" sizes="512x512">"#.utf8))
+            case "/vendor.png", "/apple-touch-icon.png", "/favicon.ico": .init(body: platform)
+            default: .init(status: 404)
+            }
+        }
+        let directory = Self.tempDirectory()
+        let loader = SiteIconLoader(
+            cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true },
+            rejects: { [reject] })
+        #expect(await loader.icon(for: "https://membres.salle-exemple.fr") == nil)
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent(Self.cacheName("membres.salle-exemple.fr")).path))
+        let count = StubProtocol.requests(host: "membres.salle-exemple.fr").count
+        #expect(count > 0)
+        #expect(await loader.icon(for: "https://membres.salle-exemple.fr") == nil)
+        #expect(StubProtocol.requests(host: "membres.salle-exemple.fr").count == count)
+        // Without the reject the same site has an icon.
+        let plain = SiteIconLoader(cacheDirectory: Self.tempDirectory(), session: session, resolver: StaticResolver(), enabled: { true })
+        #expect(await plain.icon(for: "https://membres.salle-exemple.fr") != nil)
+    }
+}
+
+// MARK: Parent brand
+
+extension SiteIconLoaderTests {
+    @Test func siteNamesComeInOrderWithEntitiesDecoded() {
+        let html = """
+            <html><head><title>Bay Club &amp; Spa | Member Portal</title>
+            <meta name="application-name" content="Bay Club App">
+            <meta property="og:site_name" content="Bay Club &amp; Spa"></head></html>
+            """
+        let manifest = Data(#"{"name": "Bay Club Connect", "short_name": "Bay Club"}"#.utf8)
+        #expect(SiteIconLoader.siteNames(in: Data(html.utf8), manifest: manifest)
+            == ["Bay Club & Spa", "Bay Club App", "Bay Club Connect", "Bay Club"])
+        #expect(SiteIconLoader.siteName(in: Data(html.utf8)) == "Bay Club & Spa")
+        #expect(SiteIconLoader.siteNames(in: Data("<title>\n Acme  -  Sign in</title>".utf8)) == ["Acme"])
+        #expect(SiteIconLoader.siteNames(in: Data("<title>Caf&eacute; &#39;Le Bon&#x27; : Accueil</title>".utf8))
+            == ["Caf\u{E9} 'Le Bon'"])
+    }
+
+    @Test func malformedPagesGiveNoNameAndNoCrash() {
+        let pages = [
+            "", "<title>", "<title></title>", "<meta property=\"og:site_name\">", "<a href=\"https://", "&#xFFFFFFFF; &#0; &",
+            "<title>&amp</title><a href='//'><a href=https://[::1]/>", String(repeating: "<a href=\"https://acme.com\">", count: 5000),
+        ]
+        for page in pages {
+            _ = SiteIconLoader.siteNames(in: Data(page.utf8), manifest: Data("not json".utf8))
+            _ = SiteIconLoader.linkedDomains(in: Data(page.utf8), host: "acme-portal.com")
+        }
+        #expect(SiteIconLoader.siteNames(in: Data([0xFF, 0xFE, 0x3C])).isEmpty)
+        // An unknown named reference is dropped; a malformed numeric one or a bare "&" is kept.
+        #expect(SiteIconLoader.decodeEntities("A &unknown; &#xZZ; &") == "A  &#xZZ; &")
+        #expect(SiteIconLoader.decodeEntities("Bay&shy;Club &amp; Spa") == "BayClub & Spa")
+    }
+
+    @Test func linkedDomainsKeepRelatedOnesMostFrequentFirst() {
+        let html = """
+            <link rel="canonical" href="https://www.example-brand.fr/home">
+            <a href="https://www.facebook.com/bayclub">f</a><a href="https://facebook.com/x">f</a>
+            <a href="https://apps.apple.com/app/1">a</a><a href="https://play.google.com/x">g</a>
+            <a href="https://checkout.stripe.com/x">s</a><a href="/local">l</a><a href="http://10.0.0.1/">ip</a>
+            <a href="https://bayclubs.com/">b</a><a href="https://www.bayclubs.com/clubs">b</a>
+            <a href="//shop.bayclubshop.com/">s</a><a href="https://unrelated.org/">u</a>
+            <a href="https://members.bayclubconnect.com/other">self</a>
+            """
+        let linked = SiteIconLoader.linkedDomains(in: Data(html.utf8), host: "members.bayclubconnect.com")
+        #expect(linked == ["bayclubs.com", "bayclubshop.com", "example-brand.fr"])
+        // The site's name makes a domain related too.
+        let named = SiteIconLoader.linkedDomains(
+            in: Data(#"<a href="https://acmefitness.com">x</a>"#.utf8), host: "portal.gymhost.com", names: ["Acme Fitness"])
+        #expect(named == ["acmefitness.com"])
+        #expect(SiteIconLoader.linkedDomains(in: Data(#"<a href="https://acmefitness.com">x</a>"#.utf8), host: "portal.gymhost.com").isEmpty)
+        // Excluded even as the canonical address.
+        let excluded = #"<link rel="canonical" href="https://www.facebook.com/club"><meta property="og:url" content="https://x.com/club">"#
+        #expect(SiteIconLoader.linkedDomains(in: Data(excluded.utf8), host: "club.exemple.fr").isEmpty)
+    }
+
+    @Test func linkedDomainsAreAtMostFive() {
+        let html = (1...8).map { "<a href=\"https://acme\($0).com\">\($0)</a>" }.joined()
+        let linked = SiteIconLoader.linkedDomains(in: Data(html.utf8), host: "acme-portal.com")
+        #expect(linked == ["acme1.com", "acme2.com", "acme3.com", "acme4.com", "acme5.com"])
+    }
+
+    /// The same home page fetch gives the icon and the parent brand: no request of its own, cached
+    /// beside the icon for the pack version it was found in.
+    @Test func parentBrandIsReadFromTheHomePageAndCached() async throws {
+        let (session, _) = Self.makeSession()
+        let html = #"<meta property="og:site_name" content="Bay Club Connect"><link rel="icon" href="/i.png" sizes="192x192">"#
+        StubProtocol.install(host: "portal.bayclub-host.fr") { request in
+            switch request.url?.path {
+            case "", "/": .init(body: Data(html.utf8))
+            case "/i.png": .init(body: Self.patternPNG(seed: 3))
+            default: .init(status: 404)
+            }
+        }
+        let pack = try IconPack(data: makeIconPack(
+            version: 3, icons: [(Data("bay".utf8), 0)], domains: ["autre.fr": 0], names: ["bayclub": 0]))
+        let directory = Self.tempDirectory()
+        let loader = SiteIconLoader(
+            cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true }, pack: { pack })
+        #expect(await loader.icon(for: "https://portal.bayclub-host.fr/login") != nil)
+        let homes = StubProtocol.requests(host: "portal.bayclub-host.fr").filter { ["", "/"].contains($0.url?.path) }
+        #expect(homes.count == 1)
+        #expect(loader.cachedParentBrand(for: "https://portal.bayclub-host.fr")
+            == SiteIconLoader.ParentBrand(packVersion: 3, byName: 0, byLink: nil))
+        // Another loader on the same cache reads it from disk, without a request.
+        let count = StubProtocol.requests(host: "portal.bayclub-host.fr").count
+        let again = SiteIconLoader(
+            cacheDirectory: directory, session: session, resolver: StaticResolver(), enabled: { true }, pack: { pack })
+        #expect(again.cachedParentBrand(for: "https://portal.bayclub-host.fr")?.byName == 0)
+        #expect(await again.icon(for: "https://portal.bayclub-host.fr") != nil)
+        #expect(StubProtocol.requests(host: "portal.bayclub-host.fr").count == count)
+    }
 }

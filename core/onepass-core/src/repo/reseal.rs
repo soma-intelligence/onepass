@@ -67,7 +67,7 @@ impl<S: RecordStore> Repository<S> {
             hashes.insert(item.id, record_hash(&sealed));
             entries.push(entry(&sealed));
             items.push(item_record(to.id, &sealed)?);
-            for r in &item.attachments {
+            for r in crate::attachment::files_of(&item) {
                 for id in crate::attachment::chunk_ids(r).unwrap_or_default() {
                     if let Some(chunk) =
                         self.store.get_in(from.zone(), RecordKind::Attachment, id)?

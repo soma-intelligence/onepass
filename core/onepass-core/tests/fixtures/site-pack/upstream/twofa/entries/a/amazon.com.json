@@ -1,0 +1,14 @@
+{
+  "Amazon": {
+    "domain": "amazon.com",
+    "tfa": [
+      "totp",
+      "sms"
+    ],
+    "documentation": "http://example.com/insecure",
+    "additional-domains": [
+      "amazon.fr",
+      "amazon.de"
+    ]
+  }
+}

@@ -330,5 +330,26 @@
   "popup.signInPill": "Sign-in pill",
   "popup.signInPillHelp": "It shows up by itself on a sign-in or signup page. Nothing is filled until you click.",
   "popup.pillNeverSites": "Never on these sites",
-  "popup.removeSite": "Remove {site}"
+  "popup.removeSite": "Remove {site}",
+  "setup.previousCode": "Previous code",
+  "popup.scanQr": "Scan 2FA QR code",
+  "setup.title": "Add the 2FA code to {item}?",
+  "setup.from": "{issuer}, {account}",
+  "setup.mismatch": "The code is for {account}. This login is {username}.",
+  "setup.add": "Add",
+  "setup.replaceTitle": "{item} already has a 2FA code. Replace it?",
+  "setup.replaceNote": "The old code stays on the login.",
+  "setup.replace": "Replace",
+  "setup.cancel": "Cancel",
+  "setup.newLogin": "New login",
+  "setup.pasteTitle": "No QR code found. Paste the setup key.",
+  "setup.unlock": "Unlock OnePass",
+  "setup.saved": "Saved. Press the site's button to confirm.",
+  "setup.code": "Your code",
+  "setup.codesTitle": {
+    "one": "Save {count} recovery code on {item}?",
+    "other": "Save {count} recovery codes on {item}?"
+  },
+  "setup.codesSave": "Save",
+  "setup.recoveryLabel": "Recovery codes"
 }

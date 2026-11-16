@@ -99,7 +99,46 @@ public struct TravelPlaces: Codable, Equatable, Sendable {
     /// Last check (seconds since 1970), for the throttle.
     public var lastCheck: Double?
 
+    /// Planned trips, at most 16.
+    public var trips: [TravelTrip] = []
+    /// Usual UTC offsets: key `"<TimeZone.identifier>|<secondsFromGMT>"`, value the days seen.
+    public var usualOffsets: [String: [Int]] = [:]
+    /// Calendar events already turned into a trip (or dismissed): never proposed twice.
+    public var seenEventIDs: Set<String> = []
+    /// Last calendar scan (seconds since 1970), for the throttle.
+    public var lastCalendarScan: Double?
+    /// Day (since 1970) of the last airport notice: one per day.
+    public var lastAirportNotice: Int?
+    /// The "back home?" card of this trip was dismissed.
+    public var welcomeTripDismissed: UUID?
+
     public init() {}
+
+    // Written by hand: every field is optional on disk, so a file from an older version opens with
+    // what it learned instead of being forgotten.
+    private enum CodingKeys: String, CodingKey {
+        case seen, taught, tripSnoozed, tripNotified, welcomeDismissed, pendingCell, travelActive
+        case lastCheck, trips, usualOffsets, seenEventIDs, lastCalendarScan, lastAirportNotice
+        case welcomeTripDismissed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        seen = try c.decodeIfPresent([String: [Int]].self, forKey: .seen) ?? [:]
+        taught = try c.decodeIfPresent(Set<String>.self, forKey: .taught) ?? []
+        tripSnoozed = try c.decodeIfPresent(Bool.self, forKey: .tripSnoozed) ?? false
+        tripNotified = try c.decodeIfPresent(Bool.self, forKey: .tripNotified) ?? false
+        welcomeDismissed = try c.decodeIfPresent(Bool.self, forKey: .welcomeDismissed) ?? false
+        pendingCell = try c.decodeIfPresent(String.self, forKey: .pendingCell)
+        travelActive = try c.decodeIfPresent(Bool.self, forKey: .travelActive) ?? false
+        lastCheck = try c.decodeIfPresent(Double.self, forKey: .lastCheck)
+        trips = try c.decodeIfPresent([TravelTrip].self, forKey: .trips) ?? []
+        usualOffsets = try c.decodeIfPresent([String: [Int]].self, forKey: .usualOffsets) ?? [:]
+        seenEventIDs = try c.decodeIfPresent(Set<String>.self, forKey: .seenEventIDs) ?? []
+        lastCalendarScan = try c.decodeIfPresent(Double.self, forKey: .lastCalendarScan)
+        lastAirportNotice = try c.decodeIfPresent(Int.self, forKey: .lastAirportNotice)
+        welcomeTripDismissed = try c.decodeIfPresent(UUID.self, forKey: .welcomeTripDismissed)
+    }
 
     public var isEmpty: Bool { seen.isEmpty && taught.isEmpty }
 }
@@ -244,12 +283,29 @@ public struct TravelPlacesStore: Sendable {
     /// The places, or empty ones when there is no file, no key, or the file does not open (it is
     /// then forgotten: learning starts again).
     public func load() -> TravelPlaces {
+        if case .opened(let places) = open() { return places }
+        return TravelPlaces()
+    }
+
+    /// What `open` found on disk.
+    public enum Opened: Equatable, Sendable {
+        /// No file, or a file that decrypted but does not decode: start from empty places.
+        case missing
+        case opened(TravelPlaces)
+        /// A file is there but cannot be read now: protected while the device is locked, its key
+        /// refused or gone, or it does not decrypt. Never overwrite it: it may hold planned trips.
+        case unreadable
+    }
+
+    /// Tells a missing file from one that cannot be read now, unlike `load`.
+    public func open() -> Opened {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
         guard let sealed = try? Data(contentsOf: url), let keyData = try? keychain.read(Self.keyName),
             let box = try? AES.GCM.SealedBox(combined: sealed),
-            let plain = try? AES.GCM.open(box, using: SymmetricKey(data: keyData)),
-            let places = try? JSONDecoder().decode(TravelPlaces.self, from: plain)
-        else { return TravelPlaces() }
-        return places
+            let plain = try? AES.GCM.open(box, using: SymmetricKey(data: keyData))
+        else { return .unreadable }
+        guard let places = try? JSONDecoder().decode(TravelPlaces.self, from: plain) else { return .missing }
+        return .opened(places)
     }
 
     public func save(_ places: TravelPlaces) throws {

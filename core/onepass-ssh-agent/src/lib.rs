@@ -27,7 +27,8 @@ pub use agent::PeerInfo;
 pub use agent::{
     Agent, AgentConfig, AgentGuards, BoundHost, Confirm, ConnState, DEFAULT_PROMPT_WAIT, KeyInfo,
     KeySource, LivenessFn, MAX_UNPAIRED_AUDIT_PER_MIN, RegistryFn, Reply, RepoKeySource, code_json,
-    file_registry, grant_key, load_key_of, menu_truthy, ssh_client_record, ssh_keys_of,
+    file_registry, grant_key, load_key_of, menu_truthy, note_signed_in, ssh_client_record,
+    ssh_keys_of,
 };
 pub use knownhosts::{matching_hosts, pattern_matches};
 pub use server::peer_info;

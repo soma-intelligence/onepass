@@ -34,6 +34,9 @@ enum SettingsTiming {
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general, security, autofill, sync, accounts, vaults, contacts, family, organisation, devices, travel, crypto,
         developer, about
+    #if DEBUG
+    case iconCheck
+    #endif
 
     var id: String { rawValue }
 
@@ -53,6 +56,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .crypto: "crypto.title"
         case .developer: "Développeur"
         case .about: "À propos"
+        #if DEBUG
+        case .iconCheck: "Icônes à vérifier"
+        #endif
         }
     }
 
@@ -72,6 +78,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .crypto: "bitcoinsign.circle"
         case .developer: "chevron.left.forwardslash.chevron.right"
         case .about: "info.circle"
+        #if DEBUG
+        case .iconCheck: "photo.badge.checkmark"
+        #endif
         }
     }
 
@@ -91,13 +100,20 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .crypto: Color(red: 0.95, green: 0.58, blue: 0.10)
         case .developer: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
         case .about: Theme.accent
+        #if DEBUG
+        case .iconCheck: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
+        #endif
         }
     }
 
     /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab. Organisation
     /// has none yet: its symbol on its tint.
     var artwork: String? {
-        self == .organisation ? nil : "settings-\(rawValue)"
+        if self == .organisation { return nil }
+        #if DEBUG
+        if self == .iconCheck { return nil }
+        #endif
+        return "settings-\(rawValue)"
     }
 
     /// The page's content, without its own navigation container.
@@ -122,6 +138,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             EmptyView()
             #endif
         case .about: AboutSettings()
+        #if DEBUG
+        case .iconCheck: IconCheckSettings()
+        #endif
         }
     }
 }
@@ -180,6 +199,9 @@ struct SettingsView: View {
                 }
                 Section {
                     row(.about)
+                    #if DEBUG
+                    row(.iconCheck)
+                    #endif
                 } footer: {
                     Text("settings.onepassOpenSourceAgpl")
                         .frame(maxWidth: .infinity)
@@ -189,18 +211,29 @@ struct SettingsView: View {
             .settingsPage("Réglages")
             .navigationDestination(for: SettingsPage.self) { page in
                 page.content
+                    // "OK" on every page: opened straight on one (Profil), it still closes the sheet.
+                    .toolbar { doneItem }
             }
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("OK") { dismiss() }
-                        .accessibilityIdentifier("settings.done")
-                }
-            }
+            .toolbar { doneItem }
         }
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
         .onChange(of: path) { model.session.noteActivity() }
-        .onAppear { SettingsTiming.mark("shown") }
+        .onAppear {
+            SettingsTiming.mark("shown")
+            // A page asked by another screen (Profil > Synchronisation, Sécurité): opened on top.
+            if let request = model.settingsPageRequest {
+                model.settingsPageRequest = nil
+                path = [request]
+            }
+        }
+    }
+
+    private var doneItem: some ToolbarContent {
+        ToolbarItem(placement: .confirmationAction) {
+            Button("OK") { dismiss() }
+                .accessibilityIdentifier("settings.done")
+        }
     }
 
     #if os(iOS)
@@ -339,6 +372,9 @@ struct MacSettingsView: View {
                         }
                         Section {
                             row(.about)
+                            #if DEBUG
+                            row(.iconCheck)
+                            #endif
                         }
                     }
                     .listStyle(.sidebar)

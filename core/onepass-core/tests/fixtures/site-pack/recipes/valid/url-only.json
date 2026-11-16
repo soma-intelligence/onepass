@@ -1,0 +1,7 @@
+{
+  "kind": "setup_totp",
+  "domains": [
+    "example.com"
+  ],
+  "steps": []
+}

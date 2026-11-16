@@ -53,6 +53,15 @@
  ],
  "brands": [
   {
+   "name": "Bay Club",
+   "domains": [
+    "bayclubs.com",
+    "bayclubconnect.com"
+   ],
+   "use": "site",
+   "site": "https://www.bayclubs.com/"
+  },
+  {
    "name": "BlaBlaCar",
    "domains": [
     "blablacar.fr",

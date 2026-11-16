@@ -40,7 +40,7 @@ jobs:
     # The schedule runs in the public repository only (a private copy builds on demand).
     if: github.event_name != 'schedule' || github.repository == 'soma-intelligence/onepass'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     permissions:
       contents: read
     outputs:
@@ -83,8 +83,14 @@ jobs:
           done
           printf '}\n' >> "$RUNNER_TEMP/sources.json"
           cat "$RUNNER_TEMP/sources.json"
-      - name: Brand icons of the hand-picked list (their App Store icon or their site's icon)
-        run: python3 -I scripts/icon_pack.py sites --out "$RUNNER_TEMP/sites"
+      - name: Brand icons of the hand-picked list and the French domain list (their App Store icon or their site's icon)
+        run: |
+          python3 -I scripts/icon_pack.py sites --domains scripts/icon-pack-domains-fr.txt \
+            --blocklist scripts/icon-pack-blocklist.txt --out "$RUNNER_TEMP/sites"
+      - name: Logos named by Wikidata (files from Wikimedia Commons, public domain or CC0 only)
+        run: |
+          python3 -I scripts/icon_pack.py wikidata --blocklist scripts/icon-pack-blocklist.txt \
+            --out "$RUNNER_TEMP/wikidata"
       - name: Version
         id: version
         run: echo "version=$(date -u +%Y%m%d)$(printf '%02d' $(( GITHUB_RUN_NUMBER % 100 )))" >> "$GITHUB_OUTPUT"
@@ -95,7 +101,8 @@ jobs:
           up="$RUNNER_TEMP/upstream"
           python3 -I scripts/icon_pack.py build --simple-icons "$up/simple-icons.src" --logos "$up/logos.src" \
             --twofa "$up/2fa-directory.src" --sources "$RUNNER_TEMP/sources.json" --version "$VERSION" \
-            --size 256 --sites "$RUNNER_TEMP/sites" --out out
+            --size 256 --sites "$RUNNER_TEMP/sites" --domains scripts/icon-pack-domains-fr.txt \
+            --wikidata "$RUNNER_TEMP/wikidata" --blocklist scripts/icon-pack-blocklist.txt --out out
           ls -l out
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

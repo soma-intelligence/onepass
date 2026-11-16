@@ -1941,10 +1941,23 @@ pub fn with_session_then<T>(
     let password = read_password("Password: ")?;
     let _lock = lock(ctx)?;
     let mut session = Session::open(ctx, &password)?;
+    flush_key_uses(&mut session.repo);
     let result = f(&mut session.repo);
     let v = save_after(ctx, &session, result)?;
     after()?;
     Ok(v)
+}
+
+/// How often a long-lived session (`onepass mcp`, `onepass ssh-agent`)
+/// flushes the key-use queue.
+pub const KEY_USE_FLUSH_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Fold the key-use queue of this device into the synced log (spec "Local
+/// queue": at the start of each write session). Best effort: an error (a
+/// read-only session, a store error) keeps the rows for a later session
+/// and never fails the command.
+pub fn flush_key_uses(repo: &mut Repository<SqliteStore>) {
+    let _ = repo.flush_key_use_queue(time::OffsetDateTime::now_utc());
 }
 
 /// The tail of a locked request: harden the directory and save the device
@@ -2129,6 +2142,9 @@ fn read_device_state(ctx: &Ctx) -> Result<DeviceState, CliError> {
 pub struct LongSession {
     session: Session,
     ctx: Ctx,
+    /// When the key-use queue was last flushed: at unlock, then again by
+    /// the first request (or `flush_key_uses_if_due`) an hour later.
+    flushed_at: std::time::Instant,
     travel_at_unlock: bool,
     travel_changed: bool,
     _servers: fs::File,
@@ -2143,7 +2159,8 @@ impl LongSession {
         }
         let password = read_password_tty("Password: ")?;
         let _lock = lock(ctx)?;
-        let session = Session::open(ctx, &password)?;
+        let mut session = Session::open(ctx, &password)?;
+        flush_key_uses(&mut session.repo);
         harden(ctx)?;
         session.persist()?;
         let travel_at_unlock = ctx.travel_path().exists();
@@ -2154,6 +2171,7 @@ impl LongSession {
         Ok(LongSession {
             session,
             ctx: ctx.clone_options(),
+            flushed_at: std::time::Instant::now(),
             travel_at_unlock,
             travel_changed: false,
             _servers: servers,
@@ -2220,7 +2238,20 @@ impl LongSession {
             device: self.session.device.as_ref(),
             pending: self.session.pending.as_ref(),
         })?);
+        if self.flushed_at.elapsed() >= KEY_USE_FLUSH_EVERY {
+            flush_key_uses(&mut self.session.repo);
+            self.flushed_at = std::time::Instant::now();
+        }
         let result = f(&mut self.session.repo);
         save_after(&self.ctx, &self.session, result)
+    }
+
+    /// The hourly flush of a long-lived process with no request coming:
+    /// a request under the same lock that only flushes, when an hour has
+    /// passed since the last flush. Best effort.
+    pub fn flush_key_uses_if_due(&mut self) {
+        if self.flushed_at.elapsed() >= KEY_USE_FLUSH_EVERY {
+            let _ = self.with_repo(|_| Ok(()));
+        }
     }
 }

@@ -8,7 +8,7 @@ import Testing
 /// A pack in format 1, as `scripts/icon_pack.py` writes it.
 func makeIconPack(
     version: Int, icons: [(Data, Int)], domains: [String: Int], size: Int = 256, names: [String: Int]? = nil,
-    tenants: [String]? = nil
+    tenants: [String]? = nil, rejects: [String]? = nil
 ) -> Data {
     var offsets: [[Int]] = []
     var blob = Data()
@@ -19,6 +19,7 @@ func makeIconPack(
     var index: [String: Any] = ["format": 1, "version": version, "size": size, "icons": offsets, "domains": domains]
     if let names { index["names"] = names }
     if let tenants { index["tenants"] = tenants }
+    if let rejects { index["rejects"] = rejects }
     let json = try! JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
     var out = Data("OPIP".utf8)
     out.append(1)
@@ -64,13 +65,29 @@ struct IconPackTests {
         #expect(pack.icon(forHost: "withings.com")?.data == red)
         #expect(pack.icon(forHost: "WWW.Withings.com.")?.data == red)
         #expect(pack.icon(forHost: "account.withings.com")?.data == red)
-        #expect(pack.icon(forHost: "appleid.apple.com") == IconPack.Icon(data: mark, monochrome: true))
+        #expect(pack.icon(forHost: "appleid.apple.com") == IconPack.Icon(data: mark, monochrome: true, pixels: 256))
         #expect(pack.icon(forHost: "accounts.firefox.com")?.monochrome == false)
         #expect(pack.icon(forHost: "withings.fr") == nil)
         #expect(pack.icon(forHost: "com") == nil)
         // A shared suffix is never reached by stripping labels.
         #expect(pack.icon(forHost: "other.gov.uk") == nil)
         #expect(pack.icon(forHost: "x.service.gov.uk")?.data == mark)
+    }
+
+    /// Hosting-platform icon hashes: parsed from 16 hex digits; an older pack has none; anything
+    /// else is a malformed index.
+    @Test func parsesRejects() throws {
+        let pack = try IconPack(data: makeIconPack(
+            version: 3, icons: [(red, 0)], domains: ["a.com": 0], rejects: ["00000000000000ff", "f0f0f0f0f0f0f0f0"]))
+        #expect(pack.rejects == [0xFF, 0xF0F0_F0F0_F0F0_F0F0])
+        let older = try IconPack(data: makeIconPack(version: 3, icons: [(red, 0)], domains: ["a.com": 0]))
+        #expect(older.rejects.isEmpty)
+        #expect(older.icon(forHost: "a.com")?.data == red)
+        for bad in ["ff", "00000000000000FF", "000000000000000g", "0000000000000000ff"] {
+            #expect(throws: IconPack.Problem.malformedIndex) {
+                try IconPack(data: makeIconPack(version: 3, icons: [(red, 0)], domains: ["a.com": 0], rejects: [bad]))
+            }
+        }
     }
 
     @Test func refusesMalformedPacks() {
@@ -216,6 +233,25 @@ struct IconPackTests {
         let icon = try #require(pack.icon(forHost: "a.com"))
         #expect(icon.data == mark && icon.data.startIndex == 0 && icon.monochrome)
     }
+
+    @Test func flagTwoMarksA128PixelIcon() throws {
+        let small = Data("small-webp".utf8)
+        let both = Data("both-webp".utf8)
+        let pack = try IconPack(data: makeIconPack(
+            version: 1, icons: [(red, 0), (small, 2), (both, 3)], domains: ["a.com": 0, "b.com": 1, "c.com": 2]))
+        #expect(pack.icon(forHost: "a.com")?.pixels == 256)
+        #expect(pack.icon(forHost: "a.com")?.monochrome == false)
+        #expect(pack.icon(forHost: "b.com")?.pixels == 128)
+        #expect(pack.icon(forHost: "b.com")?.monochrome == false)
+        #expect(pack.icon(forHost: "b.com")?.data == small)
+        #expect(pack.icon(forHost: "c.com")?.pixels == 128)
+        #expect(pack.icon(forHost: "c.com")?.monochrome == true)
+        #expect(pack.icon(number: 1)?.pixels == 128)
+        // A pack of another size gives its own size to unflagged icons.
+        let other = try IconPack(data: makeIconPack(version: 1, icons: [(red, 0), (small, 2)], domains: ["a.com": 0], size: 192))
+        #expect(other.icon(number: 0)?.pixels == 192)
+        #expect(other.icon(number: 1)?.pixels == 128)
+    }
 }
 
 /// Same as `IconPackStub`, its own state: the two suites run in parallel and must not reset
@@ -257,6 +293,16 @@ struct ItemIconResolverTests {
         // acme.zendesk.com is Acme's help desk, not Zendesk.
         #expect(pack.icon(forHost: "acme.zendesk.com") == nil)
         #expect(pack.icon(forHost: "old.reddit.com")?.data == mark)
+    }
+
+    /// A hosting platform of `icon-pack-platforms.txt` is a tenant (`icon_pack.py`): a club's portal
+    /// on it gets no platform logo by host, the platform's own site keeps it.
+    @Test func platformSubdomainsDoNotInheritThePlatformLogo() throws {
+        let pack = try IconPack(data: makeIconPack(
+            version: 7, icons: [(red, 0)], domains: ["clubautomation.com": 0], tenants: ["clubautomation.com"]))
+        #expect(pack.icon(forHost: "club.clubautomation.com") == nil)
+        #expect(pack.icon(forHost: "clubautomation.com")?.data == red)
+        #expect(pack.icon(forHost: "www.clubautomation.com")?.data == red)
     }
 
     @Test func titlesFindTheirBrand() throws {
@@ -304,11 +350,11 @@ struct ItemIconResolverTests {
     @Test func orderIsChosenThenPackThenSharpSiteIcon() {
         let chosen = Data("chosen".utf8)
         let sharp = png(side: 128)
-        let blurry = png(side: 96)
+        let blurry = png(side: 48)
         #expect(ItemIconResolver.pick(chosen: chosen, pack: packIcon, site: sharp) == chosen)
         #expect(ItemIconResolver.pick(chosen: nil, pack: packIcon, site: sharp) == packIcon)
         #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: sharp) == sharp)
-        // A 48 px source is stored at 96 px: shown as the monogram tile instead.
+        // A 24 px source is stored at 48 px: shown as the monogram tile instead.
         #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: blurry) == nil)
         #expect(ItemIconResolver.pick(chosen: nil, pack: nil, site: nil) == nil)
     }
@@ -359,5 +405,50 @@ struct ItemIconResolverTests {
         #expect(ItemIconResolver.host(of: "http://a.example.com:8080/x") == "a.example.com")
         #expect(ItemIconResolver.host(of: "androidapp://com.example") == nil)
         #expect(ItemIconResolver.host(of: "") == nil)
+    }
+
+    // MARK: search
+
+    private func bundledPack() throws -> IconPack {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("IconPack/onepass-icons.bin")
+        return try IconPack(data: try Data(contentsOf: url))
+    }
+
+    @Test func searchFindsBrandsByNameAndDomain() throws {
+        let pack = try bundledPack()
+        #expect(pack.search("netf").first?.name == "netflix")
+        #expect(pack.search("netflix").first?.domain == "netflix.com")
+        #expect(pack.search("netflix.com").first?.name == "netflix")
+        // The pack has no Societe Generale: another accented French brand, Credit Lyonnais.
+        #expect(!pack.search("Crédit Lyonnais").isEmpty)
+        #expect(pack.search("").isEmpty)
+        #expect(pack.search("  ").isEmpty)
+    }
+
+    @Test func searchResultsAreUniquePerIconAndLimited() throws {
+        let pack = try bundledPack()
+        let found = pack.search("a", limit: 5)
+        #expect(found.count == 5)
+        let many = pack.search("a", limit: 500)
+        #expect(Set(many.map(\.icon)).count == many.count)
+        #expect(many.allSatisfy { pack.icon(number: $0.icon) != nil })
+        #expect(pack.icon(number: -1) == nil)
+        #expect(pack.icon(number: pack.iconCount) == nil)
+    }
+
+    @Test func searchRanksExactThenPrefixThenDomainThenSubstring() throws {
+        let pack = try IconPack(data: makeIconPack(
+            version: 1, icons: [(red, 0), (red, 0), (red, 0), (red, 0), (red, 0)],
+            domains: ["zed.com": 0, "bar.io": 1, "barn.io": 2, "plain.com": 3, "foobar.com": 4],
+            names: ["bar": 0, "barista": 1, "zebar": 2, "other": 3, "foobar": 4]))
+        #expect(pack.search("bar").map(\.name) == ["bar", "barista", "zebar", "foobar"])
+        #expect(pack.search("bar").first?.domain == "zed.com")
+        #expect(pack.search("plain.c").map(\.name) == ["other"])
+        let onlyDomain = try IconPack(data: makeIconPack(
+            version: 1, icons: [(red, 0)], domains: ["b.example.com": 0, "a.example.com": 0, "ex.org": 0]))
+        #expect(onlyDomain.search("ex.org").first == IconPack.Entry(name: "ex.org", domain: "ex.org", icon: 0))
+        #expect(onlyDomain.search("a.exam").first?.icon == 0)
     }
 }

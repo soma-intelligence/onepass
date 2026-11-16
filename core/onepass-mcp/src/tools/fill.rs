@@ -10,7 +10,7 @@ use crate::port::{VaultInfo, VaultPort};
 use crate::protocol::ClientInfo;
 use onepass_core::fill_plan::origin::{self as rules, Scheme, UrlMatch, UrlParts};
 use onepass_core::model::checks::{CardBrand, card_brand};
-use onepass_core::model::{FieldValue, Item, ItemType, MatchRule};
+use onepass_core::model::{FieldValue, Item, ItemType, KeyUseAction, MatchRule};
 use onepass_guard::Target;
 use serde_json::{Map, Value, json};
 use zeroize::Zeroizing;
@@ -368,6 +368,8 @@ impl<P: VaultPort> McpTools<P> {
             )
             .map_err(browser_refusal)?;
         call.field = Some(if out.submitted { "submitted" } else { "filled" }.to_owned());
+        // A fill hands out the whole login or card: no single field.
+        self.note_key_use(client, vault.id, item.id, KeyUseAction::Filled, "");
         // Only the item field names of spec 3 reach the agent, once each.
         let mut filled: Vec<&str> = Vec::new();
         for name in &out.filled {

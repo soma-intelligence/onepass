@@ -13,6 +13,7 @@
 //! So 5 only comes from a writer that bypasses the lock.
 
 mod commands;
+mod parent;
 mod secret_store;
 mod session;
 mod signer;

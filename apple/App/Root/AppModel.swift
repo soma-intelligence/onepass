@@ -26,6 +26,10 @@ final class AppModel {
     /// approvals) stay on the primary account (ruling P7); the browser bridge serves every unlocked
     /// account, under the primary account's lock (ruling C).
     var session: VaultSession { accounts.active }
+    /// Bumped when the app comes to the front and after an unlock: item icon tasks follow it, so a
+    /// view that stayed on screen through a purge (`purgeChosenIcons`) loads its chosen icon again.
+    /// Never bumped by the purge itself: a load in the background would undo it.
+    private(set) var iconEpoch = 0
     /// The primary account's session.
     var primarySession: VaultSession { accounts.primary }
     @ObservationIgnored let accountLink: AccountModelLink
@@ -120,8 +124,9 @@ final class AppModel {
     /// "Voir les éléments" of a Watchtower card: the list shows only these items (within
     /// `selection`, set to `.all`). Cleared by any other filter, a reveal or a lock.
     var watchtowerFilter: WatchtowerListFilter?
-    /// Watchtower report, computed off the main actor and kept until the data changes.
-    let watchtower = WatchtowerModel()
+    /// Watchtower report, computed off the main actor and kept until the data changes. Its site
+    /// checks read the site pack shipped in the app, or a newer signed one (docs/site-pack.md).
+    let watchtower = WatchtowerModel(sitePack: .live())
     /// Watch-only crypto balances of this account (spec 2026-11-02-crypto-watch). Emptied on lock.
     let cryptoWatch = CryptoWatch()
     /// "Are you travelling?" (spec 2026-11-02): learned places and the suggestion card.
@@ -146,6 +151,8 @@ final class AppModel {
     var showSettings = false
     /// The settings page to show next time the settings open (Développeur page cards).
     var settingsPageRequest: SettingsPage?
+    /// The section of that page to scroll to (Profil > Mode d'appareil), taken by the page.
+    var settingsFocusRequest: String?
     /// Bumped on every settings change made through `updateSettings`, so views that show a setting
     /// (stored in `UserDefaults`, not observable) redraw.
     private(set) var settingsRevision = 0
@@ -418,10 +425,15 @@ final class AppModel {
         #endif
 
         let settings = environment.settings
-        // Item icons: the icon pack shipped in the app, else the site's own icon (ItemIconResolver).
-        let icons = ItemIconResolver.live(settings: settings)
+        // Item icons: the chosen icon read from the account shown, the icon pack shipped in the
+        // app, else the site's own icon (ItemIconResolver).
+        let accounts = self.accounts
+        let icons = ItemIconResolver.live(settings: settings, custom: .vault { accounts.active })
         iconLoader = icons
         Task(priority: .utility) { await icons.maintainPack() }
+        // The site pack: a newer signed one at most once a week (never while its key is empty).
+        let sitePack = watchtower.sitePack
+        Task(priority: .utility) { await sitePack.refreshIfDue() }
         onboardingInProgress = session.state == .noAccount
         #if DEBUG
         demoPreparing = demo != nil && session.state == .noAccount
@@ -494,12 +506,13 @@ final class AppModel {
             seedAccountIfRequested()
             openDebugItemIfRequested()
         }
-        // Captures (`-OnePassDemoPage watchtower|developer|crypto|duplicates`): opens that page at launch.
+        // Captures (`-OnePassDemoPage watchtower|developer|crypto|duplicates|profile`): opens that page at launch.
         switch UserDefaults.standard.string(forKey: "OnePassDemoPage") {
         case "watchtower": page = .watchtower
         case "developer": page = .developer
         case "crypto": page = .crypto
         case "duplicates": page = .duplicates
+        case "profile": page = .profile
         // Travel screenshots: Réglages > Travel Mode in its sheet.
         case "travel": travelSheet = .exit
         default: break
@@ -759,6 +772,7 @@ final class AppModel {
             // The app in front: the screen is there, whatever notification was missed.
             screenCameBack()
             #endif
+            iconEpoch &+= 1
             biometricAutoPrompt.scenePhaseChanged(.active)
             accounts.scenePhaseChanged(.active)
             // A lock asked by a Control while the app was in the background or not notified.
@@ -767,6 +781,7 @@ final class AppModel {
             // An item saved by the AutoFill extension appears even if its store-changed notification
             // was lost (sent while the app was suspended).
             if session.state == .unlocked { Task { await session.reloadAfterExternalChange() } }
+            flushKeyUses()
             if let mailbox {
                 Task { await mailbox.enterForeground() }
             } else if let router {
@@ -1220,6 +1235,8 @@ final class AppModel {
     /// The session state changed (root view): records the unlock time, runs a waiting route,
     /// refreshes the widgets.
     func sessionStateChanged(_ state: VaultSession.State, from old: VaultSession.State? = nil) {
+        let slot = accounts.activeSlot
+        defer { travelUnlockSeen = (slot, state) }
         // A real lock (never a refused unlock: that one comes from `.unlocking`) begins a new lock
         // presentation, with its one automatic biometric try (`BiometricAutoPrompt`).
         if old == .unlocked, state != .unlocked, state != .unlocking { biometricAutoPrompt.vaultLocked() }
@@ -1234,19 +1251,83 @@ final class AppModel {
             // placeholder first.
             let urls = session.summaries.compactMap(\.primaryUrl)
             Task(priority: .utility) { [iconLoader] in await iconLoader.prefetch(urls) }
+            // Chosen icons purged at the lock load again in the views still on screen.
+            iconEpoch &+= 1
             resumeMailboxSetup()
             resumeMigration()
             if activeProfile?.isManaged == true {
                 let slot = accounts.activeSlot
                 Task { await resumeManagedAccount(slot) }
             }
+            flushKeyUses()
             #if os(macOS)
             returnToBrowserIfAsked()
             #endif
+            // Only a real unlock of the account shown: never an account switch to one already
+            // unlocked, nor the second report of the same unlock.
+            let previous: VaultSession.State? =
+                if let seen = travelUnlockSeen { seen.slot == slot ? seen.state : nil } else { old }
+            if let previous, previous != .unlocked { enterTravelForTripIfDue() }
         } else {
             resetNavigation()
+            // Decrypted chosen icons never outlive the unlock; failures marked while locked go too.
+            purgeChosenIcons()
         }
         companion.sessionChanged()
+    }
+
+    /// Forgets every decrypted chosen icon (`CustomIconStore`) and every decoded icon
+    /// (`ItemIcon.purgeCache`): on a lock, an account switch and in the background. Views keep only
+    /// automatic icons in their state, so nothing else holds a chosen icon's bytes.
+    func purgeChosenIcons() {
+        iconLoader.custom?.removeAll()
+        ItemIcon.purgeCache()
+    }
+
+    /// The last session state seen by `sessionStateChanged`, with its account: an unlock is a change
+    /// of the same account to `.unlocked`.
+    @ObservationIgnored private var travelUnlockSeen: (slot: String, state: VaultSession.State)?
+
+    /// A trip marked automatic starts (spec 2026-11-14): its one attempt runs at this unlock. A
+    /// failure shows the trip's card with the reason instead.
+    private func enterTravelForTripIfDue() {
+        // Claimed before the Task starts: the card's Oui cannot slip in a second entry meanwhile.
+        guard let id = travel.unlocked(travelling: session.isTravelling), travel.beginEntry() else { return }
+        Task {
+            defer { travel.endEntry() }
+            do {
+                try await performEnterTravel(reason: String(localized: "settings.turnOnTravelMode"))
+            } catch is CancellationError {
+                travel.autoEnterFailed(id: id, message: nil)
+            } catch {
+                travel.autoEnterFailed(id: id, message: VaultError(error).localizedMessage)
+            }
+        }
+    }
+
+    /// Travel Mode on, from Réglages, the card or a trip: the device owner confirms (Touch ID, Face ID
+    /// or the passcode; a device without any owner authentication has nothing to check, hiding vaults
+    /// is never a risk in itself), then every write of the leaving vaults goes to iCloud first (the
+    /// core refuses otherwise). A refused confirmation throws `CancellationError`.
+    /// A second call while an entry runs (the card under the automatic entry's Face ID prompt, a
+    /// double unlock report) throws `CancellationError` at once: the first one carries on.
+    @discardableResult
+    func enterTravel(reason: String) async throws -> FfiTravelStatus {
+        guard travel.beginEntry() else { throw CancellationError() }
+        defer { travel.endEntry() }
+        return try await performEnterTravel(reason: reason)
+    }
+
+    @discardableResult
+    private func performEnterTravel(reason: String) async throws -> FfiTravelStatus {
+        if LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) {
+            guard await SystemPresenceChecker().confirm(prompt: reason) else { throw CancellationError() }
+        }
+        await coordinator?.syncNow()
+        let status = try await session.enterTravel()
+        travel.travelChanged(active: true)
+        showToast(String(localized: "Travel Mode activé"))
+        return status
     }
 
     /// The primary account's state changed (root view): the services bound to it (ruling P7) follow,
@@ -1601,15 +1682,39 @@ final class AppModel {
             return
         }
         session.copy(totp.code, concealed: true)
-        noteItemUse(ref)
+        let otpLabel = item.sections.flatMap(\.fields).first { field in
+            if case .otp(let value) = field.value { value == secret } else { false }
+        }?.label ?? ""
+        noteItemUse(ref, action: .totp, field: otpLabel)
         showToast(String(localized: "root.codeCopied"))
     }
 
     /// An in-app use of an item (password or one-time code copied, website opened): it feeds
-    /// Fréquemment utilisés and Récemment utilisés. Viewing an item is not a use.
-    func noteItemUse(_ ref: ItemRef) {
+    /// Fréquemment utilisés and Récemment utilisés. Viewing an item is not a use. A use that hands
+    /// out a secret (copied, revealed, one-time code) passes its `action` and the stored label of
+    /// the `field` touched, for the item's key-use log; nil when none is handed out (website).
+    func noteItemUse(_ ref: ItemRef, action: FfiKeyUseAction?, field: String) {
         let session = session
-        Task { try? await session.noteAppUse(vaultID: ref.vaultID, itemID: ref.itemID) }
+        Task {
+            try? await session.noteAppUse(vaultID: ref.vaultID, itemID: ref.itemID, action: action, field: field)
+        }
+    }
+
+    /// A secret handed out that is no use of the item for its counter (a reveal, a copy of a secret
+    /// other than the password): the item's key-use log only. `field`: the field's stored label.
+    func noteItemKeyUse(_ ref: ItemRef, action: FfiKeyUseAction, field: String) {
+        let session = session
+        Task {
+            try? await session.recordAppKeyUse(vaultID: ref.vaultID, itemID: ref.itemID, action: action, field: field)
+        }
+    }
+
+    /// Folds this device's key uses queued an hour ago or more into their items (at unlock and each
+    /// scene foreground). Best effort: an error leaves them queued for the next try.
+    private func flushKeyUses() {
+        let session = session
+        guard session.state == .unlocked else { return }
+        Task { _ = try? await session.flushKeyUseQueue() }
     }
 
     /// Drops every item-bearing navigation state (the new item's draft holds typed values).
@@ -1818,10 +1923,11 @@ final class AppModel {
     }
 
     /// "Voir les éléments" of a Watchtower card: every item of the visible vaults that the check
-    /// flagged, in the full list.
-    func showWatchtowerItems(title: String, itemIDs: Set<String>) {
+    /// flagged, in the full list. `check` is the card's site check (`WatchtowerCard.siteCheck`):
+    /// its rows then carry the setup button.
+    func showWatchtowerItems(title: String, itemIDs: Set<String>, check: String? = nil) {
         selection = .all
-        watchtowerFilter = WatchtowerListFilter(title: title, itemIDs: itemIDs)
+        watchtowerFilter = WatchtowerListFilter(title: title, itemIDs: itemIDs, check: check)
         page = .items
         if let ref = selectedItem, !itemIDs.contains(ref.itemID) { perform(.select(nil)) }
     }
@@ -2044,12 +2150,16 @@ enum BrowsePage: Hashable {
     case items, watchtower, crypto, developer
     /// Doublons possibles (spec 2026-11-03-duplicates): the review page of the sidebar row.
     case duplicates
+    /// Profil (spec 2026-11-14-profile-account-security): opened from the account panel.
+    case profile
 }
 
 /// The items a Watchtower card shows in the list, under the card's title.
 struct WatchtowerListFilter: Equatable {
     var title: String
     var itemIDs: Set<String>
+    /// `missing_2fa` or `passkey_available` for the site cards (rows show `SiteSetupButton`), else nil.
+    var check: String?
 }
 
 extension AppModel {

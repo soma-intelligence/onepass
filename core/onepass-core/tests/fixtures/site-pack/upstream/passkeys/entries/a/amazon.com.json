@@ -1,0 +1,6 @@
+{
+  "Amazon": {
+    "mfa": "allowed",
+    "documentation": "https://www.amazon.com/passkeys"
+  }
+}

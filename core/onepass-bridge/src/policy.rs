@@ -381,6 +381,13 @@ pub fn summarize(
         match_quality: quality,
         associated: quality == Some(MatchQuality::Associated),
         account: vault.account.as_ref().map(|a| a.label.clone()),
+        email: match item.item_type {
+            ItemType::Identity => display_text(item, "email")
+                .map(str::trim)
+                .filter(|e| !e.is_empty())
+                .map(str::to_owned),
+            _ => None,
+        },
     }
 }
 

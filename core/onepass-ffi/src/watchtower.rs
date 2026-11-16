@@ -26,10 +26,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use onepass_core::generator;
 use onepass_core::model::{FieldValue, Item};
+use onepass_core::site_pack;
 use onepass_core::watchtower::{
-    BreachCatalog, Check, Options, PwnedStatus, RangeSource, SiteDirectory, Sources, analyze,
+    BreachCatalog, Check, Detail, Options, PwnedStatus, RangeSource, SiteDirectory, Sources,
+    analyze,
 };
-use onepass_core::{Error, Id};
+use onepass_core::{Error, Id, IntegrityError};
 use time::OffsetDateTime;
 
 use crate::convert::{id_hex, parse_id};
@@ -57,15 +59,16 @@ pub struct FfiWatchtowerOptions {
     /// `None`: breach lookups off (status `disabled`). `Some`: the responses
     /// at hand; a prefix without one is reported in `missing_prefixes`.
     pub ranges: Option<Vec<FfiRangeResponse>>,
-    /// 2fa.directory v4 `all.json`. Without it, `missing_2fa` does not run.
-    pub twofa_directory: Option<Vec<u8>>,
-    /// passkeys-api v1 `all.json`, merged into the 2FA directory (or alone).
-    pub passkeys_directory: Option<Vec<u8>>,
     /// Vaults left out of the analysis (hidden on this device).
     pub excluded_vault_ids: Vec<String>,
     /// Have I Been Pwned `/api/v3/breaches` (the whole public catalog).
     /// Without it, or when it does not parse, `breached_site` does not run.
     pub breach_catalog: Option<Vec<u8>>,
+    /// A site pack (`site_pack::parse` format), already verified by the
+    /// caller: the only source of `missing_2fa` and `passkey_available`.
+    /// Without it, or when it does not parse, no site check runs.
+    #[uniffi(default = None)]
+    pub site_pack: Option<Vec<u8>>,
 }
 
 /// Breach lookup outcome.
@@ -86,6 +89,23 @@ pub struct FfiWatchtowerCheck {
     pub findings: u32,
     /// Distinct items concerned, without hyphens, sorted.
     pub item_ids: Vec<String>,
+    /// Where each item of `missing_2fa` and `passkey_available` can set the
+    /// feature up, one per item, sorted by item id. Empty for other checks.
+    #[uniffi(default = [])]
+    pub site_links: Vec<FfiSiteLink>,
+}
+
+/// The site facts behind one `missing_2fa` or `passkey_available` finding.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct FfiSiteLink {
+    /// Item id, without hyphens.
+    pub item_id: String,
+    /// The item host that matched the pack.
+    pub host: String,
+    pub settings_url: Option<String>,
+    pub help_url: Option<String>,
+    /// The pack carries a non-empty recipe for this check.
+    pub has_recipe: bool,
 }
 
 #[derive(uniffi::Record, Debug, Clone)]
@@ -125,18 +145,12 @@ impl RangeSource for HeldRanges {
 }
 
 fn sites(options: &FfiWatchtowerOptions) -> Option<SiteDirectory> {
-    let mut dir = match options.twofa_directory.as_deref() {
-        Some(json) => SiteDirectory::from_2fa_directory(json).ok(),
-        None => None,
-    };
-    if let Some(json) = options.passkeys_directory.as_deref() {
-        let mut target = dir.take().unwrap_or_default();
-        // A bad passkey document leaves the 2FA one usable.
-        if target.add_passkeys_directory(json).is_ok() || !target.is_empty() {
-            dir = Some(target);
-        }
-    }
-    dir.filter(|d| !d.is_empty())
+    // A pack that does not parse means no site checks, never an error.
+    let bytes = options.site_pack.as_deref()?;
+    site_pack::parse(bytes)
+        .ok()
+        .map(|pack| SiteDirectory::from_site_pack(&pack))
+        .filter(|d| !d.is_empty())
 }
 
 fn strength_levels(items: &[Item]) -> Vec<u32> {
@@ -173,9 +187,13 @@ fn pwned_to_ffi(status: &PwnedStatus) -> FfiPwnedStatus {
 }
 
 /// Runs the analysis on items already copied out of the session.
-pub(crate) fn report(items: &[Item], options: &FfiWatchtowerOptions) -> FfiWatchtowerReport {
-    let today = OffsetDateTime::now_utc().date();
-    let mut opts = Options::new(today);
+pub(crate) fn report(
+    items: &[Item],
+    options: &FfiWatchtowerOptions,
+    key_use_since: Option<OffsetDateTime>,
+) -> FfiWatchtowerReport {
+    let now = OffsetDateTime::now_utc();
+    let mut opts = Options::new(now.date()).with_key_use(now, key_use_since);
     opts.expiry_warning_days = options.expiry_warning_days;
     opts.old_password_days = options.old_password_days;
     let directory = sites(options);
@@ -200,19 +218,45 @@ pub(crate) fn report(items: &[Item], options: &FfiWatchtowerOptions) -> FfiWatch
         },
     );
     let mut by_check: BTreeMap<Check, (u32, BTreeSet<Id>)> = BTreeMap::new();
+    let mut links: BTreeMap<Check, BTreeMap<Id, FfiSiteLink>> = BTreeMap::new();
     for f in &core.findings {
         let entry = by_check.entry(f.check).or_default();
         entry.0 = entry.0.saturating_add(1);
         entry.1.insert(f.item_id);
+        if let Detail::Site {
+            documentation,
+            host,
+            settings_url,
+            recipe,
+        } = &f.detail
+        {
+            links
+                .entry(f.check)
+                .or_default()
+                .entry(f.item_id)
+                .or_insert_with(|| FfiSiteLink {
+                    item_id: id_hex(f.item_id),
+                    host: host.clone(),
+                    settings_url: settings_url.clone(),
+                    help_url: documentation.clone(),
+                    has_recipe: *recipe,
+                });
+        }
     }
     let checks = Check::ALL
         .iter()
         .map(|check| {
             let (findings, ids) = by_check.remove(check).unwrap_or_default();
+            let mut site_links: Vec<FfiSiteLink> = links
+                .remove(check)
+                .map(|m| m.into_values().collect())
+                .unwrap_or_default();
+            site_links.sort_by(|a, b| a.item_id.cmp(&b.item_id));
             FfiWatchtowerCheck {
                 check: check.id().to_owned(),
                 findings,
                 item_ids: ids.into_iter().map(id_hex).collect(),
+                site_links,
             }
         })
         .collect();
@@ -248,7 +292,7 @@ impl Session {
             .map(|id| parse_id(id))
             .collect::<Result<BTreeSet<Id>, _>>()?;
         // Copied under the lock, analyzed outside of it.
-        let items = self.with(|repo| {
+        let (items, key_use_since) = self.with(|repo| {
             let mut out = Vec::new();
             for vault in repo.vaults()? {
                 if excluded.contains(&vault.id) {
@@ -256,10 +300,47 @@ impl Session {
                 }
                 out.extend(repo.items(&vault)?);
             }
-            Ok(out)
+            // A failed read means the warm-up is not established: no key is
+            // reported dormant.
+            let since = repo.key_use_since().ok().flatten();
+            Ok((out, since))
         })?;
-        Ok(report(&items, &options))
+        Ok(report(&items, &options, key_use_since))
     }
+}
+
+/// Verifies a downloaded site pack against the manifest, its signature and
+/// the 32-byte Ed25519 `public_key`, and returns its version. A bad
+/// signature, size or hash is `Integrity { kind: "site_pack" }`; a pack that
+/// is signed but malformed is `InvalidInput { what: "site_pack" }`.
+#[uniffi::export]
+pub fn verify_site_pack(
+    manifest: Vec<u8>,
+    signature: Vec<u8>,
+    pack: Vec<u8>,
+    public_key: Vec<u8>,
+) -> Result<u64, OnePassError> {
+    match site_pack::verify_signed(&manifest, &signature, &pack, &public_key) {
+        Ok(parsed) => Ok(parsed.version),
+        Err(Error::Integrity(IntegrityError::Signature | IntegrityError::ManifestItemMismatch)) => {
+            Err(OnePassError::Integrity {
+                kind: "site_pack".to_owned(),
+            })
+        }
+        Err(_) => Err(OnePassError::InvalidInput {
+            what: "site_pack".to_owned(),
+        }),
+    }
+}
+
+/// Version of an already verified pack (the bundled copy or the cache).
+#[uniffi::export]
+pub fn site_pack_version(pack: Vec<u8>) -> Result<u64, OnePassError> {
+    site_pack::parse(&pack)
+        .map(|p| p.version)
+        .map_err(|_| OnePassError::InvalidInput {
+            what: "site_pack".to_owned(),
+        })
 }
 
 #[cfg(test)]
@@ -279,17 +360,27 @@ mod tests {
     }
 
     #[test]
-    fn bad_passkeys_document_keeps_the_2fa_directory() {
+    fn dormant_check_is_listed_and_waits_for_the_warm_up() {
+        use onepass_core::model::{ItemType, new_item};
+        let mut key = new_item(ItemType::ApiCredential, Id([1; 16]), "Key");
+        key.created_at = OffsetDateTime::now_utc() - time::Duration::days(200);
         let options = FfiWatchtowerOptions {
             expiry_warning_days: 30,
             old_password_days: 365,
             ranges: None,
-            twofa_directory: Some(br#"{"exemple.fr":{"methods":["totp"]}}"#.to_vec()),
-            passkeys_directory: Some(b"not json".to_vec()),
             excluded_vault_ids: vec![],
             breach_catalog: None,
+            site_pack: None,
         };
-        let dir = sites(&options).unwrap();
-        assert!(dir.lookup("exemple.fr").unwrap().totp);
+        let count = |since| {
+            let r = report(std::slice::from_ref(&key), &options, since);
+            r.checks
+                .iter()
+                .find(|c| c.check == "dormant")
+                .map(|c| c.findings)
+        };
+        assert_eq!(count(None), Some(0));
+        let old = OffsetDateTime::now_utc() - time::Duration::days(100);
+        assert_eq!(count(Some(old)), Some(1));
     }
 }

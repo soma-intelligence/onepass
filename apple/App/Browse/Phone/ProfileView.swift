@@ -1,9 +1,12 @@
-#if os(iOS)
+#if os(macOS)
+import AppKit
+#endif
 import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Accueil > Profil: the account (photo and name), then two cards. Identité shows the main identity
+/// Accueil > Profil (iPhone, iPad), the Profil page of the sidebar (Mac): the account (photo, name,
+/// kind of device), Compte and Sécurité (spec 2026-11-14-profile-account-security), then two cards. Identité shows the main identity
 /// (name, address on one line, phone, email); Carte de paiement the main card (holder, number as its
 /// first and last four digits, expiry). Each card edits its item, or changes which item is the
 /// main one ("Automatique" falls back to the first). Without an identity or a card, the card offers
@@ -11,29 +14,57 @@ import VaultKit
 /// Travel Mode guard shows its title only, its fields stay in its detail.
 struct ProfileView: View {
     @Environment(AppModel.self) private var model
+    #if os(iOS)
     @Environment(\.pushPhoneRoute) private var push
+    @Environment(\.openPhoneTab) private var openPhoneTab
+    /// On a tab stack of the iPhone; on the iPad split view (and the unfolded iPhone) the rows
+    /// open their page as the Mac does.
+    @Environment(\.inPhoneTabs) private var inPhoneTabs
+    /// Set when the Profil is a sheet (unfolded iPhone): "Fermer", and Réglages open once it is closed.
+    @Environment(\.closeProfileSheet) private var closeProfileSheet
+    #elseif os(macOS)
+    @Environment(\.openSettings) private var openSettingsWindow
+    #endif
+    @State private var changingPassword = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var identity: FfiItem?
     @State private var card: FfiItem?
     @State private var picking: ProfileKind?
+    /// The ID row says "copié" a moment after a tap (the toast can be under a sheet).
+    @State private var idCopied = false
 
     private var session: VaultSession { model.session }
 
     var body: some View {
         let mainIdentity = session.mainIdentity
         let mainCard = session.mainCard
+        let _ = model.settingsRevision
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.l) {
                 header
+                accountCard
+                securityCard
                 identityCard(mainIdentity)
                 paymentCard(mainCard)
             }
             .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
             .padding(.bottom, Theme.Space.xl)
         }
+        #if os(iOS)
         .background(PhoneBackground())
-        .navigationTitle("Profil")
         .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .navigationTitle("Profil")
+        #if os(iOS)
+        .toolbar {
+            if let closeProfileSheet {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") { closeProfileSheet {} }
+                        .accessibilityIdentifier("profile.close")
+                }
+            }
+        }
+        #endif
         .task(id: LoadKey(identity: mainIdentity?.id, card: mainCard?.id, revision: session.summariesRevision)) {
             identity = await load(mainIdentity)
             card = await load(mainCard)
@@ -41,6 +72,8 @@ struct ProfileView: View {
         .sheet(item: $picking) { kind in
             ProfilePicker(kind: kind)
         }
+        .sheet(isPresented: $changingPassword) { ChangePasswordSheet() }
+        .task { model.watchtower.refreshIfNeeded(session) }
     }
 
     private struct LoadKey: Equatable {
@@ -71,9 +104,148 @@ struct ProfileView: View {
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
             }
+            if let label = model.activeProfile?.label, !label.isEmpty, label != name {
+                Text(verbatim: label)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Text(deviceText)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(model.accountTint)
+                .padding(.horizontal, Theme.Space.s)
+                .padding(.vertical, Theme.Space.xxs)
+                .background(model.accountTint.opacity(0.15), in: .capsule)
+                .accessibilityIdentifier("profile.deviceBadge")
         }
         .frame(maxWidth: .infinity)
         .padding(.top, Theme.Space.l)
+    }
+
+    private var deviceText: String {
+        model.settings.deviceMode == .shared
+            ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel")
+    }
+
+    // MARK: - Compte
+
+    private var accountCard: some View {
+        let profile = model.activeProfile
+        return ProfileCard(
+            title: "profile.account.title", symbol: "person.text.rectangle.fill", color: AccountPanelTint.accounts,
+            canChange: false, onChange: {}
+        ) {
+            if let profile {
+                ProfileRow(label: "profile.account.kind", value: ProfileFacts.kindLabel(profile.kind))
+                if let short = ProfileFacts.shortID(profile.accountID), let full = profile.accountID {
+                    ProfileNavRow(
+                        label: "profile.account.id",
+                        value: idCopied ? String(localized: "profile.account.idCopied") : short,
+                        accessory: idCopied ? "checkmark" : "doc.on.doc", id: "profile.account.id"
+                    ) {
+                        session.copy(full, concealed: false)
+                        model.showToast(String(localized: "profile.account.idCopied"))
+                        idCopied = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            idCopied = false
+                        }
+                    }
+                }
+                ProfileRow(label: "profile.account.workDomains", value: profile.workDomains.joined(separator: ", "))
+            }
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                ProfileNavRow(
+                    label: "profile.account.sync", value: ProfileFacts.syncLine(model.syncStatus, now: context.date),
+                    id: "profile.account.sync"
+                ) {
+                    openSettings(.sync)
+                }
+            }
+            Spacer().frame(height: Theme.Space.l)
+        }
+        .accessibilityIdentifier("profile.account")
+    }
+
+    // MARK: - Sécurité
+
+    private var securityCard: some View {
+        let report = model.watchtower.report
+        let failed = if case .failed = model.watchtower.phase { true } else { false }
+        let watchtowerText: String = switch ProfileFacts.watchtowerStatus(
+            report, failed: failed, among: ProfileFacts.problemChecks)
+        {
+        case .analyzing: String(localized: "profile.security.analyzing")
+        case .unavailable: String(localized: "profile.security.unavailable")
+        case .clear: String(localized: "profile.security.noIssues")
+        case .issues(let issues):
+            issues.map { issue in
+                let title = WatchtowerCard.all.first { $0.checks.contains(issue.check) }?.title ?? issue.check
+                return "\(issue.findings) \(title)"
+            }.joined(separator: " \u{00B7} ")
+        }
+        let biometry = model.settings.deviceMode.biometricsAllowed && session.canUseBiometrics
+            ? OnboardingModel.biometryName : nil
+        return ProfileCard(
+            title: "profile.security.title", symbol: "lock.shield.fill", color: SettingsPage.security.tint,
+            canChange: false, onChange: {}
+        ) {
+            ProfileNavRow(
+                label: "profile.security.watchtower", value: watchtowerText, id: "profile.security.watchtower",
+                leading: { WatchtowerScoreRing(score: report.map { Int($0.score) }) }
+            ) {
+                #if os(iOS)
+                if inPhoneTabs { openPhoneTab(.watchtower); return }
+                #endif
+                model.page = .watchtower
+            }
+            ProfileNavRow(
+                label: "profile.security.unlock",
+                value: ProfileFacts.unlockLine(biometry: biometry, delay: model.settings.autoLockDelay),
+                id: "profile.security.unlock"
+            ) {
+                openSettings(.security)
+            }
+            ProfileNavRow(label: "profile.security.device", value: deviceText, id: "profile.security.device") {
+                openSettings(.security, focus: SecuritySettings.deviceModeAnchor)
+            }
+            ProfileNavRow(
+                label: "profile.security.password", value: String(localized: "profile.security.change"),
+                id: "profile.security.password"
+            ) {
+                changingPassword = true
+            }
+            ProfileNavRow(
+                label: "profile.security.passkeys",
+                value: String(localized: "profile.security.passkeyCount \(session.counts().passkeys)"),
+                id: "profile.security.passkeys"
+            ) {
+                #if os(iOS)
+                if inPhoneTabs { push(.list(.passkeys)); return }
+                #endif
+                model.showItems(.passkeys)
+            }
+            Spacer().frame(height: Theme.Space.l)
+        }
+        .accessibilityIdentifier("profile.security")
+    }
+
+    /// A Réglages page, scrolled to `focus` if given: the Settings window on the Mac, the settings
+    /// sheet elsewhere (after the Profil sheet is closed, when it is one).
+    private func openSettings(_ page: SettingsPage, focus: String? = nil) {
+        model.settingsPageRequest = page
+        model.settingsFocusRequest = focus
+        #if os(macOS)
+        NSApp.activate()
+        openSettingsWindow()
+        #elseif os(iOS)
+        if let closeProfileSheet {
+            closeProfileSheet { model.showSettings = true }
+        } else {
+            model.showSettings = true
+        }
+        #else
+        model.showSettings = true
+        #endif
     }
 
     // MARK: - Identité
@@ -138,11 +310,15 @@ struct ProfileView: View {
         .accessibilityIdentifier("profile.card")
     }
 
-    /// The item's detail, pushed, opening straight in its editor (after its reprompt, if any).
+    /// The item's detail, opening straight in its editor (after its reprompt, if any): pushed on
+    /// the iPhone tabs, revealed in the item list elsewhere (iPad, Mac).
     private func edit(_ summary: FfiItemSummary) {
         let ref = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
         model.editOnOpen = ref
-        push(.item(ref))
+        #if os(iOS)
+        if inPhoneTabs { push(.item(ref)); return }
+        #endif
+        model.perform(.reveal(ref))
     }
 
     // MARK: - Field reading (template ids of the core: identity and credit_card)
@@ -233,6 +409,8 @@ private struct ProfileCard<Content: View>: View {
             content
         }
         .phoneCard()
+        // A container: the card's identifier never replaces its rows' own.
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -260,6 +438,79 @@ private struct ProfileRow: View {
             .accessibilityElement(children: .combine)
             .privacySensitive()
         }
+    }
+}
+
+/// A row that opens something: the label and value as `ProfileRow`, an optional leading view (the
+/// Watchtower ring), and a chevron (or `accessory`) at the end.
+private struct ProfileNavRow<Leading: View>: View {
+    let label: LocalizedStringKey
+    let value: String
+    var accessory = "chevron.right"
+    let id: String
+    @ViewBuilder var leading: Leading
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Space.m) {
+                leading
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                    Text(label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(verbatim: value)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: Theme.Space.s)
+                Image(systemName: accessory)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.top, Theme.Space.s)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier(id)
+        .privacySensitive()
+    }
+}
+
+extension ProfileNavRow where Leading == EmptyView {
+    init(label: LocalizedStringKey, value: String, accessory: String = "chevron.right", id: String, action: @escaping () -> Void) {
+        self.init(label: label, value: value, accessory: accessory, id: id, leading: { EmptyView() }, action: action)
+    }
+}
+
+/// The Watchtower score on a small ring: green from 80, orange from 50, red under; empty while the
+/// report is computed.
+private struct WatchtowerScoreRing: View {
+    let score: Int?
+
+    var body: some View {
+        let value = score ?? 0
+        let color: Color = value >= 80 ? .green : value >= 50 ? .orange : .red
+        ZStack {
+            Circle().stroke(Color.secondary.opacity(0.2), lineWidth: 4)
+            Circle()
+                .trim(from: 0, to: CGFloat(value) / 100)
+                .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if let score {
+                Text(verbatim: "\(score)")
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+            }
+        }
+        .frame(width: 32, height: 32)
+        .accessibilityHidden(true)
     }
 }
 
@@ -345,7 +596,11 @@ private struct ProfilePicker: View {
                 }
             }
             .navigationTitle(kind == .identity ? "profile.chooseIdentity" : "profile.chooseCard")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #else
+            .frame(minWidth: 420, minHeight: 480)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") { dismiss() }
@@ -371,4 +626,3 @@ private struct ProfilePicker: View {
         }
     }
 }
-#endif

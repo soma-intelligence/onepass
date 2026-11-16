@@ -55,6 +55,7 @@ import {
   parsePaired,
   parsePending,
   parseSas,
+  parseSetupScan,
   parseStatus,
   parseSuggestions,
   parseTotp,
@@ -71,6 +72,8 @@ export interface PopupDeps {
     get(key: string): Promise<Record<string, unknown>>;
     set(items: Record<string, unknown>): Promise<void>;
   };
+  /** Closes the popup (window.close in the extension): the setup card then has the page. */
+  close?: () => void;
 }
 
 /** Choices of the profile used on pages (the worker reads it, generate.ts). */
@@ -769,10 +772,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       list,
       empty ? h("p", { class: "pp-empty" }, empty) : null,
       // The pairing's own forget lives in the account chip; this one forgets the site memory only.
+      // The scan of a two-factor QR code: only here, so only while the vault is unlocked.
       domain && !results
         ? h(
             "div",
             { class: "pp-foot" },
+            button(t("popup.scanQr"), "btn-link", () => void track(scanQr())),
             button(t("popup.forgetMyChoicesOn"), "btn-link", () => void track(forgetSite())),
           )
         : null,
@@ -804,6 +809,17 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
     const r = await call(deps.send, { type: "popup_smart_fill" }, parseFilled);
     if (!r.ok) return handleError(r.code);
     toast(t("popup.fillingOnDomain", { domain: r.value.domain }));
+  }
+
+  /**
+   * "Scan 2FA QR code": the worker scans the active tab. A card is then in the page (the code
+   * read, or `none`: the card asks for the setup key), so the popup leaves it the page.
+   */
+  async function scanQr(): Promise<void> {
+    const r = await call(deps.send, { type: "popup_scan_qr" }, parseSetupScan);
+    if (!r.ok) return handleError(r.code);
+    if (r.value.status === "card" || r.value.status === "none") (deps.close ?? (() => globalThis.close()))();
+    else toast(errorText("not_allowed"), "error");
   }
 
   async function forgetSite(): Promise<void> {

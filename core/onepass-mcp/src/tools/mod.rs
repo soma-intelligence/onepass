@@ -25,7 +25,7 @@ use crate::port::{PortError, VaultInfo, VaultPort};
 use crate::protocol::{CallContext, ClientInfo, ToolHost, ToolOutcome, ToolSpec};
 use crate::workspace::{LocalWorkspace, Workspace, WorkspaceRefusal};
 use onepass_core::Id;
-use onepass_core::model::Item;
+use onepass_core::model::{Item, KeyUseAction};
 use onepass_core::reference::{SecretRef, parse_ref};
 use onepass_guard::{
     Answer, ApprovalRequest, Approver, AuditEntry, AuditSink, Clock, GrantStore, LocalSigner,
@@ -597,6 +597,23 @@ impl<P: VaultPort> McpTools<P> {
         r: &SecretRef,
     ) -> Result<Zeroizing<String>, Refusal> {
         self.on_vault(vault.id, |p| p.resolve(r))
+    }
+
+    /// Notes one use of an item's key in its key-use log, once the secret
+    /// was handed out. Best effort: a refused or failed write is dropped
+    /// (the crate has no logger) and never fails the tool. The client name
+    /// is the one given at `initialize`; the core sanitizes it and `field`.
+    pub(crate) fn note_key_use(
+        &mut self,
+        client: &ClientInfo,
+        vault_id: Id,
+        item_id: Id,
+        action: KeyUseAction,
+        field: &str,
+    ) {
+        let _ = self
+            .port
+            .record_key_use(vault_id, item_id, action, &client.name, field);
     }
 
     /// Stores `item` in a visible vault.

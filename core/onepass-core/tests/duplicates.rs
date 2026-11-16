@@ -305,3 +305,61 @@ fn sure_batch_merges_only_the_groups_still_sure() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_picked_pair_groups_without_any_signal_and_merges() {
+    let (mut a, _sk) = Device::create();
+    let perso = a.vault();
+    let mut reddit = with_password(login(perso.id, "camille@live.fr", T0), "Pw-reddit-1");
+    reddit.title = "Reddit".into();
+    site(&mut reddit, "https://www.reddit.com");
+    let mut apple = with_password(login(perso.id, "camille@icloud.com", T0 + 50), "Pw-apple-2");
+    apple.title = "Apple".into();
+    site(&mut apple, "https://www.reddit.com/login");
+    a.repo().save_item(&perso, reddit.clone()).unwrap();
+    a.repo().save_item(&perso, apple.clone()).unwrap();
+    // Different usernames: the scan finds nothing, the user's pick does.
+    assert!(scan(&mut a).groups.is_empty());
+    let picked = a
+        .repo()
+        .duplicate_pick(&[key(&apple), key(&reddit)], Some(key(&reddit)))
+        .unwrap();
+    assert_eq!(picked.groups.len(), 1);
+    let g = &picked.groups[0];
+    assert!(g.signals.is_empty());
+    assert_eq!(picked.items[g.members[0]].item.id, reddit.id);
+    assert_eq!(picked.items[g.members[1]].item.id, apple.id);
+    let merged = a
+        .repo()
+        .merge_duplicates(key(&reddit), &[key(&apple)], "Fusionné dans Reddit")
+        .unwrap();
+    assert_eq!(merged.id, reddit.id);
+    assert!(find(&mut a, apple.id).archived);
+    // An archived item can no longer be picked.
+    assert!(
+        a.repo()
+            .duplicate_pick(&[key(&apple), key(&reddit)], None)
+            .is_err()
+    );
+}
+
+#[test]
+fn a_picked_pair_of_two_types_or_one_item_is_refused() {
+    let (mut a, _sk) = Device::create();
+    let perso = a.vault();
+    let l = login(perso.id, "camille@live.fr", T0);
+    let mut n = new_item(ItemType::SecureNote, perso.id, "Note");
+    n.field_mut("content").unwrap().value = FieldValue::Text("texte".into());
+    a.repo().save_item(&perso, l.clone()).unwrap();
+    a.repo().save_item(&perso, n.clone()).unwrap();
+    let err = a
+        .repo()
+        .duplicate_pick(&[key(&l), key(&n)], None)
+        .unwrap_err();
+    assert!(err.to_string().contains("same type"), "{err}");
+    let err = a
+        .repo()
+        .duplicate_pick(&[key(&l), key(&l)], None)
+        .unwrap_err();
+    assert!(err.to_string().contains("two items"), "{err}");
+}

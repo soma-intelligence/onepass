@@ -130,9 +130,13 @@ struct OtpLinkSessionTests {
         #expect(kept.label == OtpLink.previousCodeLabel())
         #expect(session.summaries.count == 1)
 
-        // The same code again stores nothing new.
+        // The same code again stores nothing new, and writes nothing (no new edit time).
+        try await Task.sleep(for: .milliseconds(1100))
         let again = try await session.attachOtp(other, toItemID: login.id, vaultID: vault, confirmed: false)
         #expect(previousCodes(again) == [first])
+        #expect(again.updatedAt == replaced.updatedAt)
+        let stored2 = try await session.loadItem(vaultID: vault, itemID: login.id)
+        #expect(stored2.updatedAt == replaced.updatedAt)
     }
 
     /// The label follows the language; the field is found by its id in any language.

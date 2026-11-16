@@ -27,7 +27,7 @@ struct WatchtowerPage: View {
                                 card: card, report: report, checkBreaches: watchtower.checkBreaches,
                                 breachCatalog: watchtower.breachCatalogUsed
                             ) {
-                                model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report))
+                                model.showWatchtowerItems(title: card.title, itemIDs: card.itemIDs(in: report), check: card.siteCheck)
                             }
                         }
                         let seen = model.seenByFormerMemberIDs
@@ -295,6 +295,18 @@ struct WatchtowerCard: Identifiable {
     let color: Color
     let source: Source
 
+    /// The card's drawn icon in Assets (Watchtower/watchtower-<id>), in the settings icons' style.
+    var artwork: String { "watchtower-\(id)" }
+
+    /// The site check of a card made of `missing_2fa` or `passkey_available` alone: its list rows
+    /// carry the setup button. Nil for every other card.
+    var siteCheck: String? {
+        guard checks.count == 1, let check = checks.first,
+            SiteSetupOffer.Kind(rawValue: check) != nil
+        else { return nil }
+        return check
+    }
+
     func itemIDs(in report: FfiWatchtowerReport) -> Set<String> {
         Set(report.checks.filter { checks.contains($0.check) }.flatMap(\.itemIds))
     }
@@ -311,9 +323,8 @@ struct WatchtowerCard: Identifiable {
             case .checked, .partial: return nil
             }
         case .sites:
-            return report.sitesChecked ? nil
-                : checkBreaches ? String(localized: "browse.siteCatalogNotDownloaded")
-                : String(localized: "browse.turnOnCheckFor2")
+            // The site pack ships in the app: these checks never wait for "Vérifier les fuites".
+            return report.sitesChecked ? nil : String(localized: "browse.siteCatalogNotDownloaded")
         case .breachCatalog:
             return breachCatalog ? nil
                 : checkBreaches ? String(localized: "browse.breachListNotDownloaded")
@@ -410,6 +421,11 @@ struct WatchtowerCard: Identifiable {
             title: String(localized: "browse.pendingPassword"),
             message: String(localized: "browse.generatedPasswordNeverConfirmed"),
             symbol: "hourglass", color: .gray, source: .local),
+        WatchtowerCard(
+            id: "dormant", checks: ["dormant"],
+            title: String(localized: "browse.dormantKeys"),
+            message: String(localized: "browse.keysUnusedOver90"),
+            symbol: "key.fill", color: .gray, source: .local),
     ]
 }
 
@@ -463,7 +479,7 @@ struct WatchtowerCardView: View {
                         alert ? AnyShapeStyle(.white)
                             : unavailable == nil && !ids.isEmpty ? AnyShapeStyle(card.color) : AnyShapeStyle(.secondary))
                 Spacer()
-                PageTile(symbol: card.symbol, color: alert ? .white.opacity(0.22) : card.color, size: 28)
+                WatchtowerArtwork(card: card, size: 40, onWash: alert)
             }
             Text(card.title).font(.headline).foregroundStyle(alert ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             Text(unavailable ?? card.message)
@@ -505,9 +521,8 @@ struct BreachSettingCard: View {
                         Text("""
                             Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers \
                             caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et \
-                            compare le reste ici. Les catalogues de 2fa.directory et la liste des sites \
-                            piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune \
-                            requête réseau.
+                            compare le reste ici. La liste des sites piratés est téléchargée en entier \
+                            et gardée une semaine. Désactivé, aucune requête réseau.
                             """)
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
@@ -545,5 +560,23 @@ struct BreachSettingCard: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
+    }
+}
+
+/// A Watchtower card's drawn icon, like the settings pages' icons. On the red alert wash it sits
+/// on a pale disc so the red artwork keeps its edge.
+struct WatchtowerArtwork: View {
+    let card: WatchtowerCard
+    var size: CGFloat = 28
+    var onWash = false
+
+    var body: some View {
+        Image(card.artwork)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
+            .padding(onWash ? size * 0.14 : 0)
+            .background { if onWash { Circle().fill(.white.opacity(0.92)) } }
+            .accessibilityHidden(true)
     }
 }

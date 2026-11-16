@@ -51,7 +51,7 @@ struct FieldValueView: View {
         case .otp(let secret):
             TotpFieldView(field: field, captured: captured) { code in
                 copy(code, concealed: true)
-                noteUse()
+                noteUse(.totp)
             }
                 .id(secret)
                 .privacySensitive()
@@ -121,7 +121,11 @@ struct FieldValueView: View {
         allowsLarge: Bool? = nil, hiddenText: String? = nil, @ViewBuilder accessory: () -> Accessory
     ) -> some View {
         let session = session
-        let onReveal: ((Bool) -> Void)? = secret ? { _ in session.noteActivity() } : nil
+        let onReveal: ((Bool) -> Void)? = secret ? { shown in
+            session.noteActivity()
+            // Unmasked (or shown large): a key use, never a use of the item (viewing is none).
+            if shown { noteKeyUse(.revealed) }
+        } : nil
         return ValueRow(
             label: label ?? self.label, value: value, isSecret: secret, monospaced: monospaced,
             copyIdentifier: copyIdentifier ?? "field.copy.\(field.id)",
@@ -130,7 +134,8 @@ struct FieldValueView: View {
             concealToken: session.concealGeneration, captured: captured, hiddenText: hiddenText,
             onCopy: {
                 copy(value, concealed: secret)
-                if field.kind == .password { noteUse() }
+                // The password copy counts as a use, as before; another secret only as a key use.
+                if field.kind == .password { noteUse(.copied) } else if secret { noteKeyUse(.copied) }
             },
             onReveal: onReveal,
             accessory: accessory)
@@ -161,8 +166,15 @@ struct FieldValueView: View {
     }
 
     /// A password or one-time code copied, a website opened: the item was used.
-    private func noteUse() {
-        if let itemUseRef { model.noteItemUse(itemUseRef) }
+    /// `action` names the key use of a secret handed out (with the field's stored label); nil for
+    /// the website, which hands out none.
+    private func noteUse(_ action: FfiKeyUseAction?) {
+        if let itemUseRef { model.noteItemUse(itemUseRef, action: action, field: action == nil ? "" : field.label) }
+    }
+
+    /// A secret handed out that is no use of the item for its counter: the key-use log only.
+    private func noteKeyUse(_ action: FfiKeyUseAction) {
+        if let itemUseRef { model.noteItemKeyUse(itemUseRef, action: action, field: field.label) }
     }
 
     private func urlRow(url: String) -> some View {
@@ -178,7 +190,7 @@ struct FieldValueView: View {
             if let target {
                 Button("item.openInBrowser", systemImage: "arrow.up.forward.app") {
                     openURL(target)
-                    noteUse()
+                    noteUse(nil)
                 }
             }
         }
@@ -506,6 +518,10 @@ struct ValueRow<Accessory: View>: View {
                 .font(enlarged ? .system(.title, design: .monospaced).weight(.semibold)
                     : monospaced ? .body.monospaced() : .body)
                 .animation(.spring(duration: 0.3, bounce: 0.2), value: enlarged)
+                // The mask stays on one line in a narrow column (the unfolded iPhone's detail
+                // half): its bullets shrink a little instead of wrapping.
+                .lineLimit(hidden ? 1 : nil)
+                .minimumScaleFactor(hidden ? 0.6 : 1)
                 #if os(iOS)
                 // Hold to see, on the value itself: shown after a short press, masked the moment
                 // the finger lifts or slides away. Taps elsewhere on the row (copy) are untouched.
@@ -700,13 +716,18 @@ private struct BarcodeRow: View {
 }
 
 /// A website of the item, under the fields card: label ("site web" by default) and the link, which
-/// opens in the browser. Copier on hover (Mac) or as an icon (elsewhere).
+/// opens in the browser. Copier on hover (Mac) or as an icon (elsewhere). On a login
+/// (`signInItemID`), a tap opens the site and signs in (`OpenAndSignIn`, "Ouvrir et se
+/// connecter"); the row's menu also has a plain "Ouvrir" and "Copier".
 struct WebsiteRow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     @Environment(\.itemUseRef) private var itemUseRef
     let url: FfiUrl
     let index: Int
+    /// The login whose website this is (hex id), or nil: then a tap only opens the page.
+    var signInItemID: String? = nil
+    /// Shows a toast (copied, or the iPhone hint about the Safari extension).
     let onCopied: (String) -> Void
     @State private var hovered = false
     #if os(iOS)
@@ -721,8 +742,13 @@ struct WebsiteRow: View {
                 EditorLabel(url.label.isEmpty ? String(localized: "app.website") : url.label.detailLabelCase)
                 if let target = FieldValueView.openable(url.url) {
                     Button {
-                        openURL(target)
-                        if let itemUseRef { model.noteItemUse(itemUseRef) }
+                        if let signInItemID {
+                            Self.openAndSignIn(
+                                itemID: signInItemID, rawURL: url.url, openURL: openURL, toast: onCopied)
+                        } else {
+                            openURL(target)
+                        }
+                        if let itemUseRef { model.noteItemUse(itemUseRef, action: nil, field: "") }
                     } label: {
                         Text(url.url)
                             .lineLimit(1)
@@ -734,7 +760,7 @@ struct WebsiteRow: View {
                     #if os(macOS)
                     .pointerStyle(.link)
                     #endif
-                    .accessibilityHint(Text("common.open"))
+                    .accessibilityHint(Text(signInItemID == nil ? "common.open" : "item.openAndSignIn"))
                     .accessibilityIdentifier("item.url.open.\(index)")
                 } else {
                     Text(url.url).lineLimit(1).truncationMode(.middle)
@@ -773,11 +799,51 @@ struct WebsiteRow: View {
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
         .contentShape(.rect)
+        .contextMenu {
+            if let target = FieldValueView.openable(url.url) {
+                if let signInItemID {
+                    Button("item.openAndSignIn", systemImage: "person.badge.key") {
+                        Self.openAndSignIn(
+                            itemID: signInItemID, rawURL: url.url, openURL: openURL, toast: onCopied)
+                    }
+                    .accessibilityIdentifier("item.url.signIn.\(index)")
+                }
+                Button("common.open", systemImage: "safari") {
+                    OpenAndSignIn.cancel()
+                    openURL(target)
+                }
+                .accessibilityIdentifier("item.url.openOnly.\(index)")
+            }
+            Button("Copier", systemImage: "doc.on.doc", action: copy)
+        }
         #if os(macOS)
         .onHover { inside in
             withAnimation(.easeOut(duration: 0.12)) { hovered = inside }
         }
         #endif
+    }
+
+    /// "Ouvrir et se connecter": record the pending sign-in, then open the page in the browser.
+    /// An `http` site opens without sign in. On iPhone and iPad, before the Safari extension ever
+    /// ran, a one-line hint says that turning it on signs in by itself; nothing is copied.
+    static func openAndSignIn(
+        itemID: String, rawURL: String, openURL: OpenURLAction, toast: (String) -> Void
+    ) {
+        switch OpenAndSignIn.prepare(itemID: itemID, rawURL: rawURL) {
+        case .signIn(let target):
+            openURL(target) { opened in
+                if !opened { OpenAndSignIn.cancel() }
+            }
+            #if os(iOS)
+            if !OpenAndSignIn.safariExtensionPaired() {
+                toast(String(localized: "item.signInHintSafari"))
+            }
+            #endif
+        case .openOnly(let target):
+            openURL(target)
+        case nil:
+            break
+        }
     }
 
     private func copy() {

@@ -1,0 +1,33 @@
+{
+  "kind": "setup_totp",
+  "domains": [
+    "example.com"
+  ],
+  "steps": [
+    {
+      "do": "goto",
+      "url": "https://example.com/settings/security"
+    },
+    {
+      "do": "reauth"
+    },
+    {
+      "do": "click",
+      "role": "button",
+      "name": [
+        "Enable two-factor"
+      ]
+    },
+    {
+      "do": "click",
+      "role": "radio",
+      "name": [
+        "Authenticator app"
+      ]
+    },
+    {
+      "do": "expect_qr",
+      "timeout_s": 30
+    }
+  ]
+}

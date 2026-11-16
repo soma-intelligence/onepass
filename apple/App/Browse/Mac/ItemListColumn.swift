@@ -23,6 +23,96 @@ enum SearchFieldFocus {
 }
 #endif
 
+#if os(macOS)
+extension EnvironmentValues {
+    /// Mac: the width of the title bar's row above the list and the detail (nil: the window's).
+    @Entry var titleBarRoom: CGFloat?
+}
+
+/// Mac: measures the title bar's row around one toolbar item (the view it sits behind): the other
+/// items after it at their natural widths, the gaps and the margins. SwiftUI gives a toolbar item
+/// the width it asks for and never stretches it, so the item asks for the row's width less this.
+/// Only the other items are measured here: the row's width comes from the layout (`titleBarRoom`),
+/// so a resize narrows the item in the same pass, before the bar could push items into its menu.
+struct ToolbarRowProbe: NSViewRepresentable {
+    @Binding var reserved: CGFloat
+    /// The row's width (`titleBarRoom`): where the pane starts, for what sits left of the item.
+    let room: CGFloat?
+    /// Changes when the bar's other items may change (selection, editing): measured again.
+    let trigger: [String]
+
+    func makeNSView(context: Context) -> ProbeView { ProbeView() }
+
+    func updateNSView(_ view: ProbeView, context: Context) {
+        view.room = room
+        view.onMeasure = { measured in
+            let target = measured.rounded(.up)
+            if abs(target - reserved) >= 1 { reserved = target }
+        }
+        view.scheduleMeasure()
+    }
+
+    final class ProbeView: NSView {
+        var onMeasure: ((CGFloat) -> Void)?
+        var room: CGFloat?
+        /// The window the row belongs to, kept while the item sits in the overflow menu (out of
+        /// the window) so the row can still be measured.
+        private weak var hostWindow: NSWindow?
+
+        /// The title bar's room around items, as measured on macOS 26: the row starts 4 pt into
+        /// its pane, items sit 0 to 6 pt apart, a closed flexible space keeps 8.5 pt and the last
+        /// item ends 7 pt from the window's edge. Rounded up: a point to spare keeps the last item
+        /// out of the overflow menu.
+        private let gap: CGFloat = 4
+        private let flexibleSpaceMinimum: CGFloat = 9
+        private let leadingInset: CGFloat = 6
+        private let trailingMargin: CGFloat = 8
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window, window.toolbar != nil { hostWindow = window }
+            scheduleMeasure()
+        }
+
+        /// Toolbar items change on the next pass: measured then, and once more when they settle.
+        func scheduleMeasure() {
+            DispatchQueue.main.async { [weak self] in self?.measure() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.measure() }
+        }
+
+        private func measure() {
+            guard let window = window ?? hostWindow, let items = window.toolbar?.items,
+                let index = items.firstIndex(where: { item in item.view.map { isDescendant(of: $0) } ?? false })
+            else { return }
+            // With the sidebar hidden, its toggle (and the window's buttons) share the row: the
+            // item starts after the last of them.
+            var leading = leadingInset
+            if let room {
+                let paneLeft = window.frame.width - room
+                for item in items[..<index] {
+                    guard let view = item.view, view.window != nil else { continue }
+                    let frame = view.convert(view.bounds, to: nil)
+                    if frame.minX >= paneLeft - 1 { leading = max(leading, frame.maxX - paneLeft + gap) }
+                }
+            }
+            var reserved = leading + trailingMargin + gap
+            for item in items[(index + 1)...] {
+                if item.itemIdentifier == .flexibleSpace {
+                    reserved += flexibleSpaceMinimum
+                    continue
+                }
+                guard let view = item.view, !(item is NSTrackingSeparatorToolbarItem) else { continue }
+                // An item in the overflow menu can report a smaller fitting size than its frame.
+                let natural = max(view.fittingSize.width, view.frame.width)
+                guard natural > 1 else { continue }
+                reserved += natural + gap
+            }
+            onMeasure?(reserved)
+        }
+    }
+}
+#endif
+
 /// Middle column (spec 6.1): items of the sidebar filter, search (⌘F), sort by title or by
 /// modification date (then grouped by month, "OCTOBRE 2026"), "Nouvel élément" (⌘N).
 struct ItemListColumn: View {
@@ -43,6 +133,12 @@ struct ItemListColumn: View {
     /// the detail column: that one lives in `model.selectedItem`.
     @State private var multiSelection: Set<ItemRef> = []
     @State private var selectAllMonitor: Any?
+    /// "Fusionner…" on two picked rows: the merge sheet's pair.
+    @State private var mergePick: MergePickRequest?
+    /// The title bar's row above the list and the detail, and what its items other than the search
+    /// field take (`ToolbarRowProbe`): the search field gets the rest.
+    @Environment(\.titleBarRoom) private var titleBarRoom
+    @State private var rowReserved: CGFloat = 400
     #endif
 
     private var session: VaultSession { model.session }
@@ -167,6 +263,9 @@ struct ItemListColumn: View {
         }
         .onAppear { installSelectAllMonitor() }
         .onDisappear { removeSelectAllMonitor() }
+        .sheet(item: $mergePick) { pick in
+            MergePickSheet(refs: pick.refs) { multiSelection = [] }
+        }
         #endif
         .overlay {
             if items.isEmpty { emptyState }
@@ -194,17 +293,32 @@ struct ItemListColumn: View {
         #if os(macOS)
         // Mockup `Main`: the list names its filter above the rows; the toolbar keeps search and actions.
         .toolbar(removing: .title)
-        // One row in the title bar above the list: the search field (it names the category it
-        // searches), then the category filter, the sort order and "Nouvel élément" as quiet round
-        // icons. No glass behind it, no second row under the title bar.
+        // One row in the title bar across the list and the detail: the search field (it names the
+        // category it searches) grows to fill it, then the category filter, the sort order and
+        // "Nouvel élément" as quiet round icons at the right edge. No glass behind it, no second
+        // row under the title bar.
         .toolbar {
             ToolbarItem(placement: .automatic) {
+                // A toolbar item keeps the width it asks for: the search field asks for the row
+                // less what the bar's other items take (`ToolbarRowProbe`).
+                searchField
+                    .frame(width: titleBarRoom.map { max(180, $0 - rowReserved) } ?? 210)
+                    // When the bar's other items change (a deleted item has fewer), the field eases
+                    // to its new width instead of jumping.
+                    .animation(.easeInOut(duration: 0.2), value: rowReserved)
+                    .background {
+                        ToolbarRowProbe(
+                            reserved: $rowReserved, room: titleBarRoom,
+                            trigger: [model.selectedItem.map { "\($0)" } ?? "", "\(model.isEditing)", "\(shownCategory.map { "\($0)" } ?? "")", "\(newItemCompact)"])
+                    }
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 4) {
-                    searchField
-                        .frame(minWidth: 150, idealWidth: 210, maxWidth: 320)
                     categoryPill
                     sortMenu
                     newItemButton
+                        .padding(.leading, Theme.Space.xs)
                 }
             }
             .sharedBackgroundVisibility(.hidden)
@@ -298,14 +412,36 @@ struct ItemListColumn: View {
     }
 
     /// The add sheet (common types first, search, every category, import), like ⌘N: the last
-    /// icon of the list's one header row.
+    /// item of the list's one header row, an accent pill "+ Nouvel élément" that folds to an
+    /// accent circle with the bare "+" when the title bar runs short.
     private var newItemButton: some View {
+        newItemButton(labelled: !newItemCompact)
+    }
+
+    /// Below this row width the pill pushes the bar's last items into its overflow menu:
+    /// the label goes and the "+" stays in an accent circle.
+    private var newItemCompact: Bool { (titleBarRoom ?? .infinity) < 700 }
+
+    private func newItemButton(labelled: Bool) -> some View {
         Button {
             model.showNewItemPicker = true
         } label: {
-            Image(systemName: "plus")
+            if labelled {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus").font(.system(size: 13, weight: .bold))
+                    Text("Nouvel élément").lineLimit(1)
+                }
+                .padding(.horizontal, -Theme.Space.xs)
+                .frame(height: 18)
+            } else {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .bold))
+                    .frame(width: 18, height: 18)
+                    .padding(.horizontal, -10)
+            }
         }
-        .buttonStyle(QuietIconButtonStyle())
+        .buttonStyle(AccentCapsuleButtonStyle())
+        .fixedSize()
         .help("browse.newItemN")
         .accessibilityLabel(Text("Nouvel élément"))
         .accessibilityIdentifier("items.new")
@@ -356,7 +492,10 @@ struct ItemListColumn: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
+        // A blur under the fill: the detail's wash, cut at the list's edge, passes behind the
+        // field as a soft glow, not a seam.
         .background(.fill.quaternary, in: Capsule())
+        .background(.ultraThinMaterial, in: Capsule())
         .overlay {
             Capsule()
                 .strokeBorder(searchFocused ? AnyShapeStyle(Theme.accent.opacity(0.8)) : AnyShapeStyle(.white.opacity(0.06)))
@@ -367,7 +506,9 @@ struct ItemListColumn: View {
     @ViewBuilder private func rows(_ items: [FfiItemSummary]) -> some View {
         let showVault = showsVaultName
         ForEach(items, id: \.id) { summary in
-            ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
+            WatchtowerSetupRow(itemID: summary.id, check: model.watchtowerFilter?.check) {
+                ItemListRow(summary: summary, vaultName: showVault ? vaultName(summary.vaultId) : nil)
+            }
                 .tag(ItemRef(vaultID: summary.vaultId, itemID: summary.id))
                 .contextMenu { contextMenu(summary) }
                 .visionHoverEffect()
@@ -419,7 +560,19 @@ struct ItemListColumn: View {
         return vaults.count == 1 ? vaults.first ?? "" : ""
     }
 
+    /// The picked rows' summaries, in list order.
+    private var batchSummaries: [FfiItemSummary] {
+        listedItems.filter { multiSelection.contains(ItemRef(vaultID: $0.vaultId, itemID: $0.id)) }
+    }
+
     @ViewBuilder private var batchActions: some View {
+        if !model.isEditing, MergePickRule.offers(batchSummaries) {
+            Button("browse.merge", systemImage: "arrow.triangle.merge") {
+                mergePick = MergePickRequest(refs: batch)
+            }
+            .accessibilityIdentifier("list.batch.merge")
+            Divider()
+        }
         MoveToVaultMenu(currentVaultID: batchVaultID) { moveBatch(to: $0) }
         Divider()
         Button("browse.moveToTrash", systemImage: "trash", role: .destructive) { trashBatch() }
@@ -471,6 +624,12 @@ struct ItemListColumn: View {
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
         .background(.bar)
+    }
+
+    /// The two rows the merge sheet works on.
+    struct MergePickRequest: Identifiable {
+        let refs: [ItemRef]
+        var id: [ItemRef] { refs }
     }
 
     /// Each picked item not already there goes to `vault`, one after the other; a failure stops

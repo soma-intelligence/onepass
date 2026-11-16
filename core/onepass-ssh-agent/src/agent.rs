@@ -38,6 +38,7 @@ use std::time::{Duration, Instant};
 
 use data_encoding::{BASE64, HEXLOWER};
 use onepass_core::Id;
+use onepass_core::model::key_use::{KeyUseAction, KeyUseChannel};
 use onepass_core::model::{FieldValue, Item, ItemType};
 use onepass_core::repo::Repository;
 use onepass_core::store::RecordStore;
@@ -50,6 +51,7 @@ use onepass_guard::{
     Surface, SystemClock, Target, Throttle, challenge_code, decision_label, sanitize_for_display,
 };
 use onepass_peer::{ClientIdentity, CodeIdentity, effective_uid};
+use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use crate::keys::{AgentKey, fingerprint_of_blob, verify_signature};
@@ -131,6 +133,8 @@ pub struct KeyInfo {
     /// May sign SSHSIG requests of the `git` namespace without a host
     /// binding (commit signing).
     pub git_signing: bool,
+    /// Label of the private key field, recorded in the key-use log.
+    pub key_field_label: String,
 }
 
 /// Where the agent's keys come from. Errors are plain messages without
@@ -140,6 +144,14 @@ pub trait KeySource: Send {
     fn list(&mut self) -> Result<Vec<KeyInfo>, String>;
     /// The private key of an item, loaded only to sign.
     fn load(&mut self, item_id: &str) -> Result<AgentKey, String>;
+    /// A signature of the key of `item_id` was produced for `client` (a
+    /// display name, empty when unknown). `field` is the label of the key
+    /// field. Sources that keep a key-use log write the entry; best effort,
+    /// it never fails a signature. Nothing about the connection or the
+    /// signed data is passed on.
+    fn note_signed(&mut self, item_id: &str, field: &str, client: &str) {
+        let _ = (item_id, field, client);
+    }
 }
 
 /// [`KeySource`] over an unlocked repository.
@@ -152,6 +164,11 @@ impl<S: RecordStore> RepoKeySource<S> {
     pub fn new(repo: Repository<S>) -> Self {
         RepoKeySource { repo }
     }
+
+    /// The repository behind the source.
+    pub fn repo_mut(&mut self) -> &mut Repository<S> {
+        &mut self.repo
+    }
 }
 
 impl<S: RecordStore + Send> KeySource for RepoKeySource<S> {
@@ -161,6 +178,43 @@ impl<S: RecordStore + Send> KeySource for RepoKeySource<S> {
 
     fn load(&mut self, item_id: &str) -> Result<AgentKey, String> {
         load_key_of(&mut self.repo, item_id)
+    }
+
+    fn note_signed(&mut self, item_id: &str, field: &str, client: &str) {
+        note_signed_in(&mut self.repo, item_id, field, client);
+    }
+}
+
+/// Writes a `Signed` key use of the item `item_id` through the SSH agent
+/// channel into the vault that holds it. Best effort: every error is
+/// ignored, a use that cannot be recorded never fails the signature.
+pub fn note_signed_in<S: RecordStore>(
+    repo: &mut Repository<S>,
+    item_id: &str,
+    field: &str,
+    client: &str,
+) {
+    let Ok(id) = item_id.parse::<Id>() else {
+        return;
+    };
+    let Ok(vaults) = repo.vaults() else {
+        return;
+    };
+    // The vault of the item, found the way `load_key_of` does.
+    for vault in &vaults {
+        let Ok(items) = repo.items(vault) else {
+            continue;
+        };
+        if items.iter().any(|i| i.id == id) {
+            let u = repo.this_device_key_use(
+                KeyUseChannel::SshAgent,
+                KeyUseAction::Signed,
+                client,
+                field,
+            );
+            let _ = repo.record_key_use(vault, id, u, OffsetDateTime::now_utc());
+            return;
+        }
     }
 }
 
@@ -240,6 +294,10 @@ pub fn ssh_keys_of<S: RecordStore>(
                 confirm_each_use: field_truthy(&item, "confirm_each_use"),
                 hosts,
                 git_signing: field_truthy(&item, "git_signing"),
+                key_field_label: item
+                    .field(KEY_FIELD)
+                    .map(|f| f.label.clone())
+                    .unwrap_or_default(),
             });
         }
     }
@@ -268,6 +326,24 @@ pub fn load_key_of<S: RecordStore>(
         return AgentKey::from_private_text(&v.private_pem, None).map_err(|e| e.to_string());
     }
     Err("item not found".into())
+}
+
+/// The client name of a key-use entry: the pairing label, or for an open
+/// agent's peer the file name of its executable (never the path). Empty
+/// when the process is unknown.
+fn key_use_client(client: &Client) -> String {
+    if client.paired {
+        return client.label.clone();
+    }
+    if client.label == UNKNOWN_PROCESS {
+        return String::new();
+    }
+    client
+        .label
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// Per-connection state.
@@ -1226,6 +1302,11 @@ impl<K: KeySource> Agent<K> {
         match signature {
             Some(sig) => {
                 st.record(&p.who, Some(&p.key), &p.ctx, decision, "ok");
+                // After the signature exists, best effort. The source is the
+                // one `load` just used, so no new lock is taken.
+                let client = key_use_client(&p.client);
+                st.source
+                    .note_signed(&p.key.item_id, &p.key.key_field_label, &client);
                 Reply::send(Response::Signature(sig))
             }
             None => {

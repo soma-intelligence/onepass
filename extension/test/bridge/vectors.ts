@@ -5,7 +5,7 @@ import { fromB64 } from "../../src/bridge/bytes";
 
 const DIR = new URL("../../../core/onepass-bridge/tests/vectors/", import.meta.url);
 
-export function loadVector<T = Record<string, unknown>>(name: "kem" | "pairing" | "session"): T {
+export function loadVector<T = Record<string, unknown>>(name: "kem" | "pairing" | "session" | "sign_in"): T {
   return JSON.parse(readFileSync(new URL(`${name}.json`, DIR), "utf8")) as T;
 }
 

@@ -4,15 +4,20 @@
 FUZZ_SECONDS ?= 60
 # Pinned nightly for fuzz and Miri (same date as .github/workflows/core.yml).
 NIGHTLY ?= nightly-2026-10-20
-FUZZ_TARGETS = blob_open signed_manifest account_params item_record signature_verify otpauth_parse reference_parse import_csv import_1pux import_bitwarden_json import_enpass_json import_keepass_xml import_cxf import_text archive_open hibp_range site_directory mcp_line ssh_agent_frame mailbox_message mailbox_signature_input enroll_ticket remote_message contact_frames sync_home enroll_request org_record org_roster org_keyset org_join org_pin org_dns_txt org_join_frame
+FUZZ_TARGETS = blob_open signed_manifest account_params item_record signature_verify otpauth_parse reference_parse import_csv import_1pux import_bitwarden_json import_enpass_json import_keepass_xml import_cxf import_text archive_open hibp_range site_directory mcp_line ssh_agent_frame mailbox_message mailbox_signature_input enroll_ticket remote_message contact_frames sync_home enroll_request org_record org_roster org_keyset org_join org_pin org_dns_txt org_join_frame site_pack
 
 check: fmt-check lint test deny
 
 fmt-check:
 	cargo fmt --all --check
 
+# Every test of the workspace through cargo-nextest (brew install
+# cargo-nextest), with the verify profile of .config/nextest.toml: per-test
+# timeouts, no fail-fast. nextest does not run doctests: `cargo test --doc`
+# does, with the same features so nothing is rebuilt.
 test:
-	cargo test --workspace
+	cargo nextest run --workspace --profile verify --features onepass-core/dev-fast-kdf
+	cargo test --doc --workspace --features onepass-core/dev-fast-kdf
 
 # Fast local loop (needs cargo-nextest: brew install cargo-nextest). Runs only
 # the crates changed since origin/main (QUICK_BASE overrides it; QUICK_CRATES
@@ -31,13 +36,13 @@ quick:
 		if [ "$$c" = onepass-core ] || grep -q '^onepass-core' $$c/Cargo.toml; then with="$$with -p $$c"; \
 		else without="$$without -p $$c"; fi; \
 	done; \
-	if [ -n "$$with" ]; then nice -n 10 cargo nextest run $$with --features onepass-core/dev-fast-kdf || exit 1; fi; \
-	if [ -n "$$without" ]; then nice -n 10 cargo nextest run $$without || exit 1; fi
+	if [ -n "$$with" ]; then nice -n 10 cargo nextest run --profile verify $$with --features onepass-core/dev-fast-kdf || exit 1; fi; \
+	if [ -n "$$without" ]; then nice -n 10 cargo nextest run --profile verify $$without || exit 1; fi
 
 # The whole workspace through nextest: same tests as `make test`, with the
 # per-test timeouts.
 nextest:
-	nice -n 10 cargo nextest run --workspace --features onepass-core/dev-fast-kdf
+	nice -n 10 cargo nextest run --workspace --profile verify --features onepass-core/dev-fast-kdf
 
 lint:
 	cargo clippy --workspace --all-targets -- -D warnings
