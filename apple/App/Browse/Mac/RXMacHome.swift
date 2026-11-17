@@ -1,4 +1,5 @@
 #if os(macOS)
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -9,6 +10,7 @@ import VaultKit
 /// list, the vault's items, the full list.
 struct RXMacHome: View {
     @Environment(AppModel.self) private var model
+    @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 64
 
     private typealias RX = Theme.RX
 
@@ -52,10 +54,13 @@ struct RXMacHome: View {
                 .rxFont(.calloutMedium)
                 .foregroundStyle(.white.opacity(0.85))
             HStack(alignment: .lastTextBaseline, spacing: RX.Space.xs) {
-                Text(score.map(String.init) ?? "–")
-                    .font(.system(size: 64, weight: .bold))
-                    .tracking(-2.5)
-                    .monospacedDigit()
+                Group {
+                    if let score { DBNumber(score) } else { Text(verbatim: "–") }
+                }
+                .font(RX.Typography.display.font(size: scoreSize))
+                .tracking(-2.5)
+                .monospacedDigit()
+                // swiftlint:disable:next db_unlocalized_string - a number, not words
                 Text(verbatim: "/100")
                     .rxFont(.title)
                     .opacity(0.7)
@@ -71,12 +76,13 @@ struct RXMacHome: View {
                 ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score ?? 0)")) {
                     capsuleLabel(Text("common.share"), systemImage: "square.and.arrow.up")
                 }
-                .buttonStyle(.plain)
+                .rxPress()
                 .disabled(score == nil)
                 .accessibilityIdentifier("rx.mac.share")
             }
         }
-        .padding(EdgeInsets(top: 28, leading: 32, bottom: 28, trailing: 32))
+        .padding(.vertical, RX.Space.xl)
+        .padding(.horizontal, RX.Space.xxl)
         .frame(maxWidth: .infinity, minHeight: 260, alignment: .leading)
         .background {
             Image(RXHero.home)
@@ -116,9 +122,9 @@ struct RXMacHome: View {
                         .rxFont(.calloutMedium)
                         .foregroundStyle(RX.Palette.accentText.color)
                 }
-                .buttonStyle(.plain)
+                .rxPress()
                 .padding(.trailing, RX.Space.l)
-                .padding(.top, 10)
+                .padding(.top, RX.Space.m)
             }
             ForEach(recents, id: \.id) { summary in
                 Button { open(summary) } label: { RXSummaryRow(summary: summary) }
@@ -162,7 +168,7 @@ struct RXMacHome: View {
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2, reservesSpace: true)
                                 .minimumScaleFactor(0.85)
-                                .padding(.horizontal, 2)
+                                .padding(.horizontal, RX.Space.xxs)
                         }
                         .frame(maxWidth: .infinity)
                     }
