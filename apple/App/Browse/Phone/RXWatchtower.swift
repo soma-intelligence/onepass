@@ -6,10 +6,19 @@ import VaultKit
 #if os(iOS)
 
 /// Watchtower in the RX look (Penpot "iPhone · Watchtower"), with the score gauge kept in place of
-/// the mock's line chart (owner decision): the title and share button, the gauge, one alert card per
+/// the mock's line chart (owner decision): the header row (account menu, title, share button), the gauge, one alert card per
 /// red issue (or a green all-clear card), three stat tiles (weak, reused, 2FA), the Improve card with
 /// the other flagged checks, then the classic strength, clear checks and breach setting cards.
 /// Every tile and row pushes the same flagged items list as the classic tab.
+/// The centre line of the Watchtower title: the avatar and the share button sit on it, not on the
+/// centre of the title and subtitle block.
+private extension VerticalAlignment {
+    enum RXTitleCentre: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[VerticalAlignment.center] }
+    }
+    static let rxTitleCentre = VerticalAlignment(RXTitleCentre.self)
+}
+
 struct RXWatchtowerContent<Scan: View, Status: View>: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -22,10 +31,6 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: RX.Space.l) {
-            HStack {
-                AccountMenu()
-                Spacer(minLength: 0)
-            }
             header
             // The gauge, the status and the scan card: the only part that animates with the run.
             VStack(spacing: RX.Space.l) {
@@ -91,49 +96,58 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
         }
     }
 
-    /// "Watchtower" (Large title) over "Security score", the share button on the right.
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: RX.Space.xs) {
-                // swiftlint:disable:next db_unlocalized_string - product name, the same in every language
-                Text(verbatim: "Watchtower")
-                    .rxFont(.largeTitle)
-                    .foregroundStyle(RX.Palette.textPrimary.color)
-                    .dbText(maxLines: 1, minimumScale: 0.7)
-                    .accessibilityAddTraits(.isHeader)
-                Text("browse.securityScore")
-                    .rxFont(.calloutMedium)
-                    .foregroundStyle(RX.Palette.textSecondary.color)
+    /// One header row: the account menu, "Watchtower" (Large title) over "Security score", and the
+    /// share button, all on the avatar's centre line (owner feedback 2026-11-16: the title sits
+    /// beside the avatar, the share button lives in the header). At accessibility text sizes the
+    /// title moves under the avatar row so it keeps its full width.
+    @ViewBuilder private var header: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: RX.Space.s) {
+                HStack {
+                    AccountMenu()
+                    Spacer(minLength: RX.Space.s)
+                    shareButton
+                }
+                titleBlock
             }
-            Spacer(minLength: RX.Space.s)
-            // The shield art of the mock, top right, with the share button on its corner.
-            // At accessibility text sizes the art gives its room to the title.
-            ZStack(alignment: .topTrailing) {
-                if !dynamicTypeSize.isAccessibilitySize {
-                    Image("rx-watch-shield")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: Self.shieldSide, height: Self.shieldSide)
-                        .padding(.top, RX.Space.s)
-                        .padding(.trailing, RX.Space.l)
-                        .accessibilityHidden(true)
-                }
-                if let score {
-                    ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
-                        RXGlassGlyph(systemImage: "square.and.arrow.up")
-                    }
-                    .rxPress()
-                    .accessibilityLabel(Text("browse.shareMyScore"))
-                    .accessibilityIdentifier("watchtower.share")
-                }
+        } else {
+            HStack(alignment: .rxTitleCentre, spacing: RX.Space.m) {
+                AccountMenu()
+                    .alignmentGuide(.rxTitleCentre) { $0[VerticalAlignment.center] }
+                titleBlock
+                Spacer(minLength: RX.Space.s)
+                shareButton
+                    .alignmentGuide(.rxTitleCentre) { $0[VerticalAlignment.center] }
             }
         }
-        .padding(.top, RX.Space.s)
-        .padding(.horizontal, RX.Space.xs)
     }
 
-    /// The shield art of the mock (Penpot size).
-    private static var shieldSide: CGFloat { 120 }
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // swiftlint:disable:next db_unlocalized_string - product name, the same in every language
+            Text(verbatim: "Watchtower")
+                .rxFont(.largeTitle)
+                .foregroundStyle(RX.Palette.textPrimary.color)
+                .dbText(maxLines: 1, minimumScale: 0.7)
+                .accessibilityAddTraits(.isHeader)
+                .alignmentGuide(.rxTitleCentre) { $0[VerticalAlignment.center] }
+            Text("browse.securityScore")
+                .rxFont(.calloutMedium)
+                .foregroundStyle(RX.Palette.textSecondary.color)
+        }
+    }
+
+    /// Share the score, once there is one (same glass glyph as the other header controls).
+    @ViewBuilder private var shareButton: some View {
+        if let score {
+            ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
+                RXGlassGlyph(systemImage: "square.and.arrow.up")
+            }
+            .rxPress()
+            .accessibilityLabel(Text("browse.shareMyScore"))
+            .accessibilityIdentifier("watchtower.share")
+        }
+    }
 
     /// One red card per alert check that flagged items. With none: a green card only when every
     /// red check really ran, else a neutral card that says what was not checked.
