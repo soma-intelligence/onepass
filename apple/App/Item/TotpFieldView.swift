@@ -8,7 +8,7 @@ struct TotpCodeView: View {
     let secret: String
     var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// RX look: the big monospaced code and the 40 pt timer ring of the mock.
+    /// RX look: the big monospaced code (30 pt) and the 40 pt timer ring of the mock.
     @Environment(\.rxCards) private var rxCards
 
     var body: some View {
@@ -23,14 +23,16 @@ struct TotpCodeView: View {
         #endif
     }
 
-    /// The RX code: "538 262" in the Mono code typography, the seconds left in a ring on the right.
+    /// The RX code: "538 262" in the Mono code typography, centred on the ring's height, the seconds left in a ring on the right.
     private var rxBody: some View {
         TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
             if let code = Self.code(secret, at: context.date) {
                 let exact = Self.exactRemaining(period: code.period, at: context.date)
-                HStack {
+                HStack(alignment: .center) {
                     Text(verbatim: Self.spaced(code.code))
                         .rxFont(.monoCode)
+                        .lineLimit(1)
+                        .frame(minHeight: 40)
                         .foregroundStyle(Theme.RX.Palette.textPrimary.color)
                         .contentTransition(.numericText())
                         .animation(.snappy(duration: 0.35), value: code.code)
@@ -47,11 +49,12 @@ struct TotpCodeView: View {
         }
     }
 
-    /// "538262" gives "538  262" (two spaces, the mock's gap); other lengths are split in halves.
+    /// "538262" gives "538 262" (one monospaced space between the groups); other lengths are split
+    /// in halves.
     static func spaced(_ code: String) -> String {
         guard code.count >= 6 else { return code }
         let half = code.index(code.startIndex, offsetBy: code.count / 2)
-        return String(code[..<half]) + "  " + String(code[half...])
+        return String(code[..<half]) + " " + String(code[half...])
     }
 
     private var classicBody: some View {
@@ -129,10 +132,19 @@ struct TotpFieldView: View {
     let field: FfiField
     var captured = false
     let onCopy: (String) -> Void
+    @Environment(\.rxCards) private var rxCards
+
+    /// RX: the template's "TOTP" label reads "Code de vérification"; a label the person typed stays.
+    private var label: String {
+        if rxCards, field.displayLabel.caseInsensitiveCompare("TOTP") == .orderedSame {
+            return String(localized: "rx.item.verificationCode")
+        }
+        return field.displayLabel.detailLabelCase
+    }
 
     var body: some View {
         DetailRow(
-            label: field.displayLabel.detailLabelCase, copyIdentifier: "field.copy.\(field.id)",
+            label: label, copyIdentifier: "field.copy.\(field.id)",
             copyLabel: Text("Copier le code"), onCopy: copyCurrent, showsMenu: false
         ) {
             if captured {
