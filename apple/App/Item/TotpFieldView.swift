@@ -8,61 +8,10 @@ struct TotpCodeView: View {
     let secret: String
     var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// RX look: the 28 pt code in two groups and the 24 pt timer ring.
-    @Environment(\.rxCards) private var rxCards
 
     var body: some View {
-        #if os(iOS) || os(macOS)
-        if rxCards, !compact {
-            rxBody
-        } else {
-            classicBody
-        }
-        #else
         classicBody
-        #endif
     }
-
-    /// The RX code row (verification code card): the two groups of digits at 28 pt (tabular
-    /// figures, no leading bearing beyond the font's own), a fixed 8 pt gap between them, then the
-    /// 24 pt timer ring centred on the digits. The row starts exactly at the value's leading edge,
-    /// under the field label.
-    private var rxBody: some View {
-        TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
-            if let code = Self.code(secret, at: context.date) {
-                let exact = Self.exactRemaining(period: code.period, at: context.date)
-                let groups = Self.groups(code.code)
-                HStack(alignment: .center, spacing: 0) {
-                    HStack(spacing: Self.rxGroupGap) {
-                        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                            Text(verbatim: group)
-                                .contentTransition(.numericText())
-                        }
-                    }
-                    .font(.system(size: Self.rxDigitSize, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Theme.RX.Palette.textPrimary.color)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .animation(.snappy(duration: 0.35), value: code.code)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text("term.oneTimeCode"))
-                    .accessibilityValue(Text(verbatim: code.code))
-                    Spacer(minLength: Theme.RX.Space.s)
-                    RXTimerRing(remaining: Int(code.remaining), fraction: exact / Double(max(code.period, 1)))
-                }
-                .frame(height: Self.rxRowHeight)
-            } else {
-                Text("item.invalidSecretPasteBase32")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    /// Digit size, gap between the two groups and row height of the RX code.
-    static let rxDigitSize: CGFloat = 28
-    static let rxGroupGap: CGFloat = 8
-    static let rxRowHeight: CGFloat = 34
 
     /// "538262" gives ["538", "262"]; other lengths of 6 or more are split in halves, a shorter
     /// code stays whole.
@@ -116,31 +65,6 @@ struct TotpCodeView: View {
     }
 }
 
-/// The RX countdown: 24 pt, a faint track and the accent arc draining (2.5 pt), the seconds in
-/// the middle (Caption 2, tabular); red over the last five seconds.
-private struct RXTimerRing: View {
-    let remaining: Int
-    let fraction: Double
-
-    var body: some View {
-        let color = remaining <= 5 ? Theme.RX.Palette.negative.color : Theme.RX.Palette.accent.color
-        ZStack {
-            Circle().stroke(Theme.RX.Palette.textTertiary.color.opacity(0.4), lineWidth: 2.5)
-            Circle()
-                .trim(from: 0, to: min(max(fraction, 0), 1))
-                .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            Text(remaining, format: .number)
-                .font(.caption2.weight(.semibold).monospacedDigit())
-                .foregroundStyle(remaining <= 5 ? color : Theme.RX.Palette.accentText.color)
-        }
-        .padding(1.25)
-        .frame(width: 24, height: 24)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("encore \(remaining) secondes"))
-    }
-}
-
 /// Detail row of a one-time code field: label, live code with its countdown pill, Copier (the code).
 /// While the screen is captured (iOS, visionOS) the code is drawn as bullets; Copier still works.
 struct TotpFieldView: View {
@@ -148,6 +72,7 @@ struct TotpFieldView: View {
     var captured = false
     let onCopy: (String) -> Void
     @Environment(\.rxCards) private var rxCards
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// RX: the template's "TOTP" label reads "Code de vérification"; a label the person typed stays.
     private var label: String {
@@ -158,6 +83,41 @@ struct TotpFieldView: View {
     }
 
     var body: some View {
+        #if os(iOS) || os(macOS)
+        if rxCards, !captured {
+            rxCard
+        } else {
+            classicRow
+        }
+        #else
+        classicRow
+        #endif
+    }
+
+    /// RX: the verification code card (DesignKit `RXCodeCard`, D-CODE-SIZE): the label, the 30 pt
+    /// digits centred with the 36 pt ring. The whole card is one button that copies the code.
+    private var rxCard: some View {
+        Button(action: copyCurrent) {
+            // Every frame so the ring drains smoothly; once a second with Reduce Motion.
+            TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
+                if let code = TotpCodeView.code(field.value.text, at: context.date) {
+                    let exact = TotpCodeView.exactRemaining(period: code.period, at: context.date)
+                    RXCodeCard(
+                        label: Text(label), code: code.code, remaining: Int(code.remaining),
+                        fraction: exact / Double(max(code.period, 1)))
+                } else {
+                    RXCardMessage(Text("item.invalidSecretPasteBase32"))
+                }
+            }
+            .padding(.vertical, Theme.RX.Space.m)
+            .padding(.horizontal, Theme.RX.Space.l)
+        }
+        .rxPress()
+        .accessibilityHint(Text("Copier le code"))
+        .accessibilityIdentifier("field.copy.\(field.id)")
+    }
+
+    private var classicRow: some View {
         DetailRow(
             label: label, copyIdentifier: "field.copy.\(field.id)",
             copyLabel: Text("Copier le code"), onCopy: copyCurrent, showsMenu: false

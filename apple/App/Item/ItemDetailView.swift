@@ -310,36 +310,13 @@ struct ItemDetailView: View {
     }
 
     #if os(iOS) || os(macOS)
-    /// RX: the quick actions of the mock under the header: copy the password, copy the current
-    /// one-time code, open the website, share. An action the item cannot do is left out.
+    /// RX: the quick actions of the mock under the header: open the website, share. Copying the
+    /// password or the one-time code is the field row and the code card (one entry point each).
+    /// An action the item cannot do is left out.
     @ViewBuilder private func rxQuickActions(_ item: FfiItem) -> some View {
-        let fields = item.sections.flatMap(\.fields)
-        let password = fields.first { $0.kind == .password && !$0.value.text.isEmpty }
-        let otp = fields.first { if case .otp(let v) = $0.value { !v.isEmpty } else { false } }
         let site = signInURL(item).flatMap(FieldValueView.openable)
         let ref = ItemRef(vaultID: item.vaultId, itemID: item.id)
         QuickActionRow {
-            if let password {
-                Button {
-                    session.copy(password.value.text, concealed: true)
-                    model.noteItemUse(ref, action: .copied, field: password.label)
-                    model.showToast(String(localized: "app.copiedClearedIn90"))
-                } label: {
-                    QuickActionLabel(Text("rx.item.action.password"), systemImage: "square.on.square")
-                }
-                .accessibilityIdentifier("rx.item.copyPassword")
-            }
-            if let otp, item.trashedAt == nil {
-                Button {
-                    guard let code = TotpCodeView.code(otp.value.text, at: Date()) else { return }
-                    session.copy(code.code, concealed: true)
-                    model.noteItemUse(ref, action: .copied, field: otp.label)
-                    model.showToast(String(localized: "app.copiedClearedIn90"))
-                } label: {
-                    QuickActionLabel(Text("rx.item.action.code"), systemImage: "clock.badge.checkmark")
-                }
-                .accessibilityIdentifier("rx.item.copyCode")
-            }
             if let site {
                 Button {
                     model.noteItemUse(ref, action: nil, field: "")
@@ -354,11 +331,7 @@ struct ItemDetailView: View {
             }
             .accessibilityIdentifier("rx.item.share")
         }
-        #if os(iOS)
-        .buttonStyle(PressableButtonStyle())
-        #else
-        .buttonStyle(.plain)
-        #endif
+        .rxPress()
     }
 
     /// RX: the Security card of the mock for an item with a password: its strength, its passkey
