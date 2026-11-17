@@ -44113,25 +44113,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No subscription. View the benefits"
+            "value" : "See the benefits"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sin suscripción. Ver las ventajas"
+            "value" : "Ver las ventajas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sans abonnement. Voir les avantages"
+            "value" : "Voir les avantages"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Senza abbonamento. Vedi i vantaggi"
+            "value" : "Vedi i vantaggi"
           }
         }
       }

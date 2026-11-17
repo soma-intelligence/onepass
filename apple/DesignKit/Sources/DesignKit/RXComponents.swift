@@ -473,9 +473,12 @@ extension QuickActionRow where Content == AnyView {
 
 // MARK: Plan card and perks
 
-/// The Plus card over a photo hero: one translucent dark glass panel (the page sheet radius), the
-/// plan name (Title, bold) and one line, a row of 44 pt discs (the last one a chevron), and the art
-/// large in the top trailing corner, bleeding off the card's top and trailing edges. The discs are
+/// The Plus card: over a photo hero, one translucent dark glass panel (the page sheet radius); on a
+/// plain page sheet (`onSheet`), a calm graphite panel with a soft light in its top leading corner
+/// (glass over a light sheet would leave the white words without contrast). Then the plan name
+/// (Title, bold) and one line, a row of 44 pt discs (the last one a chevron), and the art in the top
+/// trailing corner: over a hero, large and bleeding off the card's edges; on the sheet, whole and
+/// tilted, only just over the edges. The discs are
 /// plain white veils, not glass: the panel is already glass (glass only on controls). The card has a
 /// smallest height and grows with the text; at accessibility sizes the art goes, so it never
 /// covers the words, and the discs stay under the text.
@@ -484,16 +487,19 @@ public struct PlanCard: View {
     let subtitle: Text
     let art: Image?
     let perks: [String]
+    let onSheet: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    /// `perks`: the SF Symbols of the discs, left to right.
-    public init(title: Text, subtitle: Text, art: Image?, perks: [String]) {
+    /// `perks`: the SF Symbols of the discs, left to right. `onSheet`: the card sits on the page
+    /// sheet instead of over a photo hero.
+    public init(title: Text, subtitle: Text, art: Image?, perks: [String], onSheet: Bool = false) {
         self.title = title
         self.subtitle = subtitle
         self.art = art
         self.perks = perks
+        self.onSheet = onSheet
     }
 
     public var body: some View {
@@ -521,23 +527,35 @@ public struct PlanCard: View {
         }
         // Room on the trailing side for the art, when it is drawn: the tilted art covers about
         // half its width inside the card, so the words stop before it.
-        .padding(.trailing, large || art == nil ? 0 : RX.Metrics.planCardArtWidth * 0.5)
+        .padding(.trailing, large || art == nil ? 0 : RX.Metrics.planCardArtWidth * (onSheet ? 0.62 : 0.5))
         .padding(RX.Metrics.planCardPadding)
         .frame(maxWidth: .infinity, minHeight: RX.Metrics.planCardHeight, alignment: .leading)
         .background(alignment: .topTrailing) {
             if let art, !large {
                 // Large and off the corner: the card's shape crops its top and trailing parts.
-                art
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: RX.Metrics.planCardArtWidth)
-                    .rotationEffect(.degrees(-8))
-                    .offset(x: RX.Metrics.planCardArtWidth * 0.24, y: -RX.Metrics.planCardHeight * 0.24)
-                    .accessibilityHidden(true)
+                if onSheet {
+                    // Whole and tilted, like a card set down on the panel: only its corner leaves it.
+                    art
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: RX.Metrics.planCardArtWidth * 0.72)
+                        .rotationEffect(.degrees(-16))
+                        .offset(x: RX.Metrics.planCardArtWidth * 0.1, y: -RX.Metrics.planCardHeight * 0.06)
+                        .shadow(color: .black.opacity(0.45), radius: 14, y: 8)
+                        .accessibilityHidden(true)
+                } else {
+                    art
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: RX.Metrics.planCardArtWidth)
+                        .rotationEffect(.degrees(-8))
+                        .offset(x: RX.Metrics.planCardArtWidth * 0.24, y: -RX.Metrics.planCardHeight * 0.24)
+                        .accessibilityHidden(true)
+                }
             }
         }
         .modifier(PlanCardPanel(
-            shape: shape,
+            shape: shape, onSheet: onSheet,
             flat: Theme.Wash.isFlat(increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)))
         .environment(\.colorScheme, .dark)
         .clipShape(shape)
@@ -550,10 +568,26 @@ public struct PlanCard: View {
 /// Contrast, so the white words keep their contrast.
 private struct PlanCardPanel<S: Shape>: ViewModifier {
     let shape: S
+    let onSheet: Bool
     let flat: Bool
 
     func body(content: Content) -> some View {
-        if flat {
+        if onSheet {
+            // On the page sheet: graphite, lit softly from the top leading corner. Under Reduce
+            // Transparency or Increase Contrast the light goes and the fill gets darker.
+            content.background {
+                ZStack {
+                    Color(white: flat ? 0.1 : 0.17)
+                    if !flat {
+                        RadialGradient(
+                            colors: [.white.opacity(0.13), .clear], center: .topLeading,
+                            startRadius: 0, endRadius: RX.Metrics.planCardHeight * 2.2)
+                    }
+                }
+                .clipShape(shape)
+                .accessibilityHidden(true)
+            }
+        } else if flat {
             // A hairline edge too: on a black page (dark mode) the flat panel has no visible edge.
             content
                 .background(Color.black.opacity(RX.Veil.hero(flat: true)[2]), in: shape)

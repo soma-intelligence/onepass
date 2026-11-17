@@ -27,6 +27,18 @@ struct RXSettingsHome: View {
             hero
         } sheet: {
             VStack(spacing: RX.Space.l) {
+                // The plan card opens the sheet and scrolls with it (owner feedback 2026-11-16: it
+                // no longer stays in the hero for the sheet to slide over).
+                NavigationLink(value: SettingsRoute.plan) {
+                    PlanCard(
+                        // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
+                        title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
+                        perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"],
+                        onSheet: true)
+                }
+                .rxPress(haptic: .selection)
+                .zoomSource(Self.planZoomID)
+                .accessibilityIdentifier("rx.settings.plan")
                 RXSectionTitle(Text("rx.perks.title"))
                 RXPerkCarousel(bleed: RX.Space.gutter)
                 RXCard {
@@ -106,7 +118,7 @@ struct RXSettingsHome: View {
     static let planZoomID = "rx.plan"
     static let profileQRZoomID = "rx.profileQR"
 
-    /// The top of the photo: the account, the plan card.
+    /// The top of the photo: the account (the plan card is the first card of the sheet).
     private var hero: some View {
         VStack(spacing: RX.Space.xl) {
             NavigationLink(value: SettingsRoute.profile) {
@@ -132,16 +144,6 @@ struct RXSettingsHome: View {
             .zoomSource("settings.account")
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.account")
-            NavigationLink(value: SettingsRoute.plan) {
-                PlanCard(
-                    // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
-                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
-                    perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
-            }
-            .rxPress(haptic: .selection)
-            .zoomSource(Self.planZoomID)
-            .accessibilityIdentifier("rx.settings.plan")
-            .padding(.top, RX.Space.l)
         }
     }
 
