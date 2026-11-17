@@ -6,13 +6,15 @@ import VaultKit
 
 /// The Mac Settings window in the RX look (Penpot "Mac · Settings"), while the switch is on: on the
 /// left, the photo banner with the account, its QR button and the Plus card, then "Get more from
-/// Plus" with the two perk tiles; on the right, every page of Réglages in menu cards and the red
-/// lock row. Rows push the same pages as the classic window; the Plus card pushes the plan page.
+/// Plus" with the perk tiles; on the right, every page of Réglages in menu cards and the lock
+/// row. Rows push the same pages as the classic window; the Plus card pushes the plan page.
 struct RXMacSettingsHome: View {
     @Environment(AppModel.self) private var model
     @Binding var path: [SettingsPage]
     @State private var showPlan = RXMacSettingsHome.demoOpens("plan")
     @State private var showProfileQR = RXMacSettingsHome.demoOpens("profileQR")
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private typealias RX = Theme.RX
 
@@ -60,12 +62,12 @@ struct RXMacSettingsHome: View {
                             #endif
                         }
                         RXCard {
+                            // The account menu's words; through `perform`, which asks first when
+                            // an edit is not saved.
                             Button {
-                                model.lock()
+                                model.perform(.lock)
                             } label: {
-                                RXMenuRow(
-                                    Text("Verrouiller OnePass"), systemImage: "lock.fill",
-                                    tint: RX.Palette.negative.color, chevron: false)
+                                RXMenuRow(Text("Verrouiller"), systemImage: "lock.fill", chevron: false)
                             }
                             .accessibilityIdentifier("rx.settings.lock")
                         }
@@ -97,7 +99,7 @@ struct RXMacSettingsHome: View {
         let name = model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName
         return VStack(alignment: .leading, spacing: RX.Space.l) {
             HStack(spacing: RX.Space.m) {
-                RXAvatar(initials: model.initials, photo: model.profileImage, size: 52)
+                RXAvatar(initials: model.initials, photo: model.profileImage, size: RX.Metrics.avatarMedium)
                 VStack(alignment: .leading, spacing: RX.Space.xxs) {
                     Text(verbatim: name)
                         .rxFont(.title)
@@ -106,7 +108,8 @@ struct RXMacSettingsHome: View {
                     Text(model.settings.deviceMode == .shared
                          ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
                         .rxFont(.callout)
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(.white)
+                        .rxOnPhotoSecondary()
                 }
                 Spacer(minLength: RX.Space.s)
                 GlassButton(Text("rx.profileQR.open"), systemImage: "qrcode", onPhoto: true) { showProfileQR = true }
@@ -117,7 +120,7 @@ struct RXMacSettingsHome: View {
             } label: {
                 PlanCard(
                     // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
-                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-lux"),
+                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
                     perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
             }
             .buttonStyle(.plain)
@@ -128,10 +131,11 @@ struct RXMacSettingsHome: View {
             Image(RXHero.settings)
                 .resizable()
                 .scaledToFill()
-                .overlay(Color.black.opacity(0.2))
+                .overlay(Color.black.opacity(RX.Veil.banner(flat: Theme.Wash.isFlat(
+                    increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency))))
                 .accessibilityHidden(true)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: RX.Radius.pageSheet, style: .continuous))
     }
 
     private func menu(_ page: SettingsPage, value: Int? = nil) -> some View {

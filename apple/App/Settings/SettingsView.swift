@@ -252,9 +252,11 @@ struct SettingsView: View {
         .toolbar { doneItem }
     }
 
+    /// The system close button of the sheet, on the root and on every page (the same role and
+    /// identifier as the RX root's).
     private var doneItem: some ToolbarContent {
-        ToolbarItem(placement: .confirmationAction) {
-            Button("OK") { dismiss() }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button(role: .close) { dismiss() }
                 .accessibilityIdentifier("settings.done")
         }
     }

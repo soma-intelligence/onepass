@@ -4,7 +4,8 @@ import VaultKit
 
 /// iPhone: an item opens by zooming out of the row that was tapped, and closes back into it.
 /// PhoneTabsView owns the namespace and hands it down its navigation stacks; every row that pushes
-/// `PhoneRoute.item` marks itself as the source, the item detail as the destination.
+/// `PhoneRoute.item` marks itself as the source, the item detail as the destination. Under Reduce
+/// Motion every page keeps the automatic push instead of the zoom.
 extension EnvironmentValues {
     @Entry var itemZoomNamespace: Namespace.ID?
 }
@@ -33,7 +34,7 @@ extension View {
 
     /// The item detail of `ref`: it zooms out of its row, and back in when it closes.
     func itemZoomDestination(_ ref: ItemRef, in namespace: Namespace.ID) -> some View {
-        navigationTransition(.zoom(sourceID: ref, in: namespace))
+        modifier(ZoomTransition(id: ref, namespace: namespace))
     }
 }
 
@@ -69,9 +70,24 @@ private struct ZoomDestination<ID: Hashable>: ViewModifier {
 
     func body(content: Content) -> some View {
         if let namespace {
-            content.navigationTransition(.zoom(sourceID: id, in: namespace))
+            content.modifier(ZoomTransition(id: id, namespace: namespace))
         } else {
             content
+        }
+    }
+}
+
+/// The zoom out of `id`, or the automatic push under Reduce Motion.
+private struct ZoomTransition<ID: Hashable>: ViewModifier {
+    let id: ID
+    let namespace: Namespace.ID
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content.navigationTransition(.automatic)
+        } else {
+            content.navigationTransition(.zoom(sourceID: id, in: namespace))
         }
     }
 }

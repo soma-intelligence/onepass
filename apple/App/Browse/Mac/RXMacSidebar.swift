@@ -57,7 +57,7 @@ struct RXMacSidebar: View {
                               id: "library.trash")
                 }
                 .padding(.horizontal, RX.Space.l)
-                .padding(.top, max(titlebarHeight, 52) + 16)
+                .padding(.top, max(titlebarHeight, 52) + RX.Space.l)
                 .padding(.bottom, RX.Space.l)
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
@@ -90,7 +90,7 @@ struct RXMacSidebar: View {
                 }
             }
         }
-        .animation(.spring(duration: 0.28, bounce: 0.15), value: accountMenuOpen)
+        .dbAnimation(.snappy, value: accountMenuOpen)
         .accessibilityIdentifier("rx.mac.sidebar")
     }
 
@@ -99,7 +99,7 @@ struct RXMacSidebar: View {
     private var brand: some View {
         HStack(spacing: RX.Space.s) {
             Image(systemName: "circle.grid.3x3.fill")
-                .font(RX.Glyph.font(16, weight: .bold))
+                .font(RX.Glyph.font(RX.Glyph.macBrand, weight: .bold))
                 .foregroundStyle(RX.Palette.accent.color)
             // swiftlint:disable:next db_unlocalized_string - app name, the same in every language
             Text(verbatim: "OnePass")
@@ -126,8 +126,8 @@ struct RXMacSidebar: View {
             .rxFont(.callout)
             .foregroundStyle(RX.Palette.textSecondary.color)
             .padding(.horizontal, RX.Space.m)
-            .frame(height: 34)
-            .background(RX.Palette.field.color, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .frame(height: RX.Metrics.macRowHeight)
+            .background(RX.Palette.field.color, in: RoundedRectangle(cornerRadius: RX.Radius.macRow, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -140,8 +140,8 @@ struct RXMacSidebar: View {
             Spacer()
             Button { creatingVault = true } label: {
                 Image(systemName: "plus")
-                    .font(RX.Glyph.font(11, weight: .semibold))
-                    .frame(width: 22, height: 22)
+                    .font(RX.Glyph.font(RX.Glyph.macSmall, weight: .semibold))
+                    .frame(width: RX.Metrics.macAddButton, height: RX.Metrics.macAddButton)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -155,9 +155,9 @@ struct RXMacSidebar: View {
             let filter = ItemFilter.vault(vault.id)
             rowButton(selected: isSelected(filter), id: "sidebar.vaults.\(vault.id)", action: { model.showItems(filter) }) {
                 Text(String(vault.meta.name.prefix(1)).uppercased())
-                    .font(RX.Glyph.font(9, weight: .bold))
+                    .font(RX.Glyph.font(RX.Glyph.macInitial, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 20, height: 20)
+                    .frame(width: RX.Metrics.macRowGlyph, height: RX.Metrics.macRowGlyph)
                     .background(VaultBadge.color(named: vault.meta.color), in: Circle())
                     .accessibilityHidden(true)
                 Text(vault.meta.name)
@@ -178,8 +178,8 @@ struct RXMacSidebar: View {
                 rowButton(selected: isSelected(filter), id: "sidebar.tags.\(tag)", action: { model.showItems(filter) }) {
                     Circle()
                         .fill(TagColor.of(tag))
-                        .frame(width: 10, height: 10)
-                        .frame(width: 20, height: 20)
+                        .frame(width: RX.Metrics.macTagDot, height: RX.Metrics.macTagDot)
+                        .frame(width: RX.Metrics.macRowGlyph, height: RX.Metrics.macRowGlyph)
                         .accessibilityHidden(true)
                     Text(tag)
                     count(counts.byTag[tag])
@@ -194,18 +194,18 @@ struct RXMacSidebar: View {
             if model.travel.showsCard {
                 TravelSuggestionCard(compact: true)
                     .padding(RX.Space.m)
-                    .background(RX.Palette.pageBackground.color, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(RX.Palette.pageBackground.color, in: RoundedRectangle(cornerRadius: RX.Radius.tile, style: .continuous))
             }
             if model.showsAutoFillTip {
                 AutoFillTipCard(compact: true)
                     .padding(.horizontal, RX.Space.m)
                     .padding(.vertical, RX.Space.s)
-                    .background(RX.Palette.pageBackground.color, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(RX.Palette.pageBackground.color, in: RoundedRectangle(cornerRadius: RX.Radius.tile, style: .continuous))
             }
             if model.showsSafariSetupCard {
                 SafariSetupCard()
                     .padding(RX.Space.m)
-                    .background(RX.Palette.pageBackground.color, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(RX.Palette.pageBackground.color, in: RoundedRectangle(cornerRadius: RX.Radius.tile, style: .continuous))
             }
             if case .accountChanged = model.syncStatus {
                 AccountChangedCard(compact: true)
@@ -222,7 +222,7 @@ struct RXMacSidebar: View {
         let name = model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName
         return Button { accountMenuOpen.toggle() } label: {
             HStack(spacing: RX.Space.m) {
-                RXAvatar(initials: model.initials, photo: model.profileImage, size: 32, ring: false)
+                RXAvatar(initials: model.initials, photo: model.profileImage, size: RX.Metrics.avatarSmall, ring: false)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(verbatim: name)
                         .rxFont(.calloutMedium)
@@ -236,11 +236,11 @@ struct RXMacSidebar: View {
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(RX.Glyph.font(11, weight: .semibold))
+                    .font(RX.Glyph.font(RX.Glyph.macSmall, weight: .semibold))
                     .foregroundStyle(RX.Palette.textTertiary.color)
             }
             .padding(.horizontal, RX.Space.l)
-            .frame(height: 60)
+            .frame(minHeight: RX.Metrics.macAccountRowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -296,8 +296,8 @@ struct RXMacSidebar: View {
 
     private func glyph(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(RX.Glyph.font(14, weight: .semibold))
-            .frame(width: 20, height: 20)
+            .font(RX.Glyph.font(RX.Glyph.macRow, weight: .semibold))
+            .frame(width: RX.Metrics.macRowGlyph, height: RX.Metrics.macRowGlyph)
             .accessibilityHidden(true)
     }
 
@@ -320,10 +320,10 @@ struct RXMacSidebar: View {
                 .rxFont(selected ? .calloutMedium : .callout)
                 .foregroundStyle(selected ? RX.Palette.accentText.color : RX.Palette.textPrimary.color)
                 .padding(.horizontal, RX.Space.s)
-                .frame(height: 34)
+                .frame(minHeight: RX.Metrics.macRowHeight)
                 .background {
                     if selected {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: RX.Radius.macRow, style: .continuous)
                             .fill(RX.Palette.accentSoft.color)
                     }
                 }
