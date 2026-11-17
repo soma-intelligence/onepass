@@ -32,14 +32,85 @@ struct RXTokensTests {
         #expect(RX.Palette.accentText.tone(for: .dark) == RX.Tone(css: "#A3A2E8"))
     }
 
-    /// The Penpot file has 18 colour tokens; every name appears once, and the accent base is the
-    /// house indigo in both modes.
-    @Test func paletteMatchesPenpot() {
+    /// Every colour token of the Penpot file (the generated manifest) has exactly one entry in
+    /// `Palette.all`, and its light and dark values are the Penpot values, one by one.
+    @Test func paletteMatchesPenpot() throws {
+        let colours = RXPenpot.manifest.filter { $0.type == "color" }
         let names = RX.Palette.all.map(\.name)
-        #expect(names.count == 18)
         #expect(Set(names).count == names.count)
-        #expect(RX.Palette.accent.light == RX.Palette.accent.dark)
-        #expect(RX.Palette.accent.light == RX.Tone(css: "#5856D6"))
+        #expect(Set(names) == Set(colours.map(\.name)))
+        for entry in colours {
+            let token = try #require(RX.Palette.all.first { $0.name == entry.name }?.token, "\(entry.name) missing")
+            for (mode, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+                let css = try #require(entry.values[mode])
+                #expect(token.tone(for: scheme) == RX.Tone(css: css), "\(entry.name) \(mode): \(css)")
+            }
+        }
+    }
+
+    /// The spacing and radius API returns the Penpot value of each token, and every Penpot
+    /// dimension token is reachable from the API.
+    @Test func dimensionsMatchPenpot() throws {
+        let api: [String: CGFloat] = [
+            "space.xs": RX.Space.xs, "space.sm": RX.Space.s, "space.md": RX.Space.m, "space.lg": RX.Space.l,
+            "space.xl": RX.Space.xl, "space.2xl": RX.Space.xxl,
+            "radius.chip": RX.Radius.chip, "radius.tile": RX.Radius.tile, "radius.card": RX.Radius.card,
+            "radius.sheet": RX.Radius.sheet, "radius.pill": RX.Radius.pill,
+        ]
+        let dims = RXPenpot.manifest.filter { $0.type == "dimension" }
+        #expect(Set(dims.map(\.name)) == Set(api.keys))
+        for entry in dims {
+            for (mode, raw) in entry.values {
+                #expect(api[entry.name] == CGFloat(Double(raw) ?? .nan), "\(entry.name) \(mode): \(raw)")
+            }
+        }
+        #expect(RX.Space.gutter == RX.Space.l)
+    }
+
+    /// Each typography returns the Penpot size, weight, tracking, line height and text style.
+    @Test func typographyMatchesPenpot() throws {
+        let typos = RXPenpot.manifest.filter { $0.type == "typography" }
+        #expect(typos.count == RX.Typography.allCases.count)
+        let styles: [String: Font.TextStyle] = [
+            "largeTitle": .largeTitle, "title": .title, "title2": .title2, "headline": .headline, "body": .body,
+            "callout": .callout, "footnote": .footnote, "caption2": .caption2,
+        ]
+        for t in RX.Typography.allCases {
+            let name = t.rawValue.unicodeScalars.reduce(into: "") { out, c in
+                out += CharacterSet.uppercaseLetters.contains(c) ? " " + String(c).lowercased() : String(c)
+            }
+            let penpotName = name.prefix(1).uppercased() + name.dropFirst()
+            let entry = try #require(typos.first { $0.name == penpotName }, "no Penpot typography \(penpotName)")
+            let f = try #require(entry.values["light"]).split(separator: "|").map(String.init)
+            #expect(f.count == 6)
+            let penpotSize = CGFloat(Double(f[0])!)
+            if let owned = RX.Typography.codeOwnedSize[t] {
+                // A listed drift must still be a drift, or the entry is stale.
+                #expect(owned != penpotSize, "\(penpotName): Penpot now matches, remove the code-owned size")
+                #expect(t.spec.size == owned, "\(penpotName) size")
+            } else {
+                #expect(t.spec.size == penpotSize, "\(penpotName) size")
+            }
+            #expect(t.spec.weight == Int(f[1]), "\(penpotName) weight")
+            #expect(t.spec.tracking == CGFloat(Double(f[2])!), "\(penpotName) tracking")
+            #expect(t.spec.lineHeight == CGFloat(Double(f[3])!), "\(penpotName) line height")
+            #expect(t.textStyle == styles[f[5]], "\(penpotName) text style")
+        }
+    }
+
+    /// Springs and the press scale from designbridge.json reach Swift unchanged.
+    @Test func motionMatchesManifest() throws {
+        let springs: [String: RXPenpot.SpringToken] = [
+            "motion.spring.snappy": RXPenpot.Motion.snappy, "motion.spring.smooth": RXPenpot.Motion.smooth,
+            "motion.spring.bouncy": RXPenpot.Motion.bouncy,
+        ]
+        for entry in RXPenpot.manifest where entry.type == "spring" {
+            let s = try #require(springs[entry.name])
+            let f = try #require(entry.values["light"]).split(separator: "|").compactMap { Double($0) }
+            #expect([s.duration, s.bounce] == f, "\(entry.name)")
+            #expect((0.15...0.5).contains(s.duration))
+        }
+        #expect(RXPenpot.Motion.pressScale == 0.97)
     }
 
     @Test func spacingAndRadius() {

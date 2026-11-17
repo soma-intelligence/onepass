@@ -8,8 +8,10 @@ import AppKit
 
 /// The RX look (Revolut-style structure on the OnePass identity): grouped cards on a grey or black
 /// page, photo heroes under a rounded page sheet, round glass buttons, white glyphs on coloured
-/// discs, a floating pill tab bar. Every value here mirrors a token of the Penpot file
-/// (penpot-lab/screens/rx-tokens.js), so a screen never picks its own number or colour.
+/// discs, a floating pill tab bar. The colours, spacing, radii and typographies come from the
+/// Penpot file through `RXTokens+Generated.swift` (`dbridge export` then `dbridge gen`, see
+/// Soma_Tools/design-bridge), so a screen never picks its own number or colour. Values that Penpot
+/// does not hold yet (metrics, disc hues, the gutter, two radii) stay here, marked as code-owned.
 ///
 /// The look ships behind `RXDesign` (off by default); the screens keep their current style while
 /// it is off.
@@ -68,12 +70,10 @@ extension Theme {
                 self.dark = dark
             }
 
-            /// Both values in the Penpot notation. A typo in this file is a programmer error.
-            init(_ light: String, _ dark: String) {
-                guard let l = Tone(css: light), let d = Tone(css: dark) else {
-                    preconditionFailure("RX token: unreadable value \(light) / \(dark)")
-                }
-                self.init(light: l, dark: d)
+            /// A generated Penpot colour token.
+            init(_ token: RXPenpot.ColorToken) {
+                func tone(_ c: RXPenpot.RGBA) -> Tone { Tone(red: c.red, green: c.green, blue: c.blue, alpha: c.alpha) }
+                self.init(light: tone(token.light), dark: tone(token.dark))
             }
 
             /// The value for `scheme`.
@@ -105,26 +105,26 @@ extension Theme {
 
         /// The colour tokens of the Penpot sets OnePass/Light and OnePass/Dark.
         public enum Palette {
-            public static let pageBackground = Token("#F2F2F7", "#000000")
-            public static let cardBackground = Token("#FFFFFF", "#161618")
-            public static let raisedBackground = Token("#FFFFFF", "#2C2C2E")
-            public static let glass = Token("rgba(255,255,255,0.72)", "rgba(118,118,128,0.24)")
-            public static let field = Token("#E9E9EE", "#1F1F22")
-            public static let textPrimary = Token("#0B0B0F", "#FFFFFF")
-            public static let textSecondary = Token("#6B6B73", "#A1A1A6")
-            public static let textTertiary = Token("#A0A0A8", "#6E6E73")
-            public static let separator = Token("#E3E3E8", "#2A2A2E")
-            public static let accent = Token("#5856D6", "#5856D6")
-            public static let accentText = Token("#5856D6", "#A3A2E8")
-            public static let accentSoft = Token("rgba(88,86,214,0.12)", "rgba(163,162,232,0.18)")
-            public static let onAccent = Token("#FFFFFF", "#FFFFFF")
-            public static let positive = Token("#11A866", "#3FD68F")
-            public static let negative = Token("#E5484D", "#FF5B61")
-            public static let warning = Token("#E39A00", "#FFB020")
-            public static let tabBar = Token("rgba(255,255,255,0.86)", "rgba(44,44,46,0.82)")
-            public static let tabActive = Token("rgba(11,11,15,0.08)", "rgba(255,255,255,0.14)")
+            public static let pageBackground = Token(RXPenpot.Colors.bgPage)
+            public static let cardBackground = Token(RXPenpot.Colors.bgCard)
+            public static let raisedBackground = Token(RXPenpot.Colors.bgRaised)
+            public static let glass = Token(RXPenpot.Colors.bgGlass)
+            public static let field = Token(RXPenpot.Colors.bgField)
+            public static let textPrimary = Token(RXPenpot.Colors.textPrimary)
+            public static let textSecondary = Token(RXPenpot.Colors.textSecondary)
+            public static let textTertiary = Token(RXPenpot.Colors.textTertiary)
+            public static let separator = Token(RXPenpot.Colors.separator)
+            public static let accent = Token(RXPenpot.Colors.accentBase)
+            public static let accentText = Token(RXPenpot.Colors.accentText)
+            public static let accentSoft = Token(RXPenpot.Colors.accentSoft)
+            public static let onAccent = Token(RXPenpot.Colors.onAccent)
+            public static let positive = Token(RXPenpot.Colors.positive)
+            public static let negative = Token(RXPenpot.Colors.negative)
+            public static let warning = Token(RXPenpot.Colors.warning)
+            public static let tabBar = Token(RXPenpot.Colors.tabBar)
+            public static let tabActive = Token(RXPenpot.Colors.tabActive)
 
-            /// Every token with its Penpot name, for the tests and a future token export.
+            /// Every token with its Penpot name, for the parity test against the generated manifest.
             public static let all: [(name: String, token: Token)] = [
                 ("bg.page", pageBackground), ("bg.card", cardBackground), ("bg.raised", raisedBackground),
                 ("bg.glass", glass), ("bg.field", field), ("text.primary", textPrimary),
@@ -135,7 +135,7 @@ extension Theme {
             ]
         }
 
-        /// The disc hues behind white glyphs (same in light and dark).
+        /// The disc hues behind white glyphs (same in light and dark). Code-owned: not in Penpot yet.
         public enum Hue {
             public static let red = Tone(css: "#FF5B61")!.color
             public static let orange = Tone(css: "#FF7A45")!.color
@@ -152,29 +152,31 @@ extension Theme {
 
         /// The spacing tokens (space.xs to space.2xl).
         public enum Space {
-            public static let xs: CGFloat = 4
-            public static let s: CGFloat = 8
-            public static let m: CGFloat = 12
-            public static let l: CGFloat = 16
-            public static let xl: CGFloat = 24
-            public static let xxl: CGFloat = 32
-            /// Side margin of a screen and gap between the cards of a page.
-            public static let gutter: CGFloat = 16
+            public static let xs = RXPenpot.Spacing.spaceXs
+            public static let s = RXPenpot.Spacing.spaceSm
+            public static let m = RXPenpot.Spacing.spaceMd
+            public static let l = RXPenpot.Spacing.spaceLg
+            public static let xl = RXPenpot.Spacing.spaceXl
+            public static let xxl = RXPenpot.Spacing.space2xl
+            /// Side margin of a screen and gap between the cards of a page (space.lg).
+            public static let gutter = RXPenpot.Spacing.spaceLg
         }
 
         /// The radius tokens (radius.chip to radius.pill).
         public enum Radius {
-            public static let chip: CGFloat = 12
-            public static let tile: CGFloat = 16
-            public static let card: CGFloat = 24
-            public static let sheet: CGFloat = 36
-            /// The page sheet that starts under a photo hero.
+            public static let chip = RXPenpot.Radius.radiusChip
+            public static let tile = RXPenpot.Radius.radiusTile
+            public static let card = RXPenpot.Radius.radiusCard
+            public static let sheet = RXPenpot.Radius.radiusSheet
+            /// A capsule (radius.pill).
+            public static let pill = RXPenpot.Radius.radiusPill
+            /// The page sheet that starts under a photo hero. Code-owned: not in Penpot yet.
             public static let pageSheet: CGFloat = 28
-            /// A perk tile (Get more from Plus).
+            /// A perk tile (Get more from Plus). Code-owned: not in Penpot yet.
             public static let perk: CGFloat = 20
         }
 
-        /// Measured sizes of the building blocks.
+        /// Measured sizes of the building blocks. Code-owned: not in Penpot yet.
         public enum Metrics {
             /// A round glass button.
             public static let glassButton: CGFloat = 44
@@ -213,37 +215,39 @@ extension Theme {
             case display, largeTitle, title, headline, body, bodyMedium, callout, calloutMedium, footnote,
                 footnoteBold, caption, monoCode
 
-            /// Size, weight (100 to 900), letter spacing and line height (a multiple of the size),
-            /// exactly as rx-tokens.js writes them.
-            public var spec: (size: CGFloat, weight: Int, tracking: CGFloat, lineHeight: CGFloat) {
+            /// The generated Penpot typography.
+            var token: RXPenpot.TypeToken {
                 switch self {
-                case .display: (56, 700, -2, 1.0)
-                case .largeTitle: (34, 700, -0.8, 1.1)
-                case .title: (22, 600, -0.3, 1.2)
-                case .headline: (17, 600, -0.2, 1.25)
-                case .body: (17, 400, -0.2, 1.3)
-                case .bodyMedium: (17, 500, -0.2, 1.3)
-                case .callout: (15, 400, -0.1, 1.3)
-                case .calloutMedium: (15, 500, -0.1, 1.3)
-                case .footnote: (13, 400, 0, 1.3)
-                case .footnoteBold: (13, 600, 0, 1.3)
-                case .caption: (11, 600, 0.1, 1.2)
-                case .monoCode: (30, 500, 1, 1.1)
+                case .display: RXPenpot.Typography.display
+                case .largeTitle: RXPenpot.Typography.largeTitle
+                case .title: RXPenpot.Typography.title
+                case .headline: RXPenpot.Typography.headline
+                case .body: RXPenpot.Typography.body
+                case .bodyMedium: RXPenpot.Typography.bodyMedium
+                case .callout: RXPenpot.Typography.callout
+                case .calloutMedium: RXPenpot.Typography.calloutMedium
+                case .footnote: RXPenpot.Typography.footnote
+                case .footnoteBold: RXPenpot.Typography.footnoteBold
+                case .caption: RXPenpot.Typography.caption
+                case .monoCode: RXPenpot.Typography.monoCode
                 }
             }
 
-            /// The system text style it scales with under Dynamic Type.
+            /// Size, weight (100 to 900), letter spacing and line height (a multiple of the size),
+            /// exactly as the Penpot typography writes them.
+            public var spec: (size: CGFloat, weight: Int, tracking: CGFloat, lineHeight: CGFloat) {
+                let t = token
+                return (Self.codeOwnedSize[self] ?? t.size, t.weight, t.tracking, t.lineHeight)
+            }
+
+            /// Known drift, kept on purpose: the verification code is drawn at 30 pt since b35aa1d6e
+            /// while the Penpot typography still says 28. Change Penpot, re-export, then delete the
+            /// entry (the parity test fails once Penpot and this table agree).
+            static let codeOwnedSize: [Typography: CGFloat] = [.monoCode: 30]
+
+            /// The system text style it scales with under Dynamic Type (from designbridge.json).
             public var textStyle: Font.TextStyle {
-                switch self {
-                case .display, .largeTitle: .largeTitle
-                case .title: .title2
-                case .headline: .headline
-                case .body, .bodyMedium: .body
-                case .callout, .calloutMedium: .callout
-                case .footnote, .footnoteBold: .footnote
-                case .caption: .caption2
-                case .monoCode: .title
-                }
+                token.textStyle
             }
 
             public var weight: Font.Weight {
