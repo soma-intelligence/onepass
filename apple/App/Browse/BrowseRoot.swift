@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -8,6 +9,8 @@ import VaultKit
 /// drop an edited draft.
 struct BrowseRoot: View {
     @Environment(AppModel.self) private var model
+    /// The RX look shows every toast through DesignBridgeKit (`RXToastBridge`).
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -102,7 +105,7 @@ struct BrowseRoot: View {
             // On iPhone the new item sheet carries its own confirmation (shown over the sheet).
             .discardConfirmation(active: !phoneNewItemShown)
             .overlay(alignment: .bottom) {
-                if let toast = model.toast {
+                if !rxDesign, let toast = model.toast {
                     ToastBanner(toast: toast)
                         .padding(.bottom, 18)
                         .transition(toastTransition)
@@ -110,6 +113,7 @@ struct BrowseRoot: View {
                 }
             }
             .animation(toastAnimation, value: model.toast)
+            .modifier(RXToastBridge(active: rxDesign))
             // Not over the iPhone tabs: on iOS 27 this tap gesture swallows the taps of the navigation
             // links below it (rows, Réglages pages); the tabs note activity on navigation instead.
             .simultaneousGesture(
@@ -307,5 +311,29 @@ struct ToastBanner: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isStaticText)
         .accessibilityIdentifier("browse.toast")
+    }
+}
+
+/// RX look: every `model.showToast` (copied, saved, every error) goes to the DesignBridgeKit host
+/// at the root (`rxBridgeRoot`): one glass toast at the top, announced, with haptics, success
+/// 1.8 s and errors 6 s. The classic banner stays for the classic look.
+private struct RXToastBridge: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Environment(\.toast) private var toast
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content.onChange(of: model.toast) { _, shown in
+            guard active, let shown else { return }
+            toast(Self.toast(for: shown))
+        }
+    }
+
+    static func toast(for shown: Toast) -> DBToast {
+        switch shown.kind {
+        case .success: .success(shown.text)
+        case .error: .error(shown.text)
+        case .info: .info(shown.text)
+        }
     }
 }
