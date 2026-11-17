@@ -29,7 +29,7 @@ struct RXHomePage<Extras: View>: View {
     }
 
     var body: some View {
-        RXHeroPage(photo: Image(lightHero ? RXHero.item : RXHero.home), lightPhoto: lightHero, initialOffset: Self.demoScroll,
+        RXHeroPage(photo: wallpaper.image, lightPhoto: lightHero, initialOffset: Self.demoScroll,
             scrollToTop: scrollToTop) {
             VStack(spacing: RX.Space.xl) {
                 topBar
@@ -53,7 +53,11 @@ struct RXHomePage<Extras: View>: View {
     @Environment(\.colorScheme) private var colorScheme
     /// Light appearance: the airy art (Clarity) with dark words and white disc actions; dark
     /// appearance: the indigo art with white words and glass actions.
-    private var lightHero: Bool { colorScheme == .light }
+    private var lightHero: Bool { wallpaper.isLight }
+    /// The art behind the hero: the default (light or dark with the appearance), a theme of
+    /// Réglages > Général > Fond d'écran, or an imported photo.
+    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
+    private var wallpaper: RXWallpaper.Resolved { RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme) }
 
     /// Captures: `-OnePassDemoScroll <points>` starts Accueil scrolled. Debug builds only.
     private static var demoScroll: CGFloat? {

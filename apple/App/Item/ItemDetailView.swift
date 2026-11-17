@@ -360,7 +360,7 @@ struct ItemDetailView: View {
                 }
                 RXMenuRow(
                     Text("rx.item.lastChanged"), systemImage: "arrow.triangle.2.circlepath",
-                    value: Text(Date(timeIntervalSince1970: TimeInterval(item.updatedAt)), format: .dateTime.day().month()),
+                    value: Text(Date(timeIntervalSince1970: TimeInterval(item.updatedAt)), format: .dateTime.day().month().year()),
                     chevron: false)
             }
             .accessibilityIdentifier("rx.item.security")

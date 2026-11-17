@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -16,10 +17,20 @@ import VaultKit
 /// screen is shown in an active scene, and while it is due or up (or Touch ID asked over the
 /// browser is up) the screen shows only the glyph, the title and a quiet Touch ID state; the
 /// password column appears, focused, only once it answers without unlocking.
+///
+/// iPhone and iPad in the RX look (`RXDesign` on): the same behaviour on another screen. The art
+/// full bleed (`RXLockArt`), the account at the center (its avatar, "Bon retour", its name), and at
+/// the bottom one sheet with the password field, the main action (Face ID while the field is empty
+/// and biometric unlock is on, else Déverrouiller) and the lost password link. While Face ID checks
+/// a halo breathes around the avatar; a refused Face ID shakes the avatar, a refused password the
+/// field; the unlock zooms through into the vault (`RootView`, no vault door).
 struct LockView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    /// The RX look (iPhone and iPad only): the switch every RX screen reads.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     @State private var password = ""
     @State private var revealed = false
     @State private var message: String?
@@ -28,7 +39,8 @@ struct LockView: View {
     @State private var refusals = 0
     /// The keyboard focus of the password field (`SecretInputField` reaches its UIKit field both ways).
     @State private var fieldFocused = false
-    /// Bumped on each refused Face ID (Touch ID, Optic ID) try: the dial jiggles against its stop.
+    /// Bumped on each refused Face ID (Touch ID, Optic ID) try: the dial jiggles against its stop
+    /// (RX: the avatar shakes).
     @State private var dialRefusals = 0
     /// "J'ai perdu mon mot de passe ou ma Secret Key" is open.
     @State private var recovering = false
@@ -66,8 +78,17 @@ struct LockView: View {
 
     var body: some View {
         ZStack {
+            #if os(iOS)
+            if rxDesign {
+                rxScreen
+            } else {
+                background
+                layout
+            }
+            #else
             background
             layout
+            #endif
         }
         .task(id: lockoutUntil) {
             // Re-renders when the wait ends so the field and the button come back.
@@ -91,6 +112,7 @@ struct LockView: View {
             guard ready else { return }
             #if DEBUG && os(iOS)
             if await playDemoVaultDoor() { return }
+            if stageDemoLockState() { return }
             #endif
             if model.automaticBiometricAttemptDue, session.canUseBiometrics {
                 let settle = model.biometricAutoPrompt.settleDelay
@@ -609,8 +631,9 @@ private struct AutoAttempt: Hashable {
 #if DEBUG && os(iOS)
 extension LockView {
     /// `-OnePassDemoVaultPassage YES` (captures, demo data): a staged refusal (the dial's jiggle
-    /// only, no session call), then a real biometric unlock through the session, which opens the
-    /// vault door. Returns whether it played.
+    /// only, no session call; RX: the avatar's shake), then a real biometric unlock through the
+    /// session, which opens the vault door (RX: zooms through into the vault). Returns whether it
+    /// played.
     private func playDemoVaultDoor() async -> Bool {
         guard UserDefaults.standard.bool(forKey: "OnePassDemoVaultPassage"), DemoData.requested else {
             return false
@@ -620,6 +643,317 @@ extension LockView {
         try? await Task.sleep(for: .seconds(1.4))
         await unlockWithBiometrics(automatic: false)
         return true
+    }
+
+    /// `-OnePassDemoLockState checking|wrong` (captures, demo data): the lock screen held in one
+    /// state with no session call. `checking`: as while Face ID checks. `wrong`: as after a refused
+    /// password. Returns whether it staged one (the automatic try is then skipped).
+    private func stageDemoLockState() -> Bool {
+        guard DemoData.requested, let state = UserDefaults.standard.string(forKey: "OnePassDemoLockState") else {
+            return false
+        }
+        switch state {
+        case "checking":
+            biometricCheck = true
+        case "wrong":
+            message = String(localized: "lock.wrongPasswordLeft \(VaultSession.lockoutThreshold - 1)")
+            withAnimation(.linear(duration: 0.42)) { refusals += 1 }
+        default:
+            return false
+        }
+        return true
+    }
+}
+#endif
+
+#if os(iOS)
+// MARK: - RX look
+
+extension LockView {
+    private typealias RX = Theme.RX
+
+    /// The widest the sheet's controls grow (iPad, landscape): a column, not a banner.
+    private static let rxColumnWidth: CGFloat = 440
+
+    /// The art behind everything, the account at the center of what is left above the sheet, the
+    /// sheet at the bottom. With the keyboard up the sheet rides on it and the center gives way:
+    /// the name goes, then the avatar shrinks, the headline stays.
+    var rxScreen: some View {
+        let art = RXLockArt.lockArt(colorScheme: colorScheme)
+        return VStack(spacing: 0) {
+            ViewThatFits(in: .vertical) {
+                rxIdentity(avatar: RX.Metrics.avatarLarge, showsName: true, onLight: art.isLight)
+                rxIdentity(avatar: RX.Metrics.avatarMedium, showsName: false, onLight: art.isLight)
+                rxHeadline
+            }
+            .padding(.horizontal, RX.Space.gutter)
+            .padding(.vertical, RX.Space.l)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.colorScheme, art.isLight ? .light : .dark)
+            rxSheet
+        }
+        .background { RXLockBackdrop(image: art.image, isLight: art.isLight) }
+        .sensoryFeedback(.error, trigger: refusals)
+        .sensoryFeedback(.error, trigger: dialRefusals)
+    }
+
+    // MARK: Identity
+
+    /// The account: avatar (the menu of accounts on a device with several), headline, name.
+    private func rxIdentity(avatar: CGFloat, showsName: Bool, onLight: Bool) -> some View {
+        VStack(spacing: RX.Space.l) {
+            rxAvatar(size: avatar, onLight: onLight)
+            VStack(spacing: RX.Space.xs) {
+                rxHeadline
+                if showsName { rxAccountName }
+            }
+        }
+    }
+
+    /// "Welcome back" ("Bon retour") in the Display small typography, as Accueil's headline.
+    private var rxHeadline: some View {
+        RXLockHeadline()
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The name and initials of the account shown (its label for a named account).
+    private var rxAccount: (initials: String, name: String) {
+        let profile = model.activeProfile
+        let initials = profile.map { $0.isPrimary ? model.initials : model.initials(of: $0) } ?? model.initials
+        let name = profile.flatMap { $0.label.isEmpty ? nil : $0.label } ?? model.settings.displayName
+        return (initials, name)
+    }
+
+    /// The initials badge as everywhere else, the halo while Face ID checks, a shake on a refusal.
+    private func rxAvatar(size: CGFloat, onLight: Bool) -> some View {
+        let account = rxAccount
+        return AccountBadgeAvatar(
+            initials: account.initials, photo: model.profileImage, color: model.accountTint,
+            badge: model.accountBadge, size: size)
+            .modifier(RXLockHalo(checking: biometricCheck, diameter: size, onLight: onLight))
+            .modifier(Shake(amount: reduceMotion ? 0 : 7, animatableData: CGFloat(dialRefusals)))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(account.name.isEmpty ? Text("lock.onepassAccount") : Text(verbatim: account.name))
+            .accessibilityIdentifier("lock.account")
+    }
+
+    /// The name under the headline; with several accounts, the glass control that switches.
+    @ViewBuilder private var rxAccountName: some View {
+        let name = rxAccount.name
+        let label = Group {
+            if name.isEmpty { Text("lock.onepassAccount") } else { Text(verbatim: name) }
+        }
+        .rxFont(.calloutMedium)
+        .foregroundStyle(.primary)
+        .lineLimit(1)
+        if model.accounts.hasSeveralAccounts {
+            Menu {
+                AccountsMenuItems()
+            } label: {
+                HStack(spacing: RX.Space.xs) {
+                    label
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(RX.Glyph.font(RX.Glyph.macSmall))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, RX.Space.m)
+                .frame(minHeight: RX.Metrics.minTapTarget)
+                .rxGlass(in: Capsule(), onPhoto: colorScheme == .dark)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityIdentifier("lock.accounts")
+        } else {
+            label
+                .rxOnPhotoSecondary()
+                .accessibilityHidden(true)
+        }
+    }
+
+    // MARK: Sheet
+
+    /// The page sheet of Accueil (its colour, its top corners), holding the field, the main action
+    /// and the quiet lines under them. No glass here: only the controls are glass.
+    private var rxSheet: some View {
+        VStack(spacing: RX.Space.m) {
+            if showsPasswordColumn {
+                rxPasswordField
+                rxPrimaryButton
+                rxStatus
+            } else {
+                biometricWaiting
+            }
+        }
+        .animation(.smooth(duration: 0.2), value: message)
+        .animation(.smooth(duration: 0.2), value: password.isEmpty)
+        .frame(maxWidth: Self.rxColumnWidth)
+        .padding(.horizontal, RX.Space.gutter)
+        .padding(.top, RX.Space.xl)
+        .padding(.bottom, RX.Space.s)
+        .frame(maxWidth: .infinity)
+        .background {
+            UnevenRoundedRectangle(
+                topLeadingRadius: RX.Radius.pageSheet, topTrailingRadius: RX.Radius.pageSheet, style: .continuous)
+                .fill(RX.Palette.pageBackground.color)
+                .ignoresSafeArea(edges: .bottom)
+        }
+    }
+
+    /// The master password on the card colour, the eye inside it; an accent ring with the focus, a
+    /// red one after a refusal, and the shake.
+    private var rxPasswordField: some View {
+        let shape = RoundedRectangle(cornerRadius: RX.Radius.tile, style: .continuous)
+        let ring: Color = message != nil
+            ? RX.Palette.negative.color : (fieldFocused ? RX.Palette.accent.color : RX.Palette.separator.color)
+        return HStack(spacing: 0) {
+            SecretInputField(
+                title: String(localized: "Mot de passe maître"), text: $password, revealed: revealed,
+                focused: $fieldFocused, submitGo: true, onSubmit: { Task { await unlockWithPassword() } },
+                fontSize: RX.Typography.body.spec.size, identifier: "lock.password")
+            .labelsHidden()
+            .textFieldStyle(.plain)
+            .disabled(unlocking || lockedOut)
+            .privacySensitive()
+            .accessibilityIdentifier("lock.password")
+            Button {
+                revealed.toggle()
+                fieldFocused = true
+            } label: {
+                Image(systemName: revealed ? "eye.slash" : "eye")
+                    .font(RX.Glyph.font(RX.Glyph.action, weight: .regular))
+                    .foregroundStyle(RX.Palette.textSecondary.color)
+                    .frame(width: RX.Metrics.minTapTarget, height: Self.fieldHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(revealed ? Text("lock.hidePassword") : Text("lock.showPassword"))
+            .accessibilityIdentifier("lock.reveal")
+        }
+        .padding(.leading, RX.Space.l)
+        .frame(height: Self.fieldHeight)
+        .background(RX.Palette.cardBackground.color, in: shape)
+        .overlay {
+            shape.strokeBorder(ring, lineWidth: fieldFocused || message != nil ? 1.5 : 1)
+                .allowsHitTesting(false)
+        }
+        .modifier(Shake(amount: reduceMotion ? 0 : 7, animatableData: CGFloat(refusals)))
+        .animation(.smooth(duration: 0.15), value: fieldFocused)
+    }
+
+    /// Face ID (Touch ID, Optic ID) while the field is empty and biometric unlock is on, else
+    /// Déverrouiller. A glass control, filled with the accent; a spinner while the vault opens.
+    private var rxPrimaryButton: some View {
+        let biometric = biometrics && password.isEmpty
+        let busy = unlocking || biometricCheck
+        let enabled = biometric ? !busy : (!password.isEmpty && !busy && !lockedOut)
+        return Button {
+            guard !busy else { return }
+            Task {
+                if biometric {
+                    await unlockWithBiometrics(automatic: false)
+                } else {
+                    await unlockWithPassword()
+                }
+            }
+        } label: {
+            HStack(spacing: RX.Space.s) {
+                if busy {
+                    ProgressView()
+                        .tint(RX.Palette.onAccent.color)
+                } else if biometric {
+                    Image(systemName: OnboardingModel.biometrySymbol)
+                        .accessibilityHidden(true)
+                }
+                Group {
+                    if biometric {
+                        Text("Déverrouiller avec \(OnboardingModel.biometryName)")
+                    } else {
+                        Text("common.unlock")
+                    }
+                }
+                .dbText(maxLines: 1, minimumScale: 0.8)
+            }
+            .rxFont(.headline)
+            .frame(maxWidth: .infinity, minHeight: Self.fieldHeight)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.capsule)
+        .tint(RX.Palette.accent.color)
+        .keyboardShortcut(.defaultAction)
+        // Busy, it keeps its colour around the spinner (a tap does nothing); dimmed only when it
+        // cannot act yet (nothing typed, the wait after too many tries).
+        .disabled(!enabled && !busy)
+        .accessibilityIdentifier(biometric ? "lock.biometrics" : "lock.unlock")
+    }
+
+    /// One short line at most at a time, then the lost password link, quiet.
+    @ViewBuilder private var rxStatus: some View {
+        VStack(spacing: RX.Space.xs) {
+            if let message {
+                Text(message)
+                    .rxFont(.footnote)
+                    .foregroundStyle(RX.Palette.negative.color)
+                    .multilineTextAlignment(.center)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("lock.error")
+            } else if let until = lockoutUntil {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let remaining = max(0, Int(until.timeIntervalSince(context.date).rounded(.up)))
+                    Text(remaining > 0
+                         ? String(localized: "lock.tooManyAttemptsTry \(Self.duration(remaining))")
+                         : String(localized: "lock.canTryAgain"))
+                        .rxFont(.footnote)
+                        .foregroundStyle(RX.Palette.textSecondary.color)
+                        .multilineTextAlignment(.center)
+                }
+            } else if session.passwordChangedElsewhere {
+                Text("lock.masterPasswordChangedOn")
+                    .rxFont(.footnote)
+                    .foregroundStyle(RX.Palette.textSecondary.color)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("lock.passwordChangedElsewhere")
+            } else if model.biometricOfferDue {
+                Label(
+                    "Déverrouille une fois avec ton mot de passe : OnePass te proposera \(OnboardingModel.biometryName).",
+                    systemImage: OnboardingModel.biometrySymbol)
+                    .rxFont(.footnote)
+                    .foregroundStyle(RX.Palette.textSecondary.color)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("lock.biometricsHint")
+            }
+            if model.deviceKeys != nil {
+                Button("recovery.lost") { recovering = true }
+                    .buttonStyle(.plain)
+                    .rxFont(.footnote)
+                    .foregroundStyle(RX.Palette.textSecondary.color)
+                    .frame(minHeight: RX.Metrics.minTapTarget)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("lock.recoverWithHelp")
+                    .sheet(isPresented: $recovering) { RecoverWithHelpView() }
+            }
+        }
+    }
+}
+
+/// "Welcome back" ("Bon retour") in the Display small typography, scaled with Large Title under
+/// Dynamic Type, the tracking kept in the token's ratio (as Accueil's headline).
+private struct RXLockHeadline: View {
+    private static let base: CGFloat = Theme.RX.Typography.displaySmall.spec.size
+    @ScaledMetric(relativeTo: .largeTitle) private var size: CGFloat = RXLockHeadline.base
+
+    var body: some View {
+        let token = Theme.RX.Typography.displaySmall.spec
+        // English until the catalog has the key (French: "Bon retour").
+        Text(LocalizedStringResource("lock.rx.welcomeBack", defaultValue: "Welcome back"))
+            .font(Theme.RX.Typography.displaySmall.font(size: size))
+            .tracking(token.tracking * size / token.size)
+            .foregroundStyle(.primary)
+            .multilineTextAlignment(.center)
+            .dbText(maxLines: 2, minimumScale: 0.7)
     }
 }
 #endif

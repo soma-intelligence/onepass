@@ -45782,30 +45782,29 @@
     },
     "settings.deleteAccount.footer" : {
       "comment" : "Réglages > Sécurité: delete account footer",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Erases your account from this device and from iCloud. Another device still linked would put it back in iCloud: erase that one too."
+            "value" : "On this device and in iCloud. Erase your other linked devices too."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Borra tu cuenta de este dispositivo y de iCloud. Otro dispositivo aún vinculado la volvería a subir a iCloud: bórralo también."
+            "value" : "En este dispositivo y en iCloud. Borra también tus otros dispositivos vinculados."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Efface ton compte de cet appareil et d'iCloud. Un autre appareil encore lié le remettrait dans iCloud : efface-le aussi."
+            "value" : "Sur cet appareil et dans iCloud. Efface aussi tes autres appareils liés."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancella il tuo account da questo dispositivo e da iCloud. Un altro dispositivo ancora collegato lo rimetterebbe su iCloud: cancella anche quello."
+            "value" : "Su questo dispositivo e su iCloud. Cancella anche gli altri dispositivi collegati."
           }
         }
       }
@@ -46387,25 +46386,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass remembers which account you pick on each site, in which browser and profile, to offer it first. This history stays encrypted on this device: it is never synced or sent. Turned off, it is erased."
+            "value" : "Encrypted on this device, never synced. Turned off, it is erased."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass recuerda qué cuenta eliges en cada sitio, en qué navegador y perfil, para ofrecerla primero. Este historial queda cifrado en este dispositivo: nunca se sincroniza ni se envía. Al desactivarlo, se borra."
+            "value" : "Cifrado en este dispositivo, nunca sincronizado. Al desactivarlo, se borra."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass retient quel compte tu choisis sur chaque site, dans quel navigateur et quel profil, pour le proposer en premier. Cet historique reste chiffré sur cet appareil : il n'est jamais synchronisé ni envoyé. Désactivé, il est effacé."
+            "value" : "Chiffré sur cet appareil, jamais synchronisé. Désactivé, il est effacé."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass ricorda quale account scegli su ogni sito, in quale browser e profilo, per proporlo per primo. Questa cronologia resta cifrata su questo dispositivo: non viene mai sincronizzata né inviata. Disattivata, viene cancellata."
+            "value" : "Cifrata su questo dispositivo, mai sincronizzata. Disattivata, viene cancellata."
           }
         }
       }
@@ -49064,25 +49063,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Brand icons ship with the app; others come from each site, never a third party."
+            "value" : "Never loaded through a third party."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los iconos de marcas vienen con la app; los demás, de cada sitio, nunca de terceros."
+            "value" : "Nunca se cargan desde un servicio de terceros."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Icônes de marques livrées avec l’app, les autres chargées depuis chaque site, jamais par un service tiers."
+            "value" : "Jamais chargées par un service tiers."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le icone dei marchi sono incluse nell’app, le altre arrivano da ogni sito, mai da terze parti."
+            "value" : "Mai caricate da un servizio di terze parti."
           }
         }
       }
@@ -49122,25 +49121,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wi-Fi networks in your vault that have a place join this device when you’re within 200 m."
+            "value" : "Joins your vault’s Wi-Fi networks within 200 m of their place."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las redes Wi-Fi de tu bóveda que tienen un lugar se añaden a este dispositivo cuando estás a menos de 200 m."
+            "value" : "Se une a las redes Wi-Fi de tu bóveda a menos de 200 m de su lugar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les réseaux Wi-Fi de ton coffre qui ont un lieu rejoignent cet appareil quand tu es à moins de 200 m."
+            "value" : "Rejoint les Wi-Fi de ton coffre à moins de 200 m de leur lieu."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le reti Wi-Fi della tua cassaforte che hanno un luogo si aggiungono a questo dispositivo quando sei entro 200 m."
+            "value" : "Si collega alle reti Wi-Fi della tua cassaforte entro 200 m dal loro luogo."
           }
         }
       }
@@ -63383,30 +63382,29 @@
     },
     "settings.travel.trips.footer" : {
       "comment" : "Settings > Travel Mode, under the planned trips.",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass reminds you the evening before and 3 hours before you leave. Your trips stay on this device."
+            "value" : "A reminder the day before and 3 hours before you leave."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass te lo recuerda la víspera y 3 horas antes de la salida. Tus viajes se quedan en este dispositivo."
+            "value" : "Un recordatorio la víspera y 3 horas antes de salir."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass te le rappelle la veille et 3 heures avant le départ. Tes voyages restent sur cet appareil."
+            "value" : "Rappel la veille et 3 heures avant le départ."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass te lo ricorda la sera prima e 3 ore prima della partenza. I tuoi viaggi restano su questo dispositivo."
+            "value" : "Un promemoria il giorno prima e 3 ore prima della partenza."
           }
         }
       }
@@ -64313,60 +64311,58 @@
     },
     "settings.travel.detection.footer" : {
       "comment" : "Settings > Travel Mode, one line under the suggestion switch.",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When you seem to be travelling (place or time zone), OnePass suggests it. Everything stays on this device."
+            "value" : "From your place or time zone. Everything stays on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuando parece que viajas (lugar o zona horaria), OnePass te lo sugiere. Todo se queda en este dispositivo."
+            "value" : "Según el lugar o la zona horaria. Todo se queda en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quand tu sembles en voyage (lieu ou fuseau horaire), OnePass te le propose. Tout reste sur cet appareil."
+            "value" : "Selon le lieu ou le fuseau horaire. Tout reste sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quando sembri in viaggio (luogo o fuso orario), OnePass te lo suggerisce. Tutto resta su questo dispositivo."
+            "value" : "In base al luogo o al fuso orario. Tutto resta su questo dispositivo."
           }
         }
       }
     },
     "settings.travel.items.footer" : {
       "comment" : "Settings > Travel Mode, under the items section.",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set in each item: Hidden in Travel Mode, or Extra Protection in Travel Mode."
+            "value" : "Set in each item."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se ajusta en cada elemento: Oculto en Travel Mode o Protección reforzada en Travel Mode."
+            "value" : "Se ajusta en cada elemento."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se règle dans chaque élément : Caché en voyage, ou Protection renforcée en voyage."
+            "value" : "Se règle dans chaque élément."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si imposta in ogni elemento: Nascosto in Travel Mode o Protezione rafforzata in Travel Mode."
+            "value" : "Si imposta in ogni elemento."
           }
         }
       }
@@ -65240,30 +65236,29 @@
     },
     "rx.settings.footer" : {
       "comment" : "Réglages > Général: footer under the new design switch.",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Photos, grouped cards and glass buttons in Settings, Watchtower, the item page and Home. On this device only."
+            "value" : "A preview, on this device only."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fotos, tarjetas agrupadas y botones de cristal en Ajustes, Watchtower, la ficha de un elemento e Inicio. Solo en este dispositivo."
+            "value" : "Una vista previa, solo en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Photos, cartes groupées et boutons en verre dans Réglages, Watchtower, la fiche d'un élément et Accueil. Sur cet appareil uniquement."
+            "value" : "Un aperçu, sur cet appareil uniquement."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Foto, schede raggruppate e pulsanti in vetro in Impostazioni, Watchtower, la scheda di un elemento e Home. Solo su questo dispositivo."
+            "value" : "Un'anteprima, solo su questo dispositivo."
           }
         }
       }
@@ -67154,6 +67149,586 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tutto OnePass, su tutti i tuoi dispositivi"
+          }
+        }
+      }
+    },
+    "settings.info" : {
+      "comment" : "Réglages: label of the info button that shows a long explanation",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plus d'infos"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More info"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más información"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altre informazioni"
+          }
+        }
+      }
+    },
+    "settings.sync.accountChanged.short" : {
+      "comment" : "Réglages > Sync: one line when the device signed in to another iCloud account (details behind the info button)",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autre compte iCloud : la sync est en pause, ton coffre reste intact."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Different iCloud account: sync is paused, your vault stays intact."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otra cuenta de iCloud: la sincronización está en pausa, tu bóveda sigue intacta."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altro account iCloud: la sincronizzazione è in pausa, la tua cassaforte resta intatta."
+          }
+        }
+      }
+    },
+    "settings.watch.sent.short" : {
+      "comment" : "Réglages > Apple Watch: one line under the switch (details behind the info button)",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seuls les éléments « Sur l'Apple Watch » sont envoyés, 50 au plus."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only items marked “On Apple Watch” are sent, 50 at most."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo se envían los elementos «En el Apple Watch», 50 como máximo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vengono inviati solo gli elementi «Su Apple Watch», 50 al massimo."
+          }
+        }
+      }
+    },
+    "rx.wallpaper.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondo de pantalla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fond d'écran"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sfondo"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.upload" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carica"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Predeterminado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Par défaut"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Predefinito"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.uploaded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uploaded"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caricato"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.importFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This photo could not be imported."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo importar esta foto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d'importer cette photo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile importare questa foto."
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.glass" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cristal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vetro"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.silk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Silk"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soie"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seta"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.metal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Métal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metallo"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.lights" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lights"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luces"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lumières"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luci"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.lava" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lava"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lava"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lave"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lava"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.velvet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velvet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terciopelo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velluto"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.horizon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Horizon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Horizonte"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Horizon"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orizzonte"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.particles" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Particles"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partículas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Particules"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Particelle"
+          }
+        }
+      }
+    },
+    "lock.rx.welcomeBack" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome back"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hola de nuevo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te revoilà"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bentornato"
+          }
+        }
+      }
+    },
+    "rx.list.filtered.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No items match these filters"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún elemento con estos filtros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun élément avec ces filtres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun elemento con questi filtri"
+          }
+        }
+      }
+    },
+    "rx.list.filtered.empty.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove a filter to see your items again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quita un filtro para volver a ver tus elementos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retire un filtre pour revoir tes éléments."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovi un filtro per rivedere i tuoi elementi."
+          }
+        }
+      }
+    },
+    "rx.list.filters.clear" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Filters"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar filtros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer les filtres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella filtri"
           }
         }
       }

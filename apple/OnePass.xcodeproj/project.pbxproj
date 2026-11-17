@@ -16,6 +16,7 @@
 		034D7CB79ABF3119AE380303 /* CodesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7AEF89D2CEB58AAF425BA2C /* CodesWidget.swift */; };
 		04357FDA1F3DE232DA936E1A /* OrgConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB8A13F593BFE7B0EEFA8FFE /* OrgConsole.swift */; };
 		044892BD8AA82E3F3CA2D209 /* AttachmentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBE8F365EF0606BCF09DC6 /* AttachmentsSection.swift */; };
+		054A911E2FC6C4B99DA24246 /* RXLockParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48995BD8B9E915A54D268FB /* RXLockParts.swift */; };
 		05B744F29F1CC79754FD70F5 /* BackupSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 158EE03D2DB4AA7F9C4EFA4D /* BackupSheets.swift */; };
 		063191CF93667BB90E350FAA /* ApproveDeviceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E2696615474BD4D50D1B25C /* ApproveDeviceSheet.swift */; };
 		06396E8300D4CC9C6331BE4A /* AboutSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89863609CCDE5B045CFDE000 /* AboutSettings.swift */; };
@@ -110,6 +111,7 @@
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
 		5ED861184AA47805C66DBFDF /* RemoveMemberSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */; };
 		5F4B28891DDA2D01DE8EEEAF /* OpenAndSignInUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0A6F20B1C5A245D948C3C8 /* OpenAndSignInUITests.swift */; };
+		60787E11A37E59DDCDBCC1A4 /* RXWallpaperSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063D005E39A84279670853E7 /* RXWallpaperSettings.swift */; };
 		608A23FFF1AF64C0A8871372 /* PrivacyShield.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */; };
 		6152162EB5A9365200634C97 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 34E15535E75AEAA562AE1539 /* VaultKit */; };
 		61DBC2193C4956098FF9B60B /* CopyTotpIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A88DEF8B8258DC7244DA0F /* CopyTotpIntent.swift */; };
@@ -410,6 +412,7 @@
 		01A896751814517F3556294B /* RXMacWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacWatchtower.swift; sourceTree = "<group>"; };
 		047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelDetection.swift; sourceTree = "<group>"; };
 		0629736662C4143CF229997B /* TagEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditor.swift; sourceTree = "<group>"; };
+		063D005E39A84279670853E7 /* RXWallpaperSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXWallpaperSettings.swift; sourceTree = "<group>"; };
 		0678ACD447C474D9C9FA95CA /* AppModel+Accounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Accounts.swift"; sourceTree = "<group>"; };
 		07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretKeyScanner.swift; sourceTree = "<group>"; };
 		088FED1C489272E05F9E76CC /* RevokedDeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevokedDeviceView.swift; sourceTree = "<group>"; };
@@ -630,6 +633,7 @@
 		D2D650964A40E7825DC800DC /* IconMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconMenu.swift; sourceTree = "<group>"; };
 		D35E9918D3804788E46D2EB5 /* FamilyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyView.swift; sourceTree = "<group>"; };
 		D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWidgetsBundle.swift; sourceTree = "<group>"; };
+		D48995BD8B9E915A54D268FB /* RXLockParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXLockParts.swift; sourceTree = "<group>"; };
 		D51DD280F66567FADAA93DDD /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D53F785E56AE55B95035986B /* CompanionKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompanionKit; path = CompanionKit; sourceTree = SOURCE_ROOT; };
 		D5C3BD94740BA327E299532A /* RXSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSettingsView.swift; sourceTree = "<group>"; };
@@ -1308,6 +1312,7 @@
 				0D982919CC9E366DCF914D57 /* MigrationSheet.swift */,
 				1ECD33A35C0C4AE83116C22C /* RXMacSettings.swift */,
 				D5C3BD94740BA327E299532A /* RXSettingsView.swift */,
+				063D005E39A84279670853E7 /* RXWallpaperSettings.swift */,
 				1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */,
 				73396E5534184EF7CE76A170 /* SecuritySettings.swift */,
 				DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */,
@@ -1332,6 +1337,7 @@
 			isa = PBXGroup;
 			children = (
 				5D40167C0D7679C74A6D594D /* LockView.swift */,
+				D48995BD8B9E915A54D268FB /* RXLockParts.swift */,
 			);
 			path = Lock;
 			sourceTree = "<group>";
@@ -2177,11 +2183,13 @@
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
 				C668F80B28DEE414C8672EBD /* RXArt.swift in Sources */,
 				317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */,
+				054A911E2FC6C4B99DA24246 /* RXLockParts.swift in Sources */,
 				B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */,
 				66028C66EB1315E81F2C79BC /* RXMacSettings.swift in Sources */,
 				D1C9951D80B0D68219B7508E /* RXMacSidebar.swift in Sources */,
 				E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */,
 				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
+				60787E11A37E59DDCDBCC1A4 /* RXWallpaperSettings.swift in Sources */,
 				20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,
 				15FB8F91DBC0162C7EBD40AC /* ReceivedItemsView.swift in Sources */,
