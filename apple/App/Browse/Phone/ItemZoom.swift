@@ -15,12 +15,23 @@ extension View {
         modifier(ItemZoomSource(ref: ref))
     }
 
-    /// The item detail of `ref`: it zooms out of its row, and back in when it closes.
     /// A row, tile or card that pushes `route`: the pushed page zooms out of it.
     func routeZoomSource(_ route: PhoneRoute) -> some View {
         modifier(RouteZoomSource(route: route))
     }
 
+    /// Any view that pushes a page (Réglages rows, perk tiles, the plan card): marked with `id` in
+    /// the namespace of the environment, nothing without one.
+    func zoomSource<ID: Hashable>(_ id: ID) -> some View {
+        modifier(ZoomSource(id: id))
+    }
+
+    /// The page pushed from `zoomSource(id)`: it zooms out of that view, and back in when it closes.
+    func zoomDestination<ID: Hashable>(_ id: ID) -> some View {
+        modifier(ZoomDestination(id: id))
+    }
+
+    /// The item detail of `ref`: it zooms out of its row, and back in when it closes.
     func itemZoomDestination(_ ref: ItemRef, in namespace: Namespace.ID) -> some View {
         navigationTransition(.zoom(sourceID: ref, in: namespace))
     }
@@ -33,6 +44,32 @@ private struct RouteZoomSource: ViewModifier {
     func body(content: Content) -> some View {
         if let namespace {
             content.matchedTransitionSource(id: route, in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ZoomSource<ID: Hashable>: ViewModifier {
+    let id: ID
+    @Environment(\.itemZoomNamespace) private var namespace
+
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ZoomDestination<ID: Hashable>: ViewModifier {
+    let id: ID
+    @Environment(\.itemZoomNamespace) private var namespace
+
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.navigationTransition(.zoom(sourceID: id, in: namespace))
         } else {
             content
         }

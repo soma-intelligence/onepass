@@ -31,21 +31,7 @@ struct RXMacSettingsHome: View {
                     VStack(alignment: .leading, spacing: RX.Space.l) {
                         banner
                         RXSectionTitle(Text("rx.perks.title"))
-                        HStack(spacing: RX.Space.m) {
-                            NavigationLink(value: SettingsPage.family) {
-                                PerkTile(
-                                    title: Text("rx.perks.family.title"), subtitle: Text("rx.perks.family.subtitle"),
-                                    systemImage: "person.3.fill", art: Image("rx-perk-family"))
-                            }
-                            .accessibilityIdentifier("rx.settings.perk.family")
-                            NavigationLink(value: SettingsPage.travel) {
-                                PerkTile(
-                                    title: Text(SettingsPage.travel.title), subtitle: Text("rx.perks.travel.subtitle"),
-                                    systemImage: "airplane", art: Image("rx-perk-travel"))
-                            }
-                            .accessibilityIdentifier("rx.settings.perk.travel")
-                        }
-                        .buttonStyle(.plain)
+                        RXPerkCarousel()
                     }
                     .frame(maxWidth: .infinity)
                     VStack(spacing: RX.Space.l) {

@@ -153,6 +153,8 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsPage] = SettingsView.initialPath
+    /// RX (iPhone): the zoom from a row or tile of Réglages into its page.
+    @Namespace private var settingsZoom
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     /// Screenshots (Debug): `-OnePassDemoSettingsPage <page>` opens that page.
@@ -175,7 +177,10 @@ struct SettingsView: View {
                     .navigationDestination(for: SettingsPage.self) { page in
                         page.content
                             .toolbar { doneItem }
+                            .zoomDestination(page)
                     }
+                    // Rows, perk tiles and the plan card zoom into the page they open.
+                    .environment(\.itemZoomNamespace, settingsZoom)
             } else {
                 classicList
             }

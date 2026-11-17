@@ -6,7 +6,7 @@ import VaultKit
 
 /// Réglages in the RX look (Penpot "iPhone · Settings"): the photo hero with the round close and
 /// profile buttons, the account in the middle, the Plus plan card over the photo; then, on the page
-/// sheet, "Get more from Plus" with two perk tiles, and every page of Réglages in menu cards. Each
+/// sheet, "Get more from Plus" as a paging carousel of perks, and every page of Réglages in menu cards. Each
 /// row pushes the same page as the classic list (`SettingsPage`), so nothing is lost.
 struct RXSettingsHome: View {
     @Environment(AppModel.self) private var model
@@ -33,21 +33,7 @@ struct RXSettingsHome: View {
         } sheet: {
             VStack(spacing: RX.Space.l) {
                 RXSectionTitle(Text("rx.perks.title"))
-                HStack(spacing: RX.Space.m) {
-                    NavigationLink(value: SettingsPage.family) {
-                        PerkTile(
-                            title: Text("rx.perks.family.title"), subtitle: Text("rx.perks.family.subtitle"),
-                            systemImage: "person.3.fill", art: Image("rx-perk-family"))
-                    }
-                    .accessibilityIdentifier("rx.settings.perk.family")
-                    NavigationLink(value: SettingsPage.travel) {
-                        PerkTile(
-                            title: Text(SettingsPage.travel.title), subtitle: Text("rx.perks.travel.subtitle"),
-                            systemImage: "airplane", art: Image("rx-perk-travel"))
-                    }
-                    .accessibilityIdentifier("rx.settings.perk.travel")
-                }
-                .buttonStyle(PressableButtonStyle())
+                RXPerkCarousel(bleed: RX.Space.gutter)
                 RXCard {
                     menu(.general)
                     menu(.security)
@@ -105,10 +91,12 @@ struct RXSettingsHome: View {
             .buttonStyle(.plain)
         }
         .toolbar(.hidden, for: .navigationBar)
-        .navigationDestination(isPresented: $showPlan) { RXPlanPage() }
+        .navigationDestination(isPresented: $showPlan) { RXPlanPage().zoomDestination(Self.planZoomID) }
         .sheet(isPresented: $showProfileQR) { RXProfileQRSheet() }
         .accessibilityIdentifier("rx.settings")
     }
+
+    private static let planZoomID = "rx.plan"
 
     /// The top of the photo: close and profile buttons, the account, the plan card.
     private var hero: some View {
@@ -150,6 +138,7 @@ struct RXSettingsHome: View {
                     perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
             }
             .buttonStyle(PressableButtonStyle())
+            .zoomSource(Self.planZoomID)
             .accessibilityIdentifier("rx.settings.plan")
             .padding(.top, RX.Space.l)
         }
@@ -159,6 +148,7 @@ struct RXSettingsHome: View {
         NavigationLink(value: page) {
             RXMenuRow(Text(page.title), systemImage: page.symbol, value: value.map { Text($0, format: .number) })
         }
+        .zoomSource(page)
         .accessibilityIdentifier("settings.\(page.rawValue)")
     }
 
@@ -171,6 +161,79 @@ struct RXSettingsHome: View {
 }
 
 #endif
+
+/// "Get more from Plus": a horizontal paging row of perk tiles, each opening the page of Réglages
+/// that holds the feature (nothing here is a feature this build lacks). The tiles snap one by one
+/// and the next one peeks at the trailing edge. `bleed` is the page gutter the row runs under, so
+/// it scrolls edge to edge while its first tile lines up with the cards.
+struct RXPerkCarousel: View {
+    var bleed: CGFloat = 0
+    var idPrefix = "rx.settings.perk"
+
+    private typealias RX = Theme.RX
+
+    struct Perk: Identifiable {
+        let id: String
+        let page: SettingsPage
+        let title: LocalizedStringKey
+        let subtitle: LocalizedStringKey
+        let symbol: String
+        let art: String
+    }
+
+    static let perks: [Perk] = [
+        Perk(id: "family", page: .family, title: "rx.perks.family.title", subtitle: "rx.perks.family.subtitle",
+             symbol: "person.3.fill", art: "rx-perk-family"),
+        Perk(id: "keys", page: .security, title: "rx.perks.keys.title", subtitle: "rx.perks.keys.subtitle",
+             symbol: "key.fill", art: "rx-perk-key"),
+        Perk(id: "emergency", page: .family, title: "rx.perks.emergency.title",
+             subtitle: "rx.perks.emergency.subtitle", symbol: "lifepreserver.fill", art: "rx-perk-emergency"),
+        Perk(id: "passkeys", page: .autofill, title: "Passkeys", subtitle: "rx.perks.passkeys.subtitle",
+             symbol: "person.badge.key.fill", art: "rx-perk-passkey"),
+        Perk(id: "travel", page: .travel, title: "Travel Mode", subtitle: "rx.perks.travel.subtitle",
+             symbol: "airplane", art: "rx-perk-travel"),
+    ]
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: RX.Space.m) {
+                ForEach(Self.perks) { perk in
+                    link(perk)
+                        .frame(width: RX.Metrics.perkCarouselTileWidth)
+                        .accessibilityIdentifier("\(idPrefix).\(perk.id)")
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollIndicators(.hidden)
+        .scrollTargetBehavior(.viewAligned)
+        .contentMargins(.horizontal, bleed, for: .scrollContent)
+        .padding(.horizontal, -bleed)
+        .rxPressable()
+    }
+
+    private func tile(_ perk: Perk) -> some View {
+        PerkTile(title: Text(perk.title), subtitle: Text(perk.subtitle), systemImage: perk.symbol, art: Image(perk.art))
+    }
+
+    /// iPhone: the page zooms out of its tile (its own source id, as Famille has two tiles and a
+    /// row). The Mac pushes the page by value, as its rows do.
+    @ViewBuilder private func link(_ perk: Perk) -> some View {
+        #if os(iOS)
+        NavigationLink {
+            perk.page.content
+                .zoomDestination("perk.\(perk.id)")
+        } label: {
+            tile(perk)
+        }
+        .zoomSource("perk.\(perk.id)")
+        #else
+        NavigationLink(value: perk.page) {
+            tile(perk)
+        }
+        #endif
+    }
+}
 
 /// The account in the RX look: a round photo, or the initials on the indigo gradient of the mock,
 /// with a soft white ring.
@@ -204,9 +267,10 @@ struct RXAvatar: View {
         .accessibilityHidden(true)
     }
 }
-/// The Plus card's page (Penpot "Plan benefits"): the plan card again over the photo, then what it
-/// brings, each line opening the page of Réglages that already holds it. OnePass has no plan or
-/// subscription data: every benefit listed is a feature of this build, so nothing here is invented.
+/// The Plus card's page (Penpot "Plan benefits", laid out as a plan page: the name big over the
+/// photo with four quick actions, the perk carousel, then grouped lists). Each line opens the page
+/// of Réglages that already holds it. OnePass has no plan or subscription data: every benefit
+/// listed is a feature of this build, so nothing here is invented.
 struct RXPlanPage: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -220,26 +284,34 @@ struct RXPlanPage: View {
                 GlassButton(Text("rx.plan.back"), systemImage: "chevron.left", onPhoto: true) { dismiss() }
                     .accessibilityIdentifier("rx.plan.back")
                 #endif
-                PlanCard(
-                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-keys"),
-                    perks: ["key.fill", "person.3.fill", "airplane", "shield.lefthalf.filled"])
+                // The plan name big and centred, a line under it, then its actions.
+                VStack(spacing: RX.Space.s) {
+                    Text(verbatim: "Plus")
+                        .font(.system(size: 52, weight: .bold))
+                        .tracking(-1.5)
+                    Text("rx.plan.tagline")
+                        .rxFont(.callout)
+                        .opacity(0.75)
+                        .multilineTextAlignment(.center)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.top, RX.Space.xl)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+                QuickActionRow {
+                    action(.family, Text("rx.plan.action.members"), "person.2.fill")
+                    action(.devices, Text(SettingsPage.devices.title), "laptopcomputer.and.iphone")
+                    action(.vaults, Text(SettingsPage.vaults.title), "lock.rectangle.stack.fill")
+                    action(.security, Text(SettingsPage.security.title), "lock.shield.fill")
+                }
+                .rxPressable()
+                .padding(.top, RX.Space.s)
             }
         } sheet: {
             VStack(spacing: RX.Space.l) {
                 RXSectionTitle(Text("rx.perks.title"))
-                HStack(spacing: RX.Space.m) {
-                    NavigationLink(value: SettingsPage.family) {
-                        PerkTile(
-                            title: Text("rx.perks.family.title"), subtitle: Text("rx.perks.family.subtitle"),
-                            systemImage: "person.3.fill", art: Image("rx-perk-family"))
-                    }
-                    NavigationLink(value: SettingsPage.travel) {
-                        PerkTile(
-                            title: Text(SettingsPage.travel.title), subtitle: Text("rx.perks.travel.subtitle"),
-                            systemImage: "airplane", art: Image("rx-perk-travel"))
-                    }
-                }
-                .rxPressable()
+                RXPerkCarousel(bleed: RX.Space.gutter, idPrefix: "rx.plan.perk")
                 RXSectionTitle(Text("rx.plan.included"))
                 RXCard {
                     benefit(.vaults, Text("rx.plan.vaults"))
@@ -262,6 +334,13 @@ struct RXPlanPage: View {
         .toolbar(.hidden, for: .navigationBar)
         #endif
         .accessibilityIdentifier("rx.plan")
+    }
+
+    private func action(_ page: SettingsPage, _ title: Text, _ symbol: String) -> some View {
+        NavigationLink(value: page) {
+            QuickActionLabel(title, systemImage: symbol, onPhoto: true)
+        }
+        .accessibilityIdentifier("rx.plan.action.\(page.rawValue)")
     }
 
     private func benefit(_ page: SettingsPage, _ title: Text) -> some View {

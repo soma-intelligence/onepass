@@ -192,6 +192,9 @@ extension Theme {
             /// The plan card and a perk tile.
             public static let planCardHeight: CGFloat = 132
             public static let perkTileHeight: CGFloat = 220
+            /// A perk tile in the paging carousel: wide enough for its title, narrow enough for
+            /// the next tile to peek on an iPhone.
+            public static let perkCarouselTileWidth: CGFloat = 240
             /// The floating tab bar and its search button.
             public static let tabBarHeight: CGFloat = 64
             /// Height of the photo hero above the page sheet (Home and Settings).
@@ -225,7 +228,7 @@ extension Theme {
                 case .footnote: (13, 400, 0, 1.3)
                 case .footnoteBold: (13, 600, 0, 1.3)
                 case .caption: (11, 600, 0.1, 1.2)
-                case .monoCode: (28, 500, 1, 1.1)
+                case .monoCode: (30, 500, 1, 1.1)
                 }
             }
 
