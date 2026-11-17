@@ -126,8 +126,27 @@ struct RXSnapshotTests {
                 startPoint: .zero, endPoint: CGPoint(x: 0, y: 80)))
     }
 
-    // The plan card is not in the matrix: its native glass panel renders as an opaque white panel
-    // offscreen, so its cells would assert nothing.
+    /// The Plus plan card of Settings, in its Reduce Transparency look (the flat dark panel), not
+    /// its default glass. Why: this bundle is a SwiftPM test target with no host app, so there is
+    /// no UIApplication, no window scene and no key window; native Liquid Glass is drawn by the
+    /// render server only on screen, and both `layer.render(in:)` and `drawHierarchy` in a bare
+    /// UIWindow give an opaque white panel with the white words invisible (tried 2026-11-16).
+    /// The flat panel shares everything else with the glass card (text, line limits, art crop,
+    /// perk discs, AX5 layout), so these cells guard clipping and overlap at large type; the glass
+    /// itself is checked by eye on device. `_accessibilityReduceTransparency` is the settable
+    /// twin of the read-only `accessibilityReduceTransparency`, the value PlanCard reads.
+    @Test func planCardReduceTransparency() {
+        snapshotMatrix(of: { variant in
+            page {
+                PlanCard(
+                    title: Text(verbatim: "Plus"),
+                    subtitle: Text(verbatim: variant.locale.text("No subscription. View the benefits")),
+                    art: Self.photo,
+                    perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
+            }
+            .environment(\._accessibilityReduceTransparency, true)
+        }, name: "planCard-reduceTransparency", matrix: Self.narrow)
+    }
 
     @Test func perkTile() {
         snapshotMatrix(of: { variant in

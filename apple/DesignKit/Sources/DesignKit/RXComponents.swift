@@ -519,8 +519,9 @@ public struct PlanCard: View {
             }
             .accessibilityHidden(true)
         }
-        // Room on the trailing side for the art, when it is drawn.
-        .padding(.trailing, large || art == nil ? 0 : RX.Metrics.planCardArtWidth * 0.3)
+        // Room on the trailing side for the art, when it is drawn: the tilted art covers about
+        // half its width inside the card, so the words stop before it.
+        .padding(.trailing, large || art == nil ? 0 : RX.Metrics.planCardArtWidth * 0.5)
         .padding(RX.Metrics.planCardPadding)
         .frame(maxWidth: .infinity, minHeight: RX.Metrics.planCardHeight, alignment: .leading)
         .background(alignment: .topTrailing) {
@@ -553,7 +554,10 @@ private struct PlanCardPanel<S: Shape>: ViewModifier {
 
     func body(content: Content) -> some View {
         if flat {
-            content.background(Color.black.opacity(RX.Veil.hero(flat: true)[2]), in: shape)
+            // A hairline edge too: on a black page (dark mode) the flat panel has no visible edge.
+            content
+                .background(Color.black.opacity(RX.Veil.hero(flat: true)[2]), in: shape)
+                .overlay(shape.stroke(Color.white.opacity(0.22), lineWidth: 2)) // half of it survives the clip
         } else {
             content.rxGlass(in: shape, onPhoto: true, interactive: false)
         }
