@@ -718,6 +718,130 @@ extension View {
     }
 }
 
+// MARK: Chips
+
+/// A quick filter or sort chip (All Items): a capsule control at the minimum tap height, glass
+/// when off, filled with the accent when on (the selected trait for VoiceOver). An optional lead
+/// (a glyph, a type tile, a vault tile) sits before the title. The screen wraps it in its Button.
+public struct RXChip<Lead: View>: View {
+    let title: Text
+    let selected: Bool
+    let lead: Lead
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    public init(_ title: Text, selected: Bool, @ViewBuilder lead: () -> Lead) {
+        self.title = title
+        self.selected = selected
+        self.lead = lead()
+    }
+
+    public var body: some View {
+        let ink = selected ? RX.Palette.onAccent.color : RX.Palette.textPrimary.color
+        HStack(spacing: RX.Space.s) {
+            lead
+                .foregroundStyle(ink)
+            title
+                .rxFont(.calloutMedium)
+                .foregroundStyle(ink)
+                .dbText(maxLines: 1)
+        }
+        .padding(.horizontal, RX.Space.m + RX.Space.xxs)
+        .frame(minHeight: RX.Metrics.minTapTarget)
+        .modifier(RXChipSurface(selected: selected))
+        // Increase Contrast: a ring, so an unselected chip never melts into the page.
+        .overlay {
+            if contrast == .increased, !selected {
+                Capsule().strokeBorder(RX.Palette.textSecondary.color, lineWidth: 1)
+            }
+        }
+        .contentShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+extension RXChip where Lead == EmptyView {
+    public init(_ title: Text, selected: Bool) {
+        self.init(title, selected: selected) { EmptyView() }
+    }
+}
+
+/// Glass for a chip that is off (a control), the accent for one that is on.
+private struct RXChipSurface: ViewModifier {
+    let selected: Bool
+
+    func body(content: Content) -> some View {
+        if selected {
+            content.background(RX.Palette.accent.color, in: Capsule())
+        } else {
+            content.rxGlass(in: Capsule(), interactive: true)
+        }
+    }
+}
+
+extension RXChip: nonisolated PenpotMapped {
+    nonisolated public static var penpot: PenpotComponent {
+        PenpotComponent(path: "Chip", props: [
+            "title": .text("Label"),
+            "lead": .swap("Dot"),
+            "selected": .variant("State", ["Off", "On"]),
+        ])
+    }
+}
+
+/// The composition of a list (All Items signature): one rounded segment per kind, in its colour,
+/// as wide as its share of the list. A focused kind stays lit and the others dim. Decorative: the
+/// chips beside it carry the same information for VoiceOver.
+public struct RXCompositionStrip: View {
+    public struct Segment: Identifiable, Equatable {
+        public let id: String
+        public let count: Int
+        public let color: Color
+
+        public init(id: String, count: Int, color: Color) {
+            self.id = id
+            self.count = count
+            self.color = color
+        }
+    }
+
+    let segments: [Segment]
+    let focus: String?
+    @ScaledMetric(relativeTo: .footnote) private var height: CGFloat = 8
+
+    public init(_ segments: [Segment], focus: String? = nil) {
+        self.segments = segments
+        self.focus = focus
+    }
+
+    public var body: some View {
+        GeometryReader { geometry in
+            let gap: CGFloat = 2
+            let total = CGFloat(max(1, segments.reduce(0) { $0 + $1.count }))
+            let room = max(0, geometry.size.width - gap * CGFloat(max(0, segments.count - 1)))
+            HStack(spacing: gap) {
+                ForEach(segments) { segment in
+                    Capsule()
+                        .fill(segment.color)
+                        .frame(width: max(height / 2, room * CGFloat(segment.count) / total))
+                        .opacity(focus == nil || focus == segment.id ? 1 : 0.22)
+                }
+            }
+        }
+        .frame(height: height)
+        .clipShape(Capsule())
+        .dbAnimation(value: focus)
+        .dbAnimation(value: segments)
+        .accessibilityHidden(true)
+    }
+}
+
+extension RXCompositionStrip: nonisolated PenpotMapped {
+    nonisolated public static var penpot: PenpotComponent {
+        PenpotComponent(path: "Composition strip", props: ["segments": .swap("Segment")])
+    }
+}
+
 // MARK: Hero page
 
 /// A page with a photo hero and the rounded page sheet that starts under it (Home and Settings),
