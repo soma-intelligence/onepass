@@ -1,3 +1,4 @@
+import DesignBridgeUITesting
 import XCTest
 
 /// Réglages on iPhone, on the demo account with a large vault (`-OnePassDemoBulkItems`, fictional
@@ -186,5 +187,77 @@ final class SettingsUITests: XCTestCase {
         element("rx.profileQR.retry").tap()
         XCTAssertTrue(element("rx.profileQR.code").waitForExistence(timeout: Self.uiTimeout), "Réessayer did not draw the code")
         XCTAssertFalse(fallback.exists, "fallback still shown after Réessayer")
+    }
+}
+
+/// RX look: no text of Réglages is clipped (owner feedback 2026-11-16, "c'est tronqué"), on the root
+/// and on every page the demo arguments open, at the default size and at an accessibility size,
+/// in French. The audit (`textClipped`) only sees what is on screen: each page is audited, then
+/// scrolled, three times. Run it on a 375 pt and a 402 pt iPhone.
+@MainActor
+final class RXSettingsTruncationUITests: DBUITestCase {
+    private static let seedTimeout: TimeInterval = 600
+
+    static let pages = ["general", "security", "autofill", "sync", "vaults", "devices", "travel", "about"]
+
+    private func check(page: String?, size: DBLaunchConfiguration.ContentSize) throws {
+        var config = DBLaunchConfiguration(contentSize: size, locale: "fr_FR")
+        config.extraArguments += [
+            "-OnePassRX", "YES", "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO",
+            "-OnePassDemoCrypto", "NO", "-OnePassDemoSettings", "YES",
+        ]
+        if let page { config.extraArguments += ["-OnePassDemoSettingsPage", page] }
+        launchApp(config)
+        let done = app.descendants(matching: .any)["settings.done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: Self.seedTimeout), "Réglages not shown")
+        sleep(2)
+        for pass in 0..<3 {
+            try auditClipped("\(page ?? "root") \(size.rawValue) pass \(pass)")
+            app.swipeUp()
+            sleep(1)
+        }
+    }
+
+    /// `textClipped`, for the text fully on screen only: a row the scroll leaves half under the bar
+    /// or the bottom edge is cut by the screen, not by its layout.
+    private func auditClipped(_ name: String) throws {
+        let window = app.windows.firstMatch.frame
+        let visible = CGRect(x: window.minX, y: window.minY + 110, width: window.width, height: window.height - 150)
+        var clipped: [String] = []
+        try app.performAccessibilityAudit(for: .textClipped) { issue in
+            guard let element = issue.element else { return true }
+            let frame = element.frame
+            if visible.contains(frame) {
+                clipped.append("\(element.elementType.rawValue) \"\(element.label)\" \(frame)")
+            }
+            return true
+        }
+        if !clipped.isEmpty {
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = name
+            shot.lifetime = .keepAlways
+            add(shot)
+            XCTFail("CLIPPED \(name): " + clipped.joined(separator: " | "))
+        }
+    }
+
+    func testRootNotTruncated() throws {
+        continueAfterFailure = true
+        try check(page: nil, size: .large)
+        try check(page: nil, size: .accessibility3)
+    }
+
+    func testPagesNotTruncated() throws {
+        continueAfterFailure = true
+        for page in Self.pages {
+            try check(page: page, size: .large)
+        }
+    }
+
+    func testPagesNotTruncatedAtAccessibilitySize() throws {
+        continueAfterFailure = true
+        for page in Self.pages {
+            try check(page: page, size: .accessibility3)
+        }
     }
 }

@@ -39,7 +39,10 @@ struct AppIconSection: View {
     @State private var current = AppIconChoice.choice(for: UIApplication.shared.alternateIconName)
     @State private var changing = false
 
-    private let columns = [GridItem(.adaptive(minimum: 64, maximum: 80), spacing: Theme.Space.l)]
+    /// The tile grows with the text size, so a name such as "Crépuscule" fits its column.
+    @ScaledMetric(relativeTo: .caption) private var tile: CGFloat = 70
+
+    private var columns: [GridItem] { [GridItem(.adaptive(minimum: tile, maximum: tile * 1.2), spacing: Theme.Space.l)] }
 
     var body: some View {
         if UIApplication.shared.supportsAlternateIcons {
@@ -59,7 +62,7 @@ struct AppIconSection: View {
                 .padding(.vertical, Theme.Space.s)
                 .sensoryFeedback(.selection, trigger: current)
             } header: {
-                Text("settings.appIcon")
+                SettingsHeader("settings.appIcon")
             }
         }
     }
@@ -108,8 +111,9 @@ private struct AppIconTile: View {
             Text(choice.title)
                 .font(.caption)
                 .foregroundStyle(selected ? .primary : .secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.center)
+                // Wraps ("Verre émeraude" on a 375 pt iPhone) rather than a cut name.
+                .fixedSize(horizontal: false, vertical: true)
         }
         .contentShape(.rect)
         .accessibilityElement(children: .ignore)

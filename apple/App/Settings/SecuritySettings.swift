@@ -42,37 +42,27 @@ struct SecuritySettings: View {
         let _ = model.settingsRevision
         ScrollViewReader { proxy in
             Form {
-                unlockSection
-                autofillReuseSection
-                Section {
-                    Button("settings.security.changePassword", systemImage: "key") { changingPassword = true }
-                        .accessibilityIdentifier("settings.changePassword")
-                } footer: {
-                    Text("settings.security.changePassword.footer")
-                }
-                deviceModeSection
-                Section {
-                    Button("settings.lockNow", systemImage: "lock") {
-                        // The discard confirmation of an edited draft belongs to the main screen.
-                        model.showSettings = false
-                        model.perform(.lock)
-                    }
-                        .accessibilityIdentifier("settings.lockNow")
-                }
-                Section {
-                    Button("settings.deleteAccount", systemImage: "trash", role: .destructive) { confirmingDelete = true }
-                        .accessibilityIdentifier("settings.deleteAccount")
-                } footer: {
-                    Text("settings.deleteAccount.footer")
-                }
-                if let errorMessage {
+                Group {
+                    unlockSection
+                    autofillReuseSection
+                    deviceModeSection
                     Section {
-                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                            .accessibilityIdentifier("settings.security.error")
+                        Button("settings.deleteAccount", systemImage: "trash", role: .destructive) { confirmingDelete = true }
+                            .accessibilityIdentifier("settings.deleteAccount")
+                    } footer: {
+                        SettingsFootnote("settings.deleteAccount.footer")
+                    }
+                    if let errorMessage {
+                        Section {
+                            Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                                .accessibilityIdentifier("settings.security.error")
+                        }
                     }
                 }
+                .rxSettingsRows()
             }
+            .rxSettingsSkin()
             .onAppear { focus(proxy) }
             .onChange(of: model.settingsFocusRequest) { focus(proxy) }
         }
@@ -153,8 +143,11 @@ struct SecuritySettings: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.passwordReminder")
+            // In the card of the master password; the sheet itself says the Emergency Kit stays valid.
+            Button("settings.security.changePassword", systemImage: "key") { changingPassword = true }
+                .accessibilityIdentifier("settings.changePassword")
         } header: {
-            Text("settings.unlock")
+            SettingsHeader("settings.unlock")
         } footer: {
             unlockFooter(personal: personal)
         }
@@ -171,23 +164,26 @@ struct SecuritySettings: View {
                     set: { on in model.updateSettings { $0.autofillUnlockReuse = on } }
                 ))
                 .accessibilityIdentifier("settings.autofillReuse")
-            } footer: {
-                Text("settings.security.autofillReuse.footer \(biometry)")
+            } header: {
+                // The long rule (90 seconds, same site, passkeys excluded) behind the info button.
+                SettingsHeader(
+                    "Remplissage automatique", info: Text("settings.security.autofillReuse.footer \(biometry)"),
+                    id: "settings.autofillReuse.info")
             }
         }
     }
 
     @ViewBuilder private func unlockFooter(personal: Bool) -> some View {
         if !personal {
-            Text("settings.security.unlock.sharedFooter")
+            SettingsFootnote(Text("settings.security.unlock.sharedFooter"))
         } else if availability == .keychainRefused {
-            Text("settings.security.biometry.unsigned \(biometry)")
+            SettingsFootnote(Text("settings.security.biometry.unsigned \(biometry)"))
                 .accessibilityIdentifier("settings.biometrics.unavailable")
         } else if availability == .noBiometry {
-            Text("settings.security.biometry.unavailable \(biometry)")
+            SettingsFootnote(Text("settings.security.biometry.unavailable \(biometry)"))
                 .accessibilityIdentifier("settings.biometrics.unavailable")
         } else {
-            Text("settings.security.unlock.footer")
+            SettingsFootnote(Text("settings.security.unlock.footer"))
         }
     }
 
@@ -259,9 +255,15 @@ struct SecuritySettings: View {
                 }
                 .accessibilityIdentifier("settings.visibleVaults")
             }
+            Button("settings.lockNow", systemImage: "lock") {
+                // The discard confirmation of an edited draft belongs to the main screen.
+                model.showSettings = false
+                model.perform(.lock)
+            }
+            .accessibilityIdentifier("settings.lockNow")
         } footer: {
             if settings.deviceMode == .shared {
-                Text("settings.security.deviceMode.sharedFooter \(biometry)")
+                SettingsFootnote(Text("settings.security.deviceMode.sharedFooter \(biometry)"))
             }
         }
     }

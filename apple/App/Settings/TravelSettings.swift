@@ -20,13 +20,14 @@ struct TravelSettings: View {
 
     var body: some View {
         Form {
+            Group {
             Section {
                 statusRow
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("settings.travel.status")
                 actionButton
             } footer: {
-                Text("settings.travel.footer")
+                SettingsFootnote("settings.travel.footer")
             }
             if let errorMessage {
                 Section {
@@ -56,12 +57,15 @@ struct TravelSettings: View {
                         .accessibilityIdentifier("settings.travel.safe.\(vault.id)")
                     }
                 } header: {
-                    Text("app.safeForTravel")
+                    SettingsHeader("app.safeForTravel")
                 } footer: {
-                    Text("settings.travel.safe.footer")
+                    SettingsFootnote("settings.travel.safe.footer")
                 }
             }
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Travel Mode")
         .task {
             await reload()
@@ -131,9 +135,9 @@ struct TravelSettings: View {
                     Label { itemLabel(entry) } icon: { Image(systemName: "lock.shield") }
                 }
             } header: {
-                Text("Éléments")
+                SettingsHeader("Éléments")
             } footer: {
-                Text("settings.travel.items.footer")
+                SettingsFootnote("settings.travel.items.footer")
             }
         }
     }
@@ -171,18 +175,19 @@ struct TravelSettings: View {
             .accessibilityIdentifier("settings.travel.addTrip")
         } header: {
             // On the header, not the Section: a Section identifier overrides every row's.
-            Text("settings.travel.trips.header")
+            SettingsHeader("settings.travel.trips.header")
                 .accessibilityIdentifier("settings.travel.trips")
         } footer: {
-            Text("settings.travel.trips.footer")
+            SettingsFootnote("settings.travel.trips.footer")
         }
     }
 
     private func tripRow(_ trip: TravelTrip) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
-                Text(trip.start.formatted(date: .abbreviated, time: .shortened))
-                Text(trip.end.formatted(date: .abbreviated, time: .omitted))
+                // With the year (owner feedback 2026-11-16), in the device's language.
+                Text(trip.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute()))
+                Text(trip.end.formatted(.dateTime.day().month(.abbreviated).year()))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -207,9 +212,9 @@ struct TravelSettings: View {
                     .accessibilityIdentifier("settings.travel.forget")
             }
         } header: {
-            Text("settings.travel.detection.header")
+            SettingsHeader("settings.travel.detection.header")
         } footer: {
-            Text("settings.travel.detection.footer")
+            SettingsFootnote("settings.travel.detection.footer")
         }
     }
 
@@ -219,7 +224,7 @@ struct TravelSettings: View {
                 VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(status.exiting ? "Retour en cours" : "Travel Mode activé")
                     if let at = status.enteredAt {
-                        Text("settings.sinceOffDevice \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(date: .abbreviated, time: .shortened)) \(Self.vaultCount(status.hiddenCount))")
+                        Text("settings.sinceOffDevice \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(.dateTime.day().month(.abbreviated).year().hour().minute())) \(Self.vaultCount(status.hiddenCount))")
                             .font(.footnote)
                             .foregroundStyle(.tertiary)
                     }
