@@ -104,8 +104,10 @@ struct HomeTab: View {
             }
         }
         // "Bonjour Camille", large, above the four tiles.
-        .navigationTitle(greeting)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle(rxDesign ? "" : greeting)
+        // RX hides the bar: a hidden large title still pads the scroll inset, so the page came
+        // to rest about 55 pt low after a pull, then snapped (jank audit J03).
+        .navigationBarTitleDisplayMode(rxDesign ? .inline : .large)
         .toolbar {
             PhoneRootToolbar {
                 Section("browse.showOnHome") {

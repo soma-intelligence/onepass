@@ -229,7 +229,14 @@ struct PhoneTabsView: View {
         Binding(
             get: { tab },
             set: { newTab in
-                if newTab == tab { reselect(newTab) } else { tab = newTab }
+                if newTab == tab {
+                    reselect(newTab)
+                } else {
+                    // The search opens in the same transaction as its tab, not a pass later from
+                    // `onChange(of: tab)`, which moved the page after it showed (jank audit J06).
+                    if newTab == .search, openSearchOnSelect, paths[.search]?.isEmpty ?? true { searching = true }
+                    tab = newTab
+                }
             })
     }
 

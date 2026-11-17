@@ -139,9 +139,9 @@ extension AnyTransition {
         .modifier(active: RXZoomThrough(progress: 1), identity: RXZoomThrough(progress: 0))
     }
 
-    /// The vault under the RX lock screen: from just behind it (the door's rest scale) to full size.
-    static var rxVaultArrival: AnyTransition {
-        .opacity.combined(with: .scale(scale: VaultDoorPassage.vaultRestScale))
-    }
+    /// The vault under the RX lock screen: full size from the first frame, fading in while the lock
+    /// zooms through it. A scaled arrival showed bands at the top and bottom, the tab bar high,
+    /// then snapped to full size (jank audit J02).
+    static var rxVaultArrival: AnyTransition { .opacity }
 }
 #endif

@@ -459,7 +459,9 @@ struct WatchtowerItemsList: View {
             }
         }
         .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
+        // Inline: the finding titles are long, a large title cut them ("Comptes de connexio...",
+        // jank audit J15).
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 #endif

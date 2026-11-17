@@ -175,11 +175,10 @@ struct CategoryListView: View {
         .listStyle(.plain)
         .listSectionIndexVisibility(byDate || filter == .nearby ? .hidden : .visible)
         .environment(\.defaultMinListRowHeight, 0)
-        // A row trashed, restored or favorited, a chip or the order changed: the list closes or
-        // opens the gap.
+        // A row trashed, restored or favorited: the list closes or opens the gap. A chip or the
+        // order swaps the whole list at once: animated, rows and section letters crossfaded over
+        // each other in place (jank audit J10).
         .animation(Motion.list(reduceMotion: reduceMotion), value: session.summariesRevision)
-        .animation(Motion.list(reduceMotion: reduceMotion), value: chips)
-        .animation(Motion.list(reduceMotion: reduceMotion), value: sortByDate)
         .scrollContentBackground(.hidden)
         .background(RX.Palette.pageBackground.color.ignoresSafeArea())
         .task(id: NearbyRequest(active: filter == .nearby, revision: session.summariesRevision)) {
@@ -209,7 +208,10 @@ struct CategoryListView: View {
             Text(ItemListColumn.countLabel(shown))
                 .rxFont(.title)
                 .foregroundStyle(RX.Palette.textPrimary.color)
-                .dbRollingNumber(value: Double(shown))
+                // System digits: the rolling number passed through wrong counts on a big jump
+                // (33 to 5 read "3 éléments" for a moment, jank audit J10).
+                .contentTransition(.numericText(value: Double(shown)))
+                .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: shown)
                 .dbText(maxLines: 2)
                 .padding(.trailing, RX.Space.gutter)
                 .accessibilityIdentifier("rx.list.count")

@@ -328,7 +328,9 @@ struct NewItemSheet: View {
         let tilt = Double(i % 3 - 1)
         let lift: CGFloat = i.isMultiple(of: 2) ? 6 : -6
         if showAll {
-            return (Self.fanStep * 2.2 + CGFloat(i) * 3, CGFloat(i) * -1, tilt * 3, 0.82)
+            // The folded stack stays inside the fan's frame: at 2.2 steps its last tiles ran over
+            // the chevron (jank audit J14).
+            return (Self.fanStep * 1.6 + CGFloat(i) * 3, CGFloat(i) * -1, tilt * 3, 0.82)
         }
         if hoveringMore, !reduceMotion {
             return (rest * 1.12, lift * 1.35 - 2, tilt * 15, 1.06)

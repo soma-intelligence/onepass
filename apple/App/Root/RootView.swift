@@ -18,6 +18,8 @@ struct RootView: View {
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     /// Bumped by each RX unlock: one light tap as the vault comes.
     @State private var rxUnlocks = 0
+    /// RX: the zoom-through is playing. The Face ID offer waits for it (jank audit J04).
+    @State private var rxArriving = false
     /// The vault door between the lock screen and the vault (iPhone and iPad, `VaultDoorPassage`).
     @State private var door = VaultDoorPassage()
     /// The lock screen as it was at the end of the dial's turn: the two panels of the opening door.
@@ -227,7 +229,7 @@ struct RootView: View {
 
     #if os(iOS)
     private var doorKeepsLock: Bool { door.keepsLockOnTop }
-    private var doorHoldsPresentations: Bool { door.holdsPresentations }
+    private var doorHoldsPresentations: Bool { door.holdsPresentations || rxArriving }
     private var doorShowsVault: Bool { door.showsVaultUnderneath }
     private var vaultScale: CGFloat { door.vaultScale }
     /// The RX zoom-through plays (not under Reduce Motion: the plain crossfade).
@@ -396,7 +398,14 @@ extension RootView {
             next.handle(.unlocked(reduceMotion: reduceMotion || rxDesign))
             guard next.phase == .turning else {
                 door = next
-                if rxDesign { rxUnlocks &+= 1 }
+                if rxDesign {
+                    rxUnlocks &+= 1
+                    rxArriving = true
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(500))
+                        rxArriving = false
+                    }
+                }
                 announceUnlocked()
                 #if DEBUG
                 demoLockIfAsked()

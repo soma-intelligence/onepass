@@ -32,6 +32,10 @@ struct LockView: View {
     /// The RX look (iPhone and iPad only): the switch every RX screen reads.
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     @State private var password = ""
+    /// RX: how many characters were submitted, shown as dots while the vault opens. The field is
+    /// emptied on submission (R5), and an empty field, a dropped keyboard and a button turning back
+    /// to Face ID made the whole screen jump in one frame (jank audit J01). Only the count is kept.
+    @State private var submittedLength = 0
     @State private var revealed = false
     @State private var message: String?
     @State private var lockoutRefresh = 0
@@ -559,11 +563,13 @@ struct LockView: View {
         guard !password.isEmpty, !unlocking, !lockedOut else { return }
         message = nil
         let typed = SecretBytes(utf8: password)
+        if rxDesign { submittedLength = password.count }
         password = ""
         // The keyboard leaves with the submission. Left on, the field (disabled while unlocking)
         // took the keyboard back once enabled again, under the vault door: the panels parted
         // with it up and it stayed over the vault. A refusal gives the focus back below.
-        fieldFocused = false
+        // RX has no door: the keyboard stays up and the layout holds still until the answer.
+        if !rxDesign { fieldFocused = false }
         defer { typed.wipe() }
         do {
             try await session.unlock(password: typed)
@@ -571,6 +577,8 @@ struct LockView: View {
                 model.offerBiometrics(password: typed.withUnsafeBytes { SecretBytes(copying: $0) })
             }
         } catch {
+            // On success the dots stay while the lock screen zooms away.
+            submittedLength = 0
             let failure = VaultError(error)
             switch failure {
             case .wrongPassword:
@@ -815,7 +823,19 @@ extension LockView {
                 fontSize: RX.Typography.body.spec.size, identifier: "lock.password")
             .labelsHidden()
             .textFieldStyle(.plain)
-            .disabled(unlocking || lockedOut)
+            // Not disabled while unlocking: a disabled field drops the keyboard, and the screen
+            // moved under it. `unlockWithPassword` ignores a second submission meanwhile.
+            .disabled(lockedOut)
+            .opacity(submittedLength > 0 ? 0 : 1)
+            .overlay(alignment: .leading) {
+                if submittedLength > 0 {
+                    Text(verbatim: String(repeating: "\u{2022}", count: min(submittedLength, 24)))
+                        .rxFont(.body)
+                        .foregroundStyle(RX.Palette.textSecondary.color)
+                        .lineLimit(1)
+                        .accessibilityHidden(true)
+                }
+            }
             .privacySensitive()
             .accessibilityIdentifier("lock.password")
             Button {
@@ -846,7 +866,7 @@ extension LockView {
     /// Face ID (Touch ID, Optic ID) while the field is empty and biometric unlock is on, else
     /// Déverrouiller. A glass control, filled with the accent; a spinner while the vault opens.
     private var rxPrimaryButton: some View {
-        let biometric = biometrics && password.isEmpty
+        let biometric = biometrics && password.isEmpty && submittedLength == 0
         let busy = unlocking || biometricCheck
         let enabled = biometric ? !busy : (!password.isEmpty && !busy && !lockedOut)
         return Button {

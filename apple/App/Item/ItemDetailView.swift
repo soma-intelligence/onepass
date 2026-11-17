@@ -100,6 +100,12 @@ struct ItemDetailView: View {
                     Task { await load() }
                 }
                 .accessibilityIdentifier("item.loadError")
+            } else if rxHeader {
+                // RX: the page colour while the item reads (a few ms). Skeleton bars flashed inside
+                // the zoom from the row, then the content popped in over them (jank audit J11).
+                Theme.RX.Palette.pageBackground.color
+                    .ignoresSafeArea()
+                    .overlay { DBDelayedSpinner() }
             } else {
                 // Skeleton rows; the spinner shows only if the load takes more than 400 ms.
                 DBLoadingView { DBSkeleton(rows: 4) }

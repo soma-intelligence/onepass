@@ -69,6 +69,9 @@ struct SearchTab: View {
         .animation(Motion.list(reduceMotion: reduceMotion), value: results.map(\.id))
         .animation(Motion.fold(reduceMotion: reduceMotion), value: trimmed.isEmpty)
         .navigationTitle("common.search")
+        // RX: inline. A large title showed first, then folded as the search opened, moving the
+        // grid twice for one tap (jank audit J06).
+        .navigationBarTitleDisplayMode(rxDesign ? .inline : .automatic)
         // A category chosen for another search would hide what the next one finds.
         .onChange(of: trimmed.isEmpty) { _, empty in if empty { category = nil } }
         // Opening a result keeps the search that found it for next time.
