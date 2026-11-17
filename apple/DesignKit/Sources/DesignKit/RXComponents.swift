@@ -37,6 +37,8 @@ public struct RXGlassGlyph: View {
         Image(systemName: systemImage)
             .font(RX.Glyph.font(glyph ?? (diameter * 0.45).rounded()))
             .foregroundStyle(onPhoto ? Color.white : RX.Palette.textPrimary.color)
+            // Decorative: the button or link around it carries the label.
+            .accessibilityHidden(true)
             .frame(width: diameter, height: diameter)
             .rxGlass(in: Circle(), onPhoto: onPhoto)
             .environment(\.colorScheme, onPhoto ? .dark : colorScheme)
@@ -74,7 +76,8 @@ public struct GlassButton: View {
 
 // MARK: Discs
 
-/// A white glyph on a coloured disc (40 pt by default): the lead of an item row, a stat tile.
+/// A white glyph on a coloured disc (the item lead, 44 pt, by default): the lead of an item row,
+/// a stat tile.
 public struct ColorDisc: View {
     let systemImage: String
     let color: Color
@@ -110,7 +113,7 @@ public struct RXChevron: View {
 
 // MARK: Rows
 
-/// An item row: a 40 pt lead, the title (Body medium) over its subtitle (Callout, secondary), an
+/// An item row: a 44 pt lead, the title (Body medium) over its subtitle (Callout, secondary), an
 /// optional trailing value, an optional chevron. Pitch 64. Text wraps to two lines, then scales;
 /// at accessibility sizes the value moves under the title (no clipping, UX-TEXT-01).
 public struct RXItemRow<Lead: View>: View {
@@ -237,9 +240,9 @@ public struct RXMenuRow: View {
             if let badge {
                 badge
                     .rxFont(.footnoteBold)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(RX.Palette.onAccent.color)
                     .padding(.horizontal, RX.Space.s)
-                    .frame(minHeight: 22)
+                    .frame(minHeight: RX.Metrics.badgeHeight)
                     .background(RX.Palette.accent.color, in: Capsule())
             }
             if chevron { RXChevron() }
@@ -368,7 +371,7 @@ public struct RXStatTile: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: RX.Space.s) {
-            ColorDisc(systemImage: systemImage, color: color, diameter: 36)
+            ColorDisc(systemImage: systemImage, color: color, diameter: RX.Metrics.statDisc)
             RXNumber(value, typography: .title)
                 .foregroundStyle(RX.Palette.textPrimary.color)
             label
@@ -408,7 +411,7 @@ public struct QuickActionLabel: View {
                     .foregroundStyle(RX.Palette.accentText.color)
                     .frame(width: RX.Metrics.actionDisc, height: RX.Metrics.actionDisc)
                     .background(RX.Palette.raisedBackground.color, in: Circle())
-                    .shadow(color: .black.opacity(0.06), radius: 5, y: 2)
+                    .rxRaisedShadow()
             }
             title
                 .rxFont(.calloutMedium)
@@ -470,23 +473,22 @@ extension QuickActionRow where Content == AnyView {
 
 // MARK: Plan card and perks
 
-/// The Plus card over a photo hero: one translucent dark glass panel (radius 28), the plan name
-/// (Title, bold) and one line, a row of 44 pt glass discs (the last one a chevron), and the art
-/// large in the top trailing corner, bleeding off the card's top and trailing edges.
+/// The Plus card over a photo hero: one translucent dark glass panel (the page sheet radius), the
+/// plan name (Title, bold) and one line, a row of 44 pt discs (the last one a chevron), and the art
+/// large in the top trailing corner, bleeding off the card's top and trailing edges. The discs are
+/// plain white veils, not glass: the panel is already glass (glass only on controls). The card has a
+/// smallest height and grows with the text; at accessibility sizes the art goes, so it never
+/// covers the words, and the discs stay under the text.
 public struct PlanCard: View {
     let title: Text
     let subtitle: Text
     let art: Image?
     let perks: [String]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    /// Card height, inner padding, corner radius, disc size and art width of the plan card.
-    public static let height: CGFloat = 156
-    public static let padding: CGFloat = 20
-    public static let radius: CGFloat = 28
-    public static let disc: CGFloat = 44
-    public static let artWidth: CGFloat = 210
-
-    /// `perks`: the SF Symbols of the glass discs, left to right.
+    /// `perks`: the SF Symbols of the discs, left to right.
     public init(title: Text, subtitle: Text, art: Image?, perks: [String]) {
         self.title = title
         self.subtitle = subtitle
@@ -495,40 +497,47 @@ public struct PlanCard: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: RX.Radius.pageSheet, style: .continuous)
+        let large = dynamicTypeSize.isAccessibilitySize
         VStack(alignment: .leading, spacing: 0) {
             title
                 .rxFont(.title)
                 .fontWeight(.bold)
                 .foregroundStyle(.white)
+                .dbText(maxLines: 2)
             subtitle
                 .rxFont(.callout)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.white)
+                .rxOnPhotoSecondary()
+                .dbText(maxLines: large ? 4 : 2)
                 .padding(.top, RX.Space.xxs)
             Spacer(minLength: RX.Space.m)
             HStack(spacing: RX.Space.s) {
                 ForEach(perks, id: \.self) { symbol in
-                    RXGlassGlyph(systemImage: symbol, diameter: Self.disc, onPhoto: true)
+                    RXVeilDisc(systemImage: symbol, diameter: RX.Metrics.glassButton)
                 }
             }
             .accessibilityHidden(true)
         }
-        .padding(Self.padding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: Self.height)
+        // Room on the trailing side for the art, when it is drawn.
+        .padding(.trailing, large || art == nil ? 0 : RX.Metrics.planCardArtWidth * 0.3)
+        .padding(RX.Metrics.planCardPadding)
+        .frame(maxWidth: .infinity, minHeight: RX.Metrics.planCardHeight, alignment: .leading)
         .background(alignment: .topTrailing) {
-            if let art {
+            if let art, !large {
                 // Large and off the corner: the card's shape crops its top and trailing parts.
                 art
                     .resizable()
                     .scaledToFit()
-                    .frame(width: Self.artWidth)
+                    .frame(width: RX.Metrics.planCardArtWidth)
                     .rotationEffect(.degrees(-8))
-                    .offset(x: Self.artWidth * 0.24, y: -Self.height * 0.24)
+                    .offset(x: RX.Metrics.planCardArtWidth * 0.24, y: -RX.Metrics.planCardHeight * 0.24)
                     .accessibilityHidden(true)
             }
         }
-        .rxGlass(in: shape, onPhoto: true, interactive: false)
+        .modifier(PlanCardPanel(
+            shape: shape,
+            flat: Theme.Wash.isFlat(increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)))
         .environment(\.colorScheme, .dark)
         .clipShape(shape)
         .contentShape(shape)
@@ -536,17 +545,49 @@ public struct PlanCard: View {
     }
 }
 
-/// A perk tile of "Get more from Plus": the art full bleed (radius 24), a soft dark gradient over
-/// its lower half, a small glass glyph, the title (Headline, semibold) and one line (Footnote), all
-/// white.
+/// The plan card's panel: dark glass, or a plain dark fill under Reduce Transparency or Increase
+/// Contrast, so the white words keep their contrast.
+private struct PlanCardPanel<S: Shape>: ViewModifier {
+    let shape: S
+    let flat: Bool
+
+    func body(content: Content) -> some View {
+        if flat {
+            content.background(Color.black.opacity(RX.Veil.hero(flat: true)[2]), in: shape)
+        } else {
+            content.rxGlass(in: shape, onPhoto: true, interactive: false)
+        }
+    }
+}
+
+/// A white glyph on a white veil disc: the perks of the plan card and the glyph of a perk tile, on
+/// photos or glass, where a second glass layer would be glass on glass.
+struct RXVeilDisc: View {
+    let systemImage: String
+    let diameter: CGFloat
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(RX.Glyph.font((diameter * 0.45).rounded()))
+            .foregroundStyle(.white)
+            .frame(width: diameter, height: diameter)
+            .background(.white.opacity(0.18), in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
+/// A perk tile of "Get more from Plus": the art full bleed (the perk radius), a dark gradient over
+/// its lower half, a small white disc with the glyph, the title (Headline, semibold) and one line
+/// (Footnote), all white. It has a smallest height and grows with the text, so the glyph and title
+/// are never cut. Reduce Transparency or Increase Contrast darken the gradient.
 public struct PerkTile: View {
     let art: Image
     let title: Text
     let subtitle: Text
     let systemImage: String
-
-    /// Corner radius of a perk tile.
-    public static let radius: CGFloat = 24
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     public init(title: Text, subtitle: Text, systemImage: String, art: Image) {
         self.title = title
@@ -556,41 +597,71 @@ public struct PerkTile: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-        ZStack(alignment: .bottomLeading) {
-            RX.Wash.artPlaceholder
-            art
-                .resizable()
-                .scaledToFill()
-                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                .clipped()
-                .accessibilityHidden(true)
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0), location: 0), .init(color: .black.opacity(0), location: 0.5),
-                    .init(color: .black.opacity(0.62), location: 1),
-                ],
-                startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: RX.Space.xxs) {
-                RXGlassGlyph(systemImage: systemImage, diameter: 32, onPhoto: true)
-                    .padding(.bottom, RX.Space.s)
-                title
-                    .rxFont(.headline)
-                    .fontWeight(.semibold)
-                    .dbText(maxLines: 2)
-                subtitle
-                    .rxFont(.footnote)
-                    .opacity(0.7)
-                    .dbText(maxLines: 2)
-            }
-            .foregroundStyle(.white)
-            .padding(RX.Space.m)
+        let shape = RoundedRectangle(cornerRadius: RX.Radius.perk, style: .continuous)
+        let veil = RX.Veil.perk(flat: Theme.Wash.isFlat(
+            increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency))
+        let lines = dynamicTypeSize.isAccessibilitySize ? 4 : 2
+        VStack(alignment: .leading, spacing: RX.Space.xxs) {
+            Spacer(minLength: 0)
+            RXVeilDisc(systemImage: systemImage, diameter: RX.Metrics.perkGlyph)
+                .padding(.bottom, RX.Space.s)
+            title
+                .rxFont(.headline)
+                .fontWeight(.semibold)
+                .dbText(maxLines: lines)
+            subtitle
+                .rxFont(.footnote)
+                .rxOnPhotoSecondary()
+                .dbText(maxLines: lines)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: RX.Metrics.perkTileHeight)
+        .foregroundStyle(.white)
+        .padding(RX.Space.m)
+        .frame(maxWidth: .infinity, minHeight: RX.Metrics.perkTileHeight, alignment: .bottomLeading)
+        .background {
+            ZStack {
+                RX.Wash.artPlaceholder
+                art
+                    .resizable()
+                    .scaledToFill()
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                    .clipped()
+                    .accessibilityHidden(true)
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0), location: 0),
+                        .init(color: .black.opacity(veil.middle), location: 0.5),
+                        .init(color: .black.opacity(veil.bottom), location: 1),
+                    ],
+                    startPoint: .top, endPoint: .bottom)
+            }
+        }
         .clipShape(shape)
         .contentShape(shape)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Secondary white text on a photo: dimmed, at full opacity under Reduce Transparency or
+/// Increase Contrast.
+private struct RXOnPhotoSecondary: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        content.opacity(RX.Veil.secondaryText(flat: Theme.Wash.isFlat(
+            increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)))
+    }
+}
+
+extension View {
+    /// Secondary white text on a photo or a dark glass panel (`Theme.RX.Veil.secondaryText`).
+    public func rxOnPhotoSecondary() -> some View {
+        modifier(RXOnPhotoSecondary())
+    }
+
+    /// The one shadow of raised RX controls (`Theme.RX.Shadow`).
+    public func rxRaisedShadow() -> some View {
+        shadow(color: .black.opacity(RX.Shadow.raisedOpacity), radius: RX.Shadow.raisedRadius, y: RX.Shadow.raisedY)
     }
 }
 
@@ -621,18 +692,24 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
     let hero: Hero
     let sheet: Sheet
     @State private var position = ScrollPosition(edge: .top)
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Captures only: where the page starts scrolled to (points from the top).
     let initialOffset: CGFloat?
     /// A light photo (dark words over it): a soft white veil instead of the dark scrim.
     let lightPhoto: Bool
+    /// Each change scrolls the page back to its top (a tap on the tab that is already selected).
+    let scrollToTop: Int
 
     public init(
-        photo: Image, lightPhoto: Bool = false, initialOffset: CGFloat? = nil,
+        photo: Image, lightPhoto: Bool = false, initialOffset: CGFloat? = nil, scrollToTop: Int = 0,
         @ViewBuilder hero: () -> Hero, @ViewBuilder sheet: () -> Sheet
     ) {
         self.photo = photo
         self.lightPhoto = lightPhoto
         self.initialOffset = initialOffset
+        self.scrollToTop = scrollToTop
         self.hero = hero()
         self.sheet = sheet()
     }
@@ -655,20 +732,27 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
             try? await Task.sleep(for: .milliseconds(600))
             position.scrollTo(y: initialOffset)
         }
+        .onChange(of: scrollToTop) {
+            withDBAnimation(.smooth, reduceMotion: reduceMotion) { position.scrollTo(edge: .top) }
+        }
     }
 
-    /// Fixed: the photo never moves with the page.
+    /// Fixed: the photo never moves with the page. Reduce Transparency or Increase Contrast give a
+    /// stronger veil, so the words over it keep their contrast.
     private var backdrop: some View {
-        ZStack {
+        let flat = Theme.Wash.isFlat(increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)
+        let veil: Color = lightPhoto ? .white : .black
+        let stops = lightPhoto ? RX.Veil.lightHero(flat: flat) : RX.Veil.hero(flat: flat)
+        return ZStack {
             photo
                 .resizable()
                 .scaledToFill()
-            let veil: Color = lightPhoto ? .white : .black
+                .accessibilityHidden(true)
             LinearGradient(
                 stops: [
-                    .init(color: veil.opacity(lightPhoto ? 0.15 : 0.25), location: 0),
-                    .init(color: veil.opacity(lightPhoto ? 0.1 : 0.05), location: 0.55),
-                    .init(color: veil.opacity(lightPhoto ? 0.35 : 0.55), location: 1),
+                    .init(color: veil.opacity(stops[0]), location: 0),
+                    .init(color: veil.opacity(stops[1]), location: 0.55),
+                    .init(color: veil.opacity(stops[2]), location: 1),
                 ],
                 startPoint: .top, endPoint: .bottom)
         }
@@ -858,10 +942,14 @@ extension RXCodeCard: nonisolated PenpotMapped {
 }
 
 /// The countdown of a verification code: 36 pt, a faint track and the accent arc draining, the
-/// seconds in the middle (rolling digits); red over the last five seconds.
+/// seconds in the middle (rolling digits); over the last five seconds, red with a heavier arc and
+/// heavier digits.
 public struct RXTimerRing: View {
     let remaining: Int
     let fraction: Double
+
+    /// The last five seconds.
+    public static func isUrgent(_ remaining: Int) -> Bool { remaining <= 5 }
 
     public init(remaining: Int, fraction: Double) {
         self.remaining = remaining
@@ -869,21 +957,25 @@ public struct RXTimerRing: View {
     }
 
     public var body: some View {
-        let urgent = remaining <= 5
+        let urgent = Self.isUrgent(remaining)
         let color = urgent ? RX.Palette.negative.color : RX.Palette.accent.color
+        // Not colour alone: the last seconds also draw a heavier arc and heavier digits. The
+        // change is a plain swap, never animated, so it is static under Reduce Motion too.
+        let stroke = urgent ? RX.Metrics.codeRingUrgentStroke : RX.Metrics.codeRingStroke
         ZStack {
-            Circle().stroke(RX.Palette.textTertiary.color.opacity(0.4), lineWidth: 3)
+            Circle().stroke(RX.Palette.textTertiary.color.opacity(0.4), lineWidth: RX.Metrics.codeRingStroke)
             Circle()
                 .trim(from: 0, to: min(max(fraction, 0), 1))
-                .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(color, style: StrokeStyle(lineWidth: stroke, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             DBNumber(remaining)
                 .rxFont(.footnoteBold)
+                .fontWeight(urgent ? .black : nil)
                 .monospacedDigit()
                 .foregroundStyle(urgent ? color : RX.Palette.accentText.color)
         }
-        // swiftlint:disable:next db_spacing_literal - half the ring stroke, keeps the arc inside the frame
-        .padding(1.5)
+        // Half the heavier stroke: the arc stays inside the frame.
+        .padding(RX.Metrics.codeRingUrgentStroke / 2)
         .frame(width: RX.Metrics.codeRing, height: RX.Metrics.codeRing)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("rx.code.secondsLeft \(remaining)", bundle: .module))

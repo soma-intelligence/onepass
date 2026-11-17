@@ -108,5 +108,59 @@ struct RXSnapshotTests {
             }
         }, name: "favoritesCarousel", matrix: .smoke)
     }
+
+    /// The narrowest iPhone the app supports (SE, 375 x 667 pt @2x): the smoke matrix on it.
+    private static let narrow = SnapshotMatrix.smoke.with(devices: [
+        SnapshotDevice(
+            id: "iPhoneSE", size: CGSize(width: 375, height: 667), safeArea: .init(top: 20, bottom: 0), scale: 2,
+            idiom: .phone, horizontalSizeClass: .compact)
+    ])
+
+    /// A dark photo stand-in: a fixed gradient drawn as an image, so the cells do not depend on an
+    /// asset.
+    private static let photo = Image(size: CGSize(width: 40, height: 80)) { context in
+        context.fill(
+            Path(CGRect(x: 0, y: 0, width: 40, height: 80)),
+            with: .linearGradient(
+                Gradient(colors: [Color(red: 0.16, green: 0.2, blue: 0.3), Color(red: 0.4, green: 0.32, blue: 0.42)]),
+                startPoint: .zero, endPoint: CGPoint(x: 0, y: 80)))
+    }
+
+    // The plan card is not in the matrix: its native glass panel renders as an opaque white panel
+    // offscreen, so its cells would assert nothing.
+
+    @Test func perkTile() {
+        snapshotMatrix(of: { variant in
+            page {
+                PerkTile(
+                    title: Text(verbatim: variant.locale.text("Family vaults")),
+                    subtitle: Text(verbatim: variant.locale.text("Share with the people at home")),
+                    systemImage: "person.3.fill", art: Self.photo)
+                    .frame(width: 280)
+            }
+        }, name: "perkTile", matrix: Self.narrow)
+    }
+
+    @Test func heroPage() {
+        snapshotMatrix(of: { variant in
+            RXHeroPage(photo: Self.photo) {
+                VStack(spacing: RX.Space.s) {
+                    Text(verbatim: variant.locale.text("Camille Durand"))
+                        .rxFont(.title)
+                        .foregroundStyle(.white)
+                    Text(verbatim: variant.locale.text("Personal device"))
+                        .rxFont(.callout)
+                        .foregroundStyle(.white)
+                        .rxOnPhotoSecondary()
+                }
+                .padding(.vertical, RX.Space.xl)
+            } sheet: {
+                RXCard {
+                    RXMenuRow(Text(verbatim: variant.locale.text("General")), systemImage: "gearshape.fill")
+                    RXMenuRow(Text(verbatim: variant.locale.text("Lock")), systemImage: "lock.fill", chevron: false)
+                }
+            }
+        }, name: "heroPage", matrix: Self.narrow)
+    }
 }
 #endif

@@ -119,6 +119,21 @@ struct RXTokensTests {
         #expect(RX.Metrics.discGlyph(diameter: 36) == 18)
     }
 
+    /// White Footnote text sits on both stops of the Watchtower washes at full opacity, so every
+    /// tone keeps WCAG AA (4.5:1) against white, by the WCAG relative luminance.
+    @Test func washTonesKeepContrastWithWhite() {
+        func channel(_ c: Double) -> Double { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        func luminance(_ t: RX.Tone) -> Double {
+            0.2126 * channel(t.red) + 0.7152 * channel(t.green) + 0.0722 * channel(t.blue)
+        }
+        let tones = RX.Wash.alertTones + RX.Wash.positiveTones
+        #expect(tones.count == 4)
+        for tone in tones {
+            let ratio = 1.05 / (luminance(tone) + 0.05)
+            #expect(ratio >= 4.5, "\(tone) has \(ratio):1 against white")
+        }
+    }
+
     @Test func typographyTable() {
         #expect(RX.Typography.allCases.count == 12)
         #expect(RX.Typography.display.spec.size == 56)
