@@ -976,7 +976,9 @@ public struct RXTimerRing: View {
                 .rxFont(.footnoteBold)
                 .fontWeight(urgent ? .black : nil)
                 .monospacedDigit()
-                .foregroundStyle(urgent ? color : RX.Palette.accentText.color)
+                // The red is a fill colour (3.9:1 on white): the urgent digit stays primary text and
+                // the red ring carries the urgency.
+                .foregroundStyle(urgent ? RX.Palette.textPrimary.color : RX.Palette.accentText.color)
         }
         // Half the heavier stroke: the arc stays inside the frame.
         .padding(RX.Metrics.codeRingUrgentStroke / 2)

@@ -95,7 +95,34 @@ struct RXHomePage<Extras: View>: View {
             .accessibilityIdentifier("rx.home.share")
         }
         .rxPress(haptic: .selection)
+        .background { if lightHero { lightActionsVeil } }
     }
+
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    /// Light appearance: the dark labels sit low on the light art, where the sphere's purple
+    /// reflection runs darkest (under Générer above all) and the page veil is at its thinnest. A
+    /// soft white pool under the row, light pooling under the white discs, lifts that band so the
+    /// labels keep their contrast; stronger under Reduce Transparency or Increase Contrast.
+    private var lightActionsVeil: some View {
+        let flat = Theme.Wash.isFlat(increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)
+        let white = Color.white.opacity(flat ? RX.Veil.lightHero(flat: true)[2] : Self.actionsVeil)
+        // A gradient, not a blurred shape: a blur (or `accessibilityHidden` on it) leaves an empty
+        // element in the accessibility tree, which the audit reports as one with no description.
+        return EllipticalGradient(
+            stops: [
+                .init(color: white, location: 0),
+                .init(color: white, location: 0.55),
+                .init(color: .white.opacity(0), location: 1),
+            ])
+            .padding(.horizontal, -RX.Space.l)
+            .padding(.vertical, -RX.Space.l)
+            .allowsHitTesting(false)
+    }
+
+    /// The white pool under the light quick actions (between the hero veil's middle and bottom).
+    private static var actionsVeil: Double { 0.55 }
 
     /// Récents: the last items used, or how the card fills (classic parity: the same words).
     private var recentCard: some View {

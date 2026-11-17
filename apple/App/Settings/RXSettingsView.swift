@@ -468,7 +468,10 @@ struct RXProfileQRPage: View {
                 let image = code(attempt: attempts)
                 Group {
                     if let image {
-                        Image(decorative: image, scale: 3)
+                        // A labelled image, not `Image(decorative:)`: a decorative image is hidden
+                        // from accessibility, and a label added afterwards does not bring it back,
+                        // so VoiceOver (and the UI tests) never found the drawn code.
+                        Image(image, scale: 3, label: Text("rx.profileQR.code"))
                             .interpolation(.none)
                             .resizable()
                             .scaledToFit()
@@ -476,7 +479,9 @@ struct RXProfileQRPage: View {
                             .padding(RX.Space.l)
                             .background(Color.white, in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
                             .padding(.vertical, RX.Space.s)
+                            .accessibilityElement(children: .ignore)
                             .accessibilityLabel(Text("rx.profileQR.code"))
+                            .accessibilityAddTraits(.isImage)
                             .accessibilityIdentifier("rx.profileQR.code")
                         Text("rx.profileQR.hint")
                             .rxFont(.callout)
