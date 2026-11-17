@@ -55,12 +55,9 @@ struct ProfileView: View {
         }
         #if os(iOS)
         .background {
-            if rxDesign {
-                RXBackdrop(name: RXHero.settings, height: 300, lightOpacity: 0.35, darkOpacity: 0.6)
-            } else {
-                PhoneBackground()
-            }
+            if !rxDesign { PhoneBackground() }
         }
+        .modifier(RXScrollingBackdrop(name: RXHero.settings, height: 300, lightOpacity: 0.35, darkOpacity: 0.6, active: rxDesign))
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .navigationTitle("Profil")

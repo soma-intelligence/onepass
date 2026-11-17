@@ -273,13 +273,10 @@ struct ItemDetailView: View {
         // A soft wash in the item's identity color, fixed at the top like the page's tint. It sits
         // under the content and the navigation bar, and never takes a touch.
         .background(alignment: .top) {
-            if rxHeader {
-                // RX: the soft glass orb behind the header (high key: the text stays dark).
-                RXBackdrop(name: RXHero.item, height: 320, lightOpacity: 0.7, darkOpacity: 0.3)
-            } else {
-                identityWash(item)
-            }
+            if !rxHeader { identityWash(item) }
         }
+        // RX: the soft glass orb behind the header (high key: the text stays dark), moving with the page.
+        .modifier(RXScrollingBackdrop(name: RXHero.item, height: 320, lightOpacity: 0.7, darkOpacity: 0.3, active: rxHeader))
         #endif
         .groupedScreen()
         .environment(\.rxCards, rxDesign)

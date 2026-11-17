@@ -51,12 +51,9 @@ struct WatchtowerTab: View {
             withDBAnimation(.smooth, reduceMotion: reduceMotion) { position.scrollTo(edge: .top) }
         }
         .background {
-            if rxDesign {
-                RXBackdrop(name: RXHero.watchtower)
-            } else {
-                PhoneBackground()
-            }
+            if !rxDesign { PhoneBackground() }
         }
+        .modifier(RXScrollingBackdrop(name: RXHero.watchtower, active: rxDesign))
         // RX: the page draws its own large title.
         .navigationTitle(rxDesign ? "" : "Watchtower")
         .navigationBarTitleDisplayMode(.inline)

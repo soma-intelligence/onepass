@@ -844,16 +844,18 @@ extension RXCompositionStrip: nonisolated PenpotMapped {
 
 // MARK: Hero page
 
-/// A page with a photo hero and the rounded page sheet that starts under it (Home and Settings),
-/// on DesignBridge's `DBScrollHero` (D-HOME-HERO): the photo stays fixed behind the page, under
-/// the status bar; only the sheet scrolls up over it, and the hero (score, pill, actions) fades
-/// and shrinks as the sheet covers it. The hero area sizes to its content, so it grows with
-/// Dynamic Type instead of sliding under the sheet.
+/// A page with a photo hero and the rounded page sheet that starts under it (Home and Settings).
+/// One plain scroll: the photo, the hero (score, pill, actions) and the sheet move together, so
+/// nothing slides under anything. The photo runs under the status bar and stretches down when the
+/// page is pulled past its top, so no gap opens above it. The hero sizes to its content, so it
+/// grows with Dynamic Type.
 public struct RXHeroPage<Hero: View, Sheet: View>: View {
     let photo: Image
     let hero: Hero
     let sheet: Sheet
     @State private var position = ScrollPosition(edge: .top)
+    @State private var geometry = HeroScroll()
+    @State private var heroHeight: CGFloat = 0
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -877,17 +879,46 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
     }
 
     public var body: some View {
-        DBScrollHero(heroHeight: nil, parallax: nil, position: $position) {
-            backdrop
-        } header: {
-            hero
-                .padding(.top, RX.Space.xs)
-                .frame(maxWidth: .infinity)
-        } content: {
-            sheet
-                .padding(.top, RX.Space.xl)
-                .padding(.horizontal, RX.Space.gutter)
-                .padding(.bottom, RX.Space.xl)
+        let radius = RX.Radius.pageSheet
+        ScrollView {
+            VStack(spacing: 0) {
+                hero
+                    .padding(.top, RX.Space.xs)
+                    .padding(.horizontal, RX.Space.l)
+                    .padding(.bottom, RX.Space.xl)
+                    .frame(maxWidth: .infinity)
+                    .background(alignment: .bottom) {
+                        // The photo belongs to the hero: it scrolls with it. Taller than the hero
+                        // by the status bar, the sheet's corners and any pull past the top.
+                        backdrop
+                            .frame(maxWidth: .infinity)
+                            .frame(height: heroHeight + geometry.topInset + radius + max(0, -geometry.offset))
+                            .clipped()
+                            .offset(y: radius)
+                            .accessibilityHidden(true)
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heroHeight = $0 }
+                sheet
+                    .padding(.top, RX.Space.xl)
+                    .padding(.horizontal, RX.Space.gutter)
+                    .padding(.bottom, RX.Space.xl)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .frame(minHeight: max(0, geometry.containerHeight - radius), alignment: .top)
+                    .background(
+                        RX.Palette.pageBackground.color,
+                        in: UnevenRoundedRectangle(topLeadingRadius: radius, topTrailingRadius: radius, style: .continuous)
+                    )
+            }
+        }
+        .scrollPosition($position)
+        .background(RX.Palette.pageBackground.color.ignoresSafeArea())
+        .onScrollGeometryChange(for: HeroScroll.self) { scroll in
+            HeroScroll(
+                offset: scroll.contentOffset.y + scroll.contentInsets.top,
+                containerHeight: scroll.containerSize.height,
+                topInset: scroll.contentInsets.top)
+        } action: { _, new in
+            geometry = new
         }
         .task {
             guard let initialOffset else { return }
@@ -899,8 +930,14 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
         }
     }
 
-    /// Fixed: the photo never moves with the page. Reduce Transparency or Increase Contrast give a
-    /// stronger veil, so the words over it keep their contrast.
+    private struct HeroScroll: Equatable {
+        var offset: CGFloat = 0
+        var containerHeight: CGFloat = 0
+        var topInset: CGFloat = 0
+    }
+
+    /// Reduce Transparency or Increase Contrast give a stronger veil, so the words over the photo
+    /// keep their contrast.
     private var backdrop: some View {
         let flat = Theme.Wash.isFlat(increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)
         let veil: Color = lightPhoto ? .white : .black

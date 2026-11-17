@@ -14,12 +14,6 @@ struct RootView: View {
     #endif
     #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The RX look: no vault door, the lock screen zooms through into the vault (`RXLockPassage`).
-    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
-    /// Bumped by each RX unlock: one light tap as the vault comes.
-    @State private var rxUnlocks = 0
-    /// RX: the zoom-through is playing. The Face ID offer waits for it (jank audit J04).
-    @State private var rxArriving = false
     /// The vault door between the lock screen and the vault (iPhone and iPad, `VaultDoorPassage`).
     @State private var door = VaultDoorPassage()
     /// The lock screen as it was at the end of the dial's turn: the two panels of the opening door.
@@ -50,7 +44,6 @@ struct RootView: View {
                 MainActor.assumeIsolated { if let seam { doorSeam = seam } }
             }
             .overlay { doorOverlay }
-            .sensoryFeedback(.impact(weight: .light), trigger: rxUnlocks)
             // A catch as the dial turns, a firmer one as the bolt releases and the door parts.
             .sensoryFeedback(trigger: door.phase) { _, phase in
                 switch phase {
@@ -229,44 +222,15 @@ struct RootView: View {
 
     #if os(iOS)
     private var doorKeepsLock: Bool { door.keepsLockOnTop }
-    private var doorHoldsPresentations: Bool { door.holdsPresentations || rxArriving }
+    private var doorHoldsPresentations: Bool { door.holdsPresentations }
     private var doorShowsVault: Bool { door.showsVaultUnderneath }
     private var vaultScale: CGFloat { door.vaultScale }
-    /// The RX zoom-through plays (not under Reduce Motion: the plain crossfade).
-    private var rxPassage: Bool { rxDesign && !reduceMotion }
     #else
     private var doorKeepsLock: Bool { false }
     private var doorHoldsPresentations: Bool { false }
     private var doorShowsVault: Bool { false }
     private var vaultScale: CGFloat { 1 }
-    private var rxPassage: Bool { false }
     #endif
-
-    /// The vault arriving under the lock screen: settling from just behind it in the RX look.
-    private var vaultTransition: AnyTransition {
-        #if os(iOS)
-        if rxPassage { return .rxVaultArrival }
-        #endif
-        return .opacity
-    }
-
-    /// The move between the lock screen and the vault: the RX zoom-through, else the routes' own.
-    private var routeAnimation: Animation {
-        #if os(iOS)
-        if rxPassage { return RXLockPassage.animation }
-        #endif
-        return .smooth(duration: 0.25)
-    }
-
-    /// The lock screen leaving (or coming back): under the door it leaves at once (the panels are
-    /// its picture); in the RX look it zooms through; otherwise a crossfade.
-    private var lockTransition: AnyTransition {
-        if doorKeepsLock { return .identity }
-        #if os(iOS)
-        if rxPassage { return .rxLockZoomThrough }
-        #endif
-        return .opacity
-    }
 
     private enum Route: Hashable {
         case onboarding, lock, unlocked, failed, guest, revoked, erased
@@ -318,21 +282,20 @@ struct RootView: View {
             // One branch for both, so the lock screen can stay above the vault while the door
             // opens (the same `LockView`, never a second one: its automatic Face ID runs once).
             // One view per account: nothing typed or shown for one account stays for another.
-            // RX look: no door; the lock screen zooms through into the vault in one `.smooth` move.
             ZStack {
                 if route == .unlocked || doorShowsVault {
                     BrowseRoot()
                         .id(model.accounts.activeSlot)
                         .scaleEffect(vaultScale)
-                        .transition(vaultTransition)
+                        .transition(.opacity)
                 }
                 if route == .lock || doorKeepsLock {
                     LockView()
                         .id(model.accounts.activeSlot)
-                        .transition(lockTransition)
+                        // Under the door, the lock screen leaves at once: the panels are its picture.
+                        .transition(doorKeepsLock ? .identity : .opacity)
                 }
             }
-            .animation(routeAnimation, value: route)
             .transition(.opacity)
         case .revoked:
             RevokedDeviceView()
@@ -394,22 +357,10 @@ extension RootView {
         let generation = doorGeneration
         if old == .lock, new == .unlocked {
             var next = door
-            // RX look: no door, the route's own transition is the passage (`lockTransition`).
-            next.handle(.unlocked(reduceMotion: reduceMotion || rxDesign))
+            next.handle(.unlocked(reduceMotion: reduceMotion))
             guard next.phase == .turning else {
                 door = next
-                if rxDesign {
-                    rxUnlocks &+= 1
-                    rxArriving = true
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(500))
-                        rxArriving = false
-                    }
-                }
                 announceUnlocked()
-                #if DEBUG
-                demoLockIfAsked()
-                #endif
                 return
             }
             // The dial turns with a little catch at the end; the vault is already rendered below.
@@ -424,8 +375,7 @@ extension RootView {
         } else if old == .unlocked, new == .lock {
             doorSnapshot = nil
             // A lock in the background (auto-lock, app switcher) plays nothing nobody sees.
-            // RX look: no door either; the lock screen comes back through the same zoom.
-            door.handle(.locked(reduceMotion: reduceMotion || rxDesign || scenePhase == .background))
+            door.handle(.locked(reduceMotion: reduceMotion || scenePhase == .background))
         } else {
             doorSnapshot = nil
             door.handle(.interrupted)
