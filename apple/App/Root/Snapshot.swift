@@ -59,6 +59,7 @@ enum Snapshot {
                 model.page = .watchtower
                 try? await Task.sleep(for: .seconds(2))
                 await capture(directory, "mac-rx-watchtower-\(suffix)")
+                await captureSettings(directory, "mac-rx-settings-\(suffix)", height: 1120)
             }
             NSApp.terminate(nil)
             return
@@ -198,7 +199,10 @@ enum Snapshot {
         menu.performActionForItem(at: index)
         try? await Task.sleep(for: .milliseconds(1500))
         // The settings window is created once, then reused (hidden) by the next ⌘,.
-        guard let window = NSApp.windows.first(where: { $0.isVisible && $0 !== appWindow && $0.contentView != nil })
+        // The largest other visible window: a small panel (the AutoFill tip's icon) may be visible too.
+        guard let window = NSApp.windows
+            .filter({ $0.isVisible && $0 !== appWindow && $0.contentView != nil })
+            .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
         else {
             DemoTrace.log("snapshot: settings window not found")
             return

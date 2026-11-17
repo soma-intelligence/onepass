@@ -368,10 +368,15 @@ extension View {
 struct MacSettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var page: SettingsPage? = .general
+    /// The RX window's pushed pages.
+    @State private var rxPath: [SettingsPage] = []
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     var body: some View {
         Group {
-            if model.session.state == .unlocked {
+            if model.session.state == .unlocked, rxDesign {
+                RXMacSettingsHome(path: $rxPath)
+            } else if model.session.state == .unlocked {
                 NavigationSplitView {
                     List(selection: $page) {
                         Section {
@@ -413,7 +418,8 @@ struct MacSettingsView: View {
                     description: Text("settings.unlockOnepassToOpen"))
             }
         }
-        .frame(minWidth: 760, idealWidth: 820, minHeight: 540, idealHeight: 600)
+        .frame(minWidth: rxDesign ? 860 : 760, idealWidth: rxDesign ? 920 : 820,
+               minHeight: rxDesign ? 640 : 540, idealHeight: rxDesign ? 760 : 600)
         .containerBackground(.thinMaterial, for: .window)
         .onAppear(perform: takeRequest)
         .onChange(of: model.settingsPageRequest) { takeRequest() }
@@ -424,6 +430,7 @@ struct MacSettingsView: View {
     private func takeRequest() {
         guard let request = model.settingsPageRequest else { return }
         page = request
+        rxPath = [request]
         model.settingsPageRequest = nil
     }
 

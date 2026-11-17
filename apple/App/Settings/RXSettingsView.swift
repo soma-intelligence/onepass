@@ -215,8 +215,11 @@ struct RXPlanPage: View {
     var body: some View {
         RXHeroPage(photo: Image("rx-hero")) {
             VStack(alignment: .leading, spacing: RX.Space.xl) {
+                #if os(iOS)
+                // The Mac keeps the window toolbar's back button.
                 GlassButton(Text("rx.plan.back"), systemImage: "chevron.left", onPhoto: true) { dismiss() }
                     .accessibilityIdentifier("rx.plan.back")
+                #endif
                 PlanCard(
                     title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-keys"),
                     perks: ["key.fill", "person.3.fill", "airplane", "shield.lefthalf.filled"])

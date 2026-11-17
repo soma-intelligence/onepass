@@ -117,6 +117,7 @@
 		63AF1BAAAF2E157DFE4DE771 /* OtpScanButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EC837A6CA8E1AFDC3709C80 /* OtpScanButton.swift */; };
 		63E48896A87A4F5F744D086B /* PairingQRView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA88FD32124721CCD59CA2F /* PairingQRView.swift */; };
 		640095EA49580D71EAE656DB /* SharingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB25B0FC46CD5AF0BE37BC2 /* SharingUITests.swift */; };
+		66028C66EB1315E81F2C79BC /* RXMacSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ECD33A35C0C4AE83116C22C /* RXMacSettings.swift */; };
 		6632869371D8005F4FA8616D /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 4589B26BB420AF0E483B2C36 /* InfoPlist.xcstrings */; };
 		67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */; };
 		6836074F1CF5DEF5FFD74991 /* ItemListColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */; };
@@ -430,6 +431,7 @@
 		1AA46BB707E6DFF25141F358 /* AddAccountSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountSheet.swift; sourceTree = "<group>"; };
 		1B93AA639B4849F20B357AE9 /* CryptoReceiveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoReceiveSheet.swift; sourceTree = "<group>"; };
 		1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewItemMenu.swift; sourceTree = "<group>"; };
+		1ECD33A35C0C4AE83116C22C /* RXMacSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacSettings.swift; sourceTree = "<group>"; };
 		1EFF1217DA8BF36DC3AA5A9E /* HotspotInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotspotInstaller.swift; sourceTree = "<group>"; };
 		1F391F505B02B771276A46D5 /* ItemLinkPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemLinkPicker.swift; sourceTree = "<group>"; };
 		1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariSetupViews.swift; sourceTree = "<group>"; };
@@ -1283,6 +1285,7 @@
 				6578DD1A294793BBA2E5AB8A /* IconCheckSettings.swift */,
 				2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */,
 				0D982919CC9E366DCF914D57 /* MigrationSheet.swift */,
+				1ECD33A35C0C4AE83116C22C /* RXMacSettings.swift */,
 				D5C3BD94740BA327E299532A /* RXSettingsView.swift */,
 				1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */,
 				73396E5534184EF7CE76A170 /* SecuritySettings.swift */,
@@ -2147,6 +2150,7 @@
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
 				317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */,
 				B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */,
+				66028C66EB1315E81F2C79BC /* RXMacSettings.swift in Sources */,
 				D1C9951D80B0D68219B7508E /* RXMacSidebar.swift in Sources */,
 				E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */,
 				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
