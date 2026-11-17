@@ -79,6 +79,12 @@ struct RootView: View {
                 model.finishAddingAccountIfNeeded()
                 model.consumePendingRoute()
             }
+            #if DEBUG
+            // The demo account is seeded: a route that arrived meanwhile runs now.
+            .onChange(of: model.demoPreparing) { _, preparing in
+                if !preparing { model.consumePendingRoute() }
+            }
+            #endif
             // The services bound to the primary account follow its state, whichever account shows.
             .onChange(of: model.primarySession.state) { _, state in
                 model.primaryStateChanged(state)

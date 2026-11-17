@@ -13,6 +13,7 @@ struct EditorHeader: View {
     @State private var resolved: ResolvedIcon?
     /// "Choisir une icône…": the icon library sheet.
     @State private var choosingIcon = false
+    @Environment(\.editorAdvance) private var advance
 
     #if os(iOS)
     private static let titleHairline = Color.primary.opacity(0.06)
@@ -102,6 +103,9 @@ struct EditorHeader: View {
             .textFieldStyle(.plain)
             .font(.system(size: 26, weight: .bold))
             .focused(titleFocused)
+            // Return goes on to the first field (iOS keyboard chain).
+            .submitLabel(advance != nil ? .next : .done)
+            .onSubmit { advance?(EditorKeyboardChain.titleID) }
             .onChange(of: item.title) { editor.clearError(for: "title") }
             .padding(.horizontal, Theme.Space.l)
             .padding(.vertical, Theme.Space.m)

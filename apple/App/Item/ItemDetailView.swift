@@ -1,5 +1,6 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import DesignBridgeKit
 import DesignKit
 import GlanceKit
 import SwiftUI
@@ -26,7 +27,7 @@ struct ItemDetailView: View {
     private let standalone: Bool
 
     @State private var item: FfiItem?
-    @State private var loadError: String?
+    @State private var loadError: DBLoadError?
     /// Where the websites card sits among the free sections (per device, set by the editor).
     @AppStorage(EditorLayout.websitesSlotKey) private var websitesSlot = 0
     /// The RX look (Réglages > Général > Nouveau design): quick actions under the header, RX cards.
@@ -95,10 +96,13 @@ struct ItemDetailView: View {
                     detail(item)
                 }
             } else if let loadError {
-                EmptyState(title: String(localized: "item.itemUnavailable"), systemImage: "exclamationmark.triangle",
-                           message: loadError)
+                DBErrorView(loadError) {
+                    Task { await load() }
+                }
+                .accessibilityIdentifier("item.loadError")
             } else {
-                ProgressView()
+                // Skeleton rows; the spinner shows only if the load takes more than 400 ms.
+                DBLoadingView { DBSkeleton(rows: 4) }
             }
         }
         .task(id: ref) { await load() }
@@ -834,17 +838,24 @@ struct ItemDetailView: View {
             .accessibilityIdentifier("item.shareMenu")
             if item.archived {
                 Button("app.unarchive", systemImage: "archivebox") {
-                    run { try await session.unarchive(itemID: item.id, vaultID: item.vaultId) }
+                    run(success: String(localized: "root.unarchived \(item.title)"),
+                        undo: { try await session.archive(itemID: item.id, vaultID: item.vaultId) }) {
+                        try await session.unarchive(itemID: item.id, vaultID: item.vaultId)
+                    }
                 }
                 .accessibilityIdentifier("item.unarchive")
             } else {
                 Button("common.archive", systemImage: "archivebox") {
-                    run { try await session.archive(itemID: item.id, vaultID: item.vaultId) }
+                    run(success: String(localized: "root.archived \(item.title)"),
+                        undo: { try await session.unarchive(itemID: item.id, vaultID: item.vaultId) }) {
+                        try await session.archive(itemID: item.id, vaultID: item.vaultId)
+                    }
                 }
                 .accessibilityIdentifier("item.archive")
             }
             Button("common.delete", systemImage: "trash", role: .destructive) {
-                run(clearsSelection: true, success: String(localized: "item.movedToRecentlyDeleted")) {
+                run(clearsSelection: true, success: String(localized: "item.movedToRecentlyDeleted"),
+                    undo: { try await session.restoreItem(itemID: item.id, vaultID: item.vaultId) }) {
                     try await session.trash(itemID: item.id, vaultID: item.vaultId)
                 }
             }
@@ -946,28 +957,49 @@ struct ItemDetailView: View {
     }
 
     /// Runs an item operation, then reloads the item (or leaves the detail, or follows a move).
+    /// `undo` reverses it from the success toast's Undo button.
     private func run(
         clearsSelection: Bool = false, movedTo vaultID: String? = nil, success: String? = nil,
+        undo: (@MainActor @Sendable () async throws -> Void)? = nil,
         _ op: @escaping () async throws -> Void
     ) {
         Task {
             do {
                 try await op()
                 actionError = nil
-                if let success { showToast(success) }
+                if let success {
+                    if let undo {
+                        model.showToast(success, action: .undo { undoAction(undo) })
+                    } else {
+                        showToast(success)
+                    }
+                }
                 if clearsSelection {
                     // Leaves the detail; if it stays on screen it shows the new state (or "introuvable").
                     if !standalone, model.selectedItem == ref { model.selectedItem = nil }
-                    await reload(ref)
+                    await reload(ref, keepOnFailure: true)
                 } else if let vaultID {
                     let moved = ItemRef(vaultID: vaultID, itemID: ref.itemID)
                     if !standalone, model.selectedItem == ref { model.selectedItem = moved }
-                    await reload(moved)
+                    await reload(moved, keepOnFailure: true)
                 } else {
-                    await reload(ref)
+                    await reload(ref, keepOnFailure: true)
                 }
             } catch {
                 actionError = VaultError(error).localizedMessage
+                model.showToast(VaultError(error).localizedMessage, kind: .error)
+            }
+        }
+    }
+
+    /// The Undo of an archive or a trash: reverses it, then shows the item as stored.
+    private func undoAction(_ undo: @escaping @MainActor @Sendable () async throws -> Void) {
+        let target = ref
+        Task {
+            do {
+                try await undo()
+                await reload(target, keepOnFailure: true)
+            } catch {
                 model.showToast(VaultError(error).localizedMessage, kind: .error)
             }
         }
@@ -992,13 +1024,22 @@ struct ItemDetailView: View {
         }
     }
 
-    private func reload(_ target: ItemRef) async {
+    /// `keepOnFailure`: after an action, a failed read keeps the item on screen and says so in a
+    /// toast with Retry, instead of replacing valid content with an error.
+    private func reload(_ target: ItemRef, keepOnFailure: Bool = false) async {
         do {
             item = try await session.loadItem(vaultID: target.vaultID, itemID: target.itemID)
             loadError = nil
         } catch {
-            item = nil
-            loadError = VaultError(error).localizedMessage
+            let message = VaultError(error).localizedMessage
+            if keepOnFailure, item != nil {
+                model.showToast(message, kind: .error, action: .retry {
+                    Task { await reload(target, keepOnFailure: true) }
+                })
+            } else {
+                item = nil
+                loadError = DBLoadError(title: String(localized: "item.itemUnavailable"), message: message)
+            }
         }
     }
 

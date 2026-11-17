@@ -6,7 +6,7 @@ import VaultKit
 /// Items of one filter of the Éléments tab (vault, category, tag, Archive, Supprimés récemment)
 /// sorted by title, or of "À proximité" (closest first, the distance in the subtitle), with a search
 /// of its own. A row opens the item's detail. Swiping an active item from the right: Archive first
-/// (a full swipe archives), then Mettre à la corbeille (toast, 30 days to restore); an archived
+/// (a full swipe archives), then Supprimer (to Supprimés récemment, toast with Undo, 30 days to restore); an archived
 /// item offers Désarchiver.
 struct CategoryListView: View {
     @Environment(AppModel.self) private var model
@@ -41,35 +41,26 @@ struct CategoryListView: View {
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     if summary.trashedAt == nil {
                         // The first button is the one a full swipe runs: Archive, never the trash.
-                        if summary.archived {
-                            Button("app.unarchive", systemImage: "archivebox") { model.unarchive(ref) }
-                                .tint(.indigo)
-                                .accessibilityIdentifier("list.swipe.unarchive")
-                        } else {
-                            Button("common.archive", systemImage: "archivebox") { model.archive(ref) }
-                                .tint(.indigo)
-                                .accessibilityIdentifier("list.swipe.archive")
-                        }
-                        Button("term.trash", systemImage: "trash", role: .destructive) {
-                            model.trash(ref)
-                        }
-                        // The list's accent tint would paint it like Archive.
-                        .tint(.red)
-                        .accessibilityIdentifier("list.swipe.trash")
+                        archiveButton(summary, ref: ref)
+                            .tint(.indigo)
+                        trashButton(ref)
+                            // The list's accent tint would paint it like Archive.
+                            .tint(.red)
                     }
                 }
                 .swipeActions(edge: .leading) {
                     if summary.trashedAt == nil {
-                        Button(
-                            summary.favorite ? "Retirer des favoris" : "Ajouter aux favoris",
-                            systemImage: summary.favorite ? "star.slash" : "star.fill"
-                        ) {
-                            Task {
-                                try? await session.setFavorite(
-                                    !summary.favorite, itemID: summary.id, vaultID: summary.vaultId)
-                            }
-                        }
-                        .tint(.orange)
+                        favoriteButton(summary)
+                            .tint(.orange)
+                    }
+                }
+                // The same actions without a swipe (long press, pointer, VoiceOver actions).
+                .contextMenu {
+                    if summary.trashedAt == nil {
+                        favoriteButton(summary)
+                        archiveButton(summary, ref: ref)
+                        Divider()
+                        trashButton(ref)
                     }
                 }
             }
@@ -98,6 +89,46 @@ struct CategoryListView: View {
                     Button("Nouvel élément", systemImage: "plus") { addItem() }
                         .accessibilityIdentifier("categoryList.new")
                 }
+            }
+        }
+    }
+
+    // MARK: - Row actions (swipe and context menu)
+
+    @ViewBuilder private func archiveButton(_ summary: FfiItemSummary, ref: ItemRef) -> some View {
+        if summary.archived {
+            Button("app.unarchive", systemImage: "archivebox") { model.unarchive(ref) }
+                .accessibilityIdentifier("list.swipe.unarchive")
+        } else {
+            Button("common.archive", systemImage: "archivebox") { model.archive(ref) }
+                .accessibilityIdentifier("list.swipe.archive")
+        }
+    }
+
+    /// Goes to Supprimés récemment (toast with Undo): named "Supprimer" as in the item menu.
+    private func trashButton(_ ref: ItemRef) -> some View {
+        Button("common.delete", systemImage: "trash", role: .destructive) { model.trash(ref) }
+            .accessibilityIdentifier("list.swipe.trash")
+    }
+
+    private func favoriteButton(_ summary: FfiItemSummary) -> some View {
+        Button(
+            summary.favorite ? "Retirer des favoris" : "Ajouter aux favoris",
+            systemImage: summary.favorite ? "star.slash" : "star.fill"
+        ) {
+            toggleFavorite(summary)
+        }
+        .accessibilityIdentifier("list.swipe.favorite")
+    }
+
+    /// A failure says so in a toast (never silent).
+    private func toggleFavorite(_ summary: FfiItemSummary) {
+        let favorite = !summary.favorite
+        Task {
+            do {
+                try await session.setFavorite(favorite, itemID: summary.id, vaultID: summary.vaultId)
+            } catch {
+                model.showToast(VaultError(error).localizedMessage, kind: .error)
             }
         }
     }

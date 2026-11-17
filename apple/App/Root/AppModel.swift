@@ -186,7 +186,7 @@ final class AppModel {
     /// Bumped after each remote change set is applied: an open item detail reloads (or warns its
     /// editor) on it.
     var remoteRevision = 0
-    /// Short confirmation shown at the bottom of the browse screens ("Mis à la corbeille").
+    /// Short confirmation shown at the bottom of the browse screens ("Déplacé vers Supprimés récemment").
     private(set) var toast: Toast?
     /// OnePass is the system AutoFill provider; nil until the first read. Read again on every return
     /// to the foreground and after an activation request.
@@ -1525,6 +1525,11 @@ final class AppModel {
     /// After an unlock: the waiting route, if any.
     func consumePendingRoute() {
         guard session.state == .unlocked, !onboardingInProgress, let route = pendingRoute else { return }
+        #if DEBUG
+        // The demo account unlocks before its items are seeded: the route waits for the browse
+        // screens (`demoPreparing` off), or its toast would go before anything shows it.
+        if demoPreparing { return }
+        #endif
         pendingRoute = nil
         pendingRouteExpiry?.cancel()
         pendingRouteExpiry = nil
@@ -1980,14 +1985,29 @@ final class AppModel {
         trash(ref)
     }
 
-    /// No confirmation (the item stays 30 days in Supprimés récemment): a toast says it happened.
+    /// No confirmation (the item stays 30 days in Supprimés récemment): a toast says it happened,
+    /// with Undo.
     func trash(_ ref: ItemRef) {
         let title = session.summaries.first { $0.id == ref.itemID }?.title ?? ""
         Task {
             do {
                 try await session.trash(itemID: ref.itemID, vaultID: ref.vaultID)
                 if selectedItem == ref, !isEditing { selectedItem = nil }
-                showToast(String(localized: "root.movedToTrash \(title)"))
+                showToast(String(localized: "root.movedToTrash \(title)"), action: .undo {
+                    self.restore(ref)
+                })
+            } catch {
+                showToast(VaultError(error).localizedMessage, kind: .error)
+            }
+        }
+    }
+
+    /// Back from Supprimés récemment (the Undo of `trash`).
+    func restore(_ ref: ItemRef) {
+        Task {
+            do {
+                try await session.restoreItem(itemID: ref.itemID, vaultID: ref.vaultID)
+                showToast(String(localized: "item.restored"))
             } catch {
                 showToast(VaultError(error).localizedMessage, kind: .error)
             }
@@ -1995,7 +2015,7 @@ final class AppModel {
     }
 
     /// Archive (swipe on an iPhone list): out of the lists and the suggestions, kept in Archive. A
-    /// toast says it happened; the Archive list brings it back.
+    /// toast says it happened, with Undo; the Archive list brings it back too.
     func archive(_ ref: ItemRef) {
         setArchived(true, ref)
     }
@@ -2004,16 +2024,19 @@ final class AppModel {
         setArchived(false, ref)
     }
 
-    private func setArchived(_ archived: Bool, _ ref: ItemRef) {
+    /// `undoable` false for the Undo itself: no Undo of an Undo.
+    private func setArchived(_ archived: Bool, _ ref: ItemRef, undoable: Bool = true) {
         let title = session.summaries.first { $0.id == ref.itemID }?.title ?? ""
         Task {
             do {
+                let undo: ToastAction? = undoable
+                    ? .undo { self.setArchived(!archived, ref, undoable: false) } : nil
                 if archived {
                     try await session.archive(itemID: ref.itemID, vaultID: ref.vaultID)
-                    showToast(String(localized: "root.archived \(title)"))
+                    showToast(String(localized: "root.archived \(title)"), action: undo)
                 } else {
                     try await session.unarchive(itemID: ref.itemID, vaultID: ref.vaultID)
-                    showToast(String(localized: "root.unarchived \(title)"))
+                    showToast(String(localized: "root.unarchived \(title)"), action: undo)
                 }
             } catch {
                 showToast(VaultError(error).localizedMessage, kind: .error)
@@ -2023,13 +2046,20 @@ final class AppModel {
 
     /// Short notification at the bottom of the window: green check for a success, red for a
     /// failure (shown longer, it has to be read), neutral for information.
-    func showToast(_ text: String, kind: ToastKind = .success) {
-        let shown = Toast(text: text, kind: kind)
+    /// `action` adds a button (Undo, Retry): the toast then stays long enough to reach it.
+    func showToast(_ text: String, kind: ToastKind = .success, action: ToastAction? = nil) {
+        let shown = Toast(text: text, kind: kind, action: action)
         toast = shown
+        let seconds: Double = action != nil ? 6 : (kind == .error ? 4 : 2)
         Task {
-            try? await Task.sleep(for: .seconds(kind == .error ? 4 : 2))
+            try? await Task.sleep(for: .seconds(seconds))
             if toast == shown { toast = nil }
         }
+    }
+
+    /// Closes the toast at once (its button was pressed).
+    func dismissToast() {
+        toast = nil
     }
 
     /// The list changed (filter, search, remote reload): a selected item that is no longer in it

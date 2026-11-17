@@ -8,9 +8,10 @@ struct EditorRow<Content: View>: View {
     let label: String
     var message: String?
     @ViewBuilder var content: Content
+    @Environment(\.rxCards) private var rxCards
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+        VStack(alignment: .leading, spacing: rxCards ? Theme.RX.Space.xxs : Theme.Space.xxs) {
             EditorLabel(label)
             // The label is shown once, above: the control's own label is hidden and its text
             // starts on the left.
@@ -19,12 +20,22 @@ struct EditorRow<Content: View>: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let message {
-                Label(message, systemImage: "exclamationmark.circle.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+                EditorErrorLabel(message: message)
                     .accessibilityIdentifier("editor.error")
             }
         }
+    }
+}
+
+/// A validation message under a field: red, the RX negative token with the switch on.
+struct EditorErrorLabel: View {
+    let message: String
+    @Environment(\.rxCards) private var rxCards
+
+    var body: some View {
+        Label(message, systemImage: "exclamationmark.circle.fill")
+            .font(.footnote)
+            .foregroundStyle(rxCards ? Theme.RX.Palette.negative.color : Color.red)
     }
 }
 
@@ -140,10 +151,13 @@ struct AddRowButton: View {
 /// The red "−" at the end of a removable row.
 struct RemoveRowButton: View {
     let action: () -> Void
+    @Environment(\.rxCards) private var rxCards
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "minus.circle").font(.title3).foregroundStyle(.red)
+            Image(systemName: "minus.circle").font(.title3)
+                .foregroundStyle(rxCards ? Theme.RX.Palette.negative.color : Color.red)
+                .editorTapTarget()
         }
         .buttonStyle(.borderless)
     }
@@ -171,12 +185,17 @@ struct TextFieldEditor: View {
 
     private var suggestsAccounts: Bool { field.kind == .email || field.id == "username" }
 
+    /// A sign-in name: no capital letter, no autocorrection, the username content type.
+    private var isAccountField: Bool { field.id == "username" || field.id == "login" || field.id == "account" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             TextField(field.displayLabel, text: text, prompt: Text(placeholder))
+                // Innermost, so it wins over the kind's defaults (sentence case for text).
+                .accountInput(isAccount: isAccountField)
                 .fieldInput(field.kind)
-                .focused($focused)
                 .onSubmit { if let first = suggestions.first { text.wrappedValue = first } }
+                .editorChained($focused)
                 .accessibilityIdentifier("editor.field.\(field.id)")
             if suggestsAccounts, focused, !suggestions.isEmpty {
                 suggestionChips
@@ -213,7 +232,9 @@ struct TextFieldEditor: View {
                             .padding(.vertical, Theme.Space.xs)
                             .background(Theme.accent.opacity(0.14), in: Capsule())
                             .foregroundStyle(Theme.readableAccent)
-                            .contentShape(Capsule())
+                            // 44 pt hit area around the small capsule.
+                            .frame(minHeight: Theme.RX.Metrics.minTapTarget)
+                            .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text("item.use \(suggestion)"))
@@ -287,6 +308,24 @@ extension View {
     }
 }
 
+extension View {
+    /// Usernames: never capitalised or corrected, and offered as a username to AutoFill.
+    @ViewBuilder func accountInput(isAccount: Bool) -> some View {
+        #if os(iOS) || os(visionOS)
+        if isAccount {
+            self
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textContentType(.username)
+        } else {
+            self
+        }
+        #else
+        if isAccount { self.autocorrectionDisabled() } else { self }
+        #endif
+    }
+}
+
 #if os(iOS) || os(visionOS)
 /// No `.password` or `.oneTimeCode`: the editor holds vault secrets, and those content types make
 /// iOS offer to save the value in the system password manager (outside the vault's encryption)
@@ -306,3 +345,70 @@ extension EnvironmentValues {
     @Entry var rxCards = false
 }
 
+// MARK: - Keyboard chain (iOS)
+
+/// Asks the field with this id (`EditorFieldRow` key) to take the keyboard; `serial` makes the
+/// same field askable twice.
+struct EditorFocusRequest: Equatable {
+    let target: String
+    let serial: Int
+}
+
+extension EnvironmentValues {
+    /// The row's id in the editor's keyboard chain, set by `EditorFieldRow`.
+    @Entry var editorFocusID: String? = nil
+    /// The field asked to take the keyboard (Return or "Suivant" on the previous one).
+    @Entry var editorFocusRequest: EditorFocusRequest? = nil
+    /// Moves the keyboard to the field after this id. Set on iOS only: the Mac keeps Tab.
+    @Entry var editorAdvance: (@MainActor (String) -> Void)? = nil
+    /// A field of the chain took the keyboard ("Suivant" in the keyboard bar starts from it).
+    @Entry var editorFieldFocused: (@MainActor (String) -> Void)? = nil
+}
+
+/// A SwiftUI text field in the editor's keyboard chain: Return reads "Suivant" and moves on, a
+/// request focuses it, and it reports when it takes the keyboard.
+private struct EditorChainedField: ViewModifier {
+    let focused: FocusState<Bool>.Binding
+    @Environment(\.editorFocusID) private var id
+    @Environment(\.editorFocusRequest) private var request
+    @Environment(\.editorAdvance) private var advance
+    @Environment(\.editorFieldFocused) private var reportFocus
+
+    func body(content: Content) -> some View {
+        content
+            .focused(focused)
+            .submitLabel(id != nil && advance != nil ? .next : .done)
+            .onSubmit { if let id { advance?(id) } }
+            .onChange(of: request) { _, request in
+                if let request, request.target == id { focused.wrappedValue = true }
+            }
+            .onChange(of: focused.wrappedValue) { _, now in
+                if now, let id { reportFocus?(id) }
+            }
+    }
+}
+
+/// The same chain for the UIKit secure field (`SecretInputField` takes a Bool binding).
+struct EditorChainedSecureFocus: ViewModifier {
+    @Binding var focused: Bool
+    @Environment(\.editorFocusID) private var id
+    @Environment(\.editorFocusRequest) private var request
+    @Environment(\.editorFieldFocused) private var reportFocus
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: request) { _, request in
+                if let request, request.target == id { focused = true }
+            }
+            .onChange(of: focused) { _, now in
+                if now, let id { reportFocus?(id) }
+            }
+    }
+}
+
+extension View {
+    /// Joins the editor's keyboard chain with this field's own focus.
+    func editorChained(_ focused: FocusState<Bool>.Binding) -> some View {
+        modifier(EditorChainedField(focused: focused))
+    }
+}

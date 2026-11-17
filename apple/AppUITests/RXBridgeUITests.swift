@@ -57,9 +57,6 @@ final class RXBridgeUITests: DBUITestCase {
     /// A broken invitation link shows the error toast (the same words as the classic look).
     func testErrorShowsToast() throws {
         launch(ready: "rx.home.score")
-        // Known gap: in the demo account a broken invitation link opened while the app runs
-        // shows nothing (neither look); the classic path `openOrgJoinLink` is never reached.
-        XCTExpectFailure("bad org link gives no feedback in the demo account (open finding)")
         let link = try XCTUnwrap(URL(string: "onepass://org/join?invite=not-a-real-invite"))
         // The first open can relaunch the app before it handles the link; the second reaches the
         // running, unlocked vault.

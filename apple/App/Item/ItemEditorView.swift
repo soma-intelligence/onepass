@@ -16,6 +16,12 @@ struct ItemEditorView: View {
     /// A passkey whose removal waits for "Supprimer la passkey ?" (section id, row key).
     @State private var passkeyRemoval: PasskeyRemoval?
     @FocusState private var titleFocused: Bool
+    /// The keyboard chain (iOS): the field that has the keyboard, the field asked to take it, and
+    /// where to scroll for it.
+    @State private var chainFocus: String?
+    @State private var focusRequest: EditorFocusRequest?
+    @State private var chainScroll: String?
+    @Environment(\.rxCards) private var rxCards
     /// "+ ajouter un lieu": the place search sheet.
     @State private var searchingPlace = false
     private let onDone: (FfiItem?) -> Void
@@ -30,12 +36,12 @@ struct ItemEditorView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Space.l) {
+                VStack(alignment: .leading, spacing: rxCards ? Theme.RX.Space.l : Theme.Space.l) {
                     EditorHeader(editor: editor, titleFocused: $titleFocused)
                     if let error = editor.generalError {
                         EditorCard {
                             Label(error, systemImage: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(rxCards ? Theme.RX.Palette.negative.color : Color.red)
                                 .editorRowPadding()
                         }
                     }
@@ -84,12 +90,23 @@ struct ItemEditorView: View {
                 proxy.scrollTo(ItemEditorModel.titleAnchor, anchor: .top)
                 if editor.isNew { titleFocused = true }
             }
+            .onChange(of: chainScroll) { _, anchor in
+                guard let anchor else { return }
+                withAnimation { proxy.scrollTo(anchor, anchor: .center) }
+                chainScroll = nil
+            }
             .onChange(of: editor.scrollRequest) {
                 guard let anchor = editor.errorAnchor else { return }
                 withAnimation { proxy.scrollTo(anchor, anchor: .center) }
                 if anchor == ItemEditorModel.titleAnchor { titleFocused = true }
             }
         }
+        #if os(iOS)
+        .environment(\.editorFocusRequest, focusRequest)
+        .environment(\.editorAdvance) { id in advance(from: id) }
+        .environment(\.editorFieldFocused) { id in chainFocus = id }
+        .onChange(of: titleFocused) { _, now in if now { chainFocus = EditorKeyboardChain.titleID } }
+        #endif
         .navigationTitle(editor.isNew ? Text("Nouvel élément") : Text("Modification"))
         #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -111,6 +128,18 @@ struct ItemEditorView: View {
             #else
             ToolbarItem(placement: .cancellationAction) { cancelButton }
             ToolbarItem(placement: .confirmationAction) { saveButton }
+            #endif
+            #if os(iOS)
+            // Number and phone pads have no Return: the bar above the keyboard moves on or closes it.
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("editor.keyboard.next") { advance(from: chainFocus ?? EditorKeyboardChain.titleID) }
+                    .disabled(nextFocus(after: chainFocus ?? EditorKeyboardChain.titleID) == nil)
+                    .accessibilityIdentifier("editor.keyboard.next")
+                Button("common.ok") { dismissKeyboard() }
+                    .fontWeight(.semibold)
+                    .accessibilityIdentifier("editor.keyboard.done")
+            }
             #endif
         }
         .confirmationDialog("Abandonner les modifications ?", isPresented: $confirmDiscard, titleVisibility: .visible) {
@@ -160,11 +189,72 @@ struct ItemEditorView: View {
             .accessibilityIdentifier("editor.cancel")
     }
 
-    /// ⌘S is the "Enregistrer" menu command (`BrowseCommands`).
+    /// ⌘S is the "Enregistrer" menu command (`BrowseCommands`). While saving, a small spinner
+    /// takes the label's place at the same width.
     private var saveButton: some View {
-        Button("Enregistrer", action: save)
-            .disabled(editor.saving)
-            .accessibilityIdentifier("editor.save")
+        Button(action: save) {
+            ZStack {
+                Text("Enregistrer").opacity(editor.saving ? 0 : 1)
+                if editor.saving {
+                    ProgressView().controlSize(.small)
+                }
+            }
+        }
+        .disabled(editor.saving)
+        .accessibilityLabel(Text("Enregistrer"))
+        .accessibilityIdentifier("editor.save")
+    }
+
+    // MARK: - Keyboard chain (iOS)
+
+    /// The typed rows in screen order, after the title: the template cards, then the free sections
+    /// in their order. Each with its scroll anchor.
+    private var focusOrder: [(id: String, anchor: String)] {
+        var order: [(id: String, anchor: String)] = [(EditorKeyboardChain.titleID, ItemEditorModel.titleAnchor)]
+        func add(_ section: FfiSection, rows: [(position: Int, key: UUID)]) {
+            for row in rows where section.fields.indices.contains(row.position) {
+                guard EditorFieldRow.isTyped(section.fields[row.position].kind) else { continue }
+                order.append((EditorFieldRow.focusID(sectionID: section.id, key: row.key),
+                              ItemEditorModel.anchor(sectionID: section.id, fieldIndex: row.position)))
+            }
+        }
+        for section in item.sections where !editor.draft.isFreeSection(section.id) {
+            add(section, rows: editor.shownRows(section))
+        }
+        for slot in editor.slots {
+            guard case .section(let id) = slot, let section = item.sections.first(where: { $0.id == id }) else { continue }
+            add(section, rows: editor.shownRows(section))
+        }
+        return order
+    }
+
+    private func nextFocus(after id: String) -> (id: String, anchor: String)? {
+        let order = focusOrder
+        guard let index = order.firstIndex(where: { $0.id == id }), order.indices.contains(index + 1) else { return nil }
+        return order[index + 1]
+    }
+
+    /// Return or "Suivant": the next typed row takes the keyboard; after the last one it closes.
+    private func advance(from id: String) {
+        guard let next = nextFocus(after: id) else {
+            dismissKeyboard()
+            return
+        }
+        chainScroll = next.anchor
+        if next.id == EditorKeyboardChain.titleID {
+            titleFocused = true
+        } else {
+            titleFocused = false
+            focusRequest = EditorFocusRequest(target: next.id, serial: (focusRequest?.serial ?? 0) + 1)
+        }
+    }
+
+    private func dismissKeyboard() {
+        titleFocused = false
+        #if os(iOS)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
+        chainFocus = nil
     }
 
     // MARK: - Cards
@@ -372,4 +462,9 @@ private struct OptionToggle: View {
         .toggleStyle(.switch)
         .editorRowPadding()
     }
+}
+
+/// Ids of the editor's keyboard chain that are not field rows.
+enum EditorKeyboardChain {
+    static let titleID = "title"
 }

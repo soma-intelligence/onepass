@@ -340,7 +340,8 @@ struct LockView: View {
                 Image(systemName: revealed ? "eye.slash" : "eye")
                     .font(.system(size: Platform.isMac ? 14 : 17))
                     .foregroundStyle(.secondary)
-                    .frame(width: 32, height: Self.fieldHeight)
+                    // 44 pt wide on touch screens (minimum hit area), 32 pt on the Mac.
+                    .frame(width: Platform.isMac ? 32 : Theme.RX.Metrics.minTapTarget, height: Self.fieldHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

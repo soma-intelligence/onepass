@@ -264,12 +264,38 @@ enum ToastKind: Equatable {
 struct Toast: Equatable, Hashable {
     let text: String
     let kind: ToastKind
+    /// Undo or Retry: a button in the toast that runs the handler and closes it.
+    var action: ToastAction?
     /// Two identical messages in a row are two notifications.
     let id = UUID()
+
+    static func == (lhs: Toast, rhs: Toast) -> Bool { lhs.id == rhs.id }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+/// The button of a toast. `undo` and `retry` map to the DesignBridgeKit factories of the RX look.
+struct ToastAction: Sendable {
+    enum Kind: Sendable { case undo, retry, other }
+
+    let kind: Kind
+    let title: String
+    let handler: @MainActor @Sendable () -> Void
+
+    /// Undo of a reversible action (archive, trash, a removed field...).
+    static func undo(_ handler: @escaping @MainActor @Sendable () -> Void) -> ToastAction {
+        ToastAction(kind: .undo, title: DBStrings.undo, handler: handler)
+    }
+
+    /// Try again after a failure.
+    static func retry(_ handler: @escaping @MainActor @Sendable () -> Void) -> ToastAction {
+        ToastAction(kind: .retry, title: DBStrings.retry, handler: handler)
+    }
 }
 
 /// The notification capsule at the bottom of the window: an icon in the kind's color, the text.
 struct ToastBanner: View {
+    @Environment(AppModel.self) private var model
     let toast: Toast
 
     private var symbol: String {
@@ -297,6 +323,17 @@ struct ToastBanner: View {
             Text(toast.text)
                 .font(.callout.weight(.medium))
                 .lineLimit(2)
+            if let action = toast.action {
+                Button(action.title) {
+                    model.dismissToast()
+                    action.handler()
+                }
+                .font(.callout.weight(.semibold))
+                .buttonStyle(.borderless)
+                .frame(minHeight: Theme.RX.Metrics.minTapTarget)
+                .contentShape(.rect)
+                .accessibilityIdentifier("browse.toast.action")
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -308,8 +345,9 @@ struct ToastBanner: View {
         .overlay {
             if toast.kind == .error { Capsule().strokeBorder(.red.opacity(0.45)) }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isStaticText)
+        // With a button, its children stay reachable (VoiceOver can press Undo).
+        .accessibilityElement(children: toast.action == nil ? .combine : .contain)
+        .accessibilityAddTraits(toast.action == nil ? .isStaticText : [])
         .accessibilityIdentifier("browse.toast")
     }
 }
@@ -323,17 +361,34 @@ private struct RXToastBridge: ViewModifier {
     let active: Bool
 
     func body(content: Content) -> some View {
-        content.onChange(of: model.toast) { _, shown in
+        // Initial too: a toast set just before the browse screens appear (a link handled right
+        // after the unlock) still reaches the host.
+        content.onChange(of: model.toast, initial: true) { _, shown in
             guard active, let shown else { return }
             toast(Self.toast(for: shown))
         }
     }
 
     static func toast(for shown: Toast) -> DBToast {
+        if let action = shown.action {
+            switch action.kind {
+            case .undo:
+                return .undo(shown.text, undoTitle: action.title, perform: action.handler)
+            case .retry:
+                return .retry(shown.text, retryTitle: action.title, perform: action.handler)
+            case .other:
+                let button = DBToastButton(action.title, handler: action.handler)
+                switch shown.kind {
+                case .success: return .success(shown.text, action: button)
+                case .error: return .error(shown.text, action: button)
+                case .info: return .info(shown.text, action: button)
+                }
+            }
+        }
         switch shown.kind {
-        case .success: .success(shown.text)
-        case .error: .error(shown.text)
-        case .info: .info(shown.text)
+        case .success: return .success(shown.text)
+        case .error: return .error(shown.text)
+        case .info: return .info(shown.text)
         }
     }
 }

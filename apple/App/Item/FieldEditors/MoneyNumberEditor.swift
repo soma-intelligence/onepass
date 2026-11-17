@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 import VaultKit
 
@@ -14,15 +15,26 @@ enum Money {
         return NSDecimalNumber(decimal: rounded).int64Value
     }
 
-    /// "12,50 €".
+    /// "12,50 €" in French, "€12.50" in English: the person's own locale.
     static func formatted(minorUnits: Int64, currency: String) -> String {
         let code = currency.isEmpty ? defaultCurrency : currency
-        return amount(minorUnits: minorUnits).formatted(.currency(code: code).locale(FieldDates.french))
+        return amount(minorUnits: minorUnits).formatted(.currency(code: code).locale(.current))
+    }
+
+    /// "0,00" or "0.00", in the person's locale.
+    static var placeholder: String {
+        Decimal(0).formatted(.number.precision(.fractionLength(2)).grouping(.never).locale(.current))
+    }
+
+    /// The editor's text for an amount, with the locale's decimal separator (the parser takes both).
+    static func editorText(_ amount: Decimal) -> String {
+        NumberInput.text(amount).replacingOccurrences(of: ",", with: Locale.current.decimalSeparator ?? ",")
     }
 }
 
 /// A text field parsed on every keystroke (pads without Return never lose the value): the value
 /// follows the text when it reads as a number, and goes back to empty when the text is cleared.
+/// Text that does not read as a number keeps the last value and says so under the field.
 struct ParsedTextField<V: Equatable>: View {
     let title: String
     let prompt: String
@@ -32,10 +44,28 @@ struct ParsedTextField<V: Equatable>: View {
     let format: (V) -> String
     let commit: (V?) -> Void
     @State private var text = ""
+    @FocusState private var focused: Bool
+
+    /// Typed, but not a number: the value was not changed.
+    private var isInvalid: Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty && parse(trimmed) == nil
+    }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+            field
+            if isInvalid {
+                EditorErrorLabel(message: String(localized: "editor.invalidNumber"))
+                    .accessibilityIdentifier("editor.error")
+            }
+        }
+    }
+
+    private var field: some View {
         TextField(title, text: $text, prompt: Text(prompt))
             .fieldInput(kind)
+            .editorChained($focused)
             .onAppear { text = value.map(format) ?? "" }
             .onChange(of: text) { _, new in
                 let trimmed = new.trimmingCharacters(in: .whitespaces)
@@ -91,9 +121,9 @@ struct MoneyEditor: View {
     var body: some View {
         HStack {
             ParsedTextField(
-                title: field.displayLabel, prompt: "0,00", kind: .money,
+                title: field.displayLabel, prompt: Money.placeholder, kind: .money,
                 value: parts.map { Money.amount(minorUnits: $0.minor) },
-                parse: NumberInput.decimal, format: NumberInput.text,
+                parse: NumberInput.decimal, format: Money.editorText,
                 commit: { amount in
                     let code = parts?.currency ?? pendingCurrency
                     value = amount.map { .money(minorUnits: Money.minorUnits($0), currency: code) } ?? .empty

@@ -6,6 +6,7 @@ import VaultKit
 /// control, its error, and the (−) that fits the row. Looks its field up by its stable key on every
 /// access, so a row that went away reads `.empty` and writes nothing.
 struct EditorFieldRow: View {
+    @Environment(AppModel.self) private var model
     @Bindable var editor: ItemEditorModel
     let sectionID: String
     let key: UUID
@@ -29,6 +30,8 @@ struct EditorFieldRow: View {
             }
             .editorRowPadding()
             .id(ItemEditorModel.anchor(sectionID: sectionID, fieldIndex: index))
+            // Its place in the keyboard chain (Return and "Suivant" move to the next row).
+            .environment(\.editorFocusID, Self.focusID(sectionID: sectionID, key: key))
         }
     }
 
@@ -42,7 +45,7 @@ struct EditorFieldRow: View {
                     .accessibilityIdentifier("editor.label.\(field.id)")
                 FieldEditor(field: field, itemType: item.itemType, ownID: item.id, value: valueBinding)
                 if let message = editor.message(sectionID: sectionID, fieldIndex: index) {
-                    Label(message, systemImage: "exclamationmark.circle.fill").font(.footnote).foregroundStyle(.red)
+                    EditorErrorLabel(message: message)
                 }
             }
         } else if item.itemType == .login, field.id == "username", sectionID == item.sections.first?.id {
@@ -69,16 +72,79 @@ struct EditorFieldRow: View {
                 .accessibilityLabel(Text("item.deletePasskey"))
                 .accessibilityIdentifier("editor.remove.\(field.id)")
         } else if editor.draft.isRemovable(sectionID: sectionID, fieldIndex: index) {
-            RemoveRowButton {
-                if let i = editor.index(of: key, sectionID: sectionID) { editor.removeField(sectionID: sectionID, fieldIndex: i) }
-            }
+            RemoveRowButton { removeField() }
             .accessibilityLabel(Text("Retirer \(name)"))
             .accessibilityIdentifier("editor.remove.\(field.id)")
         } else if !field.required, !Self.alwaysShown(field, item: item, sectionID: sectionID) {
             // A template row folds back: emptied and hidden until "ajouter plus" brings it again.
-            RemoveRowButton { editor.hideField(sectionID: sectionID, key: key) }
+            RemoveRowButton { hideField(field) }
                 .accessibilityLabel(Text("Retirer \(name)"))
                 .accessibilityIdentifier("editor.remove.\(field.id)")
+        }
+    }
+
+    // MARK: - Remove with Undo
+
+    /// A template row folds back; Undo puts its value back and shows it again.
+    private func hideField(_ field: FfiField) {
+        let editor = editor, sectionID = sectionID, key = key
+        let old = field.value
+        editor.hideField(sectionID: sectionID, key: key)
+        guard !old.isBlank else { return }
+        model.showToast(String(localized: "editor.fieldRemoved"), action: .undo {
+            guard let i = editor.index(of: key, sectionID: sectionID) else { return }
+            editor.draft.setValue(old, sectionID: sectionID, fieldIndex: i)
+            editor.pin(key)
+        })
+    }
+
+    /// An added row (free field, repeat) goes; Undo inserts it again at its place.
+    private func removeField() {
+        let editor = editor, sectionID = sectionID
+        guard let i = editor.index(of: key, sectionID: sectionID),
+            let removed = editor.draft.item.sections.first(where: { $0.id == sectionID })?.fields[safe: i]
+        else { return }
+        editor.removeField(sectionID: sectionID, fieldIndex: i)
+        model.showToast(String(localized: "editor.fieldRemoved"), action: .undo {
+            Self.restore(removed, at: i, sectionID: sectionID, in: editor)
+        })
+    }
+
+    /// Puts a removed field back through the editor's own add methods (they keep the row keys in
+    /// step), then gives it its id, label and value again.
+    private static func restore(_ field: FfiField, at index: Int, sectionID: String, in editor: ItemEditorModel) {
+        guard let s = editor.draft.item.sections.firstIndex(where: { $0.id == sectionID }) else { return }
+        if editor.draft.isFreeSection(sectionID) {
+            editor.addCustomField(kind: field.kind, sectionID: sectionID)
+            let last = editor.draft.item.sections[s].fields.count - 1
+            guard last >= 0, editor.draft.item.sections[s].fields[last].kind == field.kind else { return }
+            editor.draft.item.sections[s].fields[last] = field
+            editor.moveField(sectionID: sectionID, from: last, to: index)
+        } else {
+            // A repeat of a template field: one more occurrence, then the values shift so the
+            // restored one sits at its old rank.
+            let before = editor.draft.item.sections[s].fields.count
+            editor.addRepeat(of: field.id, in: sectionID)
+            let fields = editor.draft.item.sections[s].fields
+            guard fields.count == before + 1 else { return }
+            let positions = fields.indices.filter { fields[$0].id == field.id }
+            let rank = positions.firstIndex { $0 >= index } ?? positions.count - 1
+            var values = positions.dropLast().map { fields[$0].value }
+            values.insert(field.value, at: min(rank, values.count))
+            for (position, value) in zip(positions, values) {
+                editor.draft.setValue(value, sectionID: sectionID, fieldIndex: position)
+            }
+        }
+    }
+
+    /// The row's id in the editor's keyboard chain.
+    static func focusID(sectionID: String, key: UUID) -> String { "\(sectionID)#\(key.uuidString)" }
+
+    /// Field kinds typed with the keyboard: the ones the chain stops at.
+    static func isTyped(_ kind: FfiFieldType) -> Bool {
+        switch kind {
+        case .text, .email, .phone, .url, .concealed, .password, .otp, .mnemonic, .number, .money: true
+        default: false
         }
     }
 
