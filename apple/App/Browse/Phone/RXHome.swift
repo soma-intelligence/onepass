@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -37,8 +38,8 @@ struct RXHomePage<Extras: View>: View {
             .environment(\.colorScheme, lightHero ? .light : .dark)
         } sheet: {
             VStack(spacing: RX.Space.l) {
-                if !recents.isEmpty { recentCard }
-                if !favorites.isEmpty { favoritesCard }
+                recentCard
+                favoritesCard
                 vaultsCard
                 extras
             }
@@ -61,8 +62,8 @@ struct RXHomePage<Extras: View>: View {
         #endif
     }
 
-    /// The account menu alone: search is the tab bar's round button, a new item is the first
-    /// quick action (one entry point each).
+    /// The account menu alone: search is the tab bar's search tab, a new item is the first quick
+    /// action (one entry point each, D-HOME-ACTIONS).
     private var topBar: some View {
         HStack {
             AccountMenu()
@@ -70,7 +71,9 @@ struct RXHomePage<Extras: View>: View {
         }
     }
 
-    /// New item, Generate, Share (the security score), More (the account panel's actions).
+    /// New item, Generate, Share (the security score). No "More" menu: everything it held is a
+    /// direct row of the account menu (Réglages, Importer, Scanner un code, Configurer un appareil,
+    /// Verrouiller), and the duplicates have their own banner on the sheet.
     private var quickActions: some View {
         let score = model.watchtower.report.map { Int($0.score) }
         return QuickActionRow {
@@ -87,78 +90,61 @@ struct RXHomePage<Extras: View>: View {
             }
             .disabled(score == nil)
             .accessibilityIdentifier("rx.home.share")
-            Menu {
-                Button("Réglages", systemImage: "gearshape") {
-                    SettingsTiming.requested("home more")
-                    model.showSettings = true
-                }
-                Button("Importer", systemImage: "square.and.arrow.down") { model.showImport = true }
-                Button("account.panel.scanCode", systemImage: "qrcode.viewfinder") { model.showOtpScanner = true }
-                Button("Configurer un appareil", systemImage: "qrcode") { model.showDeviceSetup = true }
-                NavigationLink(value: PhoneRoute.duplicates) {
-                    Label("rx.home.duplicates", systemImage: "square.on.square")
-                }
-                Divider()
-                Button("Verrouiller", systemImage: "lock", role: .destructive) { model.perform(.lock) }
-            } label: {
-                QuickActionLabel(Text("rx.home.more"), systemImage: "ellipsis", onPhoto: !lightHero)
-            }
-            .accessibilityIdentifier("rx.home.more")
         }
-        .buttonStyle(PressableButtonStyle())
+        .rxPress()
     }
 
+    /// Récents: the last items used, or how the card fills (classic parity: the same words).
     private var recentCard: some View {
         RXCard {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 RXCardHeader(Text("Récents"))
-                NavigationLink(value: PhoneRoute.list(.all)) {
-                    Text("rx.home.seeAll")
-                        .rxFont(.calloutMedium)
-                        .foregroundStyle(RX.Palette.accentText.color)
+                if !recents.isEmpty {
+                    NavigationLink(value: PhoneRoute.list(.all)) {
+                        Text("rx.home.seeAll")
+                            .rxFont(.calloutMedium)
+                            .foregroundStyle(RX.Palette.accentText.color)
+                            .dbText(maxLines: 1)
+                    }
+                    .rxPress()
+                    .routeZoomSource(.list(.all))
+                    .padding(.trailing, RX.Space.l)
+                    .accessibilityIdentifier("rx.home.seeAll")
                 }
-                .routeZoomSource(.list(.all))
-                .padding(.trailing, RX.Space.l)
-                .padding(.top, 10)
             }
-            ForEach(recents.prefix(3), id: \.id) { summary in
-                PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
-                    RXSummaryRow(summary: summary)
+            if recents.isEmpty {
+                RXCardMessage(Text("browse.itemsUsedAppearHere"))
+            } else {
+                ForEach(recents.prefix(3), id: \.id) { summary in
+                    PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
+                        RXSummaryRow(summary: summary)
+                    }
+                    .rxPress()
                 }
-                .buttonStyle(PressableButtonStyle(scale: 0.98))
             }
         }
         .accessibilityIdentifier("home.recents")
     }
 
-    /// Favoris as a horizontal row that snaps to each tile, the next one peeking at the edge.
+    /// Favoris as a carousel (D-CAROUSELS): tiles snap one by one, the next one peeks.
     private var favoritesCard: some View {
         RXCard {
             RXCardHeader(Text("Favoris"))
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: RX.Space.s) {
-                    ForEach(favorites, id: \.id) { summary in
-                        PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
-                            VStack(spacing: RX.Space.s) {
-                                RXSummaryIcon(summary: summary, size: 56)
-                                Text(summary.title)
-                                    .rxFont(.footnote)
-                                    .foregroundStyle(RX.Palette.textPrimary.color)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(2, reservesSpace: true)
-                            }
-                            .frame(width: 76)
+            if favorites.isEmpty {
+                RXCardMessage(Text("browse.tapItemsStarTo"))
+            } else {
+                RXCarousel(nil, items: favorites.map(RXFavorite.init), spacing: RX.Space.s, inset: RX.Space.l) { favorite in
+                    PhoneItemLink(ref: favorite.ref) {
+                        RXFavoriteTile(title: Text(favorite.summary.title)) {
+                            RXSummaryIcon(summary: favorite.summary, size: RX.Metrics.favoriteLogo)
                         }
-                        .buttonStyle(PressableButtonStyle())
                     }
+                    .rxPress()
+                    .accessibilityIdentifier("rx.home.favorite.\(favorite.summary.title)")
                 }
-                .scrollTargetLayout()
-                .padding(.horizontal, RX.Space.l)
+                .padding(.top, RX.Space.s)
+                .padding(.bottom, RX.Space.m)
             }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollIndicators(.hidden)
-            .padding(.top, RX.Space.s)
-            .padding(.bottom, 14)
         }
         .accessibilityIdentifier("home.favorites")
     }
@@ -173,15 +159,22 @@ struct RXHomePage<Extras: View>: View {
                     RXItemRow(
                         title: Text(vault.meta.name), subtitle: Text("browse.items \(count)"), chevron: true
                     ) {
-                        VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 40)
+                        VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: RX.Metrics.itemLead)
                     }
                 }
-                .buttonStyle(PressableButtonStyle(scale: 0.98))
+                .rxPress()
                 .routeZoomSource(.list(.vault(vault.id)))
             }
         }
         .accessibilityIdentifier("rx.home.vaults")
     }
+}
+
+/// A favourite as a carousel element.
+private struct RXFavorite: Identifiable {
+    let summary: FfiItemSummary
+    var id: String { summary.id }
+    var ref: ItemRef { ItemRef(vaultID: summary.vaultId, itemID: summary.id) }
 }
 
 #endif
@@ -251,41 +244,53 @@ struct RXHomeScore: View {
         }
     }
 
+    /// The words-first headline (Clarity), 44 pt bold, scaled with Dynamic Type.
+    @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 44
+
     var body: some View {
         let score = model.watchtower.report.map { Int($0.score) }
-        VStack(spacing: RX.Space.s) {
-            greeting
-                .rxFont(.calloutMedium)
-                .foregroundStyle(.secondary)
-            Text(Self.status(score))
-                .font(.system(size: 44, weight: .bold))
-                .tracking(-1.5)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            if let score {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .foregroundStyle(ScoreGauge.color(score))
-                    Text("rx.home.scoreChip \(score)")
-                        .rxFont(.footnoteBold)
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .foregroundStyle(.primary)
+        // One button: the whole score block opens Watchtower (no tap gesture, UX-PRESS-02).
+        Button { openTab(.watchtower) } label: {
+            VStack(spacing: RX.Space.s) {
+                greeting
+                    .rxFont(.calloutMedium)
+                    .foregroundStyle(.secondary)
+                    .dbText(maxLines: 2)
+                Text(Self.status(score))
+                    .font(RX.Typography.display.font(size: headlineSize))
+                    .tracking(-1.5)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .dbText(maxLines: 2, minimumScale: 0.7)
+                if let score {
+                    scoreChip(score)
+                        .padding(.top, RX.Space.xs)
                 }
-                .padding(.horizontal, RX.Space.m)
-                .frame(height: 32)
-                .rxGlass(in: Capsule(), onPhoto: colorScheme == .dark)
-                .padding(.top, RX.Space.xs)
             }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
+        .rxPress()
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .onTapGesture { openTab(.watchtower) }
+        .accessibilityIdentifier("rx.home.score")
         // The score comes from the Watchtower report: computed here too when the tab was not opened.
         .task(id: model.session.summariesRevision) { model.watchtower.refreshIfNeeded(model.session) }
+    }
+
+    /// The score as a glass chip: the shield, then the figure in rolling digits.
+    private func scoreChip(_ score: Int) -> some View {
+        HStack(spacing: RX.Space.s) {
+            Image(systemName: "checkmark.shield.fill")
+                .foregroundStyle(ScoreGauge.color(score))
+                .accessibilityHidden(true)
+            Text("rx.home.score")
+                .rxFont(.footnoteBold)
+            RXNumber(score, typography: .footnoteBold)
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, RX.Space.m)
+        .frame(minHeight: 32)
+        .rxGlass(in: Capsule(), onPhoto: colorScheme == .dark, interactive: false)
     }
 }
 #endif
