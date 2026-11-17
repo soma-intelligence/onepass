@@ -1,29 +1,72 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/hero-dark.png">
-  <img alt="OnePass: the open source, post-quantum password manager for iPhone, iPad, Mac, Apple Watch and Vision Pro" src="docs/assets/readme/hero-light.png" width="100%">
-</picture>
+<img src="docs/assets/brand/icon.svg" width="96" height="96" alt="OnePass app icon">
+
+# OnePass
+
+### Every password, one calm place.
+
+The open source, post-quantum password manager for iPhone, iPad, Mac, Apple Watch and Vision Pro.<br>
+End to end encrypted, kept on your devices and in your own private iCloud. Free, with every line of code public.
 
 <br>
+
+[![Download on the App Store](https://img.shields.io/badge/Download_on_the-App_Store-000000?style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/id6831411523)
+&nbsp;
+[![Join the TestFlight beta](https://img.shields.io/badge/Join_the-TestFlight_beta-0D96F6?style=for-the-badge&logo=apple&logoColor=white)](https://testflight.apple.com/join/MhmPEd7b)
+&nbsp;
+[![Website](https://img.shields.io/badge/Visit-somalabs.me%2Fonepass-5856D6?style=for-the-badge)](https://somalabs.me/onepass)
+
+<br>
+
+<img src="docs/assets/readme/hero-devices.jpg" width="100%" alt="OnePass on Mac, iPad, iPhone and Apple Watch, showing a fictional demo vault">
+
+<br><br>
 
 [![Core CI](https://img.shields.io/github/actions/workflow/status/soma-intelligence/onepass/core.yml?branch=main&label=core&logo=rust&logoColor=white)](https://github.com/soma-intelligence/onepass/actions/workflows/core.yml)
 [![Extension CI](https://img.shields.io/github/actions/workflow/status/soma-intelligence/onepass/extension.yml?branch=main&label=extension&logo=typescript&logoColor=white)](https://github.com/soma-intelligence/onepass/actions/workflows/extension.yml)
 [![Release](https://img.shields.io/github/v/release/soma-intelligence/onepass?include_prereleases&label=release&color=5856D6)](https://github.com/soma-intelligence/onepass/releases)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-5856D6)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/soma-intelligence/onepass?style=flat&color=5856D6&logo=github)](https://github.com/soma-intelligence/onepass/stargazers)
 <br>
 ![Platforms](https://img.shields.io/badge/iOS%20·%20iPadOS%20·%20macOS%20·%20watchOS%20·%20visionOS-26%2B-1D1D2B?logo=apple&logoColor=white)
 ![Post-quantum](https://img.shields.io/badge/crypto-ML--KEM--1024%20·%20ML--DSA--87%20·%20SLH--DSA-1D1D2B)
-<br>
-[![TestFlight](https://img.shields.io/badge/TestFlight-join%20the%20beta-0D96F6?logo=apple&logoColor=white)](https://testflight.apple.com/join/MhmPEd7b)
-[![Website](https://img.shields.io/badge/web-somalabs.me%2Fonepass-5856D6)](https://somalabs.me/onepass)
+![No tracking](https://img.shields.io/badge/analytics-none-1D1D2B)
 
-**[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Screenshots](#a-look-around)** · **[Install](#install)** · **[Build from source](#build-from-source)** · **[Roadmap](#roadmap)** · **[Contributing](#contributing)**
+**[Tour](#a-quick-tour)** · **[Why OnePass](#why-onepass)** · **[What's new](#whats-new)** · **[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Install](#install)** · **[Build](#build-from-source)** · **[Roadmap](#roadmap)**
 
 </div>
 
 > [!WARNING]
-> OnePass is **pre-release software (v0.3.x)**. It has not had an external security audit yet (planned for milestone 8). The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the Mac app is the way to use OnePass day to day. Do not store real secrets in OnePass until the first audited release.
+> OnePass is **pre-release software (v0.3.x)** and has not had an external security audit yet (planned for milestone 8). Please don't keep real secrets in it until the first audited release. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use OnePass day to day.
+
+## A quick tour
+
+<table>
+<tr>
+<td width="33%"><img src="docs/assets/readme/tour/iphone-01-home.jpg" alt="Home: every password, one calm place. Logins, cards and passkeys on every Apple device"></td>
+<td width="33%"><img src="docs/assets/readme/tour/iphone-02-detail.jpg" alt="Sign in without the hunt: passwords and one-time codes fill in Safari and apps"></td>
+<td width="33%"><img src="docs/assets/readme/tour/iphone-03-watchtower.jpg" alt="See what needs a fix: Watchtower flags weak and reused passwords"></td>
+</tr>
+<tr>
+<td><img src="docs/assets/readme/tour/iphone-04-duplicates.jpg" alt="Tidy up duplicates: see what differs, then merge in one go"></td>
+<td><img src="docs/assets/readme/tour/iphone-05-locked.jpg" alt="Yours alone, end to end: encrypted on your device and in your private iCloud"></td>
+<td><img src="docs/assets/readme/tour/iphone-06-items.jpg" alt="Open source, top to bottom: read every line of the code that guards your vault"></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/readme/tour/mac-01-browse.jpg" alt="OnePass on the Mac: sidebar, item list and a login with its one-time code"></td>
+<td width="50%"><img src="docs/assets/readme/tour/mac-02-watchtower.jpg" alt="Watchtower on the Mac: a score dial and one card per check"></td>
+</tr>
+<tr>
+<td><img src="docs/assets/readme/tour/mac-03-duplicates.jpg" alt="Possible duplicates on the Mac, with the fields that differ side by side"></td>
+<td><img src="docs/assets/readme/tour/mac-04-locked.jpg" alt="The locked Mac app, waiting for the master password"></td>
+</tr>
+</table>
+
+<p align="center"><sub>Real captures of the apps, filled with a fictional demo vault. Native SwiftUI on every platform, Mac included (not Catalyst).</sub></p>
 
 ## Why OnePass
 
@@ -31,79 +74,58 @@
 <tr>
 <td width="33%" valign="top">
 
-**Post-quantum from day one**<br>
-Vault keys are wrapped with hybrid ML-KEM-1024 + X25519. Manifests and backups are signed with hybrid ML-DSA-87 + Ed25519. Your account identity is an SLH-DSA key. Data harvested today stays safe against tomorrow's quantum computers.
+### 🔐 Post-quantum, today
+Vault keys are wrapped with hybrid **ML-KEM-1024 + X25519**. Manifests and backups carry hybrid **ML-DSA-87 + Ed25519** signatures, and your account identity is an **SLH-DSA** key. Data harvested today stays safe against tomorrow's quantum computers.
 
 </td>
 <td width="33%" valign="top">
 
-**The server is the adversary**<br>
-Every vault carries a signed, hash-chained manifest with a Merkle root. A broken or malicious sync backend cannot roll back, fork, inject, drop or swap items without the client noticing. Each attack class from the 2026 ETH Zurich / USI study of cloud password managers is a test here.
+### 🛡️ The server is the adversary
+Every vault carries a signed, hash-chained manifest with a Merkle root. A broken or malicious sync backend can't roll back, fork, inject, drop or swap items without the app noticing.
 
 </td>
 <td width="33%" valign="top">
 
-**Two secrets, not one**<br>
-Your key comes from your master password **and** a 256-bit Secret Key generated on your device. A stolen copy of the sync data is useless without both.
+### 🔑 Two secrets, not one
+Your key comes from your master password **and** a 256-bit Secret Key made on your device. A stolen copy of the sync data is useless without both.
 
 </td>
 </tr>
 <tr>
 <td valign="top">
 
-**Native everywhere**<br>
-One SwiftUI app target for iOS, iPadOS, macOS (native, not Catalyst) and visionOS, plus a standalone Apple Watch app, widgets, Controls and Shortcuts. On iPhone: Home, Items and Watchtower tabs, with search one tap away.
+### ⚡ One gesture to sign in
+Click the field, pick the account, you're in. One-click sign-in walks multi-step logins and "Sign in with Google, Apple, Microsoft or GitHub" chains, and one-time codes fill themselves.
 
 </td>
 <td valign="top">
 
-**At home in a terminal**<br>
-The Mac app serves an SSH agent with Touch ID on every signature, and an MCP server so AI agents can *use* a credential without ever *seeing* it. A CLI too.
+### 🤖 Made for AI agents
+An MCP server lets agents *use* a credential without ever *seeing* it. Every request asks you first, on the Mac or on your iPhone with Face ID, and lands in a signed audit log. An SSH agent asks before every signature.
 
 </td>
 <td valign="top">
 
-**Reviewable and tested**<br>
-Fuzzing, NIST ACVP vectors, differential tests between two crypto libraries, ProVerif models, and a seeded autofill lab that measures fill rate and leaks.
+### 🔍 Open and tested
+AGPL, top to bottom. Fuzzing, NIST ACVP vectors, differential tests between two crypto libraries, ProVerif models and a seeded autofill lab that counts leaks. No analytics, no telemetry, no ads.
 
 </td>
 </tr>
 </table>
 
-## How it fits together
+## What's new
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/architecture-dark.svg">
-  <img alt="Architecture: the Apple apps, the browser extension and the terminal tools all talk to one Rust core; sync storage only ever holds ciphertext and is treated as hostile" src="docs/assets/readme/architecture-light.svg" width="100%">
-</picture>
+Shipped on `main` in November 2026:
 
-One Rust core holds every piece of crypto and vault logic, and the Apple apps reach it through UniFFI. On the Mac, the unlocked app is also the hub for everything outside it:
-
-- **Browsers.** The app serves the extension bridge on a Unix socket in its App Group container. Safari's extension ships inside the app. Chrome and Firefox launch `onepass-relay`, a signed helper inside `OnePass.app`. Both ends check each other's code signature through the kernel audit token (`onepass-peer`), and the extension's traffic is end-to-end encrypted with a post-quantum key paired by a 6-digit code.
-- **Terminals and AI agents.** The SSH agent and the MCP server run in the app. MCP clients launch the bundled `onepass-mcp` relay, which identifies its caller and forwards lines without reading them. Every secret needs your approval in a floating panel, with Touch ID, and lands in a signed, hash-chained audit log.
-- **Other devices.** A new device joins by showing a QR code that an unlocked iPhone or iPad scans. Both screens show a 6-digit code before anything is sent, and the device list is signed.
-
-Sync storage only ever sees padded ciphertext, and everything it returns is verified before use.
-
-## A look around
-
-<table>
-<tr>
-<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-home-dark.png"><img alt="Home tab: Nearby, profile and Favorites as cards" src="docs/assets/readme/iphone-home-light.png"></picture><br><sub>Home</sub></td>
-<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-items-dark.png"><img alt="Items tab: vaults, categories and tags" src="docs/assets/readme/iphone-items-light.png"></picture><br><sub>Items</sub></td>
-<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-detail-dark.png"><img alt="Login item with password strength and a live TOTP code" src="docs/assets/readme/iphone-detail-light.png"></picture><br><sub>Item with TOTP</sub></td>
-<td align="center" width="25%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/iphone-watchtower-dark.png"><img alt="Watchtower tab: score dial and one card per check" src="docs/assets/readme/iphone-watchtower-light.png"></picture><br><sub>Watchtower</sub></td>
-</tr>
-</table>
-
-<table>
-<tr>
-<td align="center" width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/ipad-dark.png"><img alt="OnePass on iPad: sidebar, item list and item detail" src="docs/assets/readme/ipad-light.png"></picture><br><sub>iPad, three columns</sub></td>
-<td align="center" width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/mac-dark.png"><img alt="OnePass on the Mac: onboarding, with sign-in from another device by QR code" src="docs/assets/readme/mac-light.png"></picture><br><sub>Mac, native SwiftUI (not Catalyst)</sub></td>
-</tr>
-</table>
-
-<p align="center"><sub>All data in these screenshots is fictional demo data.</sub></p>
+- **One-gesture login.** From the browser extension, the in-field icon or iPhone AutoFill, one deliberate gesture ends with you signed in, plus one biometric approval when the vault is locked.
+- **Two-factor setup in one click.** The extension finds a site's 2FA setup QR code on the page, decodes it locally, saves the secret on the login and fills the first code. The apps suggest it on every login whose site supports 2FA or passkeys.
+- **A fresh look.** Every platform got the redesign: calmer colors that carry meaning, an item editor in cards, item headers tinted by the site's own color.
+- **19,323 site icons** for 22,541 domains, bundled with the app and never fetched site by site, plus an icon library to pick your own.
+- **Key usage log.** Each item shows where its secret was used: AutoFill, the CLI, the SSH agent or an AI agent through MCP. Synced and sealed like the item itself.
+- **Travel Mode that plans ahead.** Add a trip and OnePass reminds you the evening before and three hours before, then offers or turns on Travel Mode at your first unlock during the trip. An unusual time zone counts as a sign you've left.
+- **Duplicates review.** See which copies are safe to merge and which differ, field by field, then merge in one go.
+- **Profile, account and security** in one place, with Delete My Account on iPhone, iPad, Mac and Vision Pro.
+- **Encrypted attachments** on any item, with a built-in PDF reader.
 
 ## Features
 
@@ -292,6 +314,10 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 
 ### Against closed source managers
 
+<details>
+<summary><b>1Password, NordPass, Dashlane, Keeper, LastPass and Apple Passwords, side by side</b></summary>
+
+
 "Closed source" here means the vendor does not publish the source of its apps and servers. None of the vendor pages reviewed link to any, so "not published" rests on that absence.
 
 #### Trust and cryptography
@@ -336,6 +362,8 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 - **Pick 1Password, NordPass, Dashlane or Keeper if** you need Android, Windows or Linux apps, family or business sharing today, and a longer track record. The tables above show how they differ on the points that can be checked.
 - **Pick Apple Passwords if** you want the simplest option and only use Apple devices, with Windows as an occasional second platform.
 - **Pick LastPass with care.** The 2022 breach is documented, and the vendor has since raised its iteration defaults ([LastPass][lp-support]).
+
+</details>
 
 Spot an error or an out-of-date claim? Open an issue with a link to the vendor's page and we will correct it.
 
@@ -383,7 +411,8 @@ Crypto balances are off by default. Once you turn them on, the iPhone and iPad a
 
 | Platform | Where |
 |---|---|
-| iPhone, iPad, Apple Watch, Vision Pro, Mac | [TestFlight public beta](https://testflight.apple.com/join/MhmPEd7b). App Store 1.0 is in review |
+| iPhone, iPad, Apple Watch, Mac, Vision Pro | [App Store](https://apps.apple.com/app/id6831411523), free |
+| Same, newest builds first | [TestFlight public beta](https://testflight.apple.com/join/MhmPEd7b) |
 | Mac (direct download, self-updating) | [Releases](https://github.com/soma-intelligence/onepass/releases) |
 | Chrome, Firefox | From a clone, see below. Chrome Web Store listing pending |
 
