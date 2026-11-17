@@ -415,15 +415,23 @@ extension QuickActionRow where Content == AnyView {
 
 // MARK: Plan card and perks
 
-/// The plan card over the Settings photo: the plan name (Title), "View plan benefits", a row of
-/// perk discs on glass, the 3D art on the right. Glass: white at 14% over a blur, a white hairline.
+/// The Plus card over a photo hero: one translucent dark glass panel (radius 28), the plan name
+/// (Title, bold) and one line, a row of 44 pt glass discs (the last one a chevron), and the art
+/// large in the top trailing corner, bleeding off the card's top and trailing edges.
 public struct PlanCard: View {
     let title: Text
     let subtitle: Text
     let art: Image?
     let perks: [String]
 
-    /// `perks`: the SF Symbols of the perk discs, left to right.
+    /// Card height, inner padding, corner radius, disc size and art width of the plan card.
+    public static let height: CGFloat = 156
+    public static let padding: CGFloat = 20
+    public static let radius: CGFloat = 28
+    public static let disc: CGFloat = 44
+    public static let artWidth: CGFloat = 210
+
+    /// `perks`: the SF Symbols of the glass discs, left to right.
     public init(title: Text, subtitle: Text, art: Image?, perks: [String]) {
         self.title = title
         self.subtitle = subtitle
@@ -432,50 +440,58 @@ public struct PlanCard: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous)
-        ZStack(alignment: .topLeading) {
+        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+        VStack(alignment: .leading, spacing: 0) {
+            title
+                .rxFont(.title)
+                .fontWeight(.bold)
+                .foregroundStyle(.white)
+            subtitle
+                .rxFont(.callout)
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.top, 2)
+            Spacer(minLength: RX.Space.m)
+            HStack(spacing: RX.Space.s) {
+                ForEach(perks, id: \.self) { symbol in
+                    RXGlassGlyph(systemImage: symbol, diameter: Self.disc, glyph: 17, onPhoto: true)
+                }
+            }
+            .accessibilityHidden(true)
+        }
+        .padding(Self.padding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: Self.height)
+        .background(alignment: .topTrailing) {
             if let art {
+                // Large and off the corner: the card's shape crops its top and trailing parts.
                 art
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 186, height: 124)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.trailing, RX.Space.s)
+                    .frame(width: Self.artWidth)
+                    .rotationEffect(.degrees(-8))
+                    .offset(x: Self.artWidth * 0.24, y: -Self.height * 0.24)
                     .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: 0) {
-                title
-                    .rxFont(.title)
-                    .foregroundStyle(.white)
-                subtitle
-                    .rxFont(.body)
-                    .foregroundStyle(.white.opacity(0.72))
-                Spacer(minLength: RX.Space.s)
-                HStack(spacing: RX.Space.s) {
-                    ForEach(perks, id: \.self) { symbol in
-                        RXGlassGlyph(systemImage: symbol, diameter: 40, glyph: 17, onPhoto: true)
-                    }
-                }
-                .accessibilityHidden(true)
-            }
-            .padding(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
         }
-        .frame(maxWidth: .infinity, minHeight: RX.Metrics.planCardHeight, maxHeight: RX.Metrics.planCardHeight,
-               alignment: .topLeading)
         .rxGlass(in: shape, onPhoto: true, interactive: false)
         .environment(\.colorScheme, .dark)
         .clipShape(shape)
+        .contentShape(shape)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// A perk tile of "Get more from Plus": the art full bleed, a dark scrim at the bottom, a glass glyph,
-/// the title (Headline) and one line (Footnote), all white.
+/// A perk tile of "Get more from Plus": the art full bleed (radius 24), a soft dark gradient over
+/// its lower half, a small glass glyph, the title (Headline, semibold) and one line (Footnote), all
+/// white.
 public struct PerkTile: View {
     let art: Image
     let title: Text
     let subtitle: Text
     let systemImage: String
+
+    /// Corner radius of a perk tile.
+    public static let radius: CGFloat = 24
 
     public init(title: Text, subtitle: Text, systemImage: String, art: Image) {
         self.title = title
@@ -485,7 +501,7 @@ public struct PerkTile: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: RX.Radius.perk, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
         ZStack(alignment: .bottomLeading) {
             Color(white: 0.11)
             art
@@ -496,8 +512,8 @@ public struct PerkTile: View {
                 .accessibilityHidden(true)
             LinearGradient(
                 stops: [
-                    .init(color: .black.opacity(0), location: 0), .init(color: .black.opacity(0.05), location: 0.45),
-                    .init(color: .black.opacity(0.75), location: 1),
+                    .init(color: .black.opacity(0), location: 0), .init(color: .black.opacity(0), location: 0.5),
+                    .init(color: .black.opacity(0.62), location: 1),
                 ],
                 startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 2) {
@@ -505,11 +521,12 @@ public struct PerkTile: View {
                     .padding(.bottom, RX.Space.s)
                 title
                     .rxFont(.headline)
+                    .fontWeight(.semibold)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 subtitle
                     .rxFont(.footnote)
-                    .opacity(0.75)
+                    .opacity(0.7)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }

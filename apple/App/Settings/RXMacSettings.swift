@@ -115,7 +115,7 @@ struct RXMacSettingsHome: View {
                 showPlan = true
             } label: {
                 PlanCard(
-                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-keys"),
+                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-lux"),
                     perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
             }
             .buttonStyle(.plain)

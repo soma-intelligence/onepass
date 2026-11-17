@@ -134,7 +134,7 @@ struct RXSettingsHome: View {
                 showPlan = true
             } label: {
                 PlanCard(
-                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-keys"),
+                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-lux"),
                     perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
             }
             .buttonStyle(PressableButtonStyle())
@@ -169,8 +169,18 @@ struct RXSettingsHome: View {
 struct RXPerkCarousel: View {
     var bleed: CGFloat = 0
     var idPrefix = "rx.settings.perk"
+    @State private var position = ScrollPosition(idType: String.self)
 
     private typealias RX = Theme.RX
+
+    /// Captures: `-OnePassDemoPerk <id>` starts the carousel on that tile. Debug builds only.
+    private static var demoPerk: String? {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "OnePassDemoPerk")
+        #else
+        nil
+        #endif
+    }
 
     struct Perk: Identifiable {
         let id: String
@@ -183,15 +193,15 @@ struct RXPerkCarousel: View {
 
     static let perks: [Perk] = [
         Perk(id: "family", page: .family, title: "rx.perks.family.title", subtitle: "rx.perks.family.subtitle",
-             symbol: "person.3.fill", art: "rx-perk-family"),
+             symbol: "person.3.fill", art: "rx-perk-lux-family"),
         Perk(id: "keys", page: .security, title: "rx.perks.keys.title", subtitle: "rx.perks.keys.subtitle",
-             symbol: "key.fill", art: "rx-perk-key"),
+             symbol: "key.fill", art: "rx-perk-lux-hardware"),
         Perk(id: "emergency", page: .family, title: "rx.perks.emergency.title",
-             subtitle: "rx.perks.emergency.subtitle", symbol: "lifepreserver.fill", art: "rx-perk-emergency"),
+             subtitle: "rx.perks.emergency.subtitle", symbol: "lifepreserver.fill", art: "rx-perk-lux-emergency"),
         Perk(id: "passkeys", page: .autofill, title: "Passkeys", subtitle: "rx.perks.passkeys.subtitle",
-             symbol: "person.badge.key.fill", art: "rx-perk-passkey"),
+             symbol: "person.badge.key.fill", art: "rx-perk-lux-passkey"),
         Perk(id: "travel", page: .travel, title: "Travel Mode", subtitle: "rx.perks.travel.subtitle",
-             symbol: "airplane", art: "rx-perk-travel"),
+             symbol: "airplane", art: "rx-perk-lux-travel"),
     ]
 
     var body: some View {
@@ -207,6 +217,12 @@ struct RXPerkCarousel: View {
         }
         .scrollIndicators(.hidden)
         .scrollTargetBehavior(.viewAligned)
+        .scrollPosition($position)
+        .task {
+            guard let id = Self.demoPerk else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            position.scrollTo(id: id, anchor: .leading)
+        }
         .contentMargins(.horizontal, bleed, for: .scrollContent)
         .padding(.horizontal, -bleed)
         .rxPressable()
