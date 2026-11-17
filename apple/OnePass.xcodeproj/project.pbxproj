@@ -232,6 +232,7 @@
 		CF053700F315CA00546962B2 /* ProfileUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598C991D4D92485187F7DEBE /* ProfileUITests.swift */; };
 		D09283BD32DDA65DBC4BD2BE /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 17FDCEFF95D8CB4ED8362F26 /* AppShortcuts.xcstrings */; };
 		D0DF1CC20B088C7C36E85415 /* IconLibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 422181E1C469D47ED766E877 /* IconLibraryUITests.swift */; };
+		D1C9951D80B0D68219B7508E /* RXMacSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85F5016C8A990AA47DDBDF92 /* RXMacSidebar.swift */; };
 		D1E20AAFA715394200DE33E0 /* AppIconSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0440AEC79751525D4647513 /* AppIconSettings.swift */; };
 		D21C020FD752FEE1668BF6D7 /* PasswordHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */; };
 		D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */; };
@@ -540,6 +541,7 @@
 		83445BEBCAE9923380128647 /* CryptoWalletWatchCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoWalletWatchCard.swift; sourceTree = "<group>"; };
 		845CD390D016AFF7270EF38F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		84C2A26BE6307FD1BDA2DD10 /* IconLibrarySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconLibrarySheet.swift; sourceTree = "<group>"; };
+		85F5016C8A990AA47DDBDF92 /* RXMacSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacSidebar.swift; sourceTree = "<group>"; };
 		863713D1483535E8956E5D18 /* SecretInputField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretInputField.swift; sourceTree = "<group>"; };
 		8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandidateListView.swift; sourceTree = "<group>"; };
 		87D0707F2A1FF871B7D086F5 /* GlanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceViews.swift; sourceTree = "<group>"; };
@@ -829,6 +831,7 @@
 				9119720BF7C06235BF6ED5AC /* ItemListRow.swift */,
 				1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */,
 				4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */,
+				85F5016C8A990AA47DDBDF92 /* RXMacSidebar.swift */,
 				01A896751814517F3556294B /* RXMacWatchtower.swift */,
 				F0B70DA81485FABCED6D9346 /* Sidebar.swift */,
 				C83485D924585FA30495DE07 /* SplitBrowseView.swift */,
@@ -2144,6 +2147,7 @@
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
 				317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */,
 				B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */,
+				D1C9951D80B0D68219B7508E /* RXMacSidebar.swift in Sources */,
 				E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */,
 				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
 				20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */,

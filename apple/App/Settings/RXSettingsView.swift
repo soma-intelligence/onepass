@@ -1,7 +1,8 @@
-#if os(iOS)
 import DesignKit
 import SwiftUI
 import VaultKit
+
+#if os(iOS)
 
 /// Réglages in the RX look (Penpot "iPhone · Settings"): the photo hero with the round close and
 /// profile buttons, the account in the middle, the Plus plan card over the photo; then, on the page
@@ -169,6 +170,8 @@ struct RXSettingsHome: View {
     }
 }
 
+#endif
+
 /// The account in the RX look: a round photo, or the initials on the indigo gradient of the mock,
 /// with a soft white ring.
 struct RXAvatar: View {
@@ -233,7 +236,7 @@ struct RXPlanPage: View {
                             systemImage: "airplane", art: Image("rx-perk-travel"))
                     }
                 }
-                .buttonStyle(PressableButtonStyle())
+                .rxPressable()
                 RXSectionTitle(Text("rx.plan.included"))
                 RXCard {
                     benefit(.vaults, Text("rx.plan.vaults"))
@@ -252,7 +255,9 @@ struct RXPlanPage: View {
                     .frame(maxWidth: .infinity)
             }
         }
+        #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
+        #endif
         .accessibilityIdentifier("rx.plan")
     }
 
@@ -334,7 +339,22 @@ struct RXProfileQRSheet: View {
                 }
             }
         }
+        #if os(iOS)
         .presentationDetents([.large])
+        #else
+        .frame(minWidth: 380, minHeight: 520)
+        #endif
     }
 }
-#endif
+
+extension View {
+    /// The pressed look of RX cards and tiles: `PressableButtonStyle` on iOS, a plain button on the
+    /// Mac (where the style is not built).
+    @ViewBuilder func rxPressable() -> some View {
+        #if os(iOS)
+        buttonStyle(PressableButtonStyle())
+        #else
+        buttonStyle(.plain)
+        #endif
+    }
+}
