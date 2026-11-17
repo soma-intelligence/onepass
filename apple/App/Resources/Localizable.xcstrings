@@ -422,6 +422,93 @@
         }
       }
     },
+    "editor.fieldRemoved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Field removed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Campo quitado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Champ retiré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Campo rimosso"
+          }
+        }
+      }
+    },
+    "editor.invalidNumber" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That's not a valid number."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No es un número válido."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce n'est pas un nombre valide."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non è un numero valido."
+          }
+        }
+      }
+    },
+    "editor.keyboard.next" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siguiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suivant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avanti"
+          }
+        }
+      }
+    },
     "Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine. Désactivé, aucune requête réseau." : {
       "localizations" : {
         "en" : {
@@ -6951,25 +7038,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Items moved to the Trash stay here for 30 days."
+            "value" : "Deleted items stay here for 30 days."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los elementos movidos a la Papelera se quedan aquí 30 días."
+            "value" : "Los elementos eliminados se quedan aquí 30 días."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les éléments mis à la corbeille restent ici 30 jours."
+            "value" : "Les éléments supprimés restent ici 30 jours."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gli elementi spostati nel Cestino restano qui 30 giorni."
+            "value" : "Gli elementi eliminati restano qui 30 giorni."
           }
         }
       }
@@ -7270,25 +7357,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Move to Trash"
+            "value" : "Delete"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mover a la Papelera"
+            "value" : "Eliminar"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mettre à la corbeille"
+            "value" : "Supprimer"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sposta nel Cestino"
+            "value" : "Elimina"
           }
         }
       }
@@ -9348,25 +9435,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trash Is Empty"
+            "value" : "Nothing in Recently Deleted"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La papelera está vacía"
+            "value" : "No hay nada en Eliminado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Corbeille vide"
+            "value" : "Rien dans Supprimés récemment"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il cestino è vuoto"
+            "value" : "Niente in Eliminati di recente"
           }
         }
       }
@@ -27445,7 +27532,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mis dans Supprimés récemment"
+            "value" : "Déplacé vers Supprimés récemment"
           }
         },
         "it" : {
@@ -42170,25 +42257,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "An encrypted OnePass archive of everything this device holds, vaults and items in the trash included. It opens with the passphrase chosen here or with your account."
+            "value" : "An encrypted OnePass archive of everything this device holds, vaults and items in Recently Deleted included. It opens with the passphrase chosen here or with your account."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un archivo cifrado de OnePass con todo lo que contiene este dispositivo, incluidas las bóvedas y los elementos de la papelera. Se abre con la frase de contraseña elegida aquí o con tu cuenta."
+            "value" : "Un archivo cifrado de OnePass con todo lo que contiene este dispositivo, incluidas las bóvedas y los elementos en Eliminado. Se abre con la frase de contraseña elegida aquí o con tu cuenta."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Une archive OnePass chiffrée de tout ce que cet appareil contient, coffres et éléments à la corbeille compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte."
+            "value" : "Une archive OnePass chiffrée de tout ce que cet appareil contient, coffres et éléments dans Supprimés récemment compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un archivio OnePass cifrato di tutto ciò che contiene questo dispositivo, casseforti ed elementi nel cestino compresi. Si apre con la passphrase scelta qui o con il tuo account."
+            "value" : "Un archivio OnePass cifrato di tutto ciò che contiene questo dispositivo, casseforti ed elementi in Eliminati di recente compresi. Si apre con la passphrase scelta qui o con il tuo account."
           }
         }
       }
@@ -42895,25 +42982,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” moved to Trash"
+            "value" : "“%@” moved to Recently Deleted"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«%@» movido a la papelera"
+            "value" : "«%@» movido a Eliminado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "« %@ » mis à la corbeille"
+            "value" : "« %@ » déplacé vers Supprimés récemment"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«%@» spostato nel cestino"
+            "value" : "«%@» spostato in Eliminati di recente"
           }
         }
       }
@@ -43991,6 +44078,93 @@
         }
       }
     },
+    "rx.home.status.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score Unavailable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puntuación no disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score indisponible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Punteggio non disponibile"
+          }
+        }
+      }
+    },
+    "rx.plan.cardSubtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No subscription. View the benefits"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin suscripción. Ver las ventajas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sans abonnement. Voir les avantages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Senza abbonamento. Vedi i vantaggi"
+          }
+        }
+      }
+    },
+    "rx.settings.homeCards" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Customize Home"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personalizar Inicio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personnaliser l'accueil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personalizza la Home"
+          }
+        }
+      }
+    },
     "rx.watchtower.empty" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -44074,6 +44248,151 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossibile analizzare gli elementi"
+          }
+        }
+      }
+    },
+    "rx.watchtower.failed.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again in a moment. If it keeps happening, lock and unlock OnePass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a intentarlo en un momento. Si sigue pasando, bloquea y desbloquea OnePass."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessaie dans un instant. Si ça continue, verrouille puis déverrouille OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riprova tra poco. Se continua, blocca e sblocca OnePass."
+          }
+        }
+      }
+    },
+    "rx.watchtower.notChecked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Breaches Not Checked"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtraciones sin comprobar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fuites non vérifiées"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Violazioni non verificate"
+          }
+        }
+      }
+    },
+    "rx.watchtower.notChecked.partial" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Part of the check failed. Run it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parte de la comprobación falló. Vuelve a ejecutarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une partie de la vérification a échoué. Relance l'analyse."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parte del controllo non è riuscita. Riprova."
+          }
+        }
+      }
+    },
+    "rx.watchtower.notify.denied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications are off. Allow them in Settings to get alerts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notificaciones están desactivadas. Actívalas en Ajustes para recibir avisos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications refusées. Autorise-les dans Réglages pour être prévenu."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le notifiche sono disattivate. Attivale in Impostazioni per ricevere avvisi."
+          }
+        }
+      }
+    },
+    "rx.watchtower.scoreValue %lld %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld out of 100, %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de 100, %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur 100, %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld su 100, %2$@"
           }
         }
       }
@@ -44393,6 +44712,93 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attiva OnePass in Safari"
+          }
+        }
+      }
+    },
+    "scanner.cameraDenied.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To scan a QR code, allow camera access for OnePass in Settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para escanear un código QR, permite el acceso a la cámara para OnePass en Ajustes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour scanner un QR code, autorise l'appareil photo pour OnePass dans Réglages."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per scansionare un codice QR, consenti l'accesso alla fotocamera per OnePass in Impostazioni."
+          }
+        }
+      }
+    },
+    "scanner.cameraDenied.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera Access Denied"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acceso a la cámara denegado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accès à l'appareil photo refusé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accesso alla fotocamera negato"
+          }
+        }
+      }
+    },
+    "search.recentCleared" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searches cleared"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Búsquedas borradas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherches effacées"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricerche cancellate"
           }
         }
       }
@@ -45993,7 +46399,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass retient quel compte vous choisissez sur chaque site, dans quel navigateur et quel profil, pour le proposer en premier. Cet historique reste chiffré sur cet appareil : il n'est jamais synchronisé ni envoyé. Désactivé, il est effacé."
+            "value" : "OnePass retient quel compte tu choisis sur chaque site, dans quel navigateur et quel profil, pour le proposer en premier. Cet historique reste chiffré sur cet appareil : il n'est jamais synchronisé ni envoyé. Désactivé, il est effacé."
           }
         },
         "it" : {
@@ -49327,7 +49733,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les éléments de la corbeille ne sont pas exportés."
+            "value" : "Les éléments de Supprimés récemment ne sont pas exportés."
           }
         },
         "it" : {
@@ -49356,7 +49762,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les éléments gardent leur identifiant, ceux de la corbeille et les archivés compris. Une restauration signée par ton compte est enregistrée pour tes autres appareils."
+            "value" : "Les éléments gardent leur identifiant, ceux de Supprimés récemment et les archivés compris. Une restauration signée par ton compte est enregistrée pour tes autres appareils."
           }
         },
         "it" : {
@@ -49771,7 +50177,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis vous comparez un code à 6 chiffres."
+            "value" : "Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis tu compares un code à 6 chiffres."
           }
         },
         "it" : {
@@ -58670,35 +59076,6 @@
         }
       }
     },
-    "term.trash" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trash"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Papelera"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Corbeille"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cestino"
-          }
-        }
-      }
-    },
     "term.vault" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -59492,25 +59869,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Empty this vault before deleting it. Items in the trash go with it."
+            "value" : "Empty this vault before deleting it. Its items in Recently Deleted go with it."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vacía esta bóveda antes de eliminarla. Los elementos de la papelera se van con ella."
+            "value" : "Vacía esta bóveda antes de eliminarla. Sus elementos en Eliminado se van con ella."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vide ce coffre avant de le supprimer. Les éléments à la corbeille partent avec lui."
+            "value" : "Vide ce coffre avant de le supprimer. Ses éléments dans Supprimés récemment partent avec lui."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Svuota questa cassaforte prima di eliminarla. Gli elementi nel cestino vengono eliminati con lei."
+            "value" : "Svuota questa cassaforte prima di eliminarla. I suoi elementi in Eliminati di recente vengono eliminati con lei."
           }
         }
       }
@@ -60014,25 +60391,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "It disappears from all your devices, with the items in its trash."
+            "value" : "It disappears from all your devices, with its items in Recently Deleted."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desaparece de todos tus dispositivos, junto con los elementos de su papelera."
+            "value" : "Desaparece de todos tus dispositivos, junto con sus elementos en Eliminado."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il disparaît de tous tes appareils, avec les éléments de sa corbeille."
+            "value" : "Il disparaît de tous tes appareils, avec ses éléments dans Supprimés récemment."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scompare da tutti i tuoi dispositivi, insieme agli elementi del suo cestino."
+            "value" : "Scompare da tutti i tuoi dispositivi, insieme ai suoi elementi in Eliminati di recente."
           }
         }
       }
@@ -64891,36 +65268,6 @@
         }
       }
     },
-    "rx.plan.benefits" : {
-      "comment" : "Réglages (new design): line under the plan name on the plan card.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View Plan Benefits"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ver las ventajas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voir les avantages"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vedi i vantaggi"
-          }
-        }
-      }
-    },
     "rx.perks.title" : {
       "comment" : "Réglages (new design): title above the two perk tiles.",
       "extractionState" : "manual",
@@ -65037,36 +65384,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nascondi casseforti alla frontiera"
-          }
-        }
-      }
-    },
-    "rx.settings.close" : {
-      "comment" : "Réglages (new design): accessibility label of the round close button.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cerrar"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chiudi"
           }
         }
       }
@@ -66151,36 +66468,6 @@
         }
       }
     },
-    "rx.plan.back" : {
-      "comment" : "Plan benefits page (new design): round back button over the photo.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Atrás"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retour"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Indietro"
-          }
-        }
-      }
-    },
     "rx.plan.included" : {
       "comment" : "Plan benefits page (new design): title of the list of included features.",
       "extractionState" : "manual",
@@ -66271,36 +66558,6 @@
         }
       }
     },
-    "rx.plan.family" : {
-      "comment" : "Plan benefits page (new design): benefit row, opens Famille.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recovery by Family"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recuperación por tu familia"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Récupération par tes proches"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recupero tramite i familiari"
-          }
-        }
-      }
-    },
     "rx.plan.organisation" : {
       "comment" : "Plan benefits page (new design): benefit row, opens Organisation.",
       "extractionState" : "manual",
@@ -66357,36 +66614,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tutti i tuoi dispositivi"
-          }
-        }
-      }
-    },
-    "rx.plan.travel" : {
-      "comment" : "Plan benefits page (new design): benefit row, opens Voyage.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Travel Mode"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modo viaje"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mode voyage"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modalità viaggio"
           }
         }
       }
@@ -66567,66 +66794,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sblocca con Face ID e Apple Watch"
-          }
-        }
-      }
-    },
-    "rx.perks.emergency.title" : {
-      "comment" : "Réglages (new design): perk tile that opens Famille (account recovery helpers).",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Emergency Access"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acceso de emergencia"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accès d'urgence"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accesso di emergenza"
-          }
-        }
-      }
-    },
-    "rx.perks.emergency.subtitle" : {
-      "comment" : "Réglages (new design): line on the emergency access perk tile.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Someone close helps you get back in"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alguien cercano te ayuda a recuperar el acceso"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un proche t'aide à retrouver l'accès"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una persona vicina ti aiuta a rientrare"
           }
         }
       }
@@ -66927,36 +67094,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tutto OnePass, su tutti i tuoi dispositivi"
-          }
-        }
-      }
-    },
-    "rx.plan.action.members" : {
-      "comment" : "Plan page (new design): quick action that opens Famille.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Members"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Miembros"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Membres"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Membri"
           }
         }
       }

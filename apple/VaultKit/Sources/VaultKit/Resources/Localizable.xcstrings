@@ -7676,7 +7676,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les clés de %1$@ ont changé le %2$@. Pour lui rendre l'accès, vérifiez-vous en personne avec le QR."
+            "value" : "Les clés de %1$@ ont changé le %2$@. Pour lui rendre l'accès, scanne son QR code en personne et laisse-le scanner le tien."
           }
         },
         "it" : {

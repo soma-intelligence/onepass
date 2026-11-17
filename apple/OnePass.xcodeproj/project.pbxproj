@@ -2400,8 +2400,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
-				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -2625,8 +2623,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
-				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -3191,8 +3187,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
-				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -3598,8 +3592,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
-				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
