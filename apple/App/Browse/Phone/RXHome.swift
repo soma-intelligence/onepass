@@ -340,10 +340,13 @@ struct RXHomeScore: View {
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.center)
                         .dbText(maxLines: 2, minimumScale: 0.7)
-                    if let score = status.score {
-                        scoreChip(score)
-                            .padding(.top, RX.Space.xs)
-                    }
+                        .contentTransition(.opacity)
+                    // The chip keeps its place while the score is computed (a hidden chip of
+                    // the same size): the hero does not jump when the report lands at launch.
+                    scoreChip(status.score ?? 100)
+                        .opacity(status.score == nil ? 0 : 1)
+                        .accessibilityHidden(status.score == nil)
+                        .padding(.top, RX.Space.xs)
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
@@ -367,6 +370,7 @@ struct RXHomeScore: View {
                 .accessibilityIdentifier("rx.home.score.retry")
             }
         }
+        .animation(.smooth(duration: 0.35), value: status)
         // The score comes from the Watchtower report: computed here too when the tab was not opened.
         .task(id: model.session.summariesRevision) { model.watchtower.refreshIfNeeded(model.session) }
     }
