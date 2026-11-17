@@ -211,7 +211,7 @@ extension Theme {
             }
             /// The verification code: digits (D-CODE-SIZE, app-owned) and the timer ring around
             /// the seconds left.
-            public static let codeDigits: CGFloat = 30
+            public static var codeDigits: CGFloat { Typography.monoCode.spec.size }
             public static let codeRing: CGFloat = 36
             /// A favourite tile of the carousel: its logo and its width (the next one peeks).
             public static let favoriteLogo: CGFloat = 60
@@ -232,10 +232,10 @@ extension Theme {
                 .system(size: size, weight: weight)
             }
 
-            /// The digits of the verification code: tabular, at `Metrics.codeDigits`, scaled with
-            /// Dynamic Type from the title style.
+            /// The digits of the verification code: the Mono code typography (Inter, tabular
+            /// digits) at `size`, the scaled `Metrics.codeDigits`.
             public static func codeFont(size: CGFloat) -> Font {
-                .system(size: size, weight: .semibold, design: .default).monospacedDigit()
+                Typography.monoCode.font(size: size)
             }
         }
 
@@ -279,13 +279,8 @@ extension Theme {
             /// exactly as the Penpot typography writes them.
             public var spec: (size: CGFloat, weight: Int, tracking: CGFloat, lineHeight: CGFloat) {
                 let t = token
-                return (Self.codeOwnedSize[self] ?? t.size, t.weight, t.tracking, t.lineHeight)
+                return (t.size, t.weight, t.tracking, t.lineHeight)
             }
-
-            /// Known drift, kept on purpose: the verification code is drawn at 30 pt since b35aa1d6e
-            /// while the Penpot typography still says 28. Change Penpot, re-export, then delete the
-            /// entry (the parity test fails once Penpot and this table agree).
-            static let codeOwnedSize: [Typography: CGFloat] = [.monoCode: 30]
 
             /// The system text style it scales with under Dynamic Type (from designbridge.json).
             public var textStyle: Font.TextStyle {
@@ -317,13 +312,13 @@ extension Theme {
             }
 
             /// The font at `size` (the scaled size of the typography, so Dynamic Type is already in
-            /// it): Inter as in the Penpot file, the system monospaced face for the code (Geist Mono
-            /// is not bundled). The system face stands in if Inter could not be registered.
+            /// it): Inter as in the Penpot file, with tabular digits for the code. The system face
+            /// stands in if Inter could not be registered.
             public func font(size: CGFloat) -> Font {
-                if self != .monoCode, Theme.RX.Inter.isAvailable {
-                    return .custom(Theme.RX.Inter.family, fixedSize: size).weight(weight)
-                }
-                return .system(size: size, weight: weight, design: self == .monoCode ? .monospaced : .default)
+                let font: Font = Theme.RX.Inter.isAvailable
+                    ? .custom(Theme.RX.Inter.family, fixedSize: size).weight(weight)
+                    : .system(size: size, weight: weight)
+                return self == .monoCode ? font.monospacedDigit() : font
             }
         }
 

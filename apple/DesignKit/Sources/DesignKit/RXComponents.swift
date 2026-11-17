@@ -816,8 +816,8 @@ public struct RXCodeCard: View {
     public var body: some View {
         VStack(spacing: RX.Space.s) {
             label
-                .rxFont(.footnote)
-                .foregroundStyle(RX.Palette.textSecondary.color)
+                .rxFont(.footnoteBold)
+                .foregroundStyle(RX.Palette.accentText.color)
                 .dbText(maxLines: 2)
             let layout = dynamicTypeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(spacing: RX.Space.s)) : AnyLayout(HStackLayout(spacing: RX.Space.m))
@@ -847,6 +847,7 @@ extension RXCodeCard: nonisolated PenpotMapped {
     nonisolated public static let penpot = PenpotComponent(path: "Card/Verification code", props: [
         "label": .text("Label"),
         "code": .text("Code"),
+        "remaining": .text("Seconds"),
     ])
 }
 
@@ -871,7 +872,8 @@ public struct RXTimerRing: View {
                 .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             DBNumber(remaining)
-                .font(RX.Glyph.font(RX.Glyph.chevron).monospacedDigit())
+                .rxFont(.footnoteBold)
+                .monospacedDigit()
                 .foregroundStyle(urgent ? color : RX.Palette.accentText.color)
         }
         // swiftlint:disable:next db_spacing_literal - half the ring stroke, keeps the arc inside the frame

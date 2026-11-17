@@ -85,13 +85,7 @@ struct RXTokensTests {
             let f = try #require(entry.values["light"]).split(separator: "|").map(String.init)
             #expect(f.count == 6)
             let penpotSize = CGFloat(Double(f[0])!)
-            if let owned = RX.Typography.codeOwnedSize[t] {
-                // A listed drift must still be a drift, or the entry is stale.
-                #expect(owned != penpotSize, "\(penpotName): Penpot now matches, remove the code-owned size")
-                #expect(t.spec.size == owned, "\(penpotName) size")
-            } else {
-                #expect(t.spec.size == penpotSize, "\(penpotName) size")
-            }
+            #expect(t.spec.size == penpotSize, "\(penpotName) size")
             #expect(t.spec.weight == Int(f[1]), "\(penpotName) weight")
             #expect(t.spec.tracking == CGFloat(Double(f[2])!), "\(penpotName) tracking")
             #expect(t.spec.lineHeight == CGFloat(Double(f[3])!), "\(penpotName) line height")
@@ -144,12 +138,12 @@ struct RXTokensTests {
         let text = "çœéñ€àèìòù¿¡’« »"
         var glyphs = [CGGlyph](repeating: 0, count: text.utf16.count)
         #expect(CTFontGetGlyphsForCharacters(font, Array(text.utf16), &glyphs, glyphs.count))
-        // The typographies resolve to Inter at their weight, the code to the system face.
+        // Every typography resolves to Inter at its weight, the code included (tabular digits).
         let context = EnvironmentValues().fontResolutionContext
         let headline = RX.Typography.headline.font(size: 17).resolve(in: context).ctFont
         #expect(CTFontCopyFamilyName(headline) as String == "Inter")
-        let code = RX.Typography.monoCode.font(size: 28).resolve(in: context).ctFont
-        #expect(CTFontCopyFamilyName(code) as String != "Inter")
+        let code = RX.Typography.monoCode.font(size: 30).resolve(in: context).ctFont
+        #expect(CTFontCopyFamilyName(code) as String == "Inter")
         let licence = try #require(RX.Inter.licenceURL)
         #expect(try String(contentsOf: licence, encoding: .utf8).contains("SIL OPEN FONT LICENSE Version 1.1"))
     }
