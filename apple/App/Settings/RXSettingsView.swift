@@ -138,8 +138,8 @@ struct RXSettingsHome: View {
             Button {
                 showPlan = true
             } label: {
-                // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
                 PlanCard(
+                    // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
                     title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-lux"),
                     perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
             }
@@ -419,7 +419,7 @@ struct RXProfileQRSheet: View {
             .background(RX.Palette.pageBackground.color)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("OK") { dismiss() }
+                    Button(role: .close) { dismiss() }
                         .accessibilityIdentifier("rx.profileQR.done")
                 }
             }

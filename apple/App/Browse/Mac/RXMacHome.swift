@@ -50,23 +50,12 @@ struct RXMacHome: View {
         let score = model.watchtower.report.map { Int($0.score) }
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
         return VStack(alignment: .leading, spacing: RX.Space.xs) {
-            Text("rx.home.scoreLabel \(itemCount)")
-                .rxFont(.calloutMedium)
-                .foregroundStyle(.white.opacity(0.85))
-            HStack(alignment: .lastTextBaseline, spacing: RX.Space.xs) {
-                Group {
-                    if let score { DBNumber(score) } else { Text(verbatim: "–") }
-                }
-                .font(RX.Typography.display.font(size: scoreSize))
-                .tracking(-2.5)
-                .monospacedDigit()
-                // swiftlint:disable:next db_unlocalized_string - a number, not words
-                Text(verbatim: "/100")
-                    .rxFont(.title)
-                    .opacity(0.7)
+            // The score opens Watchtower: one button, no tap gesture on the card (UX-PRESS-02).
+            Button { model.page = .watchtower } label: {
+                scoreLabel(itemCount: itemCount, score: score)
             }
-            .foregroundStyle(.white)
-            .accessibilityElement(children: .combine)
+            .rxPress()
+            .accessibilityIdentifier("rx.mac.score")
             Spacer(minLength: RX.Space.l)
             HStack(spacing: RX.Space.s) {
                 capsule(Text("Nouvel élément"), systemImage: "plus") { model.showNewItemPicker = true }
@@ -94,12 +83,34 @@ struct RXMacHome: View {
         }
         .clipShape(shape)
         .contentShape(shape)
-        .onTapGesture { model.page = .watchtower }
+    }
+
+    /// The label with the item count, then the score over 100 in rolling digits.
+    private func scoreLabel(itemCount: Int, score: Int?) -> some View {
+        VStack(alignment: .leading, spacing: RX.Space.xs) {
+            Text("rx.home.scoreLabel \(itemCount)")
+                .rxFont(.calloutMedium)
+                .foregroundStyle(.white.opacity(0.85))
+            HStack(alignment: .lastTextBaseline, spacing: RX.Space.xs) {
+                Group {
+                    if let score { DBNumber(score) } else { Text(verbatim: "–") }
+                }
+                .font(RX.Typography.display.font(size: scoreSize))
+                .tracking(-2.5)
+                .monospacedDigit()
+                Text(verbatim: "/100")
+                    .rxFont(.title)
+                    .opacity(0.7)
+            }
+            .foregroundStyle(.white)
+            .accessibilityElement(children: .combine)
+        }
+        .contentShape(Rectangle())
     }
 
     private func capsule(_ title: Text, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) { capsuleLabel(title, systemImage: systemImage) }
-            .buttonStyle(.plain)
+            .rxPress()
     }
 
     private func capsuleLabel(_ title: Text, systemImage: String) -> some View {

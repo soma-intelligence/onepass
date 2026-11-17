@@ -1,4 +1,5 @@
 #if os(macOS)
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -97,11 +98,11 @@ struct RXMacSettingsHome: View {
         return VStack(alignment: .leading, spacing: RX.Space.l) {
             HStack(spacing: RX.Space.m) {
                 RXAvatar(initials: model.initials, photo: model.profileImage, size: 52)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: RX.Space.xxs) {
                     Text(verbatim: name)
                         .rxFont(.title)
                         .foregroundStyle(.white)
-                        .lineLimit(1)
+                        .dbText(maxLines: 2)
                     Text(model.settings.deviceMode == .shared
                          ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
                         .rxFont(.callout)

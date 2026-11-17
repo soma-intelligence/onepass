@@ -874,6 +874,7 @@ public struct RXTimerRing: View {
                 .font(RX.Glyph.font(RX.Glyph.chevron).monospacedDigit())
                 .foregroundStyle(urgent ? color : RX.Palette.accentText.color)
         }
+        // swiftlint:disable:next db_spacing_literal - half the ring stroke, keeps the arc inside the frame
         .padding(1.5)
         .frame(width: RX.Metrics.codeRing, height: RX.Metrics.codeRing)
         .accessibilityElement(children: .ignore)

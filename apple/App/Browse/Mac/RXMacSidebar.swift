@@ -1,4 +1,5 @@
 #if os(macOS)
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -26,7 +27,7 @@ struct RXMacSidebar: View {
             // A plain list rather than a ScrollView: one row holding the whole column (the window
             // snapshots of the Debug screenshot mode draw a list, not a scroll view, in a sidebar).
             List {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: RX.Space.xxs) {
                     brand
                     searchField
                         .padding(.bottom, RX.Space.m)
@@ -77,12 +78,13 @@ struct RXMacSidebar: View {
                 ZStack(alignment: .bottomLeading) {
                     Color.black.opacity(0.001)
                         .ignoresSafeArea()
+                        // swiftlint:disable:next db_on_tap_gesture - the dismiss scrim of the menu, not an action
                         .onTapGesture { accountMenuOpen = false }
                     AccountMenuPanel(
                         newVault: { accountMenuOpen = false; creatingVault = true },
                         close: { accountMenuOpen = false })
-                        .padding(.bottom, 64)
-                        .padding(.horizontal, 10)
+                        .padding(.bottom, RX.Space.xxl * 2)
+                        .padding(.horizontal, RX.Space.s)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .transition(.opacity)
                 }
@@ -97,8 +99,9 @@ struct RXMacSidebar: View {
     private var brand: some View {
         HStack(spacing: RX.Space.s) {
             Image(systemName: "circle.grid.3x3.fill")
-                .font(.system(size: 16, weight: .bold))
+                .font(RX.Glyph.font(16, weight: .bold))
                 .foregroundStyle(RX.Palette.accent.color)
+            // swiftlint:disable:next db_unlocalized_string - app name, the same in every language
             Text(verbatim: "OnePass")
                 .rxFont(.headline)
                 .foregroundStyle(RX.Palette.textPrimary.color)
@@ -137,7 +140,7 @@ struct RXMacSidebar: View {
             Spacer()
             Button { creatingVault = true } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(RX.Glyph.font(11, weight: .semibold))
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
@@ -152,7 +155,7 @@ struct RXMacSidebar: View {
             let filter = ItemFilter.vault(vault.id)
             rowButton(selected: isSelected(filter), id: "sidebar.vaults.\(vault.id)", action: { model.showItems(filter) }) {
                 Text(String(vault.meta.name.prefix(1)).uppercased())
-                    .font(.system(size: 9, weight: .bold))
+                    .font(RX.Glyph.font(9, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 20, height: 20)
                     .background(VaultBadge.color(named: vault.meta.color), in: Circle())
@@ -220,20 +223,20 @@ struct RXMacSidebar: View {
         return Button { accountMenuOpen.toggle() } label: {
             HStack(spacing: RX.Space.m) {
                 RXAvatar(initials: model.initials, photo: model.profileImage, size: 32, ring: false)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(verbatim: name)
                         .rxFont(.calloutMedium)
                         .foregroundStyle(RX.Palette.textPrimary.color)
-                        .lineLimit(1)
+                        .dbText(maxLines: 2)
                     Text(model.settings.deviceMode == .shared
                          ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
                         .rxFont(.footnote)
                         .foregroundStyle(RX.Palette.textSecondary.color)
-                        .lineLimit(1)
+                        .dbText(maxLines: 2)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(RX.Glyph.font(11, weight: .semibold))
                     .foregroundStyle(RX.Palette.textTertiary.color)
             }
             .padding(.horizontal, RX.Space.l)
@@ -293,7 +296,7 @@ struct RXMacSidebar: View {
 
     private func glyph(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 14, weight: .semibold))
+            .font(RX.Glyph.font(14, weight: .semibold))
             .frame(width: 20, height: 20)
             .accessibilityHidden(true)
     }
