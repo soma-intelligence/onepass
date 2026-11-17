@@ -301,6 +301,12 @@ struct PhoneTabsView: View {
             paths[.home] = [.duplicates]
             return
         }
+        // `-OnePassDemoList profile`: the Profil page over Accueil.
+        if defaults.string(forKey: "OnePassDemoList") == "profile" {
+            tab = .home
+            paths[.home] = [.profile]
+            return
+        }
         if let list = defaults.string(forKey: "OnePassDemoList") {
             let filter: ItemFilter? = switch list {
             case "archive": .archive

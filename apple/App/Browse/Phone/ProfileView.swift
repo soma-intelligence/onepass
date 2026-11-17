@@ -32,6 +32,8 @@ struct ProfileView: View {
     @State private var picking: ProfileKind?
     /// The ID row says "copié" a moment after a tap (the toast can be under a sheet).
     @State private var idCopied = false
+    /// RX look: the round avatar on the Réglages art, RX cards on one 16/24 grid.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     private var session: VaultSession { model.session }
 
@@ -40,18 +42,25 @@ struct ProfileView: View {
         let mainCard = session.mainCard
         let _ = model.settingsRevision
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Space.l) {
+            VStack(alignment: .leading, spacing: rxDesign ? Theme.RX.Space.xl : Theme.Space.l) {
                 header
                 accountCard
                 securityCard
                 identityCard(mainIdentity)
                 paymentCard(mainCard)
             }
-            .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
+            .padding(.horizontal, rxDesign ? Theme.RX.Space.gutter : Theme.Space.gutter(regularWidth: sizeClass == .regular))
             .padding(.bottom, Theme.Space.xl)
+            .environment(\.rxCards, rxDesign)
         }
         #if os(iOS)
-        .background(PhoneBackground())
+        .background {
+            if rxDesign {
+                RXBackdrop(name: RXHero.settings, height: 300, lightOpacity: 0.35, darkOpacity: 0.6)
+            } else {
+                PhoneBackground()
+            }
+        }
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .navigationTitle("Profil")
@@ -94,10 +103,16 @@ struct ProfileView: View {
 
     private var header: some View {
         VStack(spacing: Theme.Space.s) {
-            AccountBadgeAvatar(
-                initials: model.initials, photo: model.profileImage, color: model.accountTint,
-                badge: model.accountBadge, size: 72)
-                .accessibilityHidden(true)
+            if rxDesign {
+                // RX: avatar, name, label and device chip centred on one column, 8 pt apart.
+                RXAvatar(initials: model.initials, photo: model.profileImage, size: 88, ring: false)
+                    .padding(.bottom, Theme.RX.Space.xs)
+            } else {
+                AccountBadgeAvatar(
+                    initials: model.initials, photo: model.profileImage, color: model.accountTint,
+                    badge: model.accountBadge, size: 72)
+                    .accessibilityHidden(true)
+            }
             let name = model.settings.displayName
             if !name.isEmpty {
                 Text(verbatim: name)
@@ -118,7 +133,7 @@ struct ProfileView: View {
                 .accessibilityIdentifier("profile.deviceBadge")
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, Theme.Space.l)
+        .padding(.top, rxDesign ? Theme.RX.Space.xl : Theme.Space.l)
     }
 
     private var deviceText: String {
@@ -380,13 +395,17 @@ private struct ProfileCard<Content: View>: View {
     let canChange: Bool
     let onChange: () -> Void
     @ViewBuilder var content: Content
+    /// RX look: no colored bar, the tile carries the color.
+    @Environment(\.rxCards) private var rxCards
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Rectangle()
-                .fill(color)
-                .frame(height: 4)
-                .accessibilityHidden(true)
+            if !rxCards {
+                Rectangle()
+                    .fill(color)
+                    .frame(height: 4)
+                    .accessibilityHidden(true)
+            }
             HStack(spacing: Theme.Space.m) {
                 SymbolTile(symbol: symbol, color: color, size: PhoneCard.headerTileSize)
                 Text(title)

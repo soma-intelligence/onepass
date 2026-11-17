@@ -384,7 +384,7 @@ struct RXProfileQRSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: RX.Space.xl) {
+            VStack(spacing: RX.Space.l) {
                 RXAvatar(initials: model.initials, photo: model.profileImage, size: 72, ring: false)
                 Text(verbatim: name)
                     .rxFont(.title)
@@ -396,7 +396,9 @@ struct RXProfileQRSheet: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
+                        .padding(RX.Space.l)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
+                        .padding(.vertical, RX.Space.s)
                         .accessibilityLabel(Text("rx.profileQR.code"))
                         .accessibilityIdentifier("rx.profileQR.code")
                 }
@@ -411,8 +413,9 @@ struct RXProfileQRSheet: View {
                 .accessibilityIdentifier("rx.profileQR.share")
                 Spacer(minLength: 0)
             }
-            .padding(RX.Space.xl)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, RX.Space.xl)
+            .padding(.vertical, RX.Space.xl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(RX.Palette.pageBackground.color)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
