@@ -8,14 +8,10 @@ import SwiftUI
 
 private typealias RX = Theme.RX
 
-/// The press style of RX controls: the shared shrink on iPhone, plain elsewhere.
+/// The press style of RX controls: DesignBridge's 0.97 press (D-MOTION).
 private struct RXPressStyle: ViewModifier {
     func body(content: Content) -> some View {
-        #if os(iOS)
-        content.buttonStyle(PressableButtonStyle())
-        #else
-        content.buttonStyle(.plain)
-        #endif
+        content.buttonStyle(.dbPress)
     }
 }
 
@@ -39,7 +35,7 @@ public struct RXGlassGlyph: View {
 
     public var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: glyph ?? (diameter * 0.45).rounded(), weight: .semibold))
+            .font(RX.Glyph.font(glyph ?? (diameter * 0.45).rounded()))
             .foregroundStyle(onPhoto ? Color.white : RX.Palette.textPrimary.color)
             .frame(width: diameter, height: diameter)
             .rxGlass(in: Circle(), onPhoto: onPhoto)
@@ -92,7 +88,7 @@ public struct ColorDisc: View {
 
     public var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: Theme.RX.Metrics.discGlyph(diameter: diameter) * 0.85, weight: .semibold))
+            .font(RX.Glyph.font(Theme.RX.Metrics.discGlyph(diameter: diameter) * 0.85))
             .foregroundStyle(.white)
             .frame(width: diameter, height: diameter)
             .background(color, in: Circle())
@@ -106,7 +102,7 @@ public struct RXChevron: View {
 
     public var body: some View {
         Image(systemName: "chevron.right")
-            .font(.system(size: 14, weight: .bold))
+            .font(RX.Glyph.font(RX.Glyph.chevron, weight: .bold))
             .foregroundStyle(RX.Palette.textTertiary.color)
             .accessibilityHidden(true)
     }
@@ -115,47 +111,52 @@ public struct RXChevron: View {
 // MARK: Rows
 
 /// An item row: a 40 pt lead, the title (Body medium) over its subtitle (Callout, secondary), an
-/// optional trailing value, an optional chevron. Pitch 64.
+/// optional trailing value, an optional chevron. Pitch 64. Text wraps to two lines, then scales;
+/// at accessibility sizes the value moves under the title (no clipping, UX-TEXT-01).
 public struct RXItemRow<Lead: View>: View {
     let lead: Lead
     let title: Text
     let subtitle: Text?
-    let value: Text?
+    let value: AnyView?
     let valueColor: Color?
     let chevron: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(title: Text, subtitle: Text? = nil, value: Text? = nil, valueColor: Color? = nil,
                 chevron: Bool = false, @ViewBuilder lead: () -> Lead) {
         self.lead = lead()
         self.title = title
         self.subtitle = subtitle
-        self.value = value
+        self.value = value.map { AnyView($0.dbText(maxLines: 1)) }
+        self.valueColor = valueColor
+        self.chevron = chevron
+    }
+
+    /// A row whose value is a count: rolling digits (D-MOTION).
+    public init(title: Text, subtitle: Text? = nil, count: Int, valueColor: Color? = nil,
+                chevron: Bool = false, @ViewBuilder lead: () -> Lead) {
+        self.lead = lead()
+        self.title = title
+        self.subtitle = subtitle
+        self.value = AnyView(DBNumber(count))
         self.valueColor = valueColor
         self.chevron = chevron
     }
 
     public var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: RX.Space.m) {
             lead
                 .frame(width: RX.Metrics.itemLead, height: RX.Metrics.itemLead)
-            VStack(alignment: .leading, spacing: 2) {
-                title
-                    .rxFont(.bodyMedium)
-                    .foregroundStyle(RX.Palette.textPrimary.color)
-                    .lineLimit(1)
-                if let subtitle {
-                    subtitle
-                        .rxFont(.callout)
-                        .foregroundStyle(RX.Palette.textSecondary.color)
-                        .lineLimit(1)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: RX.Space.xs) {
+                    texts
+                    valueView
                 }
-            }
-            Spacer(minLength: RX.Space.s)
-            if let value {
-                value
-                    .rxFont(.bodyMedium)
-                    .monospacedDigit()
-                    .foregroundStyle(valueColor ?? RX.Palette.textPrimary.color)
+                Spacer(minLength: 0)
+            } else {
+                texts
+                Spacer(minLength: RX.Space.s)
+                valueView
             }
             if chevron { RXChevron() }
         }
@@ -164,6 +165,30 @@ public struct RXItemRow<Lead: View>: View {
         .frame(minHeight: RX.Metrics.itemPitch)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    private var texts: some View {
+        VStack(alignment: .leading, spacing: RX.Space.xxs) {
+            title
+                .rxFont(.bodyMedium)
+                .foregroundStyle(RX.Palette.textPrimary.color)
+                .dbText(maxLines: 2)
+            if let subtitle {
+                subtitle
+                    .rxFont(.callout)
+                    .foregroundStyle(RX.Palette.textSecondary.color)
+                    .dbText(maxLines: 2)
+            }
+        }
+    }
+
+    @ViewBuilder private var valueView: some View {
+        if let value {
+            value
+                .rxFont(.bodyMedium)
+                .monospacedDigit()
+                .foregroundStyle(valueColor ?? RX.Palette.textPrimary.color)
+        }
     }
 }
 
@@ -191,20 +216,20 @@ public struct RXMenuRow: View {
         let ink = tint ?? RX.Palette.textPrimary.color
         HStack(spacing: RX.Space.l) {
             Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .medium))
+                .font(RX.Glyph.font(RX.Glyph.menu, weight: .medium))
                 .foregroundStyle(ink)
                 .frame(width: RX.Metrics.menuGlyph, height: RX.Metrics.menuGlyph)
                 .accessibilityHidden(true)
             title
                 .rxFont(.bodyMedium)
                 .foregroundStyle(ink)
-                .lineLimit(1)
+                .dbText(maxLines: 2)
             Spacer(minLength: RX.Space.s)
             if let value {
                 value
                     .rxFont(.body)
                     .foregroundStyle(RX.Palette.textSecondary.color)
-                    .lineLimit(1)
+                    .dbText(maxLines: 1)
             }
             if let badge {
                 badge
@@ -238,7 +263,7 @@ public struct RXCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             content
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, RX.Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RX.Palette.cardBackground.color, in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
@@ -262,19 +287,47 @@ public struct RXCardHeader: View {
             title
                 .rxFont(.headline)
                 .foregroundStyle(RX.Palette.textPrimary.color)
+                .dbText(maxLines: 2)
                 .accessibilityAddTraits(.isHeader)
-            Spacer()
+            Spacer(minLength: RX.Space.s)
             if let actionTitle, let action {
                 Button(action: action) {
                     actionTitle
                         .rxFont(.calloutMedium)
                         .foregroundStyle(RX.Palette.accentText.color)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dbPress)
             }
         }
-        .padding(EdgeInsets(top: 14, leading: RX.Space.l, bottom: RX.Space.xs, trailing: RX.Space.l))
+        .padding(.horizontal, RX.Space.l)
+        .padding(.top, RX.Space.m)
+        .padding(.bottom, RX.Space.xs)
     }
+}
+
+/// A short line inside a card that has nothing to list yet: what will appear there, in the
+/// card's own words (the empty state of an in-card section).
+public struct RXCardMessage: View {
+    let text: Text
+
+    public init(_ text: Text) {
+        self.text = text
+    }
+
+    public var body: some View {
+        text
+            .rxFont(.callout)
+            .foregroundStyle(RX.Palette.textSecondary.color)
+            .dbText()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, RX.Space.l)
+            .padding(.top, RX.Space.xs)
+            .padding(.bottom, RX.Space.m)
+    }
+}
+
+extension RXCardMessage: nonisolated PenpotMapped {
+    nonisolated public static let penpot = PenpotComponent(path: "Card/Message", props: ["text": .text("Message")])
 }
 
 /// A section title between cards (Title).
@@ -295,14 +348,15 @@ public struct RXSectionTitle: View {
     }
 }
 
-/// A small tile of the stat row (Watchtower): a disc, the figure (Title), the label (Footnote).
+/// A small tile of the stat row (Watchtower): a disc, the count (Title, rolling digits), the label
+/// (Footnote).
 public struct RXStatTile: View {
     let systemImage: String
     let color: Color
-    let value: Text
+    let value: Int
     let label: Text
 
-    public init(value: Text, label: Text, systemImage: String, color: Color) {
+    public init(value: Int, label: Text, systemImage: String, color: Color) {
         self.value = value
         self.label = label
         self.systemImage = systemImage
@@ -310,19 +364,16 @@ public struct RXStatTile: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: RX.Space.s) {
             ColorDisc(systemImage: systemImage, color: color, diameter: 36)
-            value
-                .rxFont(.title)
-                .monospacedDigit()
+            RXNumber(value, typography: .title)
                 .foregroundStyle(RX.Palette.textPrimary.color)
             label
                 .rxFont(.footnote)
                 .foregroundStyle(RX.Palette.textSecondary.color)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                .dbText(maxLines: 3)
         }
-        .padding(14)
+        .padding(RX.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RX.Palette.cardBackground.color, in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
         .accessibilityElement(children: .combine)
@@ -347,10 +398,10 @@ public struct QuickActionLabel: View {
     public var body: some View {
         VStack(spacing: RX.Space.s) {
             if onPhoto {
-                RXGlassGlyph(systemImage: systemImage, diameter: RX.Metrics.actionDisc, glyph: 20, onPhoto: true)
+                RXGlassGlyph(systemImage: systemImage, diameter: RX.Metrics.actionDisc, glyph: RX.Glyph.action, onPhoto: true)
             } else {
                 Image(systemName: systemImage)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(RX.Glyph.font(RX.Glyph.action))
                     .foregroundStyle(RX.Palette.accentText.color)
                     .frame(width: RX.Metrics.actionDisc, height: RX.Metrics.actionDisc)
                     .background(RX.Palette.raisedBackground.color, in: Circle())
@@ -359,8 +410,8 @@ public struct QuickActionLabel: View {
             title
                 .rxFont(.calloutMedium)
                 .foregroundStyle(onPhoto ? Color.white : RX.Palette.textPrimary.color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.center)
+                .dbText(maxLines: 2, minimumScale: 0.8)
         }
         .frame(maxWidth: RX.Metrics.actionWidth)
         .frame(maxWidth: .infinity)
@@ -450,11 +501,11 @@ public struct PlanCard: View {
             subtitle
                 .rxFont(.callout)
                 .foregroundStyle(.white.opacity(0.7))
-                .padding(.top, 2)
+                .padding(.top, RX.Space.xxs)
             Spacer(minLength: RX.Space.m)
             HStack(spacing: RX.Space.s) {
                 ForEach(perks, id: \.self) { symbol in
-                    RXGlassGlyph(systemImage: symbol, diameter: Self.disc, glyph: 17, onPhoto: true)
+                    RXGlassGlyph(systemImage: symbol, diameter: Self.disc, onPhoto: true)
                 }
             }
             .accessibilityHidden(true)
@@ -504,7 +555,7 @@ public struct PerkTile: View {
     public var body: some View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
         ZStack(alignment: .bottomLeading) {
-            Color(white: 0.11)
+            RX.Wash.artPlaceholder
             art
                 .resizable()
                 .scaledToFill()
@@ -517,22 +568,20 @@ public struct PerkTile: View {
                     .init(color: .black.opacity(0.62), location: 1),
                 ],
                 startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 2) {
-                RXGlassGlyph(systemImage: systemImage, diameter: 32, glyph: 15, onPhoto: true)
+            VStack(alignment: .leading, spacing: RX.Space.xxs) {
+                RXGlassGlyph(systemImage: systemImage, diameter: 32, onPhoto: true)
                     .padding(.bottom, RX.Space.s)
                 title
                     .rxFont(.headline)
                     .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .dbText(maxLines: 2)
                 subtitle
                     .rxFont(.footnote)
                     .opacity(0.7)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .dbText(maxLines: 2)
             }
             .foregroundStyle(.white)
-            .padding(14)
+            .padding(RX.Space.m)
         }
         .frame(maxWidth: .infinity)
         .frame(height: RX.Metrics.perkTileHeight)
@@ -559,16 +608,15 @@ extension View {
 
 // MARK: Hero page
 
-/// A page with a photo hero and the rounded page sheet that starts under it (Home and Settings).
-/// The photo stays fixed behind the page, under the status bar; only the sheet scrolls up over it.
-/// As the sheet rises, the hero (score, pill, actions) fades and shrinks with the scroll offset.
+/// A page with a photo hero and the rounded page sheet that starts under it (Home and Settings),
+/// on DesignBridge's `DBScrollHero` (D-HOME-HERO): the photo stays fixed behind the page, under
+/// the status bar; only the sheet scrolls up over it, and the hero (score, pill, actions) fades
+/// and shrinks as the sheet covers it. The hero area sizes to its content, so it grows with
+/// Dynamic Type instead of sliding under the sheet.
 public struct RXHeroPage<Hero: View, Sheet: View>: View {
     let photo: Image
     let hero: Hero
     let sheet: Sheet
-    @State private var heroHeight: CGFloat = 320
-    /// 0 at rest, 1 once the sheet has covered most of the hero.
-    @State private var progress: CGFloat = 0
     @State private var position = ScrollPosition(edge: .top)
     /// Captures only: where the page starts scrolled to (points from the top).
     let initialOffset: CGFloat?
@@ -586,76 +634,257 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
         self.sheet = sheet()
     }
 
-    /// How far the hero has faded for a scroll offset (`offset` from the resting position).
-    public static func fade(offset: CGFloat, heroHeight: CGFloat) -> CGFloat {
-        min(max(offset / max(heroHeight * 0.7, 1), 0), 1)
+    public var body: some View {
+        DBScrollHero(heroHeight: nil, parallax: nil, position: $position) {
+            backdrop
+        } header: {
+            hero
+                .padding(.top, RX.Space.xs)
+                .frame(maxWidth: .infinity)
+        } content: {
+            sheet
+                .padding(.top, RX.Space.xl)
+                .padding(.horizontal, RX.Space.gutter)
+                .padding(.bottom, RX.Space.xl)
+        }
+        .task {
+            guard let initialOffset else { return }
+            try? await Task.sleep(for: .milliseconds(600))
+            position.scrollTo(y: initialOffset)
+        }
     }
 
-    public var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                VStack(spacing: 0) {
-                    hero
-                        .padding(.top, proxy.safeAreaInsets.top + RX.Space.xs)
-                        .padding(.horizontal, RX.Space.gutter)
-                        .padding(.bottom, RX.Space.xl)
-                        .frame(maxWidth: .infinity)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heroHeight = $0 }
-                        .opacity(1 - progress)
-                        .scaleEffect(1 - 0.1 * progress, anchor: .bottom)
-                        .allowsHitTesting(progress < 0.5)
-                    sheet
-                        .padding(.top, RX.Space.xl)
-                        .padding(.horizontal, RX.Space.gutter)
-                        .padding(.bottom, RX.Space.xl)
-                        .frame(maxWidth: .infinity, minHeight: proxy.size.height * 0.6, alignment: .top)
-                        .background(
-                            RX.Palette.pageBackground.color,
-                            in: UnevenRoundedRectangle(
-                                topLeadingRadius: RX.Radius.pageSheet, topTrailingRadius: RX.Radius.pageSheet,
-                                style: .continuous))
-                }
-            }
-            .scrollPosition($position)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top
-            } action: { _, offset in
-                progress = Self.fade(offset: offset, heroHeight: heroHeight)
-            }
-            .task {
-                guard let initialOffset else { return }
-                try? await Task.sleep(for: .milliseconds(600))
-                position.scrollTo(y: initialOffset)
-            }
-            .ignoresSafeArea(edges: .top)
-            .background(alignment: .top) {
-                // Fixed: the photo never moves with the page.
-                ZStack {
-                    photo
-                        .resizable()
-                        .scaledToFill()
-                    let veil: Color = lightPhoto ? .white : .black
-                    LinearGradient(
-                        stops: [
-                            .init(color: veil.opacity(lightPhoto ? 0.15 : 0.25), location: 0),
-                            .init(color: veil.opacity(lightPhoto ? 0.1 : 0.05), location: 0.55),
-                            .init(color: veil.opacity(lightPhoto ? 0.35 : 0.55), location: 1),
-                        ],
-                        startPoint: .top, endPoint: .bottom)
-                }
-                .frame(width: proxy.size.width, height: heroHeight + 60)
-                .clipped()
-                .ignoresSafeArea(edges: .top)
-                .accessibilityHidden(true)
-            }
-            .background(RX.Palette.pageBackground.color.ignoresSafeArea())
+    /// Fixed: the photo never moves with the page.
+    private var backdrop: some View {
+        ZStack {
+            photo
+                .resizable()
+                .scaledToFill()
+            let veil: Color = lightPhoto ? .white : .black
+            LinearGradient(
+                stops: [
+                    .init(color: veil.opacity(lightPhoto ? 0.15 : 0.25), location: 0),
+                    .init(color: veil.opacity(lightPhoto ? 0.1 : 0.05), location: 0.55),
+                    .init(color: veil.opacity(lightPhoto ? 0.35 : 0.55), location: 1),
+                ],
+                startPoint: .top, endPoint: .bottom)
         }
     }
 }
 
+extension RXHeroPage: nonisolated PenpotMapped {
+    nonisolated public static var penpot: PenpotComponent {
+        PenpotComponent(path: "Hero", props: [
+            "photo": .swap("Backdrop"),
+            "hero": .swap("Header"),
+            "sheet": .swap("Sheet"),
+        ])
+    }
+}
+
+// MARK: Carousels
+
+/// A horizontal carousel (D-CAROUSELS): a title, then tiles that snap one by one with the next
+/// one peeking at the trailing edge. `bleed` is the page gutter the row runs under, so it scrolls
+/// edge to edge while its first tile lines up with the cards.
+public struct RXCarousel<Item: Identifiable, Tile: View>: View {
+    let title: Text?
+    let items: [Item]
+    let spacing: CGFloat
+    let bleed: CGFloat
+    let inset: CGFloat
+    let tile: (Item) -> Tile
+    @Binding var position: ScrollPosition
+
+    public init(
+        _ title: Text?, items: [Item], spacing: CGFloat = Theme.RX.Space.m, bleed: CGFloat = 0,
+        inset: CGFloat = 0, position: Binding<ScrollPosition> = .constant(ScrollPosition(idType: String.self)),
+        @ViewBuilder tile: @escaping (Item) -> Tile
+    ) {
+        self.title = title
+        self.items = items
+        self.spacing = spacing
+        self.bleed = bleed
+        self.inset = inset
+        self.tile = tile
+        self._position = position
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: RX.Space.s) {
+            if let title {
+                title
+                    .rxFont(.headline)
+                    .foregroundStyle(RX.Palette.textPrimary.color)
+                    .dbText(maxLines: 2)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, RX.Space.xs)
+            }
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: spacing) {
+                    ForEach(items) { item in
+                        tile(item)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollPosition($position)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollIndicators(.hidden)
+            .contentMargins(.horizontal, bleed + inset, for: .scrollContent)
+            .padding(.horizontal, -bleed)
+        }
+    }
+}
+
+extension RXCarousel: nonisolated PenpotMapped {
+    nonisolated public static var penpot: PenpotComponent {
+        PenpotComponent(path: "Carousel", props: [
+            "title": .text("Title"),
+            "tile": .swap("Tile"),
+            "kind": .variant("Kind", ["Favorites", "Perks"]),
+        ])
+    }
+}
+
+/// A favourite of the Home carousel: the item's logo (60 pt, the real brand mark) over its title
+/// (Footnote, two lines reserved so the row stays even).
+public struct RXFavoriteTile<Logo: View>: View {
+    let title: Text
+    let logo: Logo
+
+    public init(title: Text, @ViewBuilder logo: () -> Logo) {
+        self.title = title
+        self.logo = logo()
+    }
+
+    public var body: some View {
+        VStack(spacing: RX.Space.s) {
+            logo
+                .frame(width: RX.Metrics.favoriteLogo, height: RX.Metrics.favoriteLogo)
+            title
+                .rxFont(.footnote)
+                .foregroundStyle(RX.Palette.textPrimary.color)
+                .multilineTextAlignment(.center)
+                .lineLimit(2, reservesSpace: true)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(width: RX.Metrics.favoriteWidth)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension RXFavoriteTile: nonisolated PenpotMapped {
+    nonisolated public static var penpot: PenpotComponent {
+        PenpotComponent(path: "Tile/Favorite", props: [
+            "title": .text("Title"),
+            "logo": .swap("Logo tile"),
+        ])
+    }
+}
+
+// MARK: Verification code
+
+/// The verification code card (D-CODE-SIZE, D-CODE-LABEL): the label "Code de vérification",
+/// then the two groups of digits at 30 pt (tabular, rolling) centred, with the 36 pt timer ring
+/// after them. The digits scale with Dynamic Type; at accessibility sizes the ring moves under
+/// the digits so nothing is clipped.
+public struct RXCodeCard: View {
+    let label: Text
+    let code: String
+    let remaining: Int
+    let fraction: Double
+    @ScaledMetric(relativeTo: .title) private var digits = Theme.RX.Metrics.codeDigits
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    public init(label: Text, code: String, remaining: Int, fraction: Double) {
+        self.label = label
+        self.code = code
+        self.remaining = remaining
+        self.fraction = fraction
+    }
+
+    /// "538262" gives ["538", "262"]; other lengths of 6 or more are split in halves, a shorter
+    /// code stays whole.
+    public static func groups(_ code: String) -> [String] {
+        guard code.count >= 6 else { return [code] }
+        let half = code.index(code.startIndex, offsetBy: code.count / 2)
+        return [String(code[..<half]), String(code[half...])]
+    }
+
+    public var body: some View {
+        VStack(spacing: RX.Space.s) {
+            label
+                .rxFont(.footnote)
+                .foregroundStyle(RX.Palette.textSecondary.color)
+                .dbText(maxLines: 2)
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(spacing: RX.Space.s)) : AnyLayout(HStackLayout(spacing: RX.Space.m))
+            layout {
+                HStack(spacing: RX.Space.s) {
+                    ForEach(Array(Self.groups(code).enumerated()), id: \.offset) { _, group in
+                        Text(verbatim: group)
+                            .contentTransition(.numericText())
+                    }
+                }
+                .font(RX.Glyph.codeFont(size: digits))
+                .foregroundStyle(RX.Palette.textPrimary.color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .dbAnimation(.snappy, value: code)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityValue(Text(verbatim: code))
+                RXTimerRing(remaining: remaining, fraction: fraction)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+extension RXCodeCard: nonisolated PenpotMapped {
+    nonisolated public static let penpot = PenpotComponent(path: "Card/Verification code", props: [
+        "label": .text("Label"),
+        "code": .text("Code"),
+    ])
+}
+
+/// The countdown of a verification code: 36 pt, a faint track and the accent arc draining, the
+/// seconds in the middle (rolling digits); red over the last five seconds.
+public struct RXTimerRing: View {
+    let remaining: Int
+    let fraction: Double
+
+    public init(remaining: Int, fraction: Double) {
+        self.remaining = remaining
+        self.fraction = fraction
+    }
+
+    public var body: some View {
+        let urgent = remaining <= 5
+        let color = urgent ? RX.Palette.negative.color : RX.Palette.accent.color
+        ZStack {
+            Circle().stroke(RX.Palette.textTertiary.color.opacity(0.4), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: min(max(fraction, 0), 1))
+                .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            DBNumber(remaining)
+                .font(RX.Glyph.font(RX.Glyph.chevron).monospacedDigit())
+                .foregroundStyle(urgent ? color : RX.Palette.accentText.color)
+        }
+        .padding(1.5)
+        .frame(width: RX.Metrics.codeRing, height: RX.Metrics.codeRing)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("rx.code.secondsLeft \(remaining)", bundle: .module))
+    }
+}
+
+// swiftlint:disable db_unlocalized_string - fixture text of the preview only
 #Preview("RX blocks") {
     ScrollView {
-        VStack(spacing: 16) {
+        VStack(spacing: Theme.RX.Space.l) {
             HStack {
                 GlassButton(Text(verbatim: "Close"), systemImage: "xmark") {}
                 ColorDisc(systemImage: "creditcard.fill", color: Theme.RX.Hue.blue)
@@ -676,10 +905,12 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
                      perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
                 .background(Color.indigo)
         }
-        .padding(16)
+        .padding(Theme.RX.Space.l)
     }
     .background(Theme.RX.Palette.pageBackground.color)
 }
+
+// swiftlint:enable db_unlocalized_string
 
 // MARK: Penpot registry
 

@@ -158,6 +158,9 @@ extension Theme {
             public static let l = RXPenpot.Spacing.spaceLg
             public static let xl = RXPenpot.Spacing.spaceXl
             public static let xxl = RXPenpot.Spacing.space2xl
+            /// Half of space.xs, between a title and its subtitle only. Code-owned: the Penpot rows
+            /// use a 2 pt gap that has no token yet.
+            public static let xxs = RXPenpot.Spacing.spaceXs / 2
             /// Side margin of a screen and gap between the cards of a page (space.lg).
             public static let gutter = RXPenpot.Spacing.spaceLg
         }
@@ -206,6 +209,45 @@ extension Theme {
             public static func discGlyph(diameter d: CGFloat) -> CGFloat {
                 (d * 0.5).rounded()
             }
+            /// The verification code: digits (D-CODE-SIZE, app-owned) and the timer ring around
+            /// the seconds left.
+            public static let codeDigits: CGFloat = 30
+            public static let codeRing: CGFloat = 36
+            /// A favourite tile of the carousel: its logo and its width (the next one peeks).
+            public static let favoriteLogo: CGFloat = 60
+            public static let favoriteWidth: CGFloat = 84
+            /// The lead logo of an item row (larger logos, device feedback 2026-11-16).
+            public static let itemLogo: CGFloat = 44
+        }
+
+        /// SF Symbols drawn inside fixed geometry (a disc, a chevron, a ring): their size follows
+        /// the shape, not Dynamic Type, so it lives here with the other measured sizes.
+        public enum Glyph {
+            public static let chevron: CGFloat = 14
+            public static let menu: CGFloat = 20
+            public static let action: CGFloat = 20
+
+            /// The SF Symbol font at a fixed size, for glyphs inside fixed shapes only.
+            public static func font(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+                .system(size: size, weight: weight)
+            }
+
+            /// The digits of the verification code: tabular, at `Metrics.codeDigits`, scaled with
+            /// Dynamic Type from the title style.
+            public static func codeFont(size: CGFloat) -> Font {
+                .system(size: size, weight: .semibold, design: .default).monospacedDigit()
+            }
+        }
+
+        /// Colours that are not Penpot tokens yet (the alert washes of Watchtower). Code-owned until
+        /// the Penpot agent adds them; dbridge drift lists them.
+        public enum Wash {
+            public static let alert: [Color] = [Tone(css: "#F0625F")!.color, Tone(css: "#D93C3F")!.color]
+            public static let positive: [Color] = [Tone(css: "#2BB673")!.color, Tone(css: "#119358")!.color]
+            /// The initials disc of an account without a photo.
+            public static let avatar: [Color] = [Tone(css: "#8B89F0")!.color, Tone(css: "#4B48C9")!.color]
+            /// Under a perk tile's art while it loads.
+            public static let artPlaceholder = Tone(css: "#1C1C1C")!.color
         }
 
         // MARK: Typography
