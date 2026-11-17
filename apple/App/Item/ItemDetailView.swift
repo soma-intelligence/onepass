@@ -762,11 +762,12 @@ struct ItemDetailView: View {
                 }
                 .accessibilityIdentifier("item.share")
             }
-            if !isReadOnly(item) {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("common.edit", systemImage: "pencil") { startEditing(item) }
-                        .accessibilityIdentifier("item.edit")
-                }
+        }
+        // Modifier stays in the bar in every look: only Partager moves to the quick actions in RX.
+        if item.trashedAt == nil, !isReadOnly(item) {
+            ToolbarItem(placement: .primaryAction) {
+                Button("common.edit", systemImage: "pencil") { startEditing(item) }
+                    .accessibilityIdentifier("item.edit")
             }
         }
         ToolbarItem(placement: .primaryAction) {
