@@ -52,6 +52,23 @@ extension View {
     public func rxPress() -> some View {
         buttonStyle(.dbPress)
     }
+
+    /// The RX press with a DesignBridge haptic as the finger lands (`selection` by default): the
+    /// RX-only controls (quick actions, tiles, plan card, menu rows, hero glass buttons), which
+    /// had no feedback of their own. The system haptics setting still applies.
+    public func rxPress(haptic: DBHapticEvent) -> some View {
+        buttonStyle(RXHapticPressStyle(event: haptic))
+    }
+}
+
+/// `DBPressButtonStyle` plus one haptic when a press begins.
+struct RXHapticPressStyle: ButtonStyle {
+    let event: DBHapticEvent
+
+    func makeBody(configuration: Configuration) -> some View {
+        DBPressButtonStyle().makeBody(configuration: configuration)
+            .dbHaptic(trigger: configuration.isPressed) { _, pressed in pressed ? event : nil }
+    }
 }
 
 /// A number of the RX look: rolling digits (`DBNumber`) in an RX typography.

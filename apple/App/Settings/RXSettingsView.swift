@@ -92,7 +92,7 @@ struct RXSettingsHome: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
             }
-            .rxPress()
+            .rxPress(haptic: .selection)
         }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(isPresented: $showPlan) { RXPlanPage().zoomDestination(Self.planZoomID) }
@@ -132,7 +132,7 @@ struct RXSettingsHome: View {
                 .padding(.top, RX.Space.xl)
                 .contentShape(Rectangle())
             }
-            .rxPress()
+            .rxPress(haptic: .selection)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.account")
             Button {
@@ -143,7 +143,7 @@ struct RXSettingsHome: View {
                     title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-lux"),
                     perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
             }
-            .rxPress()
+            .rxPress(haptic: .selection)
             .zoomSource(Self.planZoomID)
             .accessibilityIdentifier("rx.settings.plan")
             .padding(.top, RX.Space.l)
@@ -221,7 +221,7 @@ struct RXPerkCarousel: View {
             try? await Task.sleep(for: .milliseconds(500))
             position.scrollTo(id: id, anchor: .leading)
         }
-        .rxPress()
+        .rxPress(haptic: .selection)
     }
 
     private func tile(_ perk: Perk) -> some View {
@@ -328,7 +328,7 @@ struct RXPlanPage: View {
                     benefit(.devices, Text("rx.plan.devices"))
                     benefit(.crypto, Text("rx.plan.crypto"))
                 }
-                .rxPress()
+                .rxPress(haptic: .selection)
                 Text("rx.plan.footnote")
                     .rxFont(.footnote)
                     .foregroundStyle(RX.Palette.textTertiary.color)
@@ -356,6 +356,8 @@ struct RXPlanPage: View {
 struct RXProfileQRSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    /// Taps on Partager, for its haptic.
+    @State private var shares = 0
 
     private typealias RX = Theme.RX
 
@@ -410,6 +412,9 @@ struct RXProfileQRSheet: View {
                     Label("rx.profileQR.share", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.borderedProminent)
+                // ShareLink has no action to observe: count the taps for the haptic.
+                .simultaneousGesture(TapGesture().onEnded { shares += 1 })
+                .dbHaptic(.selection, trigger: shares)
                 .accessibilityIdentifier("rx.profileQR.share")
                 Spacer(minLength: 0)
             }
