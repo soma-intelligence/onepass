@@ -1,4 +1,5 @@
 #if os(iOS)
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -187,10 +188,12 @@ struct PhoneScoreGauge: View {
             Ticks(count: Self.ticks, sweep: Self.sweep, indices: (lit + 1)..<(Self.ticks + 1))
                 .stroke(Color.primary.opacity(0.12), style: StrokeStyle(lineWidth: 2, lineCap: .round))
             VStack(spacing: Theme.Space.xxs) {
-                Text(score.map(String.init) ?? "–")
-                    .font(.system(size: 58, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
+                // Rolling digits (DesignBridgeKit) as the score arrives and changes.
+                Group {
+                    if let score { DBNumber(score) } else { Text(verbatim: "–") }
+                }
+                .font(.system(size: 58, weight: .bold, design: .rounded))
+                .monospacedDigit()
                 Text(score.map(ScoreGauge.label) ?? String(localized: "browse.analyzing"))
                     .font(.subheadline.weight(.semibold))
                     .textCase(.uppercase)

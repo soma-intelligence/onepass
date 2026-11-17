@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -30,28 +31,71 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
             statusLine
                 .frame(maxWidth: .infinity)
             scanCard
-            if let report = watchtower.report {
-                alerts(report)
-                statTiles(report)
-                improve(report)
-                CryptoPhraseAlertCard()
-                StrengthCard(levels: report.strength.map(Int.init))
-                let clear = WatchtowerCard.all.filter { !WatchtowerTab.isFlagged($0, in: report) }
-                if !clear.isEmpty {
-                    ClearChecksCard(
-                        cards: clear, report: report, checkBreaches: watchtower.checkBreaches,
-                        breachCatalog: watchtower.breachCatalogUsed)
+            // The report is the data of this page: loading (skeleton), empty vault, failure
+            // (retry; over an older report, an error toast with Retry) and content (UX-STATE-01).
+            DBLoadableView(Self.state(report: watchtower.report, phase: watchtower.phase, items: model.session.summaries.count),
+                           empty: emptyState, retry: retry) { report in
+                VStack(alignment: .leading, spacing: RX.Space.l) {
+                    alerts(report)
+                    statTiles(report)
+                    improve(report)
+                    CryptoPhraseAlertCard()
+                    StrengthCard(levels: report.strength.map(Int.init))
+                    let clear = WatchtowerCard.all.filter { !WatchtowerTab.isFlagged($0, in: report) }
+                    if !clear.isEmpty {
+                        ClearChecksCard(
+                            cards: clear, report: report, checkBreaches: watchtower.checkBreaches,
+                            breachCatalog: watchtower.breachCatalogUsed)
+                    }
                 }
+            } placeholder: {
+                placeholder
             }
             BreachSettingCard()
         }
         .environment(\.rxCards, true)
     }
 
+    /// The data state of the page, from the model: no item is an empty vault, a failed run keeps
+    /// the last report under the error, no report yet is loading.
+    static func state(report: FfiWatchtowerReport?, phase: WatchtowerModel.Phase, items: Int)
+        -> DBLoadable<FfiWatchtowerReport>
+    {
+        if items == 0 { return .empty }
+        if case .failed(let message) = phase {
+            return .failed(DBLoadError(title: String(localized: "rx.watchtower.failed"), message: message), previous: report)
+        }
+        if let report { return .content(report) }
+        return .loading(previous: nil)
+    }
+
+    private var retry: @MainActor @Sendable () -> Void {
+        let model = model
+        return { model.watchtower.refresh(model.session) }
+    }
+
+    private var emptyState: DBEmptyState {
+        let model = model
+        return DBEmptyState(
+            String(localized: "rx.watchtower.empty"), systemImage: "checkmark.shield",
+            message: String(localized: "rx.watchtower.empty.message"),
+            actionTitle: String(localized: "Nouvel élément")) { model.showNewItemPicker = true }
+    }
+
+    /// While the first report runs: the stat tiles at zero, redacted with the shimmer.
+    private var placeholder: some View {
+        HStack(alignment: .top, spacing: RX.Space.m) {
+            ForEach(RXWatchtowerStat.all, id: \.id) { stat in
+                RXStatTile(value: 0, label: Text(stat.label), systemImage: stat.symbol, color: stat.color)
+            }
+        }
+    }
+
     /// "Watchtower" (Large title) over "Security score", the share button on the right.
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: RX.Space.xs) {
+                // swiftlint:disable:next db_unlocalized_string - product name, the same in every language
                 Text(verbatim: "Watchtower")
                     .rxFont(.largeTitle)
                     .foregroundStyle(RX.Palette.textPrimary.color)
@@ -74,7 +118,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                     ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
                         RXGlassGlyph(systemImage: "square.and.arrow.up")
                     }
-                    .buttonStyle(PressableButtonStyle())
+                    .rxPress()
                     .accessibilityLabel(Text("browse.shareMyScore"))
                     .accessibilityIdentifier("watchtower.share")
                 }
@@ -100,7 +144,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                         title: RXWatchtowerText.alertTitle(card, count: ids.count), message: Text(card.message),
                         systemImage: "exclamationmark", positive: false, chevron: true)
                 }
-                .buttonStyle(PressableButtonStyle())
+                .rxPress()
                 .routeZoomSource(.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck))
                 .accessibilityIdentifier("watchtower.show.\(card.id)")
             }
@@ -114,10 +158,9 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                     let ids = card.itemIDs(in: report)
                     NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck)) {
                         RXStatTile(
-                            value: Text(ids.count, format: .number), label: Text(stat.label),
-                            systemImage: stat.symbol, color: stat.color)
+                            value: ids.count, label: Text(stat.label), systemImage: stat.symbol, color: stat.color)
                     }
-                    .buttonStyle(PressableButtonStyle())
+                    .rxPress()
                     .routeZoomSource(.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck))
                     .disabled(ids.isEmpty)
                     .accessibilityIdentifier("rx.watchtower.stat.\(stat.id)")
@@ -148,14 +191,11 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
 
     private func row(_ card: WatchtowerCard, ids: Set<String>) -> some View {
         NavigationLink(value: PhoneRoute.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck)) {
-            RXItemRow(
-                title: Text(card.title), subtitle: Text(card.message), value: Text(ids.count, format: .number),
-                chevron: true
-            ) {
+            RXItemRow(title: Text(card.title), subtitle: Text(card.message), count: ids.count, chevron: true) {
                 ColorDisc(systemImage: card.symbol, color: card.color)
             }
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.98))
+        .rxPress()
         .routeZoomSource(.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck))
         .accessibilityIdentifier("watchtower.show.\(card.id)")
     }
@@ -202,28 +242,28 @@ struct RXAlertCard: View {
     let chevron: Bool
 
     var body: some View {
-        let colors: [Color] = positive
-            ? [Color(red: 0x2B / 255, green: 0xB6 / 255, blue: 0x73 / 255), Color(red: 0x11 / 255, green: 0x93 / 255, blue: 0x58 / 255)]
-            : [Color(red: 0xF0 / 255, green: 0x62 / 255, blue: 0x5F / 255), Color(red: 0xD9 / 255, green: 0x3C / 255, blue: 0x3F / 255)]
-        HStack(spacing: 14) {
+        let colors = positive ? Theme.RX.Wash.positive : Theme.RX.Wash.alert
+        HStack(spacing: Theme.RX.Space.m) {
             Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .bold))
+                .font(Theme.RX.Glyph.font(Theme.RX.Glyph.action, weight: .bold))
                 .foregroundStyle(colors[1])
                 .frame(width: 44, height: 44)
                 .background(.white, in: Circle())
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                title.rxFont(.headline)
+            VStack(alignment: .leading, spacing: Theme.RX.Space.xxs) {
+                title
+                    .rxFont(.headline)
+                    .dbText()
                 message
                     .rxFont(.footnote)
                     .opacity(0.85)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .dbText()
             }
             .multilineTextAlignment(.leading)
             Spacer(minLength: 4)
             if chevron {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(Theme.RX.Glyph.font(Theme.RX.Glyph.chevron, weight: .bold))
                     .accessibilityHidden(true)
             }
         }

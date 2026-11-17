@@ -18,6 +18,7 @@ struct RXMacWatchtowerContent<Status: View>: View {
         let report = watchtower.report
         VStack(alignment: .leading, spacing: RX.Space.l) {
             VStack(alignment: .leading, spacing: RX.Space.xs) {
+                // swiftlint:disable:next db_unlocalized_string - product name, the same in every language
                 Text(verbatim: "Watchtower")
                     .rxFont(.largeTitle)
                     .foregroundStyle(RX.Palette.textPrimary.color)
@@ -87,7 +88,7 @@ struct RXMacWatchtowerContent<Status: View>: View {
                     let ids = card.itemIDs(in: report)
                     Button { show(card, ids) } label: {
                         RXStatTile(
-                            value: Text(ids.count, format: .number), label: Text(stat.label),
+                            value: ids.count, label: Text(stat.label),
                             systemImage: stat.symbol, color: stat.color)
                     }
                     .buttonStyle(.plain)
@@ -120,7 +121,7 @@ struct RXMacWatchtowerContent<Status: View>: View {
     private func row(_ card: WatchtowerCard, ids: Set<String>) -> some View {
         Button { show(card, ids) } label: {
             RXItemRow(
-                title: Text(card.title), subtitle: Text(card.message), value: Text(ids.count, format: .number),
+                title: Text(card.title), subtitle: Text(card.message), count: ids.count,
                 chevron: true
             ) {
                 ColorDisc(systemImage: card.symbol, color: card.color)
