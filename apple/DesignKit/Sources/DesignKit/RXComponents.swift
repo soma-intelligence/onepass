@@ -67,7 +67,7 @@ public struct GlassButton: View {
         Button(action: action) {
             RXGlassGlyph(systemImage: systemImage, diameter: diameter, onPhoto: onPhoto)
         }
-        .modifier(RXPressStyle())
+        .rxPress(haptic: .selection)
         .accessibilityLabel(label)
     }
 }
@@ -174,10 +174,13 @@ public struct RXItemRow<Lead: View>: View {
                 .foregroundStyle(RX.Palette.textPrimary.color)
                 .dbText(maxLines: 2)
             if let subtitle {
+                // Usernames and addresses: one line cut in the middle (UX-TEXT-02), never broken
+                // between two letters; at accessibility sizes the row has room for two.
                 subtitle
                     .rxFont(.callout)
                     .foregroundStyle(RX.Palette.textSecondary.color)
-                    .dbText(maxLines: 2)
+                    .truncationMode(.middle)
+                    .dbText(maxLines: dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             }
         }
     }
@@ -752,6 +755,9 @@ extension RXCarousel: nonisolated PenpotMapped {
 public struct RXFavoriteTile<Logo: View>: View {
     let title: Text
     let logo: Logo
+    /// The tile widens with the text size, so a two-word name keeps whole words.
+    @ScaledMetric(relativeTo: .footnote) private var width = Theme.RX.Metrics.favoriteWidth
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(title: Text, @ViewBuilder logo: () -> Logo) {
         self.title = title
@@ -766,10 +772,10 @@ public struct RXFavoriteTile<Logo: View>: View {
                 .rxFont(.footnote)
                 .foregroundStyle(RX.Palette.textPrimary.color)
                 .multilineTextAlignment(.center)
-                .lineLimit(2, reservesSpace: true)
-                .minimumScaleFactor(0.8)
+                .dbText(maxLines: dynamicTypeSize.isAccessibilitySize ? 3 : 2)
+                .frame(maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: RX.Metrics.favoriteWidth)
+        .frame(width: width)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }

@@ -183,6 +183,8 @@ extension Theme {
         public enum Metrics {
             /// A round glass button.
             public static let glassButton: CGFloat = 44
+            /// The smallest hit area of a control (Apple HIG, UX-A11Y hit area).
+            public static let minTapTarget: CGFloat = 44
             /// The disc of a quick action.
             public static let actionDisc: CGFloat = 48
             /// The width of a quick action column (disc and label).
