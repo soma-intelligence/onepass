@@ -79,7 +79,7 @@ struct RXMacHome: View {
         .padding(EdgeInsets(top: 28, leading: 32, bottom: 28, trailing: 32))
         .frame(maxWidth: .infinity, minHeight: 260, alignment: .leading)
         .background {
-            Image("rx-hero")
+            Image(RXHero.home)
                 .resizable()
                 .scaledToFill()
                 .overlay(LinearGradient(colors: [.black.opacity(0.45), .black.opacity(0.1)],

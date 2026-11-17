@@ -137,7 +137,7 @@ struct RXMacSettingsHome: View {
         }
         .padding(RX.Space.l)
         .background {
-            Image("rx-hero")
+            Image(RXHero.settings)
                 .resizable()
                 .scaledToFill()
                 .overlay(Color.black.opacity(0.2))

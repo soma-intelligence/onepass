@@ -28,7 +28,7 @@ struct RXSettingsHome: View {
 
     var body: some View {
         let _ = model.settingsRevision
-        RXHeroPage(photo: Image("rx-hero")) {
+        RXHeroPage(photo: Image(RXHero.settings)) {
             hero
         } sheet: {
             VStack(spacing: RX.Space.l) {
@@ -213,7 +213,7 @@ struct RXPlanPage: View {
     private typealias RX = Theme.RX
 
     var body: some View {
-        RXHeroPage(photo: Image("rx-hero")) {
+        RXHeroPage(photo: Image(RXHero.settings)) {
             VStack(alignment: .leading, spacing: RX.Space.xl) {
                 #if os(iOS)
                 // The Mac keeps the window toolbar's back button.

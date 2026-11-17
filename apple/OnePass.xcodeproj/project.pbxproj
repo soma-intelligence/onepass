@@ -224,6 +224,7 @@
 		C468E1114DE58EEDDBE28A0A /* OnePassShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 123B03A83CDA95FC02A7BE8C /* OnePassShortcuts.swift */; };
 		C500D24FF75EEF70D090DF1D /* RecoverWithHelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EB124448D2A483FEE5EC583 /* RecoverWithHelpView.swift */; };
 		C64221C5F075E676EF1D3240 /* DeveloperSettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12E0E8286297CA68D0517E2 /* DeveloperSettingsPage.swift */; };
+		C668F80B28DEE414C8672EBD /* RXArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 426C7E70D70010F31C18D606 /* RXArt.swift */; };
 		C6939A7EE2BD033BC34E31DA /* RevokedDeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088FED1C489272E05F9E76CC /* RevokedDeviceView.swift */; };
 		C90860D5CEE2203B6ADB77C2 /* Nearby.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF8AF3D2E817BD4D4E9F0520 /* Nearby.swift */; };
 		C93F7FDF7FE9B6D24F6E3D19 /* DemoCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 430C9CAE5FD32B895AA0C129 /* DemoCrypto.swift */; };
@@ -472,6 +473,7 @@
 		3FFB44CC51A27D430FC17378 /* DemoData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoData.swift; sourceTree = "<group>"; };
 		40A16278188C339AA5210876 /* IdentityChangeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityChangeView.swift; sourceTree = "<group>"; };
 		422181E1C469D47ED766E877 /* IconLibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconLibraryUITests.swift; sourceTree = "<group>"; };
+		426C7E70D70010F31C18D606 /* RXArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXArt.swift; sourceTree = "<group>"; };
 		42BE6F635EE865D00B34DB84 /* FoldLayoutUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldLayoutUITests.swift; sourceTree = "<group>"; };
 		430C9CAE5FD32B895AA0C129 /* DemoCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoCrypto.swift; sourceTree = "<group>"; };
 		4589B26BB420AF0E483B2C36 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -1170,6 +1172,7 @@
 				1F8A0A14957792EE5EDF2DCD /* BrowseRoot.swift */,
 				F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */,
 				FF8AF3D2E817BD4D4E9F0520 /* Nearby.swift */,
+				426C7E70D70010F31C18D606 /* RXArt.swift */,
 				7B2925B4FDDDE6B2DE7EEA58 /* TravelSuggestionCard.swift */,
 				C3167F0DA8CE073FFD98680F /* VaultDialRefresh.swift */,
 			);
@@ -2148,6 +2151,7 @@
 				0792B9A17998C8FFA5C457A9 /* PublicSessionMonitor.swift in Sources */,
 				399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */,
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
+				C668F80B28DEE414C8672EBD /* RXArt.swift in Sources */,
 				317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */,
 				B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */,
 				66028C66EB1315E81F2C79BC /* RXMacSettings.swift in Sources */,

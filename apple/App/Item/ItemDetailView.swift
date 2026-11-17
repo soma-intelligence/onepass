@@ -262,7 +262,14 @@ struct ItemDetailView: View {
         #if os(iOS) || os(macOS)
         // A soft wash in the item's identity color, fixed at the top like the page's tint. It sits
         // under the content and the navigation bar, and never takes a touch.
-        .background(alignment: .top) { identityWash(item) }
+        .background(alignment: .top) {
+            if rxHeader {
+                // RX: the soft glass orb behind the header (high key: the text stays dark).
+                RXBackdrop(name: RXHero.item, height: 320, lightOpacity: 0.7, darkOpacity: 0.3)
+            } else {
+                identityWash(item)
+            }
+        }
         #endif
         .groupedScreen()
         .environment(\.rxCards, rxDesign)
