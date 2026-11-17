@@ -8,7 +8,7 @@ struct TotpCodeView: View {
     let secret: String
     var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// RX look: the big monospaced code (30 pt) and the 40 pt timer ring of the mock.
+    /// RX look: the 28 pt code in two groups and the 24 pt timer ring.
     @Environment(\.rxCards) private var rxCards
 
     var body: some View {
@@ -23,24 +23,34 @@ struct TotpCodeView: View {
         #endif
     }
 
-    /// The RX code: "538 262" in the Mono code typography, centred on the ring's height, the seconds left in a ring on the right.
+    /// The RX code row (verification code card): the two groups of digits at 28 pt (tabular
+    /// figures, no leading bearing beyond the font's own), a fixed 8 pt gap between them, then the
+    /// 24 pt timer ring centred on the digits. The row starts exactly at the value's leading edge,
+    /// under the field label.
     private var rxBody: some View {
         TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
             if let code = Self.code(secret, at: context.date) {
                 let exact = Self.exactRemaining(period: code.period, at: context.date)
-                HStack(alignment: .center) {
-                    Text(verbatim: Self.spaced(code.code))
-                        .rxFont(.monoCode)
-                        .lineLimit(1)
-                        .frame(minHeight: 40)
-                        .foregroundStyle(Theme.RX.Palette.textPrimary.color)
-                        .contentTransition(.numericText())
-                        .animation(.snappy(duration: 0.35), value: code.code)
-                        .accessibilityLabel(Text("term.oneTimeCode"))
-                        .accessibilityValue(Text(verbatim: code.code))
+                let groups = Self.groups(code.code)
+                HStack(alignment: .center, spacing: 0) {
+                    HStack(spacing: Self.rxGroupGap) {
+                        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                            Text(verbatim: group)
+                                .contentTransition(.numericText())
+                        }
+                    }
+                    .font(.system(size: Self.rxDigitSize, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.RX.Palette.textPrimary.color)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .animation(.snappy(duration: 0.35), value: code.code)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text("term.oneTimeCode"))
+                    .accessibilityValue(Text(verbatim: code.code))
                     Spacer(minLength: Theme.RX.Space.s)
                     RXTimerRing(remaining: Int(code.remaining), fraction: exact / Double(max(code.period, 1)))
                 }
+                .frame(height: Self.rxRowHeight)
             } else {
                 Text("item.invalidSecretPasteBase32")
                     .font(.footnote)
@@ -49,12 +59,17 @@ struct TotpCodeView: View {
         }
     }
 
-    /// "538262" gives "538 262" (one monospaced space between the groups); other lengths are split
-    /// in halves.
-    static func spaced(_ code: String) -> String {
-        guard code.count >= 6 else { return code }
+    /// Digit size, gap between the two groups and row height of the RX code.
+    static let rxDigitSize: CGFloat = 28
+    static let rxGroupGap: CGFloat = 8
+    static let rxRowHeight: CGFloat = 34
+
+    /// "538262" gives ["538", "262"]; other lengths of 6 or more are split in halves, a shorter
+    /// code stays whole.
+    static func groups(_ code: String) -> [String] {
+        guard code.count >= 6 else { return [code] }
         let half = code.index(code.startIndex, offsetBy: code.count / 2)
-        return String(code[..<half]) + " " + String(code[half...])
+        return [String(code[..<half]), String(code[half...])]
     }
 
     private var classicBody: some View {
@@ -101,8 +116,8 @@ struct TotpCodeView: View {
     }
 }
 
-/// The RX countdown: a faint track, the accent arc draining, the seconds in the middle; red over
-/// the last five seconds.
+/// The RX countdown: 24 pt, a faint track and the accent arc draining (2.5 pt), the seconds in
+/// the middle (Caption 2, tabular); red over the last five seconds.
 private struct RXTimerRing: View {
     let remaining: Int
     let fraction: Double
@@ -110,17 +125,17 @@ private struct RXTimerRing: View {
     var body: some View {
         let color = remaining <= 5 ? Theme.RX.Palette.negative.color : Theme.RX.Palette.accent.color
         ZStack {
-            Circle().stroke(Theme.RX.Palette.textTertiary.color.opacity(0.4), lineWidth: 3)
+            Circle().stroke(Theme.RX.Palette.textTertiary.color.opacity(0.4), lineWidth: 2.5)
             Circle()
                 .trim(from: 0, to: min(max(fraction, 0), 1))
-                .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text(remaining, format: .number)
-                .rxFont(.footnoteBold)
-                .monospacedDigit()
+                .font(.caption2.weight(.semibold).monospacedDigit())
                 .foregroundStyle(remaining <= 5 ? color : Theme.RX.Palette.accentText.color)
         }
-        .frame(width: 40, height: 40)
+        .padding(1.25)
+        .frame(width: 24, height: 24)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("encore \(remaining) secondes"))
     }
@@ -160,6 +175,7 @@ struct TotpFieldView: View {
         } menu: {
             EmptyView()
         }
+        .centeredOnValue(rxCards)
     }
 
     private func copyCurrent() {

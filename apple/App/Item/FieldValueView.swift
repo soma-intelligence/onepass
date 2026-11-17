@@ -231,6 +231,24 @@ struct FieldValueView: View {
 
 // MARK: - Rows
 
+extension DetailRow {
+    /// See `centersOnValue`.
+    func centeredOnValue(_ on: Bool = true) -> DetailRow {
+        var row = self
+        row.centersOnValue = on
+        return row
+    }
+}
+
+extension VerticalAlignment {
+    /// The centre of a detail row's value line (`DetailRow.centersOnValue`).
+    private enum DetailValue: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[VerticalAlignment.center] }
+    }
+
+    static let detailValue = VerticalAlignment(DetailValue.self)
+}
+
 /// A read-only row of a detail card: small accent label above the value, an optional accessory on the
 /// right (strength, countdown). Clicking the row copies. On the Mac a hover highlights the row and
 /// shows "Copier" and the menu of the other actions; elsewhere the menu (with Copier) stays visible.
@@ -243,6 +261,9 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
     let value: Value
     let accessory: Accessory
     let menu: MenuItems
+    /// The accessory and the actions centred on the value line instead of the whole row (the RX
+    /// verification code: the menu sits on the digits' row, not between label and code).
+    var centersOnValue = false
     @State private var hovered = false
     #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -269,10 +290,11 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: Theme.Space.m) {
+        HStack(alignment: centersOnValue ? .detailValue : .center, spacing: Theme.Space.m) {
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                 EditorLabel(label)
                 value.frame(maxWidth: .infinity, alignment: .leading)
+                    .alignmentGuide(.detailValue) { $0[VerticalAlignment.center] }
             }
             #if os(macOS)
             // Same slot at the trailing edge: the accessory gives way to Copier and the menu on hover,
