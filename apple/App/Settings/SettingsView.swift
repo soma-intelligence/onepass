@@ -201,7 +201,13 @@ struct SettingsView: View {
         NavigationStack(path: $path) {
             root
                 // The one destination of the stack: every row, tile and card pushes by value.
-                .navigationDestination(for: SettingsRoute.self) { destination($0) }
+                .navigationDestination(for: SettingsRoute.self) { route in
+                    destination(route)
+                        #if os(iOS)
+                        // The pushed page needs the namespace too, or its zoom has no source.
+                        .environment(\.itemZoomNamespace, rxDesign ? settingsZoom : nil)
+                        #endif
+                }
                 #if os(iOS)
                 // RX: rows, perk tiles and the plan card zoom into the page they open; the classic
                 // list has no namespace, so its pages push as usual.
