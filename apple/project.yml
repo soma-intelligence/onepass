@@ -80,6 +80,11 @@ packages:
     path: SafariExtension/SafariRelay
   UpdateKit:
     path: UpdateKit
+  # Shared DesignBridge primitives and UI test base (Soma_Tools/design-bridge, a sibling of this clone).
+  DesignBridgeKit:
+    path: ../../design-bridge/Packages/DesignBridgeKit
+  DesignBridgeTesting:
+    path: ../../design-bridge/Packages/DesignBridgeTesting
 
 targets:
   OnePass:
@@ -105,6 +110,8 @@ targets:
         product: VaultKit
       - package: DesignKit
         product: DesignKit
+      - package: DesignBridgeKit
+        product: DesignBridgeKit
       # App Intents and Shortcuts: linked explicitly, autolinking misses it in the Mac App Store archive.
       - sdk: AppIntents.framework
       # The iOS app carries the watch app; the Mac build has no watch content.
@@ -512,6 +519,8 @@ targets:
           - "OpenAndSignInUITests.swift"
     dependencies:
       - target: OnePass
+      - package: DesignBridgeTesting
+        product: DesignBridgeUITesting
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.uitests
