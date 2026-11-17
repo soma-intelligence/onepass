@@ -275,14 +275,14 @@ struct RXHomeScore: View {
         }
     }
 
-    /// The words-first headline (Clarity): the Display typography a step down, so two words fit
-    /// a line. No RX token holds this size yet; the tracking follows Display's ratio.
-    private static let headlineBase: CGFloat = 44
+    /// The words-first headline (Clarity): the Display small typography (Penpot), so two words fit
+    /// a line. It scales with Large Title under Dynamic Type; the tracking keeps the token's ratio.
+    private static let headlineBase: CGFloat = Theme.RX.Typography.displaySmall.spec.size
     @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = RXHomeScore.headlineBase
 
     private var headlineTracking: CGFloat {
-        let display = RX.Typography.display.spec
-        return display.tracking * headlineSize / display.size
+        let token = RX.Typography.displaySmall.spec
+        return token.tracking * headlineSize / token.size
     }
 
     var body: some View {
@@ -296,7 +296,7 @@ struct RXHomeScore: View {
                         .foregroundStyle(.primary)
                         .dbText(maxLines: 2)
                     Text(Self.status(status))
-                        .font(RX.Typography.display.font(size: headlineSize))
+                        .font(RX.Typography.displaySmall.font(size: headlineSize))
                         .tracking(headlineTracking)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.center)

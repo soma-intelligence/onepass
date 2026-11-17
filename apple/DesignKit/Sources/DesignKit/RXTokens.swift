@@ -316,13 +316,14 @@ extension Theme {
 
         /// The Penpot typographies (OnePass/Display to OnePass/Mono code), drawn in the system face.
         public enum Typography: String, CaseIterable, Sendable {
-            case display, largeTitle, title, headline, body, bodyMedium, callout, calloutMedium, footnote,
+            case display, displaySmall, largeTitle, title, headline, body, bodyMedium, callout, calloutMedium, footnote,
                 footnoteBold, caption, monoCode
 
             /// The generated Penpot typography.
             var token: RXPenpot.TypeToken {
                 switch self {
                 case .display: RXPenpot.Typography.display
+                case .displaySmall: RXPenpot.Typography.displaySmall
                 case .largeTitle: RXPenpot.Typography.largeTitle
                 case .title: RXPenpot.Typography.title
                 case .headline: RXPenpot.Typography.headline

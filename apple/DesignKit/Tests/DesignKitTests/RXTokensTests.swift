@@ -93,6 +93,14 @@ struct RXTokensTests {
         }
     }
 
+    /// The Home headline token: Display a step down, scaling with Large Title.
+    @Test func displaySmallToken() {
+        let t = RX.Typography.displaySmall
+        #expect(t.spec.size == 44)
+        #expect(t.spec.weight == RX.Typography.display.spec.weight)
+        #expect(t.textStyle == .largeTitle)
+    }
+
     /// Springs and the press scale from designbridge.json reach Swift unchanged.
     @Test func motionMatchesManifest() throws {
         let springs: [String: RXPenpot.SpringToken] = [
@@ -135,7 +143,7 @@ struct RXTokensTests {
     }
 
     @Test func typographyTable() {
-        #expect(RX.Typography.allCases.count == 12)
+        #expect(RX.Typography.allCases.count == 13)
         #expect(RX.Typography.display.spec.size == 56)
         #expect(RX.Typography.bodyMedium.spec.weight == 500)
         #expect(RX.Typography.callout.spec.size == 15)
