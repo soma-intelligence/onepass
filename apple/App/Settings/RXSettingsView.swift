@@ -155,6 +155,7 @@ struct RXSettingsHome: View {
 struct RXSettingsBackdrop: ViewModifier {
     func body(content: Content) -> some View {
         content
+            .modifier(RXPullDownToDismiss())
             .background(RXFrostedBackdrop().ignoresSafeArea())
             .containerBackground(Color.clear, for: .navigation)
     }

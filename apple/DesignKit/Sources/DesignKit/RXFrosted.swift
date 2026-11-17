@@ -108,6 +108,7 @@ public struct RXFrostedPage<Compact: View, Header: View, Content: View>: View {
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, new in
             offset = new
         }
+        .modifier(RXPullDownToDismiss())
         .background(RXFrostedBackdrop(image: backdrop).ignoresSafeArea())
         #if os(iOS)
         // The navigation stack paints no colour of its own: the backdrop (or the screen under a
@@ -330,5 +331,47 @@ public struct RXFrostedRowFill: ViewModifier {
         content.listRowBackground(RXFrost.cardFill(
             scheme, flat: Theme.Wash.isFlat(increaseContrast: contrast == .increased,
                                             reduceTransparency: reduceTransparency)))
+    }
+}
+
+// MARK: Pull down to close
+
+public extension EnvironmentValues {
+    /// Closes the frosted Réglages when a page is pulled down past its top. Set by the screen that
+    /// presents them (a full screen cover has no drag to dismiss of its own); nil elsewhere, where
+    /// pulling down only bounces.
+    @Entry var rxPullDownDismiss: (() -> Void)? = nil
+}
+
+/// Pull down to close: on a scroll view at its top, pulled down past `threshold` and let go, the
+/// presenting screen's `rxPullDownDismiss` runs. A light tap of the haptics marks the threshold.
+/// The close button stays: this only adds the gesture of a sheet back to a full screen cover.
+public struct RXPullDownToDismiss: ViewModifier {
+    @Environment(\.rxPullDownDismiss) private var dismiss
+    @State private var armed = false
+
+    /// How far past the top the page has to be pulled.
+    public static let threshold: CGFloat = 72
+
+    public init() {}
+
+    public func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            .onScrollGeometryChange(for: Bool.self) {
+                -($0.contentOffset.y + $0.contentInsets.top) > Self.threshold
+            } action: { _, past in
+                armed = past
+            }
+            .onScrollPhaseChange { old, new in
+                if old == .interacting, new != .interacting, armed, let dismiss {
+                    armed = false
+                    dismiss()
+                }
+            }
+            .sensoryFeedback(.impact(weight: .light), trigger: armed) { _, now in now && dismiss != nil }
+        #else
+        content
+        #endif
     }
 }

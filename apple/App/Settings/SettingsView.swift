@@ -214,6 +214,11 @@ struct SettingsView: View {
                 .environment(\.itemZoomNamespace, rxDesign ? settingsZoom : nil)
                 #endif
         }
+        #if os(iOS)
+        // RX: Réglages are a full screen cover, which has no drag to dismiss; every frosted page
+        // closes them when pulled down past its top (RXPullDownToDismiss).
+        .environment(\.rxPullDownDismiss, rxDesign ? { dismiss() } : nil)
+        #endif
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
         .onChange(of: path) { model.session.noteActivity() }
@@ -454,6 +459,7 @@ private struct ClassicSettingsBackground: ViewModifier {
     func body(content: Content) -> some View {
         if rxDesign {
             content
+                .modifier(RXPullDownToDismiss())
                 .background(RXFrostedBackdrop().ignoresSafeArea())
                 .containerBackground(Color.clear, for: .navigation)
         } else {
