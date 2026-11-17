@@ -353,7 +353,7 @@ struct ToastBanner: View {
 }
 
 /// RX look: every `model.showToast` (copied, saved, every error) goes to the DesignBridgeKit host
-/// at the root (`rxBridgeRoot`): one glass toast at the top, announced, with haptics, success
+/// at the root (`rxBridgeRoot`): one glass toast under the navigation bar, announced, with haptics, success
 /// 1.8 s and errors 6 s. The classic banner stays for the classic look.
 private struct RXToastBridge: ViewModifier {
     @Environment(AppModel.self) private var model
