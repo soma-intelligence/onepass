@@ -105,4 +105,18 @@ struct RXTokensTests {
         #expect(RXDesign.isOn(stored: true, launchArgument: nil) == true)
         #expect(RXDesign.storageKey == "onepass.design.rx")
     }
+
+    /// The RX logo scale fills the tile and still leaves an inset on the mark's long side.
+    @Test func rxLogoKeepsAnInset() {
+        #expect(ItemIcon.rxMarkScale > 1)
+        #expect(ItemIcon.markMaxSide * ItemIcon.rxMarkScale <= 0.9)
+        #expect(ItemIcon.markOpticalSide * ItemIcon.rxMarkScale >= 0.65)
+    }
+
+    /// The hero fades over 70% of its height and never leaves 0...1.
+    @Test func heroFade() {
+        #expect(RXHeroPage<EmptyView, EmptyView>.fade(offset: -40, heroHeight: 300) == 0)
+        #expect(RXHeroPage<EmptyView, EmptyView>.fade(offset: 105, heroHeight: 300) == 0.5)
+        #expect(RXHeroPage<EmptyView, EmptyView>.fade(offset: 900, heroHeight: 300) == 1)
+    }
 }

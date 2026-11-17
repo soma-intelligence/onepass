@@ -118,6 +118,8 @@ struct PhoneTabsView: View {
             if presented, tab != .search { tab = .search }
         }
         .environment(\.phoneSearchActive, searching)
+        // RX: logos fill their tiles (rows, tiles and the item header).
+        .environment(\.itemIconMarkScale, rxDesign ? ItemIcon.rxMarkScale : 1)
         .environment(\.openPhoneTab) { tab = $0 }
         .sheet(isPresented: newItemShown) {
             PhoneNewItemSheet()

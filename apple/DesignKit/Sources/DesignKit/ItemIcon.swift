@@ -296,6 +296,8 @@ public struct ItemIcon: View {
             .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08), lineWidth: 0.5)
     }
     private var corner: CGFloat { size * 9 / 38 }
+    /// How much larger than `markOpticalSide` a mark is drawn on its tile (1 in the classic look).
+    @Environment(\.itemIconMarkScale) private var markScale
     private var side: CGFloat { size * min(scale, 1.6) }
 
     /// A login's letter for the monogram tile: the title's first letter or digit, else the
@@ -379,13 +381,15 @@ public struct ItemIcon: View {
                     .frame(width: side, height: side)
             } else if let image, case .mark(let monochrome, let pale, let darkShare) = treatment {
                 let tile = Self.markBackground(monochrome: monochrome, pale: pale, dark: darkShare, darkMode: colorScheme == .dark)
-                // The image already holds the mark at its optical size in a square (`framedMark`).
+                // The image already holds the mark at its optical size in a square (`framedMark`);
+                // `markScale` (RX) draws it larger in the same tile.
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .renderingMode(monochrome ? .template : .original)
                     .interpolation(.high)
                     .scaledToFit()
                     .foregroundStyle(.primary)
+                    .frame(width: side * markScale, height: side * markScale)
                     .frame(width: side, height: side)
                     .background {
                         RoundedRectangle(cornerRadius: corner, style: .continuous).fill(tile)
@@ -507,4 +511,16 @@ private struct BrandCard: View {
                 .frame(height: brand == "visa" ? width * 0.17 : nil)
         }
     }
+}
+
+extension EnvironmentValues {
+    /// A mark on its tile drawn this much larger than `ItemIcon.markOpticalSide` (its long side at
+    /// most `markMaxSide` times this, so keep it under 1.2 for an inset). The RX look sets
+    /// `ItemIcon.rxMarkScale`: logos fill their tiles with a thin margin.
+    @Entry public var itemIconMarkScale: CGFloat = 1
+}
+
+extension ItemIcon {
+    /// RX: a mark covers 68% of its tile (optical side), 87% at most on its long side.
+    public static let rxMarkScale: CGFloat = 1.18
 }
