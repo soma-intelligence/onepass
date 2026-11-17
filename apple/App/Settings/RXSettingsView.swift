@@ -5,111 +5,93 @@ import VaultKit
 
 #if os(iOS)
 
-/// Réglages in the RX look (Penpot "iPhone · Settings"): the photo hero under a clear navigation
-/// bar with the system close and profile QR buttons, the account in the middle, the Plus plan card
-/// over the photo; then, on the page sheet, "Get more from Plus" as a paging carousel of perks, and
-/// every page of Réglages in menu cards. Each row pushes the same page as the classic list
-/// (`SettingsPage`), so nothing is lost. Every pushed page zooms out of its row.
+/// Réglages in the RX look, frosted (spec 2026-11-17-settings-frosted-design): the wallpaper blurred
+/// behind the page, the account big in the middle (the line under it opens the profile QR), the
+/// Plus plan card, then every page of Réglages in frosted cards. Each row pushes the same page as
+/// the classic list (`SettingsPage`), so nothing is lost. Every pushed page zooms out of its row.
 ///
-/// Every row, tile and card pushes by value (`SettingsRoute`) through the path of the stack in
+/// Every row and card pushes by value (`SettingsRoute`) through the path of the stack in
 /// `SettingsView`, which draws them with its one `navigationDestination(for:)`: the back button's
-/// menu and the demo launch arguments see every page. A perk tile has its own route, so its page
-/// zooms out of the tile and not out of the row of the same page.
+/// menu and the demo launch arguments see every page.
 struct RXSettingsHome: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
 
     private typealias RX = Theme.RX
 
     var body: some View {
         let _ = model.settingsRevision
-        RXHeroPage(photo: Image(RXHero.settings)) {
-            hero
-        } sheet: {
-            VStack(spacing: RX.Space.l) {
-                // The plan card opens the sheet and scrolls with it (owner feedback 2026-11-16: it
-                // no longer stays in the hero for the sheet to slide over).
-                NavigationLink(value: SettingsRoute.plan) {
-                    PlanCard(
-                        // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
-                        title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
-                        perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"],
-                        onSheet: true)
-                }
-                .rxPress(haptic: .selection)
-                .zoomSource(Self.planZoomID)
-                .accessibilityIdentifier("rx.settings.plan")
-                RXSectionTitle(Text("rx.perks.title"))
-                RXPerkCarousel(bleed: RX.Space.gutter)
-                RXCard {
-                    menu(.general)
-                    pushRow(Text("rx.settings.homeCards"), systemImage: "house.fill", id: "rx.settings.homeCards",
-                            route: .homeCards)
-                    menu(.security)
-                    menu(.autofill)
-                    menu(.sync)
-                }
-                RXCard {
-                    menu(.accounts)
-                    menu(.vaults, value: model.session.vaults.count)
-                    menu(.contacts)
-                    menu(.family)
-                    menu(.organisation)
-                    menu(.devices, value: model.session.devices.isEmpty ? nil : model.session.devices.count)
-                    menu(.travel)
-                    menu(.crypto)
-                    // swiftlint:disable:next db_unlocalized_string - product name, the same in every language
-                    pushRow(Text(verbatim: "Apple Watch"), systemImage: "applewatch", id: "settings.watch", route: .watch)
-                    // swiftlint:disable:next db_unlocalized_string - feature name, the same in every language
-                    pushRow(Text(verbatim: "Agents"), systemImage: "point.3.connected.trianglepath.dotted",
-                            id: "settings.agents", route: .agents)
-                }
-                RXCard {
-                    menu(.about)
-                    #if DEBUG
-                    menu(.iconCheck)
-                    #endif
-                }
-                RXCard {
-                    // The same words as the account menu; not destructive (nothing is lost), and
-                    // through `perform`, which asks first when an edit is not saved.
-                    Button {
-                        dismiss()
-                        model.perform(.lock)
-                    } label: {
-                        RXMenuRow(Text("Verrouiller"), systemImage: "lock.fill", chevron: false)
-                    }
-                    .accessibilityIdentifier("rx.settings.lock")
-                }
-                VStack(spacing: RX.Space.xs) {
-                    // swiftlint:disable:next db_unlocalized_string - product name and version number
-                    Text(verbatim: "OnePass \(Self.version)")
-                    Text("settings.onepassOpenSourceAgpl")
-                }
-                .rxFont(.footnote)
-                .foregroundStyle(RX.Palette.textTertiary.color)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+        RXFrostedPage(backdrop: RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme).image) {
+            RXAvatar(initials: model.initials, photo: model.profileImage, size: RXFrost.compactAvatar, ring: false)
+        } header: {
+            header
+        } content: {
+            // The plan card opens its page and scrolls with the rest.
+            NavigationLink(value: SettingsRoute.plan) {
+                PlanCard(
+                    // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
+                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
+                    perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"],
+                    frosted: true)
             }
             .rxPress(haptic: .selection)
+            .zoomSource(Self.planZoomID)
+            .accessibilityIdentifier("rx.settings.plan")
+            RXFrostedCard {
+                menu(.general)
+                pushRow(Text("rx.settings.homeCards"), systemImage: "house.fill", id: "rx.settings.homeCards",
+                        route: .homeCards)
+                menu(.security)
+                menu(.autofill)
+                menu(.sync)
+            }
+            RXFrostedCard {
+                menu(.accounts)
+                menu(.vaults, value: model.session.vaults.count)
+                menu(.contacts)
+                menu(.family)
+                menu(.organisation)
+                menu(.devices, value: model.session.devices.isEmpty ? nil : model.session.devices.count)
+                menu(.travel)
+                menu(.crypto)
+                // swiftlint:disable:next db_unlocalized_string - product name, the same in every language
+                pushRow(Text(verbatim: "Apple Watch"), systemImage: "applewatch", id: "settings.watch", route: .watch)
+                // swiftlint:disable:next db_unlocalized_string - feature name, the same in every language
+                pushRow(Text(verbatim: "Agents"), systemImage: "point.3.connected.trianglepath.dotted",
+                        id: "settings.agents", route: .agents)
+            }
+            RXFrostedCard {
+                menu(.about)
+                #if DEBUG
+                menu(.iconCheck)
+                #endif
+            }
+            RXFrostedCard {
+                // The same words as the account menu; not destructive (nothing is lost), and
+                // through `perform`, which asks first when an edit is not saved.
+                Button {
+                    dismiss()
+                    model.perform(.lock)
+                } label: {
+                    RXFrostedRow(Text("Verrouiller"), systemImage: "lock.fill")
+                }
+                .accessibilityIdentifier("rx.settings.lock")
+            }
+            RXFrostedFooter([
+                // swiftlint:disable:next db_unlocalized_string - product name and version number
+                Text(verbatim: "OnePass \(Self.version)"),
+                Text("settings.onepassOpenSourceAgpl"),
+            ])
         }
-        // The system bar, clear over the photo: the close button of the sheet and the QR button
-        // are native glass controls.
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .navigationBarTitleDisplayMode(.inline)
+        .rxPress(haptic: .selection)
+        .toolbarColorScheme(colorScheme, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button(role: .close) { dismiss() }
+                    .tint(RX.Palette.textPrimary.color)
                     .accessibilityIdentifier("settings.done")
-            }
-            // Pushed in Réglages, not a second sheet over it.
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: SettingsRoute.profileQR) {
-                    Label("rx.profileQR.open", systemImage: "qrcode")
-                }
-                .zoomSource(Self.profileQRZoomID)
-                .accessibilityIdentifier("rx.settings.profileQR")
             }
         }
         .accessibilityIdentifier("rx.settings")
@@ -118,38 +100,35 @@ struct RXSettingsHome: View {
     static let planZoomID = "rx.plan"
     static let profileQRZoomID = "rx.profileQR"
 
-    /// The top of the photo: the account (the plan card is the first card of the sheet).
-    private var hero: some View {
-        VStack(spacing: RX.Space.xl) {
+    /// The account: the avatar and the name open the profile, the line under them opens the
+    /// profile QR (the device mode, with a small QR glyph).
+    private var header: some View {
+        VStack(spacing: 0) {
             NavigationLink(value: SettingsRoute.profile) {
-                VStack(spacing: RX.Space.s) {
-                    RXAvatar(initials: model.initials, photo: model.profileImage, size: RX.Metrics.avatarLarge)
-                        .padding(.bottom, RX.Space.xs)
-                    Text(model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName)
-                        .rxFont(.title)
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .dbText(maxLines: 2)
-                    Text(model.settings.deviceMode == .shared
-                         ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
-                        .rxFont(.callout)
-                        .foregroundStyle(.white)
-                        .rxOnPhotoSecondary()
+                RXFrostedProfileName(Text(verbatim: model.settings.displayName.isEmpty
+                                          ? String(localized: "app.myAccount") : model.settings.displayName)) {
+                    RXAvatar(initials: model.initials, photo: model.profileImage, size: RXFrost.avatar)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.top, RX.Space.s)
-                .contentShape(Rectangle())
             }
             .rxPress(haptic: .selection)
             .zoomSource("settings.account")
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.account")
+            NavigationLink(value: SettingsRoute.profileQR) {
+                RXFrostedProfileDetail(
+                    Text(model.settings.deviceMode == .shared ? "Appareil partagé" : "Appareil personnel"),
+                    systemImage: "qrcode")
+            }
+            .buttonStyle(.plain)
+            .zoomSource(Self.profileQRZoomID)
+            .accessibilityLabel(Text("rx.profileQR.open"))
+            .accessibilityIdentifier("rx.settings.profileQR")
         }
     }
 
     private func menu(_ page: SettingsPage, value: Int? = nil) -> some View {
         NavigationLink(value: SettingsRoute.page(page)) {
-            RXMenuRow(Text(page.title), systemImage: page.symbol, value: value.map { Text($0, format: .number) })
+            RXFrostedRow(Text(page.title), systemImage: page.symbol, value: value.map { Text($0, format: .number) })
         }
         .zoomSource(page)
         .accessibilityIdentifier("settings.\(page.rawValue)")
@@ -159,7 +138,7 @@ struct RXSettingsHome: View {
     /// destination zooms from `id`).
     private func pushRow(_ title: Text, systemImage: String, id: String, route: SettingsRoute) -> some View {
         NavigationLink(value: route) {
-            RXMenuRow(title, systemImage: systemImage)
+            RXFrostedRow(title, systemImage: systemImage)
         }
         .zoomSource(id)
         .accessibilityIdentifier(id)
@@ -170,6 +149,17 @@ struct RXSettingsHome: View {
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
         return "\(short) (\(build))"
+    }
+}
+
+/// The background of a pushed page of the frosted Réglages: the blurred wallpaper of the root.
+struct RXSettingsBackdrop: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
+
+    func body(content: Content) -> some View {
+        content.background(
+            RXFrostedBackdrop(image: RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme).image).ignoresSafeArea())
     }
 }
 
@@ -195,7 +185,7 @@ struct RXHomeCardsSettings: View {
 
     var body: some View {
         ScrollView {
-            RXCard {
+            RXFrostedCard {
                 RXCardHeader(Text("browse.showOnHome"))
                 toggle("À proximité", systemImage: "location.fill", isOn: $showsNearby, id: "nearby")
                 toggle("Profil", systemImage: "person.crop.circle.fill", isOn: $showsProfile, id: "profile")
@@ -204,7 +194,7 @@ struct RXHomeCardsSettings: View {
             }
             .padding(RX.Space.gutter)
         }
-        .background(RX.Palette.pageBackground.color.ignoresSafeArea())
+        .modifier(RXSettingsBackdrop())
         .navigationTitle(Text("rx.settings.homeCards"))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("rx.homeCards")
@@ -508,7 +498,11 @@ struct RXProfileQRPage: View {
             .padding(.vertical, RX.Space.xl)
             .frame(maxWidth: .infinity)
         }
+        #if os(iOS)
+        .modifier(RXSettingsBackdrop())
+        #else
         .background(RX.Palette.pageBackground.color.ignoresSafeArea())
+        #endif
         .navigationTitle(Text("rx.profileQR.open"))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

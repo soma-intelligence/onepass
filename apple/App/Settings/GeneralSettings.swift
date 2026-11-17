@@ -451,6 +451,10 @@ extension EnvironmentValues {
 
 private struct RXSettingsSkin: ViewModifier {
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    #if os(iOS)
+    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
+    @Environment(\.colorScheme) private var colorScheme
+    #endif
 
     private typealias RX = Theme.RX
 
@@ -462,7 +466,9 @@ private struct RXSettingsSkin: ViewModifier {
                 .listSectionSpacing(RX.Space.l)
                 .contentMargins(.horizontal, RX.Space.gutter, for: .scrollContent)
                 .scrollContentBackground(.hidden)
-                .background(RX.Palette.pageBackground.color.ignoresSafeArea())
+                // The frosted Réglages (RXFrosted): the blurred wallpaper behind every page.
+                .background(RXFrostedBackdrop(image: RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme).image)
+                    .ignoresSafeArea())
                 .tint(RX.Palette.accentText.color)
                 .environment(\.rxSettings, true)
         } else {
@@ -482,7 +488,7 @@ private struct RXSettingsRows: ViewModifier {
     func body(content: Content) -> some View {
         if rx {
             content
-                .listRowBackground(RX.Palette.cardBackground.color)
+                .modifier(RXFrostedRowFill())
                 .listRowSeparator(.hidden)
                 .labelStyle(RXSettingsLabelStyle())
         } else {
@@ -497,8 +503,10 @@ private struct RXSettingsLabelStyle: LabelStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: RX.Space.l) {
+            // Monochrome, as the rows of the frosted Réglages.
             configuration.icon
                 .font(RX.Glyph.font(RX.Glyph.menu, weight: .medium))
+                .foregroundStyle(RX.Palette.textPrimary.color)
                 .frame(width: RX.Metrics.menuGlyph, height: RX.Metrics.menuGlyph)
                 .accessibilityHidden(true)
             // Wraps at full size: no tightening or scaling, which the clipped text audit reports.

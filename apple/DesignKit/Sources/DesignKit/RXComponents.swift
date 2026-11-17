@@ -488,13 +488,19 @@ public struct PlanCard: View {
     let art: Image?
     let perks: [String]
     let onSheet: Bool
+    let frosted: Bool
+    /// The page's appearance (the card itself is drawn dark).
+    @Environment(\.colorScheme) private var pageScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     /// `perks`: the SF Symbols of the discs, left to right. `onSheet`: the card sits on the page
     /// sheet instead of over a photo hero.
-    public init(title: Text, subtitle: Text, art: Image?, perks: [String], onSheet: Bool = false) {
+    /// `frosted`: the card sits on a frosted Réglages page (RXFrosted): a frosted panel, the art
+    /// large off the corner as over a hero.
+    public init(title: Text, subtitle: Text, art: Image?, perks: [String], onSheet: Bool = false, frosted: Bool = false) {
+        self.frosted = frosted
         self.title = title
         self.subtitle = subtitle
         self.art = art
@@ -527,13 +533,13 @@ public struct PlanCard: View {
         }
         // Room on the trailing side for the art, when it is drawn: the tilted art covers about
         // half its width inside the card, so the words stop before it.
-        .padding(.trailing, large || art == nil ? 0 : RX.Metrics.planCardArtWidth * (onSheet ? 0.62 : 0.5))
+        .padding(.trailing, large || art == nil ? 0 : RX.Metrics.planCardArtWidth * (onSheet || frosted ? 0.62 : 0.5))
         .padding(RX.Metrics.planCardPadding)
         .frame(maxWidth: .infinity, minHeight: RX.Metrics.planCardHeight, alignment: .leading)
         .background(alignment: .topTrailing) {
             if let art, !large {
                 // Large and off the corner: the card's shape crops its top and trailing parts.
-                if onSheet {
+                if onSheet || frosted {
                     // Whole and tilted, like a card set down on the panel: only its corner leaves it.
                     art
                         .resizable()
@@ -555,7 +561,7 @@ public struct PlanCard: View {
             }
         }
         .modifier(PlanCardPanel(
-            shape: shape, onSheet: onSheet,
+            shape: shape, onSheet: onSheet, frosted: frosted, lightPage: pageScheme == .light,
             flat: Theme.Wash.isFlat(increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)))
         .environment(\.colorScheme, .dark)
         .clipShape(shape)
@@ -569,10 +575,26 @@ public struct PlanCard: View {
 private struct PlanCardPanel<S: Shape>: ViewModifier {
     let shape: S
     let onSheet: Bool
+    let frosted: Bool
+    let lightPage: Bool
     let flat: Bool
 
     func body(content: Content) -> some View {
-        if onSheet {
+        if frosted, !flat {
+            // On the blurred wallpaper: a lighter frosted panel than the list cards, lit from the
+            // top leading corner (dark words never sit on it: the card is drawn dark).
+            content.background {
+                ZStack {
+                    Color.white.opacity(0.13)
+                    LinearGradient(colors: [Color(red: 0.55, green: 0.65, blue: 0.85).opacity(0.16), .clear],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+                // On a light page the panel stays dark enough for its white words.
+                .background(Color.black.opacity(lightPage ? 0.62 : 0.25))
+                .clipShape(shape)
+                .accessibilityHidden(true)
+            }
+        } else if onSheet {
             // On the page sheet: graphite, lit softly from the top leading corner. Under Reduce
             // Transparency or Increase Contrast the light goes and the fill gets darker.
             content.background {

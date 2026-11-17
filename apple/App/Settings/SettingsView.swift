@@ -330,7 +330,9 @@ struct SettingsView: View {
     /// identifier as the RX root's).
     private var doneItem: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
+            // Monochrome in the frosted Réglages, as on the root.
             Button(role: .close) { dismiss() }
+                .tint(rxDesign ? Theme.RX.Palette.textPrimary.color : nil)
                 .accessibilityIdentifier("settings.done")
         }
     }
