@@ -4,9 +4,9 @@ import VaultKit
 
 #if os(iOS)
 
-/// Accueil in the RX look (Penpot "iPhone · Home"): a full-bleed photo hero under the status bar
-/// (account menu, search pill, Watchtower and new item glass buttons, the security score, four
-/// quick actions), then the page sheet with the mock's cards in its order (Récents, Favoris,
+/// Accueil in the RX look (Penpot "iPhone · Home"): a fixed photo hero under the status bar
+/// (account menu, the security score, four quick actions) that fades as the page sheet scrolls
+/// over it. The sheet holds the mock's cards in its order (Récents, Favoris,
 /// Coffres) followed by the classic cards (`extras`). The navigation bar is hidden.
 struct RXHomePage<Extras: View>: View {
     @Environment(AppModel.self) private var model
@@ -26,7 +26,7 @@ struct RXHomePage<Extras: View>: View {
     }
 
     var body: some View {
-        RXHeroPage(photo: Image("rx-hero")) {
+        RXHeroPage(photo: Image(RXHero.home), initialOffset: Self.demoScroll) {
             VStack(spacing: RX.Space.xl) {
                 topBar
                 RXHomeScore(itemCount: itemCount)
@@ -46,31 +46,22 @@ struct RXHomePage<Extras: View>: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
+    /// Captures: `-OnePassDemoScroll <points>` starts Accueil scrolled. Debug builds only.
+    private static var demoScroll: CGFloat? {
+        #if DEBUG
+        let value = UserDefaults.standard.double(forKey: "OnePassDemoScroll")
+        return value > 0 ? CGFloat(value) : nil
+        #else
+        return nil
+        #endif
+    }
+
+    /// The account menu alone: search is the tab bar's round button, a new item is the first
+    /// quick action (one entry point each).
     private var topBar: some View {
-        HStack(spacing: 10) {
+        HStack {
             AccountMenu()
-            Button { openTab(.search) } label: {
-                HStack(spacing: RX.Space.s) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 17, weight: .semibold))
-                    Text("common.search").rxFont(.body).opacity(0.85)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .frame(height: 40)
-                .background(.white.opacity(0.18), in: Capsule())
-                .background(.ultraThinMaterial.opacity(0.6), in: Capsule())
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("rx.home.search")
-            GlassButton(Text(verbatim: "Watchtower"), systemImage: "checkmark.shield.fill", diameter: 40, onPhoto: true) {
-                openTab(.watchtower)
-            }
-            GlassButton(Text("Nouvel élément"), systemImage: "plus", diameter: 40, onPhoto: true) {
-                model.showNewItemPicker = true
-            }
-            .accessibilityIdentifier("items.new")
+            Spacer(minLength: 0)
         }
     }
 
@@ -121,6 +112,7 @@ struct RXHomePage<Extras: View>: View {
                         .rxFont(.calloutMedium)
                         .foregroundStyle(RX.Palette.accentText.color)
                 }
+                .routeZoomSource(.list(.all))
                 .padding(.trailing, RX.Space.l)
                 .padding(.top, 10)
             }
@@ -128,38 +120,40 @@ struct RXHomePage<Extras: View>: View {
                 PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
                     RXSummaryRow(summary: summary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle(scale: 0.98))
             }
         }
         .accessibilityIdentifier("home.recents")
     }
 
+    /// Favoris as a horizontal row that snaps to each tile, the next one peeking at the edge.
     private var favoritesCard: some View {
         RXCard {
             RXCardHeader(Text("Favoris"))
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(favorites.prefix(4), id: \.id) { summary in
-                    PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
-                        VStack(spacing: RX.Space.s) {
-                            RXSummaryIcon(summary: summary, size: 56)
-                            // Two lines, centred, so a long title wraps instead of being cut.
-                            Text(summary.title)
-                                .rxFont(.footnote)
-                                .foregroundStyle(RX.Palette.textPrimary.color)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2, reservesSpace: true)
-                                .minimumScaleFactor(0.85)
-                                .padding(.horizontal, 2)
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: RX.Space.s) {
+                    ForEach(favorites, id: \.id) { summary in
+                        PhoneItemLink(ref: ItemRef(vaultID: summary.vaultId, itemID: summary.id)) {
+                            VStack(spacing: RX.Space.s) {
+                                RXSummaryIcon(summary: summary, size: 56)
+                                Text(summary.title)
+                                    .rxFont(.footnote)
+                                    .foregroundStyle(RX.Palette.textPrimary.color)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2, reservesSpace: true)
+                            }
+                            .frame(width: 76)
                         }
-                        .frame(maxWidth: .infinity)
+                        .buttonStyle(PressableButtonStyle())
                     }
-                    .buttonStyle(.plain)
                 }
-                ForEach(0..<max(0, 4 - min(favorites.count, 4)), id: \.self) { _ in
-                    Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
-                }
+                .scrollTargetLayout()
+                .padding(.horizontal, RX.Space.l)
             }
-            .padding(EdgeInsets(top: RX.Space.s, leading: RX.Space.s, bottom: 14, trailing: RX.Space.s))
+            .scrollTargetBehavior(.viewAligned)
+            .scrollIndicators(.hidden)
+            .padding(.top, RX.Space.s)
+            .padding(.bottom, 14)
         }
         .accessibilityIdentifier("home.favorites")
     }
@@ -177,7 +171,8 @@ struct RXHomePage<Extras: View>: View {
                         VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 40)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle(scale: 0.98))
+                .routeZoomSource(.list(.vault(vault.id)))
             }
         }
         .accessibilityIdentifier("rx.home.vaults")

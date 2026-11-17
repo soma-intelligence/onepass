@@ -20,6 +20,10 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: RX.Space.l) {
+            HStack {
+                AccountMenu()
+                Spacer(minLength: 0)
+            }
             header
             PhoneScoreGauge(score: score)
                 .frame(maxWidth: .infinity)
@@ -97,6 +101,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                         systemImage: "exclamationmark", positive: false, chevron: true)
                 }
                 .buttonStyle(PressableButtonStyle())
+                .routeZoomSource(.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck))
                 .accessibilityIdentifier("watchtower.show.\(card.id)")
             }
         }
@@ -113,6 +118,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                             systemImage: stat.symbol, color: stat.color)
                     }
                     .buttonStyle(PressableButtonStyle())
+                    .routeZoomSource(.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck))
                     .disabled(ids.isEmpty)
                     .accessibilityIdentifier("rx.watchtower.stat.\(stat.id)")
                 }
@@ -149,7 +155,8 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                 ColorDisc(systemImage: card.symbol, color: card.color)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle(scale: 0.98))
+        .routeZoomSource(.watchtower(title: card.title, itemIDs: ids, check: card.siteCheck))
         .accessibilityIdentifier("watchtower.show.\(card.id)")
     }
 }

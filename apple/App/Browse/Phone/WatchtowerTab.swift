@@ -16,6 +16,15 @@ struct WatchtowerTab: View {
 
     private var watchtower: WatchtowerModel { model.watchtower }
 
+    /// Captures: `-OnePassDemoScroll bottom` starts Watchtower at its end. Debug builds only.
+    private static var demoBottom: Bool {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "OnePassDemoScroll") == "bottom"
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
         let score = watchtower.report.map { Int($0.score) }
         ScrollView {
@@ -28,9 +37,10 @@ struct WatchtowerTab: View {
                 classicContent(score: score)
             }
         }
+        .defaultScrollAnchor(Self.demoBottom ? .bottom : .top)
         .background {
             if rxDesign {
-                Theme.RX.Palette.pageBackground.color.ignoresSafeArea()
+                RXBackdrop(name: RXHero.watchtower)
             } else {
                 PhoneBackground()
             }
@@ -41,6 +51,9 @@ struct WatchtowerTab: View {
         .toolbar {
             PhoneRootToolbar()
         }
+        // RX: no navigation bar. Its toolbar search field doubled the tab bar's search, and a new
+        // item is Accueil's quick action; the account menu sits in the page header.
+        .toolbar(rxDesign ? .hidden : .automatic, for: .navigationBar)
         .vaultRefresh { await watchtower.refreshAndWait(model.session) }
         .task(id: model.session.summariesRevision) {
             watchtower.refreshIfNeeded(model.session)

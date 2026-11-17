@@ -66,34 +66,10 @@ struct PhoneTabsView: View {
     /// The RX look (Réglages > Général > Nouveau design).
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
-    /// RX on an iPhone (not an iPad, not the unfolded layout): the floating capsule and round search
-    /// button of the mock replace the system tab bar. The search tab keeps the system bar, whose
-    /// search field lives in it.
-    private var customBar: Bool {
-        rxDesign && UIDevice.current.userInterfaceIdiom == .phone && !besideDetail
-    }
-
-    /// The system tab bar of a stack: hidden under the custom bar, and while an editor is open.
+    /// The system tab bar of a stack: hidden while an editor is open. The RX look keeps the native
+    /// iOS 26 bar (Liquid Glass capsule and the round search tab), as the classic look does.
     private func systemBar(_ which: PhoneTab, editing: Bool = false) -> Visibility {
-        if editing { return .hidden }
-        return customBar && which != .search ? .hidden : .automatic
-    }
-
-    private var rxTabBar: some View {
-        RXTabBar(
-            tabs: [
-                RXTab(id: PhoneTab.home, title: Text("Accueil"), systemImage: "house", accessibilityIdentifier: "tab.home"),
-                RXTab(id: PhoneTab.items, title: Text("Éléments"), systemImage: "list.bullet.rectangle.portrait",
-                      accessibilityIdentifier: "tab.items"),
-                RXTab(id: PhoneTab.watchtower, title: Text(verbatim: "Watchtower"), systemImage: "checkmark.shield",
-                      accessibilityIdentifier: "tab.watchtower"),
-            ],
-            selection: $tab, searchLabel: Text("common.search")
-        ) {
-            tab = .search
-        }
-        .padding(.bottom, Theme.RX.Space.xs)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        editing ? .hidden : .automatic
     }
 
     /// A tab's label: the outline symbol, its filled form when the tab is selected.
@@ -136,11 +112,6 @@ struct PhoneTabsView: View {
         // button on the right of the three tabs, and its field opens at the bottom.
         .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("browse.searchItems"))
         .tabViewSearchActivation(.searchTabSelection)
-        .overlay(alignment: .bottom) {
-            if customBar, tab != .search, !model.isEditing {
-                rxTabBar
-            }
-        }
         .tabBarMinimizeBehavior(.onScrollDown)
         // A search is only ever shown on its own tab, whatever presented it.
         .onChange(of: searching) { _, presented in
@@ -232,10 +203,9 @@ struct PhoneTabsView: View {
                     }
                     .headerFade()
                     .toolbar(systemBar(which, editing: model.isEditing), for: .tabBar)
+                    .modifier(RouteZoomDestination(route: route, namespace: itemZoom))
                 }
         }
-        // Room under the content for the floating bar.
-        .safeAreaPadding(.bottom, customBar && which != .search ? Theme.RX.Metrics.tabBarHeight + Theme.RX.Space.s : 0)
         .environment(\.itemZoomNamespace, itemZoom)
         .environment(\.inPhoneTabs, true)
         .environment(\.pushPhoneRoute) { route in
@@ -572,7 +542,22 @@ struct PhoneItemLink<Label: View>: View {
         if foldDrag != nil {
             label.modifier(ItemRowDrag(ref: ref))
         } else {
-            NavigationLink(value: PhoneRoute.item(ref)) { label }
+            NavigationLink(value: PhoneRoute.item(ref)) { label.itemZoomSource(ref) }
+        }
+    }
+}
+
+/// Every pushed page but an item (which zooms from its own row) zooms out of the row or tile that
+/// pushed it, when that row marked itself with `routeZoomSource`.
+private struct RouteZoomDestination: ViewModifier {
+    let route: PhoneRoute
+    let namespace: Namespace.ID
+
+    func body(content: Content) -> some View {
+        if case .item = route {
+            content
+        } else {
+            content.navigationTransition(.zoom(sourceID: route, in: namespace))
         }
     }
 }

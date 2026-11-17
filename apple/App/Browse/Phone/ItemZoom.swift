@@ -16,8 +16,26 @@ extension View {
     }
 
     /// The item detail of `ref`: it zooms out of its row, and back in when it closes.
+    /// A row, tile or card that pushes `route`: the pushed page zooms out of it.
+    func routeZoomSource(_ route: PhoneRoute) -> some View {
+        modifier(RouteZoomSource(route: route))
+    }
+
     func itemZoomDestination(_ ref: ItemRef, in namespace: Namespace.ID) -> some View {
         navigationTransition(.zoom(sourceID: ref, in: namespace))
+    }
+}
+
+private struct RouteZoomSource: ViewModifier {
+    let route: PhoneRoute
+    @Environment(\.itemZoomNamespace) private var namespace
+
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.matchedTransitionSource(id: route, in: namespace)
+        } else {
+            content
+        }
     }
 }
 

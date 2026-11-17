@@ -41,11 +41,7 @@ public struct RXGlassGlyph: View {
             .font(.system(size: glyph ?? (diameter * 0.45).rounded(), weight: .semibold))
             .foregroundStyle(onPhoto ? Color.white : RX.Palette.textPrimary.color)
             .frame(width: diameter, height: diameter)
-            .background {
-                Circle()
-                    .fill(onPhoto ? AnyShapeStyle(.ultraThinMaterial.opacity(0.6)) : AnyShapeStyle(.ultraThinMaterial))
-                    .overlay(Circle().fill(onPhoto ? Color.white.opacity(0.18) : RX.Palette.glass.color))
-            }
+            .rxGlass(in: Circle(), onPhoto: onPhoto)
             .environment(\.colorScheme, onPhoto ? .dark : colorScheme)
             .contentShape(Circle())
     }
@@ -466,12 +462,8 @@ public struct PlanCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: RX.Metrics.planCardHeight, maxHeight: RX.Metrics.planCardHeight,
                alignment: .topLeading)
-        .background {
-            shape.fill(.ultraThinMaterial.opacity(0.7))
-                .overlay(shape.fill(Color.white.opacity(0.14)))
-                .environment(\.colorScheme, .dark)
-        }
-        .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .rxGlass(in: shape, onPhoto: true, interactive: false)
+        .environment(\.colorScheme, .dark)
         .clipShape(shape)
         .accessibilityElement(children: .combine)
     }
@@ -532,19 +524,50 @@ public struct PerkTile: View {
     }
 }
 
+// MARK: Glass
+
+extension View {
+    /// Native Liquid Glass (iOS, macOS and watchOS 26) in `shape`: interactive for a control, the
+    /// dark variant on a photo so white text keeps its contrast. visionOS keeps its own material.
+    @ViewBuilder public func rxGlass<S: Shape>(in shape: S, onPhoto: Bool = false, interactive: Bool = true) -> some View {
+        #if os(visionOS)
+        background(.regularMaterial, in: shape)
+        #else
+        let glass: Glass = onPhoto ? .regular.tint(.black.opacity(0.18)) : .regular
+        glassEffect(interactive ? glass.interactive() : glass, in: shape)
+        #endif
+    }
+}
+
 // MARK: Hero page
 
-/// A page with a photo hero and the rounded page sheet that starts under it (Home and Settings):
-/// the photo runs under the status bar and 60 pt under the sheet, with the scrim of the mock.
+/// A page with a photo hero and the rounded page sheet that starts under it (Home and Settings).
+/// The photo stays fixed behind the page, under the status bar; only the sheet scrolls up over it.
+/// As the sheet rises, the hero (score, pill, actions) fades and shrinks with the scroll offset.
 public struct RXHeroPage<Hero: View, Sheet: View>: View {
     let photo: Image
     let hero: Hero
     let sheet: Sheet
+    @State private var heroHeight: CGFloat = 320
+    /// 0 at rest, 1 once the sheet has covered most of the hero.
+    @State private var progress: CGFloat = 0
+    @State private var position = ScrollPosition(edge: .top)
+    /// Captures only: where the page starts scrolled to (points from the top).
+    let initialOffset: CGFloat?
 
-    public init(photo: Image, @ViewBuilder hero: () -> Hero, @ViewBuilder sheet: () -> Sheet) {
+    public init(
+        photo: Image, initialOffset: CGFloat? = nil,
+        @ViewBuilder hero: () -> Hero, @ViewBuilder sheet: () -> Sheet
+    ) {
         self.photo = photo
+        self.initialOffset = initialOffset
         self.hero = hero()
         self.sheet = sheet()
+    }
+
+    /// How far the hero has faded for a scroll offset (`offset` from the resting position).
+    public static func fade(offset: CGFloat, heroHeight: CGFloat) -> CGFloat {
+        min(max(offset / max(heroHeight * 0.7, 1), 0), 1)
     }
 
     public var body: some View {
@@ -556,30 +579,15 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
                         .padding(.horizontal, RX.Space.gutter)
                         .padding(.bottom, RX.Space.xl)
                         .frame(maxWidth: .infinity)
-                        .background(alignment: .top) {
-                            GeometryReader { hero in
-                                ZStack {
-                                    photo
-                                        .resizable()
-                                        .scaledToFill()
-                                    LinearGradient(
-                                        stops: [
-                                            .init(color: .black.opacity(0.25), location: 0),
-                                            .init(color: .black.opacity(0.05), location: 0.55),
-                                            .init(color: .black.opacity(0.55), location: 1),
-                                        ],
-                                        startPoint: .top, endPoint: .bottom)
-                                }
-                                .frame(width: hero.size.width, height: hero.size.height + 60)
-                                .clipped()
-                            }
-                            .accessibilityHidden(true)
-                        }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heroHeight = $0 }
+                        .opacity(1 - progress)
+                        .scaleEffect(1 - 0.1 * progress, anchor: .bottom)
+                        .allowsHitTesting(progress < 0.5)
                     sheet
                         .padding(.top, RX.Space.xl)
                         .padding(.horizontal, RX.Space.gutter)
-                        .padding(.bottom, proxy.safeAreaInsets.bottom + RX.Space.xl)
-                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, RX.Space.xl)
+                        .frame(maxWidth: .infinity, minHeight: proxy.size.height * 0.6, alignment: .top)
                         .background(
                             RX.Palette.pageBackground.color,
                             in: UnevenRoundedRectangle(
@@ -587,97 +595,39 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
                                 style: .continuous))
                 }
             }
-            .ignoresSafeArea(edges: [.top, .bottom])
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            } action: { _, offset in
+                progress = Self.fade(offset: offset, heroHeight: heroHeight)
+            }
+            .task {
+                guard let initialOffset else { return }
+                try? await Task.sleep(for: .milliseconds(600))
+                position.scrollTo(y: initialOffset)
+            }
+            .ignoresSafeArea(edges: .top)
+            .background(alignment: .top) {
+                // Fixed: the photo never moves with the page.
+                ZStack {
+                    photo
+                        .resizable()
+                        .scaledToFill()
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black.opacity(0.25), location: 0),
+                            .init(color: .black.opacity(0.05), location: 0.55),
+                            .init(color: .black.opacity(0.55), location: 1),
+                        ],
+                        startPoint: .top, endPoint: .bottom)
+                }
+                .frame(width: proxy.size.width, height: heroHeight + 60)
+                .clipped()
+                .ignoresSafeArea(edges: .top)
+                .accessibilityHidden(true)
+            }
             .background(RX.Palette.pageBackground.color.ignoresSafeArea())
         }
-    }
-}
-
-// MARK: Tab bar
-
-/// One tab of `RXTabBar`.
-public struct RXTab<ID: Hashable>: Identifiable {
-    public let id: ID
-    let title: Text
-    let systemImage: String
-    let accessibilityIdentifier: String
-
-    public init(id: ID, title: Text, systemImage: String, accessibilityIdentifier: String) {
-        self.id = id
-        self.title = title
-        self.systemImage = systemImage
-        self.accessibilityIdentifier = accessibilityIdentifier
-    }
-}
-
-/// The floating tab bar of the mock: a pill of tabs (glyph over a Caption label, the selected one on
-/// a soft fill in the accent) and a separate round search button, both on the tab bar glass.
-/// Each tab is a button with the selected trait; the labels scale with Dynamic Type.
-public struct RXTabBar<ID: Hashable>: View {
-    let tabs: [RXTab<ID>]
-    @Binding var selection: ID
-    let searchLabel: Text
-    let onSearch: () -> Void
-
-    public init(tabs: [RXTab<ID>], selection: Binding<ID>, searchLabel: Text, onSearch: @escaping () -> Void) {
-        self.tabs = tabs
-        _selection = selection
-        self.searchLabel = searchLabel
-        self.onSearch = onSearch
-    }
-
-    public var body: some View {
-        HStack(spacing: RX.Space.l) {
-            HStack(spacing: 0) {
-                ForEach(tabs) { tab in
-                    let selected = tab.id == selection
-                    Button {
-                        selection = tab.id
-                    } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: tab.systemImage)
-                                .font(.system(size: 20, weight: .semibold))
-                                .symbolVariant(selected ? .fill : .none)
-                                .frame(height: 24)
-                            tab.title
-                                .rxFont(.caption)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                        }
-                        .foregroundStyle(selected ? RX.Palette.accentText.color : RX.Palette.textPrimary.color)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .background {
-                            if selected { Capsule().fill(RX.Palette.tabActive.color) }
-                        }
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
-                    .accessibilityIdentifier(tab.accessibilityIdentifier)
-                }
-            }
-            .padding(6)
-            .background(glass(Capsule()))
-            Button(action: onSearch) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(RX.Palette.textPrimary.color)
-                    .frame(width: RX.Metrics.tabBarHeight, height: RX.Metrics.tabBarHeight)
-                    .background(glass(Circle()))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(searchLabel)
-            .accessibilityIdentifier("rx.tab.search")
-        }
-        .padding(.horizontal, RX.Space.gutter)
-        .accessibilityElement(children: .contain)
-    }
-
-    private func glass<S: Shape>(_ shape: S) -> some View {
-        shape.fill(.ultraThinMaterial)
-            .overlay(shape.fill(RX.Palette.tabBar.color))
-            .shadow(color: .black.opacity(0.14), radius: 14, y: 8)
     }
 }
 
