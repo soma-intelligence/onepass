@@ -26,7 +26,7 @@ struct RXHomePage<Extras: View>: View {
     }
 
     var body: some View {
-        RXHeroPage(photo: Image(RXHero.home), initialOffset: Self.demoScroll) {
+        RXHeroPage(photo: Image(lightHero ? RXHero.item : RXHero.home), lightPhoto: lightHero, initialOffset: Self.demoScroll) {
             VStack(spacing: RX.Space.xl) {
                 topBar
                 RXHomeScore(itemCount: itemCount)
@@ -34,7 +34,7 @@ struct RXHomePage<Extras: View>: View {
                 quickActions
                     .padding(.top, RX.Space.xl)
             }
-            .environment(\.colorScheme, .dark)
+            .environment(\.colorScheme, lightHero ? .light : .dark)
         } sheet: {
             VStack(spacing: RX.Space.l) {
                 if !recents.isEmpty { recentCard }
@@ -45,6 +45,11 @@ struct RXHomePage<Extras: View>: View {
         }
         .toolbar(.hidden, for: .navigationBar)
     }
+
+    @Environment(\.colorScheme) private var colorScheme
+    /// Light appearance: the airy art (Clarity) with dark words and white disc actions; dark
+    /// appearance: the indigo art with white words and glass actions.
+    private var lightHero: Bool { colorScheme == .light }
 
     /// Captures: `-OnePassDemoScroll <points>` starts Accueil scrolled. Debug builds only.
     private static var demoScroll: CGFloat? {
@@ -70,15 +75,15 @@ struct RXHomePage<Extras: View>: View {
         let score = model.watchtower.report.map { Int($0.score) }
         return QuickActionRow {
             Button { model.showNewItemPicker = true } label: {
-                QuickActionLabel(Text("Nouvel élément"), systemImage: "plus", onPhoto: true)
+                QuickActionLabel(Text("Nouvel élément"), systemImage: "plus", onPhoto: !lightHero)
             }
             .accessibilityIdentifier("rx.home.newItem")
             Button { model.showGenerator = true } label: {
-                QuickActionLabel(Text("Générer"), systemImage: "character.cursor.ibeam", onPhoto: true)
+                QuickActionLabel(Text("Générer"), systemImage: "character.cursor.ibeam", onPhoto: !lightHero)
             }
             .accessibilityIdentifier("rx.home.generate")
             ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score ?? 0)")) {
-                QuickActionLabel(Text("common.share"), systemImage: "square.and.arrow.up", onPhoto: true)
+                QuickActionLabel(Text("common.share"), systemImage: "square.and.arrow.up", onPhoto: !lightHero)
             }
             .disabled(score == nil)
             .accessibilityIdentifier("rx.home.share")
@@ -96,7 +101,7 @@ struct RXHomePage<Extras: View>: View {
                 Divider()
                 Button("Verrouiller", systemImage: "lock", role: .destructive) { model.perform(.lock) }
             } label: {
-                QuickActionLabel(Text("rx.home.more"), systemImage: "ellipsis", onPhoto: true)
+                QuickActionLabel(Text("rx.home.more"), systemImage: "ellipsis", onPhoto: !lightHero)
             }
             .accessibilityIdentifier("rx.home.more")
         }
@@ -225,39 +230,53 @@ struct RXSummaryIcon: View {
 struct RXHomeScore: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openPhoneTab) private var openTab
+    @Environment(\.colorScheme) private var colorScheme
     let itemCount: Int
 
     private typealias RX = Theme.RX
 
+    /// "Bonjour Camille" (the first word of the display name), or "Bonjour" without one.
+    private var greeting: Text {
+        let first = model.settings.displayName.split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? Text("rx.home.hello") : Text("rx.home.hi \(first)")
+    }
+
+    /// The headline in words (Clarity): the score itself is the small chip under it.
+    static func status(_ score: Int?) -> LocalizedStringKey {
+        guard let score else { return "rx.home.status.checking" }
+        switch score {
+        case 80...: return "rx.home.status.good"
+        case 60..<80: return "rx.home.status.almost"
+        default: return "rx.home.status.attention"
+        }
+    }
+
     var body: some View {
         let score = model.watchtower.report.map { Int($0.score) }
-        VStack(spacing: 6) {
-            Text("rx.home.scoreLabel \(itemCount)")
+        VStack(spacing: RX.Space.s) {
+            greeting
                 .rxFont(.calloutMedium)
-                .foregroundStyle(.white.opacity(0.8))
-            HStack(alignment: .lastTextBaseline, spacing: RX.Space.xs) {
-                Text(score.map(String.init) ?? "–")
-                    .font(.system(size: 64, weight: .bold))
-                    .tracking(-2.5)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                Text(verbatim: "/100")
-                    .rxFont(.title)
-                    .opacity(0.7)
-            }
-            .foregroundStyle(.white)
+                .foregroundStyle(.secondary)
+            Text(Self.status(score))
+                .font(.system(size: 44, weight: .bold))
+                .tracking(-1.5)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             if let score {
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.seal.fill")
+                    Image(systemName: "checkmark.shield.fill")
                         .foregroundStyle(ScoreGauge.color(score))
-                    Text(ScoreGauge.label(score))
+                    Text("rx.home.scoreChip \(score)")
                         .rxFont(.footnoteBold)
-                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .foregroundStyle(.primary)
                 }
                 .padding(.horizontal, RX.Space.m)
-                .frame(height: 30)
-                .background(.white.opacity(0.18), in: Capsule())
-                .background(.ultraThinMaterial.opacity(0.6), in: Capsule())
+                .frame(height: 32)
+                .rxGlass(in: Capsule(), onPhoto: colorScheme == .dark)
+                .padding(.top, RX.Space.xs)
             }
         }
         .frame(maxWidth: .infinity)

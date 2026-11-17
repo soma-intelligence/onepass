@@ -554,12 +554,15 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
     @State private var position = ScrollPosition(edge: .top)
     /// Captures only: where the page starts scrolled to (points from the top).
     let initialOffset: CGFloat?
+    /// A light photo (dark words over it): a soft white veil instead of the dark scrim.
+    let lightPhoto: Bool
 
     public init(
-        photo: Image, initialOffset: CGFloat? = nil,
+        photo: Image, lightPhoto: Bool = false, initialOffset: CGFloat? = nil,
         @ViewBuilder hero: () -> Hero, @ViewBuilder sheet: () -> Sheet
     ) {
         self.photo = photo
+        self.lightPhoto = lightPhoto
         self.initialOffset = initialOffset
         self.hero = hero()
         self.sheet = sheet()
@@ -613,11 +616,12 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
                     photo
                         .resizable()
                         .scaledToFill()
+                    let veil: Color = lightPhoto ? .white : .black
                     LinearGradient(
                         stops: [
-                            .init(color: .black.opacity(0.25), location: 0),
-                            .init(color: .black.opacity(0.05), location: 0.55),
-                            .init(color: .black.opacity(0.55), location: 1),
+                            .init(color: veil.opacity(lightPhoto ? 0.15 : 0.25), location: 0),
+                            .init(color: veil.opacity(lightPhoto ? 0.1 : 0.05), location: 0.55),
+                            .init(color: veil.opacity(lightPhoto ? 0.35 : 0.55), location: 1),
                         ],
                         startPoint: .top, endPoint: .bottom)
                 }
