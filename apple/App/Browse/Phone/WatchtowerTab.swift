@@ -12,6 +12,10 @@ import VaultKit
 struct WatchtowerTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A tap on the selected Watchtower tab at its root scrolls the page back to its top.
+    @Environment(\.phoneTabScrollToTop) private var scrollToTop
+    @State private var position = ScrollPosition(edge: .top)
 
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
@@ -30,15 +34,22 @@ struct WatchtowerTab: View {
         let score = watchtower.report.map { Int($0.score) }
         ScrollView {
             if rxDesign {
-                RXWatchtowerContent(score: score, scanCard: scanCard, statusLine: statusLine)
-                    .padding(.horizontal, Theme.RX.Space.gutter)
+                // The run animates inside (gauge, status, scan card), not the whole page. On a
+                // regular width (iPad, unfolded) the column keeps a readable measure.
+                RXWatchtowerContent(score: score, scanCard: scanCard, statusLine: statusLine(showsFailure: false))
+                    .frame(maxWidth: Self.readableWidth)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
                     .padding(.bottom, Theme.Space.xl)
-                    .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
             } else {
                 classicContent(score: score)
             }
         }
         .defaultScrollAnchor(Self.demoBottom ? .bottom : .top)
+        .scrollPosition($position)
+        .onChange(of: scrollToTop) {
+            withDBAnimation(.smooth, reduceMotion: reduceMotion) { position.scrollTo(edge: .top) }
+        }
         .background {
             if rxDesign {
                 RXBackdrop(name: RXHero.watchtower)
@@ -88,7 +99,7 @@ struct WatchtowerTab: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                statusLine
+                statusLine(showsFailure: true)
             }
             .padding(.horizontal, Theme.Space.xs)
             scanCard
@@ -117,10 +128,13 @@ struct WatchtowerTab: View {
         .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
     }
 
-    /// A check with items to look at (a check whose source did not run counts as clear here; the
-    /// clear card says why it has no figure).
+    /// The widest the RX column grows on a regular width (iPad, unfolded): a readable measure.
+    /// No RX token holds it yet.
+    private static let readableWidth: CGFloat = 640
+
+    /// A check with items to look at (`WatchtowerCard.isFlagged`, the rule the Mac page shares).
     static func isFlagged(_ card: WatchtowerCard, in report: FfiWatchtowerReport) -> Bool {
-        !card.itemIDs(in: report).isEmpty
+        card.isFlagged(in: report)
     }
 
     /// While a scan runs: a card with its step and a slim bar (the analysis, then the breach check
@@ -145,22 +159,26 @@ struct WatchtowerTab: View {
         }
     }
 
-    @ViewBuilder private var statusLine: some View {
+    /// The count and how far the breach check went (the Mac page's words). The RX page leaves
+    /// a failure to its error state (`DBLoadableView`), so it is not said twice.
+    @ViewBuilder private func statusLine(showsFailure: Bool) -> some View {
         switch watchtower.phase {
         case .idle, .ready:
             if let report = watchtower.report {
-                Text(report.itemsAnalyzed == 1
-                     ? String(localized: "browse.n1ItemAnalyzed") : String(localized: "browse.itemsAnalyzed \(report.itemsAnalyzed)"))
+                Text(WatchtowerModel.summary(report))
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
             }
         case .analyzing, .checkingBreaches:
             // The scan's own card says it (`scanCard`).
             EmptyView()
-        case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.footnote)
-                .foregroundStyle(.orange)
+        case .failed:
+            if showsFailure {
+                Label(WatchtowerModel.failureMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 }
@@ -169,8 +187,36 @@ struct WatchtowerTab: View {
 /// that light up to the score, the figure and its word in the middle. Flat colors, no glow.
 struct PhoneScoreGauge: View {
     let score: Int?
+    /// The run's phase: without a score, the caption says "Analyse…" only while one is coming.
+    var phase: WatchtowerModel.Phase? = nil
+    /// No item to score: no caption at all.
+    var isEmptyVault = false
+    /// RX: the Display typography, scaled with Dynamic Type, and a dial sized from it.
+    var rx = false
     private static let ticks = 40
-    private static let sweep = 270.0
+    nonisolated private static let sweep = 270.0
+    /// The classic dial: 210 pt around a 58 pt figure.
+    private static let side: CGFloat = 210
+    private static let classicDigits: CGFloat = 58
+    /// The RX dial grows with the figure up to this side, then the figure shrinks to fit.
+    private static let maxSide: CGFloat = 320
+
+    @ScaledMetric(relativeTo: .largeTitle) private var rxDigits = Theme.RX.Typography.display.spec.size
+
+    /// The dial's side: fixed in the classic look, from the scaled figure in RX.
+    private var dialSide: CGFloat {
+        guard rx else { return Self.side }
+        return min(Self.side * rxDigits / Theme.RX.Typography.display.spec.size, Self.maxSide)
+    }
+
+    /// The word under the figure: the score's word, "Analyse…" while a run is on its way, else
+    /// nothing (an empty vault, or a failure the page shows once in its error state).
+    private var caption: String? {
+        if let score { return ScoreGauge.label(score) }
+        if isEmptyVault { return nil }
+        if case .failed = phase { return nil }
+        return String(localized: "browse.analyzing")
+    }
 
     var body: some View {
         let fraction = Double(score ?? 0) / 100
@@ -180,7 +226,7 @@ struct PhoneScoreGauge: View {
                 .stroke(Color.primary.opacity(0.10), style: StrokeStyle(lineWidth: 14, lineCap: .round))
             Dial(fraction: fraction)
                 .stroke(color, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                .animation(.smooth, value: fraction)
+                .dbAnimation(value: fraction)
             // Ticks 0 through `lit` take the score's color, the rest stay faint.
             let lit = score == nil ? -1 : Int((fraction * Double(Self.ticks)).rounded())
             Ticks(count: Self.ticks, sweep: Self.sweep, indices: 0..<(lit + 1))
@@ -192,19 +238,30 @@ struct PhoneScoreGauge: View {
                 Group {
                     if let score { DBNumber(score) } else { Text(verbatim: "–") }
                 }
-                .font(.system(size: 58, weight: .bold, design: .rounded))
+                .font(rx ? Theme.RX.Typography.display.font(size: rxDigits)
+                    : .system(size: Self.classicDigits, weight: .bold, design: .rounded))
                 .monospacedDigit()
-                Text(score.map(ScoreGauge.label) ?? String(localized: "browse.analyzing"))
-                    .font(.subheadline.weight(.semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(score == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(color))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                if let caption {
+                    Text(caption)
+                        .font(.subheadline.weight(.semibold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(score == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(color))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
             }
+            // Inside the ticks, so the figure and its word never touch the ring.
+            .frame(maxWidth: dialSide * 0.6)
             .offset(y: 4)
         }
-        .frame(width: 210, height: 210)
+        // A square no wider than the screen allows.
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: dialSide, maxHeight: dialSide)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("browse.securityScore"))
-        .accessibilityValue(Text(score.map { "\($0) sur 100, \(ScoreGauge.label($0))" } ?? ""))
+        .accessibilityValue(score.map { ScoreGauge.accessibilityValue($0) } ?? Text(verbatim: ""))
     }
 
     /// The arc, opening at the bottom, filled clockwise from the lower left by `fraction`.

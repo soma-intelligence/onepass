@@ -12,6 +12,8 @@ import VaultKit
 struct RXHomePage<Extras: View>: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openPhoneTab) private var openTab
+    /// A tap on the selected Accueil tab at its root scrolls the page back to its top.
+    @Environment(\.phoneTabScrollToTop) private var scrollToTop
     let itemCount: Int
     let recents: [FfiItemSummary]
     let favorites: [FfiItemSummary]
@@ -27,7 +29,8 @@ struct RXHomePage<Extras: View>: View {
     }
 
     var body: some View {
-        RXHeroPage(photo: Image(lightHero ? RXHero.item : RXHero.home), lightPhoto: lightHero, initialOffset: Self.demoScroll) {
+        RXHeroPage(photo: Image(lightHero ? RXHero.item : RXHero.home), lightPhoto: lightHero, initialOffset: Self.demoScroll,
+            scrollToTop: scrollToTop) {
             VStack(spacing: RX.Space.xl) {
                 topBar
                 RXHomeScore(itemCount: itemCount)
@@ -225,6 +228,25 @@ struct RXSummaryIcon: View {
     }
 }
 
+/// What the Home score shows (iPhone and Mac), from the Watchtower model: the score of the last
+/// report, a failed first run (with a retry), or a run on its way.
+enum RXScoreStatus: Equatable {
+    case checking
+    case failed
+    case score(Int)
+
+    @MainActor static func of(_ watchtower: WatchtowerModel) -> RXScoreStatus {
+        if let report = watchtower.report { return .score(Int(report.score)) }
+        if case .failed = watchtower.phase { return .failed }
+        return .checking
+    }
+
+    var score: Int? {
+        if case .score(let score) = self { return score }
+        return nil
+    }
+}
+
 #if os(iOS)
 /// The security score over the photo: the label with the item count, the figure over 100, the
 /// status pill. Tapping it opens Watchtower.
@@ -243,44 +265,69 @@ struct RXHomeScore: View {
     }
 
     /// The headline in words (Clarity): the score itself is the small chip under it.
-    static func status(_ score: Int?) -> LocalizedStringKey {
-        guard let score else { return "rx.home.status.checking" }
-        switch score {
-        case 80...: return "rx.home.status.good"
-        case 60..<80: return "rx.home.status.almost"
-        default: return "rx.home.status.attention"
+    static func status(_ status: RXScoreStatus) -> LocalizedStringKey {
+        switch status {
+        case .checking: "rx.home.status.checking"
+        case .failed: "rx.home.status.failed"
+        case .score(80...): "rx.home.status.good"
+        case .score(60..<80): "rx.home.status.almost"
+        case .score: "rx.home.status.attention"
         }
     }
 
-    /// The words-first headline (Clarity), 44 pt bold, scaled with Dynamic Type.
-    @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 44
+    /// The words-first headline (Clarity): the Display typography a step down, so two words fit
+    /// a line. No RX token holds this size yet; the tracking follows Display's ratio.
+    private static let headlineBase: CGFloat = 44
+    @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = RXHomeScore.headlineBase
+
+    private var headlineTracking: CGFloat {
+        let display = RX.Typography.display.spec
+        return display.tracking * headlineSize / display.size
+    }
 
     var body: some View {
-        let score = model.watchtower.report.map { Int($0.score) }
-        // One button: the whole score block opens Watchtower (no tap gesture, UX-PRESS-02).
-        Button { openTab(.watchtower) } label: {
-            VStack(spacing: RX.Space.s) {
-                greeting
-                    .rxFont(.calloutMedium)
-                    .foregroundStyle(.primary)
-                    .dbText(maxLines: 2)
-                Text(Self.status(score))
-                    .font(RX.Typography.display.font(size: headlineSize))
-                    .tracking(-1.5)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .dbText(maxLines: 2, minimumScale: 0.7)
-                if let score {
-                    scoreChip(score)
-                        .padding(.top, RX.Space.xs)
+        let status = RXScoreStatus.of(model.watchtower)
+        VStack(spacing: RX.Space.m) {
+            // One button: the whole score block opens Watchtower (no tap gesture, UX-PRESS-02).
+            Button { openTab(.watchtower) } label: {
+                VStack(spacing: RX.Space.s) {
+                    greeting
+                        .rxFont(.calloutMedium)
+                        .foregroundStyle(.primary)
+                        .dbText(maxLines: 2)
+                    Text(Self.status(status))
+                        .font(RX.Typography.display.font(size: headlineSize))
+                        .tracking(headlineTracking)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.center)
+                        .dbText(maxLines: 2, minimumScale: 0.7)
+                    if let score = status.score {
+                        scoreChip(score)
+                            .padding(.top, RX.Space.xs)
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
+            .rxPress(haptic: .selection)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("rx.home.score")
+            // The first run failed: the headline says so, and this runs it again.
+            if status == .failed {
+                Button {
+                    model.watchtower.refresh(model.session)
+                } label: {
+                    Label(DBStrings.tryAgain, systemImage: "arrow.clockwise")
+                        .rxFont(.footnoteBold)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, RX.Space.l)
+                        .frame(minHeight: RX.Metrics.minTapTarget)
+                        .rxGlass(in: Capsule(), onPhoto: colorScheme == .dark, interactive: true)
+                }
+                .rxPress(haptic: .selection)
+                .accessibilityIdentifier("rx.home.score.retry")
+            }
         }
-        .rxPress(haptic: .selection)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("rx.home.score")
         // The score comes from the Watchtower report: computed here too when the tab was not opened.
         .task(id: model.session.summariesRevision) { model.watchtower.refreshIfNeeded(model.session) }
     }
@@ -297,7 +344,7 @@ struct RXHomeScore: View {
         }
         .foregroundStyle(.primary)
         .padding(.horizontal, RX.Space.m)
-        .frame(minHeight: 32)
+        .padding(.vertical, RX.Space.s)
         .rxGlass(in: Capsule(), onPhoto: colorScheme == .dark, interactive: false)
     }
 }

@@ -19,13 +19,13 @@ struct HomeTab: View {
     @AppStorage("onepass.home.recentsOpen", store: AppModel.browseDefaults) private var recentsOpen = true
     @AppStorage("onepass.home.frequentOpen", store: AppModel.browseDefaults) private var frequentOpen = true
     // The À proximité tile leads to the same list: its card is off unless chosen.
-    @AppStorage("onepass.home.showsNearbyCard", store: AppModel.browseDefaults) private var showsNearby = false
-    @AppStorage("onepass.home.showsProfile", store: AppModel.browseDefaults) private var showsProfile = true
+    @AppStorage(HomeCardKeys.nearby, store: AppModel.browseDefaults) private var showsNearby = false
+    @AppStorage(HomeCardKeys.profile, store: AppModel.browseDefaults) private var showsProfile = true
     @AppStorage("onepass.home.showsFavorites", store: AppModel.browseDefaults) private var showsFavorites = true
     @AppStorage("onepass.home.showsRecents", store: AppModel.browseDefaults) private var showsRecents = true
-    @AppStorage("onepass.home.showsFrequent", store: AppModel.browseDefaults) private var showsFrequent = true
+    @AppStorage(HomeCardKeys.frequent, store: AppModel.browseDefaults) private var showsFrequent = true
     // Shown only when a crypto wallet carries watch data (spec 2026-11-02-crypto-watch).
-    @AppStorage("onepass.home.showsCrypto", store: AppModel.browseDefaults) private var showsCrypto = true
+    @AppStorage(HomeCardKeys.crypto, store: AppModel.browseDefaults) private var showsCrypto = true
     /// The RX look (Réglages > Général > Nouveau design): the score banner in place of the tiles.
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 

@@ -12,6 +12,7 @@ import VaultKit
 /// Every tile and row pushes the same flagged items list as the classic tab.
 struct RXWatchtowerContent<Scan: View, Status: View>: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let score: Int?
     let scanCard: Scan
     let statusLine: Status
@@ -26,11 +27,16 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                 Spacer(minLength: 0)
             }
             header
-            PhoneScoreGauge(score: score)
-                .frame(maxWidth: .infinity)
-            statusLine
-                .frame(maxWidth: .infinity)
-            scanCard
+            // The gauge, the status and the scan card: the only part that animates with the run.
+            VStack(spacing: RX.Space.l) {
+                PhoneScoreGauge(
+                    score: score, phase: watchtower.phase, isEmptyVault: model.session.summaries.isEmpty, rx: true)
+                    .frame(maxWidth: .infinity)
+                statusLine
+                    .frame(maxWidth: .infinity)
+                scanCard
+            }
+            .dbAnimation(value: watchtower.isRunning)
             // The report is the data of this page: loading (skeleton), empty vault, failure
             // (retry; over an older report, an error toast with Retry) and content (UX-STATE-01).
             DBLoadableView(Self.state(report: watchtower.report, phase: watchtower.phase, items: model.session.summaries.count),
@@ -41,7 +47,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                     improve(report)
                     CryptoPhraseAlertCard()
                     StrengthCard(levels: report.strength.map(Int.init))
-                    let clear = WatchtowerCard.all.filter { !WatchtowerTab.isFlagged($0, in: report) }
+                    let clear = WatchtowerCard.all.filter { !$0.isFlagged(in: report) }
                     if !clear.isEmpty {
                         ClearChecksCard(
                             cards: clear, report: report, checkBreaches: watchtower.checkBreaches,
@@ -56,17 +62,11 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
         .environment(\.rxCards, true)
     }
 
-    /// The data state of the page, from the model: no item is an empty vault, a failed run keeps
-    /// the last report under the error, no report yet is loading.
+    /// The data state of the page (`WatchtowerModel.loadable`, shared with the Mac page).
     static func state(report: FfiWatchtowerReport?, phase: WatchtowerModel.Phase, items: Int)
         -> DBLoadable<FfiWatchtowerReport>
     {
-        if items == 0 { return .empty }
-        if case .failed(let message) = phase {
-            return .failed(DBLoadError(title: String(localized: "rx.watchtower.failed"), message: message), previous: report)
-        }
-        if let report { return .content(report) }
-        return .loading(previous: nil)
+        WatchtowerModel.loadable(report: report, phase: phase, items: items)
     }
 
     private var retry: @MainActor @Sendable () -> Void {
@@ -84,7 +84,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
 
     /// While the first report runs: the stat tiles at zero, redacted with the shimmer.
     private var placeholder: some View {
-        HStack(alignment: .top, spacing: RX.Space.m) {
+        RXWatchtowerStat.layout(dynamicTypeSize).callAsFunction {
             ForEach(RXWatchtowerStat.all, id: \.id) { stat in
                 RXStatTile(value: 0, label: Text(stat.label), systemImage: stat.symbol, color: stat.color)
             }
@@ -99,6 +99,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                 Text(verbatim: "Watchtower")
                     .rxFont(.largeTitle)
                     .foregroundStyle(RX.Palette.textPrimary.color)
+                    .dbText(maxLines: 1, minimumScale: 0.7)
                     .accessibilityAddTraits(.isHeader)
                 Text("browse.securityScore")
                     .rxFont(.calloutMedium)
@@ -106,14 +107,17 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
             }
             Spacer(minLength: RX.Space.s)
             // The shield art of the mock, top right, with the share button on its corner.
+            // At accessibility text sizes the art gives its room to the title.
             ZStack(alignment: .topTrailing) {
-                Image("rx-watch-shield")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 120, height: 120)
-                    .padding(.top, RX.Space.s)
-                    .padding(.trailing, RX.Space.l)
-                    .accessibilityHidden(true)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Image("rx-watch-shield")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: Self.shieldSide, height: Self.shieldSide)
+                        .padding(.top, RX.Space.s)
+                        .padding(.trailing, RX.Space.l)
+                        .accessibilityHidden(true)
+                }
                 if let score {
                     ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
                         RXGlassGlyph(systemImage: "square.and.arrow.up")
@@ -128,10 +132,22 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
         .padding(.horizontal, RX.Space.xs)
     }
 
-    /// One red card per alert check that flagged items, or a green card when none did.
+    /// The shield art of the mock (Penpot size).
+    private static var shieldSide: CGFloat { 120 }
+
+    /// One red card per alert check that flagged items. With none: a green card only when every
+    /// red check really ran, else a neutral card that says what was not checked.
     @ViewBuilder private func alerts(_ report: FfiWatchtowerReport) -> some View {
-        let flagged = WatchtowerCard.all.filter { $0.isAlert && WatchtowerTab.isFlagged($0, in: report) }
-        if flagged.isEmpty {
+        let flagged = WatchtowerCard.all.filter { $0.isAlert && $0.isFlagged(in: report) }
+        let gap = WatchtowerCard.alertGap(
+            report: report, checkBreaches: watchtower.checkBreaches, breachCatalog: watchtower.breachCatalogUsed,
+            isRunning: watchtower.isRunning)
+        if flagged.isEmpty, let gap {
+            RXAlertCard(
+                title: Text("rx.watchtower.notChecked"), message: Text(gap),
+                systemImage: "shield.slash", tone: .neutral, chevron: false)
+                .accessibilityIdentifier("rx.watchtower.notChecked")
+        } else if flagged.isEmpty {
             RXAlertCard(
                 title: Text("rx.watchtower.allClear"), message: Text("rx.watchtower.allClear.message"),
                 systemImage: "checkmark.seal.fill", positive: true, chevron: false)
@@ -152,7 +168,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
     }
 
     private func statTiles(_ report: FfiWatchtowerReport) -> some View {
-        HStack(alignment: .top, spacing: RX.Space.m) {
+        RXWatchtowerStat.layout(dynamicTypeSize).callAsFunction {
             ForEach(RXWatchtowerStat.all, id: \.id) { stat in
                 if let card = WatchtowerCard.all.first(where: { $0.id == stat.id }) {
                     let ids = card.itemIDs(in: report)
@@ -173,7 +189,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
     @ViewBuilder private func improve(_ report: FfiWatchtowerReport) -> some View {
         let statIDs = Set(RXWatchtowerStat.all.map(\.id))
         let cards = WatchtowerCard.all.filter {
-            !$0.isAlert && !statIDs.contains($0.id) && WatchtowerTab.isFlagged($0, in: report)
+            !$0.isAlert && !statIDs.contains($0.id) && $0.isFlagged(in: report)
         }
         let seen = model.seenByFormerMemberIDs
         if !cards.isEmpty || !seen.isEmpty {
@@ -225,6 +241,13 @@ struct RXWatchtowerStat {
     let symbol: String
     let color: Color
 
+    /// The three tiles side by side, stacked at accessibility text sizes so they never truncate.
+    static func layout(_ size: DynamicTypeSize) -> AnyLayout {
+        size.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: Theme.RX.Space.m))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.RX.Space.m))
+    }
+
     @MainActor static let all: [RXWatchtowerStat] = [
         .init(id: "weak", label: "rx.watchtower.stat.weak", symbol: "lock.fill", color: Theme.RX.Hue.orange),
         .init(id: "reused", label: "rx.watchtower.stat.reused", symbol: "square.on.square.fill", color: Theme.RX.Hue.violet),
@@ -235,20 +258,61 @@ struct RXWatchtowerStat {
 /// The alert card of the mock: a red (or green) wash, a white disc with the glyph, the title
 /// (Headline) and one line (Footnote), all white.
 struct RXAlertCard: View {
+    /// Red issue, green all-clear, or neutral (a check that did not run: no verdict either way).
+    enum Tone { case alert, positive, neutral }
+
     let title: Text
     let message: Text
     let systemImage: String
-    let positive: Bool
+    let tone: Tone
     let chevron: Bool
 
+    init(title: Text, message: Text, systemImage: String, tone: Tone, chevron: Bool) {
+        self.title = title
+        self.message = message
+        self.systemImage = systemImage
+        self.tone = tone
+        self.chevron = chevron
+    }
+
+    init(title: Text, message: Text, systemImage: String, positive: Bool, chevron: Bool) {
+        self.init(title: title, message: message, systemImage: systemImage, tone: positive ? .positive : .alert, chevron: chevron)
+    }
+
     var body: some View {
-        let colors = positive ? Theme.RX.Wash.positive : Theme.RX.Wash.alert
+        if tone == .neutral {
+            neutral
+        } else {
+            washed(tone == .positive ? Theme.RX.Wash.positive : Theme.RX.Wash.alert)
+        }
+    }
+
+    /// The card surface with primary words and a secondary glyph.
+    private var neutral: some View {
+        content(foreground: Theme.RX.Palette.textPrimary.color, glyph: Theme.RX.Palette.textSecondary.color,
+                disc: Theme.RX.Palette.raisedBackground.color)
+            .background(
+                Theme.RX.Palette.cardBackground.color,
+                in: RoundedRectangle(cornerRadius: Theme.RX.Radius.card, style: .continuous))
+            .accessibilityElement(children: .combine)
+    }
+
+    private func washed(_ colors: [Color]) -> some View {
+        content(foreground: .white, glyph: colors[1], disc: .white)
+            .background(
+                LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom),
+                in: RoundedRectangle(cornerRadius: Theme.RX.Radius.card, style: .continuous))
+            .rxRaisedShadow()
+            .accessibilityElement(children: .combine)
+    }
+
+    private func content(foreground: Color, glyph: Color, disc: Color) -> some View {
         HStack(spacing: Theme.RX.Space.m) {
             Image(systemName: systemImage)
                 .font(Theme.RX.Glyph.font(Theme.RX.Glyph.action, weight: .bold))
-                .foregroundStyle(colors[1])
-                .frame(width: 44, height: 44)
-                .background(.white, in: Circle())
+                .foregroundStyle(glyph)
+                .frame(width: Theme.RX.Metrics.glassButton, height: Theme.RX.Metrics.glassButton)
+                .background(disc, in: Circle())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Theme.RX.Space.xxs) {
                 title
@@ -256,24 +320,18 @@ struct RXAlertCard: View {
                     .dbText()
                 message
                     .rxFont(.footnote)
-                    .opacity(0.85)
                     .dbText()
             }
             .multilineTextAlignment(.leading)
-            Spacer(minLength: 4)
+            Spacer(minLength: Theme.RX.Space.xs)
             if chevron {
                 Image(systemName: "chevron.right")
                     .font(Theme.RX.Glyph.font(Theme.RX.Glyph.chevron, weight: .bold))
                     .accessibilityHidden(true)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(foreground)
         .padding(Theme.RX.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom),
-            in: RoundedRectangle(cornerRadius: Theme.RX.Radius.card, style: .continuous))
-        .shadow(color: colors[0].opacity(0.25), radius: 10, y: 8)
-        .accessibilityElement(children: .combine)
     }
 }

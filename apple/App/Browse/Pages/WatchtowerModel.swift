@@ -32,6 +32,9 @@ final class WatchtowerModel {
     private(set) var phase: Phase = .idle
     /// The shown report had the HIBP breach catalog (`breached_site` ran).
     private(set) var breachCatalogUsed = false
+    /// Bumped each time the system refuses notifications after "Me prévenir" was turned on: the
+    /// setting card watches it to say why the switch went back off.
+    private(set) var notifyDenials = 0
 
     /// What the shown report was computed from.
     private struct Key: Equatable {
@@ -67,7 +70,10 @@ final class WatchtowerModel {
                 Task {
                     let granted = (try? await UNUserNotificationCenter.current()
                         .requestAuthorization(options: [.alert, .sound])) ?? false
-                    if !granted { self.notify = false }
+                    if !granted {
+                        self.notify = false
+                        self.notifyDenials += 1
+                    }
                 }
             }
         }
@@ -83,6 +89,25 @@ final class WatchtowerModel {
             withMutation(keyPath: \.checkBreaches) {
                 AppModel.browseDefaults.set(newValue, forKey: Self.breachKey)
             }
+        }
+    }
+
+    /// The fixed words of a failed run (the raw error goes to the log only).
+    static var failureMessage: String { String(localized: "rx.watchtower.failed.message") }
+
+    /// "12 items analysed · breaches checked": the count, then how far the breach check went.
+    static func summary(_ report: FfiWatchtowerReport) -> String {
+        let items = report.itemsAnalyzed == 1
+            ? String(localized: "browse.n1ItemAnalyzed") : String(localized: "browse.itemsAnalyzed \(report.itemsAnalyzed)")
+        switch report.pwned {
+        case .checked:
+            return items + String(localized: "browse.breachesChecked")
+        case .partial(let failed):
+            return items + String(localized: "browse.breachesPartlyCheckedRequests \(failed)")
+        case .unavailable:
+            return items + String(localized: "browse.breachesNotCheckedNo")
+        case .disabled:
+            return items + String(localized: "browse.breachCheckTurnedOff")
         }
     }
 
@@ -190,9 +215,11 @@ final class WatchtowerModel {
                 self.alert(second)
             } catch {
                 guard let self, !Task.isCancelled else { return }
-                Self.log.error("watchtower report failed")
+                let message = VaultError(error).localizedMessage
+                Self.log.error(
+                    "watchtower report failed: \(String(reflecting: type(of: error)), privacy: .public) \(message, privacy: .private)")
                 self.computedFor = nil
-                self.phase = .failed(VaultError(error).localizedMessage)
+                self.phase = .failed(message)
             }
         }
     }

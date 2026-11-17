@@ -47,7 +47,8 @@ struct RXMacHome: View {
 
     /// The photo card: the score on the left, the actions under it.
     private func hero(itemCount: Int) -> some View {
-        let score = model.watchtower.report.map { Int($0.score) }
+        let status = RXScoreStatus.of(model.watchtower)
+        let score = status.score
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
         return VStack(alignment: .leading, spacing: RX.Space.xs) {
             // The score opens Watchtower: one button, no tap gesture on the card (UX-PRESS-02).
@@ -56,8 +57,20 @@ struct RXMacHome: View {
             }
             .rxPress()
             .accessibilityIdentifier("rx.mac.score")
+            // The first run failed: say so instead of a dash, and offer to run it again.
+            if status == .failed {
+                Text("rx.home.status.failed")
+                    .rxFont(.calloutMedium)
+                    .foregroundStyle(.white.opacity(0.85))
+            }
             Spacer(minLength: RX.Space.l)
             HStack(spacing: RX.Space.s) {
+                if status == .failed {
+                    capsule(Text(DBStrings.tryAgain), systemImage: "arrow.clockwise") {
+                        model.watchtower.refresh(model.session)
+                    }
+                    .accessibilityIdentifier("rx.mac.score.retry")
+                }
                 capsule(Text("Nouvel élément"), systemImage: "plus") { model.showNewItemPicker = true }
                     .accessibilityIdentifier("rx.mac.newItem")
                 capsule(Text("Générer"), systemImage: "character.cursor.ibeam") { model.showGenerator = true }
@@ -128,18 +141,28 @@ struct RXMacHome: View {
         RXCard {
             HStack {
                 RXCardHeader(Text("Récents"))
-                Button { model.showItems(.all) } label: {
-                    Text("rx.home.seeAll")
-                        .rxFont(.calloutMedium)
-                        .foregroundStyle(RX.Palette.accentText.color)
+                // Nothing to see in full while the card is empty.
+                if !recents.isEmpty {
+                    Button { model.showItems(.all) } label: {
+                        Text("rx.home.seeAll")
+                            .rxFont(.calloutMedium)
+                            .foregroundStyle(RX.Palette.accentText.color)
+                            .frame(minHeight: RX.Metrics.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .rxPress()
+                    .padding(.trailing, RX.Space.l)
+                    .padding(.top, RX.Space.xs)
+                    .accessibilityIdentifier("rx.mac.seeAll")
                 }
-                .rxPress()
-                .padding(.trailing, RX.Space.l)
-                .padding(.top, RX.Space.m)
             }
-            ForEach(recents, id: \.id) { summary in
-                Button { open(summary) } label: { RXSummaryRow(summary: summary) }
-                    .buttonStyle(.plain)
+            if recents.isEmpty {
+                RXCardMessage(Text("browse.itemsUsedAppearHere"))
+            } else {
+                ForEach(recents, id: \.id) { summary in
+                    Button { open(summary) } label: { RXSummaryRow(summary: summary) }
+                        .rxPress()
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -154,10 +177,10 @@ struct RXMacHome: View {
                 let count = summaries.filter { ItemFilter.vault(vault.id).matches($0) }.count
                 Button { model.showItems(.vault(vault.id)) } label: {
                     RXItemRow(title: Text(vault.meta.name), subtitle: Text("browse.items \(count)"), chevron: true) {
-                        VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 40)
+                        VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: RX.Metrics.itemLead)
                     }
                 }
-                .buttonStyle(.plain)
+                .rxPress()
             }
         }
         .frame(maxWidth: .infinity)
@@ -183,7 +206,7 @@ struct RXMacHome: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.plain)
+                    .rxPress()
                 }
                 ForEach(0..<max(0, 6 - min(favorites.count, 6)), id: \.self) { _ in
                     Color.clear.frame(maxWidth: .infinity, maxHeight: 1)

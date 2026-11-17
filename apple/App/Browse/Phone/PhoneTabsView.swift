@@ -40,6 +40,9 @@ extension EnvironmentValues {
     /// Closes the Profil sheet of the unfolded iPhone, then runs the closure (Réglages present
     /// from the root, so only once the sheet is gone). Nil when the Profil is not a sheet.
     @Entry var closeProfileSheet: (@MainActor (@escaping @MainActor () -> Void) -> Void)?
+    /// Grows each time the tab of this stack is tapped while already selected and at its root:
+    /// the root page scrolls back to its top on each change.
+    @Entry var phoneTabScrollToTop = 0
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
@@ -52,6 +55,8 @@ struct PhoneTabsView: View {
     @Environment(AppModel.self) private var model
     @State private var tab: PhoneTab = .home
     @State private var paths: [PhoneTab: [PhoneRoute]] = [:]
+    /// Per tab, the taps on the tab while it was already selected and at its root.
+    @State private var scrollToTop: [PhoneTab: Int] = [:]
     /// The item rows and the item detail share it: an item opens by zooming out of its row.
     @Namespace private var itemZoom
     @State private var searchQuery = ""
@@ -80,7 +85,7 @@ struct PhoneTabsView: View {
     }
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: tabSelection) {
             // One family: outline symbols of the same weight, filled only on the selected tab (the
             // bar's own fill variant is turned off so the unselected ones stay light).
             Tab(value: PhoneTab.home) {
@@ -210,10 +215,30 @@ struct PhoneTabsView: View {
         }
         .environment(\.itemZoomNamespace, itemZoom)
         .environment(\.inPhoneTabs, true)
+        .environment(\.phoneTabScrollToTop, scrollToTop[which] ?? 0)
         .environment(\.pushPhoneRoute) { route in
             paths[which, default: []].append(route)
             // As the path binding does: the top item of the visible stack is the selection.
             if which == tab, let ref = route.itemRef, model.selectedItem != ref { model.perform(.select(ref)) }
+        }
+    }
+
+    /// The tab bar's selection. A tap on the tab already selected (the system writes the same value
+    /// back) pops its stack to the root, or, at the root, scrolls the root page to its top.
+    private var tabSelection: Binding<PhoneTab> {
+        Binding(
+            get: { tab },
+            set: { newTab in
+                if newTab == tab { reselect(newTab) } else { tab = newTab }
+            })
+    }
+
+    private func reselect(_ which: PhoneTab) {
+        guard which != .search else { return }
+        if paths[which]?.isEmpty ?? true {
+            scrollToTop[which, default: 0] += 1
+        } else {
+            path(which).wrappedValue = []
         }
     }
 
@@ -521,8 +546,12 @@ private struct FoldDropTray: View {
         let ref = ref
         done()
         Task {
-            try? await model.session.setFavorite(true, itemID: ref.itemID, vaultID: ref.vaultID)
-            model.showToast(String(localized: "app.addedToFavorites"))
+            do {
+                try await model.session.setFavorite(true, itemID: ref.itemID, vaultID: ref.vaultID)
+                model.showToast(String(localized: "app.addedToFavorites"))
+            } catch {
+                model.showToast(VaultError(error).localizedMessage, kind: .error)
+            }
         }
     }
 }
