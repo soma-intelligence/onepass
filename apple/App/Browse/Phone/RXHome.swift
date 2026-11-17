@@ -91,7 +91,7 @@ struct RXHomePage<Extras: View>: View {
             .disabled(score == nil)
             .accessibilityIdentifier("rx.home.share")
         }
-        .rxPress()
+        .rxPress(haptic: .selection)
     }
 
     /// Récents: the last items used, or how the card fills (classic parity: the same words).
@@ -105,6 +105,8 @@ struct RXHomePage<Extras: View>: View {
                             .rxFont(.calloutMedium)
                             .foregroundStyle(RX.Palette.accentText.color)
                             .dbText(maxLines: 1)
+                            .frame(minHeight: RX.Metrics.minTapTarget)
+                            .contentShape(Rectangle())
                     }
                     .rxPress()
                     .routeZoomSource(.list(.all))
@@ -123,6 +125,8 @@ struct RXHomePage<Extras: View>: View {
                 }
             }
         }
+        // The card keeps its identifier without lending it to the buttons inside.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.recents")
     }
 
@@ -139,13 +143,15 @@ struct RXHomePage<Extras: View>: View {
                             RXSummaryIcon(summary: favorite.summary, size: RX.Metrics.favoriteLogo)
                         }
                     }
-                    .rxPress()
+                    .rxPress(haptic: .selection)
                     .accessibilityIdentifier("rx.home.favorite.\(favorite.summary.title)")
                 }
                 .padding(.top, RX.Space.s)
                 .padding(.bottom, RX.Space.m)
             }
         }
+        // The card keeps its identifier without lending it to the buttons inside.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.favorites")
     }
 
@@ -166,6 +172,8 @@ struct RXHomePage<Extras: View>: View {
                 .routeZoomSource(.list(.vault(vault.id)))
             }
         }
+        // The card keeps its identifier without lending it to the buttons inside.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("rx.home.vaults")
     }
 }
@@ -254,7 +262,7 @@ struct RXHomeScore: View {
             VStack(spacing: RX.Space.s) {
                 greeting
                     .rxFont(.calloutMedium)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .dbText(maxLines: 2)
                 Text(Self.status(score))
                     .font(RX.Typography.display.font(size: headlineSize))
@@ -270,7 +278,7 @@ struct RXHomeScore: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
-        .rxPress()
+        .rxPress(haptic: .selection)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("rx.home.score")
         // The score comes from the Watchtower report: computed here too when the tab was not opened.

@@ -749,8 +749,9 @@ struct ItemDetailView: View {
         // The big header already names the item: no second title in the bar.
         ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
         // iPhone and iPad: three icons in one group. The vault is already under the title (its
-        // badge), and "Déplacer…" sits in the actions menu.
-        if item.trashedAt == nil {
+        // badge), and "Déplacer…" sits in the actions menu. RX: Partager is a quick action under
+        // the header, so the bar does not repeat it (one entry point per action).
+        if item.trashedAt == nil, !(rxDesign && !locked(item)) {
             ToolbarItem(placement: .primaryAction) {
                 ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
                     Label("common.share", systemImage: "square.and.arrow.up")

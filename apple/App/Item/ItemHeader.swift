@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -43,7 +44,7 @@ struct ItemHeader: View {
         if let vault {
             HStack(spacing: Theme.Space.xs) {
                 VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 16)
-                Text(vault.meta.name).lineLimit(1)
+                Text(vault.meta.name).dbText(maxLines: 2)
             }
             .padding(.leading, Theme.Space.xxs)
             .padding(.trailing, Theme.Space.s)
@@ -87,7 +88,7 @@ struct ItemHeader: View {
                 .rxFont(.callout)
                 .foregroundStyle(Theme.RX.Palette.textSecondary.color)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .dbText(maxLines: 3)
             vaultBadge
                 .rxFont(.footnoteBold)
                 .foregroundStyle(Theme.RX.Palette.textPrimary.color)
