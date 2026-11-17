@@ -156,6 +156,10 @@ final class RXBridgeUITests: DBUITestCase {
                              reason: "at rest it sits under the tab bar glass; it scrolls clear of it"),
             DBAuditAllowance(.contrast, label: "1",
                              reason: "at rest it sits under the tab bar glass; it scrolls clear of it"),
+            DBAuditAllowance(.contrast, identifier: "item.notes",
+                             reason: "at rest the Forge Atlas notes card sits under the tab bar glass; it scrolls clear of it"),
+            DBAuditAllowance(.contrast, label: "Notes",
+                             reason: "the notes card's title, under the tab bar glass at rest; it scrolls clear of it"),
         ]
     }
 
