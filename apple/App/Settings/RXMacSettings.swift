@@ -7,11 +7,12 @@ import VaultKit
 /// The Mac Settings window in the RX look (Penpot "Mac · Settings"), while the switch is on: on the
 /// left, the photo banner with the account, its QR button and the Plus card, then "Get more from
 /// Plus" with the perk tiles; on the right, every page of Réglages in menu cards and the lock
-/// row. Rows push the same pages as the classic window; the Plus card pushes the plan page.
+/// row. Rows push the same pages as the classic window; the Plus card pushes the plan page. Every
+/// push is by value (`SettingsRoute`) through `path`, drawn by the stack's one
+/// `navigationDestination(for:)`; the profile QR code is a sheet.
 struct RXMacSettingsHome: View {
     @Environment(AppModel.self) private var model
-    @Binding var path: [SettingsPage]
-    @State private var showPlan = RXMacSettingsHome.demoOpens("plan")
+    @Binding var path: [SettingsRoute]
     @State private var showProfileQR = RXMacSettingsHome.demoOpens("profileQR")
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -25,6 +26,11 @@ struct RXMacSettingsHome: View {
         #else
         false
         #endif
+    }
+
+    /// The pushed pages the window opens on: the plan page for `-OnePassDemoRXSettings plan`.
+    static var initialPath: [SettingsRoute] {
+        demoOpens("plan") ? [.plan] : []
     }
 
     var body: some View {
@@ -82,12 +88,16 @@ struct RXMacSettingsHome: View {
             .background(RX.Palette.pageBackground.color)
             .environment(\.rxCards, true)
             .navigationTitle(Text("Réglages"))
-            .navigationDestination(for: SettingsPage.self) { page in
-                page.content
-                    .scrollContentBackground(.hidden)
-                    .navigationTitle(Text(page.title))
+            .navigationDestination(for: SettingsRoute.self) { route in
+                switch route {
+                case .page(let page):
+                    page.content
+                        .scrollContentBackground(.hidden)
+                        .navigationTitle(Text(page.title))
+                case .plan:
+                    RXPlanPage()
+                }
             }
-            .navigationDestination(isPresented: $showPlan) { RXPlanPage() }
         }
         .sheet(isPresented: $showProfileQR) { RXProfileQRSheet() }
         .accessibilityIdentifier("rx.settings")
@@ -115,9 +125,7 @@ struct RXMacSettingsHome: View {
                 GlassButton(Text("rx.profileQR.open"), systemImage: "qrcode", onPhoto: true) { showProfileQR = true }
                     .accessibilityIdentifier("rx.settings.profileQR")
             }
-            Button {
-                showPlan = true
-            } label: {
+            NavigationLink(value: SettingsRoute.plan) {
                 PlanCard(
                     // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
                     title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
@@ -139,7 +147,7 @@ struct RXMacSettingsHome: View {
     }
 
     private func menu(_ page: SettingsPage, value: Int? = nil) -> some View {
-        NavigationLink(value: page) {
+        NavigationLink(value: SettingsRoute.page(page)) {
             RXMenuRow(Text(page.title), systemImage: page.symbol, value: value.map { Text($0, format: .number) })
         }
         .accessibilityIdentifier("settings.\(page.rawValue)")

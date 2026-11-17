@@ -66408,6 +66408,66 @@
         }
       }
     },
+    "rx.profileQR.failed.message" : {
+      "comment" : "Profile QR page (new design): line of the fallback shown when the QR code cannot be drawn; the share button stays under it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can still share your card with the button below."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún puedes compartir tu tarjeta con el botón de abajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu peux quand même partager ta fiche avec le bouton ci-dessous."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puoi comunque condividere la tua scheda con il pulsante qui sotto."
+          }
+        }
+      }
+    },
+    "rx.profileQR.failed.title" : {
+      "comment" : "Profile QR page (new design): title of the fallback shown when the QR code cannot be drawn.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The QR code couldn't be created."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido crear el código QR."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le QR code n'a pas pu être créé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non è stato possibile creare il codice QR."
+          }
+        }
+      }
+    },
     "rx.profileQR.hint" : {
       "comment" : "Profile QR sheet (new design): line under the QR code.",
       "extractionState" : "manual",

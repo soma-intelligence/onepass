@@ -11,24 +11,13 @@ import VaultKit
 /// every page of Réglages in menu cards. Each row pushes the same page as the classic list
 /// (`SettingsPage`), so nothing is lost. Every pushed page zooms out of its row.
 ///
-/// Rows of `SettingsPage` push by value; Profil, Apple Watch, Agents, Personnaliser l'accueil and
-/// the perk tiles push with a destination closure: the stack's path is `[SettingsPage]`, which holds
-/// no other type, and a perk tile needs its own zoom source besides the row of the same page.
+/// Every row, tile and card pushes by value (`SettingsRoute`) through the path of the stack in
+/// `SettingsView`, which draws them with its one `navigationDestination(for:)`: the back button's
+/// menu and the demo launch arguments see every page. A perk tile has its own route, so its page
+/// zooms out of the tile and not out of the row of the same page.
 struct RXSettingsHome: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var showProfileQR = Self.demoOpens("profileQR")
-    @State private var showPlan = Self.demoOpens("plan")
-
-    /// Screenshots (Debug): `-OnePassDemoRXSettings plan|profileQR` opens the plan page or the
-    /// profile QR code.
-    private static func demoOpens(_ name: String) -> Bool {
-        #if DEBUG
-        UserDefaults.standard.string(forKey: "OnePassDemoRXSettings") == name
-        #else
-        false
-        #endif
-    }
 
     private typealias RX = Theme.RX
 
@@ -42,9 +31,8 @@ struct RXSettingsHome: View {
                 RXPerkCarousel(bleed: RX.Space.gutter)
                 RXCard {
                     menu(.general)
-                    pushRow(Text("rx.settings.homeCards"), systemImage: "house.fill", id: "rx.settings.homeCards") {
-                        RXHomeCardsSettings()
-                    }
+                    pushRow(Text("rx.settings.homeCards"), systemImage: "house.fill", id: "rx.settings.homeCards",
+                            route: .homeCards)
                     menu(.security)
                     menu(.autofill)
                     menu(.sync)
@@ -59,14 +47,10 @@ struct RXSettingsHome: View {
                     menu(.travel)
                     menu(.crypto)
                     // swiftlint:disable:next db_unlocalized_string - product name, the same in every language
-                    pushRow(Text(verbatim: "Apple Watch"), systemImage: "applewatch", id: "settings.watch") {
-                        WatchSettings()
-                    }
+                    pushRow(Text(verbatim: "Apple Watch"), systemImage: "applewatch", id: "settings.watch", route: .watch)
                     // swiftlint:disable:next db_unlocalized_string - feature name, the same in every language
                     pushRow(Text(verbatim: "Agents"), systemImage: "point.3.connected.trianglepath.dotted",
-                            id: "settings.agents") {
-                        AgentsSettings()
-                    }
+                            id: "settings.agents", route: .agents)
                 }
                 RXCard {
                     menu(.about)
@@ -107,34 +91,25 @@ struct RXSettingsHome: View {
                 Button(role: .close) { dismiss() }
                     .accessibilityIdentifier("settings.done")
             }
+            // Pushed in Réglages, not a second sheet over it.
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showProfileQR = true
-                } label: {
+                NavigationLink(value: SettingsRoute.profileQR) {
                     Label("rx.profileQR.open", systemImage: "qrcode")
                 }
                 .zoomSource(Self.profileQRZoomID)
                 .accessibilityIdentifier("rx.settings.profileQR")
             }
         }
-        .navigationDestination(isPresented: $showPlan) { RXPlanPage().zoomDestination(Self.planZoomID) }
-        // Pushed in Réglages, not a second sheet over it.
-        .navigationDestination(isPresented: $showProfileQR) {
-            RXProfileQRPage().zoomDestination(Self.profileQRZoomID)
-        }
         .accessibilityIdentifier("rx.settings")
     }
 
-    private static let planZoomID = "rx.plan"
-    private static let profileQRZoomID = "rx.profileQR"
+    static let planZoomID = "rx.plan"
+    static let profileQRZoomID = "rx.profileQR"
 
     /// The top of the photo: the account, the plan card.
     private var hero: some View {
         VStack(spacing: RX.Space.xl) {
-            NavigationLink {
-                ProfileSettings()
-                    .zoomDestination("settings.account")
-            } label: {
+            NavigationLink(value: SettingsRoute.profile) {
                 VStack(spacing: RX.Space.s) {
                     RXAvatar(initials: model.initials, photo: model.profileImage, size: RX.Metrics.avatarLarge)
                         .padding(.bottom, RX.Space.xs)
@@ -157,9 +132,7 @@ struct RXSettingsHome: View {
             .zoomSource("settings.account")
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.account")
-            Button {
-                showPlan = true
-            } label: {
+            NavigationLink(value: SettingsRoute.plan) {
                 PlanCard(
                     // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
                     title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
@@ -173,20 +146,17 @@ struct RXSettingsHome: View {
     }
 
     private func menu(_ page: SettingsPage, value: Int? = nil) -> some View {
-        NavigationLink(value: page) {
+        NavigationLink(value: SettingsRoute.page(page)) {
             RXMenuRow(Text(page.title), systemImage: page.symbol, value: value.map { Text($0, format: .number) })
         }
         .zoomSource(page)
         .accessibilityIdentifier("settings.\(page.rawValue)")
     }
 
-    /// A row that pushes a page outside `SettingsPage`, zooming out of the row like the others.
-    private func pushRow<Destination: View>(
-        _ title: Text, systemImage: String, id: String, @ViewBuilder destination: @escaping () -> Destination
-    ) -> some View {
-        NavigationLink {
-            destination().zoomDestination(id)
-        } label: {
+    /// A row that pushes a page outside `SettingsPage`, zooming out of the row like the others (the
+    /// destination zooms from `id`).
+    private func pushRow(_ title: Text, systemImage: String, id: String, route: SettingsRoute) -> some View {
+        NavigationLink(value: route) {
             RXMenuRow(title, systemImage: systemImage)
         }
         .zoomSource(id)
@@ -323,18 +293,16 @@ struct RXPerkCarousel: View {
         PerkTile(title: Text(perk.title), subtitle: Text(perk.subtitle), systemImage: perk.symbol, art: Image(perk.art))
     }
 
-    /// iPhone: the page zooms out of its tile. The Mac pushes the page by value, as its rows do.
+    /// iPhone: the page zooms out of its tile (its own route). The Mac pushes the page itself, as
+    /// its rows do.
     @ViewBuilder private func link(_ perk: Perk) -> some View {
         #if os(iOS)
-        NavigationLink {
-            perk.page.content
-                .zoomDestination("perk.\(perk.id)")
-        } label: {
+        NavigationLink(value: SettingsRoute.perk(perk.id)) {
             tile(perk)
         }
         .zoomSource("perk.\(perk.id)")
         #else
-        NavigationLink(value: perk.page) {
+        NavigationLink(value: SettingsRoute.page(perk.page)) {
             tile(perk)
         }
         #endif
@@ -435,7 +403,7 @@ struct RXPlanPage: View {
     }
 
     private func benefit(_ page: SettingsPage, _ title: Text) -> some View {
-        NavigationLink(value: page) {
+        NavigationLink(value: SettingsRoute.page(page)) {
             RXMenuRow(title, systemImage: page.symbol)
         }
         .accessibilityIdentifier("rx.plan.\(page.rawValue)")
@@ -445,11 +413,15 @@ struct RXPlanPage: View {
 /// The QR button of Réglages: the account as a contact card (vCard 3.0 with the display name
 /// only), drawn as a QR code on the device with CoreImage. Nothing leaves the device until the
 /// person shares the card; no server is involved. A page that scrolls, so Partager stays reachable
-/// at every text size. The iPhone pushes it inside Réglages; the Mac shows it in a sheet.
+/// at every text size. The iPhone pushes it inside Réglages; the Mac shows it in a sheet. When the
+/// code cannot be drawn, the page says so in its place, offers Réessayer, and Partager still sends
+/// the card.
 struct RXProfileQRPage: View {
     @Environment(AppModel.self) private var model
     /// Taps on Partager, for its haptic.
     @State private var shares = 0
+    /// Taps on Réessayer: each one draws the code again (and plays its haptic).
+    @State private var attempts = 0
 
     private typealias RX = Theme.RX
 
@@ -468,6 +440,15 @@ struct RXProfileQRPage: View {
             + "N:\(Self.escape(family));\(Self.escape(given));;;\r\nEND:VCARD\r\n"
     }
 
+    /// The code of the card, or nil when CoreImage cannot draw it. Debug builds:
+    /// `-OnePassDemoQRFail YES` fails the first try, so the fallback and Réessayer can be seen.
+    private func code(attempt: Int) -> CGImage? {
+        #if DEBUG
+        if attempt == 0, UserDefaults.standard.bool(forKey: "OnePassDemoQRFail") { return nil }
+        #endif
+        return PairingQRView.image(card, side: 720)
+    }
+
     private static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: ",", with: "\\,")
@@ -484,23 +465,29 @@ struct RXProfileQRPage: View {
                     .foregroundStyle(RX.Palette.textPrimary.color)
                     .multilineTextAlignment(.center)
                     .dbText(maxLines: 2)
-                if let image = PairingQRView.image(card, side: 720) {
-                    Image(decorative: image, scale: 3)
-                        .interpolation(.none)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: RX.Metrics.profileQR)
-                        .padding(RX.Space.l)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
-                        .padding(.vertical, RX.Space.s)
-                        .accessibilityLabel(Text("rx.profileQR.code"))
-                        .accessibilityIdentifier("rx.profileQR.code")
+                let image = code(attempt: attempts)
+                Group {
+                    if let image {
+                        Image(decorative: image, scale: 3)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: RX.Metrics.profileQR)
+                            .padding(RX.Space.l)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
+                            .padding(.vertical, RX.Space.s)
+                            .accessibilityLabel(Text("rx.profileQR.code"))
+                            .accessibilityIdentifier("rx.profileQR.code")
+                        Text("rx.profileQR.hint")
+                            .rxFont(.callout)
+                            .foregroundStyle(RX.Palette.textSecondary.color)
+                            .multilineTextAlignment(.center)
+                            .dbText()
+                    } else {
+                        fallback
+                    }
                 }
-                Text("rx.profileQR.hint")
-                    .rxFont(.callout)
-                    .foregroundStyle(RX.Palette.textSecondary.color)
-                    .multilineTextAlignment(.center)
-                    .dbText()
+                .dbAnimation(value: image == nil)
                 ShareLink(item: card, preview: SharePreview(Text(verbatim: name))) {
                     Label("rx.profileQR.share", systemImage: "square.and.arrow.up")
                 }
@@ -520,6 +507,41 @@ struct RXProfileQRPage: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .accessibilityIdentifier("rx.profileQR")
+    }
+
+    /// In place of the code when it cannot be drawn: what happened, that Partager still works, and
+    /// Réessayer. The same square as the code, so Partager does not jump when the code comes back.
+    private var fallback: some View {
+        VStack(spacing: RX.Space.m) {
+            Image(systemName: "qrcode")
+                .rxFont(.title)
+                .foregroundStyle(RX.Palette.textTertiary.color)
+                .accessibilityHidden(true)
+            Text("rx.profileQR.failed.title")
+                .rxFont(.bodyMedium)
+                .foregroundStyle(RX.Palette.textPrimary.color)
+                .multilineTextAlignment(.center)
+                .dbText()
+            Text("rx.profileQR.failed.message")
+                .rxFont(.callout)
+                .foregroundStyle(RX.Palette.textSecondary.color)
+                .multilineTextAlignment(.center)
+                .dbText()
+            Button {
+                attempts += 1
+            } label: {
+                Label("Réessayer", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .dbHaptic(.selection, trigger: attempts)
+            .accessibilityIdentifier("rx.profileQR.retry")
+        }
+        .padding(RX.Space.l)
+        .frame(maxWidth: RX.Metrics.profileQR + 2 * RX.Space.l, minHeight: RX.Metrics.profileQR + 2 * RX.Space.l)
+        .background(RX.Palette.cardBackground.color, in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
+        .padding(.vertical, RX.Space.s)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("rx.profileQR.fallback")
     }
 }
 

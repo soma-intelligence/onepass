@@ -168,4 +168,23 @@ final class SettingsUITests: XCTestCase {
             XCTAssertTrue(element("settings.done").waitForExistence(timeout: Self.uiTimeout), "\(id): back to Réglages failed")
         }
     }
+
+    /// RX look: the profile QR page that cannot draw its code shows the fallback (message,
+    /// Réessayer, Partager still there); Réessayer draws the code. `-OnePassDemoQRFail` fails the
+    /// first try only.
+    func testRXProfileQRFallbackRetriesAndKeepsShare() throws {
+        app.terminate()
+        app.launchArguments = [
+            "-OnePassRX", "YES", "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO",
+            "-OnePassDemoSettings", "YES", "-OnePassDemoRXSettings", "profileQR", "-OnePassDemoQRFail", "YES",
+        ]
+        app.launch()
+        let fallback = element("rx.profileQR.fallback")
+        XCTAssertTrue(fallback.waitForExistence(timeout: Self.seedTimeout), "QR fallback not shown")
+        XCTAssertFalse(element("rx.profileQR.code").exists, "QR code shown on a failed try")
+        XCTAssertTrue(element("rx.profileQR.share").exists, "Partager missing under the fallback")
+        element("rx.profileQR.retry").tap()
+        XCTAssertTrue(element("rx.profileQR.code").waitForExistence(timeout: Self.uiTimeout), "Réessayer did not draw the code")
+        XCTAssertFalse(fallback.exists, "fallback still shown after Réessayer")
+    }
 }
