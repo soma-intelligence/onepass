@@ -437,13 +437,31 @@ extension View {
             #endif
             #if os(iOS)
             .scrollContentBackground(.hidden)
-            .background(Theme.page.ignoresSafeArea())
+            .modifier(ClassicSettingsBackground())
             // Buttons and values in the accent keep 4.5:1 on the dark cards too.
             .tint(Theme.readableAccent)
             .headerFade()
             #endif
     }
 }
+
+#if os(iOS)
+/// The background of a settings page: the page colour, or in the RX look the screen under
+/// Réglages blurred (RXFrostedBackdrop), with no colour from the navigation stack.
+private struct ClassicSettingsBackground: ViewModifier {
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+
+    func body(content: Content) -> some View {
+        if rxDesign {
+            content
+                .background(RXFrostedBackdrop().ignoresSafeArea())
+                .containerBackground(Color.clear, for: .navigation)
+        } else {
+            content.background(Theme.page.ignoresSafeArea())
+        }
+    }
+}
+#endif
 
 #if os(macOS)
 /// The Mac `Settings` window (⌘,): pages in a sidebar of colored tiles, the page on the right.

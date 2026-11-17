@@ -35,22 +35,24 @@ public enum RXFrost {
     public static let compactAvatar: CGFloat = 34
 }
 
-/// The app's wallpaper blurred hard and veiled, filling its frame. Under Reduce Transparency or
-/// Increase Contrast: the plain page colour.
+/// The frosted backdrop, veiled. With an image: that picture (the app's wallpaper) blurred hard.
+/// Without one: a live material that blurs whatever is behind the page, for a full screen cover
+/// whose presentation background is clear (the screen it covers shows through, out of focus). Under
+/// Reduce Transparency or Increase Contrast: the plain page colour.
 public struct RXFrostedBackdrop: View {
-    let image: Image
+    let image: Image?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    public init(image: Image) {
+    public init(image: Image? = nil) {
         self.image = image
     }
 
     public var body: some View {
         if Theme.Wash.isFlat(increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency) {
             RX.Palette.pageBackground.color
-        } else {
+        } else if let image {
             Color.clear
                 .overlay {
                     image
@@ -62,6 +64,11 @@ public struct RXFrostedBackdrop: View {
                 .overlay(RXFrost.veil(scheme))
                 .clipped()
                 .accessibilityHidden(true)
+        } else {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(RXFrost.veil(scheme).opacity(0.6))
+                .accessibilityHidden(true)
         }
     }
 }
@@ -70,14 +77,14 @@ public struct RXFrostedBackdrop: View {
 /// soft blur at the top, and `compact` (a small avatar) fades in at the centre of the bar once it
 /// has gone.
 public struct RXFrostedPage<Compact: View, Header: View, Content: View>: View {
-    let backdrop: Image
+    let backdrop: Image?
     let compact: Compact
     let header: Header
     let content: Content
     @State private var offset: CGFloat = 0
     @State private var headerHeight: CGFloat = 0
 
-    public init(backdrop: Image, @ViewBuilder compact: () -> Compact, @ViewBuilder header: () -> Header,
+    public init(backdrop: Image? = nil, @ViewBuilder compact: () -> Compact, @ViewBuilder header: () -> Header,
                 @ViewBuilder content: () -> Content) {
         self.backdrop = backdrop
         self.compact = compact()
@@ -102,6 +109,11 @@ public struct RXFrostedPage<Compact: View, Header: View, Content: View>: View {
             offset = new
         }
         .background(RXFrostedBackdrop(image: backdrop).ignoresSafeArea())
+        #if os(iOS)
+        // The navigation stack paints no colour of its own: the backdrop (or the screen under a
+        // clear full screen cover) shows.
+        .containerBackground(Color.clear, for: .navigation)
+        #endif
         .overlay(alignment: .top) { TopBlur(visible: offset > 4) }
         #if os(iOS)
         .toolbarBackground(.hidden, for: .navigationBar)

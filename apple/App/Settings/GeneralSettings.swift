@@ -451,10 +451,6 @@ extension EnvironmentValues {
 
 private struct RXSettingsSkin: ViewModifier {
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
-    #if os(iOS)
-    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
-    @Environment(\.colorScheme) private var colorScheme
-    #endif
 
     private typealias RX = Theme.RX
 
@@ -466,9 +462,7 @@ private struct RXSettingsSkin: ViewModifier {
                 .listSectionSpacing(RX.Space.l)
                 .contentMargins(.horizontal, RX.Space.gutter, for: .scrollContent)
                 .scrollContentBackground(.hidden)
-                // The frosted Réglages (RXFrosted): the blurred wallpaper behind every page.
-                .background(RXFrostedBackdrop(image: RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme).image)
-                    .ignoresSafeArea())
+                // No colour of its own: `settingsPage` draws the frosted backdrop behind.
                 .tint(RX.Palette.accentText.color)
                 .environment(\.rxSettings, true)
         } else {

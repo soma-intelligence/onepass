@@ -23,8 +23,16 @@ struct BrowseRoot: View {
         return layout
             #if os(iOS) || os(visionOS)
             // Réglages: a sheet everywhere, opened on iPhone from the account menu.
-            .sheet(isPresented: settingsSheetShown) {
+            .sheet(isPresented: settingsAsSheet) {
                 SettingsView()
+            }
+            #endif
+            #if os(iOS)
+            // RX: Réglages full screen and see-through, the screen under it blurred by each page
+            // (RXFrostedBackdrop), as in the owner's reference.
+            .fullScreenCover(isPresented: rxDesign ? settingsSheetShown : .constant(false)) {
+                SettingsView()
+                    .presentationBackground(.clear)
             }
             #endif
             // "Générer un mot de passe" Control (`onepass://generator`): the value is only copied.
@@ -199,6 +207,15 @@ struct BrowseRoot: View {
         usesTabs || isFold
         #else
         false
+        #endif
+    }
+
+    /// Réglages as a sheet: everywhere but the RX iPhone, which covers the full screen.
+    private var settingsAsSheet: Binding<Bool> {
+        #if os(iOS)
+        rxDesign ? .constant(false) : settingsSheetShown
+        #else
+        settingsSheetShown
         #endif
     }
 

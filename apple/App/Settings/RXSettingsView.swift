@@ -17,13 +17,12 @@ struct RXSettingsHome: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
 
     private typealias RX = Theme.RX
 
     var body: some View {
         let _ = model.settingsRevision
-        RXFrostedPage(backdrop: RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme).image) {
+        RXFrostedPage {
             RXAvatar(initials: model.initials, photo: model.profileImage, size: RXFrost.compactAvatar, ring: false)
         } header: {
             header
@@ -152,14 +151,12 @@ struct RXSettingsHome: View {
     }
 }
 
-/// The background of a pushed page of the frosted Réglages: the blurred wallpaper of the root.
+/// The background of a pushed page of the frosted Réglages: the screen under the sheet, blurred.
 struct RXSettingsBackdrop: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
-
     func body(content: Content) -> some View {
-        content.background(
-            RXFrostedBackdrop(image: RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme).image).ignoresSafeArea())
+        content
+            .background(RXFrostedBackdrop().ignoresSafeArea())
+            .containerBackground(Color.clear, for: .navigation)
     }
 }
 

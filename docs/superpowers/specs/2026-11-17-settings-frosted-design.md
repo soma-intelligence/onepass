@@ -8,8 +8,10 @@ and the style. Each app supplies only its rows, an optional plan card and its fo
 
 ## Look
 
-- Background: the app's wallpaper, blurred hard and dimmed (dark) or lightened (light), filling
-  the whole screen. No photo band, no opaque page sheet. Everything scrolls together over it.
+- Background: see-through. On the iPhone, Réglages is a full screen cover with a clear
+  presentation background, and every page draws a live material, so the screen under it shows
+  through blurred and veiled. No photo band, no opaque page sheet. Everything scrolls together
+  over it. An app without a modal can pass its wallpaper image instead.
 - Top: the system close button (glass) on the leading side. A large centred avatar, the name big
   and bold, a detail line under it (OnePass: the device mode) with an optional small glyph.
 - On scroll the name goes under a soft blur at the top and a small avatar appears centred in the
