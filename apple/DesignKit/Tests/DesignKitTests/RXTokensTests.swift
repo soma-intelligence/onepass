@@ -1,6 +1,7 @@
 import CoreText
 import SwiftUI
 import Testing
+import DesignBridgeKit
 @testable import DesignKit
 
 @Suite("RX tokens")
@@ -184,10 +185,15 @@ struct RXTokensTests {
         #expect(ItemIcon.markOpticalSide * ItemIcon.rxMarkScale >= 0.65)
     }
 
-    /// The hero fades over 70% of its height and never leaves 0...1.
+    /// The hero is DesignBridge's scroll hero: it fades over 60% of its height (the kit's
+    /// default, which the RX page keeps) and never leaves 0...1.
     @Test func heroFade() {
-        #expect(RXHeroPage<EmptyView, EmptyView>.fade(offset: -40, heroHeight: 300) == 0)
-        #expect(RXHeroPage<EmptyView, EmptyView>.fade(offset: 105, heroHeight: 300) == 0.5)
-        #expect(RXHeroPage<EmptyView, EmptyView>.fade(offset: 900, heroHeight: 300) == 1)
+        func progress(_ offset: CGFloat) -> CGFloat {
+            DBScrollHeroMetrics(offset: offset, heroHeight: 300, fadeDistance: 300 * 0.6, parallax: nil,
+                                reduceMotion: false).progress
+        }
+        #expect(progress(-40) == 0)
+        #expect(progress(90) == 0.5)
+        #expect(progress(900) == 1)
     }
 }
