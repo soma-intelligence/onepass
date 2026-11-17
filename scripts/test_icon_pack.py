@@ -844,6 +844,17 @@ class Wikidata(unittest.TestCase):
         offset, length, _ = index["icons"][index["domains"][domain]]
         return blob[offset:offset + length]
 
+    def test_wikidata_owner_is_the_brand_named_item(self):
+        # PDF (a file format) lists adobe.com as its website and has more sitelinks than Adobe Inc.
+        owners = icon_pack.wikidata_owners("adobe.com", [(180, "Q42332", "PDF"), (90, "Q207407", "Adobe Inc.")])
+        self.assertEqual(owners, ["Q207407", "Q42332"])
+        # No item named after the brand: the most linked one, then the oldest.
+        self.assertEqual(icon_pack.wikidata_owners("acme.test", [(3, "Q9", "Foo"), (5, "Q8", "Bar"), (5, "Q7", "Baz")]),
+                         ["Q7", "Q8", "Q9"])
+        # A subdomain names the same brand: two Adobe products, the most linked one wins.
+        self.assertEqual(icon_pack.wikidata_owners("helpx.adobe.com", [(10, "Q1", "Adobe Director"),
+                                                                      (20, "Q2", "Adobe Bridge")]), ["Q2", "Q1"])
+
     def test_licenses(self):
         for kept in ("Public domain", "public DOMAIN", "PD", "PD-textlogo", "PD-ineligible", "PD-shape", "pd-us",
                      "CC0", "CC0 1.0", "cc0-1.0", " <span>Public domain</span> "):

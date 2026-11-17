@@ -1479,6 +1479,20 @@ def site_domains(item, refuse):
     return out
 
 
+def wikidata_owners(domain, entries):
+    """The Q ids claiming `domain`, best first. entries: [(sitelinks, qid, label)]. An item named
+    after the domain's brand (its squashed label starts with `brand_label(domain)`) comes before any
+    other, then the most sitelinks, then the oldest item: a file format or a product listing its
+    maker's site (PDF names adobe.com as its website) never takes the maker's domain from the maker."""
+    brand = brand_label(domain)
+
+    def key(entry):
+        sitelinks, qid, label = entry
+        named = bool(brand) and squash(label or "").startswith(brand)
+        return (not named, -sitelinks, int(qid[1:]))
+    return [qid for _, qid, _ in sorted(entries, key=key)]
+
+
 def wikidata_refusal(blocklist, platforms):
     hubs = Blocklist(NOT_A_BRAND_SITE)
     hosted = Blocklist(platforms)
@@ -1569,13 +1583,13 @@ def fetch_wikidata(out, blocklist, platforms, fetcher=None, page_size=WIKIDATA_P
             continue
         logo_of[qid] = logo
         for domain in domains:
-            claims.setdefault(domain, []).append((item["sitelinks"], qid))
+            claims.setdefault(domain, []).append((item["sitelinks"], qid, item["label"]))
     owner, conflicts = {}, {}
     for domain, entries in sorted(claims.items()):
-        entries.sort(key=lambda e: (-e[0], int(e[1][1:])))
-        owner[domain] = entries[0][1]
-        if len(entries) > 1:
-            conflicts[domain] = {"kept": entries[0][1], "others": [q for _, q in entries[1:]]}
+        ranked = wikidata_owners(domain, entries)
+        owner[domain] = ranked[0]
+        if len(ranked) > 1:
+            conflicts[domain] = {"kept": ranked[0], "others": ranked[1:]}
 
     titles = sorted({logo_of[q] for q in set(owner.values())})
     info = {}
