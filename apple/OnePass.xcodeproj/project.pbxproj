@@ -192,6 +192,7 @@
 		AE847DC25AA06BC3F79CC79E /* ContactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2E88614A593E5B6EA90CF4 /* ContactsView.swift */; };
 		AF0461461E7B8ECC023C804A /* DesignBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = E139DFB657B6553194CAD9DC /* DesignBridgeKit */; };
 		AF3609B18E4B8015227978EA /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 845CD390D016AFF7270EF38F /* PrivacyInfo.xcprivacy */; };
+		AF3D0314E486AE188C583518 /* RXBridgeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4287066FEEE80DF7B6BF8D9E /* RXBridgeUITests.swift */; };
 		AF4F4FF3F65C0D9A3CDEF5E6 /* GeneratePasswordIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E39401146054BC9E721F184 /* GeneratePasswordIntent.swift */; };
 		AFBE12EE3D68AE79110EA0D1 /* ImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */; };
 		B19D7967A80446677BDC9032 /* PhoneTabsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */; };
@@ -476,6 +477,7 @@
 		40A16278188C339AA5210876 /* IdentityChangeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityChangeView.swift; sourceTree = "<group>"; };
 		422181E1C469D47ED766E877 /* IconLibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconLibraryUITests.swift; sourceTree = "<group>"; };
 		426C7E70D70010F31C18D606 /* RXArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXArt.swift; sourceTree = "<group>"; };
+		4287066FEEE80DF7B6BF8D9E /* RXBridgeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXBridgeUITests.swift; sourceTree = "<group>"; };
 		42BE6F635EE865D00B34DB84 /* FoldLayoutUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldLayoutUITests.swift; sourceTree = "<group>"; };
 		430C9CAE5FD32B895AA0C129 /* DemoCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoCrypto.swift; sourceTree = "<group>"; };
 		4589B26BB420AF0E483B2C36 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -1009,6 +1011,7 @@
 				EE0A6F20B1C5A245D948C3C8 /* OpenAndSignInUITests.swift */,
 				598C991D4D92485187F7DEBE /* ProfileUITests.swift */,
 				5F1DA7C34CAC80C98F527B6B /* RunThroughUITests.swift */,
+				4287066FEEE80DF7B6BF8D9E /* RXBridgeUITests.swift */,
 				9EAD071C36B97EE03055B24A /* SafariAutofillUITests.swift */,
 				52A4C3E0C0617CEAB04F1977 /* SaveSheetWatch.swift */,
 				9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */,
@@ -2020,6 +2023,7 @@
 				1C63F11B5CCD3A82A87A6479 /* NoSaveSheetUITests.swift in Sources */,
 				4FC983E3F5EEF45E81E52160 /* OnboardingAndItemUITests.swift in Sources */,
 				CF053700F315CA00546962B2 /* ProfileUITests.swift in Sources */,
+				AF3D0314E486AE188C583518 /* RXBridgeUITests.swift in Sources */,
 				90165B8F84F9DB835D3413F4 /* RunThroughUITests.swift in Sources */,
 				EA6C3BE88D8E24B9C48CDC9F /* SaveSheetWatch.swift in Sources */,
 				67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */,
