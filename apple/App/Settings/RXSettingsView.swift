@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -52,12 +53,14 @@ struct RXSettingsHome: View {
                     NavigationLink {
                         WatchSettings()
                     } label: {
+                        // swiftlint:disable:next db_unlocalized_string - product name, the same in every language
                         RXMenuRow(Text(verbatim: "Apple Watch"), systemImage: "applewatch")
                     }
                     .accessibilityIdentifier("settings.watch")
                     NavigationLink {
                         AgentsSettings()
                     } label: {
+                        // swiftlint:disable:next db_unlocalized_string - feature name, the same in every language
                         RXMenuRow(Text(verbatim: "Agents"), systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     .accessibilityIdentifier("settings.agents")
@@ -80,6 +83,7 @@ struct RXSettingsHome: View {
                     .accessibilityIdentifier("rx.settings.lock")
                 }
                 VStack(spacing: RX.Space.xs) {
+                    // swiftlint:disable:next db_unlocalized_string - product name and version number
                     Text(verbatim: "OnePass \(Self.version)")
                     Text("settings.onepassOpenSourceAgpl")
                 }
@@ -88,7 +92,7 @@ struct RXSettingsHome: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
+            .rxPress()
         }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(isPresented: $showPlan) { RXPlanPage().zoomDestination(Self.planZoomID) }
@@ -111,13 +115,14 @@ struct RXSettingsHome: View {
             NavigationLink {
                 ProfileSettings()
             } label: {
-                VStack(spacing: 6) {
+                VStack(spacing: RX.Space.s) {
                     RXAvatar(initials: model.initials, photo: model.profileImage, size: 72)
                         .padding(.bottom, RX.Space.xs)
                     Text(model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName)
                         .rxFont(.title)
                         .foregroundStyle(.white)
-                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .dbText(maxLines: 2)
                     Text(model.settings.deviceMode == .shared
                          ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
                         .rxFont(.callout)
@@ -127,17 +132,18 @@ struct RXSettingsHome: View {
                 .padding(.top, RX.Space.xl)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .rxPress()
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.account")
             Button {
                 showPlan = true
             } label: {
+                // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
                 PlanCard(
                     title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.benefits"), art: Image("rx-plan-lux"),
                     perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"])
             }
-            .buttonStyle(PressableButtonStyle())
+            .rxPress()
             .zoomSource(Self.planZoomID)
             .accessibilityIdentifier("rx.settings.plan")
             .padding(.top, RX.Space.l)
@@ -162,10 +168,11 @@ struct RXSettingsHome: View {
 
 #endif
 
-/// "Get more from Plus": a horizontal paging row of perk tiles, each opening the page of Réglages
-/// that holds the feature (nothing here is a feature this build lacks). The tiles snap one by one
-/// and the next one peeks at the trailing edge. `bleed` is the page gutter the row runs under, so
-/// it scrolls edge to edge while its first tile lines up with the cards.
+/// "Get more from Plus" (D-CAROUSELS): perk tiles on `RXCarousel`, each opening the page of
+/// Réglages that holds the feature (nothing here is a feature this build lacks), one tile per
+/// page. The tiles snap one by one and the next one peeks at the trailing edge. `bleed` is the
+/// page gutter the row runs under, so it scrolls edge to edge while its first tile lines up with
+/// the cards.
 struct RXPerkCarousel: View {
     var bleed: CGFloat = 0
     var idPrefix = "rx.settings.perk"
@@ -191,13 +198,12 @@ struct RXPerkCarousel: View {
         let art: String
     }
 
+    /// One tile per page: emergency access lives on the Famille page, which the family tile opens.
     static let perks: [Perk] = [
         Perk(id: "family", page: .family, title: "rx.perks.family.title", subtitle: "rx.perks.family.subtitle",
              symbol: "person.3.fill", art: "rx-perk-lux-family"),
         Perk(id: "keys", page: .security, title: "rx.perks.keys.title", subtitle: "rx.perks.keys.subtitle",
              symbol: "key.fill", art: "rx-perk-lux-hardware"),
-        Perk(id: "emergency", page: .family, title: "rx.perks.emergency.title",
-             subtitle: "rx.perks.emergency.subtitle", symbol: "lifepreserver.fill", art: "rx-perk-lux-emergency"),
         Perk(id: "passkeys", page: .autofill, title: "Passkeys", subtitle: "rx.perks.passkeys.subtitle",
              symbol: "person.badge.key.fill", art: "rx-perk-lux-passkey"),
         Perk(id: "travel", page: .travel, title: "Travel Mode", subtitle: "rx.perks.travel.subtitle",
@@ -205,35 +211,24 @@ struct RXPerkCarousel: View {
     ]
 
     var body: some View {
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: RX.Space.m) {
-                ForEach(Self.perks) { perk in
-                    link(perk)
-                        .frame(width: RX.Metrics.perkCarouselTileWidth)
-                        .accessibilityIdentifier("\(idPrefix).\(perk.id)")
-                }
-            }
-            .scrollTargetLayout()
+        RXCarousel(nil, items: Self.perks, bleed: bleed, position: $position) { perk in
+            link(perk)
+                .frame(width: RX.Metrics.perkCarouselTileWidth)
+                .accessibilityIdentifier("\(idPrefix).\(perk.id)")
         }
-        .scrollIndicators(.hidden)
-        .scrollTargetBehavior(.viewAligned)
-        .scrollPosition($position)
         .task {
             guard let id = Self.demoPerk else { return }
             try? await Task.sleep(for: .milliseconds(500))
             position.scrollTo(id: id, anchor: .leading)
         }
-        .contentMargins(.horizontal, bleed, for: .scrollContent)
-        .padding(.horizontal, -bleed)
-        .rxPressable()
+        .rxPress()
     }
 
     private func tile(_ perk: Perk) -> some View {
         PerkTile(title: Text(perk.title), subtitle: Text(perk.subtitle), systemImage: perk.symbol, art: Image(perk.art))
     }
 
-    /// iPhone: the page zooms out of its tile (its own source id, as Famille has two tiles and a
-    /// row). The Mac pushes the page by value, as its rows do.
+    /// iPhone: the page zooms out of its tile. The Mac pushes the page by value, as its rows do.
     @ViewBuilder private func link(_ perk: Perk) -> some View {
         #if os(iOS)
         NavigationLink {
@@ -264,14 +259,13 @@ struct RXAvatar: View {
             if let photo {
                 photo.resizable().scaledToFill()
             } else {
-                Text(initials.isEmpty ? "?" : initials)
-                    .font(.system(size: size * 0.38, weight: .bold))
+                Text(verbatim: initials.isEmpty ? "?" : initials)
+                    .font(Theme.RX.Glyph.font(size * 0.38, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(
                         LinearGradient(
-                            colors: [Color(red: 0x8B / 255, green: 0x89 / 255, blue: 0xF0 / 255),
-                                     Color(red: 0x4B / 255, green: 0x48 / 255, blue: 0xC9 / 255)],
+                            colors: Theme.RX.Wash.avatar,
                             startPoint: UnitPoint(x: 0.2, y: 0), endPoint: UnitPoint(x: 0.8, y: 1)))
             }
         }
@@ -289,6 +283,7 @@ struct RXAvatar: View {
 /// listed is a feature of this build, so nothing here is invented.
 struct RXPlanPage: View {
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric(relativeTo: .largeTitle) private var planNameSize: CGFloat = 52
 
     private typealias RX = Theme.RX
 
@@ -300,11 +295,13 @@ struct RXPlanPage: View {
                 GlassButton(Text("rx.plan.back"), systemImage: "chevron.left", onPhoto: true) { dismiss() }
                     .accessibilityIdentifier("rx.plan.back")
                 #endif
-                // The plan name big and centred, a line under it, then its actions.
+                // The plan name big and centred, a line under it.
                 VStack(spacing: RX.Space.s) {
+                    // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
                     Text(verbatim: "Plus")
-                        .font(.system(size: 52, weight: .bold))
+                        .font(RX.Typography.display.font(size: planNameSize))
                         .tracking(-1.5)
+                        .dbText(maxLines: 1, minimumScale: 0.7)
                     Text("rx.plan.tagline")
                         .rxFont(.callout)
                         .opacity(0.75)
@@ -315,30 +312,23 @@ struct RXPlanPage: View {
                 .padding(.top, RX.Space.xl)
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
-                QuickActionRow {
-                    action(.family, Text("rx.plan.action.members"), "person.2.fill")
-                    action(.devices, Text(SettingsPage.devices.title), "laptopcomputer.and.iphone")
-                    action(.vaults, Text(SettingsPage.vaults.title), "lock.rectangle.stack.fill")
-                    action(.security, Text(SettingsPage.security.title), "lock.shield.fill")
-                }
-                .rxPressable()
-                .padding(.top, RX.Space.s)
             }
+            .padding(.bottom, RX.Space.l)
         } sheet: {
             VStack(spacing: RX.Space.l) {
                 RXSectionTitle(Text("rx.perks.title"))
                 RXPerkCarousel(bleed: RX.Space.gutter, idPrefix: "rx.plan.perk")
                 RXSectionTitle(Text("rx.plan.included"))
+                // The carousel opens Famille, Sécurité, Remplissage and Voyage: the list holds the
+                // rest, so no page has two entries on this screen.
                 RXCard {
                     benefit(.vaults, Text("rx.plan.vaults"))
                     benefit(.contacts, Text("rx.plan.sharing"))
-                    benefit(.family, Text("rx.plan.family"))
                     benefit(.organisation, Text("rx.plan.organisation"))
                     benefit(.devices, Text("rx.plan.devices"))
-                    benefit(.travel, Text("rx.plan.travel"))
                     benefit(.crypto, Text("rx.plan.crypto"))
                 }
-                .buttonStyle(.plain)
+                .rxPress()
                 Text("rx.plan.footnote")
                     .rxFont(.footnote)
                     .foregroundStyle(RX.Palette.textTertiary.color)
@@ -350,13 +340,6 @@ struct RXPlanPage: View {
         .toolbar(.hidden, for: .navigationBar)
         #endif
         .accessibilityIdentifier("rx.plan")
-    }
-
-    private func action(_ page: SettingsPage, _ title: Text, _ symbol: String) -> some View {
-        NavigationLink(value: page) {
-            QuickActionLabel(title, systemImage: symbol, onPhoto: true)
-        }
-        .accessibilityIdentifier("rx.plan.action.\(page.rawValue)")
     }
 
     private func benefit(_ page: SettingsPage, _ title: Text) -> some View {
@@ -405,7 +388,8 @@ struct RXProfileQRSheet: View {
                 Text(verbatim: name)
                     .rxFont(.title)
                     .foregroundStyle(RX.Palette.textPrimary.color)
-                    .lineLimit(1)
+                    .multilineTextAlignment(.center)
+                    .dbText(maxLines: 2)
                 if let image = PairingQRView.image(card, side: 720) {
                     Image(decorative: image, scale: 3)
                         .interpolation(.none)
@@ -449,13 +433,8 @@ struct RXProfileQRSheet: View {
 }
 
 extension View {
-    /// The pressed look of RX cards and tiles: `PressableButtonStyle` on iOS, a plain button on the
-    /// Mac (where the style is not built).
-    @ViewBuilder func rxPressable() -> some View {
-        #if os(iOS)
-        buttonStyle(PressableButtonStyle())
-        #else
-        buttonStyle(.plain)
-        #endif
+    /// The pressed look of RX cards and tiles: DesignBridge's 0.97 press on every platform.
+    func rxPressable() -> some View {
+        rxPress()
     }
 }
