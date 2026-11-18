@@ -49,6 +49,7 @@
 		202111EEBD135C59DC7E515D /* OnePassWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		20334980004F71AF3327D0EB /* SignInRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B49CB23CF87AA07996315C6 /* SignInRow.swift */; };
 		2055202225034EAB82503783 /* MacWifi.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D10599D0904E67A521ADAA /* MacWifi.swift */; };
+		20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2329A5202B5AB8206A7CD1 /* RXWatchtower.swift */; };
 		22300EE0A3C12E327C3E2B41 /* SyncChoiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ECDDE937D4E4BDE4D69A1F3 /* SyncChoiceSheet.swift */; };
 		2298C723CE7AB7505D0CCEFF /* TextFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC40A3955486B6535DA4A9 /* TextFieldEditor.swift */; };
 		23057CC4E6C58D81940A688A /* VaultsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC87C43ECF5DD8ED3E434B1 /* VaultsSettings.swift */; };
@@ -63,13 +64,14 @@
 		29FC439915D5B752F395D5E2 /* ItemsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF8989DA7AFD037445B1CA6 /* ItemsTab.swift */; };
 		2D6A4275912F83F19E16AA05 /* CryptoSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AAC5B8D38B4E80005624A80 /* CryptoSettingsView.swift */; };
 		2E2A86CDE42259837AD6756F /* KitShareController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95190D978CCD258D8EDDE9FB /* KitShareController.swift */; };
+		317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA37D294EA87B1E34D803C3D /* RXHome.swift */; };
 		3247164F181A54CAFFD132A5 /* GeneratorProfileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18CB70C246AF39BB3009C194 /* GeneratorProfileRow.swift */; };
 		34BB13688B8E23925412FBBD /* SharingBanners.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D2E7145A55971E67D14F50E /* SharingBanners.swift */; };
 		3590802262EF3AA389F7A464 /* MainCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CFF82E6E14142CF8F5C65CB /* MainCard.swift */; };
 		365D67E458DDD2161A54A8F8 /* Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B70DA81485FABCED6D9346 /* Sidebar.swift */; };
 		369F365C2C4F921040181B8B /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D108454111E28E82A0B04F6 /* DesignKit */; };
 		37B4C8CCA1F02D66CB98C113 /* DeveloperPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727D48838217D2195CC3694F /* DeveloperPage.swift */; };
-		38A6C409F0B1D7CF82704CB1 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = 2E4420EF75378FA3F99DE790 /* UpdateKit */; };
+		38A6C409F0B1D7CF82704CB1 /* CompanionLink in Frameworks */ = {isa = PBXBuildFile; productRef = 1BEDA96F4982E21986971703 /* CompanionLink */; };
 		3963C3EF4E51F8EE2A8BD086 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E9E954337A597A29939BD2F6 /* Localizable.xcstrings */; };
 		3966FEC30AD7CAC800F12F2C /* DemoWatchModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4807ECE87FEA8C5106548F /* DemoWatchModel.swift */; };
 		399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073AA66E7F67375CA2D6FA0 /* PublicSessionPicker.swift */; };
@@ -103,11 +105,13 @@
 		56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214B39B3C661A8FF88275223 /* OnboardingSteps.swift */; };
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
 		582745A6BDE935DA6DC285D3 /* LockControlIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */; };
+		59974DC3E1898277B453C5AB /* RXSplash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0535F8E6C7385339E4582FDA /* RXSplash.swift */; };
 		5A3B3C0264919DA7784F2977 /* AccountsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCFA55095EE1CC9CC844A31 /* AccountsSettings.swift */; };
 		5AD704952C61BCF3A67100E6 /* TravelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAF97588217514C64DBA911D /* TravelSettings.swift */; };
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
 		5ED861184AA47805C66DBFDF /* RemoveMemberSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */; };
 		5F4B28891DDA2D01DE8EEEAF /* OpenAndSignInUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0A6F20B1C5A245D948C3C8 /* OpenAndSignInUITests.swift */; };
+		60787E11A37E59DDCDBCC1A4 /* RXWallpaperSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063D005E39A84279670853E7 /* RXWallpaperSettings.swift */; };
 		608A23FFF1AF64C0A8871372 /* PrivacyShield.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */; };
 		6152162EB5A9365200634C97 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 34E15535E75AEAA562AE1539 /* VaultKit */; };
 		61DBC2193C4956098FF9B60B /* CopyTotpIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A88DEF8B8258DC7244DA0F /* CopyTotpIntent.swift */; };
@@ -115,6 +119,7 @@
 		63AF1BAAAF2E157DFE4DE771 /* OtpScanButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EC837A6CA8E1AFDC3709C80 /* OtpScanButton.swift */; };
 		63E48896A87A4F5F744D086B /* PairingQRView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA88FD32124721CCD59CA2F /* PairingQRView.swift */; };
 		640095EA49580D71EAE656DB /* SharingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB25B0FC46CD5AF0BE37BC2 /* SharingUITests.swift */; };
+		66028C66EB1315E81F2C79BC /* RXMacSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ECD33A35C0C4AE83116C22C /* RXMacSettings.swift */; };
 		6632869371D8005F4FA8616D /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 4589B26BB420AF0E483B2C36 /* InfoPlist.xcstrings */; };
 		67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */; };
 		6836074F1CF5DEF5FFD74991 /* ItemListColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */; };
@@ -167,13 +172,14 @@
 		9A242C6769B71380072A5909 /* ChangePasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6608A2696A8CFEDC8DD3AD5 /* ChangePasswordSheet.swift */; };
 		9AF91C5D751590EEA1D3EB23 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 2BD7EC0A628B2ABE8D58F0A8 /* PrivacyInfo.xcprivacy */; };
 		9C373AB08DC115C907C85D82 /* MembersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3312802FBAE76D180E4D396E /* MembersView.swift */; };
+		9C46F2D4C857F51619349A63 /* DesignBridgeUITesting in Frameworks */ = {isa = PBXBuildFile; productRef = E07A56860FA4A2C7B70E91AA /* DesignBridgeUITesting */; };
 		9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD7A17DB13CA04B2F0C4933 /* AddressEditor.swift */; };
 		9DE84FC2711722167F45A359 /* MoneyNumberEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */; };
 		9E735A256691AD70E64876A6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */; };
 		9EA3106FF4DD38C55D75BE0B /* OrgJoinRequestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8ADF48C0C6787EDC5CCD5B5 /* OrgJoinRequestSheet.swift */; };
 		9EA53D0BF2DA9CB15911C35D /* WatchtowerPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6033154613CA6480B3B3BA6B /* WatchtowerPage.swift */; };
 		9F12A8CA59C3C016AD6098EA /* SafetyNumberView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CFFAEB23B34F56116FCABF /* SafetyNumberView.swift */; };
-		A01A958E22C1E8ABA30D30A9 /* CompanionLink in Frameworks */ = {isa = PBXBuildFile; productRef = 1BEDA96F4982E21986971703 /* CompanionLink */; };
+		A01A958E22C1E8ABA30D30A9 /* GlanceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3FCA6BEE85156D42B867CBF8 /* GlanceKit */; };
 		A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CBA904F1F157D072B427852 /* ReadOnlyFieldView.swift */; };
 		A4381FA9F265F6360D1A4C49 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E7BF144A8111B507F90B1D7 /* PrivacyInfo.xcprivacy */; };
 		A44DBA37E311FC25A3D56F2C /* OrgCreateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22D05EF0D636B20D9A8FD08D /* OrgCreateSheet.swift */; };
@@ -186,8 +192,9 @@
 		AC97612BBB4918DE3AF1B3FE /* AgentRequestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79712E88469993C8B12D6D /* AgentRequestView.swift */; };
 		AD29CFEF6D3AB96633FA488F /* SplitBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83485D924585FA30495DE07 /* SplitBrowseView.swift */; };
 		AE847DC25AA06BC3F79CC79E /* ContactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2E88614A593E5B6EA90CF4 /* ContactsView.swift */; };
-		AF0461461E7B8ECC023C804A /* GlanceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3FCA6BEE85156D42B867CBF8 /* GlanceKit */; };
+		AF0461461E7B8ECC023C804A /* DesignBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = E139DFB657B6553194CAD9DC /* DesignBridgeKit */; };
 		AF3609B18E4B8015227978EA /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 845CD390D016AFF7270EF38F /* PrivacyInfo.xcprivacy */; };
+		AF3D0314E486AE188C583518 /* RXBridgeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4287066FEEE80DF7B6BF8D9E /* RXBridgeUITests.swift */; };
 		AF4F4FF3F65C0D9A3CDEF5E6 /* GeneratePasswordIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E39401146054BC9E721F184 /* GeneratePasswordIntent.swift */; };
 		AFBE12EE3D68AE79110EA0D1 /* ImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */; };
 		B19D7967A80446677BDC9032 /* PhoneTabsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */; };
@@ -202,6 +209,7 @@
 		B716F92C9616BABA814C0AF7 /* OnePassCore in Frameworks */ = {isa = PBXBuildFile; productRef = 451A77F800231FE2450B58B4 /* OnePassCore */; };
 		B79C51D23F0756ECAC48EBCE /* CompanionLink in Frameworks */ = {isa = PBXBuildFile; productRef = 958DAB1110F5AA509D48EAC7 /* CompanionLink */; };
 		B79CBE1CA10296A11E15570C /* HotspotInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFF1217DA8BF36DC3AA5A9E /* HotspotInstaller.swift */; };
+		B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */; };
 		B847A67A6921D12461A050AB /* SafariSetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */; };
 		BB3901D1319A800CA20F27D9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 29816FC64123CECF0063156E /* PrivacyInfo.xcprivacy */; };
 		BBD33D1A14745D3CC8C23455 /* CryptoCoinView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98AB73D4EBAF2F2ABEB4135 /* CryptoCoinView.swift */; };
@@ -220,6 +228,7 @@
 		C468E1114DE58EEDDBE28A0A /* OnePassShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 123B03A83CDA95FC02A7BE8C /* OnePassShortcuts.swift */; };
 		C500D24FF75EEF70D090DF1D /* RecoverWithHelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EB124448D2A483FEE5EC583 /* RecoverWithHelpView.swift */; };
 		C64221C5F075E676EF1D3240 /* DeveloperSettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12E0E8286297CA68D0517E2 /* DeveloperSettingsPage.swift */; };
+		C668F80B28DEE414C8672EBD /* RXArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 426C7E70D70010F31C18D606 /* RXArt.swift */; };
 		C6939A7EE2BD033BC34E31DA /* RevokedDeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088FED1C489272E05F9E76CC /* RevokedDeviceView.swift */; };
 		C90860D5CEE2203B6ADB77C2 /* Nearby.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF8AF3D2E817BD4D4E9F0520 /* Nearby.swift */; };
 		C93F7FDF7FE9B6D24F6E3D19 /* DemoCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 430C9CAE5FD32B895AA0C129 /* DemoCrypto.swift */; };
@@ -229,11 +238,13 @@
 		CF053700F315CA00546962B2 /* ProfileUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598C991D4D92485187F7DEBE /* ProfileUITests.swift */; };
 		D09283BD32DDA65DBC4BD2BE /* AppShortcuts.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 17FDCEFF95D8CB4ED8362F26 /* AppShortcuts.xcstrings */; };
 		D0DF1CC20B088C7C36E85415 /* IconLibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 422181E1C469D47ED766E877 /* IconLibraryUITests.swift */; };
+		D1C9951D80B0D68219B7508E /* RXMacSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85F5016C8A990AA47DDBDF92 /* RXMacSidebar.swift */; };
 		D1E20AAFA715394200DE33E0 /* AppIconSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0440AEC79751525D4647513 /* AppIconSettings.swift */; };
 		D21C020FD752FEE1668BF6D7 /* PasswordHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */; };
 		D2F831CB6B3AF0F1C4903AC6 /* CandidateListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */; };
 		D35C6AC2BAD5E6311803E2F8 /* EditorHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96B4CC034C3AE3131FB403A0 /* EditorHeader.swift */; };
 		D5C5B1A5817808ED47A986E0 /* Commands.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */; };
+		D60EF86E9F32C7956CE0405A /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = 2E4420EF75378FA3F99DE790 /* UpdateKit */; };
 		D61F8F4E86F33CC8B8CA8DC3 /* WifiAutoController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */; };
 		D830BB8FBE565123BF120EC6 /* onepass-icons.bin in Resources */ = {isa = PBXBuildFile; fileRef = E364C6482B7E724032103715 /* onepass-icons.bin */; };
 		D91670480E50E01B5C477A14 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */; };
@@ -243,6 +254,7 @@
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
 		E04761763662B47771A1A831 /* LockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D40167C0D7679C74A6D594D /* LockView.swift */; };
 		E0F05CC1047E16590D806097 /* TagEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0629736662C4143CF229997B /* TagEditor.swift */; };
+		E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A896751814517F3556294B /* RXMacWatchtower.swift */; };
 		E1DE2AFB91E7CB2AE9BC0003 /* PairingPasswordStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7F408977317BA9B16FDD68 /* PairingPasswordStep.swift */; };
 		E1F9ECC90A514F5FE2FE9875 /* AllAccountsSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A106C3614367687097B3B54C /* AllAccountsSearch.swift */; };
 		E3994E68351E59E6E7D53126 /* SiteSetupBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D838BBE555FF15937D141DE6 /* SiteSetupBanner.swift */; };
@@ -268,6 +280,7 @@
 		F40BBE052065BF7A31B7C236 /* ItemListRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9119720BF7C06235BF6ED5AC /* ItemListRow.swift */; };
 		F44F6C0E0EFB3EA752AB6B93 /* CoinIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 470584D1B48820546C712920 /* CoinIcon.swift */; };
 		F5E7599D30A18148EE9AD7D7 /* OnePassWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DF4D9AF4B114E1B41881EA27 /* OnePassWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5C3BD94740BA327E299532A /* RXSettingsView.swift */; };
 		F7E347F60EB684704FAD9336 /* CryptoPortfolioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681C202A7F456BC917F549CE /* CryptoPortfolioView.swift */; };
 		F7ED18E1061488E44AB2E8F5 /* GlanceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 55B85CDB4BCDFD6D0AE89FF0 /* GlanceKit */; };
 		F9F1D47BCFAE40F3A44CC777 /* OnePassWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70D198370DE24CFF6A929681 /* OnePassWatchApp.swift */; };
@@ -396,8 +409,11 @@
 		00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WifiAutoController.swift; sourceTree = "<group>"; };
 		013A476F2676DCA4286E22C9 /* VaultKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VaultKit; path = VaultKit; sourceTree = SOURCE_ROOT; };
 		0151B9E949BF8C50E53F3176 /* BarcodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeEditor.swift; sourceTree = "<group>"; };
+		01A896751814517F3556294B /* RXMacWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacWatchtower.swift; sourceTree = "<group>"; };
 		047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelDetection.swift; sourceTree = "<group>"; };
+		0535F8E6C7385339E4582FDA /* RXSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSplash.swift; sourceTree = "<group>"; };
 		0629736662C4143CF229997B /* TagEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditor.swift; sourceTree = "<group>"; };
+		063D005E39A84279670853E7 /* RXWallpaperSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXWallpaperSettings.swift; sourceTree = "<group>"; };
 		0678ACD447C474D9C9FA95CA /* AppModel+Accounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Accounts.swift"; sourceTree = "<group>"; };
 		07F862061FDCD55EF5FD6C95 /* SecretKeyScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretKeyScanner.swift; sourceTree = "<group>"; };
 		088FED1C489272E05F9E76CC /* RevokedDeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevokedDeviceView.swift; sourceTree = "<group>"; };
@@ -423,6 +439,7 @@
 		1AA46BB707E6DFF25141F358 /* AddAccountSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccountSheet.swift; sourceTree = "<group>"; };
 		1B93AA639B4849F20B357AE9 /* CryptoReceiveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoReceiveSheet.swift; sourceTree = "<group>"; };
 		1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewItemMenu.swift; sourceTree = "<group>"; };
+		1ECD33A35C0C4AE83116C22C /* RXMacSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacSettings.swift; sourceTree = "<group>"; };
 		1EFF1217DA8BF36DC3AA5A9E /* HotspotInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotspotInstaller.swift; sourceTree = "<group>"; };
 		1F391F505B02B771276A46D5 /* ItemLinkPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemLinkPicker.swift; sourceTree = "<group>"; };
 		1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariSetupViews.swift; sourceTree = "<group>"; };
@@ -463,6 +480,8 @@
 		3FFB44CC51A27D430FC17378 /* DemoData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoData.swift; sourceTree = "<group>"; };
 		40A16278188C339AA5210876 /* IdentityChangeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityChangeView.swift; sourceTree = "<group>"; };
 		422181E1C469D47ED766E877 /* IconLibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconLibraryUITests.swift; sourceTree = "<group>"; };
+		426C7E70D70010F31C18D606 /* RXArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXArt.swift; sourceTree = "<group>"; };
+		4287066FEEE80DF7B6BF8D9E /* RXBridgeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXBridgeUITests.swift; sourceTree = "<group>"; };
 		42BE6F635EE865D00B34DB84 /* FoldLayoutUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldLayoutUITests.swift; sourceTree = "<group>"; };
 		430C9CAE5FD32B895AA0C129 /* DemoCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoCrypto.swift; sourceTree = "<group>"; };
 		4589B26BB420AF0E483B2C36 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -476,7 +495,9 @@
 		49841660587A002A57EE289D /* PublicSessionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicSessionMonitor.swift; sourceTree = "<group>"; };
 		4A28B0CFB737900012034BCE /* EditorFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorFieldRow.swift; sourceTree = "<group>"; };
 		4B7F408977317BA9B16FDD68 /* PairingPasswordStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPasswordStep.swift; sourceTree = "<group>"; };
+		4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacHome.swift; sourceTree = "<group>"; };
 		4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyNumberEditor.swift; sourceTree = "<group>"; };
+		4D6B5E5475C277882630047F /* DesignBridgeTesting */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignBridgeTesting; path = Vendor/DesignBridge/DesignBridgeTesting; sourceTree = SOURCE_ROOT; };
 		4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassSafariMobile.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4FAA14239035AEBB97155D9B /* DevicesSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesSettings.swift; sourceTree = "<group>"; };
 		4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -496,6 +517,7 @@
 		5FCFA55095EE1CC9CC844A31 /* AccountsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSettings.swift; sourceTree = "<group>"; };
 		600D7CCE7887C2B9308B4DA4 /* ItemEditorModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEditorModel.swift; sourceTree = "<group>"; };
 		6033154613CA6480B3B3BA6B /* WatchtowerPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerPage.swift; sourceTree = "<group>"; };
+		60351DF902BFDB753FEF4690 /* DesignBridgeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignBridgeKit; path = Vendor/DesignBridge/DesignBridgeKit; sourceTree = SOURCE_ROOT; };
 		63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordHistoryView.swift; sourceTree = "<group>"; };
 		63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		64165D82E996859B750AAF94 /* OnePass.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OnePass.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -533,6 +555,7 @@
 		83445BEBCAE9923380128647 /* CryptoWalletWatchCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoWalletWatchCard.swift; sourceTree = "<group>"; };
 		845CD390D016AFF7270EF38F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		84C2A26BE6307FD1BDA2DD10 /* IconLibrarySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconLibrarySheet.swift; sourceTree = "<group>"; };
+		85F5016C8A990AA47DDBDF92 /* RXMacSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacSidebar.swift; sourceTree = "<group>"; };
 		863713D1483535E8956E5D18 /* SecretInputField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretInputField.swift; sourceTree = "<group>"; };
 		8640F0C29B5F0B1D165E88F7 /* CandidateListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandidateListView.swift; sourceTree = "<group>"; };
 		87D0707F2A1FF871B7D086F5 /* GlanceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceViews.swift; sourceTree = "<group>"; };
@@ -571,6 +594,7 @@
 		A9CD2D4CA386C947DB696B2C /* TravelReminderCenter+System.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TravelReminderCenter+System.swift"; sourceTree = "<group>"; };
 		AADC8BC0D910001EC096242B /* GlanceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceProvider.swift; sourceTree = "<group>"; };
 		AAF78448AAEC42C44F2E16FB /* ItemEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEntity.swift; sourceTree = "<group>"; };
+		AB2329A5202B5AB8206A7CD1 /* RXWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXWatchtower.swift; sourceTree = "<group>"; };
 		AF35143E318DDE2E8D4F84CE /* PageComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageComponents.swift; sourceTree = "<group>"; };
 		AF91253BDC4BD15D61A7EF70 /* RecoveryHelperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryHelperView.swift; sourceTree = "<group>"; };
 		B0C4A8E1F604636FF7658971 /* ShareVaultSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareVaultSheet.swift; sourceTree = "<group>"; };
@@ -600,6 +624,7 @@
 		C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoveMemberSheet.swift; sourceTree = "<group>"; };
 		C83485D924585FA30495DE07 /* SplitBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitBrowseView.swift; sourceTree = "<group>"; };
 		C89189A5B59E73F9B657D77B /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
+		CA37D294EA87B1E34D803C3D /* RXHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXHome.swift; sourceTree = "<group>"; };
 		CB8A13F593BFE7B0EEFA8FFE /* OrgConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrgConsole.swift; sourceTree = "<group>"; };
 		CEB25B0FC46CD5AF0BE37BC2 /* SharingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingUITests.swift; sourceTree = "<group>"; };
 		CFF11DA958080038BA1B310F /* IntegrityFailureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrityFailureView.swift; sourceTree = "<group>"; };
@@ -611,6 +636,7 @@
 		D45B0A2E7E89981FFB0AA858 /* OnePassWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnePassWidgetsBundle.swift; sourceTree = "<group>"; };
 		D51DD280F66567FADAA93DDD /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D53F785E56AE55B95035986B /* CompanionKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompanionKit; path = CompanionKit; sourceTree = SOURCE_ROOT; };
+		D5C3BD94740BA327E299532A /* RXSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSettingsView.swift; sourceTree = "<group>"; };
 		D6DA50BEC5F27CE8D01F0A5D /* AutoFillHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoFillHostApp.swift; sourceTree = "<group>"; };
 		D838BBE555FF15937D141DE6 /* SiteSetupBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteSetupBanner.swift; sourceTree = "<group>"; };
 		D8FA3E9BC65D3B546BAAE33A /* TextInsertionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInsertionView.swift; sourceTree = "<group>"; };
@@ -705,16 +731,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		ADD977B565E657294D7F9C1A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9C46F2D4C857F51619349A63 /* DesignBridgeUITesting in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BEF0711806BF64102FB9DA30 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */,
 				369F365C2C4F921040181B8B /* DesignKit in Frameworks */,
+				AF0461461E7B8ECC023C804A /* DesignBridgeKit in Frameworks */,
 				248F3D535D0FDBD091325B97 /* AppIntents.framework in Frameworks */,
-				AF0461461E7B8ECC023C804A /* GlanceKit in Frameworks */,
-				A01A958E22C1E8ABA30D30A9 /* CompanionLink in Frameworks */,
-				38A6C409F0B1D7CF82704CB1 /* UpdateKit in Frameworks */,
+				A01A958E22C1E8ABA30D30A9 /* GlanceKit in Frameworks */,
+				38A6C409F0B1D7CF82704CB1 /* CompanionLink in Frameworks */,
+				D60EF86E9F32C7956CE0405A /* UpdateKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -818,6 +853,9 @@
 				EEFF53CC1ED0153EE5BA51E4 /* ItemListColumn.swift */,
 				9119720BF7C06235BF6ED5AC /* ItemListRow.swift */,
 				1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */,
+				4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */,
+				85F5016C8A990AA47DDBDF92 /* RXMacSidebar.swift */,
+				01A896751814517F3556294B /* RXMacWatchtower.swift */,
 				F0B70DA81485FABCED6D9346 /* Sidebar.swift */,
 				C83485D924585FA30495DE07 /* SplitBrowseView.swift */,
 			);
@@ -977,6 +1015,7 @@
 				EE0A6F20B1C5A245D948C3C8 /* OpenAndSignInUITests.swift */,
 				598C991D4D92485187F7DEBE /* ProfileUITests.swift */,
 				5F1DA7C34CAC80C98F527B6B /* RunThroughUITests.swift */,
+				4287066FEEE80DF7B6BF8D9E /* RXBridgeUITests.swift */,
 				9EAD071C36B97EE03055B24A /* SafariAutofillUITests.swift */,
 				52A4C3E0C0617CEAB04F1977 /* SaveSheetWatch.swift */,
 				9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */,
@@ -1019,6 +1058,8 @@
 			isa = PBXGroup;
 			children = (
 				D53F785E56AE55B95035986B /* CompanionKit */,
+				60351DF902BFDB753FEF4690 /* DesignBridgeKit */,
+				4D6B5E5475C277882630047F /* DesignBridgeTesting */,
 				7FE4F3CB0CFA4BB2988A5A3B /* DesignKit */,
 				EC2CBAB173BD8B63CA2B2BF2 /* SafariRelay */,
 				7C7335F1B42AC0A2907BFC30 /* UpdateKit */,
@@ -1067,6 +1108,7 @@
 				DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */,
 				088FED1C489272E05F9E76CC /* RevokedDeviceView.swift */,
 				0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */,
+				0535F8E6C7385339E4582FDA /* RXSplash.swift */,
 				D01023E7F8B52E18C675B84F /* SafeExitViews.swift */,
 				863713D1483535E8956E5D18 /* SecretInputField.swift */,
 				DA59281B681069BA80A59493 /* Snapshot.swift */,
@@ -1153,6 +1195,7 @@
 				1F8A0A14957792EE5EDF2DCD /* BrowseRoot.swift */,
 				F0DD3EFE43A5A24EBBA6F716 /* Commands.swift */,
 				FF8AF3D2E817BD4D4E9F0520 /* Nearby.swift */,
+				426C7E70D70010F31C18D606 /* RXArt.swift */,
 				7B2925B4FDDDE6B2DE7EEA58 /* TravelSuggestionCard.swift */,
 				C3167F0DA8CE073FFD98680F /* VaultDialRefresh.swift */,
 			);
@@ -1224,6 +1267,8 @@
 				B6B6A1BAE0385A425AE55355 /* ItemZoom.swift */,
 				4681AE91A8FB719ABD3F23AC /* PhoneTabsView.swift */,
 				7907A548EB7701F8B71580BB /* ProfileView.swift */,
+				CA37D294EA87B1E34D803C3D /* RXHome.swift */,
+				AB2329A5202B5AB8206A7CD1 /* RXWatchtower.swift */,
 				75E35D6B7BAA0F2017F49CDF /* SearchTab.swift */,
 				0D2CBC8A40BF965B7FA9A227 /* WatchtowerTab.swift */,
 			);
@@ -1266,6 +1311,9 @@
 				6578DD1A294793BBA2E5AB8A /* IconCheckSettings.swift */,
 				2F45C46BA4FEB08CD8A7C5FE /* ImportSheet.swift */,
 				0D982919CC9E366DCF914D57 /* MigrationSheet.swift */,
+				1ECD33A35C0C4AE83116C22C /* RXMacSettings.swift */,
+				D5C3BD94740BA327E299532A /* RXSettingsView.swift */,
+				063D005E39A84279670853E7 /* RXWallpaperSettings.swift */,
 				1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */,
 				73396E5534184EF7CE76A170 /* SecuritySettings.swift */,
 				DBB7CFFC13A520CD1D6A54B6 /* SettingsView.swift */,
@@ -1471,6 +1519,7 @@
 			packageProductDependencies = (
 				4184F03FCF4EBB67CF1EFCEA /* VaultKit */,
 				1D108454111E28E82A0B04F6 /* DesignKit */,
+				E139DFB657B6553194CAD9DC /* DesignBridgeKit */,
 				3FCA6BEE85156D42B867CBF8 /* GlanceKit */,
 				1BEDA96F4982E21986971703 /* CompanionLink */,
 				2E4420EF75378FA3F99DE790 /* UpdateKit */,
@@ -1586,6 +1635,7 @@
 			buildConfigurationList = E89D4C634FA3E97BA544A1B8 /* Build configuration list for PBXNativeTarget "OnePassUITests" */;
 			buildPhases = (
 				768BDB3C2AFD69D8AA3CF58D /* Sources */,
+				ADD977B565E657294D7F9C1A /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -1594,6 +1644,7 @@
 			);
 			name = OnePassUITests;
 			packageProductDependencies = (
+				E07A56860FA4A2C7B70E91AA /* DesignBridgeUITesting */,
 			);
 			productName = OnePassUITests;
 			productReference = 15DA91325D7B74C10AFBA3A6 /* OnePassUITests.xctest */;
@@ -1667,6 +1718,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				510B0CA8D60DE962F549B244 /* XCLocalSwiftPackageReference "CompanionKit" */,
+				FB473F376F308A2638D9325E /* XCLocalSwiftPackageReference "Vendor/DesignBridge/DesignBridgeKit" */,
+				8E59CAED8FFA8372074039D9 /* XCLocalSwiftPackageReference "Vendor/DesignBridge/DesignBridgeTesting" */,
 				817B225C6984734AD379E708 /* XCLocalSwiftPackageReference "DesignKit" */,
 				70AE7BA97676A404C610A1BC /* XCLocalSwiftPackageReference "SafariExtension/SafariRelay" */,
 				FD510938C1541B6A28373391 /* XCLocalSwiftPackageReference "UpdateKit" */,
@@ -1976,6 +2029,7 @@
 				1C63F11B5CCD3A82A87A6479 /* NoSaveSheetUITests.swift in Sources */,
 				4FC983E3F5EEF45E81E52160 /* OnboardingAndItemUITests.swift in Sources */,
 				CF053700F315CA00546962B2 /* ProfileUITests.swift in Sources */,
+				AF3D0314E486AE188C583518 /* RXBridgeUITests.swift in Sources */,
 				90165B8F84F9DB835D3413F4 /* RunThroughUITests.swift in Sources */,
 				EA6C3BE88D8E24B9C48CDC9F /* SaveSheetWatch.swift in Sources */,
 				67FC2F53EA5276C5C3EBC00E /* ScreenshotUITests.swift in Sources */,
@@ -2127,6 +2181,16 @@
 				0792B9A17998C8FFA5C457A9 /* PublicSessionMonitor.swift in Sources */,
 				399C50B0FD217D1ED10BB0D4 /* PublicSessionPicker.swift in Sources */,
 				4FB0D84800B68A1EBF559893 /* PublicSessionView.swift in Sources */,
+				C668F80B28DEE414C8672EBD /* RXArt.swift in Sources */,
+				317B69F6F3960BAAA0C1F21D /* RXHome.swift in Sources */,
+				B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */,
+				66028C66EB1315E81F2C79BC /* RXMacSettings.swift in Sources */,
+				D1C9951D80B0D68219B7508E /* RXMacSidebar.swift in Sources */,
+				E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */,
+				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
+				59974DC3E1898277B453C5AB /* RXSplash.swift in Sources */,
+				60787E11A37E59DDCDBCC1A4 /* RXWallpaperSettings.swift in Sources */,
+				20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,
 				15FB8F91DBC0162C7EBD40AC /* ReceivedItemsView.swift in Sources */,
 				C500D24FF75EEF70D090DF1D /* RecoverWithHelpView.swift in Sources */,
@@ -2344,8 +2408,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
-				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -2569,8 +2631,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
-				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -3135,8 +3195,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
-				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -3542,8 +3600,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				ONEPASS_LOCATION_PURPOSE = "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.";
-				"ONEPASS_LOCATION_PURPOSE[sdk=macosx*]" = "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(ONEPASS_BUNDLE_ID_PREFIX)";
 				PRODUCT_NAME = OnePass;
 				SDKROOT = auto;
@@ -3940,6 +3996,14 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = VaultKit;
 		};
+		8E59CAED8FFA8372074039D9 /* XCLocalSwiftPackageReference "Vendor/DesignBridge/DesignBridgeTesting" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/DesignBridge/DesignBridgeTesting;
+		};
+		FB473F376F308A2638D9325E /* XCLocalSwiftPackageReference "Vendor/DesignBridge/DesignBridgeKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/DesignBridge/DesignBridgeKit;
+		};
 		FD510938C1541B6A28373391 /* XCLocalSwiftPackageReference "UpdateKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = UpdateKit;
@@ -3998,6 +4062,14 @@
 		BF0ADEA62603ADADE306FF9B /* SafariRelay */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SafariRelay;
+		};
+		E07A56860FA4A2C7B70E91AA /* DesignBridgeUITesting */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DesignBridgeUITesting;
+		};
+		E139DFB657B6553194CAD9DC /* DesignBridgeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DesignBridgeKit;
 		};
 		EABAE413D46D55DEEAFD8298 /* DesignKit */ = {
 			isa = XCSwiftPackageProductDependency;

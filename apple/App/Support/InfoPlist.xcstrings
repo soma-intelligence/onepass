@@ -103,6 +103,66 @@
           }
         }
       }
+    },
+    "NSLocationUsageDescription" : {
+      "comment" : "",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass uses your location to add a place to an item, to list the items nearby and to read the name of this Mac's Wi-Fi network (Automatic Wi-Fi). It stays on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa tu ubicación para añadir un lugar a un elemento, mostrar los elementos cercanos y leer el nombre de la red Wi-Fi de este Mac (Wi-Fi automático). Se queda en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa la tua posizione per aggiungere un luogo a un elemento, elencare gli elementi nelle vicinanze e leggere il nome della rete Wi-Fi di questo Mac (Wi-Fi automatico). Resta su questo dispositivo."
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "comment" : "",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass uses your location to add a place to an item and to list the items nearby. It stays on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa tu ubicación para añadir un lugar a un elemento y mostrar los elementos cercanos. Se queda en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass usa la tua posizione per aggiungere un luogo a un elemento ed elencare gli elementi nelle vicinanze. Resta su questo dispositivo."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

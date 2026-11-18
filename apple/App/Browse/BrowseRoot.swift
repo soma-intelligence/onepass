@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -8,6 +9,8 @@ import VaultKit
 /// drop an edited draft.
 struct BrowseRoot: View {
     @Environment(AppModel.self) private var model
+    /// The RX look shows every toast through DesignBridgeKit (`RXToastBridge`).
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,8 +23,16 @@ struct BrowseRoot: View {
         return layout
             #if os(iOS) || os(visionOS)
             // Réglages: a sheet everywhere, opened on iPhone from the account menu.
-            .sheet(isPresented: settingsSheetShown) {
+            .sheet(isPresented: settingsAsSheet) {
                 SettingsView()
+            }
+            #endif
+            #if os(iOS)
+            // RX: Réglages full screen and see-through, the screen under it blurred by each page
+            // (RXFrostedBackdrop), as in the owner's reference.
+            .fullScreenCover(isPresented: rxDesign ? settingsSheetShown : .constant(false)) {
+                SettingsView()
+                    .presentationBackground(.clear)
             }
             #endif
             // "Générer un mot de passe" Control (`onepass://generator`): the value is only copied.
@@ -102,7 +113,7 @@ struct BrowseRoot: View {
             // On iPhone the new item sheet carries its own confirmation (shown over the sheet).
             .discardConfirmation(active: !phoneNewItemShown)
             .overlay(alignment: .bottom) {
-                if let toast = model.toast {
+                if !rxDesign, let toast = model.toast {
                     ToastBanner(toast: toast)
                         .padding(.bottom, 18)
                         .transition(toastTransition)
@@ -110,6 +121,7 @@ struct BrowseRoot: View {
                 }
             }
             .animation(toastAnimation, value: model.toast)
+            .modifier(RXToastBridge(active: rxDesign))
             // Not over the iPhone tabs: on iOS 27 this tap gesture swallows the taps of the navigation
             // links below it (rows, Réglages pages); the tabs note activity on navigation instead.
             .simultaneousGesture(
@@ -198,6 +210,15 @@ struct BrowseRoot: View {
         #endif
     }
 
+    /// Réglages as a sheet: everywhere but the RX iPhone, which covers the full screen.
+    private var settingsAsSheet: Binding<Bool> {
+        #if os(iOS)
+        rxDesign ? .constant(false) : settingsSheetShown
+        #else
+        settingsSheetShown
+        #endif
+    }
+
     private var settingsSheetShown: Binding<Bool> {
         Binding(
             // iPhone tabs too: Réglages left the tab bar for the account menu.
@@ -260,12 +281,38 @@ enum ToastKind: Equatable {
 struct Toast: Equatable, Hashable {
     let text: String
     let kind: ToastKind
+    /// Undo or Retry: a button in the toast that runs the handler and closes it.
+    var action: ToastAction?
     /// Two identical messages in a row are two notifications.
     let id = UUID()
+
+    static func == (lhs: Toast, rhs: Toast) -> Bool { lhs.id == rhs.id }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+/// The button of a toast. `undo` and `retry` map to the DesignBridgeKit factories of the RX look.
+struct ToastAction: Sendable {
+    enum Kind: Sendable { case undo, retry, other }
+
+    let kind: Kind
+    let title: String
+    let handler: @MainActor @Sendable () -> Void
+
+    /// Undo of a reversible action (archive, trash, a removed field...).
+    static func undo(_ handler: @escaping @MainActor @Sendable () -> Void) -> ToastAction {
+        ToastAction(kind: .undo, title: DBStrings.undo, handler: handler)
+    }
+
+    /// Try again after a failure.
+    static func retry(_ handler: @escaping @MainActor @Sendable () -> Void) -> ToastAction {
+        ToastAction(kind: .retry, title: DBStrings.retry, handler: handler)
+    }
 }
 
 /// The notification capsule at the bottom of the window: an icon in the kind's color, the text.
 struct ToastBanner: View {
+    @Environment(AppModel.self) private var model
     let toast: Toast
 
     private var symbol: String {
@@ -293,6 +340,17 @@ struct ToastBanner: View {
             Text(toast.text)
                 .font(.callout.weight(.medium))
                 .lineLimit(2)
+            if let action = toast.action {
+                Button(action.title) {
+                    model.dismissToast()
+                    action.handler()
+                }
+                .font(.callout.weight(.semibold))
+                .buttonStyle(.borderless)
+                .frame(minHeight: Theme.RX.Metrics.minTapTarget)
+                .contentShape(.rect)
+                .accessibilityIdentifier("browse.toast.action")
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -304,8 +362,56 @@ struct ToastBanner: View {
         .overlay {
             if toast.kind == .error { Capsule().strokeBorder(.red.opacity(0.45)) }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isStaticText)
+        // With a button, its children stay reachable (VoiceOver can press Undo).
+        .accessibilityElement(children: toast.action == nil ? .combine : .contain)
+        .accessibilityAddTraits(toast.action == nil ? .isStaticText : [])
         .accessibilityIdentifier("browse.toast")
+    }
+}
+
+/// RX look: every `model.showToast` (copied, saved, every error) goes to the DesignBridgeKit host
+/// at the root (`rxBridgeRoot`): one glass toast under the navigation bar, announced, with haptics, success
+/// 1.8 s and errors 6 s. The classic banner stays for the classic look.
+private struct RXToastBridge: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Environment(\.toast) private var toast
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        // Initial too: a toast set just before the browse screens appear (a link handled right
+        // after the unlock) still reaches the host.
+        // The model remembers what it already handed over: a bridge that appears again (tab switch,
+        // rebuild) never shows the same toast twice or runs its Undo twice.
+        content.onChange(of: model.toast, initial: true) { _, shown in
+            guard active, let shown, model.forwardToast(shown) else { return }
+            toast(Self.toast(for: shown, model: model))
+        }
+    }
+
+    /// The host gets a lookup by toast id, never the handler itself: a lock empties the model's
+    /// table, so a late tap does nothing and the captured values are released.
+    static func toast(for shown: Toast, model: AppModel) -> DBToast {
+        if let action = shown.action {
+            let id = shown.id
+            let handler: @MainActor @Sendable () -> Void = { [weak model] in model?.runToastAction(id) }
+            switch action.kind {
+            case .undo:
+                return .undo(shown.text, undoTitle: action.title, perform: handler)
+            case .retry:
+                return .retry(shown.text, retryTitle: action.title, perform: handler)
+            case .other:
+                let button = DBToastButton(action.title, handler: handler)
+                switch shown.kind {
+                case .success: return .success(shown.text, action: button)
+                case .error: return .error(shown.text, action: button)
+                case .info: return .info(shown.text, action: button)
+                }
+            }
+        }
+        switch shown.kind {
+        case .success: return .success(shown.text)
+        case .error: return .error(shown.text)
+        case .info: return .info(shown.text)
+        }
     }
 }

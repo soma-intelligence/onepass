@@ -3,7 +3,7 @@
   "languages": ["fr", "en", "es", "it"],
   "apple": {
     "catalogs": "apple/**/*.xcstrings",
-    "exclude": ["/.build/", "/build/", "/DerivedData/"],
+    "exclude": ["/.build/", "/build/", "/DerivedData/", "/apple/Vendor/"],
     "generated": {
       "apple/VaultKit/Sources/VaultKit/Resources/CoreLabels.xcstrings": "apple/scripts/core_labels/gen.py"
     },

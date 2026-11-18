@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -128,6 +129,8 @@ struct ItemListColumn: View {
     @State private var choosingCategory = false
     /// Mac: the search field under the header, shown or hidden by its icon (⌘F always shows it).
     @AppStorage("onepass.browse.searchShown", store: AppModel.browseDefaults) private var searchShown = true
+    /// The RX look (Réglages > Général > Nouveau design): the count and the composition strip head the list.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     #if os(macOS)
     /// Mac: two or more rows picked at once (⌘ or ⇧ click, ⌘A). Empty while one item is shown in
     /// the detail column: that one lives in `model.selectedItem`.
@@ -250,6 +253,11 @@ struct ItemListColumn: View {
         // No scroll bar parked on the column's edge: the trackpad or wheel still scrolls.
         .scrollIndicators(.never)
         #endif
+        // RX: the count in rolling digits over the composition strip (All Items v2 signature);
+        // the chosen type stays lit. Above the rows, never over them.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if rxDesign, !items.isEmpty { rxHeader(count: items.count) }
+        }
         // A new sidebar filter starts on every type again.
         .onChange(of: model.selection) { categoryFilter = nil }
         .focusedValue(\.itemListFocused, true)
@@ -368,6 +376,27 @@ struct ItemListColumn: View {
             }
             #endif
         }
+    }
+
+    /// RX: the list's count and its composition by type (one segment per type, most items first).
+    private func rxHeader(count: Int) -> some View {
+        let segments = presentTypes
+            .sorted { $0.count > $1.count }
+            .map { RXCompositionStrip.Segment(id: NewItemMenu.key($0.type), count: $0.count, color: ItemCategory.of($0.type).color) }
+        return VStack(alignment: .leading, spacing: Theme.RX.Space.s) {
+            Text(Self.countLabel(count))
+                .rxFont(.headline)
+                .foregroundStyle(Theme.RX.Palette.textPrimary.color)
+                .dbRollingNumber(value: Double(count))
+                .accessibilityIdentifier("rx.list.count")
+            if segments.count > 1 {
+                RXCompositionStrip(segments, focus: shownCategory.map(NewItemMenu.key))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.RX.Space.l)
+        .padding(.top, Theme.RX.Space.s)
+        .padding(.bottom, Theme.RX.Space.m)
     }
 
     #if os(macOS)

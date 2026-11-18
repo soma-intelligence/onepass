@@ -59,8 +59,16 @@ final class SiteSetupUITests: XCTestCase {
         XCTAssertTrue(reveal(restore).exists, "no Rétablir in the item's Watchtower section")
         restore.tap()
         XCTAssertTrue(restore.waitForNonExistence(timeout: Self.uiTimeout), "check still ignored")
-        app.swipeDown()
-        app.swipeDown()
+        // The detail is a plain stack: the banner is back in the tree before it is scrolled to.
         XCTAssertTrue(banner.waitForExistence(timeout: Self.uiTimeout), "banner not back after Rétablir")
+        // Back up, one swipe at a time while the banner is out of reach: in the RX look the detail
+        // is a zoom transition, so a swipe down once at the top closes it (the item is gone).
+        var tries = 0
+        while !banner.isHittable, tries < 8 {
+            app.scrollViews.firstMatch.swipeDown()
+            tries += 1
+        }
+        XCTAssertTrue(banner.isHittable, "banner not reachable after Rétablir")
+        XCTAssertTrue(element("item.title").exists, "the item closed while scrolling back up")
     }
 }

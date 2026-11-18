@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import ImageIO
 #if os(iOS)
@@ -32,13 +33,16 @@ struct GeneralSettings: View {
         // Read so the page redraws when a setting changes.
         let _ = model.settingsRevision
         Form {
+            Group {
             #if os(macOS)
             // iPhone and iPad: Profil is the account row on top of Réglages.
             ProfileSection()
             #endif
             #if os(iOS)
             AppearanceSection()
+            RXDesignSection()
             AppIconSection()
+            WallpaperSection()
             #endif
             Section {
                 Picker("settings.general.autoLock", selection: Binding(
@@ -58,9 +62,9 @@ struct GeneralSettings: View {
                 .accessibilityIdentifier("settings.siteIcons")
             } footer: {
                 if shared {
-                    Text("settings.general.autoLock.sharedFooter")
+                    SettingsFootnote("settings.general.autoLock.sharedFooter")
                 } else {
-                    Text("settings.general.siteIcons.footer")
+                    SettingsFootnote("settings.general.siteIcons.footer")
                 }
             }
             WifiAutoSection()
@@ -70,7 +74,7 @@ struct GeneralSettings: View {
                 }
                 .accessibilityIdentifier("settings.import")
             } footer: {
-                Text("settings.general.import.footer")
+                SettingsFootnote("settings.general.import.footer")
             }
             Section {
                 Button("settings.general.backup.export", systemImage: "square.and.arrow.down.on.square") {
@@ -87,11 +91,14 @@ struct GeneralSettings: View {
                 .foregroundStyle(.red)
                 .accessibilityIdentifier("settings.backup.plaintext")
             } header: {
-                Text("settings.general.backup.header")
+                SettingsHeader("settings.general.backup.header")
             } footer: {
-                Text("settings.general.backup.footer")
+                SettingsFootnote("settings.general.backup.footer")
             }
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         // Over the settings themselves (the Mac `Settings` window has no browse sheet).
         .sheet(isPresented: $importing) {
             ImportSheet()
@@ -118,9 +125,9 @@ private struct WifiAutoSection: View {
                 .accessibilityIdentifier("settings.wifiAuto")
         } footer: {
             #if os(macOS)
-            Text("settings.general.wifiAuto.footer.mac")
+            SettingsFootnote("settings.general.wifiAuto.footer.mac")
             #else
-            Text("settings.general.wifiAuto.footer")
+            SettingsFootnote("settings.general.wifiAuto.footer")
             #endif
         }
     }
@@ -131,7 +138,9 @@ struct ProfileSettings: View {
     var body: some View {
         Form {
             ProfileSection()
+                .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Profil")
     }
 }
@@ -161,7 +170,22 @@ private struct AppearanceSection: View {
             .padding(.vertical, Theme.Space.s)
             .sensoryFeedback(.selection, trigger: stored)
         } header: {
-            Text("settings.general.appearance")
+            SettingsHeader("settings.general.appearance")
+        }
+    }
+}
+
+/// Nouveau design: the RX look (photo heroes, grouped cards, glass buttons) on Réglages, Watchtower,
+/// the item detail and Accueil. A preview, off by default, stored on this device only.
+private struct RXDesignSection: View {
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var isOn = RXDesign.launchDefault
+
+    var body: some View {
+        Section {
+            Toggle("rx.settings.toggle", isOn: $isOn)
+                .accessibilityIdentifier("settings.rxDesign")
+        } footer: {
+            SettingsFootnote("rx.settings.footer")
         }
     }
 }
@@ -328,9 +352,9 @@ struct ProfileSection: View {
             }
             .padding(.vertical, Theme.Space.xs)
         } header: {
-            Text("Profil")
+            SettingsHeader("Profil")
         } footer: {
-            Text(failed
+            SettingsFootnote(failed
                 ? "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC."
                 : "Synchronisé sur tes appareils, sans ses métadonnées.")
         }
@@ -394,5 +418,201 @@ enum ProfilePhoto {
         else { return nil }
         CGImageDestinationAddImage(destination, scaled, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
         return CGImageDestinationFinalize(destination) ? out as Data : nil
+    }
+}
+
+// MARK: - The RX look of the pages of Réglages
+
+
+/// The pages of Réglages in the RX look (owner feedback 2026-11-16: "rends les sous-pages comme le
+/// reste du RX, avec moins de texte"). Each page keeps its `Form`, so every setting, sheet, swipe
+/// and identifier stays as it is; while the RX look is on (iPhone), the form is drawn as RX cards:
+/// the RX page colour, cards in the card token with no separators, Inter rows, card titles in
+/// Headline inside the page's rhythm, footnotes in Footnote. Off, nothing changes.
+///
+/// Usage: `Form { Group { sections }.rxSettingsRows() }.rxSettingsSkin().settingsPage("Titre")`.
+/// The skin goes before `settingsPage`, so its tint and background win over the classic ones.
+extension View {
+    /// The whole page (the form): page colour, gutters, section rhythm, Inter, RX accent.
+    func rxSettingsSkin() -> some View {
+        modifier(RXSettingsSkin())
+    }
+
+    /// The rows of every section in it: card background, no separators, RX label glyphs.
+    func rxSettingsRows() -> some View {
+        modifier(RXSettingsRows())
+    }
+}
+
+extension EnvironmentValues {
+    /// True on a page of Réglages drawn in the RX look.
+    @Entry var rxSettings = false
+}
+
+private struct RXSettingsSkin: ViewModifier {
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+
+    private typealias RX = Theme.RX
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if rxDesign {
+            content
+                .rxFont(.bodyMedium)
+                .listSectionSpacing(RX.Space.l)
+                .contentMargins(.horizontal, RX.Space.gutter, for: .scrollContent)
+                .scrollContentBackground(.hidden)
+                // No colour of its own: `settingsPage` draws the frosted backdrop behind.
+                .tint(RX.Palette.accentText.color)
+                .environment(\.rxSettings, true)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+private struct RXSettingsRows: ViewModifier {
+    @Environment(\.rxSettings) private var rx
+
+    private typealias RX = Theme.RX
+
+    func body(content: Content) -> some View {
+        if rx {
+            content
+                .modifier(RXFrostedRowFill())
+                .listRowSeparator(.hidden)
+                .labelStyle(RXSettingsLabelStyle())
+        } else {
+            content
+        }
+    }
+}
+
+/// A row's label in the RX look: the 24 pt glyph of `RXMenuRow`, then the title, which wraps.
+private struct RXSettingsLabelStyle: LabelStyle {
+    private typealias RX = Theme.RX
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: RX.Space.l) {
+            // Monochrome, as the rows of the frosted Réglages.
+            configuration.icon
+                .font(RX.Glyph.font(RX.Glyph.menu, weight: .medium))
+                .foregroundStyle(RX.Palette.textPrimary.color)
+                .frame(width: RX.Metrics.menuGlyph, height: RX.Metrics.menuGlyph)
+                .accessibilityHidden(true)
+            // Wraps at full size: no tightening or scaling, which the clipped text audit reports.
+            configuration.title
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// A card title with the long explanation behind an info button (in place of a paragraph under
+/// the card). Classic look: the same, as a section header.
+struct SettingsHeader: View {
+    let title: Text
+    var info: Text?
+    var infoID: String?
+    @Environment(\.rxSettings) private var rx
+
+    private typealias RX = Theme.RX
+
+    init(_ title: LocalizedStringKey, info: Text? = nil, id: String? = nil) {
+        self.init(Text(title), info: info, id: id)
+    }
+
+    init(_ title: Text, info: Text? = nil, id: String? = nil) {
+        self.title = title
+        self.info = info
+        self.infoID = id
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: RX.Space.s) {
+            if rx {
+                title
+                    .rxFont(.headline)
+                    .foregroundStyle(RX.Palette.textPrimary.color)
+                    .textCase(nil)
+                    .dbText(maxLines: 2)
+                    .accessibilityAddTraits(.isHeader)
+            } else {
+                title
+            }
+            Spacer(minLength: 0)
+            if let info {
+                SettingsInfoButton(info, id: infoID)
+            }
+        }
+    }
+}
+
+/// The ⓘ that holds a long explanation: a popover on iPhone too, so it reads in place.
+struct SettingsInfoButton: View {
+    let text: Text
+    var id: String?
+    @State private var shown = false
+
+    private typealias RX = Theme.RX
+
+    init(_ text: Text, id: String? = nil) {
+        self.text = text
+        self.id = id
+    }
+
+    var body: some View {
+        Button {
+            shown = true
+        } label: {
+            Image(systemName: "info.circle")
+                .font(RX.Glyph.font(RX.Glyph.menu, weight: .regular))
+                .frame(minWidth: RX.Metrics.minTapTarget, minHeight: RX.Metrics.minTapTarget, alignment: .trailing)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .textCase(nil)
+        .accessibilityLabel(Text("settings.info"))
+        .dbHaptic(.selection, trigger: shown)
+        .popover(isPresented: $shown) {
+            ScrollView {
+                text
+                    .rxFont(.callout)
+                    .foregroundStyle(RX.Palette.textPrimary.color)
+                    .dbText()
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .padding(RX.Space.l)
+            }
+            .frame(idealWidth: 320, maxHeight: 420)
+            .presentationCompactAdaptation(.popover)
+            .accessibilityIdentifier("settings.info.text")
+        }
+        .accessibilityIdentifier(id ?? "settings.info")
+    }
+}
+
+/// A short footnote under a card: RX Footnote in the tertiary text token; the system footer in the
+/// classic look.
+struct SettingsFootnote: View {
+    let text: Text
+    @Environment(\.rxSettings) private var rx
+
+    private typealias RX = Theme.RX
+
+    init(_ key: LocalizedStringKey) { text = Text(key) }
+    init(_ text: Text) { self.text = text }
+
+    var body: some View {
+        if rx {
+            text
+                .rxFont(.footnote)
+                .foregroundStyle(RX.Palette.textSecondary.color)
+                .textCase(nil)
+                .dbText()
+        } else {
+            text
+        }
     }
 }

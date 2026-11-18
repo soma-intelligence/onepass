@@ -422,6 +422,93 @@
         }
       }
     },
+    "editor.fieldRemoved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Field removed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Campo quitado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Champ retiré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Campo rimosso"
+          }
+        }
+      }
+    },
+    "editor.invalidNumber" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That's not a valid number."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No es un número válido."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce n'est pas un nombre valide."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non è un numero valido."
+          }
+        }
+      }
+    },
+    "editor.keyboard.next" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siguiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suivant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avanti"
+          }
+        }
+      }
+    },
     "Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine. Désactivé, aucune requête réseau." : {
       "localizations" : {
         "en" : {
@@ -6951,25 +7038,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Items moved to the Trash stay here for 30 days."
+            "value" : "Deleted items stay here for 30 days."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los elementos movidos a la Papelera se quedan aquí 30 días."
+            "value" : "Los elementos eliminados se quedan aquí 30 días."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les éléments mis à la corbeille restent ici 30 jours."
+            "value" : "Les éléments supprimés restent ici 30 jours."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gli elementi spostati nel Cestino restano qui 30 giorni."
+            "value" : "Gli elementi eliminati restano qui 30 giorni."
           }
         }
       }
@@ -7270,25 +7357,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Move to Trash"
+            "value" : "Delete"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mover a la Papelera"
+            "value" : "Eliminar"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mettre à la corbeille"
+            "value" : "Supprimer"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sposta nel Cestino"
+            "value" : "Elimina"
           }
         }
       }
@@ -9348,25 +9435,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trash Is Empty"
+            "value" : "Nothing in Recently Deleted"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La papelera está vacía"
+            "value" : "No hay nada en Eliminado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Corbeille vide"
+            "value" : "Rien dans Supprimés récemment"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il cestino è vuoto"
+            "value" : "Niente in Eliminati di recente"
           }
         }
       }
@@ -27445,7 +27532,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mis dans Supprimés récemment"
+            "value" : "Déplacé vers Supprimés récemment"
           }
         },
         "it" : {
@@ -42170,25 +42257,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "An encrypted OnePass archive of everything this device holds, vaults and items in the trash included. It opens with the passphrase chosen here or with your account."
+            "value" : "An encrypted OnePass archive of everything this device holds, vaults and items in Recently Deleted included. It opens with the passphrase chosen here or with your account."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un archivo cifrado de OnePass con todo lo que contiene este dispositivo, incluidas las bóvedas y los elementos de la papelera. Se abre con la frase de contraseña elegida aquí o con tu cuenta."
+            "value" : "Un archivo cifrado de OnePass con todo lo que contiene este dispositivo, incluidas las bóvedas y los elementos en Eliminado. Se abre con la frase de contraseña elegida aquí o con tu cuenta."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Une archive OnePass chiffrée de tout ce que cet appareil contient, coffres et éléments à la corbeille compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte."
+            "value" : "Une archive OnePass chiffrée de tout ce que cet appareil contient, coffres et éléments dans Supprimés récemment compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un archivio OnePass cifrato di tutto ciò che contiene questo dispositivo, casseforti ed elementi nel cestino compresi. Si apre con la passphrase scelta qui o con il tuo account."
+            "value" : "Un archivio OnePass cifrato di tutto ciò che contiene questo dispositivo, casseforti ed elementi in Eliminati di recente compresi. Si apre con la passphrase scelta qui o con il tuo account."
           }
         }
       }
@@ -42895,25 +42982,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” moved to Trash"
+            "value" : "“%@” moved to Recently Deleted"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«%@» movido a la papelera"
+            "value" : "«%@» movido a Eliminado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "« %@ » mis à la corbeille"
+            "value" : "« %@ » déplacé vers Supprimés récemment"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«%@» spostato nel cestino"
+            "value" : "«%@» spostato in Eliminati di recente"
           }
         }
       }
@@ -43962,6 +44049,528 @@
         }
       }
     },
+    "rx.home.score" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puntuación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Punteggio"
+          }
+        }
+      }
+    },
+    "rx.home.status.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score Unavailable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puntuación no disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score indisponible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Punteggio non disponibile"
+          }
+        }
+      }
+    },
+    "rx.plan.cardSubtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "See the benefits"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver las ventajas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voir les avantages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vedi i vantaggi"
+          }
+        }
+      }
+    },
+    "rx.settings.homeCards" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Customize Home"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personalizar Inicio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personnaliser l'accueil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personalizza la Home"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.live" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Animated wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondo animado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fond animé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sfondo animato"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.live.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The wallpaper drifts slowly on Home and when you unlock. Still when Reduce Motion is on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El fondo se mueve despacio en Inicio y al desbloquear. Quieto si Reducir movimiento está activado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le fond bouge lentement sur Accueil et à l'ouverture. Immobile si « Réduire les animations » est activé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo sfondo si muove lentamente nella Home e allo sblocco. Fermo se Riduci movimento è attivo."
+          }
+        }
+      }
+    },
+    "rx.wallpaper.tone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tone"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tono"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tono"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.tone.clair" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clair"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiaro"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.tone.natural" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Natural"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Natural"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naturel"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naturale"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.tone.noir" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noir"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noir"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noir"
+          }
+        }
+      }
+    },
+    "rx.watchtower.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to check yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay nada que revisar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien à vérifier pour l'instant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ancora niente da controllare"
+          }
+        }
+      }
+    },
+    "rx.watchtower.empty.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add an item and Watchtower checks it for weak, reused and exposed passwords."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añade un elemento y Watchtower revisará las contraseñas débiles, reutilizadas y expuestas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoute un élément : Watchtower vérifie les mots de passe faibles, réutilisés et exposés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi un elemento e Watchtower controlla le password deboli, riutilizzate ed esposte."
+          }
+        }
+      }
+    },
+    "rx.watchtower.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't check your items"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron revisar tus elementos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse impossible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile analizzare gli elementi"
+          }
+        }
+      }
+    },
+    "rx.watchtower.failed.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again in a moment. If it keeps happening, lock and unlock OnePass."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a intentarlo en un momento. Si sigue pasando, bloquea y desbloquea OnePass."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessaie dans un instant. Si ça continue, verrouille puis déverrouille OnePass."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riprova tra poco. Se continua, blocca e sblocca OnePass."
+          }
+        }
+      }
+    },
+    "rx.watchtower.notChecked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Breaches Not Checked"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtraciones sin comprobar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fuites non vérifiées"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Violazioni non verificate"
+          }
+        }
+      }
+    },
+    "rx.watchtower.notChecked.partial" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Part of the check failed. Run it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parte de la comprobación falló. Vuelve a ejecutarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une partie de la vérification a échoué. Relance l'analyse."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parte del controllo non è riuscita. Riprova."
+          }
+        }
+      }
+    },
+    "rx.watchtower.notify.denied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications are off. Allow them in Settings to get alerts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notificaciones están desactivadas. Actívalas en Ajustes para recibir avisos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications refusées. Autorise-les dans Réglages pour être prévenu."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le notifiche sono disattivate. Attivale in Impostazioni per ricevere avvisi."
+          }
+        }
+      }
+    },
+    "rx.watchtower.scoreValue %lld %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld out of 100, %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de 100, %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld sur 100, %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld su 100, %2$@"
+          }
+        }
+      }
+    },
     "safari.setup.ios.footer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -44277,6 +44886,93 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attiva OnePass in Safari"
+          }
+        }
+      }
+    },
+    "scanner.cameraDenied.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To scan a QR code, allow camera access for OnePass in Settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para escanear un código QR, permite el acceso a la cámara para OnePass en Ajustes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour scanner un QR code, autorise l'appareil photo pour OnePass dans Réglages."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per scansionare un codice QR, consenti l'accesso alla fotocamera per OnePass in Impostazioni."
+          }
+        }
+      }
+    },
+    "scanner.cameraDenied.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera Access Denied"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acceso a la cámara denegado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accès à l'appareil photo refusé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accesso alla fotocamera negato"
+          }
+        }
+      }
+    },
+    "search.recentCleared" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searches cleared"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Búsquedas borradas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherches effacées"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricerche cancellate"
           }
         }
       }
@@ -45260,30 +45956,29 @@
     },
     "settings.deleteAccount.footer" : {
       "comment" : "Réglages > Sécurité: delete account footer",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Erases your account from this device and from iCloud. Another device still linked would put it back in iCloud: erase that one too."
+            "value" : "On this device and in iCloud. Erase your other linked devices too."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Borra tu cuenta de este dispositivo y de iCloud. Otro dispositivo aún vinculado la volvería a subir a iCloud: bórralo también."
+            "value" : "En este dispositivo y en iCloud. Borra también tus otros dispositivos vinculados."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Efface ton compte de cet appareil et d'iCloud. Un autre appareil encore lié le remettrait dans iCloud : efface-le aussi."
+            "value" : "Sur cet appareil et dans iCloud. Efface aussi tes autres appareils liés."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancella il tuo account da questo dispositivo e da iCloud. Un altro dispositivo ancora collegato lo rimetterebbe su iCloud: cancella anche quello."
+            "value" : "Su questo dispositivo e su iCloud. Cancella anche gli altri dispositivi collegati."
           }
         }
       }
@@ -45865,25 +46560,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass remembers which account you pick on each site, in which browser and profile, to offer it first. This history stays encrypted on this device: it is never synced or sent. Turned off, it is erased."
+            "value" : "Encrypted on this device, never synced. Turned off, it is erased."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass recuerda qué cuenta eliges en cada sitio, en qué navegador y perfil, para ofrecerla primero. Este historial queda cifrado en este dispositivo: nunca se sincroniza ni se envía. Al desactivarlo, se borra."
+            "value" : "Cifrado en este dispositivo, nunca sincronizado. Al desactivarlo, se borra."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass retient quel compte vous choisissez sur chaque site, dans quel navigateur et quel profil, pour le proposer en premier. Cet historique reste chiffré sur cet appareil : il n'est jamais synchronisé ni envoyé. Désactivé, il est effacé."
+            "value" : "Chiffré sur cet appareil, jamais synchronisé. Désactivé, il est effacé."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass ricorda quale account scegli su ogni sito, in quale browser e profilo, per proporlo per primo. Questa cronologia resta cifrata su questo dispositivo: non viene mai sincronizzata né inviata. Disattivata, viene cancellata."
+            "value" : "Cifrata su questo dispositivo, mai sincronizzata. Disattivata, viene cancellata."
           }
         }
       }
@@ -48542,25 +49237,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Brand icons ship with the app; others come from each site, never a third party."
+            "value" : "Never loaded through a third party."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los iconos de marcas vienen con la app; los demás, de cada sitio, nunca de terceros."
+            "value" : "Nunca se cargan desde un servicio de terceros."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Icônes de marques livrées avec l’app, les autres chargées depuis chaque site, jamais par un service tiers."
+            "value" : "Jamais chargées par un service tiers."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le icone dei marchi sono incluse nell’app, le altre arrivano da ogni sito, mai da terze parti."
+            "value" : "Mai caricate da un servizio di terze parti."
           }
         }
       }
@@ -48600,25 +49295,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wi-Fi networks in your vault that have a place join this device when you’re within 200 m."
+            "value" : "Joins your vault’s Wi-Fi networks within 200 m of their place."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las redes Wi-Fi de tu bóveda que tienen un lugar se añaden a este dispositivo cuando estás a menos de 200 m."
+            "value" : "Se une a las redes Wi-Fi de tu bóveda a menos de 200 m de su lugar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les réseaux Wi-Fi de ton coffre qui ont un lieu rejoignent cet appareil quand tu es à moins de 200 m."
+            "value" : "Rejoint les Wi-Fi de ton coffre à moins de 200 m de leur lieu."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le reti Wi-Fi della tua cassaforte che hanno un luogo si aggiungono a questo dispositivo quando sei entro 200 m."
+            "value" : "Si collega alle reti Wi-Fi della tua cassaforte entro 200 m dal loro luogo."
           }
         }
       }
@@ -49211,7 +49906,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les éléments de la corbeille ne sont pas exportés."
+            "value" : "Les éléments de Supprimés récemment ne sont pas exportés."
           }
         },
         "it" : {
@@ -49240,7 +49935,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les éléments gardent leur identifiant, ceux de la corbeille et les archivés compris. Une restauration signée par ton compte est enregistrée pour tes autres appareils."
+            "value" : "Les éléments gardent leur identifiant, ceux de Supprimés récemment et les archivés compris. Une restauration signée par ton compte est enregistrée pour tes autres appareils."
           }
         },
         "it" : {
@@ -49655,7 +50350,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis vous comparez un code à 6 chiffres."
+            "value" : "Le Mac affiche un code à scanner avec le nouvel iPhone ou iPad, puis tu compares un code à 6 chiffres."
           }
         },
         "it" : {
@@ -58554,35 +59249,6 @@
         }
       }
     },
-    "term.trash" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trash"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Papelera"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Corbeille"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cestino"
-          }
-        }
-      }
-    },
     "term.vault" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -59376,25 +60042,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Empty this vault before deleting it. Items in the trash go with it."
+            "value" : "Empty this vault before deleting it. Its items in Recently Deleted go with it."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vacía esta bóveda antes de eliminarla. Los elementos de la papelera se van con ella."
+            "value" : "Vacía esta bóveda antes de eliminarla. Sus elementos en Eliminado se van con ella."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vide ce coffre avant de le supprimer. Les éléments à la corbeille partent avec lui."
+            "value" : "Vide ce coffre avant de le supprimer. Ses éléments dans Supprimés récemment partent avec lui."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Svuota questa cassaforte prima di eliminarla. Gli elementi nel cestino vengono eliminati con lei."
+            "value" : "Svuota questa cassaforte prima di eliminarla. I suoi elementi in Eliminati di recente vengono eliminati con lei."
           }
         }
       }
@@ -59898,25 +60564,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "It disappears from all your devices, with the items in its trash."
+            "value" : "It disappears from all your devices, with its items in Recently Deleted."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desaparece de todos tus dispositivos, junto con los elementos de su papelera."
+            "value" : "Desaparece de todos tus dispositivos, junto con sus elementos en Eliminado."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il disparaît de tous tes appareils, avec les éléments de sa corbeille."
+            "value" : "Il disparaît de tous tes appareils, avec ses éléments dans Supprimés récemment."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scompare da tutti i tuoi dispositivi, insieme agli elementi del suo cestino."
+            "value" : "Scompare da tutti i tuoi dispositivi, insieme ai suoi elementi in Eliminati di recente."
           }
         }
       }
@@ -62890,30 +63556,29 @@
     },
     "settings.travel.trips.footer" : {
       "comment" : "Settings > Travel Mode, under the planned trips.",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass reminds you the evening before and 3 hours before you leave. Your trips stay on this device."
+            "value" : "A reminder the day before and 3 hours before you leave."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass te lo recuerda la víspera y 3 horas antes de la salida. Tus viajes se quedan en este dispositivo."
+            "value" : "Un recordatorio la víspera y 3 horas antes de salir."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass te le rappelle la veille et 3 heures avant le départ. Tes voyages restent sur cet appareil."
+            "value" : "Rappel la veille et 3 heures avant le départ."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass te lo ricorda la sera prima e 3 ore prima della partenza. I tuoi viaggi restano su questo dispositivo."
+            "value" : "Un promemoria il giorno prima e 3 ore prima della partenza."
           }
         }
       }
@@ -63820,60 +64485,58 @@
     },
     "settings.travel.detection.footer" : {
       "comment" : "Settings > Travel Mode, one line under the suggestion switch.",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When you seem to be travelling (place or time zone), OnePass suggests it. Everything stays on this device."
+            "value" : "From your place or time zone. Everything stays on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuando parece que viajas (lugar o zona horaria), OnePass te lo sugiere. Todo se queda en este dispositivo."
+            "value" : "Según el lugar o la zona horaria. Todo se queda en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quand tu sembles en voyage (lieu ou fuseau horaire), OnePass te le propose. Tout reste sur cet appareil."
+            "value" : "Selon le lieu ou le fuseau horaire. Tout reste sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quando sembri in viaggio (luogo o fuso orario), OnePass te lo suggerisce. Tutto resta su questo dispositivo."
+            "value" : "In base al luogo o al fuso orario. Tutto resta su questo dispositivo."
           }
         }
       }
     },
     "settings.travel.items.footer" : {
       "comment" : "Settings > Travel Mode, under the items section.",
-      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set in each item: Hidden in Travel Mode, or Extra Protection in Travel Mode."
+            "value" : "Set in each item."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se ajusta en cada elemento: Oculto en Travel Mode o Protección reforzada en Travel Mode."
+            "value" : "Se ajusta en cada elemento."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se règle dans chaque élément : Caché en voyage, ou Protection renforcée en voyage."
+            "value" : "Se règle dans chaque élément."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si imposta in ogni elemento: Nascosto in Travel Mode o Protezione rafforzata in Travel Mode."
+            "value" : "Si imposta in ogni elemento."
           }
         }
       }
@@ -64711,6 +65374,2564 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chiavi API e SSH inutilizzate da più di 90 giorni. Revocale presso il fornitore, poi archivia l'elemento."
+          }
+        }
+      }
+    },
+    "rx.settings.toggle" : {
+      "comment" : "Réglages > Général: switch of the new RX look (preview).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Design (Preview)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo diseño (vista previa)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveau design (aperçu)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuovo design (anteprima)"
+          }
+        }
+      }
+    },
+    "rx.settings.footer" : {
+      "comment" : "Réglages > Général: footer under the new design switch.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A preview, on this device only."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una vista previa, solo en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un aperçu, sur cet appareil uniquement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un'anteprima, solo su questo dispositivo."
+          }
+        }
+      }
+    },
+    "rx.perks.title" : {
+      "comment" : "Réglages (new design): title above the two perk tiles.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get More from Plus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saca más partido a Plus"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profite plus de Plus"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ottieni di più da Plus"
+          }
+        }
+      }
+    },
+    "rx.perks.family.title" : {
+      "comment" : "Réglages (new design): perk tile that opens Famille.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Family Vaults"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bóvedas en familia"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffres en famille"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Casseforti in famiglia"
+          }
+        }
+      }
+    },
+    "rx.perks.family.subtitle" : {
+      "comment" : "Réglages (new design): line on the family perk tile.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share with up to 5 people"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comparte con hasta 5 personas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partage avec jusqu'à 5 personnes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Condividi con fino a 5 persone"
+          }
+        }
+      }
+    },
+    "rx.perks.travel.subtitle" : {
+      "comment" : "Réglages (new design): line on the Travel Mode perk tile.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide vaults at the border"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oculta bóvedas en la frontera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache des coffres à la frontière"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nascondi casseforti alla frontiera"
+          }
+        }
+      }
+    },
+    "rx.watchtower.stat.weak" : {
+      "comment" : "Watchtower (new design): label of the weak passwords tile.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weak"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Débiles"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faibles"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deboli"
+          }
+        }
+      }
+    },
+    "rx.watchtower.stat.reused" : {
+      "comment" : "Watchtower (new design): label of the reused passwords tile.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reused"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reutilizadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réutilisés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riutilizzate"
+          }
+        }
+      }
+    },
+    "rx.watchtower.stat.twoFactor" : {
+      "comment" : "Watchtower (new design): label of the tile counting sites that offer 2FA.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2FA Available"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2FA disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2FA disponible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2FA disponibile"
+          }
+        }
+      }
+    },
+    "rx.watchtower.improve" : {
+      "comment" : "Watchtower (new design): title of the card listing what can be improved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Improve"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mejorar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Améliorer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migliora"
+          }
+        }
+      }
+    },
+    "rx.watchtower.allClear" : {
+      "comment" : "Watchtower (new design): alert card when no check flags an issue.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Issues"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún problema"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun problème"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun problema"
+          }
+        }
+      }
+    },
+    "rx.watchtower.allClear.message" : {
+      "comment" : "Watchtower (new design): line under 'Aucun problème'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No exposed or compromised passwords."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguna contraseña expuesta o comprometida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun mot de passe exposé ou compromis."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna password esposta o compromessa."
+          }
+        }
+      }
+    },
+    "rx.item.action.password" : {
+      "comment" : "Item detail (new design): quick action that copies the password.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mot de passe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password"
+          }
+        }
+      }
+    },
+    "rx.item.action.open" : {
+      "comment" : "Item detail (new design): quick action that opens the website.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri"
+          }
+        }
+      }
+    },
+    "rx.home.scoreLabel %lld" : {
+      "comment" : "Accueil (new design): line above the security score on the photo banner, with the number of items.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Security score · %lld item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Security score · %lld items"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Puntuación de seguridad · %lld elemento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Puntuación de seguridad · %lld elementos"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Score de sécurité · %lld élément"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Score de sécurité · %lld éléments"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Punteggio di sicurezza · %lld elemento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Punteggio di sicurezza · %lld elementi"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rx.home.allItems" : {
+      "comment" : "Accueil (new design): quick action that opens all items.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Items"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutti"
+          }
+        }
+      }
+    },
+    "rx.watchtower.alert.compromised %lld" : {
+      "comment" : "Watchtower (new design): title of the red card, compromised passwords.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld exposed account"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld exposed accounts"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cuenta expuesta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cuentas expuestas"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld compte exposé"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comptes exposés"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld account esposto"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld account esposti"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rx.watchtower.alert.breachedSite %lld" : {
+      "comment" : "Watchtower (new design): title of the red card, sites hit by a breach.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld breached site"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld breached sites"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sitio con filtración"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sitios con filtración"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld site touché par une fuite"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sites touchés par une fuite"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sito con violazione"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld siti con violazione"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rx.watchtower.alert.providerExposed %lld" : {
+      "comment" : "Watchtower (new design): title of the red card, exposed sign-in accounts (Google, Apple...).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld exposed sign-in account"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld exposed sign-in accounts"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cuenta de inicio de sesión expuesta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cuentas de inicio de sesión expuestas"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld compte de connexion exposé"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comptes de connexion exposés"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld account di accesso esposto"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld account di accesso esposti"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rx.watchtower.alert.expiring %lld" : {
+      "comment" : "Watchtower (new design): title of the red card, expired or expiring items.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item expired or expiring"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items expired or expiring"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento caducado o por caducar"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementos caducados o por caducar"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld élément expiré ou bientôt expiré"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld éléments expirés ou bientôt expirés"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento scaduto o in scadenza"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementi scaduti o in scadenza"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rx.item.action.code" : {
+      "comment" : "Item detail (new design): quick action that copies the current one-time code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice"
+          }
+        }
+      }
+    },
+    "rx.item.strength" : {
+      "comment" : "Item detail (new design): Security card row, the password strength.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strength"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Robustez"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Robustesse"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Robustezza"
+          }
+        }
+      }
+    },
+    "rx.item.passkey" : {
+      "comment" : "Item detail (new design): Security card row about the item's passkey.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llave de acceso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey"
+          }
+        }
+      }
+    },
+    "rx.item.passkey.saved" : {
+      "comment" : "Item detail (new design): value of the passkey row, a passkey is saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salvata"
+          }
+        }
+      }
+    },
+    "rx.item.passkey.available" : {
+      "comment" : "Item detail (new design): value of the passkey row, the site accepts one.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponibile"
+          }
+        }
+      }
+    },
+    "rx.item.badge.new" : {
+      "comment" : "Item detail (new design): small badge next to an available passkey.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveau"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuovo"
+          }
+        }
+      }
+    },
+    "rx.item.lastChanged" : {
+      "comment" : "Item detail (new design): Security card row, the date the item last changed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last Changed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última modificación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière modification"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultima modifica"
+          }
+        }
+      }
+    },
+    "rx.home.more" : {
+      "comment" : "Accueil (new design): quick action that opens a menu of more actions.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plus"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altro"
+          }
+        }
+      }
+    },
+    "rx.home.seeAll" : {
+      "comment" : "Accueil (new design): link of the Récents card to all items.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "See All"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver todo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout voir"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vedi tutto"
+          }
+        }
+      }
+    },
+    "rx.home.duplicates" : {
+      "comment" : "Accueil (new design): More menu entry that opens the duplicates review.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicates"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doublons"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicati"
+          }
+        }
+      }
+    },
+    "rx.profileQR.open" : {
+      "comment" : "Réglages (new design): round glass button that shows the account as a QR code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share My Profile"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir mi perfil"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partager mon profil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Condividi il mio profilo"
+          }
+        }
+      }
+    },
+    "rx.profileQR.code" : {
+      "comment" : "Profile QR sheet (new design): accessibility label of the QR code image.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR code of your contact card"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código QR de tu tarjeta de contacto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code QR de ta fiche contact"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice QR della tua scheda contatto"
+          }
+        }
+      }
+    },
+    "rx.profileQR.failed.message" : {
+      "comment" : "Profile QR page (new design): line of the fallback shown when the QR code cannot be drawn; the share button stays under it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can still share your card with the button below."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún puedes compartir tu tarjeta con el botón de abajo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu peux quand même partager ta fiche avec le bouton ci-dessous."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puoi comunque condividere la tua scheda con il pulsante qui sotto."
+          }
+        }
+      }
+    },
+    "rx.profileQR.failed.title" : {
+      "comment" : "Profile QR page (new design): title of the fallback shown when the QR code cannot be drawn.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The QR code couldn't be created."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido crear el código QR."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le QR code n'a pas pu être créé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non è stato possibile creare il codice QR."
+          }
+        }
+      }
+    },
+    "rx.profileQR.hint" : {
+      "comment" : "Profile QR sheet (new design): line under the QR code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan this code with the Camera to add your contact card. It holds your name only."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanea este código con la Cámara para añadir tu tarjeta de contacto. Solo contiene tu nombre."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fais scanner ce code avec l'appareil photo pour ajouter ta fiche contact. Seul ton nom y figure."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inquadra questo codice con la Fotocamera per aggiungere la tua scheda contatto. Contiene solo il tuo nome."
+          }
+        }
+      }
+    },
+    "rx.profileQR.share" : {
+      "comment" : "Profile QR sheet (new design): button that shares the contact card.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share Card"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir tarjeta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partager la fiche"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Condividi scheda"
+          }
+        }
+      }
+    },
+    "rx.plan.included" : {
+      "comment" : "Plan benefits page (new design): title of the list of included features.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Included"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inclus"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluso"
+          }
+        }
+      }
+    },
+    "rx.plan.vaults" : {
+      "comment" : "Plan benefits page (new design): benefit row, opens Coffres.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Your Vaults"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas tus bóvedas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tous tes coffres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutte le tue casseforti"
+          }
+        }
+      }
+    },
+    "rx.plan.sharing" : {
+      "comment" : "Plan benefits page (new design): benefit row, opens Contacts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encrypted Sharing with Contacts"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir cifrado con tus contactos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partage chiffré avec tes contacts"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Condivisione cifrata con i contatti"
+          }
+        }
+      }
+    },
+    "rx.plan.organisation" : {
+      "comment" : "Plan benefits page (new design): benefit row, opens Organisation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organisation and Team"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organización y equipo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organisation et équipe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organizzazione e team"
+          }
+        }
+      }
+    },
+    "rx.plan.devices" : {
+      "comment" : "Plan benefits page (new design): benefit row, opens Appareils.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Your Devices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos tus dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tous tes appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutti i tuoi dispositivi"
+          }
+        }
+      }
+    },
+    "rx.plan.crypto" : {
+      "comment" : "Plan benefits page (new design): benefit row, opens Crypto.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crypto Wallets"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monederos cripto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portefeuilles crypto"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portafogli crypto"
+          }
+        }
+      }
+    },
+    "rx.plan.footnote" : {
+      "comment" : "Plan benefits page (new design): footnote under the list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everything is already included in OnePass, with no subscription."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo ya está incluido en OnePass, sin suscripción."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout est déjà inclus dans OnePass, sans abonnement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutto è già incluso in OnePass, senza abbonamento."
+          }
+        }
+      }
+    },
+    "rx.mac.home" : {
+      "comment" : "Mac sidebar and page title (new design): the home page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accueil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
+          }
+        }
+      }
+    },
+    "rx.mac.more" : {
+      "comment" : "Mac sidebar (new design): header of the Archive and Recently Deleted rows.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altro"
+          }
+        }
+      }
+    },
+    "rx.perks.keys.title" : {
+      "comment" : "Réglages (new design): perk tile that opens Sécurité (Face ID, Apple Watch, Secure Enclave keys).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hardware Keys"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llaves de hardware"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clés matérielles"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiavi hardware"
+          }
+        }
+      }
+    },
+    "rx.perks.keys.subtitle" : {
+      "comment" : "Réglages (new design): line on the hardware keys perk tile.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock with Face ID and Apple Watch"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea con Face ID y el Apple Watch"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déverrouille avec Face ID et l'Apple Watch"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sblocca con Face ID e Apple Watch"
+          }
+        }
+      }
+    },
+    "rx.perks.passkeys.subtitle" : {
+      "comment" : "Réglages (new design): line on the passkeys perk tile (opens Remplissage automatique).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in without a password"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicia sesión sin contraseña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecte-toi sans mot de passe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accedi senza password"
+          }
+        }
+      }
+    },
+    "rx.item.verificationCode" : {
+      "comment" : "Item detail (new design): label of the one-time code field (the template's TOTP field).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification Code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de verificación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code de vérification"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice di verifica"
+          }
+        }
+      }
+    },
+    "rx.home.hello" : {
+      "comment" : "Accueil (new design): greeting above the headline when no display name is set.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hi"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hola"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bonjour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ciao"
+          }
+        }
+      }
+    },
+    "rx.home.hi %@" : {
+      "comment" : "Accueil (new design): greeting above the headline, with the first name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hi %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hola, %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bonjour %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ciao %@"
+          }
+        }
+      }
+    },
+    "rx.home.status.good" : {
+      "comment" : "Accueil (new design): headline when the security score is 80 or more.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Good"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo bien"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout va bien"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutto bene"
+          }
+        }
+      }
+    },
+    "rx.home.status.almost" : {
+      "comment" : "Accueil (new design): headline when the security score is 60 to 79.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almost There"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Casi perfecto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Presque parfait"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quasi perfetto"
+          }
+        }
+      }
+    },
+    "rx.home.status.attention" : {
+      "comment" : "Accueil (new design): headline when the security score is under 60.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs a Look"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Por revisar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "À vérifier"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Da controllare"
+          }
+        }
+      }
+    },
+    "rx.home.status.checking" : {
+      "comment" : "Accueil (new design): headline while the security score is computed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobando…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérification…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifica…"
+          }
+        }
+      }
+    },
+    "rx.home.scoreChip %lld" : {
+      "comment" : "Accueil (new design): small chip with the security score out of 100.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puntuación %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score %lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Punteggio %lld"
+          }
+        }
+      }
+    },
+    "rx.plan.tagline" : {
+      "comment" : "Plan page (new design): line under the big plan name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All of OnePass, on all your devices"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo OnePass, en todos tus dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tout OnePass, sur tous tes appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutto OnePass, su tutti i tuoi dispositivi"
+          }
+        }
+      }
+    },
+    "settings.info" : {
+      "comment" : "Réglages: label of the info button that shows a long explanation",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plus d'infos"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More info"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más información"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altre informazioni"
+          }
+        }
+      }
+    },
+    "settings.sync.accountChanged.short" : {
+      "comment" : "Réglages > Sync: one line when the device signed in to another iCloud account (details behind the info button)",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autre compte iCloud : la sync est en pause, ton coffre reste intact."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Different iCloud account: sync is paused, your vault stays intact."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otra cuenta de iCloud: la sincronización está en pausa, tu bóveda sigue intacta."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altro account iCloud: la sincronizzazione è in pausa, la tua cassaforte resta intatta."
+          }
+        }
+      }
+    },
+    "settings.watch.sent.short" : {
+      "comment" : "Réglages > Apple Watch: one line under the switch (details behind the info button)",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seuls les éléments « Sur l'Apple Watch » sont envoyés, 50 au plus."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only items marked “On Apple Watch” are sent, 50 at most."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo se envían los elementos «En el Apple Watch», 50 como máximo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vengono inviati solo gli elementi «Su Apple Watch», 50 al massimo."
+          }
+        }
+      }
+    },
+    "rx.wallpaper.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondo de pantalla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fond d'écran"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sfondo"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.upload" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carica"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Predeterminado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Par défaut"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Predefinito"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.uploaded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uploaded"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caricato"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.importFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This photo could not be imported."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo importar esta foto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d'importer cette photo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile importare questa foto."
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.glass" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cristal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verre"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vetro"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.silk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Silk"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soie"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seta"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.metal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Métal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metallo"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.lights" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lights"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luces"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lumières"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luci"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.lava" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lava"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lava"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lave"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lava"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.velvet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velvet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terciopelo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velluto"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.horizon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Horizon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Horizonte"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Horizon"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orizzonte"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.particles" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Particles"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partículas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Particules"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Particelle"
+          }
+        }
+      }
+    },
+    "lock.rx.welcomeBack" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome back"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hola de nuevo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te revoilà"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bentornato"
+          }
+        }
+      }
+    },
+    "rx.list.filtered.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No items match these filters"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún elemento con estos filtros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun élément avec ces filtres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun elemento con questi filtri"
+          }
+        }
+      }
+    },
+    "rx.list.filtered.empty.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove a filter to see your items again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quita un filtro para volver a ver tus elementos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retire un filtre pour revoir tes éléments."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovi un filtro per rivedere i tuoi elementi."
+          }
+        }
+      }
+    },
+    "rx.list.filters.clear" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Filters"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar filtros"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer les filtres"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella filtri"
+          }
+        }
+      }
+    },
+    "rx.wallpaper.category.landscape" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Landscape"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paisaje"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paysage"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paesaggio"
           }
         }
       }

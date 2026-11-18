@@ -1,5 +1,6 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import DesignBridgeKit
 import DesignKit
 import GlanceKit
 import SwiftUI
@@ -26,9 +27,14 @@ struct ItemDetailView: View {
     private let standalone: Bool
 
     @State private var item: FfiItem?
-    @State private var loadError: String?
+    @State private var loadError: DBLoadError?
+    /// The item the screen shows now. The Mac split view reuses this view across selections, so a
+    /// late Undo or Retry compares against it before it reloads an item that is no longer shown.
+    @State private var shownRef: ItemRef?
     /// Where the websites card sits among the free sections (per device, set by the editor).
     @AppStorage(EditorLayout.websitesSlotKey) private var websitesSlot = 0
+    /// The RX look (Réglages > Général > Nouveau design): quick actions under the header, RX cards.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     @State private var actionError: String?
     @State private var confirmDelete = false
     // Reprompt.
@@ -71,6 +77,15 @@ struct ItemDetailView: View {
 
     private var editingHere: Bool { !standalone && model.editing }
 
+    /// The RX centred header: iPhone, iPad and Mac with the switch on.
+    private var rxHeader: Bool {
+        #if os(iOS) || os(macOS)
+        rxDesign
+        #else
+        false
+        #endif
+    }
+
     private var session: VaultSession { model.session }
 
     var body: some View {
@@ -84,10 +99,19 @@ struct ItemDetailView: View {
                     detail(item)
                 }
             } else if let loadError {
-                EmptyState(title: String(localized: "item.itemUnavailable"), systemImage: "exclamationmark.triangle",
-                           message: loadError)
+                DBErrorView(loadError) {
+                    Task { await load() }
+                }
+                .accessibilityIdentifier("item.loadError")
+            } else if rxHeader {
+                // RX: the page colour while the item reads (a few ms). Skeleton bars flashed inside
+                // the zoom from the row, then the content popped in over them (jank audit J11).
+                Theme.RX.Palette.pageBackground.color
+                    .ignoresSafeArea()
+                    .overlay { DBDelayedSpinner() }
             } else {
-                ProgressView()
+                // Skeleton rows; the spinner shows only if the load takes more than 400 ms.
+                DBLoadingView { DBSkeleton(rows: 4) }
             }
         }
         .task(id: ref) { await load() }
@@ -172,7 +196,7 @@ struct ItemDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Self.sectionSpacing) {
                 #if os(iOS) || os(macOS)
-                ItemHeader(item: item) { icon in
+                ItemHeader(item: item, centered: rxHeader) { icon in
                     // The icon's tint replaces the category's: eased, never a jump.
                     withAnimation(.easeInOut(duration: 0.25)) { identity = (item.id, identityColor(item, icon: icon)) }
                 }
@@ -183,6 +207,11 @@ struct ItemDetailView: View {
                 ItemHeader(item: item)
                     .padding(.horizontal, Theme.Space.xs)
                     .padding(.bottom, Theme.Space.xs)
+                #endif
+                #if os(iOS) || os(macOS)
+                if rxDesign, !locked(item), item.trashedAt == nil {
+                    rxQuickActions(item)
+                }
                 #endif
                 if let actionError {
                     EditorCard {
@@ -209,6 +238,9 @@ struct ItemDetailView: View {
                         }
                     }
                     content(item)
+                    #if os(iOS) || os(macOS)
+                    if rxDesign { rxSecurityCard(item) }
+                    #endif
                     ItemAttachmentsSection(item: item, editable: item.trashedAt == nil && !standalone) {
                         self.item = $0
                     }
@@ -243,9 +275,14 @@ struct ItemDetailView: View {
         #if os(iOS) || os(macOS)
         // A soft wash in the item's identity color, fixed at the top like the page's tint. It sits
         // under the content and the navigation bar, and never takes a touch.
-        .background(alignment: .top) { identityWash(item) }
+        .background(alignment: .top) {
+            if !rxHeader { identityWash(item) }
+        }
+        // RX: the soft glass orb behind the header (high key: the text stays dark), moving with the page.
+        .modifier(RXScrollingBackdrop(name: RXHero.item, height: 320, lightOpacity: 0.7, darkOpacity: 0.3, active: rxHeader))
         #endif
         .groupedScreen()
+        .environment(\.rxCards, rxDesign)
         .environment(\.openURL, OpenURLAction { url in
             // Links in notes and fields open only on a tap, and only web or mail links.
             ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") ? .systemAction : .discarded
@@ -281,6 +318,61 @@ struct ItemDetailView: View {
         }
         .simultaneousGesture(TapGesture().onEnded { session.noteActivity() })
     }
+
+    #if os(iOS) || os(macOS)
+    /// RX: the quick actions of the mock under the header: open the website, share. Copying the
+    /// password or the one-time code is the field row and the code card (one entry point each).
+    /// An action the item cannot do is left out.
+    @ViewBuilder private func rxQuickActions(_ item: FfiItem) -> some View {
+        let site = signInURL(item).flatMap(FieldValueView.openable)
+        let ref = ItemRef(vaultID: item.vaultId, itemID: item.id)
+        QuickActionRow {
+            if let site {
+                Button {
+                    model.noteItemUse(ref, action: nil, field: "")
+                    openURL(site)
+                } label: {
+                    QuickActionLabel(Text("rx.item.action.open"), systemImage: "globe")
+                }
+                .accessibilityIdentifier("rx.item.open")
+            }
+            ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
+                QuickActionLabel(Text("common.share"), systemImage: "square.and.arrow.up")
+            }
+            .accessibilityIdentifier("rx.item.share")
+        }
+        .rxPress()
+    }
+
+    /// RX: the Security card of the mock for an item with a password: its strength, its passkey
+    /// (saved, or available on a site that accepts one), the date it last changed.
+    @ViewBuilder private func rxSecurityCard(_ item: FfiItem) -> some View {
+        let fields = item.sections.flatMap(\.fields)
+        if let password = fields.first(where: { $0.kind == .password && !$0.value.text.isEmpty }) {
+            let hasPasskey = fields.contains { $0.kind == .passkey && !$0.value.isBlank }
+            let canAdd = !hasPasskey && item.itemType == .login
+                && PasskeySupport.siteAccepts(item, report: model.watchtower.report)
+            RXCard {
+                RXCardHeader(Text("Sécurité"))
+                RXMenuRow(
+                    Text("rx.item.strength"), systemImage: "checkmark.shield.fill",
+                    value: Text(StrengthMeter.label(forBits: PasswordStrength.estimatedBits(password.value.text))),
+                    chevron: false)
+                if hasPasskey || canAdd {
+                    RXMenuRow(
+                        Text("rx.item.passkey"), systemImage: "person.badge.key.fill",
+                        value: Text(hasPasskey ? "rx.item.passkey.saved" : "rx.item.passkey.available"),
+                        badge: canAdd ? Text("rx.item.badge.new") : nil, chevron: false)
+                }
+                RXMenuRow(
+                    Text("rx.item.lastChanged"), systemImage: "arrow.triangle.2.circlepath",
+                    value: Text(Date(timeIntervalSince1970: TimeInterval(item.updatedAt)), format: .dateTime.day().month().year()),
+                    chevron: false)
+            }
+            .accessibilityIdentifier("rx.item.security")
+        }
+    }
+    #endif
 
     private func banner(_ text: LocalizedStringKey, systemImage: String) -> some View {
         Label(text, systemImage: systemImage)
@@ -667,19 +759,21 @@ struct ItemDetailView: View {
         // The big header already names the item: no second title in the bar.
         ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
         // iPhone and iPad: three icons in one group. The vault is already under the title (its
-        // badge), and "Déplacer…" sits in the actions menu.
-        if item.trashedAt == nil {
+        // badge), and "Déplacer…" sits in the actions menu. RX: Partager is a quick action under
+        // the header, so the bar does not repeat it (one entry point per action).
+        if item.trashedAt == nil, !(rxDesign && !locked(item)) {
             ToolbarItem(placement: .primaryAction) {
                 ShareLink(item: ItemShare.text(item), subject: Text(item.title)) {
                     Label("common.share", systemImage: "square.and.arrow.up")
                 }
                 .accessibilityIdentifier("item.share")
             }
-            if !isReadOnly(item) {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("common.edit", systemImage: "pencil") { startEditing(item) }
-                        .accessibilityIdentifier("item.edit")
-                }
+        }
+        // Modifier stays in the bar in every look: only Partager moves to the quick actions in RX.
+        if item.trashedAt == nil, !isReadOnly(item) {
+            ToolbarItem(placement: .primaryAction) {
+                Button("common.edit", systemImage: "pencil") { startEditing(item) }
+                    .accessibilityIdentifier("item.edit")
             }
         }
         ToolbarItem(placement: .primaryAction) {
@@ -751,17 +845,24 @@ struct ItemDetailView: View {
             .accessibilityIdentifier("item.shareMenu")
             if item.archived {
                 Button("app.unarchive", systemImage: "archivebox") {
-                    run { try await session.unarchive(itemID: item.id, vaultID: item.vaultId) }
+                    run(success: String(localized: "root.unarchived \(item.title)"),
+                        undo: { try await session.archive(itemID: item.id, vaultID: item.vaultId) }) {
+                        try await session.unarchive(itemID: item.id, vaultID: item.vaultId)
+                    }
                 }
                 .accessibilityIdentifier("item.unarchive")
             } else {
                 Button("common.archive", systemImage: "archivebox") {
-                    run { try await session.archive(itemID: item.id, vaultID: item.vaultId) }
+                    run(success: String(localized: "root.archived \(item.title)"),
+                        undo: { try await session.unarchive(itemID: item.id, vaultID: item.vaultId) }) {
+                        try await session.archive(itemID: item.id, vaultID: item.vaultId)
+                    }
                 }
                 .accessibilityIdentifier("item.archive")
             }
             Button("common.delete", systemImage: "trash", role: .destructive) {
-                run(clearsSelection: true, success: String(localized: "item.movedToRecentlyDeleted")) {
+                run(clearsSelection: true, success: String(localized: "item.movedToRecentlyDeleted"),
+                    undo: { try await session.restoreItem(itemID: item.id, vaultID: item.vaultId) }) {
                     try await session.trash(itemID: item.id, vaultID: item.vaultId)
                 }
             }
@@ -863,28 +964,50 @@ struct ItemDetailView: View {
     }
 
     /// Runs an item operation, then reloads the item (or leaves the detail, or follows a move).
+    /// `undo` reverses it from the success toast's Undo button.
     private func run(
         clearsSelection: Bool = false, movedTo vaultID: String? = nil, success: String? = nil,
+        undo: (@MainActor @Sendable () async throws -> Void)? = nil,
         _ op: @escaping () async throws -> Void
     ) {
         Task {
             do {
                 try await op()
                 actionError = nil
-                if let success { showToast(success) }
+                if let success {
+                    if let undo {
+                        model.showToast(success, action: .undo { undoAction(undo) })
+                    } else {
+                        showToast(success)
+                    }
+                }
                 if clearsSelection {
                     // Leaves the detail; if it stays on screen it shows the new state (or "introuvable").
                     if !standalone, model.selectedItem == ref { model.selectedItem = nil }
-                    await reload(ref)
+                    await reload(ref, keepOnFailure: true)
                 } else if let vaultID {
                     let moved = ItemRef(vaultID: vaultID, itemID: ref.itemID)
                     if !standalone, model.selectedItem == ref { model.selectedItem = moved }
-                    await reload(moved)
+                    await reload(moved, keepOnFailure: true)
                 } else {
-                    await reload(ref)
+                    await reload(ref, keepOnFailure: true)
                 }
             } catch {
                 actionError = VaultError(error).localizedMessage
+                model.showToast(VaultError(error).localizedMessage, kind: .error)
+            }
+        }
+    }
+
+    /// The Undo of an archive or a trash: reverses it, then shows the item as stored.
+    private func undoAction(_ undo: @escaping @MainActor @Sendable () async throws -> Void) {
+        let target = ref
+        Task {
+            do {
+                try await undo()
+                // The user may have opened another item since the toast: leave that one on screen.
+                if shownRef == target { await reload(target, keepOnFailure: true) }
+            } catch {
                 model.showToast(VaultError(error).localizedMessage, kind: .error)
             }
         }
@@ -895,11 +1018,19 @@ struct ItemDetailView: View {
         guard let saved else { return }
         item = saved
         let savedRef = ItemRef(vaultID: saved.vaultId, itemID: saved.id)
+        shownRef = savedRef
         if savedRef != ref, model.selectedItem == ref { model.selectedItem = savedRef }
         showToast(String(localized: "item.saved"))
     }
 
     private func load() async {
+        // Another item in a reused view: the reprompt and Travel checks of the last one do not carry over.
+        if shownRef?.itemID != ref.itemID {
+            confirmed = false
+            presencePassed = false
+            passwordPassed = false
+            editAfterConfirm = false
+        }
         await reload(ref)
         if let item, item.reprompt || travelGuarded(item), !confirmed { await confirmPresence() }
         // Profil > "Modifier l'identité" or "Modifier la carte": the editor opens once loaded.
@@ -909,13 +1040,24 @@ struct ItemDetailView: View {
         }
     }
 
-    private func reload(_ target: ItemRef) async {
+    /// `keepOnFailure`: after an action, a failed read keeps the item on screen and says so in a
+    /// toast with Retry, instead of replacing valid content with an error.
+    private func reload(_ target: ItemRef, keepOnFailure: Bool = false) async {
         do {
             item = try await session.loadItem(vaultID: target.vaultID, itemID: target.itemID)
+            shownRef = target
             loadError = nil
         } catch {
-            item = nil
-            loadError = VaultError(error).localizedMessage
+            let message = VaultError(error).localizedMessage
+            if keepOnFailure, item != nil {
+                model.showToast(message, kind: .error, action: .retry {
+                    Task { if shownRef == target { await reload(target, keepOnFailure: true) } }
+                })
+            } else {
+                item = nil
+                shownRef = target
+                loadError = DBLoadError(title: String(localized: "item.itemUnavailable"), message: message)
+            }
         }
     }
 

@@ -23,6 +23,7 @@ struct TravelTripEditor: View {
 
     var body: some View {
         Form {
+            Group {
             Section {
                 DatePicker("trip.start", selection: $start, displayedComponents: [.date, .hourAndMinute])
                     .accessibilityIdentifier("trip.start")
@@ -33,7 +34,7 @@ struct TravelTripEditor: View {
                 Toggle("trip.auto", isOn: $autoEnter)
                     .accessibilityIdentifier("trip.auto")
             } footer: {
-                Text("trip.auto.footer")
+                SettingsFootnote("trip.auto.footer")
             }
             if let shownError {
                 Section {
@@ -47,7 +48,10 @@ struct TravelTripEditor: View {
                     .disabled(endsBeforeStart)
                     .accessibilityIdentifier("trip.save")
             }
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("settings.travel.addTrip")
         .onChange(of: start) { _, _ in errorMessage = nil }
         .onChange(of: end) { _, _ in errorMessage = nil }

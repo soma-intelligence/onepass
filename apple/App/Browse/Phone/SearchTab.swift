@@ -1,4 +1,5 @@
 #if os(iOS)
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -17,8 +18,13 @@ struct SearchTab: View {
     @Binding var query: String
     @Binding var isSearching: Bool
     @State private var category: FfiItemType?
+    /// The RX look: its spacing tokens. The classic look keeps `Theme.Space`.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     private var session: VaultSession { model.session }
+
+    /// Spacing steps of the look in use.
+    private var space: SearchSpacing { rxDesign ? .rx : .classic }
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
@@ -63,6 +69,9 @@ struct SearchTab: View {
         .animation(Motion.list(reduceMotion: reduceMotion), value: results.map(\.id))
         .animation(Motion.fold(reduceMotion: reduceMotion), value: trimmed.isEmpty)
         .navigationTitle("common.search")
+        // RX: inline. A large title showed first, then folded as the search opened, moving the
+        // grid twice for one tap (jank audit J06).
+        .navigationBarTitleDisplayMode(rxDesign ? .inline : .automatic)
         // A category chosen for another search would hide what the next one finds.
         .onChange(of: trimmed.isEmpty) { _, empty in if empty { category = nil } }
         // Opening a result keeps the search that found it for next time.
@@ -82,7 +91,7 @@ struct SearchTab: View {
                         query = text
                         isSearching = true
                     } label: {
-                        HStack(spacing: Theme.Space.m) {
+                        HStack(spacing: space.m) {
                             Image(systemName: "clock.arrow.circlepath")
                                 .font(.body)
                                 .foregroundStyle(.secondary)
@@ -104,9 +113,7 @@ struct SearchTab: View {
                 HStack(alignment: .firstTextBaseline) {
                     PhoneSectionLabel("Recherches récentes")
                     Spacer()
-                    Button("browse.clear") {
-                        withAnimation(Motion.list(reduceMotion: reduceMotion)) { session.clearRecentSearches() }
-                    }
+                    Button("browse.clear") { clearRecentSearches() }
                     .font(.subheadline)
                     .accessibilityIdentifier("search.recent.clear")
                 }
@@ -133,6 +140,19 @@ struct SearchTab: View {
         }
     }
 
+    /// "Effacer": the list goes at once, Undo in the toast brings it back in the same order.
+    private func clearRecentSearches() {
+        let cleared = session.recentSearches
+        let session = session, reduceMotion = reduceMotion
+        withAnimation(Motion.list(reduceMotion: reduceMotion)) { session.clearRecentSearches() }
+        model.showToast(String(localized: "search.recentCleared"), action: .undo {
+            withAnimation(Motion.list(reduceMotion: reduceMotion)) {
+                // Oldest first: each one added goes to the top.
+                for text in cleared.reversed() { session.noteSearch(text) }
+            }
+        })
+    }
+
     /// Items opened during the session, newest first (at most five).
     private func recentlyOpened(_ all: [FfiItemSummary]) -> [FfiItemSummary] {
         let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -143,14 +163,14 @@ struct SearchTab: View {
     /// shows that category; typing then searches inside it.
     private func browseGrid(_ all: [FfiItemSummary]) -> some View {
         let present = scopes(in: all)
-        return LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Space.m), GridItem(.flexible(), spacing: Theme.Space.m)], spacing: Theme.Space.m) {
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: space.m), GridItem(.flexible(), spacing: space.m)], spacing: space.m) {
             ForEach(present, id: \.type) { scope in
                 Button {
                     withAnimation(Motion.fold(reduceMotion: reduceMotion)) { category = scope.type }
                 } label: {
-                    HStack(spacing: Theme.Space.m) {
+                    HStack(spacing: space.m) {
                         CategoryArtwork(type: scope.type, size: 30)
-                        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                        VStack(alignment: .leading, spacing: space.xxs) {
                             Text(ItemCategory.of(scope.type).plural)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
@@ -163,7 +183,7 @@ struct SearchTab: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, Theme.Space.m)
+                    .padding(.horizontal, space.m)
                     .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                     .phoneCard()
                     .contentShape(.rect(cornerRadius: PhoneCard.radius))
@@ -203,7 +223,7 @@ struct SearchTab: View {
 
     private func chips(_ scopes: [Scope], total: Int) -> some View {
         ScrollView(.horizontal) {
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: space.s) {
                 chip(String(localized: "browse.all"), type: nil, count: total, selected: category == nil, id: "search.category.all") {
                     category = nil
                 }
@@ -218,10 +238,10 @@ struct SearchTab: View {
             }
             // The inset grouped list's row inset: the chips line up with the rows below.
             .padding(.horizontal, 20)
-            .padding(.vertical, Theme.Space.xxs)
+            .padding(.vertical, space.xxs)
         }
         .scrollIndicators(.hidden)
-        .sensoryFeedback(.selection, trigger: category)
+        .dbHaptic(.selection, trigger: category)
     }
 
     /// A scope chip: the type's artwork, its name and its count; the chosen one in the accent.
@@ -229,7 +249,7 @@ struct SearchTab: View {
         _ label: String, type: FfiItemType?, count: Int, selected: Bool, id: String, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: space.s) {
                 if let type { CategoryArtwork(type: type, size: 20) }
                 Text(label).font(.subheadline.weight(.semibold))
                 Text(count, format: .number)
@@ -238,8 +258,8 @@ struct SearchTab: View {
                     .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
                     .contentTransition(.numericText())
             }
-            .padding(.leading, type == nil ? Theme.Space.l : Theme.Space.s)
-            .padding(.trailing, Theme.Space.l)
+            .padding(.leading, type == nil ? space.l : space.s)
+            .padding(.trailing, space.l)
             .frame(height: 34)
             .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             .background(selected ? Theme.accent : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
@@ -263,11 +283,11 @@ struct SearchTab: View {
     /// Nothing found: what was searched, what to try, and the way out of a category.
     private var noResults: some View {
         Section {
-            VStack(spacing: Theme.Space.m) {
+            VStack(spacing: space.m) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 34, weight: .regular))
                     .foregroundStyle(.tertiary)
-                    .padding(.bottom, Theme.Space.xxs)
+                    .padding(.bottom, space.xxs)
                 Text(trimmed.isEmpty ? String(localized: "browse.nothingInCategory")
                     : String(localized: "browse.noResultsFor \(trimmed)"))
                     .font(.headline)
@@ -284,7 +304,7 @@ struct SearchTab: View {
                         withAnimation(Motion.fold(reduceMotion: reduceMotion)) { category = nil }
                     }
                     .buttonStyle(.glass)
-                    .padding(.top, Theme.Space.xs)
+                    .padding(.top, space.xs)
                     .accessibilityIdentifier("search.everywhere")
                 }
             }
@@ -306,5 +326,15 @@ struct SearchTab: View {
     private func vaultName(_ id: String) -> String? {
         session.allVaults.first { $0.id == id }?.meta.name
     }
+}
+
+/// The spacing steps the search tab uses, from `Theme.RX.Space` or the classic `Theme.Space`.
+struct SearchSpacing {
+    let xxs, xs, s, m, l: CGFloat
+
+    static let classic = SearchSpacing(
+        xxs: Theme.Space.xxs, xs: Theme.Space.xs, s: Theme.Space.s, m: Theme.Space.m, l: Theme.Space.l)
+    static let rx = SearchSpacing(
+        xxs: Theme.RX.Space.xxs, xs: Theme.RX.Space.xs, s: Theme.RX.Space.s, m: Theme.RX.Space.m, l: Theme.RX.Space.l)
 }
 #endif

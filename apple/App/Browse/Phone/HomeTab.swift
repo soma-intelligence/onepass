@@ -19,13 +19,15 @@ struct HomeTab: View {
     @AppStorage("onepass.home.recentsOpen", store: AppModel.browseDefaults) private var recentsOpen = true
     @AppStorage("onepass.home.frequentOpen", store: AppModel.browseDefaults) private var frequentOpen = true
     // The À proximité tile leads to the same list: its card is off unless chosen.
-    @AppStorage("onepass.home.showsNearbyCard", store: AppModel.browseDefaults) private var showsNearby = false
-    @AppStorage("onepass.home.showsProfile", store: AppModel.browseDefaults) private var showsProfile = true
+    @AppStorage(HomeCardKeys.nearby, store: AppModel.browseDefaults) private var showsNearby = false
+    @AppStorage(HomeCardKeys.profile, store: AppModel.browseDefaults) private var showsProfile = true
     @AppStorage("onepass.home.showsFavorites", store: AppModel.browseDefaults) private var showsFavorites = true
     @AppStorage("onepass.home.showsRecents", store: AppModel.browseDefaults) private var showsRecents = true
-    @AppStorage("onepass.home.showsFrequent", store: AppModel.browseDefaults) private var showsFrequent = true
+    @AppStorage(HomeCardKeys.frequent, store: AppModel.browseDefaults) private var showsFrequent = true
     // Shown only when a crypto wallet carries watch data (spec 2026-11-02-crypto-watch).
-    @AppStorage("onepass.home.showsCrypto", store: AppModel.browseDefaults) private var showsCrypto = true
+    @AppStorage(HomeCardKeys.crypto, store: AppModel.browseDefaults) private var showsCrypto = true
+    /// The RX look (Réglages > Général > Nouveau design): the score banner in place of the tiles.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     // Loaded here: a banner with nothing to show is an empty view, and an empty view never runs its task.
     @State private var duplicates = DuplicatesLoader()
@@ -40,6 +42,12 @@ struct HomeTab: View {
         Group {
             if counts.all == 0 {
                 firstItemState
+            } else if rxDesign {
+                RXHomePage(itemCount: counts.all, recents: recents, favorites: favorites) {
+                    rxExtras(frequent: frequent)
+                }
+                .environment(\.rxCards, true)
+                .task(id: session.summariesRevision) { await duplicates.load(session) }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Space.l) {
@@ -96,8 +104,10 @@ struct HomeTab: View {
             }
         }
         // "Bonjour Camille", large, above the four tiles.
-        .navigationTitle(greeting)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle(rxDesign ? "" : greeting)
+        // RX hides the bar: a hidden large title still pads the scroll inset, so the page came
+        // to rest about 55 pt low after a pull, then snapped (jank audit J03).
+        .navigationBarTitleDisplayMode(rxDesign ? .inline : .large)
         .toolbar {
             PhoneRootToolbar {
                 Section("browse.showOnHome") {
@@ -109,6 +119,33 @@ struct HomeTab: View {
                     Toggle("crypto.title", systemImage: "bitcoinsign.circle", isOn: $showsCrypto)
                 }
             }
+        }
+    }
+
+    /// RX: the classic cards under Récents, Favoris and Coffres (banners, tips, the cards picked in
+    /// the options), in the classic order.
+    @ViewBuilder private func rxExtras(frequent: [FfiItemSummary]) -> some View {
+        SyncRefusalSection()
+        AccountChangedSection()
+        if !searchActive { DuplicatesBanner(loader: duplicates) }
+        SharingBanners(horizontalPadding: 0)
+        if model.travel.showsCard, !searchActive {
+            TravelSuggestionCard().padding(Theme.Space.l).phoneCard()
+        }
+        if model.showsAutoFillTip, !searchActive {
+            AutoFillTipCard().padding(Theme.Space.l).phoneCard()
+        }
+        if model.showsSafariSetupCard, !searchActive {
+            SafariSetupCard().padding(Theme.Space.l).phoneCard()
+        }
+        if showsNearby { HomeNearbyCard() }
+        if showsCrypto { HomeCryptoCard() }
+        if showsProfile { HomeProfileCard(summary: session.mainIdentity) }
+        if showsFrequent, !frequent.isEmpty {
+            HomeListCard(
+                title: "home.frequentlyUsed", symbol: "chart.bar.fill", color: .teal,
+                isOpen: $frequentOpen, items: frequent, list: nil,
+                emptyText: "browse.itemsUsedAppearHere", id: "home.frequent")
         }
     }
 
@@ -602,7 +639,21 @@ extension View {
 /// The card's surface: the cell color, clipped to the card radius, a hairline, and the light-only
 /// card shadow.
 private struct PhoneCardSurface: ViewModifier {
-    func body(content: Content) -> some View {
+    /// RX look: the card token at radius 24, no hairline, no shadow.
+    @Environment(\.rxCards) private var rxCards
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if rxCards {
+            let shape = RoundedRectangle(cornerRadius: Theme.RX.Radius.card, style: .continuous)
+            content
+                .background(Theme.RX.Palette.cardBackground.color, in: shape)
+                .clipShape(shape)
+        } else {
+            classic(content)
+        }
+    }
+
+    private func classic(_ content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: PhoneCard.radius, style: .continuous)
         return content
             .background(Theme.card, in: shape)

@@ -1,3 +1,4 @@
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -7,6 +8,8 @@ import VaultKit
 struct ItemHeader: View {
     @Environment(AppModel.self) private var model
     let item: FfiItem
+    /// The RX header (iPhone): a centred 76 pt tile, the large title, the subtitle, the vault chip.
+    var centered = false
     /// Tells the detail which icon data the header draws, so the identity wash follows it.
     var onIcon: (Data?) -> Void = { _ in }
     /// The automatic icon the task found (the chosen one is read from memory at each frame).
@@ -41,7 +44,7 @@ struct ItemHeader: View {
         if let vault {
             HStack(spacing: Theme.Space.xs) {
                 VaultIconTile(icon: vault.meta.icon, colorName: vault.meta.color, size: 16)
-                Text(vault.meta.name).lineLimit(1)
+                Text(vault.meta.name).dbText(maxLines: 2)
             }
             .padding(.leading, Theme.Space.xxs)
             .padding(.trailing, Theme.Space.s)
@@ -53,6 +56,48 @@ struct ItemHeader: View {
     }
 
     var body: some View {
+        Group {
+            if centered {
+                rxBody
+            } else {
+                classicBody
+            }
+        }
+        .onChange(of: iconData, initial: true) { _, data in onIcon(data) }
+        .task(id: taskID) {
+            let id = taskID
+            resolved = ResolvedIcon(id: id, data: await model.iconLoader.icon(for: id.url, title: id.title, custom: id.custom))
+        }
+    }
+
+    private var rxBody: some View {
+        VStack(spacing: Theme.RX.Space.s) {
+            ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: 76, brand: item.cardBrandName,
+                useCategory: item.usesCategoryIcon, tint: ItemTint.color(named: item.color),
+                domain: ItemIconResolver.registrableDomain(primaryURL))
+                .favoriteBadge(item.favorite, iconSize: 76)
+                .shadow(color: .black.opacity(0.12), radius: 9, y: 6)
+                .padding(.bottom, Theme.RX.Space.xs)
+            Text(item.title)
+                .rxFont(.largeTitle)
+                .foregroundStyle(Theme.RX.Palette.textPrimary.color)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .accessibilityIdentifier("item.title")
+            Text(subtitle)
+                .rxFont(.callout)
+                .foregroundStyle(Theme.RX.Palette.textSecondary.color)
+                .multilineTextAlignment(.center)
+                .dbText(maxLines: 3)
+            vaultBadge
+                .rxFont(.footnoteBold)
+                .foregroundStyle(Theme.RX.Palette.textPrimary.color)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, Theme.RX.Space.xs)
+    }
+
+    private var classicBody: some View {
         HStack(alignment: .center, spacing: Theme.Space.l) {
             ItemIcon(type: item.itemType, title: item.title, siteIcon: iconData, size: Self.iconSize, brand: item.cardBrandName,
                 useCategory: item.usesCategoryIcon, tint: ItemTint.color(named: item.color),
@@ -89,11 +134,6 @@ struct ItemHeader: View {
                 #endif
             }
             Spacer(minLength: 0)
-        }
-        .onChange(of: iconData, initial: true) { _, data in onIcon(data) }
-        .task(id: taskID) {
-            let id = taskID
-            resolved = ResolvedIcon(id: id, data: await model.iconLoader.icon(for: id.url, title: id.title, custom: id.custom))
         }
     }
 }

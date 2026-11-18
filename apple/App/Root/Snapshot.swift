@@ -43,6 +43,28 @@ enum Snapshot {
             return
         }
 
+        // `-OnePassSnapshotOnly rx` (with `-OnePassRX YES`): the RX look on the Mac, Accueil, an
+        // item and Watchtower, light then dark.
+        if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "rx" {
+            for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: appearance)
+                model.selectedItem = nil
+                model.page = .home
+                try? await Task.sleep(for: .seconds(2))
+                await capture(directory, "mac-rx-home-\(suffix)")
+                model.showItems(.all)
+                model.selectedItem = login.map { ItemRef(vaultID: $0.vaultId, itemID: $0.id) }
+                await capture(directory, "mac-rx-item-\(suffix)")
+                model.selectedItem = nil
+                model.page = .watchtower
+                try? await Task.sleep(for: .seconds(2))
+                await capture(directory, "mac-rx-watchtower-\(suffix)")
+                await captureSettings(directory, "mac-rx-settings-\(suffix)", height: 1120)
+            }
+            NSApp.terminate(nil)
+            return
+        }
+
         // `-OnePassSnapshotOnly toolbar`: the list's header row (search, filter, sort, the
         // "Nouvel élément" pill) wide then narrow, where the pill folds to its "+", light then dark.
         if UserDefaults.standard.string(forKey: "OnePassSnapshotOnly") == "toolbar" {
@@ -177,7 +199,10 @@ enum Snapshot {
         menu.performActionForItem(at: index)
         try? await Task.sleep(for: .milliseconds(1500))
         // The settings window is created once, then reused (hidden) by the next ⌘,.
-        guard let window = NSApp.windows.first(where: { $0.isVisible && $0 !== appWindow && $0.contentView != nil })
+        // The largest other visible window: a small panel (the AutoFill tip's icon) may be visible too.
+        guard let window = NSApp.windows
+            .filter({ $0.isVisible && $0 !== appWindow && $0.contentView != nil })
+            .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
         else {
             DemoTrace.log("snapshot: settings window not found")
             return

@@ -11,20 +11,7 @@ public struct AppGlyph: View {
 
     public var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        stops: [
-                            .init(color: Color(red: 0x6E / 255, green: 0x6C / 255, blue: 0xF0 / 255), location: 0),
-                            .init(color: Theme.accent, location: 0.45),
-                            .init(color: Color(red: 0x3F / 255, green: 0x3D / 255, blue: 0xB8 / 255), location: 1),
-                        ],
-                        startPoint: UnitPoint(x: 0.33, y: 0),
-                        endPoint: UnitPoint(x: 0.67, y: 1)
-                    )
-                )
-                .shadow(color: Color(red: 0x1B / 255, green: 0x1A / 255, blue: 0x4A / 255).opacity(0.25),
-                        radius: size * 0.06, y: size * 0.05)
+            AppGlyphTile(size: size, shadow: true)
             Lattice.Dots().fill(Color.white.opacity(0.55))
                 .frame(width: size * 0.6, height: size * 0.6)
             Lattice.Bar().fill(Color.white)
@@ -38,9 +25,10 @@ public struct AppGlyph: View {
 
     /// The mark on a 100 x 100 grid: dots r 9 at x 23.5 / 49.5, y 24 / 50 / 76,
     /// bar 18 x 70 at (67.5, 15).
-    enum Lattice {
-        struct Dots: Shape {
-            func path(in rect: CGRect) -> Path {
+    public enum Lattice {
+        public struct Dots: Shape {
+            public init() {}
+            public func path(in rect: CGRect) -> Path {
                 let u = min(rect.width, rect.height) / 100
                 var path = Path()
                 for cx in [23.5, 49.5] as [CGFloat] {
@@ -53,13 +41,44 @@ public struct AppGlyph: View {
             }
         }
 
-        struct Bar: Shape {
-            func path(in rect: CGRect) -> Path {
+        public struct Bar: Shape {
+            public init() {}
+            public func path(in rect: CGRect) -> Path {
                 let u = min(rect.width, rect.height) / 100
                 let bar = CGRect(x: rect.minX + 67.5 * u, y: rect.minY + 15 * u, width: 18 * u, height: 70 * u)
                 return Path(roundedRect: bar, cornerRadius: 9 * u)
             }
         }
+    }
+}
+
+/// The indigo tile of the mark without its Lattice: the launch screen's picture (`LaunchMark`,
+/// rendered without the shadow) and the ground the splash assembles the mark on.
+public struct AppGlyphTile: View {
+    private let size: CGFloat
+    private let shadow: Bool
+
+    public init(size: CGFloat, shadow: Bool = false) {
+        self.size = size
+        self.shadow = shadow
+    }
+
+    public var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
+            .fill(
+                LinearGradient(
+                    stops: [
+                        .init(color: Color(red: 0x6E / 255, green: 0x6C / 255, blue: 0xF0 / 255), location: 0),
+                        .init(color: Theme.accent, location: 0.45),
+                        .init(color: Color(red: 0x3F / 255, green: 0x3D / 255, blue: 0xB8 / 255), location: 1),
+                    ],
+                    startPoint: UnitPoint(x: 0.33, y: 0),
+                    endPoint: UnitPoint(x: 0.67, y: 1)
+                )
+            )
+            .shadow(color: Color(red: 0x1B / 255, green: 0x1A / 255, blue: 0x4A / 255).opacity(shadow ? 0.25 : 0),
+                    radius: size * 0.06, y: size * 0.05)
+            .frame(width: size, height: size)
     }
 }
 

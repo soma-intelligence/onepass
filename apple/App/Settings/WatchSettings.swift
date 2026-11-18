@@ -10,15 +10,19 @@ struct WatchSettings: View {
 
     var body: some View {
         Form {
-            if let phone = model.companion.phone {
-                content(phone)
-            } else {
-                Section {
-                    Label("settings.notAvailableOnDevice", systemImage: "applewatch.slash")
-                        .foregroundStyle(.secondary)
+            Group {
+                if let phone = model.companion.phone {
+                    content(phone)
+                } else {
+                    Section {
+                        Label("settings.notAvailableOnDevice", systemImage: "applewatch.slash")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Apple Watch")
     }
 
@@ -55,20 +59,14 @@ struct WatchSettings: View {
                         .accessibilityIdentifier("settings.watch.error")
                 }
             } footer: {
-                Text(
-                    "Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés. Au-delà de 50 éléments marqués, les derniers par ordre alphabétique ne sont pas copiés."
-                )
+                // One line; what the watch gets and never gets, the 50 item cap and the wrist
+                // detection advice sit behind the info button (they were two paragraphs).
+                HStack(alignment: .firstTextBaseline) {
+                    SettingsFootnote("settings.watch.sent.short")
+                    Spacer(minLength: 0)
+                    SettingsInfoButton(Self.details, id: "settings.watch.info")
+                }
             }
-            Section {
-                Text(
-                    "La montre reçoit les codes à usage unique, l'identifiant d'un Login, les Wi-Fi avec leur mot de passe, les cartes de membre, la carte bancaire réduite aux 4 derniers chiffres, les codes d'accès et les pièces d'identité. Jamais le mot de passe d'un Login, le CVV, le code PIN, le numéro complet d'une carte ni les notes. Les coffres masqués sont exclus."
-                )
-                Text(
-                    "Sans la détection du poignet, les codes restent visibles tant que la montre est déverrouillée. Verrouille-la pour les protéger."
-                )
-            }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
             Section {
                 Button("settings.removeFromAppleWatch", role: .destructive) {
                     confirmWipe = true
@@ -84,9 +82,18 @@ struct WatchSettings: View {
                 }
                 .accessibilityIdentifier("settings.watch.wipe")
             } footer: {
-                Text("settings.watch.wipe.footer")
+                SettingsFootnote("settings.watch.wipe.footer")
             }
         }
+    }
+
+    /// The rules of what is sent, for the info button.
+    private static var details: Text {
+        Text("La montre reçoit les codes à usage unique, l'identifiant d'un Login, les Wi-Fi avec leur mot de passe, les cartes de membre, la carte bancaire réduite aux 4 derniers chiffres, les codes d'accès et les pièces d'identité. Jamais le mot de passe d'un Login, le CVV, le code PIN, le numéro complet d'une carte ni les notes. Les coffres masqués sont exclus.")
+            + Text(verbatim: "\n\n")
+            + Text("Seuls les éléments marqués « Sur l'Apple Watch » sont envoyés. Au-delà de 50 éléments marqués, les derniers par ordre alphabétique ne sont pas copiés.")
+            + Text(verbatim: "\n\n")
+            + Text("Sans la détection du poignet, les codes restent visibles tant que la montre est déverrouillée. Verrouille-la pour les protéger.")
     }
 
     private static func relative(_ date: Date) -> String {

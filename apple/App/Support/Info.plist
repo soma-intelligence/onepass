@@ -56,9 +56,9 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur.</string>
 	<key>NSLocationUsageDescription</key>
-	<string>$(ONEPASS_LOCATION_PURPOSE)</string>
+	<string>OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>$(ONEPASS_LOCATION_PURPOSE)</string>
+	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>ASCredentialExchangeActivity</string>
@@ -103,7 +103,14 @@
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+		<key>UIImageName</key>
+		<string>LaunchMark</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<false/>
+	</dict>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

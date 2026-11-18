@@ -20,6 +20,7 @@ struct Sidebar: View {
     @State private var duplicates = DuplicatesLoader()
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     #if os(macOS)
     /// Height of the window's title bar and toolbar, which the sidebar column does not report as
     /// a safe area (macOS 26): the account header starts below it.
@@ -53,6 +54,30 @@ struct Sidebar: View {
 
     var body: some View {
         #if os(macOS)
+        if rxDesign {
+            RXMacSidebar(
+                creatingVault: $creatingVault, editingVaultID: $editingVaultID,
+                duplicateGroups: duplicates.groups.count)
+                .task(id: session.summariesRevision) { await duplicates.load(session) }
+                .sheet(isPresented: $creatingVault) {
+                    VaultEditorView(vault: nil) { creatingVault = false }
+                }
+                .sheet(isPresented: Binding(get: { editingVaultID != nil }, set: { if !$0 { editingVaultID = nil } })) {
+                    if let vault = session.vaults.first(where: { $0.id == editingVaultID }) {
+                        VaultEditorView(vault: vault) { editingVaultID = nil }
+                    }
+                }
+        } else {
+            nativeColumn
+        }
+        #else
+        list
+        #endif
+    }
+
+    #if os(macOS)
+    /// The native column (the RX look off).
+    @ViewBuilder private var nativeColumn: some View {
         // Mac: the sidebar column reports no top safe area, so a list there starts under the traffic
         // lights. The account row sits above the list, below the title bar (its height read from
         // the window): never under the window buttons, its menu stays clickable.
@@ -118,10 +143,8 @@ struct Sidebar: View {
         // Light appearance: a brighter, airier column (a white wash over the blur, the desktop
         // still showing through), so it no longer reads as a gray panel.
         .background { SidebarLightWash().ignoresSafeArea() }
-        #else
-        list
-        #endif
     }
+    #endif
 
     private var list: some View {
         let counts = session.counts()
@@ -132,6 +155,12 @@ struct Sidebar: View {
             }
             #endif
             Section {
+                #if os(macOS)
+                // The RX look's Accueil (Penpot "Mac · Home"), first while the switch is on.
+                if rxDesign || model.page == .home {
+                    pageRow("rx.mac.home", symbol: "house.fill", color: Theme.accent, page: .home, id: "sidebar.home")
+                }
+                #endif
                 row("Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent, count: counts.all,
                     filter: .all, id: "library.all")
                 row("Favoris", symbol: "star.fill", color: Self.favoritesColor, count: counts.favorites,

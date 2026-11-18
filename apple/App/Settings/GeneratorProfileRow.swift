@@ -48,9 +48,9 @@ struct GeneratorProfileSection: View {
                     .accessibilityIdentifier("autofill.generator.symbols")
             }
         } header: {
-            Text("settings.autofill.generator.header")
+            SettingsHeader("settings.autofill.generator.header")
         } footer: {
-            Text(footer)
+            SettingsFootnote(footer)
         }
         .onAppear { profile = store.profile }
     }

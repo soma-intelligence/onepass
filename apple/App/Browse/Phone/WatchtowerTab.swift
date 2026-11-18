@@ -1,4 +1,5 @@
 #if os(iOS)
+import DesignBridgeKit
 import DesignKit
 import SwiftUI
 import VaultKit
@@ -11,67 +12,57 @@ import VaultKit
 struct WatchtowerTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A tap on the selected Watchtower tab at its root scrolls the page back to its top.
+    @Environment(\.phoneTabScrollToTop) private var scrollToTop
+    @State private var position = ScrollPosition(edge: .top)
+
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     private var watchtower: WatchtowerModel { model.watchtower }
+
+    /// Captures: `-OnePassDemoScroll bottom` starts Watchtower at its end. Debug builds only.
+    private static var demoBottom: Bool {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "OnePassDemoScroll") == "bottom"
+        #else
+        false
+        #endif
+    }
 
     var body: some View {
         let score = watchtower.report.map { Int($0.score) }
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Space.l) {
-                VStack(spacing: Theme.Space.l) {
-                    PhoneScoreGauge(score: score)
-                        .padding(.top, Theme.Space.xs)
-                    if let score {
-                        ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
-                            Label("browse.shareMyScore", systemImage: "square.and.arrow.up")
-                                .font(.subheadline.weight(.semibold))
-                                .padding(.horizontal, Theme.Space.xs)
-                                .frame(minHeight: 30)
-                        }
-                        .buttonStyle(.glass)
-                        .accessibilityIdentifier("watchtower.share")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                VStack(alignment: .leading, spacing: Theme.Space.s) {
-                    Text("browse.watchtowerFindsPasswordsTo")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    statusLine
-                }
-                .padding(.horizontal, Theme.Space.xs)
-                scanCard
-                if let report = watchtower.report {
-                    StrengthCard(levels: report.strength.map(Int.init))
-                    let flagged = WatchtowerCard.all.filter { Self.isFlagged($0, in: report) }
-                    ForEach(flagged) { card in
-                        PhoneWatchtowerCard(card: card, count: card.itemIDs(in: report).count, ids: card.itemIDs(in: report))
-                    }
-                    let seen = model.seenByFormerMemberIDs
-                    if !seen.isEmpty {
-                        PhoneWatchtowerCard(card: .seenByFormerMember, count: seen.count, ids: seen)
-                    }
-                    CryptoPhraseAlertCard()
-                    let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
-                    if !clear.isEmpty {
-                        ClearChecksCard(
-                            cards: clear, report: report, checkBreaches: watchtower.checkBreaches,
-                            breachCatalog: watchtower.breachCatalogUsed)
-                    }
-                }
-                BreachSettingCard()
+            if rxDesign {
+                // The run animates inside (gauge, status, scan card), not the whole page. On a
+                // regular width (iPad, unfolded) the column keeps a readable measure.
+                RXWatchtowerContent(score: score, scanCard: scanCard, statusLine: statusLine(showsFailure: false))
+                    .frame(maxWidth: Self.readableWidth)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
+                    .padding(.bottom, Theme.Space.xl)
+            } else {
+                classicContent(score: score)
             }
-            .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
-            .padding(.bottom, Theme.Space.xl)
-            .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
         }
-        .background(PhoneBackground())
-        .navigationTitle("Watchtower")
+        .defaultScrollAnchor(Self.demoBottom ? .bottom : .top)
+        .scrollPosition($position)
+        .onChange(of: scrollToTop) {
+            withDBAnimation(.smooth, reduceMotion: reduceMotion) { position.scrollTo(edge: .top) }
+        }
+        .background {
+            if !rxDesign { PhoneBackground() }
+        }
+        .modifier(RXScrollingBackdrop(name: RXHero.watchtower, active: rxDesign))
+        // RX: the page draws its own large title.
+        .navigationTitle(rxDesign ? "" : "Watchtower")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             PhoneRootToolbar()
         }
+        // RX: no navigation bar. Its toolbar search field doubled the tab bar's search, and a new
+        // item is Accueil's quick action; the account menu sits in the page header.
+        .toolbar(rxDesign ? .hidden : .automatic, for: .navigationBar)
         .vaultRefresh { await watchtower.refreshAndWait(model.session) }
         .task(id: model.session.summariesRevision) {
             watchtower.refreshIfNeeded(model.session)
@@ -82,10 +73,65 @@ struct WatchtowerTab: View {
         .accessibilityIdentifier("page.watchtower")
     }
 
-    /// A check with items to look at (a check whose source did not run counts as clear here; the
-    /// clear card says why it has no figure).
+    /// The classic layout (the RX look off).
+    private func classicContent(score: Int?) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.l) {
+            VStack(spacing: Theme.Space.l) {
+                PhoneScoreGauge(score: score)
+                    .padding(.top, Theme.Space.xs)
+                if let score {
+                    ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score)")) {
+                        Label("browse.shareMyScore", systemImage: "square.and.arrow.up")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, Theme.Space.xs)
+                            .frame(minHeight: 30)
+                    }
+                    .buttonStyle(.glass)
+                    .accessibilityIdentifier("watchtower.share")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                Text("browse.watchtowerFindsPasswordsTo")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                statusLine(showsFailure: true)
+            }
+            .padding(.horizontal, Theme.Space.xs)
+            scanCard
+            if let report = watchtower.report {
+                StrengthCard(levels: report.strength.map(Int.init))
+                let flagged = WatchtowerCard.all.filter { Self.isFlagged($0, in: report) }
+                ForEach(flagged) { card in
+                    PhoneWatchtowerCard(card: card, count: card.itemIDs(in: report).count, ids: card.itemIDs(in: report))
+                }
+                let seen = model.seenByFormerMemberIDs
+                if !seen.isEmpty {
+                    PhoneWatchtowerCard(card: .seenByFormerMember, count: seen.count, ids: seen)
+                }
+                CryptoPhraseAlertCard()
+                let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
+                if !clear.isEmpty {
+                    ClearChecksCard(
+                        cards: clear, report: report, checkBreaches: watchtower.checkBreaches,
+                        breachCatalog: watchtower.breachCatalogUsed)
+                }
+            }
+            BreachSettingCard()
+        }
+        .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
+        .padding(.bottom, Theme.Space.xl)
+        .animation(.smooth(duration: 0.3), value: watchtower.isRunning)
+    }
+
+    /// The widest the RX column grows on a regular width (iPad, unfolded): a readable measure.
+    /// No RX token holds it yet.
+    private static let readableWidth: CGFloat = 640
+
+    /// A check with items to look at (`WatchtowerCard.isFlagged`, the rule the Mac page shares).
     static func isFlagged(_ card: WatchtowerCard, in report: FfiWatchtowerReport) -> Bool {
-        !card.itemIDs(in: report).isEmpty
+        card.isFlagged(in: report)
     }
 
     /// While a scan runs: a card with its step and a slim bar (the analysis, then the breach check
@@ -110,22 +156,26 @@ struct WatchtowerTab: View {
         }
     }
 
-    @ViewBuilder private var statusLine: some View {
+    /// The count and how far the breach check went (the Mac page's words). The RX page leaves
+    /// a failure to its error state (`DBLoadableView`), so it is not said twice.
+    @ViewBuilder private func statusLine(showsFailure: Bool) -> some View {
         switch watchtower.phase {
         case .idle, .ready:
             if let report = watchtower.report {
-                Text(report.itemsAnalyzed == 1
-                     ? String(localized: "browse.n1ItemAnalyzed") : String(localized: "browse.itemsAnalyzed \(report.itemsAnalyzed)"))
+                Text(WatchtowerModel.summary(report))
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
             }
         case .analyzing, .checkingBreaches:
             // The scan's own card says it (`scanCard`).
             EmptyView()
-        case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.footnote)
-                .foregroundStyle(.orange)
+        case .failed:
+            if showsFailure {
+                Label(WatchtowerModel.failureMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 }
@@ -134,8 +184,36 @@ struct WatchtowerTab: View {
 /// that light up to the score, the figure and its word in the middle. Flat colors, no glow.
 struct PhoneScoreGauge: View {
     let score: Int?
+    /// The run's phase: without a score, the caption says "Analyse…" only while one is coming.
+    var phase: WatchtowerModel.Phase? = nil
+    /// No item to score: no caption at all.
+    var isEmptyVault = false
+    /// RX: the Display typography, scaled with Dynamic Type, and a dial sized from it.
+    var rx = false
     private static let ticks = 40
-    private static let sweep = 270.0
+    nonisolated private static let sweep = 270.0
+    /// The classic dial: 210 pt around a 58 pt figure.
+    private static let side: CGFloat = 210
+    private static let classicDigits: CGFloat = 58
+    /// The RX dial grows with the figure up to this side, then the figure shrinks to fit.
+    private static let maxSide: CGFloat = 320
+
+    @ScaledMetric(relativeTo: .largeTitle) private var rxDigits = Theme.RX.Typography.display.spec.size
+
+    /// The dial's side: fixed in the classic look, from the scaled figure in RX.
+    private var dialSide: CGFloat {
+        guard rx else { return Self.side }
+        return min(Self.side * rxDigits / Theme.RX.Typography.display.spec.size, Self.maxSide)
+    }
+
+    /// The word under the figure: the score's word, "Analyse…" while a run is on its way, else
+    /// nothing (an empty vault, or a failure the page shows once in its error state).
+    private var caption: String? {
+        if let score { return ScoreGauge.label(score) }
+        if isEmptyVault { return nil }
+        if case .failed = phase { return nil }
+        return String(localized: "browse.analyzing")
+    }
 
     var body: some View {
         let fraction = Double(score ?? 0) / 100
@@ -145,7 +223,7 @@ struct PhoneScoreGauge: View {
                 .stroke(Color.primary.opacity(0.10), style: StrokeStyle(lineWidth: 14, lineCap: .round))
             Dial(fraction: fraction)
                 .stroke(color, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                .animation(.smooth, value: fraction)
+                .dbAnimation(value: fraction)
             // Ticks 0 through `lit` take the score's color, the rest stay faint.
             let lit = score == nil ? -1 : Int((fraction * Double(Self.ticks)).rounded())
             Ticks(count: Self.ticks, sweep: Self.sweep, indices: 0..<(lit + 1))
@@ -153,21 +231,34 @@ struct PhoneScoreGauge: View {
             Ticks(count: Self.ticks, sweep: Self.sweep, indices: (lit + 1)..<(Self.ticks + 1))
                 .stroke(Color.primary.opacity(0.12), style: StrokeStyle(lineWidth: 2, lineCap: .round))
             VStack(spacing: Theme.Space.xxs) {
-                Text(score.map(String.init) ?? "–")
-                    .font(.system(size: 58, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                Text(score.map(ScoreGauge.label) ?? String(localized: "browse.analyzing"))
-                    .font(.subheadline.weight(.semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(score == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(color))
+                // Rolling digits (DesignBridgeKit) as the score arrives and changes.
+                Group {
+                    if let score { DBNumber(score) } else { Text(verbatim: "–") }
+                }
+                .font(rx ? Theme.RX.Typography.display.font(size: rxDigits)
+                    : .system(size: Self.classicDigits, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                if let caption {
+                    Text(caption)
+                        .font(.subheadline.weight(.semibold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(score == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(color))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
             }
+            // Inside the ticks, so the figure and its word never touch the ring.
+            .frame(maxWidth: dialSide * 0.6)
             .offset(y: 4)
         }
-        .frame(width: 210, height: 210)
+        // A square no wider than the screen allows.
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: dialSide, maxHeight: dialSide)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("browse.securityScore"))
-        .accessibilityValue(Text(score.map { "\($0) sur 100, \(ScoreGauge.label($0))" } ?? ""))
+        .accessibilityValue(score.map { ScoreGauge.accessibilityValue($0) } ?? Text(verbatim: ""))
     }
 
     /// The arc, opening at the bottom, filled clockwise from the lower left by `fraction`.
@@ -284,7 +375,7 @@ private struct PhoneWatchtowerCard: View {
 }
 
 /// The checks with nothing to report: one row each, a green check, or why there is no figure.
-private struct ClearChecksCard: View {
+struct ClearChecksCard: View {
     let cards: [WatchtowerCard]
     let report: FfiWatchtowerReport
     let checkBreaches: Bool
@@ -365,7 +456,9 @@ struct WatchtowerItemsList: View {
             }
         }
         .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
+        // Inline: the finding titles are long, a large title cut them ("Comptes de connexio...",
+        // jank audit J15).
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 #endif

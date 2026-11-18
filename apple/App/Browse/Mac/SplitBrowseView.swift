@@ -192,6 +192,11 @@ struct PageColumn: View {
                 case .developer: DeveloperPage()
                 case .duplicates: DuplicatesReviewView(layout: .page)
                 case .profile: ProfileView()
+                #if os(macOS)
+                case .home: RXMacHome()
+                #else
+                case .home: EmptyView()
+                #endif
                 case .items: EmptyView()
                 }
             }

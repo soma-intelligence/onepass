@@ -40,6 +40,9 @@ extension EnvironmentValues {
     /// Closes the Profil sheet of the unfolded iPhone, then runs the closure (Réglages present
     /// from the root, so only once the sheet is gone). Nil when the Profil is not a sheet.
     @Entry var closeProfileSheet: (@MainActor (@escaping @MainActor () -> Void) -> Void)?
+    /// Grows each time the tab of this stack is tapped while already selected and at its root:
+    /// the root page scrolls back to its top on each change.
+    @Entry var phoneTabScrollToTop = 0
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
@@ -52,6 +55,8 @@ struct PhoneTabsView: View {
     @Environment(AppModel.self) private var model
     @State private var tab: PhoneTab = .home
     @State private var paths: [PhoneTab: [PhoneRoute]] = [:]
+    /// Per tab, the taps on the tab while it was already selected and at its root.
+    @State private var scrollToTop: [PhoneTab: Int] = [:]
     /// The item rows and the item detail share it: an item opens by zooming out of its row.
     @Namespace private var itemZoom
     @State private var searchQuery = ""
@@ -63,6 +68,14 @@ struct PhoneTabsView: View {
     /// The unfolded iPhone: an item opens in the detail half beside the tabs, never in a tab's
     /// stack, so the selection belongs to that half and the stacks never follow it.
     private var besideDetail: Bool { foldDrag != nil }
+    /// The RX look (Réglages > Général > Nouveau design).
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+
+    /// The system tab bar of a stack: hidden while an editor is open. The RX look keeps the native
+    /// iOS 26 bar (Liquid Glass capsule and the round search tab), as the classic look does.
+    private func systemBar(_ which: PhoneTab, editing: Bool = false) -> Visibility {
+        editing ? .hidden : .automatic
+    }
 
     /// A tab's label: the outline symbol, its filled form when the tab is selected.
     private func tabLabel(_ title: LocalizedStringKey, _ symbol: String, _ value: PhoneTab) -> some View {
@@ -72,7 +85,7 @@ struct PhoneTabsView: View {
     }
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: tabSelection) {
             // One family: outline symbols of the same weight, filled only on the selected tab (the
             // bar's own fill variant is turned off so the unselected ones stay light).
             Tab(value: PhoneTab.home) {
@@ -110,6 +123,8 @@ struct PhoneTabsView: View {
             if presented, tab != .search { tab = .search }
         }
         .environment(\.phoneSearchActive, searching)
+        // RX: logos fill their tiles (rows, tiles and the item header).
+        .environment(\.itemIconMarkScale, rxDesign ? ItemIcon.rxMarkScale : 1)
         .environment(\.openPhoneTab) { tab = $0 }
         .sheet(isPresented: newItemShown) {
             PhoneNewItemSheet()
@@ -170,6 +185,7 @@ struct PhoneTabsView: View {
             // same way (one shared modifier, never a copy per screen).
             root()
                 .headerFade()
+                .toolbar(systemBar(which), for: .tabBar)
                 .navigationDestination(for: PhoneRoute.self) { route in
                     Group {
                         switch route {
@@ -189,18 +205,47 @@ struct PhoneTabsView: View {
                             ItemDetailView(ref: ref)
                                 .id(ref)
                                 .itemZoomDestination(ref, in: itemZoom)
-                                .toolbar(model.isEditing ? .hidden : .visible, for: .tabBar)
+                                .toolbar(systemBar(which, editing: model.isEditing), for: .tabBar)
                         }
                     }
                     .headerFade()
+                    .toolbar(systemBar(which, editing: model.isEditing), for: .tabBar)
+                    .modifier(RouteZoomDestination(route: route, namespace: itemZoom))
                 }
         }
         .environment(\.itemZoomNamespace, itemZoom)
         .environment(\.inPhoneTabs, true)
+        .environment(\.phoneTabScrollToTop, scrollToTop[which] ?? 0)
         .environment(\.pushPhoneRoute) { route in
             paths[which, default: []].append(route)
             // As the path binding does: the top item of the visible stack is the selection.
             if which == tab, let ref = route.itemRef, model.selectedItem != ref { model.perform(.select(ref)) }
+        }
+    }
+
+    /// The tab bar's selection. A tap on the tab already selected (the system writes the same value
+    /// back) pops its stack to the root, or, at the root, scrolls the root page to its top.
+    private var tabSelection: Binding<PhoneTab> {
+        Binding(
+            get: { tab },
+            set: { newTab in
+                if newTab == tab {
+                    reselect(newTab)
+                } else {
+                    // The search opens in the same transaction as its tab, not a pass later from
+                    // `onChange(of: tab)`, which moved the page after it showed (jank audit J06).
+                    if newTab == .search, openSearchOnSelect, paths[.search]?.isEmpty ?? true { searching = true }
+                    tab = newTab
+                }
+            })
+    }
+
+    private func reselect(_ which: PhoneTab) {
+        guard which != .search else { return }
+        if paths[which]?.isEmpty ?? true {
+            scrollToTop[which, default: 0] += 1
+        } else {
+            path(which).wrappedValue = []
         }
     }
 
@@ -286,6 +331,12 @@ struct PhoneTabsView: View {
         if let list = defaults.string(forKey: "OnePassDemoList"), list.hasPrefix("duplicates") {
             tab = .home
             paths[.home] = [.duplicates]
+            return
+        }
+        // `-OnePassDemoList profile`: the Profil page over Accueil.
+        if defaults.string(forKey: "OnePassDemoList") == "profile" {
+            tab = .home
+            paths[.home] = [.profile]
             return
         }
         if let list = defaults.string(forKey: "OnePassDemoList") {
@@ -502,8 +553,12 @@ private struct FoldDropTray: View {
         let ref = ref
         done()
         Task {
-            try? await model.session.setFavorite(true, itemID: ref.itemID, vaultID: ref.vaultID)
-            model.showToast(String(localized: "app.addedToFavorites"))
+            do {
+                try await model.session.setFavorite(true, itemID: ref.itemID, vaultID: ref.vaultID)
+                model.showToast(String(localized: "app.addedToFavorites"))
+            } catch {
+                model.showToast(VaultError(error).localizedMessage, kind: .error)
+            }
         }
     }
 }
@@ -531,7 +586,22 @@ struct PhoneItemLink<Label: View>: View {
         if foldDrag != nil {
             label.modifier(ItemRowDrag(ref: ref))
         } else {
-            NavigationLink(value: PhoneRoute.item(ref)) { label }
+            NavigationLink(value: PhoneRoute.item(ref)) { label.itemZoomSource(ref) }
+        }
+    }
+}
+
+/// Every pushed page but an item (which zooms from its own row) zooms out of the row or tile that
+/// pushed it, when that row marked itself with `routeZoomSource`.
+private struct RouteZoomDestination: ViewModifier {
+    let route: PhoneRoute
+    let namespace: Namespace.ID
+
+    func body(content: Content) -> some View {
+        if case .item = route {
+            content
+        } else {
+            content.navigationTransition(.zoom(sourceID: route, in: namespace))
         }
     }
 }

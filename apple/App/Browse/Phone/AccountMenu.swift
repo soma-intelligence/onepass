@@ -140,7 +140,8 @@ struct AccountPanel: View {
                 }
                 .accessibilityIdentifier("account.setUpDevice")
                 #elseif os(iOS)
-                if SecretKeyScanner.isSupported {
+                // Shown whenever the device can scan: the scanner sheet explains a denied camera.
+                if SecretKeyScanner.isDeviceSupported {
                     AccountPanelRow(title: "account.panel.scanCode", symbol: "qrcode.viewfinder", color: AccountPanelTint.scan) {
                         perform(.scanCode)
                     }

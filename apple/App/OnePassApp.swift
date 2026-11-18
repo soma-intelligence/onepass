@@ -104,6 +104,9 @@ struct OnePassApp: App {
         RootView()
             .environment(model)
             .tint(Theme.accent)
+            // DesignBridgeKit: toast host and theme of the RX look, and the UI test launch
+            // overrides (-DBColorScheme, -DBDynamicTypeSize, -DBReduceMotion; Debug only).
+            .rxBridgeRoot()
             #if os(iOS)
             .modifier(AppearanceOverride())
             #endif

@@ -981,7 +981,7 @@ private struct RestoreStep: View {
             monospaced: true, secretKey: true, identifier: "onboarding.restoreKey")
             .secretKeyCaptureGuard()
         #if os(iOS)
-        if SecretKeyScanner.isSupported {
+        if SecretKeyScanner.isDeviceSupported {
             Button {
                 scanning = true
             } label: {

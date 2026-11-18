@@ -1,0 +1,8 @@
+{
+  "images" : [
+    { "filename" : "launch-tile@1x.png", "idiom" : "universal", "scale" : "1x" },
+    { "filename" : "launch-tile@2x.png", "idiom" : "universal", "scale" : "2x" },
+    { "filename" : "launch-tile@3x.png", "idiom" : "universal", "scale" : "3x" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
