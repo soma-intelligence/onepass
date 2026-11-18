@@ -16,11 +16,35 @@ enum RXWallpaper {
     /// The imported photo, stored in Application Support.
     static let uploaded = "upload"
     private static let uploadLightKey = "rx.home.wallpaper.uploadLight"
+    /// Whether the wallpaper drifts (`RXLiveWallpaper`), on Accueil and the lock screen. On by default.
+    static let liveKey = "rx.home.wallpaper.live"
+
+    /// The tones of a theme: its own colours, a low key one and a high key one (generate.py `tone`).
+    enum Tone: String, CaseIterable, Identifiable {
+        case natural, noir, clair
+        var id: String { rawValue }
+        var title: LocalizedStringKey { LocalizedStringKey("rx.wallpaper.tone." + rawValue) }
+        /// The suffix of the picture's name: "" for its own colours.
+        var suffix: String { self == .natural ? "" : "-" + rawValue }
+
+        /// The tone of a stored wallpaper name.
+        static func of(_ name: String) -> Tone {
+            allCases.first { $0 != .natural && name.hasSuffix($0.suffix) } ?? .natural
+        }
+    }
+
+    /// The name of the picture without its tone: "wp-lava-3-noir" is "wp-lava-3".
+    static func baseName(_ name: String) -> String {
+        let tone = Tone.of(name)
+        return tone == .natural ? name : String(name.dropLast(tone.suffix.count))
+    }
 
     /// A theme of the picker: its chip title and its pictures.
     struct Category: Identifiable, Hashable {
         let id: String
         let count: Int
+        /// Lava, Lights, Silk and Glass also come in Noir and Clair.
+        var hasTones: Bool { ["lava", "lights", "silk", "glass"].contains(id) }
 
         /// An interpolated literal would look up "rx.wallpaper.category.%@": the key is a plain String.
         var title: LocalizedStringKey { LocalizedStringKey("rx.wallpaper.category." + id) }
@@ -53,7 +77,13 @@ enum RXWallpaper {
             return Resolved(image: Image(uiImage: photo), isLight: AppModel.browseDefaults.bool(forKey: uploadLightKey))
         }
         if id.hasPrefix("wp-"), UIImage(named: id) != nil {
-            return Resolved(image: Image(id), isLight: lightNames.contains(id))
+            // A Clair picture is light, a Noir one dark, whatever its own colours are.
+            let light = switch Tone.of(id) {
+            case .clair: true
+            case .noir: false
+            case .natural: lightNames.contains(id)
+            }
+            return Resolved(image: Image(id), isLight: light)
         }
         let light = colorScheme == .light
         return Resolved(image: Image(light ? RXHero.item : RXHero.home), isLight: light)
@@ -185,6 +215,8 @@ struct RXWallpaperPicker: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var hasUpload = RXWallpaper.hasUpload
     @State private var importFailed = false
+    @State private var tone: RXWallpaper.Tone
+    @AppStorage(RXWallpaper.liveKey, store: AppModel.browseDefaults) private var live = true
 
     private typealias RX = Theme.RX
     private static let defaultChip = "default"
@@ -193,7 +225,8 @@ struct RXWallpaperPicker: View {
 
     init() {
         let stored = AppModel.browseDefaults.string(forKey: RXWallpaper.storageKey) ?? RXWallpaper.automatic
-        let owner = RXWallpaper.categories.first { $0.names.contains(stored) }
+        let owner = RXWallpaper.categories.first { $0.names.contains(RXWallpaper.baseName(stored)) }
+        _tone = State(initialValue: RXWallpaper.Tone.of(stored))
         var initial = owner?.id ?? (stored == RXWallpaper.uploaded ? Self.uploadedChip : Self.defaultChip)
         #if DEBUG
         if let demo = UserDefaults.standard.string(forKey: "OnePassDemoWallpaperChip") { initial = demo }
@@ -206,8 +239,27 @@ struct RXWallpaperPicker: View {
             VStack(spacing: 0) {
                 chips
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: RX.Space.m) {
-                        tiles
+                    VStack(spacing: RX.Space.l) {
+                        if currentTheme?.hasTones == true {
+                            Picker(selection: $tone) {
+                                ForEach(RXWallpaper.Tone.allCases) { tone in
+                                    Text(tone.title).tag(tone)
+                                }
+                            } label: {
+                                Text("rx.wallpaper.tone")
+                            }
+                            .pickerStyle(.segmented)
+                            .accessibilityIdentifier("rx.wallpaper.tone")
+                        }
+                        LazyVGrid(columns: columns, spacing: RX.Space.m) {
+                            tiles
+                        }
+                        Toggle(isOn: $live) {
+                            Text("rx.wallpaper.live")
+                            Text("rx.wallpaper.live.detail")
+                        }
+                        .padding(.top, RX.Space.s)
+                        .accessibilityIdentifier("rx.wallpaper.live")
                     }
                     .padding(.horizontal, RX.Space.gutter)
                     .padding(.vertical, RX.Space.l)
@@ -236,7 +288,18 @@ struct RXWallpaperPicker: View {
                 Button("OK", role: .cancel) {}
             }
             .sensoryFeedback(.selection, trigger: selection)
+            // A new tone applies at once to the picture chosen in this theme.
+            .onChange(of: tone) { _, tone in
+                let base = RXWallpaper.baseName(selection)
+                if let theme = currentTheme, theme.hasTones, theme.names.contains(base) {
+                    selection = base + tone.suffix
+                }
+            }
         }
+    }
+
+    private var currentTheme: RXWallpaper.Category? {
+        RXWallpaper.categories.first { $0.id == category }
     }
 
     private var chipIDs: [String] {
@@ -285,8 +348,9 @@ struct RXWallpaperPicker: View {
                 tile(id: RXWallpaper.uploaded, image: Image(uiImage: photo), badge: nil)
             }
         default:
-            if let theme = RXWallpaper.categories.first(where: { $0.id == category }) {
-                ForEach(theme.names, id: \.self) { name in
+            if let theme = currentTheme {
+                let suffix = theme.hasTones ? tone.suffix : ""
+                ForEach(theme.names.map { $0 + suffix }, id: \.self) { name in
                     tile(id: name, image: Image(RXWallpaper.thumbnail(name)), badge: nil)
                 }
             }

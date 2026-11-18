@@ -885,15 +885,18 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
     let initialOffset: CGFloat?
     /// A light photo (dark words over it): a soft white veil instead of the dark scrim.
     let lightPhoto: Bool
+    /// A wallpaper that drifts slowly (`RXLiveWallpaper`), still with Reduce Motion.
+    let livePhoto: Bool
     /// Each change scrolls the page back to its top (a tap on the tab that is already selected).
     let scrollToTop: Int
 
     public init(
-        photo: Image, lightPhoto: Bool = false, initialOffset: CGFloat? = nil, scrollToTop: Int = 0,
-        @ViewBuilder hero: () -> Hero, @ViewBuilder sheet: () -> Sheet
+        photo: Image, lightPhoto: Bool = false, livePhoto: Bool = false, initialOffset: CGFloat? = nil,
+        scrollToTop: Int = 0, @ViewBuilder hero: () -> Hero, @ViewBuilder sheet: () -> Sheet
     ) {
         self.photo = photo
         self.lightPhoto = lightPhoto
+        self.livePhoto = livePhoto
         self.initialOffset = initialOffset
         self.scrollToTop = scrollToTop
         self.hero = hero()
@@ -968,6 +971,8 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
             photo
                 .resizable()
                 .scaledToFill()
+                // Drifts while the hero is on screen.
+                .rxLiveWallpaper(active: livePhoto && geometry.offset < heroHeight + geometry.topInset)
                 .accessibilityHidden(true)
             LinearGradient(
                 stops: [

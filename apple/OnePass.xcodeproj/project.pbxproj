@@ -175,6 +175,7 @@
 		9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD7A17DB13CA04B2F0C4933 /* AddressEditor.swift */; };
 		9DE84FC2711722167F45A359 /* MoneyNumberEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */; };
 		9E735A256691AD70E64876A6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */; };
+		49C13D873A9827711E853C60 /* RXSplash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611CA0BAD49A19A74A5692B5 /* RXSplash.swift */; };
 		9EA3106FF4DD38C55D75BE0B /* OrgJoinRequestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8ADF48C0C6787EDC5CCD5B5 /* OrgJoinRequestSheet.swift */; };
 		9EA53D0BF2DA9CB15911C35D /* WatchtowerPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6033154613CA6480B3B3BA6B /* WatchtowerPage.swift */; };
 		9F12A8CA59C3C016AD6098EA /* SafetyNumberView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CFFAEB23B34F56116FCABF /* SafetyNumberView.swift */; };
@@ -423,6 +424,7 @@
 		0D982919CC9E366DCF914D57 /* MigrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationSheet.swift; sourceTree = "<group>"; };
 		0DD43A3A8A980B4F9C98E885 /* LockVaultIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockVaultIntent.swift; sourceTree = "<group>"; };
 		0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		611CA0BAD49A19A74A5692B5 /* RXSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSplash.swift; sourceTree = "<group>"; };
 		0F5599963AE005E91D539368 /* AddMoreCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMoreCard.swift; sourceTree = "<group>"; };
 		111D03375573C7945D93F515 /* ReorderableStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReorderableStack.swift; sourceTree = "<group>"; };
 		1219B00FDE8D6A6B54AEC7ED /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -1106,6 +1108,7 @@
 				DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */,
 				088FED1C489272E05F9E76CC /* RevokedDeviceView.swift */,
 				0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */,
+				611CA0BAD49A19A74A5692B5 /* RXSplash.swift */,
 				D01023E7F8B52E18C675B84F /* SafeExitViews.swift */,
 				863713D1483535E8956E5D18 /* SecretInputField.swift */,
 				DA59281B681069BA80A59493 /* Snapshot.swift */,
@@ -2197,6 +2200,7 @@
 				1E4E49914C0302AE6F4D214E /* ReorderableStack.swift in Sources */,
 				C6939A7EE2BD033BC34E31DA /* RevokedDeviceView.swift in Sources */,
 				9E735A256691AD70E64876A6 /* RootView.swift in Sources */,
+				49C13D873A9827711E853C60 /* RXSplash.swift in Sources */,
 				FA303266C343BF2B2767F81F /* SSHKeySheet.swift in Sources */,
 				B847A67A6921D12461A050AB /* SafariSetupViews.swift in Sources */,
 				3BA390E406586A30AE2B1F1A /* SafeExitViews.swift in Sources */,

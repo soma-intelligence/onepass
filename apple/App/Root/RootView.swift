@@ -25,6 +25,8 @@ struct RootView: View {
     #if DEBUG
     @State private var demoDoorPlayed = false
     #endif
+    /// The animated splash of a cold launch (`RXSplash`), once per process.
+    @State private var splashing = RootView.splashOnLaunch
     #endif
     /// Credentials handed over by another app (Credential Exchange), waiting for the unlock.
     @State private var credentialExchange: CredentialExchangeRequest?
@@ -44,6 +46,12 @@ struct RootView: View {
                 MainActor.assumeIsolated { if let seam { doorSeam = seam } }
             }
             .overlay { doorOverlay }
+            .overlay {
+                if splashing {
+                    RXSplash { splashing = false }
+                        .transition(.identity)
+                }
+            }
             // A catch as the dial turns, a firmer one as the bolt releases and the door parts.
             .sensoryFeedback(trigger: door.phase) { _, phase in
                 switch phase {
@@ -325,6 +333,19 @@ struct RootView: View {
 }
 
 #if os(iOS)
+// MARK: - Splash
+
+extension RootView {
+    /// Debug captures and UI tests can skip it with `-OnePassNoSplash YES`.
+    static var splashOnLaunch: Bool {
+        #if DEBUG
+        !UserDefaults.standard.bool(forKey: "OnePassNoSplash")
+        #else
+        true
+        #endif
+    }
+}
+
 // MARK: - Vault door
 
 extension RootView {

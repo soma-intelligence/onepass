@@ -29,8 +29,8 @@ struct RXHomePage<Extras: View>: View {
     }
 
     var body: some View {
-        RXHeroPage(photo: wallpaper.image, lightPhoto: lightHero, initialOffset: Self.demoScroll,
-            scrollToTop: scrollToTop) {
+        RXHeroPage(photo: wallpaper.image, lightPhoto: lightHero, livePhoto: liveWallpaper,
+            initialOffset: Self.demoScroll, scrollToTop: scrollToTop) {
             VStack(spacing: RX.Space.xl) {
                 topBar
                 RXHomeScore(itemCount: itemCount)
@@ -58,6 +58,7 @@ struct RXHomePage<Extras: View>: View {
     /// Réglages > Général > Fond d'écran, or an imported photo.
     @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
     private var wallpaper: RXWallpaper.Resolved { RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme) }
+    @AppStorage(RXWallpaper.liveKey, store: AppModel.browseDefaults) private var liveWallpaper = true
 
     /// Captures: `-OnePassDemoScroll <points>` starts Accueil scrolled. Debug builds only.
     private static var demoScroll: CGFloat? {

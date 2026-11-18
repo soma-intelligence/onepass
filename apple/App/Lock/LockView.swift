@@ -20,6 +20,14 @@ struct LockView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.colorScheme) private var colorScheme
+    /// The RX look shows the wallpaper of Accueil behind the dial (`RXWallpaper`), drifting when
+    /// Réglages > Fond d'écran > Fond animé is on.
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.automatic
+    @AppStorage(RXWallpaper.liveKey, store: AppModel.browseDefaults) private var liveWallpaper = true
+    #endif
     @State private var password = ""
     @State private var revealed = false
     @State private var message: String?
@@ -68,6 +76,10 @@ struct LockView: View {
         ZStack {
             background
             layout
+                #if os(iOS)
+                // Over a wallpaper, the words follow the picture: dark over a light one.
+                .environment(\.colorScheme, wordsScheme)
+                #endif
         }
         .task(id: lockoutUntil) {
             // Re-renders when the wait ends so the field and the button come back.
@@ -178,9 +190,36 @@ struct LockView: View {
         .animation(.smooth(duration: 0.2), value: message)
     }
 
-    private var background: some View {
+    #if os(iOS)
+    private var wallpaper: RXWallpaper.Resolved? {
+        rxDesign ? RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme) : nil
+    }
+
+    private var wordsScheme: ColorScheme {
+        guard let wallpaper else { return colorScheme }
+        return wallpaper.isLight ? .light : .dark
+    }
+    #endif
+
+    @ViewBuilder private var background: some View {
         #if os(iOS)
-        Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+        if let wallpaper {
+            ZStack {
+                wallpaper.image
+                    .resizable()
+                    .scaledToFill()
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                    .clipped()
+                    .rxLiveWallpaper(active: liveWallpaper)
+                // A veil so the dial and the field read over any picture.
+                (wallpaper.isLight ? Color.white : Color.black)
+                    .opacity(wallpaper.isLight ? 0.32 : 0.28)
+            }
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
+        } else {
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+        }
         #else
         // Mac: the window's translucent glass (`containerBackground`); Vision Pro: the system glass.
         Color.clear

@@ -203,7 +203,11 @@ targets:
         # App/Support/InfoPlist.xcstrings.
         NSLocationWhenInUseUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
         NSLocationUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
-        UILaunchScreen: {}
+        # The launch screen: the RX page colour and the bare mark tile; RXSplash carries on from it.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchMark
+          UIImageRespectsSafeAreaInsets: false
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         # CloudKit pushes: sync rounds, and the agent requests of the Mac (agent-ready spec 5.2).
