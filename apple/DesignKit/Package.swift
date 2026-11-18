@@ -6,9 +6,9 @@ import PackageDescription
 // reads ONEPASS_FFI_XCFRAMEWORK (path relative to the VaultKit directory), so
 // `make test` passes the same variable to both packages.
 //
-// DesignBridgeKit and DesignBridgeTesting (Soma_Tools/design-bridge, a sibling of this clone) hold the
+// DesignBridgeKit and DesignBridgeTesting (vendored in apple/Vendor/DesignBridge, see its README) hold the
 // shared behaviour primitives (toast, rolling numbers, motion, states, glass) and the snapshot matrix.
-let designBridge = "../../../design-bridge/Packages"
+let designBridge = "../Vendor/DesignBridge"
 let package = Package(
     name: "DesignKit",
     defaultLocalization: "fr",

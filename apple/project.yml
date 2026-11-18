@@ -80,11 +80,11 @@ packages:
     path: SafariExtension/SafariRelay
   UpdateKit:
     path: UpdateKit
-  # Shared DesignBridge primitives and UI test base (Soma_Tools/design-bridge, a sibling of this clone).
+  # Shared DesignBridge primitives and UI test base, vendored in Vendor/DesignBridge (see its README).
   DesignBridgeKit:
-    path: ../../design-bridge/Packages/DesignBridgeKit
+    path: Vendor/DesignBridge/DesignBridgeKit
   DesignBridgeTesting:
-    path: ../../design-bridge/Packages/DesignBridgeTesting
+    path: Vendor/DesignBridge/DesignBridgeTesting
 
 targets:
   OnePass:

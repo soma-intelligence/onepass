@@ -105,6 +105,7 @@
 		56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214B39B3C661A8FF88275223 /* OnboardingSteps.swift */; };
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
 		582745A6BDE935DA6DC285D3 /* LockControlIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */; };
+		59974DC3E1898277B453C5AB /* RXSplash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0535F8E6C7385339E4582FDA /* RXSplash.swift */; };
 		5A3B3C0264919DA7784F2977 /* AccountsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCFA55095EE1CC9CC844A31 /* AccountsSettings.swift */; };
 		5AD704952C61BCF3A67100E6 /* TravelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAF97588217514C64DBA911D /* TravelSettings.swift */; };
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
@@ -175,7 +176,6 @@
 		9D7B0465F8F84A1BC0F77CAA /* AddressEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD7A17DB13CA04B2F0C4933 /* AddressEditor.swift */; };
 		9DE84FC2711722167F45A359 /* MoneyNumberEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */; };
 		9E735A256691AD70E64876A6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */; };
-		49C13D873A9827711E853C60 /* RXSplash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611CA0BAD49A19A74A5692B5 /* RXSplash.swift */; };
 		9EA3106FF4DD38C55D75BE0B /* OrgJoinRequestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8ADF48C0C6787EDC5CCD5B5 /* OrgJoinRequestSheet.swift */; };
 		9EA53D0BF2DA9CB15911C35D /* WatchtowerPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6033154613CA6480B3B3BA6B /* WatchtowerPage.swift */; };
 		9F12A8CA59C3C016AD6098EA /* SafetyNumberView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CFFAEB23B34F56116FCABF /* SafetyNumberView.swift */; };
@@ -411,6 +411,7 @@
 		0151B9E949BF8C50E53F3176 /* BarcodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeEditor.swift; sourceTree = "<group>"; };
 		01A896751814517F3556294B /* RXMacWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacWatchtower.swift; sourceTree = "<group>"; };
 		047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelDetection.swift; sourceTree = "<group>"; };
+		0535F8E6C7385339E4582FDA /* RXSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSplash.swift; sourceTree = "<group>"; };
 		0629736662C4143CF229997B /* TagEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditor.swift; sourceTree = "<group>"; };
 		063D005E39A84279670853E7 /* RXWallpaperSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXWallpaperSettings.swift; sourceTree = "<group>"; };
 		0678ACD447C474D9C9FA95CA /* AppModel+Accounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Accounts.swift"; sourceTree = "<group>"; };
@@ -424,7 +425,6 @@
 		0D982919CC9E366DCF914D57 /* MigrationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationSheet.swift; sourceTree = "<group>"; };
 		0DD43A3A8A980B4F9C98E885 /* LockVaultIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockVaultIntent.swift; sourceTree = "<group>"; };
 		0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
-		611CA0BAD49A19A74A5692B5 /* RXSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSplash.swift; sourceTree = "<group>"; };
 		0F5599963AE005E91D539368 /* AddMoreCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMoreCard.swift; sourceTree = "<group>"; };
 		111D03375573C7945D93F515 /* ReorderableStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReorderableStack.swift; sourceTree = "<group>"; };
 		1219B00FDE8D6A6B54AEC7ED /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -497,7 +497,7 @@
 		4B7F408977317BA9B16FDD68 /* PairingPasswordStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingPasswordStep.swift; sourceTree = "<group>"; };
 		4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacHome.swift; sourceTree = "<group>"; };
 		4CEB4C1C28B12B7DB3CEF256 /* MoneyNumberEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyNumberEditor.swift; sourceTree = "<group>"; };
-		4D6B5E5475C277882630047F /* DesignBridgeTesting */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignBridgeTesting; path = "../../design-bridge/Packages/DesignBridgeTesting"; sourceTree = SOURCE_ROOT; };
+		4D6B5E5475C277882630047F /* DesignBridgeTesting */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignBridgeTesting; path = Vendor/DesignBridge/DesignBridgeTesting; sourceTree = SOURCE_ROOT; };
 		4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassSafariMobile.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4FAA14239035AEBB97155D9B /* DevicesSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesSettings.swift; sourceTree = "<group>"; };
 		4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -517,7 +517,7 @@
 		5FCFA55095EE1CC9CC844A31 /* AccountsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSettings.swift; sourceTree = "<group>"; };
 		600D7CCE7887C2B9308B4DA4 /* ItemEditorModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEditorModel.swift; sourceTree = "<group>"; };
 		6033154613CA6480B3B3BA6B /* WatchtowerPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerPage.swift; sourceTree = "<group>"; };
-		60351DF902BFDB753FEF4690 /* DesignBridgeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignBridgeKit; path = "../../design-bridge/Packages/DesignBridgeKit"; sourceTree = SOURCE_ROOT; };
+		60351DF902BFDB753FEF4690 /* DesignBridgeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignBridgeKit; path = Vendor/DesignBridge/DesignBridgeKit; sourceTree = SOURCE_ROOT; };
 		63A4EEE56330F9F390B44838 /* PasswordHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordHistoryView.swift; sourceTree = "<group>"; };
 		63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		64165D82E996859B750AAF94 /* OnePass.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OnePass.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1108,7 +1108,7 @@
 				DCDA2384BE1D7375EE1EABFA /* PrivacyShield.swift */,
 				088FED1C489272E05F9E76CC /* RevokedDeviceView.swift */,
 				0ED229DECCAC9AF41F7DB5B3 /* RootView.swift */,
-				611CA0BAD49A19A74A5692B5 /* RXSplash.swift */,
+				0535F8E6C7385339E4582FDA /* RXSplash.swift */,
 				D01023E7F8B52E18C675B84F /* SafeExitViews.swift */,
 				863713D1483535E8956E5D18 /* SecretInputField.swift */,
 				DA59281B681069BA80A59493 /* Snapshot.swift */,
@@ -1718,8 +1718,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				510B0CA8D60DE962F549B244 /* XCLocalSwiftPackageReference "CompanionKit" */,
-				96DE3B27FAA27A4F1C018953 /* XCLocalSwiftPackageReference "../../design-bridge/Packages/DesignBridgeKit" */,
-				FEB5F2737AD8486A1DCD0468 /* XCLocalSwiftPackageReference "../../design-bridge/Packages/DesignBridgeTesting" */,
+				FB473F376F308A2638D9325E /* XCLocalSwiftPackageReference "Vendor/DesignBridge/DesignBridgeKit" */,
+				8E59CAED8FFA8372074039D9 /* XCLocalSwiftPackageReference "Vendor/DesignBridge/DesignBridgeTesting" */,
 				817B225C6984734AD379E708 /* XCLocalSwiftPackageReference "DesignKit" */,
 				70AE7BA97676A404C610A1BC /* XCLocalSwiftPackageReference "SafariExtension/SafariRelay" */,
 				FD510938C1541B6A28373391 /* XCLocalSwiftPackageReference "UpdateKit" */,
@@ -2188,6 +2188,7 @@
 				D1C9951D80B0D68219B7508E /* RXMacSidebar.swift in Sources */,
 				E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */,
 				F706685FFBC4E7BD9CC6BD64 /* RXSettingsView.swift in Sources */,
+				59974DC3E1898277B453C5AB /* RXSplash.swift in Sources */,
 				60787E11A37E59DDCDBCC1A4 /* RXWallpaperSettings.swift in Sources */,
 				20D54063BA509C9A47785F48 /* RXWatchtower.swift in Sources */,
 				A28F82424D365F83B772B85C /* ReadOnlyFieldView.swift in Sources */,
@@ -2200,7 +2201,6 @@
 				1E4E49914C0302AE6F4D214E /* ReorderableStack.swift in Sources */,
 				C6939A7EE2BD033BC34E31DA /* RevokedDeviceView.swift in Sources */,
 				9E735A256691AD70E64876A6 /* RootView.swift in Sources */,
-				49C13D873A9827711E853C60 /* RXSplash.swift in Sources */,
 				FA303266C343BF2B2767F81F /* SSHKeySheet.swift in Sources */,
 				B847A67A6921D12461A050AB /* SafariSetupViews.swift in Sources */,
 				3BA390E406586A30AE2B1F1A /* SafeExitViews.swift in Sources */,
@@ -3996,17 +3996,17 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = VaultKit;
 		};
-		96DE3B27FAA27A4F1C018953 /* XCLocalSwiftPackageReference "../../design-bridge/Packages/DesignBridgeKit" */ = {
+		8E59CAED8FFA8372074039D9 /* XCLocalSwiftPackageReference "Vendor/DesignBridge/DesignBridgeTesting" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../design-bridge/Packages/DesignBridgeKit";
+			relativePath = Vendor/DesignBridge/DesignBridgeTesting;
+		};
+		FB473F376F308A2638D9325E /* XCLocalSwiftPackageReference "Vendor/DesignBridge/DesignBridgeKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/DesignBridge/DesignBridgeKit;
 		};
 		FD510938C1541B6A28373391 /* XCLocalSwiftPackageReference "UpdateKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = UpdateKit;
-		};
-		FEB5F2737AD8486A1DCD0468 /* XCLocalSwiftPackageReference "../../design-bridge/Packages/DesignBridgeTesting" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../design-bridge/Packages/DesignBridgeTesting";
 		};
 /* End XCLocalSwiftPackageReference section */
 
