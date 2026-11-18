@@ -376,7 +376,10 @@ struct WatchtowerCard: Identifiable {
         case .breaches:
             switch report.pwned {
             case .disabled: return String(localized: "browse.breachCheckTurnedOff2")
-            case .unavailable: return checkBreaches ? String(localized: "browse.waitingForNetwork") : nil
+            // Not run: with the setting off, the card says so instead of showing a clean result.
+            case .unavailable:
+                return checkBreaches ? String(localized: "browse.waitingForNetwork")
+                    : String(localized: "browse.breachCheckTurnedOff2")
             case .checked, .partial: return nil
             }
         case .sites:

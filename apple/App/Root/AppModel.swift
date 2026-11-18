@@ -188,6 +188,13 @@ final class AppModel {
     var remoteRevision = 0
     /// Short confirmation shown at the bottom of the browse screens ("Déplacé vers Supprimés récemment").
     private(set) var toast: Toast?
+    /// RX look: the buttons of the toasts handed to the DesignBridgeKit host, by toast id. The host
+    /// only gets a lookup into this table, so a lock drops every handler at once, with any value an
+    /// Undo captured (a removed password field, an OTP seed).
+    @ObservationIgnored private var toastActions: [UUID: ToastAction] = [:]
+    @ObservationIgnored private var toastActionOrder: [UUID] = []
+    /// RX look: the last toast handed to the host, so a bridge that appears again never sends it twice.
+    @ObservationIgnored private var forwardedToastID: UUID?
     /// OnePass is the system AutoFill provider; nil until the first read. Read again on every return
     /// to the foreground and after an activation request.
     private(set) var autofillEnabled: Bool?
@@ -1725,6 +1732,7 @@ final class AppModel {
     /// Drops every item-bearing navigation state (the new item's draft holds typed values).
     /// Also run when the session leaves `unlocked` on its own (auto-lock, background, failure).
     func resetNavigation() {
+        dropToasts()
         selectedItem = nil
         watchtowerFilter = nil
         watchtower.clear()
@@ -2060,6 +2068,37 @@ final class AppModel {
     /// Closes the toast at once (its button was pressed).
     func dismissToast() {
         toast = nil
+    }
+
+    /// RX look: marks `shown` as handed to the DesignBridgeKit host and keeps its button here.
+    /// False when it was already handed over (the bridge appeared again while it was current).
+    func forwardToast(_ shown: Toast) -> Bool {
+        guard forwardedToastID != shown.id else { return false }
+        forwardedToastID = shown.id
+        if let action = shown.action {
+            toastActions[shown.id] = action
+            toastActionOrder.append(shown.id)
+            // The host shows one toast and queues three: older buttons can no longer be reached.
+            while toastActionOrder.count > 4 {
+                toastActions[toastActionOrder.removeFirst()] = nil
+            }
+        }
+        return true
+    }
+
+    /// RX look: runs the button of a forwarded toast, once. Nothing after a lock.
+    func runToastAction(_ id: UUID) {
+        guard let action = toastActions.removeValue(forKey: id) else { return }
+        toastActionOrder.removeAll { $0 == id }
+        if toast?.id == id { toast = nil }
+        action.handler()
+    }
+
+    /// Toasts and their buttons never outlive a lock or an account switch.
+    private func dropToasts() {
+        toast = nil
+        toastActions.removeAll()
+        toastActionOrder.removeAll()
     }
 
     /// The list changed (filter, search, remote reload): a selected item that is no longer in it

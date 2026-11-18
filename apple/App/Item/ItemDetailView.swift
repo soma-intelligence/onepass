@@ -28,6 +28,9 @@ struct ItemDetailView: View {
 
     @State private var item: FfiItem?
     @State private var loadError: DBLoadError?
+    /// The item the screen shows now. The Mac split view reuses this view across selections, so a
+    /// late Undo or Retry compares against it before it reloads an item that is no longer shown.
+    @State private var shownRef: ItemRef?
     /// Where the websites card sits among the free sections (per device, set by the editor).
     @AppStorage(EditorLayout.websitesSlotKey) private var websitesSlot = 0
     /// The RX look (Réglages > Général > Nouveau design): quick actions under the header, RX cards.
@@ -1002,7 +1005,8 @@ struct ItemDetailView: View {
         Task {
             do {
                 try await undo()
-                await reload(target, keepOnFailure: true)
+                // The user may have opened another item since the toast: leave that one on screen.
+                if shownRef == target { await reload(target, keepOnFailure: true) }
             } catch {
                 model.showToast(VaultError(error).localizedMessage, kind: .error)
             }
@@ -1014,11 +1018,19 @@ struct ItemDetailView: View {
         guard let saved else { return }
         item = saved
         let savedRef = ItemRef(vaultID: saved.vaultId, itemID: saved.id)
+        shownRef = savedRef
         if savedRef != ref, model.selectedItem == ref { model.selectedItem = savedRef }
         showToast(String(localized: "item.saved"))
     }
 
     private func load() async {
+        // Another item in a reused view: the reprompt and Travel checks of the last one do not carry over.
+        if shownRef?.itemID != ref.itemID {
+            confirmed = false
+            presencePassed = false
+            passwordPassed = false
+            editAfterConfirm = false
+        }
         await reload(ref)
         if let item, item.reprompt || travelGuarded(item), !confirmed { await confirmPresence() }
         // Profil > "Modifier l'identité" or "Modifier la carte": the editor opens once loaded.
@@ -1033,15 +1045,17 @@ struct ItemDetailView: View {
     private func reload(_ target: ItemRef, keepOnFailure: Bool = false) async {
         do {
             item = try await session.loadItem(vaultID: target.vaultID, itemID: target.itemID)
+            shownRef = target
             loadError = nil
         } catch {
             let message = VaultError(error).localizedMessage
             if keepOnFailure, item != nil {
                 model.showToast(message, kind: .error, action: .retry {
-                    Task { await reload(target, keepOnFailure: true) }
+                    Task { if shownRef == target { await reload(target, keepOnFailure: true) } }
                 })
             } else {
                 item = nil
+                shownRef = target
                 loadError = DBLoadError(title: String(localized: "item.itemUnavailable"), message: message)
             }
         }

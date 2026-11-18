@@ -380,21 +380,27 @@ private struct RXToastBridge: ViewModifier {
     func body(content: Content) -> some View {
         // Initial too: a toast set just before the browse screens appear (a link handled right
         // after the unlock) still reaches the host.
+        // The model remembers what it already handed over: a bridge that appears again (tab switch,
+        // rebuild) never shows the same toast twice or runs its Undo twice.
         content.onChange(of: model.toast, initial: true) { _, shown in
-            guard active, let shown else { return }
-            toast(Self.toast(for: shown))
+            guard active, let shown, model.forwardToast(shown) else { return }
+            toast(Self.toast(for: shown, model: model))
         }
     }
 
-    static func toast(for shown: Toast) -> DBToast {
+    /// The host gets a lookup by toast id, never the handler itself: a lock empties the model's
+    /// table, so a late tap does nothing and the captured values are released.
+    static func toast(for shown: Toast, model: AppModel) -> DBToast {
         if let action = shown.action {
+            let id = shown.id
+            let handler: @MainActor @Sendable () -> Void = { [weak model] in model?.runToastAction(id) }
             switch action.kind {
             case .undo:
-                return .undo(shown.text, undoTitle: action.title, perform: action.handler)
+                return .undo(shown.text, undoTitle: action.title, perform: handler)
             case .retry:
-                return .retry(shown.text, retryTitle: action.title, perform: action.handler)
+                return .retry(shown.text, retryTitle: action.title, perform: handler)
             case .other:
-                let button = DBToastButton(action.title, handler: action.handler)
+                let button = DBToastButton(action.title, handler: handler)
                 switch shown.kind {
                 case .success: return .success(shown.text, action: button)
                 case .error: return .error(shown.text, action: button)
