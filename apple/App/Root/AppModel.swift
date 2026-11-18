@@ -2094,6 +2094,16 @@ final class AppModel {
         action.handler()
     }
 
+    /// The buttons that act on `owner` (an item editor that closed) go, with what they captured.
+    /// A toast still on screen stays as text; its button does nothing.
+    func dropToastActions(owner: AnyObject) {
+        let id = ObjectIdentifier(owner)
+        if toast?.action?.owner == id { toast = nil }
+        let gone = toastActions.filter { $0.value.owner == id }.map(\.key)
+        for key in gone { toastActions[key] = nil }
+        toastActionOrder.removeAll { gone.contains($0) }
+    }
+
     /// Toasts and their buttons never outlive a lock or an account switch.
     private func dropToasts() {
         toast = nil

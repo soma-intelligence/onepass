@@ -67330,12 +67330,6 @@
     "settings.info" : {
       "comment" : "Réglages: label of the info button that shows a long explanation",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plus d'infos"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -67346,6 +67340,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Más información"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plus d'infos"
           }
         },
         "it" : {
@@ -67359,12 +67359,6 @@
     "settings.sync.accountChanged.short" : {
       "comment" : "Réglages > Sync: one line when the device signed in to another iCloud account (details behind the info button)",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Autre compte iCloud : la sync est en pause, ton coffre reste intact."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -67375,6 +67369,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Otra cuenta de iCloud: la sincronización está en pausa, tu bóveda sigue intacta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autre compte iCloud : la sync est en pause, ton coffre reste intact."
           }
         },
         "it" : {
@@ -67388,12 +67388,6 @@
     "settings.watch.sent.short" : {
       "comment" : "Réglages > Apple Watch: one line under the switch (details behind the info button)",
       "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seuls les éléments « Sur l'Apple Watch » sont envoyés, 50 au plus."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -67404,6 +67398,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Solo se envían los elementos «En el Apple Watch», 50 como máximo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seuls les éléments « Sur l'Apple Watch » sont envoyés, 50 au plus."
           }
         },
         "it" : {
@@ -67932,6 +67932,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paesaggio"
+          }
+        }
+      }
+    },
+    "rx.home.status.stale" : {
+      "comment" : "Accueil (new design): headline when the last Watchtower check failed and the score shown is the previous one.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score Not Up to Date"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puntuación no actualizada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score pas à jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Punteggio non aggiornato"
           }
         }
       }

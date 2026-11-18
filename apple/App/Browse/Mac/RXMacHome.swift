@@ -57,15 +57,15 @@ struct RXMacHome: View {
             }
             .rxPress()
             .accessibilityIdentifier("rx.mac.score")
-            // The first run failed: say so instead of a dash, and offer to run it again.
-            if status == .failed {
-                Text("rx.home.status.failed")
+            // The last run failed: say so (no figure, or an old one), and offer to run it again.
+            if status.canRetry {
+                Text(status == .failed ? "rx.home.status.failed" : "rx.home.status.stale")
                     .rxFont(.calloutMedium)
                     .foregroundStyle(.white.opacity(0.85))
             }
             Spacer(minLength: RX.Space.l)
             HStack(spacing: RX.Space.s) {
-                if status == .failed {
+                if status.canRetry {
                     capsule(Text(DBStrings.tryAgain), systemImage: "arrow.clockwise") {
                         model.watchtower.refresh(model.session)
                     }

@@ -298,10 +298,13 @@ struct ToastAction: Sendable {
     let kind: Kind
     let title: String
     let handler: @MainActor @Sendable () -> Void
+    /// The screen the button acts on (an item editor). `AppModel.dropToastActions(owner:)` drops
+    /// the button when that screen closes, with the values its handler captured.
+    var owner: ObjectIdentifier?
 
     /// Undo of a reversible action (archive, trash, a removed field...).
-    static func undo(_ handler: @escaping @MainActor @Sendable () -> Void) -> ToastAction {
-        ToastAction(kind: .undo, title: DBStrings.undo, handler: handler)
+    static func undo(owner: AnyObject? = nil, _ handler: @escaping @MainActor @Sendable () -> Void) -> ToastAction {
+        ToastAction(kind: .undo, title: DBStrings.undo, handler: handler, owner: owner.map(ObjectIdentifier.init))
     }
 
     /// Try again after a failure.

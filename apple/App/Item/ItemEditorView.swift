@@ -165,7 +165,11 @@ struct ItemEditorView: View {
         .interactiveDismissDisabled(editor.isDirty)
         // A lock or a navigation asks first while the draft has unsaved changes (`AppModel.perform`).
         .onChange(of: editor.isDirty, initial: true) { _, dirty in model.editorDirty = dirty }
-        .onDisappear { model.editorDirty = false }
+        .onDisappear {
+            model.editorDirty = false
+            // A removed field's Undo holds its value (a password, a seed): it goes with the editor.
+            model.dropToastActions(owner: editor)
+        }
         .onChange(of: model.saveRequest) { save() }
         // Typing counts as activity: a long edit does not auto-lock under the user's fingers.
         .onChange(of: editor.draft) { model.session.noteActivity() }

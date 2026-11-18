@@ -91,7 +91,7 @@ struct EditorFieldRow: View {
         let old = field.value
         editor.hideField(sectionID: sectionID, key: key)
         guard !old.isBlank else { return }
-        model.showToast(String(localized: "editor.fieldRemoved"), action: .undo {
+        model.showToast(String(localized: "editor.fieldRemoved"), action: .undo(owner: editor) {
             guard let i = editor.index(of: key, sectionID: sectionID) else { return }
             editor.draft.setValue(old, sectionID: sectionID, fieldIndex: i)
             editor.pin(key)
@@ -105,7 +105,7 @@ struct EditorFieldRow: View {
             let removed = editor.draft.item.sections.first(where: { $0.id == sectionID })?.fields[safe: i]
         else { return }
         editor.removeField(sectionID: sectionID, fieldIndex: i)
-        model.showToast(String(localized: "editor.fieldRemoved"), action: .undo {
+        model.showToast(String(localized: "editor.fieldRemoved"), action: .undo(owner: editor) {
             Self.restore(removed, at: i, sectionID: sectionID, in: editor)
         })
     }

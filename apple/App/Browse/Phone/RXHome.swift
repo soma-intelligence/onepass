@@ -270,22 +270,30 @@ struct RXSummaryIcon: View {
 }
 
 /// What the Home score shows (iPhone and Mac), from the Watchtower model: the score of the last
-/// report, a failed first run (with a retry), or a run on its way.
+/// report, a failed first run (with a retry), the last score after a failed refresh (with a retry),
+/// or a run on its way.
 enum RXScoreStatus: Equatable {
     case checking
     case failed
     case score(Int)
+    /// The last refresh failed: the figure is the previous report's, the headline says it is old.
+    case stale(Int)
 
     @MainActor static func of(_ watchtower: WatchtowerModel) -> RXScoreStatus {
-        if let report = watchtower.report { return .score(Int(report.score)) }
-        if case .failed = watchtower.phase { return .failed }
-        return .checking
+        let failed = if case .failed = watchtower.phase { true } else { false }
+        if let report = watchtower.report { return failed ? .stale(Int(report.score)) : .score(Int(report.score)) }
+        return failed ? .failed : .checking
     }
 
     var score: Int? {
-        if case .score(let score) = self { return score }
-        return nil
+        switch self {
+        case .score(let score), .stale(let score): score
+        case .checking, .failed: nil
+        }
     }
+
+    /// The last run failed: the Home offers to run it again.
+    var canRetry: Bool { self == .failed || { if case .stale = self { true } else { false } }() }
 }
 
 #if os(iOS)
@@ -310,6 +318,7 @@ struct RXHomeScore: View {
         switch status {
         case .checking: "rx.home.status.checking"
         case .failed: "rx.home.status.failed"
+        case .stale: "rx.home.status.stale"
         case .score(80...): "rx.home.status.good"
         case .score(60..<80): "rx.home.status.almost"
         case .score: "rx.home.status.attention"
@@ -356,8 +365,8 @@ struct RXHomeScore: View {
             .rxPress(haptic: .selection)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("rx.home.score")
-            // The first run failed: the headline says so, and this runs it again.
-            if status == .failed {
+            // The last run failed: the headline says so, and this runs it again.
+            if status.canRetry {
                 Button {
                     model.watchtower.refresh(model.session)
                 } label: {
