@@ -43,8 +43,8 @@ enum RXWallpaper {
     struct Category: Identifiable, Hashable {
         let id: String
         let count: Int
-        /// Lava, Lights, Silk and Glass also come in Noir and Clair.
-        var hasTones: Bool { ["lava", "lights", "silk", "glass"].contains(id) }
+        /// Lava, Lights, Silk, Glass and Landscape also come in Noir and Clair.
+        var hasTones: Bool { ["lava", "lights", "silk", "glass", "landscape"].contains(id) }
 
         /// An interpolated literal would look up "rx.wallpaper.category.%@": the key is a plain String.
         var title: LocalizedStringKey { LocalizedStringKey("rx.wallpaper.category." + id) }
@@ -53,19 +53,23 @@ enum RXWallpaper {
 
     /// The picker's themes, in chip order.
     static let categories: [Category] = [
-        "glass", "silk", "metal", "lights", "lava", "velvet", "horizon", "particles",
+        "landscape", "glass", "silk", "metal", "lights", "lava", "velvet", "horizon", "particles",
     ].map { Category(id: $0, count: 6) }
 
     /// Bundled wallpapers whose top half is light, so the hero keeps dark words over them
     /// (generate.py's manifest, `isLight`).
     static let lightNames: Set<String> = [
         "wp-metal-2", "wp-metal-3", "wp-velvet-1", "wp-velvet-2", "wp-velvet-3", "wp-glass-1", "wp-glass-2", "wp-glass-3", "wp-glass-4", "wp-glass-5", "wp-glass-6",
+        "wp-landscape-2", "wp-landscape-3", "wp-landscape-5", "wp-landscape-6",
     ]
 
     /// What the hero shows for the stored choice: the picture, and whether its words go dark.
     struct Resolved {
         let image: Image
         let isLight: Bool
+        /// Drawn pictures flow (`RXLiveWallpaper`); photos (Landscape, an imported one) only get
+        /// the slow camera move, so trees and faces never wobble.
+        var flows = true
     }
 
     static func resolve(_ id: String, colorScheme: ColorScheme) -> Resolved {
@@ -74,7 +78,7 @@ enum RXWallpaper {
         let id = UserDefaults.standard.string(forKey: "OnePassDemoWallpaper") ?? id
         #endif
         if id == uploaded, let photo = UploadCache.image() {
-            return Resolved(image: Image(uiImage: photo), isLight: AppModel.browseDefaults.bool(forKey: uploadLightKey))
+            return Resolved(image: Image(uiImage: photo), isLight: AppModel.browseDefaults.bool(forKey: uploadLightKey), flows: false)
         }
         if id.hasPrefix("wp-"), UIImage(named: id) != nil {
             // A Clair picture is light, a Noir one dark, whatever its own colours are.
@@ -83,7 +87,7 @@ enum RXWallpaper {
             case .noir: false
             case .natural: lightNames.contains(id)
             }
-            return Resolved(image: Image(id), isLight: light)
+            return Resolved(image: Image(id), isLight: light, flows: !id.hasPrefix("wp-landscape-"))
         }
         let light = colorScheme == .light
         return Resolved(image: Image(light ? RXHero.item : RXHero.home), isLight: light)

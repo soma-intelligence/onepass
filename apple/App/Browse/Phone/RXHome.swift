@@ -30,6 +30,7 @@ struct RXHomePage<Extras: View>: View {
 
     var body: some View {
         RXHeroPage(photo: wallpaper.image, lightPhoto: lightHero, livePhoto: liveWallpaper,
+            flowPhoto: wallpaper.flows,
             initialOffset: Self.demoScroll, scrollToTop: scrollToTop) {
             VStack(spacing: RX.Space.xl) {
                 topBar

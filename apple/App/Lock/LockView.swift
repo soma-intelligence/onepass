@@ -210,7 +210,7 @@ struct LockView: View {
                     .scaledToFill()
                     .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                     .clipped()
-                    .rxLiveWallpaper(active: liveWallpaper)
+                    .rxLiveWallpaper(active: liveWallpaper, flow: wallpaper.flows)
                 // A veil so the dial and the field read over any picture.
                 (wallpaper.isLight ? Color.white : Color.black)
                     .opacity(wallpaper.isLight ? 0.32 : 0.28)

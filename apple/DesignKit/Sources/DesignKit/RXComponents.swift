@@ -887,16 +887,19 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
     let lightPhoto: Bool
     /// A wallpaper that drifts slowly (`RXLiveWallpaper`), still with Reduce Motion.
     let livePhoto: Bool
+    /// The colours of a drawn wallpaper flow too; a photo only gets the slow camera move.
+    let flowPhoto: Bool
     /// Each change scrolls the page back to its top (a tap on the tab that is already selected).
     let scrollToTop: Int
 
     public init(
-        photo: Image, lightPhoto: Bool = false, livePhoto: Bool = false, initialOffset: CGFloat? = nil,
+        photo: Image, lightPhoto: Bool = false, livePhoto: Bool = false, flowPhoto: Bool = true, initialOffset: CGFloat? = nil,
         scrollToTop: Int = 0, @ViewBuilder hero: () -> Hero, @ViewBuilder sheet: () -> Sheet
     ) {
         self.photo = photo
         self.lightPhoto = lightPhoto
         self.livePhoto = livePhoto
+        self.flowPhoto = flowPhoto
         self.initialOffset = initialOffset
         self.scrollToTop = scrollToTop
         self.hero = hero()
@@ -972,7 +975,7 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
                 .resizable()
                 .scaledToFill()
                 // Drifts while the hero is on screen.
-                .rxLiveWallpaper(active: livePhoto && geometry.offset < heroHeight + geometry.topInset)
+                .rxLiveWallpaper(active: livePhoto && geometry.offset < heroHeight + geometry.topInset, flow: flowPhoto)
                 .accessibilityHidden(true)
             LinearGradient(
                 stops: [
