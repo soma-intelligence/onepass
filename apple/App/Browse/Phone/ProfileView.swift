@@ -37,6 +37,9 @@ struct ProfileView: View {
 
     private var session: VaultSession { model.session }
 
+    /// The widest the cards get (Watchtower's readable width).
+    private static let readableWidth: CGFloat = 640
+
     var body: some View {
         let mainIdentity = session.mainIdentity
         let mainCard = session.mainCard
@@ -49,6 +52,9 @@ struct ProfileView: View {
                 identityCard(mainIdentity)
                 paymentCard(mainCard)
             }
+            // Mac and iPad: the cards keep a readable width, centred, instead of spanning the window.
+            .frame(maxWidth: Self.readableWidth)
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, rxDesign ? Theme.RX.Space.gutter : Theme.Space.gutter(regularWidth: sizeClass == .regular))
             .padding(.bottom, Theme.Space.xl)
             .environment(\.rxCards, rxDesign)
