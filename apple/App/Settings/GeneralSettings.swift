@@ -43,6 +43,10 @@ struct GeneralSettings: View {
             if !inRXPage {
                 ProfileSection()
             }
+            // The RX Accueil's hero: only the RX Réglages of the window dress it.
+            if inRXPage {
+                MacWallpaperSection()
+            }
             #endif
             #if os(iOS)
             AppearanceSection()

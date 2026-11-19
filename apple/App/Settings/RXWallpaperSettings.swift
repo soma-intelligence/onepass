@@ -1,18 +1,30 @@
-#if os(iOS)
 import DesignKit
 import OSLog
+#if os(iOS)
 import PhotosUI
-import SwiftUI
 import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
+import SwiftUI
 
+#if os(iOS) || os(macOS)
 /// The wallpaper behind the Accueil hero: the default art (light or dark with the appearance), one
 /// of the bundled themes (`Assets.xcassets/Wallpapers`, made by penpot-lab/wallpapers/generate.py),
-/// or a photo the user imported. The choice is one string in the browse defaults.
+/// or a photo the user imported (iPhone and iPad). The choice is one string in the browse defaults.
+/// The Mac has no default art nor imported photo: nothing stored, or either of them, is Lava 3.
 @MainActor
 enum RXWallpaper {
     static let storageKey = "rx.home.wallpaper"
     /// The default art, which follows the appearance.
     static let automatic = "auto"
+    /// What the hero shows when nothing is stored: the default art on iPhone and iPad, Lava 3 (a
+    /// warm one) on the Mac.
+    #if os(macOS)
+    static let platformDefault = "wp-lava-3"
+    #else
+    static let platformDefault = automatic
+    #endif
     /// The imported photo, stored in Application Support.
     static let uploaded = "upload"
     private static let uploadLightKey = "rx.home.wallpaper.uploadLight"
@@ -77,10 +89,12 @@ enum RXWallpaper {
         // Captures: `-OnePassDemoWallpaper <name>` shows that wallpaper whatever is stored.
         let id = UserDefaults.standard.string(forKey: "OnePassDemoWallpaper") ?? id
         #endif
+        #if os(iOS)
         if id == uploaded, let photo = UploadCache.image() {
             return Resolved(image: Image(uiImage: photo), isLight: AppModel.browseDefaults.bool(forKey: uploadLightKey), flows: false)
         }
-        if id.hasPrefix("wp-"), UIImage(named: id) != nil {
+        #endif
+        if id.hasPrefix("wp-"), isBundled(id) {
             // A Clair picture is light, a Noir one dark, whatever its own colours are.
             let light = switch Tone.of(id) {
             case .clair: true
@@ -89,12 +103,26 @@ enum RXWallpaper {
             }
             return Resolved(image: Image(id), isLight: light, flows: !id.hasPrefix("wp-landscape-"))
         }
+        #if os(macOS)
+        // The default art, an imported photo or a name no longer bundled: the Mac's own default.
+        if id != platformDefault { return resolve(platformDefault, colorScheme: colorScheme) }
+        #endif
         let light = colorScheme == .light
         return Resolved(image: Image(light ? RXHero.item : RXHero.home), isLight: light)
     }
 
     static func thumbnail(_ name: String) -> String { name + "-thumb" }
 
+    /// Whether the asset catalog has a picture of that name.
+    static func isBundled(_ name: String) -> Bool {
+        #if os(macOS)
+        NSImage(named: name) != nil
+        #else
+        UIImage(named: name) != nil
+        #endif
+    }
+
+    #if os(iOS)
     // MARK: Imported photo
 
     static var uploadURL: URL {
@@ -157,7 +185,11 @@ enum RXWallpaper {
 
         static func reset() { cached = nil }
     }
+    #endif
 }
+#endif
+
+#if os(iOS)
 
 /// Réglages > Général: the wallpaper of Accueil, one row that opens the picker.
 struct WallpaperSection: View {
@@ -418,6 +450,129 @@ struct RXWallpaperPicker: View {
             Logger(subsystem: "me.somalabs.onepass", category: "wallpaper").error("Import failed: \(error.localizedDescription, privacy: .public)")
             importFailed = true
         }
+    }
+}
+#endif
+
+#if os(macOS)
+/// Réglages > Général on the Mac (the RX popup): the wallpaper of the Accueil hero as one card.
+/// The themes as small chips that wrap, the tone of the themes that have one, then the theme's
+/// pictures as landscape tiles (the hero's shape); a click applies at once.
+struct MacWallpaperSection: View {
+    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var selection = RXWallpaper.platformDefault
+    @State private var category: String
+    @State private var tone: RXWallpaper.Tone
+
+    private typealias RX = Theme.RX
+    private static let tileSize = CGSize(width: 120, height: 68)
+    private static let tileRadius: CGFloat = 12
+
+    init() {
+        let stored = AppModel.browseDefaults.string(forKey: RXWallpaper.storageKey) ?? RXWallpaper.platformDefault
+        let shown = RXWallpaper.isBundled(stored) ? stored : RXWallpaper.platformDefault
+        let owner = RXWallpaper.categories.first { $0.names.contains(RXWallpaper.baseName(shown)) }
+        _category = State(initialValue: owner?.id ?? "lava")
+        _tone = State(initialValue: RXWallpaper.Tone.of(shown))
+    }
+
+    var body: some View {
+        Section {
+            FlowLayout(spacing: RX.Space.s) {
+                ForEach(RXWallpaper.categories) { theme in
+                    chip(theme)
+                }
+            }
+            if currentTheme?.hasTones == true {
+                Picker(selection: $tone) {
+                    ForEach(RXWallpaper.Tone.allCases) { tone in
+                        Text(tone.title).tag(tone)
+                    }
+                } label: {
+                    Text("rx.wallpaper.tone")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("rx.wallpaper.tone")
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.tileSize.width, maximum: 160), spacing: RX.Space.m)],
+                      alignment: .leading, spacing: RX.Space.m) {
+                if let theme = currentTheme {
+                    let suffix = theme.hasTones ? tone.suffix : ""
+                    ForEach(theme.names.map { $0 + suffix }, id: \.self) { name in
+                        tile(name)
+                    }
+                }
+            }
+            .padding(.vertical, RX.Space.xs)
+        } header: {
+            SettingsHeader("rx.wallpaper.title")
+        }
+        // A new tone applies at once to the picture chosen in this theme.
+        .onChange(of: tone) { _, tone in
+            let base = RXWallpaper.baseName(selection)
+            if let theme = currentTheme, theme.hasTones, theme.names.contains(base) {
+                selection = base + tone.suffix
+            }
+        }
+    }
+
+    private var currentTheme: RXWallpaper.Category? {
+        RXWallpaper.categories.first { $0.id == category }
+    }
+
+    private func chip(_ theme: RXWallpaper.Category) -> some View {
+        let selected = category == theme.id
+        return Button {
+            withAnimation(.snappy) { category = theme.id }
+        } label: {
+            Text(theme.title)
+                .rxFont(.footnoteBold)
+                .foregroundStyle(selected ? RX.Palette.onAccent.color : RX.Palette.textPrimary.color)
+                .padding(.horizontal, RX.Space.m)
+                .frame(height: 28)
+                .background(selected ? RX.Palette.accent.color : RX.Palette.field.color, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("rx.wallpaper.chip.\(theme.id)")
+    }
+
+    private func tile(_ name: String) -> some View {
+        let selected = selection == name
+        let shape = RoundedRectangle(cornerRadius: Self.tileRadius, style: .continuous)
+        return Button {
+            selection = name
+        } label: {
+            Color.clear
+                .aspectRatio(Self.tileSize.width / Self.tileSize.height, contentMode: .fit)
+                .overlay {
+                    Image(RXWallpaper.thumbnail(name))
+                        .resizable()
+                        .scaledToFill()
+                }
+                .clipShape(shape)
+                .overlay {
+                    shape.strokeBorder(selected ? RX.Palette.accent.color : RX.Palette.separator.color,
+                                       lineWidth: selected ? 3 : 1)
+                }
+                .overlay(alignment: .topTrailing) {
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, RX.Palette.accent.color)
+                            .padding(RX.Space.xs)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("rx.wallpaper.title"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("rx.wallpaper.\(name)")
     }
 }
 #endif

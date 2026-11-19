@@ -11,6 +11,9 @@ import VaultKit
 struct RXMacHome: View {
     @Environment(AppModel.self) private var model
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 64
+    /// The hero's picture, picked in Réglages > Général (Lava 3 when nothing is stored).
+    @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.platformDefault
+    @Environment(\.colorScheme) private var colorScheme
 
     private typealias RX = Theme.RX
 
@@ -53,13 +56,16 @@ struct RXMacHome: View {
 
     /// The photo card: the score on the left, the actions under it.
     private func hero(itemCount: Int) -> some View {
+        let wallpaper = RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme)
+        // A light picture keeps dark words, over a white veil (as the iPhone hero does).
+        let light = wallpaper.isLight
         let status = RXScoreStatus.of(model.watchtower)
         let score = status.score
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
         return VStack(alignment: .leading, spacing: RX.Space.xs) {
             // The score opens Watchtower: one button, no tap gesture on the card (UX-PRESS-02).
             Button { model.page = .watchtower } label: {
-                scoreLabel(itemCount: itemCount, score: score)
+                scoreLabel(itemCount: itemCount, score: score, light: light)
             }
             .rxPress()
             .accessibilityIdentifier("rx.mac.score")
@@ -67,22 +73,22 @@ struct RXMacHome: View {
             if status.canRetry {
                 Text(status == .failed ? "rx.home.status.failed" : "rx.home.status.stale")
                     .rxFont(.calloutMedium)
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(Self.ink(light).opacity(0.85))
             }
             Spacer(minLength: RX.Space.l)
             HStack(spacing: RX.Space.s) {
                 if status.canRetry {
-                    capsule(Text(DBStrings.tryAgain), systemImage: "arrow.clockwise") {
+                    capsule(Text(DBStrings.tryAgain), systemImage: "arrow.clockwise", light: light) {
                         model.watchtower.refresh(model.session)
                     }
                     .accessibilityIdentifier("rx.mac.score.retry")
                 }
-                capsule(Text("Nouvel élément"), systemImage: "plus") { model.showNewItemPicker = true }
+                capsule(Text("Nouvel élément"), systemImage: "plus", light: light) { model.showNewItemPicker = true }
                     .accessibilityIdentifier("rx.mac.newItem")
-                capsule(Text("Générer"), systemImage: "character.cursor.ibeam") { model.showGenerator = true }
+                capsule(Text("Générer"), systemImage: "character.cursor.ibeam", light: light) { model.showGenerator = true }
                     .accessibilityIdentifier("rx.mac.generate")
                 ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score ?? 0)")) {
-                    capsuleLabel(Text("common.share"), systemImage: "square.and.arrow.up")
+                    capsuleLabel(Text("common.share"), systemImage: "square.and.arrow.up", light: light)
                 }
                 .rxPress()
                 .disabled(score == nil)
@@ -93,10 +99,11 @@ struct RXMacHome: View {
         .padding(.horizontal, RX.Space.xxl)
         .frame(maxWidth: .infinity, minHeight: 260, alignment: .leading)
         .background {
-            Image(RXHero.home)
+            wallpaper.image
                 .resizable()
                 .scaledToFill()
-                .overlay(LinearGradient(colors: [.black.opacity(0.45), .black.opacity(0.1)],
+                .overlay(LinearGradient(colors: light ? [.white.opacity(0.55), .white.opacity(0.1)]
+                                                      : [.black.opacity(0.45), .black.opacity(0.1)],
                                         startPoint: .leading, endPoint: .trailing))
                 .accessibilityHidden(true)
         }
@@ -105,11 +112,11 @@ struct RXMacHome: View {
     }
 
     /// The label with the item count, then the score over 100 in rolling digits.
-    private func scoreLabel(itemCount: Int, score: Int?) -> some View {
+    private func scoreLabel(itemCount: Int, score: Int?, light: Bool) -> some View {
         VStack(alignment: .leading, spacing: RX.Space.xs) {
             Text("rx.home.scoreLabel \(itemCount)")
                 .rxFont(.calloutMedium)
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(Self.ink(light).opacity(0.85))
             HStack(alignment: .lastTextBaseline, spacing: RX.Space.xs) {
                 Group {
                     if let score { DBNumber(score) } else { Text(verbatim: "–") }
@@ -121,26 +128,31 @@ struct RXMacHome: View {
                     .rxFont(.title)
                     .opacity(0.7)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(Self.ink(light))
             .accessibilityElement(children: .combine)
         }
         .contentShape(Rectangle())
     }
 
-    private func capsule(_ title: Text, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { capsuleLabel(title, systemImage: systemImage) }
+    /// The words over the hero: white over a dark picture, near black over a light one.
+    private static func ink(_ light: Bool) -> Color {
+        light ? Color(white: 0.08) : .white
+    }
+
+    private func capsule(_ title: Text, systemImage: String, light: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) { capsuleLabel(title, systemImage: systemImage, light: light) }
             .rxPress()
     }
 
-    private func capsuleLabel(_ title: Text, systemImage: String) -> some View {
+    private func capsuleLabel(_ title: Text, systemImage: String, light: Bool) -> some View {
         Label { title } icon: { Image(systemName: systemImage) }
             .rxFont(.calloutMedium)
-            .foregroundStyle(.white)
+            .foregroundStyle(Self.ink(light))
             .padding(.horizontal, RX.Space.l)
             .frame(height: 40)
-            .background(.white.opacity(0.18), in: Capsule())
+            .background(.white.opacity(light ? 0.45 : 0.18), in: Capsule())
             .background(.ultraThinMaterial.opacity(0.6), in: Capsule())
-            .environment(\.colorScheme, .dark)
+            .environment(\.colorScheme, light ? .light : .dark)
     }
 
     private func recentCard(_ recents: [FfiItemSummary]) -> some View {
