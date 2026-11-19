@@ -10,7 +10,7 @@ import VaultKit
 /// list, the vault's items, the full list.
 struct RXMacHome: View {
     @Environment(AppModel.self) private var model
-    @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 64
+    @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = Theme.RX.Typography.displaySmall.spec.size
     /// The hero's picture, picked in Réglages > Général (Lava 3 when nothing is stored).
     @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.platformDefault
     @Environment(\.colorScheme) private var colorScheme
@@ -54,7 +54,8 @@ struct RXMacHome: View {
         .accessibilityIdentifier("rx.mac.home")
     }
 
-    /// The photo card: the score on the left, the actions under it.
+    /// The photo card, words first as on the iPhone: the greeting, the state in words, the score as
+    /// a glass chip with the item count, then the actions in Liquid Glass along the bottom.
     private func hero(itemCount: Int) -> some View {
         let wallpaper = RXWallpaper.resolve(wallpaperID, colorScheme: colorScheme)
         // A light picture keeps dark words, over a white veil (as the iPhone hero does).
@@ -62,20 +63,33 @@ struct RXMacHome: View {
         let status = RXScoreStatus.of(model.watchtower)
         let score = status.score
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
-        return VStack(alignment: .leading, spacing: RX.Space.xs) {
-            // The score opens Watchtower: one button, no tap gesture on the card (UX-PRESS-02).
+        return VStack(alignment: .leading, spacing: 0) {
+            // The words open Watchtower: one button, no tap gesture on the card (UX-PRESS-02).
             Button { model.page = .watchtower } label: {
-                scoreLabel(itemCount: itemCount, score: score, light: light)
+                VStack(alignment: .leading, spacing: RX.Space.s) {
+                    greeting
+                        .rxFont(.calloutMedium)
+                        .foregroundStyle(Self.ink(light).opacity(0.8))
+                    Text(Self.headline(status))
+                        .font(RX.Typography.displaySmall.font(size: headlineSize))
+                        .tracking(RX.Typography.displaySmall.spec.tracking * headlineSize / RX.Typography.displaySmall.spec.size)
+                        .foregroundStyle(Self.ink(light))
+                        .lineLimit(2)
+                        .contentTransition(.opacity)
+                    HStack(spacing: RX.Space.s) {
+                        scoreChip(score, light: light)
+                        Text("browse.items \(itemCount)")
+                            .rxFont(.footnoteBold)
+                            .foregroundStyle(Self.ink(light).opacity(0.75))
+                    }
+                    .padding(.top, RX.Space.xs)
+                }
+                .contentShape(Rectangle())
             }
             .rxPress()
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("rx.mac.score")
-            // The last run failed: say so (no figure, or an old one), and offer to run it again.
-            if status.canRetry {
-                Text(status == .failed ? "rx.home.status.failed" : "rx.home.status.stale")
-                    .rxFont(.calloutMedium)
-                    .foregroundStyle(Self.ink(light).opacity(0.85))
-            }
-            Spacer(minLength: RX.Space.l)
+            Spacer(minLength: RX.Space.xl)
             HStack(spacing: RX.Space.s) {
                 if status.canRetry {
                     capsule(Text(DBStrings.tryAgain), systemImage: "arrow.clockwise", light: light) {
@@ -83,8 +97,17 @@ struct RXMacHome: View {
                     }
                     .accessibilityIdentifier("rx.mac.score.retry")
                 }
-                capsule(Text("Nouvel élément"), systemImage: "plus", light: light) { model.showNewItemPicker = true }
-                    .accessibilityIdentifier("rx.mac.newItem")
+                // The main action stands out: solid, the others are glass.
+                Button { model.showNewItemPicker = true } label: {
+                    Label { Text("Nouvel élément") } icon: { Image(systemName: "plus") }
+                        .rxFont(.calloutMedium)
+                        .foregroundStyle(light ? Color.white : Color(white: 0.08))
+                        .padding(.horizontal, RX.Space.l)
+                        .frame(height: 40)
+                        .background(light ? Color(white: 0.08) : Color.white, in: Capsule())
+                }
+                .rxPress()
+                .accessibilityIdentifier("rx.mac.newItem")
                 capsule(Text("Générer"), systemImage: "character.cursor.ibeam", light: light) { model.showGenerator = true }
                     .accessibilityIdentifier("rx.mac.generate")
                 ShareLink(item: String(localized: "browse.myOnepassSecurityScore \(score ?? 0)")) {
@@ -95,43 +118,64 @@ struct RXMacHome: View {
                 .accessibilityIdentifier("rx.mac.share")
             }
         }
-        .padding(.vertical, RX.Space.xl)
-        .padding(.horizontal, RX.Space.xxl)
-        .frame(maxWidth: .infinity, minHeight: 260, alignment: .leading)
+        .padding(RX.Space.xxl)
+        .frame(maxWidth: .infinity, minHeight: 300, alignment: .leading)
         .background {
             wallpaper.image
                 .resizable()
                 .scaledToFill()
-                .overlay(LinearGradient(colors: light ? [.white.opacity(0.55), .white.opacity(0.1)]
-                                                      : [.black.opacity(0.45), .black.opacity(0.1)],
+                // Words top left, buttons bottom left: the veil darkens (or lightens) that side
+                // and fades out to the right, so the picture keeps its colours there.
+                .overlay(LinearGradient(colors: light ? [.white.opacity(0.6), .white.opacity(0.15), .clear]
+                                                      : [.black.opacity(0.55), .black.opacity(0.2), .clear],
                                         startPoint: .leading, endPoint: .trailing))
+                .overlay(LinearGradient(colors: [.clear, (light ? Color.white : Color.black).opacity(0.25)],
+                                        startPoint: .center, endPoint: .bottom))
                 .accessibilityHidden(true)
         }
         .clipShape(shape)
         .contentShape(shape)
+        .animation(.smooth(duration: 0.35), value: status)
     }
 
-    /// The label with the item count, then the score over 100 in rolling digits.
-    private func scoreLabel(itemCount: Int, score: Int?, light: Bool) -> some View {
-        VStack(alignment: .leading, spacing: RX.Space.xs) {
-            Text("rx.home.scoreLabel \(itemCount)")
-                .rxFont(.calloutMedium)
-                .foregroundStyle(Self.ink(light).opacity(0.85))
-            HStack(alignment: .lastTextBaseline, spacing: RX.Space.xs) {
-                Group {
-                    if let score { DBNumber(score) } else { Text(verbatim: "–") }
-                }
-                .font(RX.Typography.display.font(size: scoreSize))
-                .tracking(-2.5)
-                .monospacedDigit()
-                Text(verbatim: "/100")
-                    .rxFont(.title)
-                    .opacity(0.7)
-            }
-            .foregroundStyle(Self.ink(light))
-            .accessibilityElement(children: .combine)
+    /// "Bonjour Quentin" (first word of the display name), or "Bonjour" without one.
+    private var greeting: Text {
+        let first = model.settings.displayName.split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? Text("rx.home.hello") : Text("rx.home.hi \(first)")
+    }
+
+    /// The state in words (same keys as the iPhone hero).
+    private static func headline(_ status: RXScoreStatus) -> LocalizedStringKey {
+        switch status {
+        case .checking: "rx.home.status.checking"
+        case .failed: "rx.home.status.failed"
+        case .stale: "rx.home.status.stale"
+        case .score(80...): "rx.home.status.good"
+        case .score(60..<80): "rx.home.status.almost"
+        case .score: "rx.home.status.attention"
         }
-        .contentShape(Rectangle())
+    }
+
+    /// The score as a glass chip: the shield in the score's colour, then the figure over 100. It
+    /// keeps its place (hidden) while the score is computed, so the hero does not jump.
+    private func scoreChip(_ score: Int?, light: Bool) -> some View {
+        HStack(spacing: RX.Space.s) {
+            Image(systemName: "checkmark.shield.fill")
+                .foregroundStyle(ScoreGauge.color(score ?? 100))
+                .accessibilityHidden(true)
+            Text("rx.home.score")
+                .rxFont(.footnoteBold)
+            HStack(spacing: 0) {
+                RXNumber(score ?? 100, typography: .footnoteBold)
+                Text(verbatim: "/100").rxFont(.footnoteBold).opacity(0.6)
+            }
+        }
+        .foregroundStyle(Self.ink(light))
+        .padding(.horizontal, RX.Space.m)
+        .padding(.vertical, RX.Space.s)
+        .rxGlass(in: Capsule(), onPhoto: !light, interactive: false)
+        .environment(\.colorScheme, light ? .light : .dark)
+        .opacity(score == nil ? 0 : 1)
     }
 
     /// The words over the hero: white over a dark picture, near black over a light one.
@@ -150,8 +194,7 @@ struct RXMacHome: View {
             .foregroundStyle(Self.ink(light))
             .padding(.horizontal, RX.Space.l)
             .frame(height: 40)
-            .background(.white.opacity(light ? 0.45 : 0.18), in: Capsule())
-            .background(.ultraThinMaterial.opacity(0.6), in: Capsule())
+            .rxGlass(in: Capsule(), onPhoto: !light, interactive: true)
             .environment(\.colorScheme, light ? .light : .dark)
     }
 
@@ -255,6 +298,7 @@ private struct MacFavoritesCard: View {
     let open: (FfiItemSummary) -> Void
     @State private var position = ScrollPosition(idType: String.self)
     @State private var geometry = RowGeometry()
+    @State private var hovered: String?
 
     private typealias RX = Theme.RX
     private static let tileWidth: CGFloat = 104
@@ -317,7 +361,13 @@ private struct MacFavoritesCard: View {
 
     private func tile(_ summary: FfiItemSummary) -> some View {
         VStack(spacing: RX.Space.s) {
-            RXSummaryIcon(summary: summary, size: 52)
+            // Every logo on the same squircle, so bare marks (Apple, GitHub) and tiled ones
+            // (Amazon) read as one grid.
+            RXSummaryIcon(summary: summary, size: 40)
+                .frame(width: 64, height: 64)
+                .background(RX.Palette.field.color, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .scaleEffect(hovered == summary.id ? 1.06 : 1)
+                .animation(.snappy(duration: 0.18), value: hovered)
             // Two lines, centred, so a long title wraps instead of being cut.
             Text(summary.title)
                 .rxFont(.footnote)
@@ -329,6 +379,9 @@ private struct MacFavoritesCard: View {
         .frame(width: Self.tileWidth)
         .padding(.top, RX.Space.xs)
         .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { hovered = summary.id } else if hovered == summary.id { hovered = nil }
+        }
     }
 
     /// Opaque in the middle; a fade on each side where more tiles wait.
@@ -366,7 +419,7 @@ private struct MacFavoritesCard: View {
 }
 
 /// The lead (icon, vault tile) of a Home card row on the Mac.
-private let macHomeLead: CGFloat = 28
+private let macHomeLead: CGFloat = 32
 
 /// A row of the Home cards on the Mac: a 28 pt lead, the title (Callout medium) over its subtitle
 /// (Footnote, secondary), then a trailing column of fixed width (the time, or nothing) and an
@@ -377,6 +430,7 @@ private struct MacHomeRow<Lead: View>: View {
     var trailing: Text?
     var chevron = false
     @ViewBuilder var leadView: Lead
+    @State private var hovering = false
 
     init(title: Text, subtitle: Text, trailing: Text? = nil, chevron: Bool = false, @ViewBuilder lead: () -> Lead) {
         self.title = title
@@ -416,9 +470,15 @@ private struct MacHomeRow<Lead: View>: View {
                     .frame(width: 84, alignment: .trailing)
             }
         }
-        .padding(.horizontal, RX.Space.l)
-        .frame(minHeight: 48)
+        .padding(.horizontal, RX.Space.l - RX.Space.s)
+        .frame(minHeight: 52)
+        // Hover: a soft rounded highlight, inset from the card's edge, as in a Mac source list.
+        .background(RX.Palette.field.color.opacity(hovering ? 1 : 0),
+                    in: RoundedRectangle(cornerRadius: RX.Radius.macRow, style: .continuous))
+        .padding(.horizontal, RX.Space.s)
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .accessibilityElement(children: .combine)
     }
 }
