@@ -149,6 +149,9 @@ final class AppModel {
     var pendingDiscard: GuardedAction?
     /// iPhone and iPad: the settings sheet (the Mac has its own `Settings` window).
     var showSettings = false
+    /// iPhone: how many account panels are open (each tab has its own account button); the tabs dim
+    /// behind an open one so its glass stays readable.
+    var accountPanelsOpen = 0
     /// The settings page to show next time the settings open (Développeur page cards).
     var settingsPageRequest: SettingsPage?
     /// The section of that page to scroll to (Profil > Mode d'appareil), taken by the page.

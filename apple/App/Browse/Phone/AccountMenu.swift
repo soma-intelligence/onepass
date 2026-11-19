@@ -49,6 +49,12 @@ struct AccountMenu: View {
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
         }
+        .onChange(of: isOpen) { _, open in
+            model.accountPanelsOpen = max(0, model.accountPanelsOpen + (open ? 1 : -1))
+        }
+        .onDisappear {
+            if isOpen { model.accountPanelsOpen = max(0, model.accountPanelsOpen - 1) }
+        }
         #if DEBUG
         // Screenshots: `-OnePassDemoAccountPanel YES` opens the panel once the screen is there.
         .task {

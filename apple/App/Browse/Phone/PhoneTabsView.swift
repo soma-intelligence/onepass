@@ -155,6 +155,17 @@ struct PhoneTabsView: View {
             model.phoneBrowsedVault = vault
         }
         .onDisappear { model.phoneBrowsedVault = nil }
+        // The account panel's glass over the busy Home read as one mess: the whole screen, tab bar
+        // included, dims evenly behind it (the panel itself is its own presentation, above this).
+        .overlay {
+            if model.accountPanelsOpen > 0 {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: model.accountPanelsOpen > 0)
         // A deep link (widget, Control): the item in Éléments, or the search tab. Also on appear,
         // when the link was waiting for the unlock.
         .onChange(of: model.browseReveal, initial: true) { _, reveal in
