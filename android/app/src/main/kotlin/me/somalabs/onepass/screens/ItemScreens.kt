@@ -32,6 +32,12 @@ import me.somalabs.onepass.core.passwordStrengthBits
 import me.somalabs.onepass.core.totpNow
 import me.somalabs.onepass.ui.Category
 import me.somalabs.onepass.ui.Ios
+import me.somalabs.onepass.ui.RxArt
+import me.somalabs.onepass.ui.backdropPage
+import me.somalabs.onepass.ui.glassChip
+import me.somalabs.onepass.ui.quickAction
+import me.somalabs.onepass.ui.quickActionRow
+import me.somalabs.onepass.ui.rxBar
 
 /**
  * The item as on iPhone: the detail (ItemDetailView: header, section cards
@@ -123,26 +129,59 @@ class ItemScreens(private val a: MainActivity) {
         val star = a.barIcon(if (item.favorite) R.drawable.ic_star_fill else R.drawable.ic_star, a.t("Favori", "Favorite")) {
             a.background({ s.setFavorite(item.vaultId, item.id, !item.favorite) }) { reopen(item) }
         }.apply { if (item.favorite) ((this as FrameLayout).getChildAt(0) as android.widget.ImageView).imageTintList = ColorStateList.valueOf(ui.amberStar) }
-        val edit = a.barText(a.t("Modifier", "Edit")) { edit(item, isNew = false) }
-        val more = a.barIcon(R.drawable.ic_more_circle, a.t("Actions", "Actions")) { v -> actions(v, item) }
+        val edit = a.barIcon(R.drawable.ic_edit, a.t("Modifier", "Edit")) { edit(item, isNew = false) }
+        val more = a.barIcon(R.drawable.ic_more, a.t("Actions", "Actions")) { v -> actions(v, item) }
         val trailing = if (trashed) listOf(more) else listOf(star, edit, more)
-        return a.pushedPage(null, trailing) {
-            // Header: icon, title, "Catégorie · sous-titre", vault chip.
-            val head = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(4)) }
-            head.addView(a.itemIcon(item.itemType, 56, url = (item.urls.firstOrNull { it.primary } ?: item.urls.firstOrNull())?.url, title = item.title).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = ui.dp(14) })
-            val names = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-            names.addView(ui.text(item.title.ifBlank { a.t("Sans titre", "Untitled") }, 26f, ui.label, 700))
-            val sub = a.summaries.firstOrNull { it.id == item.id }?.subtitle.orEmpty()
-            names.addView(ui.text(listOf(cat.singular(a), sub).filter { it.isNotBlank() }.joinToString(" · "), 15f, ui.secondary).apply { setPadding(0, ui.dp(3), 0, 0); maxLines = 1 })
-            head.addView(names, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(head)
-            val chips = LinearLayout(a).apply { setPadding(ui.dp(16), ui.dp(8), ui.dp(16), 0) }
-            a.vaults.firstOrNull { it.id == item.vaultId }?.let { v ->
-                chips.addView(ui.chip(v.meta.name, Ios.vaultColor(v.meta.color)))
+        val primaryUrl = (item.urls.firstOrNull { it.primary } ?: item.urls.firstOrNull())?.url
+        return a.backdropPage(RxArt.item, a.rxBar(trailing)) {
+            // The RX item hero: the art with the favourite star, the title, "Catégorie · sous-titre", the vault chip.
+            val head = LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(ui.dp(24), ui.dp(24), ui.dp(24), 0)
             }
-            if (item.archived) chips.addView(ui.chip(a.t("Archivé", "Archived"), ui.secondary).apply { (layoutParams as? LinearLayout.LayoutParams)?.marginStart = ui.dp(8) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = ui.dp(8) })
-            if (trashed) chips.addView(ui.chip(a.t("Dans la corbeille", "In Trash"), ui.red), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = ui.dp(8) })
-            addView(chips)
+            head.addView(a.itemIcon(item.itemType, 88, item.favorite, url = primaryUrl, title = item.title))
+            head.addView(ui.text(item.title.ifBlank { a.t("Sans titre", "Untitled") }, 34f, ui.label, 700).apply {
+                gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(16), 0, ui.dp(6))
+            })
+            val sub = a.summaries.firstOrNull { it.id == item.id }?.subtitle.orEmpty()
+            head.addView(ui.text(listOf(cat.singular(a), sub).filter { it.isNotBlank() }.joinToString(" · "), 15f, ui.secondary).apply { gravity = Gravity.CENTER; maxLines = 1 })
+            val chips = LinearLayout(a).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(10), 0, 0) }
+            fun chipLp(first: Boolean) = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { if (!first) marginStart = ui.dp(8) }
+            a.vaults.firstOrNull { it.id == item.vaultId }?.let { v ->
+                chips.addView(ui.glassChip(ui.monogram(v.meta.name.take(1).uppercase(), Ios.vaultColor(v.meta.color), 20), v.meta.name, onPhoto = false), chipLp(true))
+            }
+            if (item.archived) chips.addView(ui.chip(a.t("Archivé", "Archived"), ui.secondary), chipLp(chips.childCount == 0))
+            if (trashed) chips.addView(ui.chip(a.t("Dans la corbeille", "In Trash"), ui.red), chipLp(chips.childCount == 0))
+            head.addView(chips)
+            addView(head)
+
+            // Quick actions: copy the password, copy the code, open the website, send or copy the username.
+            val fields = item.sections.flatMap { it.fields }
+            val actions = mutableListOf<View>()
+            fields.firstOrNull { it.kind == FfiFieldType.PASSWORD && it.value !is FfiFieldValue.Empty }?.let { f ->
+                actions += ui.quickAction(R.drawable.ic_copy, a.t("Mot de passe", "Password"), onPhoto = false) { fresh(item, f.id)?.let { a.copy(it, true) } }
+            }
+            fields.firstOrNull { it.kind == FfiFieldType.OTP && it.value !is FfiFieldValue.Empty }?.let { f ->
+                actions += ui.quickAction(R.drawable.ic_two_factor, a.t("Code", "Code"), onPhoto = false) {
+                    fresh(item, f.id)?.let { secret -> runCatching { totpNow(secret, (System.currentTimeMillis() / 1000).toULong()) }.getOrNull()?.let { a.copy(it.code, true) } }
+                }
+            }
+            primaryUrl?.let { u ->
+                actions += ui.quickAction(R.drawable.ic_globe, a.t("Ouvrir", "Open"), onPhoto = false) {
+                    runCatching { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(if (u.contains("://")) u else "https://$u"))) }
+                }
+            }
+            if (!trashed && a.sharing.snapshot.contacts.any { it.state is me.somalabs.onepass.core.FfiContactState.Active }) {
+                actions += ui.quickAction(R.drawable.ic_share, a.t("Partager", "Share"), onPhoto = false) { a.sharingScreens.sendItem(item) }
+            } else username(item)?.let { u ->
+                actions += ui.quickAction(R.drawable.ic_copy, a.t("Identifiant", "Username"), onPhoto = false) { a.copy(u, false) }
+            }
+            if (actions.isNotEmpty() && !trashed) {
+                addView(ui.quickActionRow(*actions.take(4).toTypedArray()), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = ui.dp(28); marginStart = ui.dp(8); marginEnd = ui.dp(8)
+                })
+            }
 
             for (section in item.sections) {
                 val fields = section.fields.filter { it.value !is FfiFieldValue.Empty && display(it.value) != null }
@@ -266,7 +305,7 @@ class ItemScreens(private val a: MainActivity) {
         }
         var shown = false
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(ui.text(label, 13f, ui.readableAccent, 500))
+        col.addView(ui.text(label, 15f, ui.readableAccent, 500))
         col.addView(value.apply { setPadding(0, ui.dp(3), 0, 0) })
         if (kind == FfiFieldType.PASSWORD) {
             fresh(item, fieldId)?.let { p ->
@@ -286,7 +325,7 @@ class ItemScreens(private val a: MainActivity) {
         val more = FrameLayout(a).apply {
             setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(10))
             contentDescription = a.t("Actions", "Actions")
-            addView(ui.glyph(R.drawable.ic_more, ui.secondary, 22))
+            addView(ui.glyph(R.drawable.ic_more, ui.readableAccent, 22).apply { alpha = 0.6f })
             isClickable = true
         }
         more.setOnClickListener {
@@ -296,7 +335,7 @@ class ItemScreens(private val a: MainActivity) {
             if (secret) entries += Triple(if (shown) R.drawable.ic_eye_off else R.drawable.ic_eye, if (shown) a.t("Masquer", "Conceal") else a.t("Révéler", "Reveal")) {
                 shown = !shown
                 value.text = if (shown) fresh(item, fieldId)?.let { if (kind == FfiFieldType.PASSWORD) colored(it) else it } ?: "" else "••••••••••"
-                value.typeface = if (shown && kind == FfiFieldType.PASSWORD) Typeface.MONOSPACE else Typeface.DEFAULT
+                value.typeface = if (shown && kind == FfiFieldType.PASSWORD) Typeface.MONOSPACE else ui.font(400)
             }
             entries += Triple(R.drawable.ic_large_type, a.t("Afficher en grand", "Show in Large Type")) {
                 (if (secret) fresh(item, fieldId) else plain)?.let { largeType(it) }
@@ -327,7 +366,7 @@ class ItemScreens(private val a: MainActivity) {
             setOnClickListener { onClick() }
         }
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(ui.text(label, 13f, ui.readableAccent, 500))
+        col.addView(ui.text(label, 15f, ui.readableAccent, 500))
         col.addView(ui.text(value, 17f, ui.label).apply { setPadding(0, ui.dp(3), 0, 0); maxLines = 2 })
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         trailing?.let { row.addView(it) }
@@ -336,7 +375,7 @@ class ItemScreens(private val a: MainActivity) {
 
     /** The live code "538 • 262" and the seconds left in a ring pill. */
     private fun otpRow(item: FfiItem, fieldId: String, label: String): View {
-        val code = ui.text("––– • –––", 26f, ui.label, 600).apply { fontFeatureSettings = "tnum"; setPadding(0, ui.dp(3), 0, 0) }
+        val code = ui.text("––– –––", 30f, ui.label, 600).apply { fontFeatureSettings = "tnum"; setPadding(0, ui.dp(3), 0, 0) }
         val left = ui.text("", 15f, ui.readableAccent, 600).apply {
             fontFeatureSettings = "tnum"
             background = ui.rounded(ui.fill, 14)
@@ -352,7 +391,7 @@ class ItemScreens(private val a: MainActivity) {
                 } else {
                     current = r.code
                     val half = r.code.length / 2
-                    code.text = r.code.take(half) + " • " + r.code.drop(half)
+                    code.text = r.code.take(half) + " " + r.code.drop(half)
                     left.text = "${r.remaining}"
                     left.setTextColor(if (r.remaining <= 5u) ui.red else ui.readableAccent)
                 }
@@ -368,7 +407,7 @@ class ItemScreens(private val a: MainActivity) {
             setOnClickListener { current?.let { a.copy(it, true) } }
         }
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(ui.text(label.ifBlank { a.t("code à usage unique", "one-time password") }, 13f, ui.readableAccent, 500))
+        col.addView(ui.text(label.ifBlank { a.t("Code de vérification", "Verification Code") }, 15f, ui.readableAccent, 500))
         col.addView(code)
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row.addView(left)
@@ -412,7 +451,7 @@ class ItemScreens(private val a: MainActivity) {
                 col.addView(ui.text(a.t("Remplacé le ", "Replaced ") + df.format(Date(e.replacedAt * 1000)), 13f, ui.readableAccent, 500))
                 col.addView(v)
                 row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                row.addView(a.barIcon(R.drawable.ic_eye, a.t("Révéler", "Reveal")) { shown = !shown; v.text = if (shown) colored(e.value) else "••••••••••"; v.typeface = if (shown) Typeface.MONOSPACE else Typeface.DEFAULT })
+                row.addView(a.barIcon(R.drawable.ic_eye, a.t("Révéler", "Reveal")) { shown = !shown; v.text = if (shown) colored(e.value) else "••••••••••"; v.typeface = if (shown) Typeface.MONOSPACE else ui.font(400) })
                 row.addView(a.barIcon(R.drawable.ic_copy, a.t("Copier", "Copy")) { a.copy(e.value, true) })
                 row
             }.toTypedArray())))

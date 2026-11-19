@@ -23,40 +23,73 @@ import android.widget.TextView
 import me.somalabs.onepass.R
 
 /**
- * The iPhone app's look in plain Android views (DesignKit `Theme`, `ThemeMetrics`):
- * the grouped page (soft gray in light, black in dark), white or raised-gray
- * cards of radius 18 with a hairline, the indigo accent #5856D6, accent labels
- * lightened in dark mode, the 2 to 32 spacing scale, large titles.
+ * The RX look of the iPhone app (DesignKit `RXTokens+Generated.swift`, from Penpot) in plain
+ * Android views: the page (#F2F2F7 / black), borderless cards of radius 24 (#FFFFFF / #161618),
+ * the indigo accent #5856D6 with its lighter text tone in dark mode, the RX semantic colours
+ * (positive, negative, warning), glass for controls over a photo, Inter for every word, and the
+ * 4 to 32 spacing scale.
  */
 class Ios(val context: Context) {
     val dark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
 
-    // iOS system colors (systemGroupedBackground, secondarySystemGroupedBackground, label...).
-    val page = if (dark) Color.BLACK else Color.rgb(0xF2, 0xF2, 0xF7)
-    val card = if (dark) Color.rgb(0x1C, 0x1C, 0x1E) else Color.WHITE
-    val raised = if (dark) Color.rgb(0x2C, 0x2C, 0x2E) else Color.rgb(0xE5, 0xE5, 0xEA)
-    val fill = if (dark) Color.argb(0x5C, 0x76, 0x76, 0x80) else Color.argb(0x1F, 0x76, 0x76, 0x80)
-    val label = if (dark) Color.WHITE else Color.BLACK
-    val secondary = if (dark) Color.argb(0x99, 0xEB, 0xEB, 0xF5) else Color.argb(0x99, 0x3C, 0x3C, 0x43)
-    val tertiary = if (dark) Color.argb(0x4D, 0xEB, 0xEB, 0xF5) else Color.argb(0x4D, 0x3C, 0x3C, 0x43)
-    val separator = if (dark) Color.argb(0x99, 0x54, 0x54, 0x58) else Color.argb(0x4A, 0x3C, 0x3C, 0x43)
-    val hairline = if (dark) Color.argb(0x0F, 0xFF, 0xFF, 0xFF) else Color.argb(0x0F, 0, 0, 0)
+    private fun tone(light: Int, dark: Int) = if (this.dark) dark else light
+
+    // RX colour tokens (bg.*, text.*, accent.*, separator, tab.*).
+    val page = tone(Color.rgb(0xF2, 0xF2, 0xF7), Color.BLACK)
+    val card = tone(Color.WHITE, Color.rgb(0x16, 0x16, 0x18))
+    val raised = tone(Color.WHITE, Color.rgb(0x2C, 0x2C, 0x2E))
+    /** bg.field: inputs, tracks, the inactive segment. */
+    val fill = tone(Color.rgb(0xE9, 0xE9, 0xEE), Color.rgb(0x1F, 0x1F, 0x22))
+    /** bg.glass: a control over the page or a photo. */
+    val glass = tone(Color.argb(0xB8, 0xFF, 0xFF, 0xFF), Color.argb(0x3D, 0x76, 0x76, 0x80))
+    val label = tone(Color.rgb(0x0B, 0x0B, 0x0F), Color.WHITE)
+    val secondary = tone(Color.rgb(0x6B, 0x6B, 0x73), Color.rgb(0xA1, 0xA1, 0xA6))
+    val tertiary = tone(Color.rgb(0xA0, 0xA0, 0xA8), Color.rgb(0x6E, 0x6E, 0x73))
+    val separator = tone(Color.rgb(0xE3, 0xE3, 0xE8), Color.rgb(0x2A, 0x2A, 0x2E))
+    /** RX cards have no outline: kept for the few controls drawn over a photo. */
+    val hairline = tone(Color.argb(0x0F, 0, 0, 0), Color.argb(0x14, 0xFF, 0xFF, 0xFF))
     val accent = Color.rgb(0x58, 0x56, 0xD6)
-    /** Accent for small text: 4.5:1 on the page in both appearances. */
-    val readableAccent = if (dark) Color.rgb(0xA3, 0xA2, 0xE8) else accent
-    val red = if (dark) Color.rgb(0xFF, 0x45, 0x3A) else Color.rgb(0xFF, 0x3B, 0x30)
-    val orange = if (dark) Color.rgb(0xFF, 0x9F, 0x0A) else Color.rgb(0xFF, 0x95, 0x00)
-    val yellow = if (dark) Color.rgb(0xFF, 0xD6, 0x0A) else Color.rgb(0xFF, 0xCC, 0x00)
-    val green = if (dark) Color.rgb(0x30, 0xD1, 0x58) else Color.rgb(0x34, 0xC7, 0x59)
-    val teal = if (dark) Color.rgb(0x40, 0xCB, 0xE0) else Color.rgb(0x30, 0xB0, 0xC7)
-    val blue = if (dark) Color.rgb(0x0A, 0x84, 0xFF) else Color.rgb(0x00, 0x7A, 0xFF)
+    /** accent.text: accent for words, 4.5:1 on the page in both appearances. */
+    val readableAccent = tone(accent, Color.rgb(0xA3, 0xA2, 0xE8))
+    /** accent.soft: a tinted chip or the selected row. */
+    val accentSoft = tone(Color.argb(0x1F, 0x58, 0x56, 0xD6), Color.argb(0x2E, 0xA3, 0xA2, 0xE8))
+    /** tab.bar, more opaque than on iPhone: Android draws no blur under it. */
+    val tabBar = tone(Color.argb(0xF5, 0xFF, 0xFF, 0xFF), Color.argb(0xF2, 0x2C, 0x2C, 0x2E))
+    val tabActive = tone(Color.argb(0x14, 0x0B, 0x0B, 0x0F), Color.argb(0x24, 0xFF, 0xFF, 0xFF))
+    /** negative, warning, positive. */
+    val red = tone(Color.rgb(0xE5, 0x48, 0x4D), Color.rgb(0xFF, 0x5B, 0x61))
+    val orange = tone(Color.rgb(0xE3, 0x9A, 0x00), Color.rgb(0xFF, 0xB0, 0x20))
+    val green = tone(Color.rgb(0x11, 0xA8, 0x66), Color.rgb(0x3F, 0xD6, 0x8F))
+    val yellow = tone(Color.rgb(0xFF, 0xCC, 0x00), Color.rgb(0xFF, 0xD6, 0x0A))
+    val teal = tone(Color.rgb(0x13, 0xA0, 0x9A), Color.rgb(0x40, 0xCB, 0xC0))
+    val blue = tone(Color.rgb(0x2F, 0x80, 0xED), Color.rgb(0x4A, 0x9B, 0xFF))
+    val purple = tone(Color.rgb(0x8E, 0x4E, 0xC6), Color.rgb(0xA8, 0x6B, 0xE0))
     val amberStar = Color.rgb(0xFF, 0x9F, 0x0A)
 
-    // Spacing (Theme.Space) and radii (Theme.Radius), in dp.
+    // Spacing (space.*) and radii (radius.*), in dp.
     object Space { const val XXS = 2; const val XS = 4; const val S = 8; const val M = 12; const val L = 16; const val XL = 24; const val XXL = 32 }
-    object Radius { const val CHIP = 8; const val CONTROL = 12; const val CARD = 18; const val SHEET = 26 }
+    object Radius { const val CHIP = 12; const val CONTROL = 12; const val TILE = 16; const val CARD = 24; const val SHEET = 36 }
 
     fun dp(v: Number): Int = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), context.resources.displayMetrics).toInt()
+
+    /** Inter (the RX family) at a CSS weight, its variable axis set to it. */
+    fun font(weight: Int = 400): Typeface = fonts.getOrPut(weight) {
+        runCatching {
+            Typeface.Builder(context.assets, "fonts/Inter.ttf").setFontVariationSettings("'wght' $weight").setWeight(weight).build()
+        }.getOrNull() ?: Typeface.create(Typeface.DEFAULT, weight, false)
+    }
+
+    /** The RX tracking of a size (Penpot's letter spacing in points, here in em). */
+    private fun tracking(size: Float): Float = when {
+        size >= 50f -> -2f / 56f
+        size >= 40f -> -1.57f / 44f
+        size >= 28f -> -0.8f / 34f
+        size >= 20f -> -0.3f / 22f
+        size >= 16f -> -0.2f / 17f
+        size >= 14f -> -0.1f / 15f
+        size >= 12f -> 0f
+        else -> 0.1f / 11f
+    }
 
     fun rounded(color: Int, radiusDp: Number = Radius.CARD, stroke: Int? = null) = GradientDrawable().apply {
         setColor(color)
@@ -74,9 +107,10 @@ class Ios(val context: Context) {
         text = s
         textSize = size
         setTextColor(color)
-        typeface = Typeface.create(Typeface.DEFAULT, weight, false)
+        typeface = font(weight)
+        letterSpacing = tracking(size)
         includeFontPadding = false
-        setLineSpacing(0f, 1.12f)
+        setLineSpacing(0f, if (size >= 28f) 1.05f else 1.15f)
     }
 
     /** "Large Title": 34 sp bold, the root screens' title. */
@@ -91,14 +125,14 @@ class Ios(val context: Context) {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(Space.L + 4), dp(Space.XL), dp(Space.L + 4), dp(Space.S))
         }
-        row.addView(text(s, 20f, secondary, 600), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(text(s, 22f, label, 600), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         trailing?.let { row.addView(it) }
         return row
     }
 
     /** Small caps section label of the item detail ("LOGIN"). */
     fun capsLabel(s: String) = text(s.uppercase(), 13f, secondary, 600).apply {
-        letterSpacing = 0.04f
+        letterSpacing = 0.08f
         setPadding(dp(Space.L + 4), dp(Space.XL - 4), dp(Space.L), dp(Space.S - 2))
     }
 
@@ -129,8 +163,7 @@ class Ios(val context: Context) {
 
     /** Round translucent toolbar button ("Liquid Glass" circle of the iPhone toolbar). */
     fun roundButton(res: Int, desc: String, onClick: () -> Unit) = FrameLayout(context).apply {
-        background = pressable(rounded(if (dark) Color.argb(0xCC, 0x2C, 0x2C, 0x2E) else Color.argb(0xE6, 0xFF, 0xFF, 0xFF), 22, hairline), 22)
-        elevation = dp(2).toFloat()
+        background = pressable(rounded(glass, 22, hairline), 22)
         contentDescription = desc
         isClickable = true
         setOnClickListener { onClick() }
@@ -143,7 +176,7 @@ class Ios(val context: Context) {
     /** An inset grouped section: rounded card with hairline, rows separated by inset lines. */
     fun card(vararg rows: View?): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(card, Radius.CARD, hairline)
+        background = rounded(card, Radius.CARD)
         clipToOutline = true
         val visible = rows.filterNotNull()
         visible.forEachIndexed { i, r ->
@@ -154,7 +187,7 @@ class Ios(val context: Context) {
 
     fun separatorLine(insetDp: Int = 60) = View(context).apply {
         setBackgroundColor(separator)
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, maxOf(1, dp(0.33))).apply { marginStart = dp(insetDp) }
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, maxOf(1, dp(0.5))).apply { marginStart = dp(insetDp); marginEnd = dp(Space.L) }
     }
 
     /** Wraps a card with the side gutter. */
@@ -193,7 +226,7 @@ class Ios(val context: Context) {
             addView(it, lp)
         }
         val texts = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        texts.addView(text(title, 17f, titleColor).apply { maxLines = 2 })
+        texts.addView(text(title, 17f, titleColor, 500).apply { maxLines = 2 })
         subtitle?.takeIf { it.isNotBlank() }?.let {
             texts.addView(text(it, 15f, secondary).apply { maxLines = 1; setPadding(0, dp(3), 0, 0) })
         }
@@ -208,7 +241,7 @@ class Ios(val context: Context) {
         val sw = Switch(context).apply {
             isChecked = on
             thumbTintList = ColorStateList.valueOf(Color.WHITE)
-            trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(green, fill))
+            trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(green, if (dark) Color.rgb(0x3A, 0x3A, 0x3E) else Color.rgb(0xD5, 0xD5, 0xDB)))
             setOnCheckedChangeListener { _, v -> onChange(v) }
         }
         // Touching the row flips the switch, as on iPhone.
@@ -228,15 +261,15 @@ class Ios(val context: Context) {
         inputType = if (password) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         imeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-        typeface = Typeface.DEFAULT
+        typeface = font(400)
     }
 
     /** The search capsule ("Titre, site, identifiant, tag"). */
     fun searchField(hint: String, value: String = "") = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = rounded(fill, 12)
-        setPadding(dp(Space.S + 2), 0, dp(Space.S), 0)
+        background = rounded(fill, Radius.CHIP)
+        setPadding(dp(Space.M), 0, dp(Space.S), 0)
         addView(glyph(R.drawable.ic_search, secondary, 20))
         addView(field(hint, value).apply { setPadding(dp(Space.S), dp(Space.S + 1), dp(Space.S), dp(Space.S + 1)) },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -246,11 +279,11 @@ class Ios(val context: Context) {
     fun capsule(label: String, prominent: Boolean = true, color: Int = accent, onClick: () -> Unit) = TextView(context).apply {
         text = label
         textSize = 17f
-        typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+        typeface = font(600)
         gravity = Gravity.CENTER
         setTextColor(if (prominent) Color.WHITE else color)
         val bg = if (prominent) color else Color.argb(if (dark) 0x40 else 0x1F, Color.red(color), Color.green(color), Color.blue(color))
-        background = pressable(rounded(bg, 25), 25)
+        background = pressable(rounded(bg, 999), 999)
         setPadding(dp(Space.XL), dp(Space.M + 2), dp(Space.XL), dp(Space.M + 2))
         minHeight = dp(50)
         isClickable = true
@@ -259,7 +292,7 @@ class Ios(val context: Context) {
     }
 
     fun chip(caption: String, color: Int = accent) = text(caption, 15f, label, 500).apply {
-        background = rounded(Color.argb(if (dark) 0x40 else 0x1F, Color.red(color), Color.green(color), Color.blue(color)), 9)
+        background = rounded(Color.argb(if (dark) 0x40 else 0x1F, Color.red(color), Color.green(color), Color.blue(color)), Radius.CHIP)
         setPadding(dp(Space.M), dp(Space.XS + 2), dp(Space.M), dp(Space.XS + 2))
     }
 
@@ -267,7 +300,7 @@ class Ios(val context: Context) {
     fun monogram(letters: String, color: Int, sizeDp: Int, square: Boolean = false) = TextView(context).apply {
         text = letters
         textSize = sizeDp * 0.4f
-        typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+        typeface = font(600)
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
         background = if (square) rounded(color, sizeDp * 0.24f) else GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
@@ -276,6 +309,9 @@ class Ios(val context: Context) {
     }
 
     companion object {
+        /** Inter per weight, built once for the process. */
+        private val fonts = HashMap<Int, Typeface>()
+
         /** Vault colors of the iPhone app (vault tile palette). */
         val VAULT_COLORS = mapOf(
             "blue" to Color.rgb(0x2F, 0x80, 0xED), "teal" to Color.rgb(0x13, 0xA0, 0x9A), "orange" to Color.rgb(0xE0, 0x8A, 0x00),

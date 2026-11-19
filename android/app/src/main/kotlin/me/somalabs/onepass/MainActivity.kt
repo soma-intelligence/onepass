@@ -51,6 +51,12 @@ import me.somalabs.onepass.wifi.WifiAutomation
  * tests take screenshots); a copied secret is marked sensitive (Android 13+)
  * and cleared after 90 s if the clipboard still holds it.
  */
+/** The tag of a page that draws under the status bar (an RX photo page). */
+const val EDGE = "rx.edge"
+
+/** The same, over a dark photo in both appearances: the status bar icons turn light. */
+const val EDGE_ON_DARK = "rx.edge.dark"
+
 class MainActivity : Activity() {
     lateinit var ui: Ios
     lateinit var vault: DeviceVault
@@ -149,14 +155,20 @@ class MainActivity : Activity() {
         root = FrameLayout(this).apply { setBackgroundColor(ui.page) }
         host = FrameLayout(this)
         root.addView(host, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // Edge to edge: the RX pages draw their photo under the status bar (`statusTop`), the
+        // others get it as padding of the host.
         root.setOnApplyWindowInsetsListener { v, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
                 val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.ime())
-                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                v.setPadding(bars.left, 0, bars.right, bars.bottom)
+                statusTop = bars.top
             } else {
                 @Suppress("DEPRECATION")
-                v.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+                v.setPadding(insets.systemWindowInsetLeft, 0, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+                @Suppress("DEPRECATION")
+                statusTop = insets.systemWindowInsetTop
             }
+            fitPage()
             insets
         }
         setContentView(root)
@@ -296,6 +308,7 @@ class MainActivity : Activity() {
         vault.lock()
         VaultWifi.locked(wifi)
         recents.clear()
+        openedAt.clear()
         recentSearches.clear()
         stacks.clear()
         noTabs.clear()
@@ -314,6 +327,24 @@ class MainActivity : Activity() {
         tabBar = null
         host.removeAllViews()
         host.addView(build(), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        fitPage()
+    }
+
+    /** The status bar's height: an RX page (`EDGE` tag) draws under it, others start below it. */
+    var statusTop = 0
+        private set
+
+    /** Pads the host for the page shown, and picks light or dark status bar icons for it. */
+    private fun fitPage() {
+        if (!::host.isInitialized) return
+        val page = host.getChildAt(0)
+        val edge = page?.tag == EDGE || page?.tag == EDGE_ON_DARK
+        host.setPadding(0, if (edge) 0 else statusTop, 0, 0)
+        if (Build.VERSION.SDK_INT >= 30) {
+            val darkIcons = !ui.dark && page?.tag != EDGE_ON_DARK
+            val mask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+            window.insetsController?.setSystemBarsAppearance(if (darkIcons) mask else 0, mask)
+        }
     }
 
     fun openTabs(start: Tab = Tab.HOME) {
@@ -409,6 +440,7 @@ class MainActivity : Activity() {
         val s = stack(tab)
         host.removeAllViews()
         host.addView(s.last()(), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        fitPage()
         setBack(if (s.size > 1) ({ pop() }) else if (tab != Tab.HOME) ({ selectTab(Tab.HOME) }) else null)
         if (s.last() in noTabs) {
             tabBar?.let { root.removeView(it) }
@@ -426,8 +458,8 @@ class MainActivity : Activity() {
         }
         val capsule = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = ui.rounded(if (ui.dark) Color.argb(0xFA, 0x1C, 0x1C, 0x1E) else Color.argb(0xFA, 0xFF, 0xFF, 0xFF), 32, ui.hairline)
-            elevation = ui.dp(8).toFloat()
+            background = ui.rounded(ui.tabBar, 32, ui.hairline)
+            elevation = ui.dp(10).toFloat()
             setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
         }
         fun item(t: Tab, icon: Int, iconOn: Int, label: String) {
@@ -436,13 +468,13 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(5))
-                if (on) background = ui.rounded(ui.fill, 28)
+                if (on) background = ui.rounded(ui.tabActive, 28)
                 contentDescription = label
                 isClickable = true
                 setOnClickListener { selectTab(t) }
             }
-            cell.addView(ui.glyph(if (on) iconOn else icon, if (on) ui.accent else ui.label, 26))
-            cell.addView(ui.text(label, 11f, if (on) ui.accent else ui.label, 600).apply { gravity = Gravity.CENTER; maxLines = 1; setPadding(0, ui.dp(3), 0, 0) })
+            cell.addView(ui.glyph(if (on) iconOn else icon, if (on) ui.readableAccent else ui.label, 26))
+            cell.addView(ui.text(label, 11f, if (on) ui.readableAccent else ui.label, 600).apply { gravity = Gravity.CENTER; maxLines = 1; setPadding(0, ui.dp(3), 0, 0) })
             capsule.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         item(Tab.HOME, R.drawable.ic_home, R.drawable.ic_home_fill, t("Accueil", "Home"))
@@ -451,8 +483,8 @@ class MainActivity : Activity() {
         bar.addView(capsule, LinearLayout.LayoutParams(0, ui.dp(64), 1f))
         val search = FrameLayout(this).apply {
             val on = tab == Tab.SEARCH
-            background = ui.rounded(if (ui.dark) Color.argb(0xFA, 0x1C, 0x1C, 0x1E) else Color.argb(0xFA, 0xFF, 0xFF, 0xFF), 32, ui.hairline)
-            elevation = ui.dp(8).toFloat()
+            background = ui.rounded(ui.tabBar, 32, ui.hairline)
+            elevation = ui.dp(10).toFloat()
             contentDescription = t("Rechercher", "Search")
             isClickable = true
             setOnClickListener { selectTab(Tab.SEARCH) }
@@ -514,8 +546,7 @@ class MainActivity : Activity() {
             val pill = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                background = ui.rounded(if (ui.dark) Color.argb(0xCC, 0x2C, 0x2C, 0x2E) else Color.argb(0xE6, 0xFF, 0xFF, 0xFF), 22, ui.hairline)
-                elevation = ui.dp(2).toFloat()
+                background = ui.rounded(ui.glass, 22, ui.hairline)
                 setPadding(ui.dp(6), 0, ui.dp(6), 0)
                 minimumHeight = ui.dp(44)
             }
@@ -541,17 +572,17 @@ class MainActivity : Activity() {
         setOnClickListener { onClick() }
     }
 
-    fun barIcon(res: Int, desc: String, onClick: (View) -> Unit) = FrameLayout(this).apply {
+    fun barIcon(res: Int, desc: String, color: Int = ui.readableAccent, onClick: (View) -> Unit) = FrameLayout(this).apply {
         contentDescription = desc
         isClickable = true
         setOnClickListener { onClick(this) }
-        setPadding(ui.dp(8), ui.dp(10), ui.dp(8), ui.dp(10))
-        addView(ui.glyph(res, ui.accent, 24))
+        setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(10))
+        addView(ui.glyph(res, color, 24))
     }
 
     // ---- account menu (PhoneRootToolbar) ------------------------------------------------------------
 
-    private fun accountButton(): View {
+    fun accountButton(onPhoto: Boolean = false): View {
         val name = profileName
         val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "1" }
         val btn = LinearLayout(this).apply {
@@ -561,7 +592,7 @@ class MainActivity : Activity() {
             contentDescription = t("Compte", "Account")
         }
         btn.addView(ui.monogram(initials, ui.accent, 36, square = true))
-        btn.addView(ui.glyph(R.drawable.ic_chevron_down, ui.readableAccent, 20).apply { (layoutParams as LinearLayout.LayoutParams).marginStart = ui.dp(2) })
+        btn.addView(ui.glyph(R.drawable.ic_chevron_down, if (onPhoto) Color.argb(0xCC, 255, 255, 255) else ui.secondary, 20).apply { (layoutParams as LinearLayout.LayoutParams).marginStart = ui.dp(2) })
         btn.setOnClickListener { accountMenu(btn, name) }
         return btn
     }
@@ -667,8 +698,12 @@ class MainActivity : Activity() {
             .setTextColor(if (destructive) ui.red else ui.accent)
     }
 
+    /** When each item of `recents` was opened (Home "Récents" shows how long ago). */
+    val openedAt = mutableMapOf<String, Long>()
+
     /** Notes an item as opened (Home "Récents", Search "Ouverts récemment"). */
     fun opened(s: FfiItemSummary) {
+        openedAt[s.id] = System.currentTimeMillis()
         recents.remove(s.id)
         recents.add(0, s.id)
         while (recents.size > 20) recents.removeAt(recents.lastIndex)

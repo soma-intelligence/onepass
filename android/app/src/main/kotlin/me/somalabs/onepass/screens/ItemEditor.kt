@@ -325,7 +325,7 @@ class ItemEditor(private val a: MainActivity, private val original: FfiItem, pri
         // Title.
         val head = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), ui.dp(4), 0, ui.dp(4)) }
         head.addView(a.itemIcon(original.itemType, 44))
-        val t = ui.field(cat.singular(a), title).apply { textSize = 22f; typeface = Typeface.create(Typeface.DEFAULT, 600, false); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES }
+        val t = ui.field(cat.singular(a), title).apply { textSize = 22f; typeface = ui.font(600); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES }
         watch(t) { title = it; if (errorField == "title") errorField = null }
         titleInput = t
         head.addView(t, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -628,7 +628,7 @@ class ItemEditor(private val a: MainActivity, private val original: FfiItem, pri
             shown = !shown
             val sel = e.selectionEnd
             e.inputType = if (shown) shownType else hiddenType
-            e.typeface = if (shown && f.kind == FfiFieldType.PASSWORD) Typeface.MONOSPACE else Typeface.DEFAULT
+            e.typeface = if (shown && f.kind == FfiFieldType.PASSWORD) Typeface.MONOSPACE else ui.font(400)
             e.setSelection(sel.coerceIn(0, e.text.length))
             ((eye as FrameLayout).getChildAt(0) as android.widget.ImageView).setImageResource(if (shown) R.drawable.ic_eye_off else R.drawable.ic_eye)
         }

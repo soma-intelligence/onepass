@@ -16,6 +16,10 @@ import me.somalabs.onepass.R
 import me.somalabs.onepass.core.FfiVault
 import me.somalabs.onepass.core.FfiVaultMeta
 import me.somalabs.onepass.ui.Ios
+import me.somalabs.onepass.ui.RxArt
+import me.somalabs.onepass.ui.heroPage
+import me.somalabs.onepass.ui.rxCard
+import me.somalabs.onepass.ui.rxRow
 import me.somalabs.onepass.wifi.SuggestionApproval
 import me.somalabs.onepass.wifi.SyncReport
 
@@ -53,14 +57,50 @@ class SettingsScreens(private val a: MainActivity) {
 
     fun open() = a.push { root() }
 
-    private fun root(): View = a.pushedPage(a.t("Réglages", "Settings"), largeTitle = true) {
+    /**
+     * Réglages in the RX look (RXSettingsView): the profile over the photo (close button, the
+     * initials in a ringed disc, the name, "Appareil personnel"), then the groups on the sheet.
+     */
+    private fun root(): View {
         val name = a.profileName
-        addView(ui.inset(ui.card(ui.row(
-            icon = ui.monogram(name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "1" }, ui.accent, 56),
-            title = name.ifEmpty { a.t("Compte OnePass", "OnePass Account") }, subtitle = a.t("Profil, Emergency Kit", "Profile, Emergency Kit"), minHeightDp = 76,
-        ) { a.push { accounts() } }), top = Ios.Space.S))
-        groups.forEach { group ->
-            addView(ui.inset(ui.card(*group.map { p -> ui.row(icon = tile(p.art), title = a.t(p.fr, p.en)) { if (p.key == "travel") a.travel.open() else a.push { page(p) } } }.toTypedArray()), top = Ios.Space.XL))
+        val initials = name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "1" }
+        return a.heroPage(RxArt.settings, darkPhoto = true, hero = {
+            addView(LinearLayout(a).apply {
+                addView(ui.roundButton(R.drawable.ic_close, a.t("Fermer", "Close")) { a.pop() }.apply {
+                    background = ui.rounded(Color.argb(0x33, 255, 255, 255), 22, Color.argb(0x33, 255, 255, 255))
+                    (getChildAt(0) as android.widget.ImageView).imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                })
+            })
+            val avatar = TextView(a).apply {
+                text = initials
+                textSize = 36f
+                typeface = ui.font(700)
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(0x7B, 0x79, 0xF0), ui.accent)).apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setStroke(ui.dp(3), Color.argb(0x66, 255, 255, 255))
+                }
+                isClickable = true
+                contentDescription = a.t("Profil", "Profile")
+                setOnClickListener { a.push { accounts() } }
+            }
+            addView(avatar, LinearLayout.LayoutParams(ui.dp(96), ui.dp(96)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(24) })
+            addView(ui.text(name.ifEmpty { a.t("Compte OnePass", "OnePass Account") }, 28f, Color.WHITE, 700).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(14), 0, ui.dp(4)) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(ui.text(a.t("Appareil personnel", "Personal device"), 17f, Color.argb(0xCC, 255, 255, 255)).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }) {
+            addView(ui.rxCard {
+                setPadding(0, ui.dp(Ios.Space.S), 0, ui.dp(Ios.Space.S))
+                addView(ui.rxRow(a.itemIconArt(R.drawable.settings_accounts, 30), a.t("Profil et Emergency Kit", "Profile and Emergency Kit"), chevron = true) { a.push { accounts() } })
+            })
+            groups.forEach { group ->
+                addView(ui.rxCard {
+                    setPadding(0, ui.dp(Ios.Space.S), 0, ui.dp(Ios.Space.S))
+                    group.forEach { p -> addView(ui.rxRow(tile(p.art), a.t(p.fr, p.en), chevron = true) { if (p.key == "travel") a.travel.open() else a.push { page(p) } }) }
+                })
+            }
         }
     }
 

@@ -33,3 +33,9 @@ shown only to help people recognize their own accounts; their use implies no aff
 endorsement.
 
 Word lists used by the core keep their own licenses: core/onepass-core/data/LICENSES.md.
+
+Inter typeface (android/app/src/main/assets/fonts)
+
+- Inter, https://github.com/rsms/inter
+  SIL Open Font License 1.1. Copyright (c) 2016 The Inter Project Authors. The full license is
+  shipped with the app: android/app/src/main/assets/licenses/Inter-OFL.txt.

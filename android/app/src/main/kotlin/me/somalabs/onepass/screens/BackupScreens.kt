@@ -62,7 +62,7 @@ class BackupScreens(private val a: MainActivity) {
         build()
     }
 
-    private fun secret(hint: String) = ui.field(hint, password = true).apply { typeface = android.graphics.Typeface.DEFAULT }
+    private fun secret(hint: String) = ui.field(hint, password = true).apply { typeface = ui.font(400) }
 
     /** Writes [bytes] where the user picks (SAF), then wipes them. */
     private fun saveAs(name: String, mime: String, bytes: ByteArray, done: () -> Unit) {

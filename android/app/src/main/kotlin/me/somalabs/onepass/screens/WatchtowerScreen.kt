@@ -18,7 +18,14 @@ import me.somalabs.onepass.R
 import me.somalabs.onepass.core.FfiPwnedStatus
 import me.somalabs.onepass.core.FfiWatchtowerOptions
 import me.somalabs.onepass.core.FfiWatchtowerReport
+import android.graphics.drawable.GradientDrawable
 import me.somalabs.onepass.ui.Ios
+import me.somalabs.onepass.ui.RxArt
+import me.somalabs.onepass.ui.backdropPage
+import me.somalabs.onepass.ui.disc
+import me.somalabs.onepass.ui.rxCard
+import me.somalabs.onepass.ui.rxCardHeader
+import me.somalabs.onepass.ui.rxRow
 
 /**
  * Watchtower as on iPhone (WatchtowerTab): the score dial with "Partager mon
@@ -99,13 +106,6 @@ class WatchtowerScreen(private val a: MainActivity) {
             else if (checking) a.t("Vérification des fuites…", "Checking for breaches…") else null
     }
 
-    private fun fill(c: Card): Int = if (c.alert()) Color.rgb(199, 41, 41) else when (c.id) {
-        "duplicate" -> Color.rgb(97, 97, 107)
-        "passkey" -> ui.accent
-        "2fa" -> Color.rgb(10, 99, 199)
-        else -> Color.rgb(179, 77, 0)
-    }
-
     /** Computes the report if needed, then redraws (when still on Watchtower or Home). */
     private var computing = false
 
@@ -173,45 +173,130 @@ class WatchtowerScreen(private val a: MainActivity) {
         return ui.card(row)
     }
 
+    /**
+     * Watchtower in the RX look (RXWatchtower): the art fading into the page, the title with the
+     * glass shield, the dial, a red card per alert, the three stat tiles (weak, reused, 2FA),
+     * Améliorer for the other findings, then the strength bar, the clear checks and the setting.
+     */
     fun screen(): View {
         val report = a.report
         if (report == null) ensureReport()
-        return a.rootPage("Watchtower", large = false, options = null) {
-            val score = report?.score?.toInt()
-            addView(ScoreDial(a, ui, score), LinearLayout.LayoutParams(ui.dp(210), ui.dp(210)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(8) })
-            if (score != null) {
-                addView(ui.capsule(a.t("Partager mon score", "Share My Score"), prominent = false) {
-                    val text = a.t("Mon score de sécurité OnePass : $score/100", "My OnePass security score: $score/100")
+        val score = report?.score?.toInt()
+        return a.backdropPage(RxArt.watchtower, null) {
+            addView(LinearLayout(a).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(ui.dp(16), ui.dp(8), ui.dp(16), 0)
+                addView(a.accountButton())
+                addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
+                if (score != null) addView(ui.roundButton(R.drawable.ic_share, a.t("Partager mon score", "Share My Score")) {
+                    val text = a.t("Mon score de sécurité OnePass : $score sur 100.", "My OnePass security score: $score out of 100.")
                     a.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null))
-                }.apply { textSize = 15f; minHeight = ui.dp(36); setPadding(ui.dp(16), ui.dp(6), ui.dp(16), ui.dp(6)) },
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(16) })
-            }
-            addView(ui.text(a.t("Watchtower repère les mots de passe à changer et les sites où tu peux renforcer la sécurité de tes comptes.",
-                "Watchtower finds passwords to change and sites where you can make your accounts more secure."), 15f, ui.secondary).apply { setPadding(ui.dp(20), ui.dp(16), ui.dp(20), ui.dp(4)) })
+                }.apply { (getChildAt(0) as android.widget.ImageView).imageTintList = android.content.res.ColorStateList.valueOf(ui.label) })
+            })
+            val head = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(20), ui.dp(12), ui.dp(12), 0) }
+            val names = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+            names.addView(ui.text("Watchtower", 34f, ui.label, 700))
+            names.addView(ui.text(a.t("Score de sécurité", "Security Score"), 17f, ui.secondary).apply { setPadding(0, ui.dp(6), 0, 0) })
+            head.addView(names, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            head.addView(ui.image(R.drawable.rx_watch_shield, 112).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
+            addView(head)
+            addView(ScoreDial(a, ui, score), LinearLayout.LayoutParams(ui.dp(260), ui.dp(260)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(8) })
             if (report == null) {
-                addView(ui.text(a.t("Analyse…", "Analyzing…"), 13f, ui.tertiary).apply { setPadding(ui.dp(20), 0, ui.dp(20), 0) })
-                return@rootPage
+                addView(ui.text(a.t("Analyse…", "Analyzing…"), 15f, ui.tertiary).apply { gravity = Gravity.CENTER; setPadding(ui.dp(20), 0, ui.dp(20), 0) })
+                return@backdropPage
             }
             val n = report.itemsAnalyzed.toInt()
-            addView(ui.text((if (n == 1) a.t("1 élément analysé", "1 item analyzed") else a.t("$n éléments analysés", "$n items analyzed")) + pwnedText(report), 13f, ui.tertiary).apply { setPadding(ui.dp(20), 0, ui.dp(20), 0) })
-            addView(ui.inset(strength(report.strength.map { it.toInt() }), top = Ios.Space.L))
+            addView(ui.text((if (n == 1) a.t("1 élément analysé", "1 item analyzed") else a.t("$n éléments analysés", "$n items analyzed")) + pwnedText(report), 15f, ui.tertiary).apply {
+                gravity = Gravity.CENTER; setPadding(ui.dp(24), 0, ui.dp(24), ui.dp(20))
+            })
             val flagged = cards.filter { it.ids(report).isNotEmpty() }
-            flagged.forEach { addView(ui.inset(flaggedCard(it, report), top = Ios.Space.L)) }
+            flagged.filter { it.alert() }.forEach { addView(ui.inset(alertCard(it, report), bottom = Ios.Space.L)) }
+            addView(statTiles(report))
+            val stats = setOf("weak", "reused", "2fa")
+            val improve = flagged.filter { !it.alert() && it.id !in stats }
+            if (improve.isNotEmpty()) addView(ui.rxCard {
+                addView(ui.rxCardHeader(a.t("Améliorer", "Improve")))
+                improve.forEach { c ->
+                    addView(ui.rxRow(ui.disc(c.icon, c.color(ui), 40), c.title(), a.t(c.msgFr, c.msgEn), c.ids(report).size.toString(), chevron = true) { open(c, report) })
+                }
+            })
+            if (flagged.none { it.alert() }) addView(ui.rxCard {
+                addView(ui.rxRow(ui.disc(R.drawable.ic_shield_check, ui.green, 40), a.t("Aucun problème", "No Issues"), a.t("Aucun mot de passe exposé ou compromis.", "No exposed or compromised passwords.")))
+            })
+            addView(ui.inset(strength(report.strength.map { it.toInt() }), bottom = Ios.Space.L))
             val clear = cards.filter { it.ids(report).isEmpty() }
-            if (clear.isNotEmpty()) addView(ui.inset(clearCard(clear, report), top = Ios.Space.L))
-            addView(ui.inset(breachSetting(), top = Ios.Space.L))
+            if (clear.isNotEmpty()) addView(ui.inset(clearCard(clear, report), bottom = Ios.Space.L))
+            addView(ui.inset(breachSetting()))
         }
+    }
+
+    private fun open(c: Card, r: FfiWatchtowerReport) {
+        val ids = c.ids(r)
+        if (c.id == "duplicate") a.duplicates.open() else a.push { flaggedItems(c.title(), ids) }
+    }
+
+    /** An alert (compromised, breached site, exposed account, expiring) as a red card. */
+    private fun alertCard(c: Card, r: FfiWatchtowerReport): View {
+        val count = c.ids(r).size
+        val row = LinearLayout(a).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = ui.pressable(GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(0xEE, 0x5C, 0x5C), Color.rgb(0xD9, 0x3A, 0x40))).apply {
+                cornerRadius = ui.dp(Ios.Radius.CARD).toFloat()
+            }, Ios.Radius.CARD)
+            elevation = ui.dp(6).toFloat()
+            setPadding(ui.dp(20), ui.dp(18), ui.dp(14), ui.dp(18))
+            isClickable = true
+            contentDescription = "$count, " + c.title()
+            setOnClickListener { open(c, r) }
+        }
+        val badge = android.widget.FrameLayout(a).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) }
+            addView(ui.text("!", 26f, Color.rgb(0xD9, 0x3A, 0x40), 800).apply { gravity = Gravity.CENTER }, android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        row.addView(badge, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)).apply { marginEnd = ui.dp(16) })
+        val texts = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(ui.text("$count · " + c.title(), 20f, Color.WHITE, 700))
+        texts.addView(ui.text(a.t(c.msgFr, c.msgEn), 15f, Color.argb(0xE6, 255, 255, 255)).apply { setPadding(0, ui.dp(4), 0, 0) })
+        row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(ui.glyph(R.drawable.ic_chevron_right, Color.WHITE, 20))
+        return row
+    }
+
+    /** Faibles, Réutilisés, 2FA disponible: three tiles, the figure under a coloured disc. */
+    private fun statTiles(r: FfiWatchtowerReport): View {
+        val row = LinearLayout(a).apply { setPadding(ui.dp(16), 0, ui.dp(16), ui.dp(Ios.Space.L)) }
+        listOf(
+            Triple("weak", a.t("Faibles", "Weak"), ui.orange),
+            Triple("reused", a.t("Réutilisés", "Reused"), ui.purple),
+            Triple("2fa", a.t("2FA disponible", "2FA Available"), ui.teal),
+        ).forEachIndexed { i, (id, label, color) ->
+            val c = cards.first { it.id == id }
+            val count = c.ids(r).size
+            val unavailable = c.unavailable(r) != null
+            val tile = LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                background = ui.pressable(ui.rounded(ui.card, Ios.Radius.CARD), Ios.Radius.CARD)
+                setPadding(ui.dp(14), ui.dp(14), ui.dp(10), ui.dp(16))
+                contentDescription = "$label: " + if (unavailable) "–" else count.toString()
+                if (count > 0) { isClickable = true; setOnClickListener { open(c, r) } }
+            }
+            tile.addView(ui.disc(c.icon, color, 36))
+            tile.addView(ui.text(if (unavailable) "–" else count.toString(), 28f, ui.label, 700).apply { fontFeatureSettings = "tnum"; setPadding(0, ui.dp(12), 0, ui.dp(4)) })
+            tile.addView(ui.text(label, 15f, ui.secondary).apply { maxLines = 2 })
+            row.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { if (i > 0) marginStart = ui.dp(10) })
+        }
+        return row
     }
 
     private fun strength(levels: List<Int>): View {
         val total = levels.sum()
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
-            background = ui.rounded(ui.card, Ios.Radius.CARD, ui.hairline)
-            setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16))
+            background = ui.rounded(ui.card, Ios.Radius.CARD)
+            setPadding(ui.dp(20), ui.dp(18), ui.dp(20), ui.dp(18))
         }
         val head = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL }
-        head.addView(ui.text(a.t("Force globale des mots de passe", "Overall Password Strength"), 17f, ui.label, 600), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        head.addView(ui.text(a.t("Force des mots de passe", "Password Strength"), 22f, ui.label, 600), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         head.addView(ui.text(if (total == 1) a.t("1 mot de passe", "1 password") else a.t("$total mots de passe", "$total passwords"), 15f, ui.secondary))
         col.addView(head)
         if (total == 0) {
@@ -238,43 +323,18 @@ class WatchtowerScreen(private val a: MainActivity) {
         return col
     }
 
-    private fun flaggedCard(c: Card, r: FfiWatchtowerReport): View {
-        val ids = c.ids(r)
-        val col = LinearLayout(a).apply {
-            orientation = LinearLayout.VERTICAL
-            background = ui.pressable(ui.rounded(fill(c), Ios.Radius.CARD), Ios.Radius.CARD)
-            isClickable = true
-            contentDescription = c.title()
-            setOnClickListener { if (c.id == "duplicate") a.duplicates.open() else a.push { flaggedItems(c.title(), ids) } }
-        }
-        val body = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16)) }
-        val top = LinearLayout(a).apply { gravity = Gravity.TOP }
-        top.addView(ui.text(ids.size.toString(), 44f, Color.WHITE, 700).apply { fontFeatureSettings = "tnum" }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        top.addView(ui.glyph(c.icon, Color.argb(0x59, 255, 255, 255), 30))
-        body.addView(top)
-        body.addView(ui.text(c.title(), 17f, Color.WHITE, 600).apply { setPadding(0, ui.dp(8), 0, ui.dp(6)) })
-        body.addView(ui.text(a.t(c.msgFr, c.msgEn), 15f, Color.WHITE))
-        col.addView(body)
-        col.addView(View(a).apply { setBackgroundColor(Color.argb(0x40, 255, 255, 255)) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, maxOf(1, ui.dp(0.5))))
-        val foot = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), 0, ui.dp(16), 0); minimumHeight = ui.dp(48) }
-        foot.addView(ui.text(a.t("Voir les éléments", "Show Items"), 17f, Color.WHITE, 500), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        foot.addView(ui.glyph(R.drawable.ic_chevron_right, Color.WHITE, 18))
-        col.addView(foot)
-        return col
-    }
-
     private fun clearCard(list: List<Card>, r: FfiWatchtowerReport): View {
         val col = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
-            background = ui.rounded(ui.card, Ios.Radius.CARD, ui.hairline)
+            background = ui.rounded(ui.card, Ios.Radius.CARD)
             setPadding(0, 0, 0, ui.dp(8))
         }
-        col.addView(ui.text(a.t("Rien à signaler", "Nothing to Report"), 17f, ui.label, 600).apply { setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(8)) })
+        col.addView(ui.text(a.t("Rien à signaler", "Nothing to Report"), 22f, ui.label, 600).apply { setPadding(ui.dp(20), ui.dp(18), ui.dp(16), ui.dp(8)) })
         list.forEachIndexed { i, c ->
-            if (i > 0) col.addView(ui.separatorLine(16 + 26 + 12))
+            if (i > 0) col.addView(ui.separatorLine(20 + 30 + 12))
             val note = c.unavailable(r)
-            val row = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)) }
-            row.addView(ui.symbolTile(c.icon, c.color(ui), 26).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = ui.dp(12) })
+            val row = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ui.dp(20), ui.dp(9), ui.dp(16), ui.dp(9)) }
+            row.addView(ui.disc(c.icon, c.color(ui), 30).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = ui.dp(12) })
             val texts = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
             texts.addView(ui.text(c.title(), 15f, ui.label, 500))
             note?.let { texts.addView(ui.text(it, 12f, ui.secondary).apply { setPadding(0, ui.dp(2), 0, 0) }) }
@@ -317,7 +377,7 @@ class WatchtowerScreen(private val a: MainActivity) {
             setWillNotDraw(false)
             contentDescription = a.t("Score de sécurité", "Security Score") + (score?.let { " $it/100, " + scoreLabel(a, it) } ?: "")
             val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-            col.addView(ui.text(score?.toString() ?: "–", 58f, ui.label, 700).apply { gravity = Gravity.CENTER; fontFeatureSettings = "tnum" })
+            col.addView(ui.text(score?.toString() ?: "–", 72f, ui.label, 700).apply { gravity = Gravity.CENTER; fontFeatureSettings = "tnum" })
             col.addView(ui.text((score?.let { scoreLabel(a, it) } ?: a.t("Analyse…", "Analyzing…")).uppercase(), 15f, if (score == null) ui.secondary else color, 600).apply { gravity = Gravity.CENTER })
             addView(col, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply { topMargin = ui.dp(4) })
         }
@@ -326,10 +386,10 @@ class WatchtowerScreen(private val a: MainActivity) {
             super.onDraw(c)
             val w = width.toFloat()
             val d = ui.dp(1).toFloat()
-            val r = w / 2 - 7 * d
+            val r = w / 2 - 10 * d
             val oval = RectF(w / 2 - r, w / 2 - r, w / 2 + r, w / 2 + r)
             val faint = if (ui.dark) Color.argb(26, 255, 255, 255) else Color.argb(26, 0, 0, 0)
-            paint.strokeWidth = 14 * d
+            paint.strokeWidth = 18 * d
             paint.color = faint
             c.drawArc(oval, 135f, 270f, false, paint)
             val fraction = (score ?: 0) / 100f
@@ -339,8 +399,8 @@ class WatchtowerScreen(private val a: MainActivity) {
             }
             val ticks = 40
             val lit = if (score == null) -1 else Math.round(fraction * ticks)
-            val outer = w / 2 - 22 * d
-            val inner = outer - 7 * d
+            val outer = w / 2 - 30 * d
+            val inner = outer - 9 * d
             paint.strokeWidth = 2 * d
             for (i in 0..ticks) {
                 val ang = Math.toRadians(135.0 + 270.0 * i / ticks)

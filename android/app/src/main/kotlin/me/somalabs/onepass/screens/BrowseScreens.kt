@@ -18,6 +18,18 @@ import me.somalabs.onepass.core.FfiItemSummary
 import me.somalabs.onepass.core.FfiItemType
 import me.somalabs.onepass.ui.Category
 import me.somalabs.onepass.ui.Ios
+import me.somalabs.onepass.ui.RxArt
+import me.somalabs.onepass.ui.carousel
+import me.somalabs.onepass.ui.favoriteTile
+import me.somalabs.onepass.ui.glassChip
+import me.somalabs.onepass.ui.heroPage
+import me.somalabs.onepass.ui.quickAction
+import me.somalabs.onepass.ui.quickActionRow
+import me.somalabs.onepass.ui.rxCard
+import me.somalabs.onepass.ui.rxCardHeader
+import me.somalabs.onepass.ui.rxLink
+import me.somalabs.onepass.ui.rxMessage
+import me.somalabs.onepass.ui.rxRow
 
 /**
  * The item's icon, rounded, with the favorite star badge (ItemIcon + favoriteBadge): the site's
@@ -29,9 +41,12 @@ fun MainActivity.itemIcon(type: FfiItemType, sizeDp: Int, favorite: Boolean = fa
     val pack = me.somalabs.onepass.ui.IconPack.shared
     val brand = if (pack == null || type !in brandTypes) null else me.somalabs.onepass.ui.IconPack.host(url)?.let { pack.forHost(it) }
         ?: title?.takeIf { url.isNullOrBlank() }?.let { pack?.forTitle(it) }
+    // Large (the item hero, Favoris): the brand alone, as RX draws it; small: on its rounded tile.
+    // A colour logo stays on its white tile in the dark appearance (a black mark would vanish).
+    val bare = sizeDp >= 64 && (brand?.monochrome == true || !ui.dark)
     val art: View = if (brand != null) FrameLayout(this).apply {
-        background = ui.rounded(if (brand.monochrome) ui.card else android.graphics.Color.WHITE, sizeDp * 0.225f, ui.hairline)
-        val pad = ui.dp(sizeDp * 0.16f)
+        if (!bare) background = ui.rounded(if (brand.monochrome) ui.card else android.graphics.Color.WHITE, sizeDp * 0.225f, ui.hairline)
+        val pad = ui.dp(sizeDp * (if (bare) 0.06f else 0.16f))
         addView(android.widget.ImageView(this@itemIcon).apply {
             setImageBitmap(brand.bitmap)
             scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
@@ -49,7 +64,10 @@ fun MainActivity.itemIcon(type: FfiItemType, sizeDp: Int, favorite: Boolean = fa
             background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(ui.card) }
             addView(ui.glyph(R.drawable.ic_star_fill, ui.amberStar, 12), FrameLayout.LayoutParams(ui.dp(12), ui.dp(12), Gravity.CENTER))
         }
-        box.addView(badge, FrameLayout.LayoutParams(ui.dp(16), ui.dp(16), Gravity.END or Gravity.BOTTOM).apply { setMargins(0, 0, -ui.dp(3), -ui.dp(3)) })
+        // Large icons keep the badge inside their box (a parent clips what overflows).
+        val b = if (sizeDp >= 64) (sizeDp * 0.3f).toInt() else 16
+        (badge.getChildAt(0).layoutParams as FrameLayout.LayoutParams).apply { width = ui.dp(b * 0.75f); height = ui.dp(b * 0.75f) }
+        box.addView(badge, FrameLayout.LayoutParams(ui.dp(b), ui.dp(b), Gravity.END or Gravity.BOTTOM).apply { if (sizeDp < 64) setMargins(0, 0, -ui.dp(3), -ui.dp(3)) })
         box.clipChildren = false
     }
     return box
@@ -100,120 +118,106 @@ class BrowseScreens(private val a: MainActivity) {
 
     // ---- Accueil ---------------------------------------------------------------------------------
 
+    /**
+     * Accueil in the RX look (RXHomePage): the photo hero (account menu, the security score in
+     * words, three quick actions) that fades as the page sheet scrolls over it, then Récents,
+     * Favoris as a carousel and Coffres.
+     */
     fun home(): View {
         val first = a.profileName.split(" ").firstOrNull { it.isNotBlank() }
-        val greeting = if (first == null) a.t("Accueil", "Home") else a.t("Bonjour $first", "Hi $first")
         val active = a.active
+        val onPhoto = ui.dark
+        val ink = if (onPhoto) Color.WHITE else ui.label
         // The sharing notices on top (iPhone `SharingBanners`): a recovery request, invitations, changed keys, received items.
         val banners = a.sharingScreens.banners()
-        if (active.isEmpty()) return a.rootPage(greeting, large = true, options = null) {
-            banners?.let { addView(it) }
-            addView(firstItemState(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        }
-        return a.rootPage(greeting, large = true, options = { homeOptions() }) {
-            banners?.let { addView(it) }
-            addView(tiles(active))
-            if (prefs.getBoolean("profile", true)) {
-                active.filter { it.itemType == FfiItemType.IDENTITY }.minByOrNull { it.title.lowercase() }?.let { p ->
-                    addView(ui.inset(ui.card(ui.row(icon = a.itemIcon(FfiItemType.IDENTITY, 40), title = a.t("Profil", "Profile"), subtitle = p.title, minHeightDp = 64) { a.items.detail(p.vaultId, p.id) }), top = Ios.Space.L))
-                }
-            }
-            if (prefs.getBoolean("favorites", true)) {
-                addView(foldCard("favoritesOpen", a.t("Favoris", "Favorites"), R.drawable.ic_star_fill, ui.orange,
-                    active.filter { it.favorite }.sortedBy { it.title.lowercase() }, a.t("Touche l'étoile d'un élément pour le retrouver ici.", "Tap an item's star to find it here.")))
-            }
-            if (prefs.getBoolean("recents", true)) {
-                val byId = active.associateBy { it.id }
-                addView(foldCard("recentsOpen", a.t("Récents", "Recents"), R.drawable.ic_history, Color.rgb(0x8C, 0x8C, 0x8C),
-                    a.recents.mapNotNull { byId[it] }, a.t("Les éléments ouverts apparaissent ici jusqu'au verrouillage.", "Items you open appear here until OnePass locks.")))
-            }
-        }
-    }
-
-    private fun homeOptions() {
-        val keys = listOf("profile" to a.t("Profil", "Profile"), "favorites" to a.t("Favoris", "Favorites"), "recents" to a.t("Récents", "Recents"))
-        val checked = keys.map { prefs.getBoolean(it.first, true) }.toBooleanArray()
-        android.app.AlertDialog.Builder(a)
-            .setTitle(a.t("Afficher sur l'accueil", "Show on Home"))
-            .setMultiChoiceItems(keys.map { it.second }.toTypedArray(), checked) { _, i, on -> prefs.edit().putBoolean(keys[i].first, on).apply() }
-            .setPositiveButton("OK") { _, _ -> a.render() }
-            .show()
-    }
-
-    private fun tiles(active: List<FfiItemSummary>): View {
-        val grid = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(16), ui.dp(4), ui.dp(16), 0) }
-        fun tile(title: String, icon: Int, color: Int, value: View, onClick: () -> Unit) = LinearLayout(a).apply {
-            orientation = LinearLayout.VERTICAL
-            background = ui.pressable(ui.rounded(ui.card, Ios.Radius.CARD, ui.hairline), Ios.Radius.CARD)
-            setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16))
-            isClickable = true
-            contentDescription = title
-            setOnClickListener { onClick() }
-            val top = LinearLayout(a).apply { gravity = Gravity.CENTER_VERTICAL }
-            top.addView(ui.symbolTile(icon, color, 34))
-            top.addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
-            top.addView(value)
-            addView(top)
-            addView(ui.text(title, 15f, ui.secondary, 600).apply { maxLines = 1; setPadding(0, ui.dp(12), 0, 0) })
-        }
-        fun figure(n: String, color: Int = ui.label) = ui.text(n, 22f, color, 700).apply { fontFeatureSettings = "tnum" }
-        fun pair(l: View, r: View) = LinearLayout(a).apply {
-            addView(l, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = ui.dp(6) })
-            addView(r, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = ui.dp(6) })
-        }
         val score = a.report?.score?.toInt()
-        grid.addView(pair(
-            tile(a.t("Tous les éléments", "All Items"), R.drawable.ic_grid, ui.accent, figure(active.size.toString())) { a.push { list(a.t("Tous les éléments", "All Items"), active) } },
-            tile(a.t("Favoris", "Favorites"), R.drawable.ic_star_fill, ui.orange, figure(active.count { it.favorite }.toString())) {
-                a.push { list(a.t("Favoris", "Favorites"), active.filter { it.favorite }) }
-            },
-        ))
-        grid.addView(pair(
-            tile("Watchtower", R.drawable.ic_watchtower, WATCHTOWER_COLOR,
-                if (score != null) figure(score.toString(), WatchtowerScreen.scoreColor(ui, score)) else ui.glyph(R.drawable.ic_chevron_right, ui.tertiary, 20)) { a.selectTab(MainActivity.Tab.WATCHTOWER) },
-            tile(a.t("À proximité", "Nearby"), R.drawable.ic_globe, ui.blue, ui.text("2 km", 15f, ui.secondary, 600)) { a.push { nearby() } },
-        ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(12) })
-        return grid
-    }
-
-    private fun nearby(): View = a.pushedPage(a.t("À proximité", "Nearby"), largeTitle = true) {
-        addView(ui.footnote(a.t(
-            "Les éléments qui ont un lieu (une adresse, un digicode) apparaîtront ici. La position n'est pas encore lue sur Android : rien n'est demandé à l'appareil.",
-            "Items with a place (an address, a door code) will show here. Android does not read the location yet: nothing is asked of the device.")))
-    }
-
-    /** Favoris or Récents: the header (tile, count, fold chevron), then the rows. */
-    private fun foldCard(key: String, title: String, icon: Int, color: Int, list: List<FfiItemSummary>, empty: String): View {
-        val open = prefs.getBoolean(key, true)
-        val col = LinearLayout(a).apply {
-            orientation = LinearLayout.VERTICAL
-            background = ui.rounded(ui.card, Ios.Radius.CARD, ui.hairline)
-            clipToOutline = true
-        }
-        val header = LinearLayout(a).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(ui.dp(16), ui.dp(10), ui.dp(8), ui.dp(10))
-            isClickable = true
-            setOnClickListener { prefs.edit().putBoolean(key, !open).apply(); a.render() }
-        }
-        header.addView(ui.symbolTile(icon, color, 32))
-        val names = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.dp(12), 0, 0, 0) }
-        names.addView(ui.text(title, 17f, ui.label, 600))
-        if (list.isNotEmpty()) names.addView(ui.text(a.countLabel(list.size), 12f, ui.tertiary))
-        header.addView(names, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(ui.glyph(R.drawable.ic_chevron_down, ui.readableAccent, 18).apply { rotation = if (open) 0f else -90f; (layoutParams as LinearLayout.LayoutParams).marginEnd = ui.dp(8) })
-        col.addView(header)
-        if (open) {
-            if (list.isEmpty()) {
-                col.addView(ui.text(empty, 15f, ui.secondary).apply { setPadding(ui.dp(16), 0, ui.dp(16), ui.dp(16)) })
-            } else {
-                list.take(8).forEach { s ->
-                    col.addView(ui.separatorLine(64))
-                    col.addView(a.itemRow(s))
-                }
+        return a.heroPage(RxArt.home(ui), darkPhoto = onPhoto, hero = {
+            addView(LinearLayout(a).apply { addView(a.accountButton(onPhoto)) })
+            // The score block: one button that opens Watchtower.
+            val block = LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                isClickable = true
+                setOnClickListener { a.selectTab(MainActivity.Tab.WATCHTOWER) }
+                setPadding(0, ui.dp(56), 0, 0)
+            }
+            block.addView(ui.text(if (first == null) a.t("Bonjour", "Hi") else a.t("Bonjour $first", "Hi $first"), 15f, if (onPhoto) Color.argb(0xD9, 255, 255, 255) else ui.secondary, 500).apply { gravity = Gravity.CENTER; maxLines = 2 })
+            val status = when {
+                score == null -> a.t("Vérification…", "Checking…")
+                score >= 80 -> a.t("Tout va bien", "All Good")
+                score >= 60 -> a.t("Presque parfait", "Almost There")
+                else -> a.t("À vérifier", "Needs a Look")
+            }
+            block.addView(ui.text(status, 44f, ink, 700).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(8), 0, ui.dp(12)) })
+            val chip = ui.glassChip(ui.glyph(R.drawable.ic_shield_check, score?.let { WatchtowerScreen.scoreColor(ui, it) } ?: ui.green, 20), a.t("Score ", "Score ") + (score ?: 100), onPhoto)
+            // The chip keeps its place while the score is computed: the hero does not jump.
+            chip.visibility = if (score == null) View.INVISIBLE else View.VISIBLE
+            block.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            block.contentDescription = status + (score?.let { a.t(", score $it sur 100", ", score $it out of 100") } ?: "")
+            addView(block, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(ui.quickActionRow(
+                ui.quickAction(R.drawable.ic_add, a.t("Nouvel élément", "New Item"), onPhoto) { a.items.newItem(null) },
+                ui.quickAction(R.drawable.ic_key, a.t("Générer", "Generate"), onPhoto) { a.items.generator(null) },
+                ui.quickAction(R.drawable.ic_share, a.t("Partager", "Share"), onPhoto, enabled = score != null) {
+                    val text = a.t("Mon score de sécurité OnePass : $score sur 100.", "My OnePass security score: $score out of 100.")
+                    a.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text), null))
+                },
+            ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(40) })
+        }) {
+            banners?.let { addView(it) }
+            if (active.isEmpty()) {
+                addView(firstItemState())
+                return@heroPage
+            }
+            addView(recentCard(active))
+            addView(favoritesCard(active))
+            addView(vaultsCard(active))
+            active.filter { it.itemType == FfiItemType.IDENTITY }.minByOrNull { it.title.lowercase() }?.let { p ->
+                addView(ui.rxCard {
+                    addView(ui.rxRow(a.itemIcon(FfiItemType.IDENTITY, 40), a.t("Profil", "Profile"), p.title, chevron = true) { a.items.detail(p.vaultId, p.id) })
+                })
             }
         }
-        return ui.inset(col, top = Ios.Space.L)
+    }
+
+    /** Récents: the last items opened (until OnePass locks), how long ago, "Tout voir". */
+    private fun recentCard(active: List<FfiItemSummary>): View = ui.rxCard {
+        val byId = active.associateBy { it.id }
+        val recents = a.recents.mapNotNull { byId[it] }
+        addView(ui.rxCardHeader(a.t("Récents", "Recents"), if (recents.isEmpty()) null else ui.rxLink(a.t("Tout voir", "See All")) {
+            a.push { list(a.t("Tous les éléments", "All Items"), active) }
+        }))
+        if (recents.isEmpty()) addView(ui.rxMessage(a.t("Les éléments que tu ouvres apparaissent ici jusqu'au verrouillage.", "Items you open appear here until OnePass locks.")))
+        recents.take(3).forEach { s ->
+            val ago = a.openedAt[s.id]?.let { at ->
+                if (System.currentTimeMillis() - at < 60_000) a.t("maintenant", "now")
+                else android.text.format.DateUtils.getRelativeTimeSpanString(at, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS, android.text.format.DateUtils.FORMAT_ABBREV_RELATIVE).toString()
+            }
+            addView(ui.rxRow(a.itemIcon(s.itemType, 40, s.favorite, s.primaryUrl, s.title), s.title.ifBlank { a.t("Sans titre", "Untitled") }, a.secondLine(s), ago) { a.items.detail(s.vaultId, s.id) })
+        }
+    }
+
+    /** Favoris as a carousel: tiles one after the other, the next one peeking. */
+    private fun favoritesCard(active: List<FfiItemSummary>): View = ui.rxCard {
+        addView(ui.rxCardHeader(a.t("Favoris", "Favorites")))
+        val favorites = active.filter { it.favorite }.sortedBy { it.title.lowercase() }
+        if (favorites.isEmpty()) {
+            addView(ui.rxMessage(a.t("Touche l'étoile d'un élément pour le retrouver ici.", "Tap an item's star to find it here.")))
+        } else {
+            addView(ui.carousel(favorites.map { s ->
+                ui.favoriteTile(a.itemIcon(s.itemType, 64, url = s.primaryUrl, title = s.title), s.title.ifBlank { a.t("Sans titre", "Untitled") }) { a.items.detail(s.vaultId, s.id) }
+            }))
+        }
+    }
+
+    private fun vaultsCard(active: List<FfiItemSummary>): View = ui.rxCard {
+        addView(ui.rxCardHeader(a.t("Coffres", "Vaults")))
+        a.vaults.sortedBy { it.meta.name.lowercase() }.forEach { v ->
+            val inVault = active.filter { it.vaultId == v.id }
+            addView(ui.rxRow(ui.monogram(v.meta.name.take(1).uppercase(), Ios.vaultColor(v.meta.color), 40), v.meta.name, a.countLabel(inVault.size), chevron = true) {
+                a.push { list(v.meta.name, inVault) }
+            })
+        }
     }
 
     private fun firstItemState(): View = LinearLayout(a).apply {

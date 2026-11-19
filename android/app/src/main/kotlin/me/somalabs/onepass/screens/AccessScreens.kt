@@ -128,7 +128,7 @@ class AccessScreens(private val a: MainActivity) {
         box.addView(a.barIcon(R.drawable.ic_eye, a.t("Afficher le mot de passe", "Show Password")) { v ->
             shown = !shown
             input.inputType = InputType.TYPE_CLASS_TEXT or if (shown) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD
-            input.typeface = Typeface.DEFAULT
+            input.typeface = ui.font(400)
             input.setSelection(input.text.length)
             ((v as FrameLayout).getChildAt(0) as android.widget.ImageView).setImageResource(if (shown) R.drawable.ic_eye_off else R.drawable.ic_eye)
         })
@@ -183,7 +183,7 @@ class AccessScreens(private val a: MainActivity) {
             val p = generatePassword(FfiPasswordRecipe.Words(5u, "-", a.t("fr", "en") == "fr", false))
             pw.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
             pw2.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            pw.typeface = Typeface.DEFAULT; pw2.typeface = Typeface.DEFAULT
+            pw.typeface = ui.font(400); pw2.typeface = ui.font(400)
             pw.setText(p); pw2.setText(p)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = ui.dp(6) })
         lateinit var go: TextView
