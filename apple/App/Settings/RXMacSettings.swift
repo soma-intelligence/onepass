@@ -145,9 +145,9 @@ struct RXMacSettingsPopup: View {
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(RX.Glyph.font(RX.Glyph.macSmall, weight: .bold))
-                    .foregroundStyle(RX.Palette.textSecondary.color)
-                    .frame(width: 28, height: 28)
-                    .background(RX.Palette.field.color, in: Circle())
+                    .foregroundStyle(RX.Palette.textPrimary.color)
+                    .frame(width: 30, height: 30)
+                    .glassEffect(.regular.interactive(), in: Circle())
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
