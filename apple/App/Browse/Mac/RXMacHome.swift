@@ -224,39 +224,132 @@ struct RXMacHome: View {
     }
 
     private func favoritesCard(_ favorites: [FfiItemSummary]) -> some View {
-        RXCard {
-            cardHeader(Text("Favoris")) { EmptyView() }
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(favorites.prefix(6), id: \.id) { summary in
-                    Button { open(summary) } label: {
-                        VStack(spacing: RX.Space.s) {
-                            RXSummaryIcon(summary: summary, size: 52)
-                            // Two lines, centred, so a long title wraps instead of being cut.
-                            Text(summary.title)
-                                .rxFont(.footnote)
-                                .foregroundStyle(RX.Palette.textPrimary.color)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2, reservesSpace: true)
-                                .minimumScaleFactor(0.85)
-                                .padding(.horizontal, RX.Space.xxs)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .rxPress()
-                }
-                ForEach(0..<max(0, 6 - min(favorites.count, 6)), id: \.self) { _ in
-                    Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
-                }
-            }
-            .padding(EdgeInsets(top: RX.Space.s, leading: RX.Space.s, bottom: 14, trailing: RX.Space.s))
-        }
-        .accessibilityIdentifier("rx.mac.favorites")
+        MacFavoritesCard(favorites: favorites, open: open)
     }
 
     /// The item in the list of all items, as a click in the sidebar search would show it.
     private func open(_ summary: FfiItemSummary) {
         model.showItems(.all)
         model.selectedItem = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
+    }
+}
+
+/// Favoris on the Mac Home: one row of fixed-width tiles (52 pt icon, the name under it, 104 pt
+/// per tile), left-aligned, scrolled sideways with the trackpad or Shift and the wheel. No scroll
+/// bar; the edge where more tiles wait fades out, and two small chevrons at the header's right
+/// page left and right (for a mouse without sideways scroll), shown only when the row overflows.
+private struct MacFavoritesCard: View {
+    let favorites: [FfiItemSummary]
+    let open: (FfiItemSummary) -> Void
+    @State private var position = ScrollPosition(idType: String.self)
+    @State private var geometry = RowGeometry()
+
+    private typealias RX = Theme.RX
+    private static let tileWidth: CGFloat = 104
+    private static let fade: CGFloat = 40
+
+    struct RowGeometry: Equatable {
+        var offset: CGFloat = 0
+        var content: CGFloat = 0
+        var container: CGFloat = 0
+        var overflows: Bool { content > container + 1 }
+        var atStart: Bool { offset <= 1 }
+        var atEnd: Bool { offset + container >= content - 1 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Favoris")
+                    .rxFont(.calloutMedium)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(RX.Palette.textPrimary.color)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: RX.Space.s)
+                if geometry.overflows {
+                    HStack(spacing: RX.Space.xs) {
+                        pager("chevron.left", label: Text("rx.mac.favorites.previous"), disabled: geometry.atStart) { page(-1) }
+                        pager("chevron.right", label: Text("rx.mac.favorites.next"), disabled: geometry.atEnd) { page(1) }
+                    }
+                }
+            }
+            .padding(.horizontal, RX.Space.l)
+            .padding(.top, RX.Space.l)
+            .padding(.bottom, RX.Space.s)
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: 0) {
+                    ForEach(favorites, id: \.id) { summary in
+                        Button { open(summary) } label: { tile(summary) }
+                            .rxPress()
+                            .id(summary.id)
+                    }
+                }
+                .padding(.horizontal, RX.Space.s)
+                .scrollTargetLayout()
+            }
+            .scrollIndicators(.never)
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: RowGeometry.self) { scroll in
+                RowGeometry(offset: scroll.contentOffset.x, content: scroll.contentSize.width,
+                            container: scroll.containerSize.width)
+            } action: { _, new in
+                geometry = new
+            }
+            .mask { edgeFade }
+            .padding(.bottom, 14)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RX.Palette.cardBackground.color, in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
+        .accessibilityIdentifier("rx.mac.favorites")
+    }
+
+    private func tile(_ summary: FfiItemSummary) -> some View {
+        VStack(spacing: RX.Space.s) {
+            RXSummaryIcon(summary: summary, size: 52)
+            // Two lines, centred, so a long title wraps instead of being cut.
+            Text(summary.title)
+                .rxFont(.footnote)
+                .foregroundStyle(RX.Palette.textPrimary.color)
+                .multilineTextAlignment(.center)
+                .lineLimit(2, reservesSpace: true)
+                .padding(.horizontal, RX.Space.xxs)
+        }
+        .frame(width: Self.tileWidth)
+        .padding(.top, RX.Space.xs)
+        .contentShape(Rectangle())
+    }
+
+    /// Opaque in the middle; a fade on each side where more tiles wait.
+    private var edgeFade: some View {
+        HStack(spacing: 0) {
+            LinearGradient(colors: [geometry.atStart ? .black : .clear, .black], startPoint: .leading, endPoint: .trailing)
+                .frame(width: Self.fade)
+            Rectangle()
+            LinearGradient(colors: [.black, geometry.atEnd ? .black : .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: Self.fade)
+        }
+    }
+
+    private func pager(_ symbol: String, label: Text, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(RX.Glyph.font(RX.Glyph.macSmall, weight: .bold))
+                .foregroundStyle(RX.Palette.textSecondary.color)
+                .frame(width: 24, height: 24)
+                .background(RX.Palette.field.color, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+        .accessibilityLabel(label)
+    }
+
+    /// One page: the row's width less one tile, so a tile of the last page stays in view.
+    private func page(_ direction: CGFloat) {
+        let step = max(geometry.container - Self.tileWidth, Self.tileWidth)
+        let target = min(max(geometry.offset + direction * step, 0), max(geometry.content - geometry.container, 0))
+        withAnimation(.snappy) { position.scrollTo(x: target) }
     }
 }
 
