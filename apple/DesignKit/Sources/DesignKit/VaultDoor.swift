@@ -5,7 +5,7 @@ import SwiftUI
 /// Unlock: while Face ID checks, the dial of the lock screen is worked tick by tick (`VaultDial`);
 /// once the session opens, it turns a quarter turn further with a mechanical catch, then the lock
 /// screen splits at the dial's center: the top panel slides up, the bottom panel slides down, and
-/// the vault, already rendered underneath, settles from 96% to full size. About 0.8 s in all.
+/// the vault, already rendered underneath at full size, shows between them. About 0.8 s in all.
 /// Lock: two plain panels slide in and meet over the screen change, then fade. Reduce Motion: none
 /// of this, the plain crossfade of the routes.
 ///
@@ -89,17 +89,8 @@ public struct VaultDoorPassage: Equatable, Sendable {
     /// The dial's angle on the lock screen, in degrees.
     public var dialTurn: Double { phase == .turning ? Self.turnDegrees : 0 }
 
-    /// The vault's scale under the door: slightly back while the door is closed, full once open.
-    public var vaultScale: CGFloat {
-        switch phase {
-        case .turning: Self.vaultRestScale
-        default: 1
-        }
-    }
-
     /// A quarter turn: enough to read as a dial, short enough to feel like a catch.
     public static let turnDegrees: Double = 90
-    public static let vaultRestScale: CGFloat = 0.96
 }
 
 extension EnvironmentValues {

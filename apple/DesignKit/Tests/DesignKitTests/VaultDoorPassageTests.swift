@@ -10,13 +10,11 @@ struct VaultDoorPassageTests {
         #expect(door.keepsLockOnTop)
         #expect(door.showsVaultUnderneath)
         #expect(door.dialTurn == VaultDoorPassage.turnDegrees)
-        #expect(door.vaultScale == VaultDoorPassage.vaultRestScale)
 
         door.handle(.turnFinished)
         #expect(door.phase == .parting)
         #expect(!door.keepsLockOnTop)
         #expect(door.showsVaultUnderneath)
-        #expect(door.vaultScale == 1)
 
         door.handle(.panelsOpened)
         #expect(door.phase == .idle)
@@ -88,7 +86,6 @@ struct VaultDoorPassageTests {
             #expect(door.isActive)
             door.handle(.interrupted)
             #expect(door.phase == .idle)
-            #expect(door.vaultScale == 1)
         }
     }
 
