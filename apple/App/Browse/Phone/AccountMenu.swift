@@ -34,7 +34,9 @@ struct AccountMenu: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text("browse.accountMenu"))
         .accessibilityIdentifier("account.menu")
-        .popover(isPresented: $isOpen, arrowEdge: .top) {
+        // Anchored at the chevron's end, not the button's middle: the arrow then clears the panel's
+        // corner, so the top-left corner keeps the same radius as the other three.
+        .popover(isPresented: $isOpen, attachmentAnchor: .point(.trailing), arrowEdge: .top) {
             AccountPanel { action in
                 if case .settings = action { SettingsTiming.requested("account panel") }
                 pending = action
