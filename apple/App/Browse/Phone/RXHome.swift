@@ -241,7 +241,7 @@ struct RXSummaryRow: View {
 
     /// "maintenant" for the last minute, then minutes, hours, "hier": the seconds counted up on
     /// every render ("il y a 6 s") and the row's width moved with them (jank audit J17).
-    private static func usedLabel(_ date: Date) -> Text {
+    static func usedLabel(_ date: Date) -> Text {
         let now = Date()
         let shown = now.timeIntervalSince(date) < 60 ? now : date
         return Text(shown, format: .relative(presentation: .named, unitsStyle: .abbreviated))
