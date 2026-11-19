@@ -15,8 +15,23 @@ extension EnvironmentValues {
     /// Set by the Réglages page of the main window: shows another category in place (the plan
     /// page's rows, the perk tiles). Nil elsewhere, where those push by value.
     @Entry var rxMacSettingsSelect: ((RXMacSettingsSelection) -> Void)? = nil
-    /// True inside the Réglages page of the main window: the settings forms draw as RX cards.
+    /// True inside the Réglages popup of the main window: the settings forms draw as RX cards.
     @Entry var rxMacSettingsPage = false
+    /// The settings forms on screen in the popup's current stack: a form that appears over
+    /// another one was pushed, and shows a back button.
+    @Entry var rxMacSettingsDepth: RXMacSettingsDepth? = nil
+}
+
+/// Counts the settings forms on screen per navigation stack of the Réglages popup (each category
+/// gets a fresh stack, `generation`).
+struct RXMacSettingsDepth {
+    final class Counts { var byGeneration: [Int: Int] = [:] }
+    let counts: Counts
+    let generation: Int
+
+    var current: Int { counts.byGeneration[generation] ?? 0 }
+    func appeared() { counts.byGeneration[generation] = current + 1 }
+    func disappeared() { counts.byGeneration[generation] = max(current - 1, 0) }
 }
 
 /// Hosts Réglages of the RX look on the Mac as a popup inside the main window: while
@@ -52,10 +67,9 @@ struct RXMacSettingsPopup: View {
     let close: () -> Void
     @Environment(AppModel.self) private var model
     @State private var selection: RXMacSettingsSelection = RXMacSettingsPopup.initialSelection
-    /// Changed to drop the pages pushed in the detail (back to the category's own page).
+    /// A fresh navigation stack per category.
     @State private var stackID = 0
-    /// True while a page pushed by the category covers its own page.
-    @State private var pushed = false
+    @State private var depthCounts = RXMacSettingsDepth.Counts()
 
     private typealias RX = Theme.RX
 
@@ -100,7 +114,7 @@ struct RXMacSettingsPopup: View {
     private var backdrop: some View {
         ZStack {
             Rectangle().fill(.ultraThinMaterial)
-            Color.black.opacity(0.35)
+            Color.black.opacity(0.25)
         }
         .contentShape(Rectangle())
         // swiftlint:disable:next db_on_tap_gesture - the dismiss scrim of the popup, not an action
@@ -146,8 +160,7 @@ struct RXMacSettingsPopup: View {
     }
 
     private var detail: some View {
-        let stack = stackID
-        return NavigationStack {
+        NavigationStack {
             Group {
                 switch selection {
                 case .profile:
@@ -156,39 +169,19 @@ struct RXMacSettingsPopup: View {
                     page.content
                 }
             }
-            .environment(\.rxMacSettingsPage, true)
             .safeAreaInset(edge: .top, spacing: 0) { header }
-            .onAppear { pushed = false }
-            // Covered by a push (the stack is the same one), not replaced by another category.
-            .onDisappear { if stack == stackID { pushed = true } }
             .navigationDestination(for: SettingsRoute.self) { route in
                 switch route {
-                case .page(let page):
-                    page.content.environment(\.rxMacSettingsPage, true)
-                case .plan:
-                    RXPlanPage()
+                case .page(let page): page.content
+                case .plan: RXPlanPage()
                 }
             }
         }
+        // On the stack, so its pushed pages draw as RX cards too (each shows its back button).
+        .environment(\.rxMacSettingsPage, true)
+        .environment(\.rxMacSettingsDepth, RXMacSettingsDepth(counts: depthCounts, generation: stackID))
         .id(stackID)
         .toolbar(.hidden, for: .windowToolbar)
-        .overlay(alignment: .topLeading) {
-            if pushed {
-                // A pushed page: back to the category's own page.
-                Button { stackID &+= 1 } label: {
-                    Image(systemName: "chevron.left")
-                        .font(RX.Glyph.font(RX.Glyph.macSmall, weight: .bold))
-                        .foregroundStyle(RX.Palette.textPrimary.color)
-                        .frame(width: 28, height: 28)
-                        .background(RX.Palette.field.color, in: Circle())
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("common.back"))
-                .accessibilityIdentifier("rx.settings.back")
-                .padding(RX.Space.m)
-            }
-        }
     }
 
     /// The category's title over its cards, on the readable width.
@@ -216,6 +209,28 @@ struct RXMacSettingsPopup: View {
         guard let request = model.settingsPageRequest else { return }
         selection = .page(request)
         model.settingsPageRequest = nil
+    }
+}
+
+/// The back button of a page pushed inside the Réglages popup, above its cards on the
+/// readable width.
+struct RXMacSettingsBackBar: View {
+    let back: () -> Void
+
+    private typealias RX = Theme.RX
+
+    var body: some View {
+        Button(action: back) {
+            Label("common.back", systemImage: "chevron.left")
+        }
+        .accessibilityIdentifier("rx.settings.back")
+        .buttonStyle(RXMacPillButtonStyle())
+        .frame(maxWidth: RXMacSettingsPopup.readableWidth, alignment: .leading)
+        .padding(.horizontal, RX.Space.xl)
+        .padding(.top, RX.Space.l)
+        .padding(.bottom, RX.Space.xs)
+        .frame(maxWidth: .infinity)
+        .background(RX.Palette.pageBackground.color)
     }
 }
 
@@ -455,7 +470,7 @@ private struct RXMacLabeledContentStyle: LabeledContentStyle {
 
 /// A button of a settings card: a soft pill in the field token, Callout medium, in the primary
 /// text colour (the negative token for a destructive one), a little darker while pressed.
-private struct RXMacPillButtonStyle: ButtonStyle {
+struct RXMacPillButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     private typealias RX = Theme.RX

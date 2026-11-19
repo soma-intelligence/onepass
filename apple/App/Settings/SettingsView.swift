@@ -455,7 +455,11 @@ extension View {
 private struct SettingsFormStyle: ViewModifier {
     #if os(macOS)
     @Environment(\.rxMacSettingsPage) private var inRXPage
+    @Environment(\.rxMacSettingsDepth) private var depth
+    @Environment(\.dismiss) private var dismiss
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    /// Pushed over another settings form of the popup: a back button above the cards.
+    @State private var pushed = false
     #endif
 
     func body(content: Content) -> some View {
@@ -464,6 +468,15 @@ private struct SettingsFormStyle: ViewModifier {
             content
                 .formStyle(RXMacFormStyle())
                 .environment(\.rxSettings, true)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if pushed { RXMacSettingsBackBar { dismiss() } }
+                }
+                .onAppear {
+                    guard let depth else { return }
+                    pushed = depth.current > 0
+                    depth.appeared()
+                }
+                .onDisappear { depth?.disappeared() }
         } else {
             content.formStyle(.grouped)
         }

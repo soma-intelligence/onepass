@@ -375,7 +375,8 @@ struct ProfileSection: View {
             }
             .padding(.vertical, Theme.Space.xs)
         } header: {
-            SettingsHeader("Profil")
+            // The RX Réglages of the Mac title the page Profil already.
+            if !rx { SettingsHeader("Profil") }
         } footer: {
             SettingsFootnote(failed
                 ? "Cette image n'a pas pu être lue. Essaie un JPEG, un PNG ou un HEIC."
