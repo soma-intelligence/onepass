@@ -91,7 +91,7 @@ struct RXMacSidebar: View {
         }
         .frame(maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: .top)
-        .background(RX.Palette.cardBackground.color.ignoresSafeArea())
+        .background(SidebarMaterial().ignoresSafeArea())  // frosted: the desktop shows through
         .background { TitlebarHeightReader(height: $titlebarHeight) }
         .overlay(alignment: .bottomLeading) {
             if accountMenuOpen {
