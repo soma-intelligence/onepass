@@ -2233,9 +2233,6 @@ enum BrowsePage: Hashable {
     case profile
     /// Accueil of the RX look on the Mac (`RXMacHome`), a sidebar row only while the switch is on.
     case home
-    /// Réglages of the RX look on the Mac (`RXMacSettingsPage`): a page of the main window instead
-    /// of the separate `Settings` window, while the switch is on.
-    case settings
 }
 
 #if os(macOS)
@@ -2245,14 +2242,14 @@ extension AppModel {
         browseDefaults.object(forKey: RXDesign.storageKey) as? Bool ?? RXDesign.launchDefault
     }
 
-    /// Réglages in the RX look: the page of the main window, on `page` when given (the window is
-    /// brought forward when `bringWindow`). Returns false while the look is off: the caller then
-    /// opens the classic `Settings` window.
+    /// Réglages in the RX look: the popup inside the main window (`RXMacSettingsPopup`), on
+    /// `page` when given (the window is brought forward when `bringWindow`). Returns false while
+    /// the look is off: the caller then opens the classic `Settings` window.
     @discardableResult
     func openSettingsInWindow(_ page: SettingsPage? = nil, bringWindow: Bool = false) -> Bool {
         guard Self.rxDesignIsOn else { return false }
         if let page { settingsPageRequest = page }
-        self.page = .settings
+        showSettings = true
         if bringWindow { mainWindowRequest &+= 1 }
         return true
     }

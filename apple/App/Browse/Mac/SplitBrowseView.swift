@@ -24,6 +24,8 @@ struct SplitBrowseView: View {
                     PageColumn(page: model.page)
                 }
             }
+            // RX: Réglages, a popup over the whole window (sidebar included).
+            .modifier(RXMacSettingsPopupHost())
             #else
             if model.page == .items {
                 NavigationSplitView(columnVisibility: $visibility) {
@@ -194,9 +196,8 @@ struct PageColumn: View {
                 case .profile: ProfileView()
                 #if os(macOS)
                 case .home: RXMacHome()
-                case .settings: RXMacSettingsPage()
                 #else
-                case .home, .settings: EmptyView()
+                case .home: EmptyView()
                 #endif
                 case .items: EmptyView()
                 }

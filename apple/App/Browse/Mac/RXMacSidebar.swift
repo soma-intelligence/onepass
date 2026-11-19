@@ -53,7 +53,12 @@ struct RXMacSidebar: View {
                     pageRow("Développeur", symbol: "chevron.left.forwardslash.chevron.right", page: .developer,
                             id: "sidebar.developer")
                     filterRow("À proximité", symbol: "location.fill", count: nil, filter: .nearby, id: "nearby")
-                    pageRow("Réglages", symbol: "gearshape.fill", page: .settings, id: "sidebar.settings")
+                    // A popup over the window (RXMacSettingsPopup), not a page: the row is never selected.
+                    rowButton(selected: false, id: "sidebar.settings", action: { model.openSettingsInWindow() }) {
+                        glyph("gearshape.fill")
+                        Text("Réglages")
+                        Spacer(minLength: 0)
+                    }
                     vaults(counts)
                     tags(counts)
                     header(Text("rx.mac.more"))

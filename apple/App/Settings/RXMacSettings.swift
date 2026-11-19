@@ -6,48 +6,64 @@ import VaultKit
 
 /// What the Réglages page of the main window shows on its right (RX look, Mac).
 enum RXMacSettingsSelection: Hashable {
-    /// The account: the photo banner with the Plus strip, then "Get more from Plus".
-    case overview
-    /// The page of the Plus strip.
-    case plan
+    /// Profil: the account's name and photo.
+    case profile
     case page(SettingsPage)
 }
 
 extension EnvironmentValues {
-    /// Set by the Réglages page of the main window: shows another category in place (the perk
-    /// tiles, the plan page's rows). Nil elsewhere, where those push by value.
+    /// Set by the Réglages page of the main window: shows another category in place (the plan
+    /// page's rows, the perk tiles). Nil elsewhere, where those push by value.
     @Entry var rxMacSettingsSelect: ((RXMacSettingsSelection) -> Void)? = nil
     /// True inside the Réglages page of the main window: the settings forms draw as RX cards.
     @Entry var rxMacSettingsPage = false
 }
 
-/// Réglages on the Mac in the RX look: a page of the main window, right of the sidebar, like
-/// Accueil or Watchtower (no separate `Settings` window while the switch is on). Two panes, as in
-/// the system's own settings: on the left a column of categories (the account on top, then the
-/// pages in three groups, Verrouiller at the bottom), the selected one on a soft accent pill; on
-/// the right the selected page under its title, its sections drawn as RX cards (`RXMacFormStyle`)
-/// at a readable width. A page's own pushes ("Coffres visibles") go through the column's
-/// navigation stack, with the window's toolbar back button.
-struct RXMacSettingsPage: View {
+/// Hosts Réglages of the RX look on the Mac as a popup inside the main window: while
+/// `AppModel.showSettings` is on, the window dims and blurs under a centred panel. The window's
+/// toolbar hides meanwhile, so nothing stays bright above the dimmed backdrop.
+struct RXMacSettingsPopupHost: ViewModifier {
     @Environment(AppModel.self) private var model
-    @State private var selection: RXMacSettingsSelection = RXMacSettingsPage.initialSelection
-    @State private var showProfileQR = RXMacSettingsPage.demoOpens("profileQR")
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let shown = rxDesign && model.showSettings && model.session.state == .unlocked
+        content
+            .toolbar(shown ? .hidden : .automatic, for: .windowToolbar)
+            .overlay {
+                if shown {
+                    RXMacSettingsPopup { model.showSettings = false }
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
+                }
+            }
+            .animation(reduceMotion ? .easeOut(duration: 0.15) : .snappy(duration: 0.25), value: shown)
+    }
+}
+
+/// Réglages on the Mac in the RX look: a popup inside the main window (never a separate window).
+/// The window dims and blurs; in the middle, one rounded RX panel, 860 x 620 at most and smaller
+/// with the window. On its left the categories (Profil, then the pages in three groups,
+/// Verrouiller at the bottom), the selected one on a soft accent pill; on its right the selected
+/// page under its title, its sections drawn as RX cards (`RXMacFormStyle`). It opens on Général.
+/// The close button, Escape or a click on the backdrop close it. A page's own pushes ("Coffres
+/// visibles") stay inside the panel, with a back chevron beside the title.
+struct RXMacSettingsPopup: View {
+    let close: () -> Void
+    @Environment(AppModel.self) private var model
+    @State private var selection: RXMacSettingsSelection = RXMacSettingsPopup.initialSelection
+    /// Changed to drop the pages pushed in the detail (back to the category's own page).
+    @State private var stackID = 0
+    /// True while a page pushed by the category covers its own page.
+    @State private var pushed = false
 
     private typealias RX = Theme.RX
 
-    /// The widest the content gets, centred in the pane (Profil's readable width).
-    static let readableWidth: CGFloat = 640
+    /// The widest the cards get inside the panel.
+    static let readableWidth: CGFloat = 600
     /// The categories column.
-    static let columnWidth: CGFloat = 232
-
-    /// Screenshots (Debug): `-OnePassDemoRXSettings plan|profileQR`, as on the iPhone.
-    private static func demoOpens(_ name: String) -> Bool {
-        #if DEBUG
-        UserDefaults.standard.string(forKey: "OnePassDemoRXSettings") == name
-        #else
-        false
-        #endif
-    }
+    static let columnWidth: CGFloat = 220
+    static let panelSize = CGSize(width: 860, height: 620)
 
     private static var initialSelection: RXMacSettingsSelection {
         #if DEBUG
@@ -55,13 +71,49 @@ struct RXMacSettingsPage: View {
             return .page(page)
         }
         #endif
-        return demoOpens("plan") ? .plan : .overview
+        return .page(.general)
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        GeometryReader { proxy in
+            let width = min(Self.panelSize.width, proxy.size.width - 2 * RX.Space.xl)
+            let height = min(Self.panelSize.height, proxy.size.height - 2 * RX.Space.xl)
+            ZStack {
+                backdrop
+                panel
+                    .frame(width: max(width, 0), height: max(height, 0))
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .ignoresSafeArea()
+        .onAppear(perform: takeRequest)
+        .onChange(of: model.settingsPageRequest) { takeRequest() }
+        // Opening another category counts as activity, as a push in Réglages does.
+        .onChange(of: selection) {
+            model.session.noteActivity()
+            stackID &+= 1
+        }
+        .accessibilityIdentifier("rx.settings")
+    }
+
+    /// The window under the panel, blurred and dimmed; a click on it closes.
+    private var backdrop: some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            Color.black.opacity(0.35)
+        }
+        .contentShape(Rectangle())
+        // swiftlint:disable:next db_on_tap_gesture - the dismiss scrim of the popup, not an action
+        .onTapGesture(perform: close)
+        .accessibilityHidden(true)
+    }
+
+    private var panel: some View {
+        let shape = RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous)
+        return HStack(spacing: 0) {
             RXMacSettingsColumn(selection: $selection)
                 .frame(width: Self.columnWidth)
+                .background(RX.Palette.cardBackground.color)
             Rectangle()
                 .fill(RX.Palette.separator.color)
                 .frame(width: 1)
@@ -70,51 +122,93 @@ struct RXMacSettingsPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(RX.Palette.pageBackground.color)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(RX.Palette.separator.color, lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 30, y: 12)
         .environment(\.rxCards, true)
         .environment(\.rxMacSettingsSelect) { selection = $0 }
-        // The pages' value links (a perk tile or a plan row outside this page) still land here.
-        .navigationDestination(for: SettingsRoute.self) { route in
-            switch route {
-            case .page(let page): formPage(page)
-            case .plan: RXPlanPage()
+        .overlay(alignment: .topTrailing) {
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(RX.Glyph.font(RX.Glyph.macSmall, weight: .bold))
+                    .foregroundStyle(RX.Palette.textSecondary.color)
+                    .frame(width: 28, height: 28)
+                    .background(RX.Palette.field.color, in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .help(Text("Fermer"))
+            .accessibilityLabel(Text("Fermer"))
+            .accessibilityIdentifier("rx.settings.close")
+            .padding(RX.Space.m)
+        }
+    }
+
+    private var detail: some View {
+        let stack = stackID
+        return NavigationStack {
+            Group {
+                switch selection {
+                case .profile:
+                    ProfileSettings()
+                case .page(let page):
+                    page.content
+                }
+            }
+            .environment(\.rxMacSettingsPage, true)
+            .safeAreaInset(edge: .top, spacing: 0) { header }
+            .onAppear { pushed = false }
+            // Covered by a push (the stack is the same one), not replaced by another category.
+            .onDisappear { if stack == stackID { pushed = true } }
+            .navigationDestination(for: SettingsRoute.self) { route in
+                switch route {
+                case .page(let page):
+                    page.content.environment(\.rxMacSettingsPage, true)
+                case .plan:
+                    RXPlanPage()
+                }
             }
         }
-        .sheet(isPresented: $showProfileQR) { RXProfileQRSheet() }
-        .onAppear(perform: takeRequest)
-        .onChange(of: model.settingsPageRequest) { takeRequest() }
-        // Opening another category counts as activity, as a push in Réglages does.
-        .onChange(of: selection) { model.session.noteActivity() }
-        .accessibilityIdentifier("rx.settings")
-    }
-
-    @ViewBuilder private var detail: some View {
-        switch selection {
-        case .overview:
-            RXMacSettingsOverview(showProfileQR: $showProfileQR)
-        case .plan:
-            RXPlanPage()
-        case .page(let page):
-            formPage(page).id(page)
+        .id(stackID)
+        .toolbar(.hidden, for: .windowToolbar)
+        .overlay(alignment: .topLeading) {
+            if pushed {
+                // A pushed page: back to the category's own page.
+                Button { stackID &+= 1 } label: {
+                    Image(systemName: "chevron.left")
+                        .font(RX.Glyph.font(RX.Glyph.macSmall, weight: .bold))
+                        .foregroundStyle(RX.Palette.textPrimary.color)
+                        .frame(width: 28, height: 28)
+                        .background(RX.Palette.field.color, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("common.back"))
+                .accessibilityIdentifier("rx.settings.back")
+                .padding(RX.Space.m)
+            }
         }
     }
 
-    /// A page of Réglages under its title, both on the readable width.
-    private func formPage(_ page: SettingsPage) -> some View {
-        VStack(spacing: 0) {
-            Text(page.title)
-                .rxFont(.title)
-                .foregroundStyle(RX.Palette.textPrimary.color)
-                .dbText(maxLines: 2)
-                .accessibilityAddTraits(.isHeader)
-                .frame(maxWidth: Self.readableWidth, alignment: .leading)
-                .padding(.horizontal, RX.Space.xl)
-                .padding(.top, RX.Space.l)
-                .padding(.bottom, RX.Space.s)
-                .frame(maxWidth: .infinity)
-            page.content
-                .environment(\.rxMacSettingsPage, true)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    /// The category's title over its cards, on the readable width.
+    private var header: some View {
+        Group {
+            switch selection {
+            case .profile: Text("Profil")
+            case .page(let page): Text(page.title)
+            }
         }
+        .rxFont(.title)
+        .foregroundStyle(RX.Palette.textPrimary.color)
+        .dbText(maxLines: 1)
+        .accessibilityAddTraits(.isHeader)
+        .frame(maxWidth: Self.readableWidth, alignment: .leading)
+        .padding(.horizontal, RX.Space.xl)
+        .padding(.top, RX.Space.l)
+        .padding(.bottom, RX.Space.xs)
+        .frame(maxWidth: .infinity)
+        .background(RX.Palette.pageBackground.color)
     }
 
     /// A page asked by another screen (Profil, Développeur, the browser pairing).
@@ -125,8 +219,9 @@ struct RXMacSettingsPage: View {
     }
 }
 
-/// The left pane of Réglages: the account, then the categories, then Verrouiller. Rows as the RX
-/// sidebar's: a 20 pt glyph, Callout, 34 pt high, the selected one in the accent on a soft pill.
+/// The left pane of Réglages: Profil (the account's photo and name), the categories, then
+/// Verrouiller. Rows as the RX sidebar's: a 20 pt glyph, Callout, 34 pt high, the selected one in
+/// the accent on a soft pill.
 private struct RXMacSettingsColumn: View {
     @Environment(AppModel.self) private var model
     @Binding var selection: RXMacSettingsSelection
@@ -134,10 +229,16 @@ private struct RXMacSettingsColumn: View {
     private typealias RX = Theme.RX
 
     var body: some View {
+        let _ = model.settingsRevision
+        let name = model.settings.displayName.isEmpty ? String(localized: "Profil") : model.settings.displayName
         ScrollView {
             VStack(alignment: .leading, spacing: RX.Space.xxs) {
-                accountRow
-                    .padding(.bottom, RX.Space.s)
+                // Profil: one plain row, the avatar in place of the glyph.
+                row(Text(verbatim: name), selected: selection == .profile, id: "settings.account") {
+                    selection = .profile
+                } glyph: {
+                    RXAvatar(initials: model.initials, photo: model.profileImage, size: RX.Metrics.macRowGlyph, ring: false)
+                }
                 group([.general, .security, .autofill, .sync, .devices])
                 group([.accounts, .vaults, .contacts, .family, .organisation, .travel, .crypto, .developer])
                 #if DEBUG
@@ -147,8 +248,10 @@ private struct RXMacSettingsColumn: View {
                 #endif
                 // The account menu's words; through `perform`, which asks first when an edit is
                 // not saved.
-                row(Text("Verrouiller"), symbol: "lock.fill", selected: false, id: "rx.settings.lock") {
+                row(Text("Verrouiller"), selected: false, id: "rx.settings.lock") {
                     model.perform(.lock)
+                } glyph: {
+                    symbol("lock.fill")
                 }
                 .padding(.top, RX.Space.m)
             }
@@ -159,43 +262,6 @@ private struct RXMacSettingsColumn: View {
         .accessibilityIdentifier("rx.settings.categories")
     }
 
-    /// The account: avatar, name and the kind of device; it shows the overview.
-    private var accountRow: some View {
-        let _ = model.settingsRevision
-        let name = model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName
-        let selected = selection == .overview || selection == .plan
-        return Button { selection = .overview } label: {
-            HStack(spacing: RX.Space.s) {
-                RXAvatar(initials: model.initials, photo: model.profileImage, size: RX.Metrics.avatarSmall, ring: false)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(verbatim: name)
-                        .rxFont(.calloutMedium)
-                        .foregroundStyle(selected ? RX.Palette.accentText.color : RX.Palette.textPrimary.color)
-                        .dbText(maxLines: 1)
-                    Text(model.settings.deviceMode == .shared
-                         ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
-                        .rxFont(.footnote)
-                        .foregroundStyle(RX.Palette.textSecondary.color)
-                        .dbText(maxLines: 1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, RX.Space.s)
-            .padding(.vertical, RX.Space.s)
-            .background {
-                if selected {
-                    RoundedRectangle(cornerRadius: RX.Radius.macRow, style: .continuous)
-                        .fill(RX.Palette.accentSoft.color)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityIdentifier("settings.account")
-    }
-
     @ViewBuilder private func group(_ pages: [SettingsPage]) -> some View {
         Rectangle()
             .fill(RX.Palette.separator.color)
@@ -204,17 +270,25 @@ private struct RXMacSettingsColumn: View {
             .padding(.vertical, RX.Space.s)
             .accessibilityHidden(true)
         ForEach(pages) { page in
-            row(Text(page.title), symbol: page.symbol, selected: selection == .page(page), id: "settings.\(page.rawValue)") {
+            row(Text(page.title), selected: selection == .page(page), id: "settings.\(page.rawValue)") {
                 selection = .page(page)
+            } glyph: {
+                symbol(page.symbol)
             }
         }
     }
 
-    private func row(_ title: Text, symbol: String, selected: Bool, id: String, action: @escaping () -> Void) -> some View {
+    private func symbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(RX.Glyph.font(RX.Glyph.macRow, weight: .semibold))
+    }
+
+    private func row<Glyph: View>(
+        _ title: Text, selected: Bool, id: String, action: @escaping () -> Void, @ViewBuilder glyph: () -> Glyph
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: RX.Space.m) {
-                Image(systemName: symbol)
-                    .font(RX.Glyph.font(RX.Glyph.macRow, weight: .semibold))
+                glyph()
                     .frame(width: RX.Metrics.macRowGlyph, height: RX.Metrics.macRowGlyph)
                     .accessibilityHidden(true)
                 title
@@ -239,141 +313,28 @@ private struct RXMacSettingsColumn: View {
     }
 }
 
-/// The account side of Réglages: the photo banner (the account, its QR button and the compact
-/// Plus strip), then "Get more from Plus" as a grid of four tiles.
-private struct RXMacSettingsOverview: View {
+/// The `Settings` window while the RX look is on: Réglages live in the main window, so the window
+/// (opened by the app menu's Réglages… or ⌘,) hands over to that page and closes at once.
+struct RXSettingsWindowRedirect: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.rxMacSettingsSelect) private var select
-    @Binding var showProfileQR: Bool
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    private typealias RX = Theme.RX
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: RX.Space.l) {
-                Text("Réglages")
-                    .rxFont(.title)
-                    .foregroundStyle(RX.Palette.textPrimary.color)
-                    .accessibilityAddTraits(.isHeader)
-                banner
-                Text("rx.perks.title")
-                    .rxFont(.headline)
-                    .foregroundStyle(RX.Palette.textPrimary.color)
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.top, RX.Space.s)
-                RXPerkCarousel()
-            }
-            .frame(maxWidth: RXMacSettingsPage.readableWidth, alignment: .leading)
-            .padding(.horizontal, RX.Space.xl)
-            .padding(.top, RX.Space.l)
-            .padding(.bottom, RX.Space.xl)
-            .frame(maxWidth: .infinity)
-        }
+        Color.clear
+            .frame(width: 1, height: 1)
+            .background(WindowCloser())
+            .onAppear { model.openSettingsInWindow(bringWindow: true) }
     }
 
-    /// The photo banner: the account with its QR button, then the Plus strip.
-    private var banner: some View {
-        let _ = model.settingsRevision
-        let name = model.settings.displayName.isEmpty ? String(localized: "app.myAccount") : model.settings.displayName
-        return VStack(alignment: .leading, spacing: RX.Space.l) {
-            HStack(spacing: RX.Space.m) {
-                RXAvatar(initials: model.initials, photo: model.profileImage, size: RX.Metrics.avatarMedium)
-                VStack(alignment: .leading, spacing: RX.Space.xxs) {
-                    Text(verbatim: name)
-                        .rxFont(.headline)
-                        .foregroundStyle(.white)
-                        .dbText(maxLines: 2)
-                    Text(model.settings.deviceMode == .shared
-                         ? String(localized: "Appareil partagé") : String(localized: "Appareil personnel"))
-                        .rxFont(.footnote)
-                        .foregroundStyle(.white)
-                        .rxOnPhotoSecondary()
-                }
-                Spacer(minLength: RX.Space.s)
-                GlassButton(Text("rx.profileQR.open"), systemImage: "qrcode", diameter: 36, onPhoto: true) { showProfileQR = true }
-                    .accessibilityIdentifier("rx.settings.profileQR")
-            }
-            Button { select?(.plan) } label: { RXMacPlanStrip() }
-                .buttonStyle(.dbPress)
-                .accessibilityIdentifier("rx.settings.plan")
+    private struct WindowCloser: NSViewRepresentable {
+        func makeNSView(context: Context) -> NSView {
+            let view = NSView()
+            DispatchQueue.main.async { view.window?.close() }
+            return view
         }
-        .padding(RX.Space.l)
-        .background {
-            Image(RXHero.settings)
-                .resizable()
-                .scaledToFill()
-                .overlay(Color.black.opacity(RX.Veil.banner(flat: Theme.Wash.isFlat(
-                    increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency))))
-                .accessibilityHidden(true)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
-    }
-}
 
-/// The Plus card on the Mac: one compact glass strip (64 pt) instead of the iPhone's tall card.
-/// The metal card art small and tilted on the left, "Plus" over one line, three small perk glyphs
-/// and a chevron on the right.
-private struct RXMacPlanStrip: View {
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    private typealias RX = Theme.RX
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: RX.Radius.tile, style: .continuous)
-        let flat = Theme.Wash.isFlat(increaseContrast: contrast == .increased, reduceTransparency: reduceTransparency)
-        HStack(spacing: RX.Space.m) {
-            Image("rx-plan-lux")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 52)
-                .rotationEffect(.degrees(-10))
-                .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 0) {
-                // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
-                Text(verbatim: "Plus")
-                    .rxFont(.headline)
-                    .fontWeight(.bold)
-                Text("rx.plan.cardSubtitle")
-                    .rxFont(.footnote)
-                    .rxOnPhotoSecondary()
-                    .dbText(maxLines: 1)
-            }
-            .foregroundStyle(.white)
-            Spacer(minLength: RX.Space.s)
-            HStack(spacing: RX.Space.xs) {
-                ForEach(["key.fill", "person.3.fill", "airplane"], id: \.self) { symbol in
-                    Image(systemName: symbol)
-                        .font(RX.Glyph.font(11))
-                        .foregroundStyle(.white)
-                        .frame(width: 26, height: 26)
-                        .background(.white.opacity(0.18), in: Circle())
-                }
-            }
-            .accessibilityHidden(true)
-            Image(systemName: "chevron.right")
-                .font(RX.Glyph.font(RX.Glyph.chevron, weight: .bold))
-                .foregroundStyle(.white.opacity(0.7))
-                .accessibilityHidden(true)
+        func updateNSView(_ nsView: NSView, context: Context) {
+            DispatchQueue.main.async { nsView.window?.close() }
         }
-        .padding(.horizontal, RX.Space.m)
-        .frame(height: 64)
-        .background {
-            if flat {
-                shape.fill(Color.black.opacity(0.75))
-            } else {
-                shape.fill(Color.black.opacity(0.28))
-                    .background(.ultraThinMaterial, in: shape)
-                    .environment(\.colorScheme, .dark)
-            }
-        }
-        .overlay(shape.strokeBorder(.white.opacity(0.14), lineWidth: 1))
-        .clipShape(shape)
-        .contentShape(shape)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -397,7 +358,7 @@ struct RXMacFormStyle: FormStyle {
                     }
                 }
             }
-            .frame(maxWidth: RXMacSettingsPage.readableWidth, alignment: .leading)
+            .frame(maxWidth: RXMacSettingsPopup.readableWidth, alignment: .leading)
             .padding(.horizontal, RX.Space.xl)
             .padding(.top, RX.Space.s)
             .padding(.bottom, RX.Space.xxl)

@@ -503,9 +503,8 @@ struct MacSettingsView: View {
     var body: some View {
         Group {
             if model.session.state == .unlocked, rxDesign {
-                // The RX look opens Réglages in the main window; should this window still open,
-                // it shows the same page.
-                NavigationStack { RXMacSettingsPage() }
+                // The RX look opens Réglages in the main window: this window hands over and closes.
+                RXSettingsWindowRedirect()
             } else if model.session.state == .unlocked {
                 NavigationSplitView {
                     List(selection: $page) {
@@ -548,8 +547,7 @@ struct MacSettingsView: View {
                     description: Text("settings.unlockOnepassToOpen"))
             }
         }
-        .frame(minWidth: rxDesign ? 860 : 760, idealWidth: rxDesign ? 920 : 820,
-               minHeight: rxDesign ? 640 : 540, idealHeight: rxDesign ? 760 : 600)
+        .frame(minWidth: 760, idealWidth: 820, minHeight: 540, idealHeight: 600)
         .containerBackground(.thinMaterial, for: .window)
         .onAppear(perform: takeRequest)
         .onChange(of: model.settingsPageRequest) { takeRequest() }

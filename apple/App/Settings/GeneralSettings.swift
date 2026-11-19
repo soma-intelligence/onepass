@@ -12,6 +12,9 @@ import VaultKit
 /// the backup and export of the vault (encrypted backup, restore, plaintext CSV).
 struct GeneralSettings: View {
     @Environment(AppModel.self) private var model
+    #if os(macOS)
+    @Environment(\.rxMacSettingsPage) private var inRXPage
+    #endif
     @State private var importing = false
     @State private var backupSheet: BackupSheet?
 
@@ -35,8 +38,11 @@ struct GeneralSettings: View {
         Form {
             Group {
             #if os(macOS)
-            // iPhone and iPad: Profil is the account row on top of Réglages.
-            ProfileSection()
+            // iPhone and iPad: Profil is the account row on top of Réglages; the RX Réglages of
+            // the Mac window have their own Profil row.
+            if !inRXPage {
+                ProfileSection()
+            }
             #endif
             #if os(iOS)
             AppearanceSection()
