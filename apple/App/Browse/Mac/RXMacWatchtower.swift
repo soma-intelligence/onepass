@@ -5,8 +5,8 @@ import SwiftUI
 import VaultKit
 
 /// Watchtower on the Mac in the RX look (Penpot "Mac · Watchtower"), same data as the iPhone tab:
-/// the title and status line, the gauge card on the left with the alert cards and the three stat
-/// tiles beside it, the Improve list underneath, then the strength, clear checks and breach
+/// the title and status line, the gauge card on the left (as tall as its neighbour) with the alert
+/// cards and the three stat tiles beside it, the Improve list underneath, then the strength, clear checks and breach
 /// setting cards. Every card opens the flagged items in the list, as the classic page does.
 struct RXMacWatchtowerContent<Status: View>: View {
     @Environment(AppModel.self) private var model
@@ -34,6 +34,9 @@ struct RXMacWatchtowerContent<Status: View>: View {
                 empty: emptyState, retry: retry
             ) { report in
                 VStack(alignment: .leading, spacing: RX.Space.l) {
+                    // Gauge on the left, alerts over the stat tiles on the right. The gauge card
+                    // stretches to the height of the right column (gauge centred), so both columns
+                    // end on the same line however many alerts there are.
                     HStack(alignment: .top, spacing: RX.Space.l) {
                         gauge(Int(report.score))
                         VStack(spacing: RX.Space.m) {
@@ -42,6 +45,7 @@ struct RXMacWatchtowerContent<Status: View>: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                     improve(report)
                     StrengthCard(levels: report.strength.map(Int.init))
                     clearChecks(report)
@@ -64,10 +68,10 @@ struct RXMacWatchtowerContent<Status: View>: View {
     private func gauge(_ score: Int?) -> some View {
         RXCard {
             ScoreGauge(score: score)
-                .frame(maxWidth: .infinity)
                 .padding(RX.Space.xl)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var retry: @MainActor @Sendable () -> Void {

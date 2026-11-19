@@ -35,7 +35,7 @@ struct RXMacSettingsDepth {
 }
 
 /// Hosts Réglages of the RX look on the Mac as a popup inside the main window: while
-/// `AppModel.showSettings` is on, the window dims and blurs under a centred panel. The window's
+/// `AppModel.showSettings` is on, the window dims (no blur) under a centred panel. The window's
 /// toolbar hides meanwhile, so nothing stays bright above the dimmed backdrop.
 struct RXMacSettingsPopupHost: ViewModifier {
     @Environment(AppModel.self) private var model
@@ -57,7 +57,7 @@ struct RXMacSettingsPopupHost: ViewModifier {
 }
 
 /// Réglages on the Mac in the RX look: a popup inside the main window (never a separate window).
-/// The window dims and blurs; in the middle, one rounded RX panel, 860 x 620 at most and smaller
+/// The window dims, the page still visible behind; in the middle, one rounded RX panel, 860 x 620 at most and smaller
 /// with the window. On its left the categories (Profil, then the pages in three groups,
 /// Verrouiller at the bottom), the selected one on a soft accent pill; on its right the selected
 /// page under its title, its sections drawn as RX cards (`RXMacFormStyle`). It opens on Général.
@@ -110,12 +110,10 @@ struct RXMacSettingsPopup: View {
         .accessibilityIdentifier("rx.settings")
     }
 
-    /// The window under the panel, blurred and dimmed; a click on it closes.
+    /// The window under the panel, lightly dimmed and never blurred, so the page stays readable
+    /// behind the popup; a click on it closes.
     private var backdrop: some View {
-        ZStack {
-            Rectangle().fill(.ultraThinMaterial)
-            Color.black.opacity(0.25)
-        }
+        Color.black.opacity(0.3)
         .contentShape(Rectangle())
         // swiftlint:disable:next db_on_tap_gesture - the dismiss scrim of the popup, not an action
         .onTapGesture(perform: close)
