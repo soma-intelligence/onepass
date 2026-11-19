@@ -108,6 +108,16 @@ struct AccountPanel: View {
     @Environment(AppModel.self) private var model
     let perform: (AccountPanelAction) -> Void
 
+    #if os(iOS)
+    /// iPhone: the cards keep clear of the glass popover's edge, their corners following its curve
+    /// (8 pt read as cards pressed against the panel's side).
+    static let inset: CGFloat = Theme.Space.m
+    static let cardRadius: CGFloat = 24
+    #else
+    static let inset: CGFloat = Theme.Space.s
+    static let cardRadius: CGFloat = Theme.Radius.card
+    #endif
+
     var body: some View {
         let _ = model.settingsRevision
         VStack(alignment: .leading, spacing: 0) {
@@ -170,8 +180,8 @@ struct AccountPanel: View {
             }
             .padding(.top, Theme.Space.s)
         }
-        .padding(.horizontal, Theme.Space.s)
-        .padding(.bottom, Theme.Space.s)
+        .padding(.horizontal, AccountPanel.inset)
+        .padding(.bottom, AccountPanel.inset)
         #if os(macOS)
         // Never wider than the sidebar column (the panel was cut at its edge when it is narrow).
         .frame(maxWidth: 272)
@@ -185,7 +195,7 @@ struct AccountPanel: View {
     @ViewBuilder private var accounts: some View {
         if model.accounts.hasSeveralAccounts {
             AccountsPanelSection(showsAdd: false, showsLockAll: false) { perform(.account($0)) }
-                .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
+                .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: AccountPanel.cardRadius, style: .continuous))
                 // Cancels the accounts block's side padding: the card runs to the groups' edges.
                 .padding(.horizontal, -Theme.Space.l)
         } else {
@@ -260,7 +270,7 @@ private struct AccountPanelGroup<Content: View>: View {
                 }
             }
         }
-        .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
+        .background(Theme.card.opacity(0.6), in: .rect(cornerRadius: AccountPanel.cardRadius, style: .continuous))
     }
 }
 
