@@ -24,13 +24,18 @@ struct RXMacSidebar: View {
     var body: some View {
         let counts = session.counts()
         VStack(spacing: 0) {
+            // The brand and the search field stay put at the top; only the rows below them scroll.
+            VStack(alignment: .leading, spacing: RX.Space.xxs) {
+                brand
+                searchField
+            }
+            .padding(.horizontal, RX.Space.l)
+            .padding(.top, max(titlebarHeight, 52) + RX.Space.l)
+            .padding(.bottom, RX.Space.s)
             // A plain list rather than a ScrollView: one row holding the whole column (the window
             // snapshots of the Debug screenshot mode draw a list, not a scroll view, in a sidebar).
             List {
                 VStack(alignment: .leading, spacing: RX.Space.xxs) {
-                    brand
-                    searchField
-                        .padding(.bottom, RX.Space.m)
                     pageRow("rx.mac.home", symbol: "house.fill", page: .home, id: "sidebar.home")
                     filterRow("Tous les éléments", symbol: "list.bullet.rectangle.fill", count: counts.all,
                               filter: .all, id: "library.all")
@@ -57,7 +62,7 @@ struct RXMacSidebar: View {
                               id: "library.trash")
                 }
                 .padding(.horizontal, RX.Space.l)
-                .padding(.top, max(titlebarHeight, 52) + RX.Space.l)
+                .padding(.top, RX.Space.m)
                 .padding(.bottom, RX.Space.l)
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
@@ -66,11 +71,20 @@ struct RXMacSidebar: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
-            .ignoresSafeArea(.container, edges: .top)
+            .frame(minHeight: 0, maxHeight: .infinity)
+            // Rows scrolling up fade out under the search field instead of being cut sharp.
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: RX.Space.m)
+                    Rectangle()
+                }
+            }
             footerCards
             accountRow
         }
         .frame(maxHeight: .infinity)
+        .ignoresSafeArea(.container, edges: .top)
         .background(RX.Palette.cardBackground.color.ignoresSafeArea())
         .background { TitlebarHeightReader(height: $titlebarHeight) }
         .overlay(alignment: .bottomLeading) {
