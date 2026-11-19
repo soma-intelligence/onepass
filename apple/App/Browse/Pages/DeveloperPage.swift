@@ -60,8 +60,11 @@ struct DeveloperPage: View {
     /// The Mac app serves the agent and the MCP server: their settings. Elsewhere, the CLI guide.
     private func show(_ g: DeveloperGuide) {
         #if os(macOS)
-        model.settingsPageRequest = .developer
-        openSettings()
+        // RX: the Réglages page of the main window; else the Settings window.
+        if !model.openSettingsInWindow(.developer) {
+            model.settingsPageRequest = .developer
+            openSettings()
+        }
         #else
         guide = g
         #endif

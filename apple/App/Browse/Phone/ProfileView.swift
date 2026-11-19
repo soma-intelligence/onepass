@@ -253,6 +253,8 @@ struct ProfileView: View {
         model.settingsPageRequest = page
         model.settingsFocusRequest = focus
         #if os(macOS)
+        // RX: the Réglages page of the main window; else the Settings window.
+        if model.openSettingsInWindow(page) { return }
         NSApp.activate()
         openSettingsWindow()
         #elseif os(iOS)

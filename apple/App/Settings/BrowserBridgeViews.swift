@@ -59,8 +59,10 @@ struct BrowserPairingSheet: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Button("settings.turnOnTouchId") {
-                        model.settingsPageRequest = .security
-                        openSettings()
+                        if !model.openSettingsInWindow(.security, bringWindow: true) {
+                            model.settingsPageRequest = .security
+                            openSettings()
+                        }
                     }
                     .accessibilityIdentifier("bridge.pairing.enableTouchID")
                 }

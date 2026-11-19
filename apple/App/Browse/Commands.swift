@@ -48,6 +48,13 @@ struct BrowseCommands: Commands {
                 .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(!unlocked || listFocused != true || !model.canTrashSelection)
         }
+        #if os(macOS)
+        // OnePass > Réglages… (⌘,): the page of the main window in the RX look, else the
+        // `Settings` window as the system item would open it.
+        CommandGroup(replacing: .appSettings) {
+            SettingsMenuItem(model: model)
+        }
+        #endif
         CommandGroup(after: .appSettings) {
             Button("Verrouiller OnePass") { model.perform(.lock) }
                 .keyboardShortcut("l", modifiers: .command)
@@ -55,6 +62,21 @@ struct BrowseCommands: Commands {
         }
     }
 }
+
+#if os(macOS)
+/// The app menu's "Réglages…" (⌘,). A view, so it reads `openSettings` from the environment.
+private struct SettingsMenuItem: View {
+    let model: AppModel
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Button("Réglages…") {
+            if !model.openSettingsInWindow(bringWindow: true) { openSettings() }
+        }
+        .keyboardShortcut(",", modifiers: .command)
+    }
+}
+#endif
 
 extension FocusedValues {
     /// True while the item list (not a text field) has keyboard focus.

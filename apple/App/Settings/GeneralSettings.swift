@@ -45,16 +45,22 @@ struct GeneralSettings: View {
             WallpaperSection()
             #endif
             Section {
-                Picker("settings.general.autoLock", selection: Binding(
-                    get: { delays.contains(settings.autoLockDelay) ? settings.autoLockDelay : .fiveMinutes },
-                    set: { delay in model.updateSettings { $0.autoLockDelay = delay } }
-                )) {
-                    ForEach(delays, id: \.self) { delay in
-                        Text(delay.label).tag(delay)
+                // The label beside the menu, so the RX cards of the Mac put the menu on the
+                // trailing edge (the grouped form draws it the same).
+                LabeledContent("settings.general.autoLock") {
+                    Picker("settings.general.autoLock", selection: Binding(
+                        get: { delays.contains(settings.autoLockDelay) ? settings.autoLockDelay : .fiveMinutes },
+                        set: { delay in model.updateSettings { $0.autoLockDelay = delay } }
+                    )) {
+                        ForEach(delays, id: \.self) { delay in
+                            Text(delay.label).tag(delay)
+                        }
                     }
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(shared)
+                    .accessibilityIdentifier("settings.autoLock")
                 }
-                .disabled(shared)
-                .accessibilityIdentifier("settings.autoLock")
                 Toggle("settings.websiteIcons", isOn: Binding(
                     get: { settings.siteIconsEnabled },
                     set: { value in model.updateSettings { $0.siteIconsEnabled = value } }
@@ -298,12 +304,22 @@ struct ProfileSection: View {
     #if os(iOS)
     @State private var pick: PhotosPickerItem?
     #endif
+    /// The RX look of Réglages on the Mac: the round RX avatar, the field in the RX field token
+    /// (the iPhone keeps its own look).
+    @Environment(\.rxSettings) private var rxSettings
+    private var rx: Bool {
+        #if os(macOS)
+        rxSettings
+        #else
+        false
+        #endif
+    }
 
     var body: some View {
         let _ = model.settingsRevision
         Section {
             HStack(spacing: Theme.Space.l) {
-                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 64)
+                avatar
                     #if os(macOS)
                     .dropDestination(for: Data.self) { items, _ in
                         guard let data = items.first else { return false }
@@ -317,12 +333,13 @@ struct ProfileSection: View {
                     ), prompt: Text("settings.name2"))
                     .labelsHidden()
                     .textFieldStyle(.plain)
-                    .font(.title3.weight(.semibold))
+                    .font(rx ? Theme.RX.Typography.headline.font(size: 15) : .title3.weight(.semibold))
                     .focused($nameFocused)
                     // A real field: a soft well, an accent ring while typing.
                     .padding(.horizontal, Theme.Space.m)
                     .padding(.vertical, Theme.Space.s)
-                    .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
+                    .background(rx ? AnyShapeStyle(Theme.RX.Palette.field.color) : AnyShapeStyle(.fill.quaternary),
+                                in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                             .strokeBorder(nameFocused ? Theme.accent : Color.primary.opacity(0.08), lineWidth: nameFocused ? 1.5 : 1)
@@ -377,6 +394,16 @@ struct ProfileSection: View {
             }
         }
         #endif
+    }
+
+    @ViewBuilder private var avatar: some View {
+        Group {
+            if rx {
+                RXAvatar(initials: model.initials, photo: model.profileImage, size: 64, ring: false)
+            } else {
+                AccountAvatar(initials: model.initials, photo: model.profileImage, size: 64)
+            }
+        }
     }
 
     @discardableResult private func use(_ data: Data) -> Bool {

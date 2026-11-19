@@ -511,7 +511,7 @@ struct AccountHeader: View {
                     .accessibilityIdentifier("account.import")
                 Button("Réglages…", systemImage: "gearshape") {
                     #if os(macOS)
-                    openSettings()
+                    if !model.openSettingsInWindow() { openSettings() }
                     #else
                     model.showSettings = true
                     #endif
@@ -581,7 +581,7 @@ struct AccountMenuPanel: View {
                 newVault()
             case .settings:
                 close()
-                openSettings()
+                if !model.openSettingsInWindow() { openSettings() }
             case .profile:
                 close()
                 model.page = .profile
@@ -819,7 +819,7 @@ struct SettingsButton: View {
     var body: some View {
         Button("Réglages", systemImage: "gearshape") {
             #if os(macOS)
-            openSettings()
+            if !model.openSettingsInWindow() { openSettings() }
             #else
             model.showSettings = true
             #endif

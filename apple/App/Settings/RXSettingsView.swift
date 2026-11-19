@@ -265,6 +265,22 @@ struct RXPerkCarousel: View {
              symbol: "airplane", art: "rx-perk-lux-travel"),
     ]
 
+    #if os(macOS)
+    /// Mac: the window is wide, so the four tiles sit in a grid (four across on the readable
+    /// width, two when narrower), shorter than on the iPhone; no scroll bar, nothing hidden.
+    @Environment(\.rxMacSettingsSelect) private var select
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: RX.Space.m, alignment: .top)],
+                  alignment: .leading, spacing: RX.Space.m) {
+            ForEach(Self.perks) { perk in
+                link(perk)
+                    .accessibilityIdentifier("\(idPrefix).\(perk.id)")
+            }
+        }
+        .buttonStyle(.dbPress)
+    }
+    #else
     var body: some View {
         RXCarousel(nil, items: Self.perks, bleed: bleed, position: $position) { perk in
             link(perk)
@@ -278,9 +294,15 @@ struct RXPerkCarousel: View {
         }
         .rxPress(haptic: .selection)
     }
+    #endif
 
     private func tile(_ perk: Perk) -> some View {
+        #if os(macOS)
+        PerkTile(title: Text(perk.title), subtitle: Text(perk.subtitle), systemImage: perk.symbol, art: Image(perk.art),
+                 minHeight: 150)
+        #else
         PerkTile(title: Text(perk.title), subtitle: Text(perk.subtitle), systemImage: perk.symbol, art: Image(perk.art))
+        #endif
     }
 
     /// iPhone: the page zooms out of its tile (its own route). The Mac pushes the page itself, as
@@ -292,8 +314,13 @@ struct RXPerkCarousel: View {
         }
         .zoomSource("perk.\(perk.id)")
         #else
-        NavigationLink(value: SettingsRoute.page(perk.page)) {
-            tile(perk)
+        if let select {
+            // In the Réglages page of the main window: the page opens in place.
+            Button { select(.page(perk.page)) } label: { tile(perk) }
+        } else {
+            NavigationLink(value: SettingsRoute.page(perk.page)) {
+                tile(perk)
+            }
         }
         #endif
     }
@@ -337,6 +364,9 @@ struct RXAvatar: View {
 /// swipe back) on a clear bar over the photo.
 struct RXPlanPage: View {
     @ScaledMetric(relativeTo: .largeTitle) private var planNameSize: CGFloat = 52
+    #if os(macOS)
+    @Environment(\.rxMacSettingsSelect) private var select
+    #endif
 
     private typealias RX = Theme.RX
 
@@ -392,7 +422,22 @@ struct RXPlanPage: View {
         .accessibilityIdentifier("rx.plan")
     }
 
-    private func benefit(_ page: SettingsPage, _ title: Text) -> some View {
+    @ViewBuilder private func benefit(_ page: SettingsPage, _ title: Text) -> some View {
+        #if os(macOS)
+        if let select {
+            // In the Réglages page of the main window: the page opens in place.
+            Button { select(.page(page)) } label: { RXMenuRow(title, systemImage: page.symbol) }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("rx.plan.\(page.rawValue)")
+        } else {
+            benefitLink(page, title)
+        }
+        #else
+        benefitLink(page, title)
+        #endif
+    }
+
+    private func benefitLink(_ page: SettingsPage, _ title: Text) -> some View {
         NavigationLink(value: SettingsRoute.page(page)) {
             RXMenuRow(title, systemImage: page.symbol)
         }

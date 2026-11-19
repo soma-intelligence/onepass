@@ -435,7 +435,7 @@ extension View {
     /// iPad: an inline title over the app's page color, content fading under the bar with the
     /// shared header fade.
     func settingsPage(_ title: LocalizedStringKey) -> some View {
-        formStyle(.grouped)
+        modifier(SettingsFormStyle())
             .navigationTitle(title)
             #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -447,6 +447,29 @@ extension View {
             .tint(Theme.readableAccent)
             .headerFade()
             #endif
+    }
+}
+
+/// The grouped form everywhere, except inside the Réglages page of the Mac main window (RX look),
+/// where the form draws as RX cards (`RXMacFormStyle`).
+private struct SettingsFormStyle: ViewModifier {
+    #if os(macOS)
+    @Environment(\.rxMacSettingsPage) private var inRXPage
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    #endif
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        if inRXPage, rxDesign {
+            content
+                .formStyle(RXMacFormStyle())
+                .environment(\.rxSettings, true)
+        } else {
+            content.formStyle(.grouped)
+        }
+        #else
+        content.formStyle(.grouped)
+        #endif
     }
 }
 
@@ -475,14 +498,14 @@ private struct ClassicSettingsBackground: ViewModifier {
 struct MacSettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var page: SettingsPage? = .general
-    /// The RX window's pushed pages.
-    @State private var rxPath: [SettingsRoute] = RXMacSettingsHome.initialPath
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     var body: some View {
         Group {
             if model.session.state == .unlocked, rxDesign {
-                RXMacSettingsHome(path: $rxPath)
+                // The RX look opens Réglages in the main window; should this window still open,
+                // it shows the same page.
+                NavigationStack { RXMacSettingsPage() }
             } else if model.session.state == .unlocked {
                 NavigationSplitView {
                     List(selection: $page) {
@@ -536,8 +559,9 @@ struct MacSettingsView: View {
     /// A page asked by another screen (Développeur page cards).
     private func takeRequest() {
         guard let request = model.settingsPageRequest else { return }
+        // The RX page takes the request itself.
+        guard !rxDesign else { return }
         page = request
-        rxPath = [.page(request)]
         model.settingsPageRequest = nil
     }
 

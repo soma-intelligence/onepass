@@ -194,8 +194,9 @@ struct PageColumn: View {
                 case .profile: ProfileView()
                 #if os(macOS)
                 case .home: RXMacHome()
+                case .settings: RXMacSettingsPage()
                 #else
-                case .home: EmptyView()
+                case .home, .settings: EmptyView()
                 #endif
                 case .items: EmptyView()
                 }

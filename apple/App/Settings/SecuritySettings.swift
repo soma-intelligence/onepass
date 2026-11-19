@@ -234,16 +234,22 @@ struct SecuritySettings: View {
 
     private var deviceModeSection: some View {
         Section {
-            Picker("settings.device", selection: Binding(
-                get: { settings.deviceMode },
-                set: { mode in
-                    if mode != settings.deviceMode { pendingMode = mode }
+            // The label beside the menu, so the RX cards of the Mac put the menu on the trailing
+            // edge (the grouped form draws it the same).
+            LabeledContent("settings.device") {
+                Picker("settings.device", selection: Binding(
+                    get: { settings.deviceMode },
+                    set: { mode in
+                        if mode != settings.deviceMode { pendingMode = mode }
+                    }
+                )) {
+                    Text("Personnel").tag(DeviceMode.personal)
+                    Text("Partagé").tag(DeviceMode.shared)
                 }
-            )) {
-                Text("Personnel").tag(DeviceMode.personal)
-                Text("Partagé").tag(DeviceMode.shared)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("settings.deviceMode")
             }
-            .accessibilityIdentifier("settings.deviceMode")
             .id(Self.deviceModeAnchor)
             if settings.deviceMode == .shared {
                 NavigationLink {

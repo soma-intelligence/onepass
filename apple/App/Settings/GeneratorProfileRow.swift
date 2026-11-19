@@ -15,12 +15,16 @@ struct GeneratorProfileSection: View {
 
     var body: some View {
         Section {
-            Picker("Profil", selection: kind) {
-                Text("settings.autofill.generator.strong").tag(Kind.strong)
-                Text("settings.autofill.generator.readable").tag(Kind.readable)
-                Text("settings.autofill.generator.custom").tag(Kind.custom)
+            LabeledContent("Profil") {
+                Picker("Profil", selection: kind) {
+                    Text("settings.autofill.generator.strong").tag(Kind.strong)
+                    Text("settings.autofill.generator.readable").tag(Kind.readable)
+                    Text("settings.autofill.generator.custom").tag(Kind.custom)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("autofill.generator.profile")
             }
-            .accessibilityIdentifier("autofill.generator.profile")
             if case .custom(let length, let digits, let symbols) = profile {
                 VStack(alignment: .leading) {
                     LabeledContent("Longueur") {

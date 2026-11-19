@@ -11,7 +11,6 @@ import VaultKit
 /// Every row leads where the native sidebar's row leads.
 struct RXMacSidebar: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.openSettings) private var openSettings
     @Binding var creatingVault: Bool
     @Binding var editingVaultID: String?
     let duplicateGroups: Int
@@ -25,13 +24,15 @@ struct RXMacSidebar: View {
         let counts = session.counts()
         VStack(spacing: 0) {
             // The brand and the search field stay put at the top; only the rows below them scroll.
-            VStack(alignment: .leading, spacing: RX.Space.xxs) {
+            // Just under the title bar (traffic lights), on the rows' left edge: the mark, the
+            // search field's glass and the row glyphs line up; 12 pt brand to search, 12 pt
+            // search to the first row.
+            VStack(alignment: .leading, spacing: RX.Space.m) {
                 brand
                 searchField
             }
             .padding(.horizontal, RX.Space.l)
-            .padding(.top, max(titlebarHeight, 52) + RX.Space.l)
-            .padding(.bottom, RX.Space.s)
+            .padding(.top, titlebarHeight + RX.Space.xs)
             // A plain list rather than a ScrollView: one row holding the whole column (the window
             // snapshots of the Debug screenshot mode draw a list, not a scroll view, in a sidebar).
             List {
@@ -52,7 +53,7 @@ struct RXMacSidebar: View {
                     pageRow("Développeur", symbol: "chevron.left.forwardslash.chevron.right", page: .developer,
                             id: "sidebar.developer")
                     filterRow("À proximité", symbol: "location.fill", count: nil, filter: .nearby, id: "nearby")
-                    button("Réglages", symbol: "gearshape.fill", id: "sidebar.settings") { openSettings() }
+                    pageRow("Réglages", symbol: "gearshape.fill", page: .settings, id: "sidebar.settings")
                     vaults(counts)
                     tags(counts)
                     header(Text("rx.mac.more"))
@@ -111,17 +112,18 @@ struct RXMacSidebar: View {
     // MARK: - Parts
 
     private var brand: some View {
-        HStack(spacing: RX.Space.s) {
+        HStack(spacing: RX.Space.m) {
             Image(systemName: "circle.grid.3x3.fill")
                 .font(RX.Glyph.font(RX.Glyph.macBrand, weight: .bold))
                 .foregroundStyle(RX.Palette.accent.color)
+                .frame(width: RX.Metrics.macRowGlyph)
             // swiftlint:disable:next db_unlocalized_string - app name, the same in every language
             Text(verbatim: "OnePass")
                 .rxFont(.headline)
                 .foregroundStyle(RX.Palette.textPrimary.color)
         }
         .padding(.horizontal, RX.Space.s)
-        .padding(.bottom, RX.Space.m)
+        .frame(height: RX.Metrics.macRowHeight)
         .accessibilityElement(children: .combine)
     }
 
@@ -131,15 +133,16 @@ struct RXMacSidebar: View {
             model.showItems(.all)
             model.searchFocusRequest &+= 1
         } label: {
-            HStack(spacing: RX.Space.s) {
+            HStack(spacing: RX.Space.m) {
                 Image(systemName: "magnifyingglass")
+                    .frame(width: RX.Metrics.macRowGlyph)
                 Text("common.search")
                 Spacer(minLength: 0)
                 Text(verbatim: "⌘F").rxFont(.footnote)
             }
             .rxFont(.callout)
             .foregroundStyle(RX.Palette.textSecondary.color)
-            .padding(.horizontal, RX.Space.m)
+            .padding(.horizontal, RX.Space.s)
             .frame(height: RX.Metrics.macRowHeight)
             .background(RX.Palette.field.color, in: RoundedRectangle(cornerRadius: RX.Radius.macRow, style: .continuous))
             .contentShape(Rectangle())
@@ -297,14 +300,6 @@ struct RXMacSidebar: View {
             glyph(symbol)
             Text(title)
             count(value)
-        }
-    }
-
-    private func button(_ title: LocalizedStringKey, symbol: String, id: String, action: @escaping () -> Void) -> some View {
-        rowButton(selected: false, id: id, action: action) {
-            glyph(symbol)
-            Text(title)
-            Spacer(minLength: 0)
         }
     }
 

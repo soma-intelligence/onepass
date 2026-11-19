@@ -314,7 +314,8 @@ struct MenuBarMenu: View {
             .disabled(model.session.state != .unlocked)
         Button("Réglages…") {
             NSApp.activate()
-            openSettings()
+            // RX: the Réglages page of the main window; else the Settings window.
+            if !model.openSettingsInWindow(bringWindow: true) { openSettings() }
         }
         Divider()
         Button("Quitter OnePass") { NSApp.terminate(nil) }

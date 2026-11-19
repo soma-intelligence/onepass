@@ -645,15 +645,20 @@ public struct PerkTile: View {
     let title: Text
     let subtitle: Text
     let systemImage: String
+    let minHeight: CGFloat
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    public init(title: Text, subtitle: Text, systemImage: String, art: Image) {
+    /// `minHeight`: the tile's smallest height (the Mac grid uses a shorter tile than the
+    /// iPhone carousel).
+    public init(title: Text, subtitle: Text, systemImage: String, art: Image,
+                minHeight: CGFloat = Theme.RX.Metrics.perkTileHeight) {
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
         self.art = art
+        self.minHeight = minHeight
     }
 
     public var body: some View {
@@ -676,7 +681,7 @@ public struct PerkTile: View {
         }
         .foregroundStyle(.white)
         .padding(RX.Space.m)
-        .frame(maxWidth: .infinity, minHeight: RX.Metrics.perkTileHeight, alignment: .bottomLeading)
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .bottomLeading)
         .background {
             ZStack {
                 RX.Wash.artPlaceholder
