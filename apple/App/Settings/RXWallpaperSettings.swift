@@ -72,7 +72,7 @@ enum RXWallpaper {
     /// (generate.py's manifest, `isLight`).
     static let lightNames: Set<String> = [
         "wp-metal-2", "wp-metal-3", "wp-velvet-1", "wp-velvet-2", "wp-velvet-3", "wp-glass-1", "wp-glass-2", "wp-glass-3", "wp-glass-4", "wp-glass-5", "wp-glass-6",
-        "wp-landscape-2", "wp-landscape-3", "wp-landscape-5", "wp-landscape-6",
+        "wp-landscape-1", "wp-landscape-3", "wp-landscape-5", "wp-landscape-1-noir", "wp-landscape-3-noir",
     ]
 
     /// What the hero shows for the stored choice: the picture, and whether its words go dark.
@@ -95,10 +95,10 @@ enum RXWallpaper {
         }
         #endif
         if id.hasPrefix("wp-"), isBundled(id) {
-            // A Clair picture is light, a Noir one dark, whatever its own colours are.
+            // A Clair picture is light, a Noir one dark unless its sky stays pale (misty photos).
             let light = switch Tone.of(id) {
             case .clair: true
-            case .noir: false
+            case .noir: lightNames.contains(id)
             case .natural: lightNames.contains(id)
             }
             return Resolved(image: Image(id), isLight: light, flows: !id.hasPrefix("wp-landscape-"))
