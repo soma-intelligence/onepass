@@ -238,9 +238,6 @@ struct ItemDetailView: View {
                         }
                     }
                     content(item)
-                    #if os(iOS) || os(macOS)
-                    if rxDesign { rxSecurityCard(item) }
-                    #endif
                     ItemAttachmentsSection(item: item, editable: item.trashedAt == nil && !standalone) {
                         self.item = $0
                     }
@@ -342,35 +339,6 @@ struct ItemDetailView: View {
             .accessibilityIdentifier("rx.item.share")
         }
         .rxPress()
-    }
-
-    /// RX: the Security card of the mock for an item with a password: its strength, its passkey
-    /// (saved, or available on a site that accepts one), the date it last changed.
-    @ViewBuilder private func rxSecurityCard(_ item: FfiItem) -> some View {
-        let fields = item.sections.flatMap(\.fields)
-        if let password = fields.first(where: { $0.kind == .password && !$0.value.text.isEmpty }) {
-            let hasPasskey = fields.contains { $0.kind == .passkey && !$0.value.isBlank }
-            let canAdd = !hasPasskey && item.itemType == .login
-                && PasskeySupport.siteAccepts(item, report: model.watchtower.report)
-            RXCard {
-                RXCardHeader(Text("Sécurité"))
-                RXMenuRow(
-                    Text("rx.item.strength"), systemImage: "checkmark.shield.fill",
-                    value: Text(StrengthMeter.label(forBits: PasswordStrength.estimatedBits(password.value.text))),
-                    chevron: false)
-                if hasPasskey || canAdd {
-                    RXMenuRow(
-                        Text("rx.item.passkey"), systemImage: "person.badge.key.fill",
-                        value: Text(hasPasskey ? "rx.item.passkey.saved" : "rx.item.passkey.available"),
-                        badge: canAdd ? Text("rx.item.badge.new") : nil, chevron: false)
-                }
-                RXMenuRow(
-                    Text("rx.item.lastChanged"), systemImage: "arrow.triangle.2.circlepath",
-                    value: Text(Date(timeIntervalSince1970: TimeInterval(item.updatedAt)), format: .dateTime.day().month().year()),
-                    chevron: false)
-            }
-            .accessibilityIdentifier("rx.item.security")
-        }
     }
     #endif
 
