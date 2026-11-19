@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Synchronization
 import Testing
@@ -32,19 +33,19 @@ struct WatchtowerTests {
         let a = try await addLogin(session, title: "A", password: "password")
         let b = try await addLogin(session, title: "B", password: "password")
 
-        let offline = try await session.watchtowerReport(ranges: nil, twofaDirectory: nil, passkeysDirectory: nil)
+        let offline = try await session.watchtowerReport(ranges: nil, sitePack: nil)
         #expect(offline.pwned == .disabled)
         #expect(offline.missingPrefixes.isEmpty)
         let reused = offline.checks.first { $0.check == "reused" }
         #expect(Set(reused?.itemIds ?? []) == [a.id, b.id])
 
-        let first = try await session.watchtowerReport(ranges: [], twofaDirectory: nil, passkeysDirectory: nil)
+        let first = try await session.watchtowerReport(ranges: [], sitePack: nil)
         #expect(first.missingPrefixes == ["5BAA6"])
         #expect(first.pwned == .unavailable)
 
         let body = Data("1E4C9B93F3F0682250B6CF8331B7EE68FD8:42\n".utf8)
         let second = try await session.watchtowerReport(
-            ranges: [FfiRangeResponse(prefix: "5BAA6", body: body)], twofaDirectory: nil, passkeysDirectory: nil)
+            ranges: [FfiRangeResponse(prefix: "5BAA6", body: body)], sitePack: nil)
         #expect(second.pwned == .checked)
         let compromised = second.checks.first { $0.check == "compromised" }
         #expect(Set(compromised?.itemIds ?? []) == [a.id, b.id])
@@ -58,7 +59,7 @@ struct WatchtowerTests {
         try await session.createVault(
             FfiVaultMeta(name: "Famille", icon: "house", color: "blue", travelSafe: false, mcpAccess: false))
         session.setVaultHidden(item.vaultId, hidden: true)
-        let report = try await session.watchtowerReport(ranges: nil, twofaDirectory: nil, passkeysDirectory: nil)
+        let report = try await session.watchtowerReport(ranges: nil, sitePack: nil)
         #expect(report.itemsAnalyzed == 0)
         #expect(report.score == 100)
     }
@@ -90,29 +91,54 @@ struct WatchtowerTests {
         #expect(WatchtowerStubProtocol.paths().count == 3)
     }
 
-    @Test func catalogsStayOfflineWhenNetworkIsNotAllowed() async {
+    /// The site pack runs the 2FA and passkey checks with breach lookups off (`ranges` nil): they
+    /// no longer wait for "Vérifier les fuites".
+    @Test func siteChecksRunWithoutTheBreachSetting() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = try await unlockedSession(h)
+        var item = try await addLogin(session, title: "OVH", password: "Tq7#vLr9-pXw2!mZ8kEa-Hs4")
+        item.urls = [FfiUrl(label: "", url: "https://ovh.com", rule: .domain, primary: true)]
+        item = try await session.save(item)
+
+        let without = try await session.watchtowerReport(ranges: nil, sitePack: nil)
+        #expect(!without.sitesChecked)
+        let report = try await session.watchtowerReport(ranges: nil, sitePack: try SitePackVector.pack)
+        #expect(report.pwned == .disabled)
+        #expect(report.sitesChecked)
+        let missing = report.checks.first { $0.check == "missing_2fa" }
+        #expect(missing?.itemIds == [item.id])
+        #expect(missing?.siteLinks.map(\.host) == ["ovh.com"])
+    }
+
+    /// Breach lookups and the site pack refresh: no request reaches 2fa.directory.
+    @Test func noSiteDirectoryIsDownloaded() async throws {
         WatchtowerStubProtocol.reset()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [WatchtowerStubProtocol.self]
+        let session = URLSession(configuration: config)
         let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
-        let fetcher = WatchtowerFetcher(session: URLSession(configuration: config), cacheDirectory: dir)
-        let none = await fetcher.siteDirectories(allowNetwork: false)
-        #expect(none.twofa == nil && none.passkeys == nil)
-        #expect(WatchtowerStubProtocol.paths().isEmpty)
-        let fetched = await fetcher.siteDirectories(allowNetwork: true)
-        #expect(fetched.twofa != nil && fetched.passkeys != nil)
-        let cached = await fetcher.siteDirectories(allowNetwork: false)
-        #expect(cached.twofa == fetched.twofa)
-        #expect(WatchtowerStubProtocol.paths().count == 2)
+        let fetcher = WatchtowerFetcher(session: session, cacheDirectory: dir)
+        _ = await fetcher.ranges(for: ["5BAA6"])
+        _ = await fetcher.breachCatalog(allowNetwork: true)
+        let store = SitePackStore(
+            baseline: nil, directory: dir.appending(path: "SitePack"),
+            publicKey: Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString(),
+            session: session)
+        _ = await store.refreshIfDue(force: true)
+        let hosts = WatchtowerStubProtocol.hosts()
+        #expect(Set(hosts) == ["api.pwnedpasswords.com", "haveibeenpwned.com", "github.com"])
+        #expect(!hosts.contains { $0 == "2fa.directory" || $0.hasSuffix(".2fa.directory") })
     }
 }
 
 /// Answers every request with a small body and records what was asked.
 final class WatchtowerStubProtocol: URLProtocol, @unchecked Sendable {
-    private static let log = Mutex<[(path: String, padding: String?)]>([])
+    private static let log = Mutex<[(host: String, path: String, padding: String?)]>([])
 
     static func reset() { log.withLock { $0.removeAll() } }
+    static func hosts() -> [String] { log.withLock { $0.map(\.host) } }
     static func paths() -> [String] { log.withLock { $0.map(\.path) } }
     static func paddingHeaders() -> [String?] { log.withLock { $0.map(\.padding) } }
 
@@ -122,7 +148,7 @@ final class WatchtowerStubProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         let path = request.url?.path ?? ""
         let padding = request.value(forHTTPHeaderField: "Add-Padding")
-        Self.log.withLock { $0.append((path, padding)) }
+        Self.log.withLock { $0.append((request.url?.host() ?? "", path, padding)) }
         let body = path.hasPrefix("/range/") ? Data("0000000000000000000000000000000000A:0\n".utf8) : Data("{}".utf8)
         if let url = request.url, let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) {
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

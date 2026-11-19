@@ -8,8 +8,8 @@ import OnePassCore
 /// (`missingPrefixes`); `WatchtowerFetcher` downloads those ranges from Have I Been Pwned, then the
 /// second pass compares the suffixes on the device. Only 5 hex characters per distinct password
 /// leave the device, with the `Add-Padding` header so that the response size says nothing either
-/// (milestone 5 spec, section 3.3). The 2FA and passkey catalogs are downloaded whole, so they say
-/// nothing about the vault's sites.
+/// (milestone 5 spec, section 3.3). The site checks read the site pack (`SitePackStore`), shipped in
+/// the app and refreshed whole, so they say nothing about the vault's sites.
 extension VaultSession {
     /// Defaults of the spec: an expiration is reported 30 days ahead, a password is old at a year.
     nonisolated public static let watchtowerExpiryWarningDays: UInt16 = 30
@@ -17,17 +17,17 @@ extension VaultSession {
 
     /// One analysis of the visible vaults (hidden ones are left out). `ranges` nil turns breach
     /// lookups off; an empty array runs the offline pass that lists the prefixes to fetch.
+    /// `sitePack` (`SitePackStore.pack()`) runs the 2FA and passkey checks, whatever `ranges` is.
     public func watchtowerReport(
-        ranges: [FfiRangeResponse]?, twofaDirectory: Data?, passkeysDirectory: Data?, breachCatalog: Data? = nil
+        ranges: [FfiRangeResponse]?, sitePack: Data?, breachCatalog: Data? = nil
     ) async throws -> FfiWatchtowerReport {
         let options = FfiWatchtowerOptions(
             expiryWarningDays: Self.watchtowerExpiryWarningDays,
             oldPasswordDays: Self.watchtowerOldPasswordDays,
             ranges: ranges,
-            twofaDirectory: twofaDirectory,
-            passkeysDirectory: passkeysDirectory,
             excludedVaultIds: hiddenVaultIDs.sorted(),
-            breachCatalog: breachCatalog)
+            breachCatalog: breachCatalog,
+            sitePack: sitePack)
         return try await read { try $0.watchtowerReport(options: options) }
     }
 
@@ -48,13 +48,10 @@ extension VaultSession {
 }
 
 /// Download of the public Watchtower data: HIBP password ranges (kept in memory, for one hour, and
-/// dropped by `clear` on lock), the 2fa.directory catalogs and the HIBP breach catalog (kept on disk
-/// in Caches for a week).
+/// dropped by `clear` on lock) and the HIBP breach catalog (kept on disk in Caches for a week).
 /// Ephemeral `URLSession`: no cookie, no URL cache, no credential.
 public actor WatchtowerFetcher {
     public static let rangeBase = "https://api.pwnedpasswords.com/range/"
-    public static let twofaDirectoryURL = URL(string: "https://api.2fa.directory/v4/all.json")!
-    public static let passkeysDirectoryURL = URL(string: "https://passkeys-api.2fa.directory/v1/all.json")!
     /// The public breach catalog of Have I Been Pwned (no key): downloaded whole.
     public static let breachCatalogURL = URL(string: "https://haveibeenpwned.com/api/v3/breaches")!
     /// Largest range body the core reads (spec 3.3) and largest catalog (spec 3.4).
@@ -177,15 +174,8 @@ public actor WatchtowerFetcher {
         return data
     }
 
-    /// The 2FA and passkey catalogs: the disk copy while under a week old, else a download (the
-    /// stale copy serves when the download fails). Nil when neither exists.
-    public func siteDirectories(allowNetwork: Bool) async -> (twofa: Data?, passkeys: Data?) {
-        async let twofa = catalog(Self.twofaDirectoryURL, file: "2fa-directory.json", allowNetwork: allowNetwork)
-        async let passkeys = catalog(Self.passkeysDirectoryURL, file: "passkeys-directory.json", allowNetwork: allowNetwork)
-        return await (twofa, passkeys)
-    }
-
-    /// The breach catalog: same cache rules as the site catalogs.
+    /// The breach catalog: the disk copy while under a week old, else a download (the stale copy
+    /// serves when the download fails). Nil when neither exists.
     public func breachCatalog(allowNetwork: Bool) async -> Data? {
         await catalog(Self.breachCatalogURL, file: "hibp-breaches.json", allowNetwork: allowNetwork)
     }

@@ -46,6 +46,7 @@ struct DevicesSettings: View {
 
     var body: some View {
         Form {
+            Group {
             Section {
                 ForEach(active, id: \.id) { device in
                     DeviceRow(device: device, isThisDevice: isThisDevice(device), ack: session.rotationAcks[device.id]) {
@@ -53,14 +54,13 @@ struct DevicesSettings: View {
                     }
                 }
             } header: {
-                Text("settings.onAccount")
+                // What "À jour" and "En attente" mean, behind the info button while they show.
+                SettingsHeader(
+                    "settings.onAccount",
+                    info: session.rotationAcks.isEmpty ? nil : Text("settings.devices.ack.footer"),
+                    id: "settings.devices.ack.info")
             } footer: {
-                VStack(alignment: .leading, spacing: Theme.Space.s) {
-                    Text("settings.devices.list.footer")
-                    if !session.rotationAcks.isEmpty {
-                        Text("settings.devices.ack.footer")
-                    }
-                }
+                SettingsFootnote("settings.devices.list.footer")
             }
             #if os(macOS)
             if let bridge = model.browserBridge {
@@ -93,7 +93,7 @@ struct DevicesSettings: View {
                 #endif
             } footer: {
                 #if os(iOS)
-                Text("settings.devices.add.footer")
+                SettingsFootnote("settings.devices.add.footer")
                 #elseif os(macOS)
                 Text("settings.macShowsCodeTo")
                 #else
@@ -101,10 +101,12 @@ struct DevicesSettings: View {
                 #endif
             }
             if !revoked.isEmpty {
-                Section("settings.removed") {
+                Section {
                     ForEach(revoked, id: \.id) { device in
                         DeviceRow(device: device, isThisDevice: false, ack: nil) { stolenAction(device) }
                     }
+                } header: {
+                    SettingsHeader("settings.removed")
                 }
             }
             if let errorMessage {
@@ -114,7 +116,10 @@ struct DevicesSettings: View {
                         .accessibilityIdentifier("settings.devices.error")
                 }
             }
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Appareils")
         .task { await reload() }
         #if os(iOS)
@@ -304,14 +309,28 @@ private struct DeviceRow<Actions: View>: View {
 
     private var revokedAt: Date? { device.revokedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) } }
     private var addedAt: Date { Date(timeIntervalSince1970: TimeInterval(device.addedAt)) }
+    /// Always with the year (owner feedback 2026-11-16), in the device's language.
+    private static var day: Date.FormatStyle { .dateTime.day().month(.abbreviated).year() }
 
     private var detail: String {
         let kind = DeviceKindText.kind(device.kind)
         let mode = DeviceKindText.mode(device.mode)
         if let revokedAt {
-            return String(localized: "settings.removedOn \(kind) \(revokedAt.formatted(date: .abbreviated, time: .omitted))")
+            return String(localized: "settings.removedOn \(kind) \(revokedAt.formatted(Self.day))")
         }
-        return String(localized: "settings.addedOn \(kind) \(mode) \(addedAt.formatted(date: .abbreviated, time: .omitted))")
+        return String(localized: "settings.addedOn \(kind) \(mode) \(addedAt.formatted(Self.day))")
+    }
+
+    @ViewBuilder private var thisDeviceBadge: some View {
+        if isThisDevice {
+            Text("settings.device")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.readableAccent)
+                .fixedSize()
+                .padding(.horizontal, Theme.Space.s)
+                .padding(.vertical, Theme.Space.xxs)
+                .background(Theme.accent.opacity(0.15), in: Capsule())
+        }
     }
 
     var body: some View {
@@ -326,20 +345,15 @@ private struct DeviceRow<Actions: View>: View {
                     in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
-                HStack(spacing: Theme.Space.s) {
-                    Text(device.name).lineLimit(1)
-                    if isThisDevice {
-                        Text("settings.device")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.readableAccent)
-                            .padding(.horizontal, Theme.Space.s)
-                            .padding(.vertical, Theme.Space.xxs)
-                            .background(Theme.accent.opacity(0.15), in: Capsule())
-                    }
-                }
+                // The name wraps and the "Cet appareil" badge sits under it: on a 375 pt iPhone the
+                // two no longer share a line that cut the name.
+                Text(device.name)
+                    .fixedSize(horizontal: false, vertical: true)
+                thisDeviceBadge
                 Text(detail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if revokedAt == nil, let ack {
                     AckLabel(acknowledged: ack.acknowledged)
                         .accessibilityIdentifier("settings.devices.ack.\(device.id)")

@@ -172,6 +172,33 @@ Captures sur la vraie extension et le vrai hôte (hors suite) : `ONEPASS_E2E_SHO
 
 `lab/` contient un laboratoire qui génère des sites fictifs à partir d'une graine et mesure ce que l'extension remplit, et ce qu'elle ne doit jamais remplir (fuites vers un autre hôte ou un champ piège). Commandes (`npm run lab:smoke`, `npm run lab`, `npm run lab:repro`, `npm run lab:corpus`), garde-fous du corpus et limites : voir [`lab/README.md`](lab/README.md).
 
+## Configurer la double authentification par QR code
+
+Dans la popup, la partie du site courant propose "Scanner le QR code 2FA" (spec `docs/superpowers/specs/2026-11-13-two-factor-passkey-setup-design.md`, section 1). L'extension cherche le QR de configuration dans la page (images, canvas, SVG, fonds CSS et liens `otpauth://` du document et des cadres de même origine), puis, si rien n'est décodé, fait une capture de l'onglet visible. Sans résultat, la carte propose de coller la clé de configuration. Le décodage est local (jsQR, chargé à la demande) et la recherche n'envoie aucune requête. La carte de confirmation montre l'émetteur et le compte lus dans le QR, choisit le login cible et enregistre le secret sur ce login par l'hôte natif. Une fois l'écriture confirmée par l'app, le code est rempli dans le champ du site.
+
+Limites :
+
+- `activeTab` seulement : la capture ne marche qu'après un clic sur le bouton de l'extension dans la barre d'outils, qui ouvre la popup. Une page ne peut jamais lancer un scan.
+- Seul `otpauth://totp/` est accepté. `otpauth-migration://` et HOTP sont refusés.
+- Un login qui a déjà un autre code demande "Remplacer ?", Annuler par défaut ; en cas de remplacement l'ancien code reste sur le login.
+- Les codes de récupération détectés dans la page sont proposés, jamais enregistrés sans clic.
+- Le code est rempli, jamais soumis : c'est l'utilisateur qui appuie sur le bouton du site.
+- Le secret ne passe que par la mémoire de l'extension et le pont chiffré. Il n'est écrit dans aucun stockage, aucun journal, et n'est jamais renvoyé à la page.
+
+Permissions : aucune nouvelle. La fonction utilise `activeTab` et `scripting`, déjà présents dans `manifests/base.json`. `<all_urls>` n'est pas demandé (décision du 2026-11-13).
+
+État : Chromium vert en tests unitaires et de bout en bout (`e2e/setup-qr.spec.ts`), avec la capture remplacée par un bouchon, car Chromium sans interface n'accorde pas `activeTab`. Firefox : non exercé. Safari et les vrais sites : non exercés.
+
+Vérification à la main (à faire par le propriétaire, avec l'hôte de développement et le coffre de la fixture, sur les pages `/2fa/*` que sert `e2e/server.ts` pour `https://atlas-cloud.test`, avec le certificat et les règles de résolution du harnais, voir "Tests de bout en bout") :
+
+1. Chrome, `dist/chromium` : page `/2fa/frame` (QR dans un cadre d'une autre origine), clic sur le bouton de l'extension dans la barre d'outils, puis "Scanner le QR code 2FA". Attendu : la capture lit le QR et la carte s'ouvre. C'est le seul test de la vraie capture `activeTab`.
+2. Firefox, `npm run build` puis `about:debugging#/runtime/this-firefox`, "Charger un module complémentaire temporaire", `dist/firefox/manifest.json`. Vérifier d'abord dans `about:addons` que les permissions d'hôte sont accordées (Firefox MV3 les rend facultatives).
+3. Firefox, page `/2fa/img` : le QR est lu dans la page, la carte propose le login Atlas, "Ajouter" enregistre, le code est rempli sans soumission.
+4. Firefox, page `/2fa/frame` : même chose par la capture, après un clic sur le bouton de la barre d'outils.
+5. Firefox, remplacement : refaire l'étape 3 sur un login qui a déjà un autre code. Attendu : "Remplacer ?", Annuler par défaut, et après "Remplacer" l'ancien code apparaît comme "Ancien code" sur le login.
+6. Firefox, page `/2fa/manual` (clé en texte, pas de QR) : la carte propose de coller la clé, le collage enregistre.
+7. Firefox, page `/2fa/codes` : après l'enregistrement, la carte propose les codes de récupération ; rien n'est écrit sans clic sur "Enregistrer".
+
 ## Limites et reports
 
 Rulings de la spec (section 14) qui bornent cette version :

@@ -53,6 +53,24 @@
  ],
  "brands": [
   {
+   "name": "Adobe",
+   "domains": [
+    "adobe.com"
+   ],
+   "use": "site",
+   "site": "https://www.adobe.com/",
+   "note": "2026-11-16: the Adobe mark, not the PDF file icon Wikidata gave adobe.com (the PDF item lists adobe.com as its website and has more sitelinks than Adobe Inc.)"
+  },
+  {
+   "name": "Bay Club",
+   "domains": [
+    "bayclubs.com",
+    "bayclubconnect.com"
+   ],
+   "use": "site",
+   "site": "https://www.bayclubs.com/"
+  },
+  {
    "name": "BlaBlaCar",
    "domains": [
     "blablacar.fr",

@@ -15,6 +15,7 @@ struct AutoFillSettings: View {
         // Read so the page redraws when a setting changes.
         let _ = model.settingsRevision
         Form {
+            Group {
             providerSection
             SafariExtensionSection()
             #if os(macOS)
@@ -28,7 +29,7 @@ struct AutoFillSettings: View {
                 }
                 .accessibilityIdentifier("autofill.codes")
             } footer: {
-                Text("settings.autofill.codes.footer")
+                SettingsFootnote("settings.autofill.codes.footer")
             }
             Section {
                 Toggle("settings.autofill.quickType", isOn: Binding(
@@ -40,7 +41,7 @@ struct AutoFillSettings: View {
                 ))
                 .accessibilityIdentifier("autofill.quicktype")
             } footer: {
-                Text("settings.autofill.quickType.footer")
+                SettingsFootnote("settings.autofill.quickType.footer")
             }
             #if os(iOS)
             // The system asks the extension for a password only on iOS (26.2 and later).
@@ -54,10 +55,13 @@ struct AutoFillSettings: View {
                 }
                 .accessibilityIdentifier("autofill.forgetSites")
             } footer: {
-                Text("settings.autofill.forgetSites.footer")
+                SettingsFootnote("settings.autofill.forgetSites.footer")
             }
             AutofillHistorySection()
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Remplissage automatique")
         .task { await model.refreshAutoFillStatus() }
     }
@@ -97,19 +101,17 @@ struct AutoFillSettings: View {
                 }
                 .accessibilityIdentifier("autofill.systemSettings")
             }
-        } header: {
-            Text("settings.autofill.provider.header")
-                .font(.subheadline)
-                .textCase(nil)
         } footer: {
+            // One line under the card: what to do next. What the provider fills is the page's own
+            // subject, so the header line above the card is gone (owner feedback 2026-11-16).
             if enabled == true {
                 #if os(macOS)
-                Text("settings.autofill.enabled.footer.mac")
+                SettingsFootnote("settings.autofill.enabled.footer.mac")
                 #else
-                Text("settings.autofill.enabled.footer.ios")
+                SettingsFootnote("settings.autofill.enabled.footer.ios")
                 #endif
             } else {
-                Text("settings.autofill.disabled.footer")
+                SettingsFootnote("settings.autofill.disabled.footer")
             }
         }
     }
@@ -142,6 +144,7 @@ struct ForgetSiteChoices: View {
 
     var body: some View {
         Form {
+            Group {
             if let errorMessage {
                 Section {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -164,9 +167,12 @@ struct ForgetSiteChoices: View {
                     }
                 }
             } footer: {
-                Text("settings.autofill.forgetSites.pageFooter")
+                SettingsFootnote("settings.autofill.forgetSites.pageFooter")
             }
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("settings.autofill.forgetSites.title")
         .task { await reload() }
         .confirmationDialog(
@@ -233,7 +239,7 @@ struct AutofillHistorySection: View {
                     .foregroundStyle(.red)
             }
         } footer: {
-            Text("settings.autofill.history.footer")
+            SettingsFootnote("settings.autofill.history.footer")
         }
         .task { await reload() }
         .confirmationDialog(

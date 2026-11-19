@@ -19,6 +19,7 @@ import * as https from "node:https";
 import * as net from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import QRCode from "qrcode";
 import type { TestCert } from "./cert";
 
 const PAGES = fileURLToPath(new URL("./pages/", import.meta.url));
@@ -50,7 +51,21 @@ export const FX = {
   },
   /** Fictional passport of Alex Martin (fixtures/e2e.json). */
   passport: { number: "E2E0PASS1" },
+  /**
+   * Two-factor setup pages (/2fa/*): the seed their QR codes carry (in no vault), and the ten
+   * recovery codes the site shows once a code of that seed was verified.
+   */
+  setup: {
+    secret: "OBQXG43XN5ZGIMJSGM2DKNRXHA4TAMJS",
+    codes: ["4F7K-2M9Q", "8D3H-6W1P", "1Z5R-7C4N", "9B2T-3X8L", "6J4V-5S2E", "2G8Y-1K7A", "7N3U-4D9F", "5Q1W-8H6R", "3M6C-9P2Z", "0T4B-7V5J"],
+  },
 } as const;
+
+/** The setup URI of a /2fa page: `for` names the account (`ops` by default, `alex`, `pat`). */
+export function setupUri(account = "ops"): string {
+  const user = account === "alex" ? FX.atlas.email : account === "pat" ? "pat@atlas.dev" : FX.ops.email;
+  return `otpauth://totp/Atlas%20Cloud:${encodeURIComponent(user)}?secret=${FX.setup.secret}&issuer=Atlas%20Cloud`;
+}
 
 // ---- TOTP (RFC 6238, SHA-1, 30 s, 6 digits) ----
 
@@ -125,8 +140,17 @@ export interface Captured {
 /** Path every host answers on with the server's nonce (fixtures.ts canary). */
 export const CANARY_PATH = "/__onepass_e2e_canary";
 
+/** One request the server received (the scan must add none). */
+export interface Hit {
+  host: string;
+  method: string;
+  path: string;
+}
+
 export interface TestServer {
   port: number;
+  /** Every request received, in order. */
+  hits: Hit[];
   /** Random per server: a page showing it was served by this process. */
   nonce: string;
   /** Every POST received by a trap host (lookalikes, evil.test). */
@@ -225,6 +249,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
   /** WebAuthn challenges issued by /passkey, each good for one check. */
   const passkeyChallenges = new Set<string>();
   const state: Omit<TestServer, "port" | "close" | "nonce"> = {
+    hits: [],
     captured: [],
     providerSignIns: [],
     users: initialUsers(),
@@ -233,6 +258,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
       codes.clear();
       passkeyChallenges.clear();
       this.captured.length = 0;
+      this.hits.length = 0;
       this.providerSignIns.length = 0;
       this.users = initialUsers();
     },
@@ -243,6 +269,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
     const url = new URL(req.url ?? "/", `${secure ? "https" : "http"}://${host}`);
     const path = url.pathname;
     const post = req.method === "POST";
+    if (path !== CANARY_PATH) state.hits.push({ host, method: req.method ?? "", path });
     const body = post ? await readBody(req) : {};
 
     const cookieName = "e2e_sid";
@@ -264,6 +291,70 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
     const redirect = (to: string) => {
       res.writeHead(303, { ...headers, location: to });
       res.end();
+    };
+
+    /**
+     * Two-factor setup pages (/2fa/<kind>?for=<account>): the setup QR as an image, a canvas, an
+     * inline svg, a CSS background, in another origin's frame, on a tainted canvas, in a closed
+     * shadow root (`hidpi`), for another account (`decoy`), or the key as text (`manual`). Their
+     * form posts to /2fa/verify, which takes a current code of FX.setup.secret and then shows the
+     * recovery codes. Served on Atlas Cloud and on the trap hosts (the look-alike).
+     */
+    const twoFa = async (brand: string): Promise<boolean> => {
+      if (!path.startsWith("/2fa/")) return false;
+      const kind = path.slice("/2fa/".length);
+      const account = kind === "decoy" ? "pat" : (url.searchParams.get("for") ?? "ops");
+      const uri = setupUri(account);
+      const forQs = `?for=${encodeURIComponent(account)}`;
+      const show = (name: string, vars: Record<string, string>, raw: Record<string, string> = {}, error = "") =>
+        send(page("Atlas Cloud - Sécurité", `atlas/${name}.html`, { brand, error, ...vars }, raw));
+      const dataUrl = () => QRCode.toDataURL(uri, { width: 200, margin: 2 });
+      switch (kind) {
+        case "qr.png":
+          res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
+          res.end(await QRCode.toBuffer(uri, { width: 200, margin: 2 }));
+          return true;
+        case "qr-frame":
+          send(page("QR", "atlas/2fa-qr-frame.html", { src: `/2fa/qr.png${forQs}` }));
+          return true;
+        case "img":
+        case "decoy":
+          show(`2fa-${kind}`, { src: `/2fa/qr.png${forQs}` });
+          return true;
+        case "canvas":
+        case "background":
+        case "hidpi":
+          show(`2fa-${kind}`, { src: await dataUrl() });
+          return true;
+        case "svg":
+          show("2fa-svg", {}, { svg: await QRCode.toString(uri, { type: "svg", width: 200, margin: 2 }) });
+          return true;
+        case "frame":
+          show("2fa-frame", { frame: `https://docs.atlas-cloud.test/2fa/qr-frame${forQs}` });
+          return true;
+        case "tainted":
+          show("2fa-tainted", { src: `https://docs.atlas-cloud.test/2fa/qr.png${forQs}` });
+          return true;
+        case "manual":
+          show("2fa-manual", { key: (FX.setup.secret.match(/.{1,4}/g) ?? []).join(" ") });
+          return true;
+        case "verify": {
+          if (!post) {
+            send("Introuvable", 404);
+            return true;
+          }
+          if (!totpOk(FX.setup.secret, body.code ?? "")) {
+            show("2fa-img", { src: `/2fa/qr.png${forQs}` }, {}, "Code incorrect");
+            return true;
+          }
+          const codes = FX.setup.codes.map((c) => `<li>${esc(c)}</li>`).join("");
+          send(page("Atlas Cloud - Sécurité", "atlas/2fa-codes.html", { brand }, { codes }));
+          return true;
+        }
+        default:
+          send("Introuvable", 404);
+          return true;
+      }
     };
 
     if (path === CANARY_PATH) {
@@ -289,6 +380,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
 
     // ---- trap hosts: record and show nothing useful ----
     if (TRAP_HOSTS.has(host)) {
+      if (await twoFa("Atlas Cloud")) return;
       if (post) {
         state.captured.push({ host, path, body });
         send(page("Merci", "atlas/status.html", { brand: host, status: "Reçu", detail: "" }));
@@ -311,6 +403,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           }),
         );
       }
+      if (path === "/join") return send(page("Atlas Cloud", "atlas/email-first.html", { action: path }));
       const brand = host === "sso.evil.test" ? "Connexion unique" : "Atlas Cloud";
       return send(page("Connexion", "atlas/login.html", { brand, error: "", action: path }));
     }
@@ -368,6 +461,7 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
         session().email = detail;
         return redirect("/home");
       };
+      if (await twoFa(brand)) return;
       const google = (client: string, providerHost = "accounts.google.com") =>
         `https://${providerHost}/o/oauth2/auth?client=${encodeURIComponent(client)}&redirect_uri=${encodeURIComponent("https://atlas-cloud.test/oauth/callback")}`;
 
@@ -466,6 +560,11 @@ export async function startServer(cert: TestCert): Promise<TestServer> {
           state.users.set(email, body.password);
           return signedIn(email);
         }
+        case "/join":
+          // Email-first, passwordless (the code would be sent by e-mail): the page title and URL
+          // say nothing of signing in or up, only the form's own "Sign in" / "Sign up" switch.
+          if (!post) return send(page("Atlas Cloud", "atlas/email-first.html", { action: path }));
+          return send(page("Atlas Cloud", "atlas/status.html", { brand, status: "Code envoyé", detail: body.email ?? "" }));
         case "/signup-passkey": {
           // One-click signup: a form that can also make a passkey (its own button).
           const challenge = randomBytes(32).toString("base64url");

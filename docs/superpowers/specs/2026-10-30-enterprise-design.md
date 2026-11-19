@@ -1,7 +1,7 @@
 # OnePass Business : SSO, console d'administration, SCIM, politiques, journaux d'audit
 
 Date : 2026-10-30
-Statut : brouillon pour revue du fondateur (rulings E1 à E30 proposés, questions ouvertes en fin de document). Rien n'est implémenté.
+Statut : décisions du fondateur confirmées le 2026-11-13 (fin du document). Les rulings E1 à E30 de la section 19 tiennent tels qu'écrits. E0 et E1 en cours sur `feat/business-e0-e1`.
 Branche : `docs/enterprise`, depuis la `main` privée (`88468668`).
 Portée : tout ce qu'il faut pour vendre OnePass à une organisation : déverrouillage par SSO (OIDC, SAML) sans donner les clés au fournisseur d'identité ni à notre serveur, le serveur qu'il faut ajouter, la console d'administration, le provisionnement SCIM 2.0, les politiques, les journaux d'audit, la récupération d'un compte par les administrateurs, les paliers de fonctions, le modèle de menace, le modèle formel, les jalons et les tests.
 
@@ -712,21 +712,21 @@ Les affirmations sur les autres produits viennent de leur propre documentation, 
 11. **Effacement du membre parti (E12).** Immédiat au prochain lancement, ou délai de 7 jours comme [ROT] ? Mon choix : **immédiat**, les données restent sur le serveur et chez les autres membres.
 12. **Hébergement.** Région de notre instance hébergée (UE, US, les deux) et ordre de lancement ? Mon choix : **UE et US dès E8**, données d'une organisation dans une seule région choisie à la création.
 
-## Décisions du fondateur (2026-10-30)
+## Décisions du fondateur (2026-10-30, confirmées le 2026-11-13)
 
-Réponses du fondateur marquées **(fondateur)**. Les autres sont une première passe de Claude, à confirmer, marquées **(première passe)**. Une décision ici prime sur le texte de la spec ; les sections touchées sont à réécrire au prochain passage.
+Réponses du fondateur marquées **(fondateur)**. Les décisions d'abord proposées par Claude puis confirmées par le fondateur sont marquées **(fondateur, 2026-11-13)**. Une décision ici prime sur le texte de la spec ; les sections touchées sont à réécrire au prochain passage.
 
-Toutes les décisions de cette spec sont une première passe ; le fondateur n'a pas encore répondu.
+Le 2026-11-13, le fondateur a confirmé les douze décisions ci-dessous telles quelles et lancé E0 et E1.
 
-1. **SSO : approche B, appareils de confiance avec part serveur liée à l'IdP (première passe).**
-2. **Pas d'option séquestre en v1 (première passe).**
-3. **Récupération par l'organisation : K3, désactivée par défaut, 2 sur 3, 48 h (première passe).**
-4. **Coffre privé couvert par la récupération quand elle est active, affiché en en-tête (première passe).**
-5. **Un admin n'est membre d'aucun coffre par défaut (première passe).**
-6. **Vérification directe auprès de l'IdP optionnelle, Okta et Entra ID d'abord (première passe).**
-7. **Pas d'attestation d'app en v1 (première passe).**
-8. **Tout en AGPL ; on vend hébergement, support, audit (première passe).**
-9. **Comptes de service : couverts par la spec `2026-10-30-dev-secrets-aliases-design.md` (paquet scellé), la version serveur viendra après E5 (première passe).**
-10. **Propriétaires en 2SKD obligatoire (première passe).**
-11. **Membre parti : verrouillage immédiat, effacement au prochain lancement (première passe).** Différent des 7 jours de la rotation : ici le retrait est signé par l'organisation via l'agent SCIM, pas par un appareil qui peut avoir été volé, et les données restent chez l'organisation. À confirmer par le fondateur.
-12. **Hébergement : Supabase (première passe, conséquence de la décision de la spec multi-plateforme).** Un projet Supabase par région, UE et US dès E8, une organisation dans une seule région choisie à la création. Le serveur d'entreprise (annuaire, parts serveur, segments d'audit, politiques) s'ajoute au même socle que la boîte aux lettres ; les parts serveur ne sont jamais lisibles par une requête Supabase directe (fonction serveur seulement).
+1. **SSO : approche B, appareils de confiance avec part serveur liée à l'IdP (fondateur, 2026-11-13).**
+2. **Pas d'option séquestre en v1 (fondateur, 2026-11-13).**
+3. **Récupération par l'organisation : K3, désactivée par défaut, 2 sur 3, 48 h (fondateur, 2026-11-13).**
+4. **Coffre privé couvert par la récupération quand elle est active, affiché en en-tête (fondateur, 2026-11-13).**
+5. **Un admin n'est membre d'aucun coffre par défaut (fondateur, 2026-11-13).**
+6. **Vérification directe auprès de l'IdP optionnelle, Okta et Entra ID d'abord (fondateur, 2026-11-13).**
+7. **Pas d'attestation d'app en v1 (fondateur, 2026-11-13).**
+8. **Tout en AGPL ; on vend hébergement, support, audit (fondateur, 2026-11-13).**
+9. **Comptes de service : couverts par la spec `2026-10-30-dev-secrets-aliases-design.md` (paquet scellé), la version serveur viendra après E5 (fondateur, 2026-11-13).**
+10. **Propriétaires en 2SKD obligatoire (fondateur, 2026-11-13).**
+11. **Membre parti : verrouillage immédiat, effacement au prochain lancement (fondateur, 2026-11-13).** Différent des 7 jours de la rotation : ici le retrait est signé par l'organisation via l'agent SCIM, pas par un appareil qui peut avoir été volé, et les données restent chez l'organisation.
+12. **Hébergement : Supabase (fondateur, 2026-11-13, conséquence de la décision de la spec multi-plateforme).** Un projet Supabase par région, UE et US dès E8, une organisation dans une seule région choisie à la création. Le serveur d'entreprise (annuaire, parts serveur, segments d'audit, politiques) s'ajoute au même socle que la boîte aux lettres ; les parts serveur ne sont jamais lisibles par une requête Supabase directe (fonction serveur seulement).

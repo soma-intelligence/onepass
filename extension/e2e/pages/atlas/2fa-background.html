@@ -1,0 +1,10 @@
+<div class="brand">{{brand}}</div>
+<h1>Activer la validation en deux étapes</h1>
+<p>Scanne ce QR code avec ton application d'authentification, puis saisis le code.</p>
+<p class="error" id="error">{{error}}</p>
+<div id="qr" role="img" aria-label="QR code de configuration" style="width: 200px; height: 200px; background: #fff url('{{src}}') center / contain no-repeat;"></div>
+<form id="verify" action="/2fa/verify" method="post">
+  <label for="code">Code de vérification</label>
+  <input id="code" name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+  <button id="submit" type="submit">Vérifier</button>
+</form>

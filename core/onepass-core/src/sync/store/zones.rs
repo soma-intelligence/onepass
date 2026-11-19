@@ -52,6 +52,14 @@ CREATE TABLE IF NOT EXISTS zone_staging (
 CREATE TABLE IF NOT EXISTS zone_fetch (
     zone BLOB NOT NULL PRIMARY KEY
 );
+CREATE TABLE IF NOT EXISTS zone_ancestor (
+    zone BLOB NOT NULL,
+    kind INTEGER NOT NULL,
+    id BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (zone, kind, id)
+);
 ";
 
 fn shared_key(zone: Zone) -> Result<Vec<u8>> {
@@ -202,7 +210,13 @@ pub(super) fn zones_in(conn: &Connection) -> Result<Vec<Zone>> {
 
 pub(super) fn drop_zone_in(conn: &Connection, zone: Zone) -> Result<()> {
     let z = shared_key(zone)?;
-    for table in ["zone_base", "zone_pending", "zone_staging", "zone_fetch"] {
+    for table in [
+        "zone_base",
+        "zone_pending",
+        "zone_staging",
+        "zone_fetch",
+        "zone_ancestor",
+    ] {
         conn.execute(&format!("DELETE FROM {table} WHERE zone = ?1"), params![&z])
             .map_err(store_err)?;
     }
@@ -327,11 +341,13 @@ pub(super) fn drop_pending_rows(
 ) -> Result<()> {
     let z = shared_key(zone)?;
     for (kind, id) in rows {
-        conn.execute(
-            "DELETE FROM zone_pending WHERE zone = ?1 AND kind = ?2 AND id = ?3",
-            params![&z, kind.code(), &id.0[..]],
-        )
-        .map_err(store_err)?;
+        for table in ["zone_pending", "zone_ancestor"] {
+            conn.execute(
+                &format!("DELETE FROM {table} WHERE zone = ?1 AND kind = ?2 AND id = ?3"),
+                params![&z, kind.code(), &id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
     }
     Ok(())
 }
@@ -427,6 +443,36 @@ impl SyncStore {
                 })
                 .collect())
         })
+    }
+
+    /// The record a pending deletion of item row `blob` of shared `zone`
+    /// removes: its confirmed row, or the copy kept once the server
+    /// removed or replaced it while the deletion waited (`zone_ancestor`).
+    /// The shared rebase reads it as the ancestor of my write of the item.
+    pub fn zone_item_ancestor(&self, zone: Zone, blob: Id) -> Result<Option<Record>> {
+        if let Some(r) = self.zone_base_record(zone, RecordKind::Item, blob)? {
+            return Ok(Some(r));
+        }
+        let z = shared_key(zone)?;
+        let row: Option<(i64, Vec<u8>)> = self
+            .conn
+            .query_row(
+                "SELECT version, data FROM zone_ancestor
+                 WHERE zone = ?1 AND kind = ?2 AND id = ?3",
+                params![&z, RecordKind::Item.code(), &blob.0[..]],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(store_err)?;
+        row.map(|(v, data)| {
+            Ok(Record {
+                kind: RecordKind::Item,
+                id: blob,
+                version: u64::try_from(v).map_err(|_| Error::InvalidFormat("record version"))?,
+                data,
+            })
+        })
+        .transpose()
     }
 
     /// The confirmed (server) row of a record of shared `zone`, pending
@@ -575,11 +621,13 @@ impl SyncStore {
             ),
         }
         .map_err(store_err)?;
-        tx.execute(
-            "DELETE FROM zone_pending WHERE zone = ?1 AND kind = ?2 AND id = ?3",
-            params![&z, kind.code(), &id.0[..]],
-        )
-        .map_err(store_err)?;
+        for table in ["zone_pending", "zone_ancestor"] {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE zone = ?1 AND kind = ?2 AND id = ?3"),
+                params![&z, kind.code(), &id.0[..]],
+            )
+            .map_err(store_err)?;
+        }
         tx.commit()
     }
 
@@ -705,6 +753,20 @@ impl SyncStore {
             }
             if kind == RecordKind::Item && data.is_some() {
                 served_items.insert(id.clone());
+            }
+            if kind == RecordKind::Item {
+                // My deletion of this row waits: keep the row the server
+                // drops, the shared rebase reads it as the ancestor of my
+                // write of the item (`zone_item_ancestor`).
+                tx.execute(
+                    "INSERT OR IGNORE INTO zone_ancestor (zone, kind, id, version, data)
+                     SELECT b.zone, b.kind, b.id, b.version, b.data FROM zone_base b
+                     JOIN zone_pending p
+                       ON p.zone = b.zone AND p.kind = b.kind AND p.id = b.id
+                     WHERE b.zone = ?1 AND b.kind = ?2 AND b.id = ?3 AND p.data IS NULL",
+                    params![&z, kind_code, &id],
+                )
+                .map_err(store_err)?;
             }
             match data {
                 Some(data) => tx.execute(

@@ -2124,6 +2124,7 @@ version = "0.3.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
+ "num-bigint",
  "onepass-bridge",
  "onepass-cdp",
  "onepass-core",
@@ -2208,6 +2209,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "time",
  "zeroize",
 ]
 
@@ -2290,6 +2292,7 @@ dependencies = [
  "onepass-peer",
  "serde_json",
  "tempfile",
+ "time",
  "zeroize",
 ]
 

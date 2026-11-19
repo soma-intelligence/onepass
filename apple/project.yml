@@ -80,6 +80,11 @@ packages:
     path: SafariExtension/SafariRelay
   UpdateKit:
     path: UpdateKit
+  # Shared DesignBridge primitives and UI test base, vendored in Vendor/DesignBridge (see its README).
+  DesignBridgeKit:
+    path: Vendor/DesignBridge/DesignBridgeKit
+  DesignBridgeTesting:
+    path: Vendor/DesignBridge/DesignBridgeTesting
 
 targets:
   OnePass:
@@ -94,11 +99,19 @@ targets:
       # from the containing app, or from the copy the app puts in the App Group.
       - path: IconPack/onepass-icons.bin
         buildPhase: resources
+      # Site pack (docs/site-pack.md), shipped once in the app: Watchtower's 2FA and passkey checks
+      # read it, or a newer signed one SitePackStore downloads. The manifest records its sources.
+      - path: SitePack/onepass-sites.json
+        buildPhase: resources
+      - path: SitePack/site-pack-manifest.json
+        buildPhase: resources
     dependencies:
       - package: VaultKit
         product: VaultKit
       - package: DesignKit
         product: DesignKit
+      - package: DesignBridgeKit
+        product: DesignBridgeKit
       # App Intents and Shortcuts: linked explicitly, autolinking misses it in the Mac App Store archive.
       - sdk: AppIntents.framework
       # The iOS app carries the watch app; the Mac build has no watch content.
@@ -184,11 +197,17 @@ targets:
         # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
         NSLocalNetworkUsageDescription: "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
         NSBonjourServices: [_onepass-pair._tcp, _onepass-contact._tcp]
-        # Asked only on "Utiliser ma position" or when "À proximité" opens (macOS reads NSLocationUsageDescription).
-        # Mac: also the first time Wi-Fi automatique runs (macOS gives the network name only with it).
-        NSLocationWhenInUseUsageDescription: $(ONEPASS_LOCATION_PURPOSE)
-        NSLocationUsageDescription: $(ONEPASS_LOCATION_PURPOSE)
-        UILaunchScreen: {}
+        # Asked only on "Utiliser ma position" or when "À proximité" opens. iOS reads
+        # NSLocationWhenInUseUsageDescription, macOS reads NSLocationUsageDescription, which also
+        # names Wi-Fi automatique (macOS gives the network name only with it). Translated in
+        # App/Support/InfoPlist.xcstrings.
+        NSLocationWhenInUseUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+        NSLocationUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
+        # The launch screen: the RX page colour and the bare mark tile; RXSplash carries on from it.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchMark
+          UIImageRespectsSafeAreaInsets: false
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         # CloudKit pushes: sync rounds, and the agent requests of the Mac (agent-ready spec 5.2).
@@ -213,8 +232,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX)
         PRODUCT_NAME: OnePass
-        ONEPASS_LOCATION_PURPOSE: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
-        "ONEPASS_LOCATION_PURPOSE[sdk=macosx*]": "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
         TARGETED_DEVICE_FAMILY: "1,2,7"
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
@@ -503,8 +520,11 @@ targets:
         excludes:
           - "AutoFillUITests.swift"
           - "SafariAutofillUITests.swift"
+          - "OpenAndSignInUITests.swift"
     dependencies:
       - target: OnePass
+      - package: DesignBridgeTesting
+        product: DesignBridgeUITesting
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.uitests
@@ -702,6 +722,7 @@ targets:
     platform: iOS
     sources:
       - path: AppUITests/SafariAutofillUITests.swift
+      - path: AppUITests/OpenAndSignInUITests.swift
     dependencies:
       - target: AutoFillHost
     settings:

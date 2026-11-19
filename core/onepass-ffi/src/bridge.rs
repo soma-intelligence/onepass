@@ -46,6 +46,7 @@ use onepass_bridge::host::{Approval, Approver, Journal, PairingStore};
 #[cfg(unix)]
 use onepass_bridge::host::{Conn, Limits, spawn_reader};
 use onepass_bridge::pairing::PairingRecord;
+use onepass_bridge::pending::{PENDING_TTL, PendingStore};
 use onepass_bridge::service::{AccountTag, VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::Id;
@@ -217,6 +218,9 @@ struct Shared {
     /// The agent fills of `fill_in_browser`: every session may poll it
     /// (`agent_wait`); the MCP host fills through the same one.
     agent: Arc<AgentHub>,
+    /// Open and sign in: where the app records pending sign-ins (the App
+    /// Group container); none until `set_pending_dir`.
+    pending: Mutex<Option<PendingStore>>,
 }
 
 /// An account as one request sees it: listed, with a session.
@@ -441,6 +445,23 @@ impl<'a> AppVault<'a> {
             warned: Cell::new(false),
             pairing_id: String::new(),
         }
+    }
+
+    /// The browser of the client served, for its key uses: the one the app
+    /// vouched for by code signature, else the one it named when it paired
+    /// (untrusted, as every client name). Empty before the session opens.
+    fn client_browser(&self) -> String {
+        lock(&self.shared.pairings)
+            .iter()
+            .find(|p| p.pairing_id == self.pairing_id)
+            .map(|p| {
+                if p.verified_browser.is_empty() {
+                    p.browser.clone()
+                } else {
+                    p.verified_browser.clone()
+                }
+            })
+            .unwrap_or_default()
     }
 
     /// The accounts to read: `locked` unless the primary one is open.
@@ -786,11 +807,12 @@ impl VaultAccess for AppVault<'_> {
         force: bool,
     ) -> onepass_bridge::Result<bool> {
         let (owner, _) = self.owner(vault_id)?;
+        let client = self.client_browser();
         let written = owner
             .session
             .with(|repo| {
                 let vault = find_vault(repo, vault_id)?;
-                Ok(repo.record_usage(&vault, item_id, u.clone(), now, force)?)
+                Ok(repo.record_usage(&vault, item_id, u.clone(), now, force, &client)?)
             })
             .map_err(bridge_error)?;
         if written {
@@ -872,6 +894,43 @@ impl VaultAccess for AppVault<'_> {
             .flat_map(|(_, learned)| learned)
             .collect())
     }
+
+    fn take_pending_sign_in(&mut self, origin: &str, top_origin: &str, now: u64) -> Option<Id> {
+        let store = lock(&self.shared.pending).clone()?;
+        let id = store.take(origin, top_origin, now)?;
+        self.shared
+            .delegate
+            .note("open and sign in: pending sign-in taken".to_owned());
+        Some(id)
+    }
+}
+
+/// Open and sign in (spec 2026-11-04-open-and-sign-in): record in `dir`
+/// that the user asked to sign in to `url` with login `item_id`, for
+/// `PENDING_TTL` seconds, replacing any earlier one. Only the id, the site
+/// and two times are written (0600), never a secret. `insecure_origin`
+/// (as `InvalidInput`) for an `http` URL: the app then only opens it.
+#[uniffi::export]
+pub fn record_pending_sign_in(
+    dir: String,
+    item_id: String,
+    url: String,
+) -> Result<u64, OnePassError> {
+    let id = parse_id(&item_id)?;
+    PendingStore::new(dir)
+        .record(id, &url, unix_now())
+        .map_err(|e| match e {
+            BridgeError::App(AppErrorCode::InsecureOrigin) => invalid("insecure_origin"),
+            BridgeError::App(_) => invalid("url"),
+            _ => invalid("pending sign-in not written"),
+        })?;
+    Ok(PENDING_TTL)
+}
+
+/// Open and sign in: drop the pending sign-in of `dir`, if any.
+#[uniffi::export]
+pub fn clear_pending_sign_in(dir: String) {
+    PendingStore::new(dir).clear();
 }
 
 /// Serve one admitted connection until it ends. `allowed`: the caller's
@@ -948,6 +1007,7 @@ impl BridgeServer {
                 next_request: AtomicU64::new(1),
                 audit_path: PathBuf::from(audit_path),
                 agent: crate::developer::agent_hub(),
+                pending: Mutex::new(None),
             }),
             #[cfg(target_os = "macos")]
             server: Mutex::new(None),
@@ -1023,6 +1083,13 @@ impl BridgeServer {
         {
             false
         }
+    }
+
+    /// Open and sign in: the directory where the app records pending
+    /// sign-ins (`record_pending_sign_in`), the App Group container's
+    /// database folder. Without it, `take_sign_in` finds nothing.
+    pub fn set_pending_dir(&self, dir: String) {
+        *lock(&self.shared.pending) = Some(PendingStore::new(dir));
     }
 
     /// The unlocked session (on unlock), or none (on lock): the bridge

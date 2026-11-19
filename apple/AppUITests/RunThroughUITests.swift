@@ -66,6 +66,9 @@ final class RunThroughUITests: XCTestCase {
         verifyOnInSystemSettings()
         onePass.activate()
         let status = onePass.descendants(matching: .any)["autofill.status"].firstMatch
+        // iPhone and iPad lock as soon as the app leaves the screen (the default since d4ff9eb1b):
+        // unlock with the master password, then back to the AutoFill page if the unlock left it.
+        if unlockIfLocked(), !status.waitForExistence(timeout: 3) { openAutoFillSettings() }
         require(status, in: onePass, "autofill settings page after activation")
         if !waitForValue(status, "Activé", timeout: Self.uiTimeout) {
             // iOS 27.0 Simulator: `ASCredentialIdentityStore.state()` cannot reach
@@ -191,6 +194,18 @@ final class RunThroughUITests: XCTestCase {
         pause(3)
     }
 
+    /// The lock screen, when the app locked while away: unlocked with the master password.
+    /// Returns whether it was locked.
+    @discardableResult
+    private func unlockIfLocked() -> Bool {
+        let field = onePass.secureTextFields["lock.password"]
+        guard field.waitForExistence(timeout: 5) else { return false }
+        type(Self.masterPassword, into: field, in: onePass)
+        tap(onePass.buttons["lock.unlock"], in: onePass)
+        XCTAssertTrue(field.waitForNonExistence(timeout: Self.kdfTimeout), "OnePass not unlocked")
+        return true
+    }
+
     private func pause(_ seconds: TimeInterval) { Thread.sleep(forTimeInterval: seconds) }
 
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
@@ -292,9 +307,29 @@ final class RunThroughUITests: XCTestCase {
         let accept = springboard.buttons
             .matching(Self.labelPredicate(["Turn On", "Activer", "Allow", "Autoriser"])).firstMatch
         guard accept.waitForExistence(timeout: 10) else {
-            dump("springboard without the activation alert", springboard)
-            attachScreenshot("no-activation-alert")
-            XCTFail("no system alert after \"Activer OnePass\"")
+            // iOS 27.2 Simulator: the request answers "off" at once, without the alert, and the app
+            // falls back to the system AutoFill settings (`AppModel.requestAutoFillActivation`).
+            // Only accepted when that fallback is on screen; OnePass is then turned on there.
+            guard preferences.wait(for: .runningForeground, timeout: 5) else {
+                dump("springboard without the activation alert", springboard)
+                attachScreenshot("no-activation-alert")
+                XCTFail("no system alert after \"Activer OnePass\", and no system settings either")
+                return
+            }
+            attachScreenshot("activation-fallback-settings")
+            print("Simulator limit: no activation alert, the app opened the system AutoFill settings")
+            let toggle = systemSwitch()
+            if toggle.value as? String != "1" { flip(toggle) }
+            // A confirmation may follow the switch, in Settings or Springboard.
+            for app in [preferences, springboard] {
+                let confirm = app.buttons
+                    .matching(Self.labelPredicate(["Turn On", "Activer", "Allow", "Autoriser", "Continue", "Continuer"]))
+                    .firstMatch
+                if confirm.waitForExistence(timeout: 2) {
+                    print("Settings confirmation: \(confirm.label)")
+                    confirm.tap()
+                }
+            }
             return
         }
         attachScreenshot("activation-alert")

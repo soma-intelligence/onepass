@@ -268,3 +268,137 @@ struct MasterPasswordGateTests {
         #expect(abs(PasswordStrength.estimatedBits(generated) - passwordEntropyBits(recipe: recipe)) < 1e-9)
     }
 }
+
+private func textField(_ id: String, _ label: String, _ value: String = "") -> FfiField {
+    FfiField(
+        id: id, label: label, kind: .text, value: value.isEmpty ? .empty : .text(value: value), required: false,
+        repeatable: false, autofill: false)
+}
+
+private func sectionIDs(_ draft: ItemDraft) -> [String] { draft.item.sections.map(\.id) }
+
+@Suite("Item draft cards")
+struct ItemDraftCardsTests {
+    @Test func importedSectionIsFree() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: "imported", label: "Imported", fields: [textField("note", "Note", "x")]))
+        let draft = ItemDraft(item: item)
+        #expect(draft.isFreeSection("imported"))
+        #expect(!draft.isFreeSection("main"))
+        #expect(draft.freeSectionIDs == ["imported"])
+        #expect(draft.isRemovable(sectionID: "imported", fieldIndex: 0))
+    }
+
+    @Test func addSectionNumbersNeverReused() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: "section_2", label: "Banque", fields: []))
+        var draft = ItemDraft(item: item)
+        draft.removeSection(id: "section_2")
+        #expect(draft.addSection() == "section_3")
+        #expect(draft.addSection() == "section_4")
+        // Blank while editing: the name field shows the default as its prompt, the save fills it.
+        #expect(draft.item.sections.last?.label == "")
+        #expect(draft.addSection(label: " Banque ") == "section_5")
+        #expect(draft.item.sections.last?.label == "Banque")
+    }
+
+    @Test func moveFreeSectionKeepsTemplatesFirst() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: "custom", label: "Champs perso", fields: []))
+        item.sections.append(FfiSection(id: "imported", label: "Imported", fields: []))
+        var draft = ItemDraft(item: item)
+        draft.moveFreeSection(from: 1, to: 0)
+        #expect(sectionIDs(draft) == ["main", "imported", "custom"])
+        draft.moveFreeSection(from: 0, to: 5)
+        #expect(sectionIDs(draft) == ["main", "custom", "imported"])
+    }
+
+    @Test func moveFieldOnlyInFreeSections() {
+        var item = draftItem(.login)
+        item.sections.append(
+            FfiSection(id: "custom", label: "Champs perso", fields: [textField("custom_1", "A"), textField("custom_2", "B")]))
+        var draft = ItemDraft(item: item)
+        let before = draft.item.sections[0].fields.map(\.id)
+        draft.moveField(sectionID: "main", from: 0, to: 2)
+        #expect(draft.item.sections[0].fields.map(\.id) == before)
+        draft.moveField(sectionID: "custom", from: 1, to: 0)
+        #expect(draft.item.sections[1].fields.map(\.id) == ["custom_2", "custom_1"])
+    }
+
+    @Test func moveURLKeepsPrimaryOnItsSite() {
+        var item = draftItem(.login)
+        item.urls = [
+            FfiUrl(label: "", url: "https://a.exemple.fr", rule: .domain, primary: true),
+            FfiUrl(label: "", url: "https://b.exemple.fr", rule: .domain, primary: false),
+            FfiUrl(label: "", url: "https://c.exemple.fr", rule: .domain, primary: false),
+        ]
+        var draft = ItemDraft(item: item)
+        draft.moveURL(from: 0, to: 2)
+        #expect(draft.item.urls.map(\.url) == ["https://b.exemple.fr", "https://c.exemple.fr", "https://a.exemple.fr"])
+        #expect(draft.item.urls.filter(\.primary).map(\.url) == ["https://a.exemple.fr"])
+        draft.moveURL(from: 9, to: 0)
+        #expect(draft.item.urls.count == 3)
+    }
+
+    @Test func removeSectionFreeOnly() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: "imported", label: "Imported", fields: []))
+        var draft = ItemDraft(item: item)
+        draft.removeSection(id: "main")
+        #expect(sectionIDs(draft) == ["main", "imported"])
+        draft.removeSection(id: "imported")
+        #expect(sectionIDs(draft) == ["main"])
+    }
+
+    @Test func renameSectionFreeOnly() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: "imported", label: "Imported", fields: []))
+        var draft = ItemDraft(item: item)
+        draft.renameSection(id: "imported", label: "Banque")
+        draft.renameSection(id: "main", label: "Autre")
+        #expect(draft.item.sections.map(\.label) == ["Connexion", "Banque"])
+    }
+
+    @Test func preparedForSaveDropsEmptyAndRelabels() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: "section_1", label: "Vide", fields: []))
+        item.sections.append(FfiSection(id: "section_2", label: "  ", fields: [textField("custom_1", " ", "x")]))
+        let saved = ItemDraft(item: item).preparedForSave()
+        #expect(saved.sections.map(\.id) == ["main", "section_2"])
+        #expect(saved.sections[1].label == ItemDraft.defaultSectionLabel())
+        #expect(saved.sections[1].fields[0].label == ItemDraft.defaultLabel(.text))
+    }
+
+    @Test func blankCustomSectionGetsItsOwnName() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: ItemDraft.customSectionID, label: " ", fields: [textField("custom_1", "Code", "x")]))
+        let saved = ItemDraft(item: item).preparedForSave()
+        #expect(saved.sections.last?.label == ItemDraft.customSectionLabel)
+    }
+
+    @Test func addCustomFieldIntoSection() {
+        var item = draftItem(.login)
+        item.sections.append(FfiSection(id: "section_1", label: "Banque", fields: []))
+        var draft = ItemDraft(item: item)
+        draft.addCustomField(kind: .text, label: "IBAN", sectionID: "section_1")
+        #expect(draft.item.sections[1].fields.map(\.id) == ["custom_1"])
+        #expect(!draft.item.sections.contains { $0.id == ItemDraft.customSectionID })
+        draft.addCustomField(kind: .text, label: "BIC", sectionID: "main")
+        #expect(draft.item.sections.first { $0.id == "main" }!.fields.allSatisfy { !$0.id.hasPrefix("custom_") })
+    }
+
+    @Test func removingProviderKeepsUsername() {
+        var item = draftItem(.login)
+        item.loginMethods = [
+            .provider(provider: "google", accountItemId: "0123456789abcdef0123456789abcdef", relayEmail: nil)
+        ]
+        var draft = ItemDraft(item: item)
+        let username = draft.item.sections[0].fields.firstIndex { $0.id == "username" }!
+        draft.setValue(.text(value: "camille.durand@exemple.fr"), sectionID: "main", fieldIndex: username)
+        draft.clearSignInProvider()
+        #expect(draft.item.sections[0].fields[username].value == .text(value: "camille.durand@exemple.fr"))
+        #expect(draft.item.loginMethods.isEmpty)
+        draft.setValue(.empty, sectionID: "main", fieldIndex: username)
+        #expect(draft.validationError?.field == "username")
+    }
+}

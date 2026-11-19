@@ -112,10 +112,30 @@ export class FakeExt implements BgExt {
     onReplaced: this.onReplaced,
     query: async () => (this.activeTab ? [{ ...this.activeTab }] : []),
     get: async (tabId) => ({ ...(this.tabStates.get(tabId) ?? { active: true, windowId: 1 }) }),
+    captureVisibleTab: async (windowId, options) => {
+      this.captures.push({ windowId, format: options.format });
+      if (!this.captureImpl) throw new Error("Either the '<all_urls>' or 'activeTab' permission is required.");
+      return this.captureImpl(windowId);
+    },
   };
 
   /** What `tabs.get` answers per tab (default: the active tab of window 1). */
-  readonly tabStates = new Map<number, { active: boolean; windowId: number }>();
+  readonly tabStates = new Map<number, { active: boolean; windowId: number; incognito?: boolean }>();
+
+  /** `tabs.captureVisibleTab` calls, and what it answers (absent: it throws, as without activeTab). */
+  readonly captures: { windowId: number | undefined; format: string }[] = [];
+  captureImpl: ((windowId: number | undefined) => string | Promise<string>) | undefined;
+
+  /** `scripting.executeScript` calls; `injectError` makes the next ones throw. */
+  readonly injections: { target: { tabId: number; allFrames?: boolean; frameIds?: number[] }; files: string[] }[] = [];
+  injectError: Error | undefined;
+  readonly scripting: NonNullable<BgExt["scripting"]> = {
+    executeScript: async (injection) => {
+      this.injections.push(structuredClone(injection));
+      if (this.injectError) throw this.injectError;
+      return [];
+    },
+  };
 
   /** The content script's reply to `tabs.sendMessage` (undefined by default). */
   tabReply: ((tabId: number, message: unknown, options: { frameId?: number; documentId?: string }) => unknown) | undefined;
@@ -124,7 +144,7 @@ export class FakeExt implements BgExt {
   readonly commands: NonNullable<BgExt["commands"]> = { onCommand: this.onCommand };
 
   /** What `tabs.query({active, currentWindow})` returns. */
-  activeTab: { id?: number; url?: string } | null = null;
+  activeTab: { id?: number; url?: string; windowId?: number; incognito?: boolean } | null = null;
 
   readonly webNavigation: BgExt["webNavigation"] = {
     getFrame: async ({ tabId, frameId }) => {

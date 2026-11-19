@@ -53,7 +53,11 @@ struct ShareVaultSheet: View {
                     }
                     .accessibilityIdentifier("sharing.share.role")
                 } footer: {
-                    if chosen?.level == .link { Text("sharing.share.linkReadOnly") }
+                    VStack(alignment: .leading, spacing: 4) {
+                        if chosen?.level == .link { Text("sharing.share.linkReadOnly") }
+                        // The key-use log is sealed in each item, so every member reads it.
+                        Text("sharing.share.keyUsesVisible")
+                    }
                 }
                 SharingErrorSection(message: errorMessage)
             }

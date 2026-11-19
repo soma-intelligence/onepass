@@ -1,3 +1,4 @@
+import DesignBridgeUITesting
 import XCTest
 
 /// Réglages on iPhone, on the demo account with a large vault (`-OnePassDemoBulkItems`, fictional
@@ -91,6 +92,41 @@ final class SettingsUITests: XCTestCase {
         cancel.tap()
     }
 
+    /// Ajouter un compte > organisation: always selectable, it offers joining by invitation; creating
+    /// one is for the devices that sign org changes (Mac and iPad), never an iPhone.
+    func testAddAccountOffersJoinForAnOrganisation() throws {
+        element("account.menu").tap()
+        let panelAdd = element("accounts.add")
+        XCTAssertTrue(panelAdd.waitForExistence(timeout: Self.uiTimeout), "account panel without Ajouter un compte")
+        panelAdd.tap()
+        let managed = element("accounts.add.kind.managed")
+        XCTAssertTrue(managed.waitForExistence(timeout: Self.uiTimeout), "Ajouter un compte without the organisation kind")
+        managed.tap()
+        XCTAssertTrue(element("accounts.add.org.join").waitForExistence(timeout: Self.uiTimeout), "no Join with an invitation")
+        XCTAssertFalse(element("accounts.add.org.create").exists, "an iPhone offers to create an organisation")
+        XCTAssertFalse(element("accounts.add.create").exists, "the managed kind still offers a plain sign up")
+        element("accounts.add.dismiss").tap()
+    }
+
+    /// Réglages > Organisation sits right after Famille; on the personal demo account it offers to join
+    /// an organisation (an iPhone never offers to create one).
+    func testOrganisationPageSitsAfterFamilyAndOffersJoin() throws {
+        _ = openSettings()
+        let family = element("settings.family")
+        let organisation = element("settings.organisation")
+        var swipes = 0
+        while !(organisation.exists && organisation.isHittable), swipes < 3 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(organisation.waitForExistence(timeout: Self.uiTimeout), "no Organisation row")
+        XCTAssertTrue(family.exists, "no Famille row")
+        XCTAssertGreaterThan(organisation.frame.minY, family.frame.minY, "Organisation is not after Famille")
+        organisation.tap()
+        XCTAssertTrue(element("org.entry.join").waitForExistence(timeout: Self.uiTimeout), "no Join an organisation")
+        XCTAssertFalse(element("org.entry.create").exists, "an iPhone offers to create an organisation")
+    }
+
     func testNewVaultFromSettingsShowsInTheList() throws {
         _ = openSettings()
         element("settings.vaults").tap()
@@ -131,6 +167,97 @@ final class SettingsUITests: XCTestCase {
             add(shot)
             back.tap()
             XCTAssertTrue(element("settings.done").waitForExistence(timeout: Self.uiTimeout), "\(id): back to Réglages failed")
+        }
+    }
+
+    /// RX look: the profile QR page that cannot draw its code shows the fallback (message,
+    /// Réessayer, Partager still there); Réessayer draws the code. `-OnePassDemoQRFail` fails the
+    /// first try only.
+    func testRXProfileQRFallbackRetriesAndKeepsShare() throws {
+        app.terminate()
+        app.launchArguments = [
+            "-OnePassRX", "YES", "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO",
+            "-OnePassDemoSettings", "YES", "-OnePassDemoRXSettings", "profileQR", "-OnePassDemoQRFail", "YES",
+        ]
+        app.launch()
+        let fallback = element("rx.profileQR.fallback")
+        XCTAssertTrue(fallback.waitForExistence(timeout: Self.seedTimeout), "QR fallback not shown")
+        XCTAssertFalse(element("rx.profileQR.code").exists, "QR code shown on a failed try")
+        XCTAssertTrue(element("rx.profileQR.share").exists, "Partager missing under the fallback")
+        element("rx.profileQR.retry").tap()
+        XCTAssertTrue(element("rx.profileQR.code").waitForExistence(timeout: Self.uiTimeout), "Réessayer did not draw the code")
+        XCTAssertFalse(fallback.exists, "fallback still shown after Réessayer")
+    }
+}
+
+/// RX look: no text of Réglages is clipped (owner feedback 2026-11-16, "c'est tronqué"), on the root
+/// and on every page the demo arguments open, at the default size and at an accessibility size,
+/// in French. The audit (`textClipped`) only sees what is on screen: each page is audited, then
+/// scrolled, three times. Run it on a 375 pt and a 402 pt iPhone.
+@MainActor
+final class RXSettingsTruncationUITests: DBUITestCase {
+    private static let seedTimeout: TimeInterval = 600
+
+    static let pages = ["general", "security", "autofill", "sync", "vaults", "devices", "travel", "about"]
+
+    private func check(page: String?, size: DBLaunchConfiguration.ContentSize) throws {
+        var config = DBLaunchConfiguration(contentSize: size, locale: "fr_FR")
+        config.extraArguments += [
+            "-OnePassRX", "YES", "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO",
+            "-OnePassDemoCrypto", "NO", "-OnePassDemoSettings", "YES",
+        ]
+        if let page { config.extraArguments += ["-OnePassDemoSettingsPage", page] }
+        launchApp(config)
+        let done = app.descendants(matching: .any)["settings.done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: Self.seedTimeout), "Réglages not shown")
+        sleep(2)
+        for pass in 0..<3 {
+            try auditClipped("\(page ?? "root") \(size.rawValue) pass \(pass)")
+            app.swipeUp()
+            sleep(1)
+        }
+    }
+
+    /// `textClipped`, for the text fully on screen only: a row the scroll leaves half under the bar
+    /// or the bottom edge is cut by the screen, not by its layout.
+    private func auditClipped(_ name: String) throws {
+        let window = app.windows.firstMatch.frame
+        let visible = CGRect(x: window.minX, y: window.minY + 110, width: window.width, height: window.height - 150)
+        var clipped: [String] = []
+        try app.performAccessibilityAudit(for: .textClipped) { issue in
+            guard let element = issue.element else { return true }
+            let frame = element.frame
+            if visible.contains(frame) {
+                clipped.append("\(element.elementType.rawValue) \"\(element.label)\" \(frame)")
+            }
+            return true
+        }
+        if !clipped.isEmpty {
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = name
+            shot.lifetime = .keepAlways
+            add(shot)
+            XCTFail("CLIPPED \(name): " + clipped.joined(separator: " | "))
+        }
+    }
+
+    func testRootNotTruncated() throws {
+        continueAfterFailure = true
+        try check(page: nil, size: .large)
+        try check(page: nil, size: .accessibility3)
+    }
+
+    func testPagesNotTruncated() throws {
+        continueAfterFailure = true
+        for page in Self.pages {
+            try check(page: page, size: .large)
+        }
+    }
+
+    func testPagesNotTruncatedAtAccessibilitySize() throws {
+        continueAfterFailure = true
+        for page in Self.pages {
+            try check(page: page, size: .accessibility3)
         }
     }
 }

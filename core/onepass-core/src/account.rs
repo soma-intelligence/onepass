@@ -302,10 +302,19 @@ impl Account {
     /// give `InvalidFormat("kdf params")`, since such an account could not
     /// unlock.
     pub fn create_with_params(password: &str, kdf: KdfParams) -> Result<NewAccount> {
+        Self::create_with_params_and_id(password, kdf, Id::new())
+    }
+
+    /// `create_with_params` under a chosen account id: a managed account
+    /// (OnePass Business) takes the id its organisation's roster invited.
+    pub(crate) fn create_with_params_and_id(
+        password: &str,
+        kdf: KdfParams,
+        account_id: Id,
+    ) -> Result<NewAccount> {
         if !within_ceiling(&kdf) || !above_floor(&kdf) {
             return Err(Error::InvalidFormat("kdf params"));
         }
-        let account_id = Id::new();
         let secret_key = SecretKey::generate()?;
         let keyset = Keyset {
             kem: HybridKemSecret::generate()?,

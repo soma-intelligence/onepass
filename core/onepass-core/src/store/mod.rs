@@ -2,6 +2,7 @@
 //! `Repository` verifies everything it reads back.
 
 pub(crate) mod autofill_sql;
+pub(crate) mod key_use_queue_sql;
 mod memory;
 mod sqlite;
 mod zone;
@@ -118,6 +119,14 @@ pub enum RecordKind {
     /// the lists: id = `account_record_id`, version = its seq. A deletion
     /// from the server is ignored, like a list's.
     SyncHome,
+    /// An org's signed lineage record (`crate::org`), immutable.
+    OrgLineage,
+    /// An org's signed roster record (`crate::org`), immutable.
+    OrgRoster,
+    /// An org keyset delivery to a member (`crate::org`), replaceable.
+    OrgKeyset,
+    /// A join request to an org (`crate::org`), replaceable.
+    OrgJoinRequest,
 }
 
 /// Code of the mailbox enroll request (`crate::enroll_request`), a side
@@ -155,6 +164,10 @@ impl RecordKind {
             Self::Attachment => 25,
             Self::DeviceAck => 26,
             Self::SyncHome => 27,
+            Self::OrgLineage => 29,
+            Self::OrgRoster => 30,
+            Self::OrgKeyset => 31,
+            Self::OrgJoinRequest => 32,
         }
     }
 
@@ -187,6 +200,10 @@ impl RecordKind {
             25 => Self::Attachment,
             26 => Self::DeviceAck,
             27 => Self::SyncHome,
+            29 => Self::OrgLineage,
+            30 => Self::OrgRoster,
+            31 => Self::OrgKeyset,
+            32 => Self::OrgJoinRequest,
             _ => return Err(Error::InvalidFormat("record kind")),
         })
     }
@@ -211,6 +228,8 @@ impl RecordKind {
                 | Self::MemberKey
                 | Self::MemberLineage
                 | Self::DeviceAck
+                | Self::OrgLineage
+                | Self::OrgRoster
         )
     }
 
@@ -227,6 +246,8 @@ impl RecordKind {
                 | Self::Family
                 | Self::MemberLineage
                 | Self::DeviceAck
+                | Self::OrgLineage
+                | Self::OrgRoster
         )
     }
 }
@@ -318,6 +339,14 @@ pub type AutofillRow = (i64, [u8; 32], Vec<u8>);
 /// A store without an autofill history (`RecordStore::autofill_append`).
 pub fn autofill_unsupported() -> Error {
     Error::Store("no autofill history in this store".into())
+}
+
+/// A row of the key-use queue: `(seq, item_tag, sealed row)`.
+pub type KeyUseQueueRow = (i64, [u8; 32], Vec<u8>);
+
+/// A store without a key-use queue (`RecordStore::key_use_queue_put`).
+pub fn key_use_queue_unsupported() -> Error {
+    Error::Store("no key-use queue in this store".into())
 }
 
 fn local_meta_unsupported() -> Error {
@@ -600,6 +629,44 @@ pub trait RecordStore {
     /// Remove every autofill history row: how many there were.
     fn autofill_clear(&mut self) -> Result<usize> {
         Err(autofill_unsupported())
+    }
+
+    /// Whether this store keeps a key-use queue (the methods below).
+    fn keeps_key_use_queue(&self) -> bool {
+        false
+    }
+
+    /// Remove the key-use queue rows of the `replace` seqs, append one
+    /// sealed row under its keyed item tag (`crate::key_use_queue`), then
+    /// keep the newest `keep_total` rows, in one transaction. Device-local:
+    /// never synced, never a record. A store that keeps no queue refuses.
+    fn key_use_queue_put(
+        &mut self,
+        item_tag: &[u8; 32],
+        replace: &[i64],
+        data: &[u8],
+        keep_total: usize,
+    ) -> Result<()> {
+        let _ = (item_tag, replace, data, keep_total);
+        Err(key_use_queue_unsupported())
+    }
+
+    /// The key-use queue rows `(seq, item_tag, data)`, oldest first: those
+    /// of `item_tag`, or all of them.
+    fn key_use_queue_rows(&self, item_tag: Option<&[u8; 32]>) -> Result<Vec<KeyUseQueueRow>> {
+        let _ = item_tag;
+        Err(key_use_queue_unsupported())
+    }
+
+    /// Remove the key-use queue rows of these `seq`s.
+    fn key_use_queue_delete(&mut self, seqs: &[i64]) -> Result<()> {
+        let _ = seqs;
+        Err(key_use_queue_unsupported())
+    }
+
+    /// Remove every key-use queue row: how many there were.
+    fn key_use_queue_clear(&mut self) -> Result<usize> {
+        Err(key_use_queue_unsupported())
     }
 
     /// `put_all_if_version`, and remove the local metadata under `key`,
@@ -1077,6 +1144,10 @@ mod tests {
             RecordKind::Attachment,
             RecordKind::DeviceAck,
             RecordKind::SyncHome,
+            RecordKind::OrgLineage,
+            RecordKind::OrgRoster,
+            RecordKind::OrgKeyset,
+            RecordKind::OrgJoinRequest,
         ] {
             assert_eq!(RecordKind::from_code(kind.code()).unwrap(), kind);
         }
@@ -1110,6 +1181,20 @@ mod tests {
         assert_eq!(RecordKind::SyncHome.code(), 27);
         assert_eq!(RecordKind::from_code(27).unwrap(), RecordKind::SyncHome);
         assert!(!RecordKind::SyncHome.is_immutable());
+        assert_eq!(RecordKind::OrgLineage.code(), 29);
+        assert_eq!(RecordKind::OrgRoster.code(), 30);
+        assert_eq!(RecordKind::OrgKeyset.code(), 31);
+        assert_eq!(RecordKind::OrgJoinRequest.code(), 32);
+        assert!(RecordKind::OrgLineage.is_immutable() && RecordKind::OrgRoster.is_immutable());
+        assert!(
+            !RecordKind::OrgKeyset.is_immutable() && !RecordKind::OrgJoinRequest.is_immutable()
+        );
+        assert!(
+            RecordKind::OrgLineage.server_deletion_refused()
+                && RecordKind::OrgRoster.server_deletion_refused()
+        );
+        assert!(RecordKind::from_code(28).is_err());
+        assert!(RecordKind::from_code(33).is_err());
         assert!(RecordKind::Attachment.is_vault_prefixed());
         // Spec 6.8 (O6): code 13 went to the approver lists, the ack takes 26.
         assert_eq!(RecordKind::DeviceAck.code(), 26);

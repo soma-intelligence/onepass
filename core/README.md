@@ -93,6 +93,7 @@ Dix-neuf cibles, chacune exige seulement l'absence de panique. Elles visent ce q
 | `archive_open` | octets arbitraires, puis mutation d'une sauvegarde valide : `archive::inspect`, `open` par phrase de passe et `open` par compte (compte fixe créé une fois, paramètres Argon2id du plancher dev) |
 | `hibp_range` | `watchtower::parse_range` sur une réponse de plage HIBP |
 | `site_directory` | le premier octet choisit 2fa.directory, passkeys ou le catalogue HIBP des fuites |
+| `site_pack` | `site_pack::parse` sur un paquet de sites quelconque : jamais de panique, et toute recette conservée tient en 12 étapes au plus, finit par son étape `expect_*` et a des délais de 1 à 60 s |
 | `mcp_line` | ligne JSON-RPC passée à `onepass_mcp::handle_line` avec un hôte factice sans coffre, sur une session neuve puis sur une session initialisée |
 | `ssh_agent_frame` | message de l'agent SSH passé à `decode_request`, puis l'entrée découpée en clé publique, message et signature pour `verify_signature` |
 

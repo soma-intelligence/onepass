@@ -14,6 +14,7 @@ pub mod kdf;
 pub mod kem;
 pub mod origin;
 pub mod pairing;
+pub mod pending;
 pub mod policy;
 pub mod provider;
 pub mod quirks;

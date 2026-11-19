@@ -85,7 +85,12 @@ export interface BgExt {
     /** A tab took another's place (prerender, instant pages): `addedTabId` replaces `removedTabId`. */
     onReplaced?: Event<(addedTabId: number, removedTabId: number) => void>;
     /** The popup's active tab (url readable through activeTab / host permissions). */
-    query(q: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string }[]>;
+    query(q: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string; windowId?: number; incognito?: boolean }[]>;
+    /**
+     * A PNG of the visible tab of `windowId` as a data: URL. Needs the `activeTab` grant of a
+     * toolbar click (no `<all_urls>`); absent in some test fakes.
+     */
+    captureVisibleTab?(windowId: number | undefined, options: { format: "png" }): Promise<string>;
     /**
      * Is the tab the active one of its window, and which window (no permission needed for these
      * two). `incognito`: a private window (Chromium, Firefox, and Safari's private windows).
@@ -123,6 +128,10 @@ export interface BgExt {
     create(name: string, info: { periodInMinutes: number }): Promise<void> | void;
     clear?(name: string): Promise<boolean> | void;
     onAlarm: Event<(alarm: { name: string }) => void>;
+  };
+  /** Injects an extension file into frames of a tab (the setup scanner, on demand only). */
+  scripting?: {
+    executeScript(injection: { target: { tabId: number; allFrames?: boolean; frameIds?: number[] }; files: string[] }): Promise<unknown>;
   };
   /** Keyboard shortcuts of the manifest's `commands` (absent where the browser has none). */
   commands?: {

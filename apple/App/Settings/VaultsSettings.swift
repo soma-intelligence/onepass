@@ -61,9 +61,11 @@ struct VaultsSettings: View {
                 }
                 .accessibilityIdentifier("settings.vaults.new")
             } footer: {
-                Text("settings.vaults.footer")
+                SettingsFootnote("settings.vaults.footer")
             }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Coffres")
         #if DEBUG
         .onAppear {

@@ -200,3 +200,39 @@ fn review_lines_choices_and_sure_batch() {
     );
     assert!(s.duplicate_groups(vec![]).unwrap().is_empty());
 }
+
+#[test]
+fn a_picked_pair_has_the_review_and_the_chosen_primary() {
+    let (_dir, s) = session();
+    let vault = s.vaults().unwrap()[0].id.clone();
+    let a = login(&s, &vault, "Reddit", "camille", "Pw-one-11");
+    let b = login(&s, &vault, "Apple", "camille@icloud.com", "Pw-two-22");
+    let g = s
+        .duplicate_group_for(vec![key(&a), key(&b)], Some(key(&b)))
+        .unwrap();
+    assert!(g.signals.is_empty());
+    assert_eq!(g.copies[0].summary.id, b.id);
+    assert_eq!(g.confidence, FfiDuplicateConfidence::Review);
+    assert!(g.rows.iter().any(|r| r.subject == "password"));
+    let swapped = s
+        .duplicate_group_for(vec![key(&a), key(&b)], Some(key(&a)))
+        .unwrap();
+    assert_eq!(swapped.copies[0].summary.id, a.id);
+    assert_eq!(swapped.id, g.id);
+    // A note and a login are not one item.
+    let mut note = s
+        .new_item(vault.clone(), FfiItemType::SecureNote, "Note".into())
+        .unwrap();
+    set(
+        &mut note,
+        "content",
+        FfiFieldValue::Text {
+            value: "texte".into(),
+        },
+    );
+    let note = s.save_item(note).unwrap();
+    assert!(
+        s.duplicate_group_for(vec![key(&a), key(&note)], None)
+            .is_err()
+    );
+}

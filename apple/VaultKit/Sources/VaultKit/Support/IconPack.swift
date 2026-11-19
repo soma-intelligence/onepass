@@ -13,7 +13,9 @@ import Synchronization
 /// `format`, `version`, `size`, `icons` as `[offset, length, flags]` into the bytes that follow,
 /// `domains` as domain to icon number; optional `names`, a brand name squashed to lowercase letters
 /// and digits to icon number, and `tenants`, domains whose icon is not inherited by their
-/// subdomains), then the icons (square lossless WebP, `size` pixels).
+/// subdomains; and `rejects`, the dHashes of hosting-platform icons as 16 lowercase hex digits), then
+/// the icons (square lossless WebP, `size` pixels unless flagged 128). Flags are bits: 1 = a one
+/// color mark (monochrome), 2 = this icon is 128 pixels, not `size`; both can be set (flags 3).
 public struct IconPack: Sendable {
     public static let magic = Data("OPIP".utf8)
     public static let format: UInt8 = 1
@@ -22,10 +24,12 @@ public struct IconPack: Sendable {
     static let maxIndexBytes = 8 * 1024 * 1024
 
     public struct Icon: Equatable, Sendable {
-        /// Square WebP, `IconPack.pixels` on a side.
+        /// Square WebP, `pixels` on a side.
         public let data: Data
         /// A one color mark (drawn in the text color, like a template image).
         public let monochrome: Bool
+        /// The side in pixels: 128 for an icon flagged so (flag bit 2), else the pack's `size`.
+        public let pixels: Int
     }
 
     public let version: Int
@@ -34,9 +38,20 @@ public struct IconPack: Sendable {
     let domains: [String: Int]
     let names: [String: Int]
     let tenants: Set<String>
+    /// dHashes (`IconHash`) of hosting-platform icons: a gym member portal serving its club
+    /// software's favicon, a shop on a site builder serving the builder's. A site icon within
+    /// `rejectDistance` of one is never shown as the brand's logo. Empty for a pack without the key.
+    public let rejects: [UInt64]
+    /// Icon numbers of hosting platforms (daxko.com, okta.com, wix.com...): shown for the platform's
+    /// own domain, never as another site's parent brand. Empty for a pack without the key.
+    public let platformIcons: Set<Int>
+    /// Icon numbers of tenant domains (`tenants`): platforms too.
+    let tenantIcons: Set<Int>
     /// The whole file (memory mapped when read from disk: never copied) and where the icons start.
     let data: Data
     let iconsStart: Int
+    /// The search rows, built on the first search.
+    private let searchIndex = SearchIndex()
 
     public var domainCount: Int { domains.count }
     public var iconCount: Int { icons.count }
@@ -56,6 +71,8 @@ public struct IconPack: Sendable {
         let domains: [String: Int]
         let names: [String: Int]?
         let tenants: [String]?
+        let rejects: [String]?
+        let platforms: [Int]?
     }
 
     /// Parses a pack, every offset and every domain's icon number checked.
@@ -79,9 +96,16 @@ public struct IconPack: Sendable {
             guard offset >= 0, size > 0, offset <= blobCount - size else { throw .outOfBounds }
             icons.append((offset, size, flags))
         }
-        for number in Array(index.domains.values) + Array((index.names ?? [:]).values)
+        for number in Array(index.domains.values) + Array((index.names ?? [:]).values) + (index.platforms ?? [])
         where !(0..<icons.count).contains(number) {
             throw .outOfBounds
+        }
+        var rejects: [UInt64] = []
+        for text in index.rejects ?? [] {
+            guard text.utf8.count == 16, text.allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) }),
+                let value = UInt64(text, radix: 16)
+            else { throw .malformedIndex }
+            rejects.append(value)
         }
         self.version = index.version
         self.pixels = index.size
@@ -89,6 +113,9 @@ public struct IconPack: Sendable {
         self.domains = index.domains
         self.names = index.names ?? [:]
         self.tenants = Set(index.tenants ?? [])
+        self.rejects = rejects
+        self.platformIcons = Set(index.platforms ?? [])
+        self.tenantIcons = Set((index.tenants ?? []).compactMap { index.domains[$0] })
         self.data = data
         self.iconsStart = iconsStart
     }
@@ -98,6 +125,11 @@ public struct IconPack: Sendable {
     /// domain (a platform that hosts other brands: `acme.zendesk.com` is Acme's help desk) gives its
     /// icon to itself only, never to its subdomains.
     public func icon(forHost host: String) -> Icon? {
+        number(forHost: host).map(icon)
+    }
+
+    /// The number of `icon(forHost:)`.
+    func number(forHost host: String) -> Int? {
         var name = host.lowercased()
         if name.hasSuffix(".") { name.removeLast() }
         if name.hasPrefix("www.") { name.removeFirst(4) }
@@ -107,7 +139,7 @@ public struct IconPack: Sendable {
         var first = true
         while labels.count >= floor {
             let candidate = labels.joined(separator: ".")
-            if let number = domains[candidate], first || !tenants.contains(candidate) { return icon(number) }
+            if let number = domains[candidate], first || !tenants.contains(candidate) { return number }
             labels.removeFirst()
             first = false
         }
@@ -130,6 +162,95 @@ public struct IconPack: Sendable {
         return icon(number)
     }
 
+    /// Words a site puts after its brand's name ("Bay Club Connect", "Acme Member Portal"): up to
+    /// two of them are dropped when the whole name is not a brand of the pack.
+    static let genericTrailingWords: Set<String> = [
+        "connect", "portal", "online", "app", "login", "account", "members", "member", "my", "client", "clients",
+        "mobile", "web",
+    ]
+    /// Names of a page, not of a brand: never matched.
+    static let genericPageNames: Set<String> = ["home", "login", "welcome", "signin", "accueil", "connexion"]
+    /// A shorter squashed name says too little to stand for a brand.
+    static let minBrandNameLength = 4
+
+    /// The icon of the brand a site names itself after (`og:site_name`, its title...): the name
+    /// squashed, then without a leading "my", then without one or two trailing generic words
+    /// (`genericTrailingWords`), each looked up exactly in the pack's names. "Bay Club Connect"
+    /// gives "bayclub". A name under `minBrandNameLength` characters or a page name ("Login",
+    /// "Home": `genericPageNames`) never matches.
+    public func icon(forBrandName name: String) -> Icon? {
+        number(forBrandName: name).map(icon)
+    }
+
+    /// The number of `icon(forBrandName:)`.
+    func number(forBrandName name: String) -> Int? {
+        for key in Self.brandKeys(name) {
+            if let number = names[key] { return number }
+        }
+        return nil
+    }
+
+    /// The squashed forms of a site name tried against the pack's names, best first.
+    static func brandKeys(_ name: String) -> [String] {
+        let words = name.split(whereSeparator: \.isWhitespace).map { squash(String($0)) }.filter { !$0.isEmpty }
+        guard !words.isEmpty, !genericPageNames.contains(words.joined()) else { return [] }
+        var variants = [words]
+        if words.count > 1, words[0] == "my" { variants.append(Array(words.dropFirst())) }
+        var keys: [String] = []
+        for dropped in 0...2 {
+            for variant in variants where variant.count > dropped {
+                let tail = variant.suffix(dropped)
+                guard tail.allSatisfy(genericTrailingWords.contains) else { continue }
+                let kept = variant.dropLast(dropped)
+                // "My Portal", "Member Portal", "Mobile App": no brand word at all.
+                guard !kept.allSatisfy(genericTrailingWords.contains) else { continue }
+                let key = kept.joined()
+                guard key.count >= minBrandNameLength, !genericPageNames.contains(key), !keys.contains(key) else { continue }
+                keys.append(key)
+            }
+        }
+        return keys
+    }
+
+    /// The icon number of a domain a site links to (`linkedDomains`): its own entry or a parent's,
+    /// never a tenant platform's (a portal linking to its help desk host is not that host's brand).
+    func number(forLinkedDomain domain: String) -> Int? {
+        guard let number = number(forHost: domain) else { return nil }
+        var name = domain.lowercased()
+        if name.hasPrefix("www.") { name.removeFirst(4) }
+        if tenants.contains(name) { return nil }
+        if let registrable = SiteIconLoader.registrableDomain(of: name), tenants.contains(registrable) { return nil }
+        return number
+    }
+
+    /// Whether icon `number` may stand for another site's parent brand: not a hosting platform's
+    /// (`platformIcons`), not a tenant domain's, and not an icon the pack's `rejects` refuse.
+    func mayBeParentBrand(_ number: Int) -> Bool {
+        guard icons.indices.contains(number), !platformIcons.contains(number), !tenantIcons.contains(number)
+        else { return false }
+        return !Self.isRejected(icon(number).data, by: rejects)
+    }
+
+    /// Largest Hamming distance between two dHashes of the same icon (`REJECT_DISTANCE` in
+    /// scripts/icon_pack.py).
+    public static let rejectDistance = 6
+
+    /// A dHash with fewer or more bits set says little about the icon (a flat tile hashes 0): it is
+    /// never refused, and such a reject is ignored (`MIN_HASH_BITS` / `MAX_HASH_BITS` in the build).
+    public static let minHashBits = 8
+    public static let maxHashBits = 56
+
+    static func isInformative(_ hash: UInt64) -> Bool {
+        (minHashBits...maxHashBits).contains(hash.nonzeroBitCount)
+    }
+
+    /// Whether `png` is a hosting-platform icon: its dHash is within `rejectDistance` of one of
+    /// `rejects`. An image that does not hash, or whose hash is not informative, is not refused.
+    public static func isRejected(_ png: Data, by rejects: [UInt64]) -> Bool {
+        guard !rejects.isEmpty, let hash = IconHash.dHash(png), isInformative(hash) else { return false }
+        return rejects.contains { isInformative($0) && IconHash.distance($0, hash) <= rejectDistance }
+    }
+
     /// `scripts/icon_pack.py squash`: letters and digits only, accents dropped.
     static func squash(_ text: String) -> String {
         let folded = text.lowercased().replacingOccurrences(of: "&", with: "and")
@@ -137,11 +258,93 @@ public struct IconPack: Sendable {
         return String(folded.unicodeScalars.filter { ("a"..."z").contains($0) || ("0"..."9").contains($0) }.map(Character.init))
     }
 
+    /// One searchable icon: its best name, its shortest domain, its number.
+    public struct Entry: Hashable, Sendable {
+        /// The squashed brand name (the domain itself for an icon that has no name).
+        public let name: String
+        public let domain: String?
+        public let icon: Int
+    }
+
+    fileprivate struct Row: Sendable {
+        let entry: Entry
+        /// `name` squashed (the same as `name` for a named icon).
+        let key: String
+        let domains: [String]
+    }
+
+    fileprivate final class SearchIndex: Sendable {
+        private let rows = Mutex<[Row]?>(nil)
+        func get(_ pack: IconPack) -> [Row] {
+            rows.withLock { state in
+                if let state { return state }
+                var byNumber: [Int: [String]] = [:]
+                for (domain, number) in pack.domains { byNumber[number, default: []].append(domain) }
+                for number in Array(byNumber.keys) {
+                    byNumber[number]?.sort { ($0.count, $0) < ($1.count, $1) }
+                }
+                var built: [Row] = []
+                var named = Set<Int>()
+                for (name, number) in pack.names where !name.isEmpty {
+                    let domains = byNumber[number] ?? []
+                    built.append(Row(entry: Entry(name: name, domain: domains.first, icon: number), key: name, domains: domains))
+                    named.insert(number)
+                }
+                for (number, domains) in byNumber where !named.contains(number) {
+                    guard let first = domains.first else { continue }
+                    built.append(Row(entry: Entry(name: first, domain: first, icon: number), key: IconPack.squash(first), domains: domains))
+                }
+                state = built
+                return built
+            }
+        }
+    }
+
+    /// Icons whose brand name or domain matches `query` (squashed like the pack's names), best
+    /// first: exact name, name prefix, domain prefix, name substring; ties by shorter name. One
+    /// entry per icon.
+    public func search(_ query: String, limit: Int = 60) -> [Entry] {
+        let key = Self.squash(query)
+        let raw = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty, limit > 0 else { return [] }
+        var best: [Int: (rank: Int, entry: Entry)] = [:]
+        for row in searchIndex.get(self) {
+            let rank: Int
+            if row.key == key {
+                rank = 0
+            } else if row.key.hasPrefix(key) {
+                rank = 1
+            } else if row.domains.contains(where: { $0.hasPrefix(raw) }) {
+                rank = 2
+            } else if row.key.contains(key) {
+                rank = 3
+            } else {
+                continue
+            }
+            if let current = best[row.entry.icon],
+                (current.rank, current.entry.name.count, current.entry.name) <= (rank, row.entry.name.count, row.entry.name)
+            {
+                continue
+            }
+            best[row.entry.icon] = (rank, row.entry)
+        }
+        let sorted = best.values.sorted {
+            ($0.rank, $0.entry.name.count, $0.entry.name) < ($1.rank, $1.entry.name.count, $1.entry.name)
+        }
+        return sorted.prefix(limit).map(\.entry)
+    }
+
+    /// The icon with this number in the pack, nil when out of range.
+    public func icon(number: Int) -> Icon? {
+        icons.indices.contains(number) ? icon(number) : nil
+    }
+
     func icon(_ number: Int) -> Icon {
         let entry = icons[number]
         let start = iconsStart + entry.offset
         // A copy of the icon's bytes alone: a slice would keep its offsets into the whole pack.
-        return Icon(data: Data(data[start..<(start + entry.length)]), monochrome: entry.flags & 1 != 0)
+        return Icon(data: Data(data[start..<(start + entry.length)]), monochrome: entry.flags & 1 != 0,
+            pixels: entry.flags & 2 != 0 ? 128 : pixels)
     }
 }
 
@@ -306,22 +509,8 @@ public actor IconPackStore {
         return .updated(version: fresh.version)
     }
 
-    /// Written beside its place, then renamed over it: a reader sees the old pack or the new one.
     private func swapIn(_ data: Data) -> Bool {
-        let target = downloaded
-        let temporary = directory.appending(path: ".\(Self.packName).\(UUID().uuidString)")
-        do {
-            try data.write(to: temporary, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-            if FileManager.default.fileExists(atPath: target.path()) {
-                _ = try FileManager.default.replaceItemAt(target, withItemAt: temporary)
-            } else {
-                try FileManager.default.moveItem(at: temporary, to: target)
-            }
-            return true
-        } catch {
-            try? FileManager.default.removeItem(at: temporary)
-            return false
-        }
+        (try? PackDownload.swapIn(data, as: Self.packName, in: directory)) != nil
     }
 
     private func touch(_ url: URL) {
@@ -332,18 +521,8 @@ public actor IconPackStore {
         }
     }
 
-    /// HTTPS GET, 200 only, at most `limit` bytes (the declared length is checked first, the
-    /// downloaded file after).
     private func get(_ url: URL, limit: Int) async -> Data? {
-        guard url.scheme == "https",
-            let (file, response) = try? await session.download(from: url),
-            let http = response as? HTTPURLResponse, http.statusCode == 200,
-            http.expectedContentLength <= Int64(limit)
-        else { return nil }
-        defer { try? FileManager.default.removeItem(at: file) }
-        guard let size = (try? FileManager.default.attributesOfItem(atPath: file.path())[.size]) as? Int, size <= limit
-        else { return nil }
-        return try? Data(contentsOf: file)
+        try? await PackDownload.get(url, limit: limit, session: session)
     }
 
     /// No cookies, no cache, and time for a pack of a few megabytes on a slow line.

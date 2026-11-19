@@ -47,8 +47,10 @@ export interface PairOptions {
  * `agent`: a fill an MCP agent asked for and the holder approved in the app
  * (spec 2026-11-07-agent-browser-fill 5); `plan_fill`, `fill_login` and
  * `fill_card` only, each with `agent_request`.
+ * `setup`: two-factor setup, the QR scan's confirmation card (`save_totp`, `save_recovery_codes`,
+ * `list_for_origin`, `fill_login`).
  */
-export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey" | "agent";
+export type Ctx = "popup" | "menu" | "overlay" | "save_prompt" | "chain" | "passkey" | "agent" | "setup";
 export type FillField = "username" | "password" | "totp";
 export type MatchRule = "domain" | "exact_host" | "exact_url" | "never";
 
@@ -69,6 +71,8 @@ export interface Summary {
   associated?: true;
   /** Label of the item's account, sent only when items of several accounts answer. */
   account?: string;
+  /** An identity's e-mail address (host 0.3.x and later); left out otherwise. */
+  email?: string;
 }
 
 /** `smart` profile: Strong (default), Readable (words) or Custom (`length` and `symbols`). */
@@ -249,6 +253,32 @@ interface Ops {
     res: { item_id: string };
   };
   /**
+   * A two-factor seed scanned or pasted on a setup page (`setup` only). `uri` is an
+   * `otpauth://totp/` URI, at most 2048 bytes (a bare key is refused). With `item_id` the seed goes
+   * into that Login, else a new Login is made from `vault_id`, `title` and `username`. `exists`: the
+   * Login holds another seed and `replace` was false, nothing written; `replaced`: the old seed was
+   * kept as a field labelled `previous_label`.
+   */
+  save_totp: {
+    req: {
+      ctx: Ctx;
+      origin: string;
+      uri: string;
+      item_id?: string;
+      vault_id?: string;
+      title?: string;
+      username?: string;
+      replace?: boolean;
+      previous_label?: string;
+    };
+    res: { status: "saved" | "same" | "exists" | "replaced"; item_id: string };
+  };
+  /** The recovery codes shown at setup, stored on the Login (`setup` only). */
+  save_recovery_codes: {
+    req: { ctx: Ctx; origin: string; item_id: string; codes: string; label?: string };
+    res: Record<string, never>;
+  };
+  /**
    * A card typed by hand in a checkout (`save_prompt` only): `same` when a card with this number
    * is there (expiry equal or unknown), `update` when only its expiry differs.
    */
@@ -416,6 +446,13 @@ interface Ops {
     };
     res: PasskeyRegistration;
   };
+  /**
+   * Open and sign in: the login the user asked to sign in with from the app, for this page's
+   * site, taken once (the host's pending entry lives 60 s). `origin` and `top_origin`: the
+   * browser's origins of the frame and its top frame, the same https origin. Served locked too;
+   * `item_id` null when nothing is pending. A host that predates it answers `invalid`.
+   */
+  take_sign_in: { req: { origin: string; top_origin: string }; res: { item_id: string | null } };
 }
 
 export type Op = keyof Ops;

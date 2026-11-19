@@ -184,7 +184,7 @@ impl<S: RecordStore> Repository<S> {
             for (_, r) in &loaded.records {
                 let item = vault.open_item(r)?;
                 // The chunks leave too: the server must hold each one.
-                for a in &item.attachments {
+                for a in crate::attachment::files_of(&item) {
                     for id in crate::attachment::chunk_ids(a)? {
                         if let Some(chunk) = self.store.get(RecordKind::Attachment, id)? {
                             chunks.push(chunk);
@@ -229,8 +229,10 @@ impl<S: RecordStore> Repository<S> {
             .chain(item_plan.iter().flat_map(|(_, _, r)| r.iter().cloned()))
             .collect();
         // The autofill history names sites and items of what leaves: it
-        // goes first, and nothing is recorded while travelling.
+        // goes first, and nothing is recorded while travelling. The
+        // key-use queue names items of what leaves too: it goes with it.
         self.clear_autofill_history()?;
+        self.clear_key_use_queue()?;
         self.store.evict_all(&all)?;
         let mut parked = BTreeMap::new();
         for (id, seen, _) in plan {
@@ -279,7 +281,7 @@ impl<S: RecordStore> Repository<S> {
                     .get(RecordKind::Item, *blob)?
                     .ok_or(Error::NotFound)?,
             ];
-            for a in &item.attachments {
+            for a in crate::attachment::files_of(&item) {
                 for id in crate::attachment::chunk_ids(a)? {
                     if let Some(chunk) = self.store.get(RecordKind::Attachment, id)? {
                         required.push(chunk);
@@ -452,7 +454,7 @@ impl<S: RecordStore> Repository<S> {
                 let Ok(item) = vault.open_item(&rec) else {
                     continue;
                 };
-                for a in &item.attachments {
+                for a in crate::attachment::files_of(&item) {
                     for id in crate::attachment::chunk_ids(a)? {
                         if self.store.get(RecordKind::Attachment, id)?.is_none()
                             && let Some(chunk) = upstream.get(RecordKind::Attachment, id)?

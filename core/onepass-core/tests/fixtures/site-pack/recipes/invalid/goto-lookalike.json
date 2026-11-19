@@ -1,0 +1,15 @@
+{
+  "kind": "setup_totp",
+  "domains": [
+    "example.com"
+  ],
+  "steps": [
+    {
+      "do": "goto",
+      "url": "https://example.com.evil.io/settings"
+    },
+    {
+      "do": "expect_qr"
+    }
+  ]
+}

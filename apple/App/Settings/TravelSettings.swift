@@ -1,5 +1,4 @@
 import DesignKit
-import LocalAuthentication
 import SwiftUI
 import VaultKit
 
@@ -21,13 +20,14 @@ struct TravelSettings: View {
 
     var body: some View {
         Form {
+            Group {
             Section {
                 statusRow
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("settings.travel.status")
                 actionButton
             } footer: {
-                Text("settings.travel.footer")
+                SettingsFootnote("settings.travel.footer")
             }
             if let errorMessage {
                 Section {
@@ -37,6 +37,7 @@ struct TravelSettings: View {
                 }
             }
             itemsSection
+            tripsSection
             detectionSection
             if status?.active != true {
                 Section {
@@ -56,12 +57,15 @@ struct TravelSettings: View {
                         .accessibilityIdentifier("settings.travel.safe.\(vault.id)")
                     }
                 } header: {
-                    Text("app.safeForTravel")
+                    SettingsHeader("app.safeForTravel")
                 } footer: {
-                    Text("settings.travel.safe.footer")
+                    SettingsFootnote("settings.travel.safe.footer")
                 }
             }
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Travel Mode")
         .task {
             await reload()
@@ -131,9 +135,9 @@ struct TravelSettings: View {
                     Label { itemLabel(entry) } icon: { Image(systemName: "lock.shield") }
                 }
             } header: {
-                Text("Éléments")
+                SettingsHeader("Éléments")
             } footer: {
-                Text("settings.travel.items.footer")
+                SettingsFootnote("settings.travel.items.footer")
             }
         }
     }
@@ -142,6 +146,57 @@ struct TravelSettings: View {
         VStack(alignment: .leading, spacing: Theme.Space.xxs) {
             Text(entry.title)
             Text(entry.vaultName).font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
+    /// Planned trips: a reminder the eve and 3 hours before, and optionally Travel Mode on its own.
+    private var tripsSection: some View {
+        let trips = model.travel.trips.sorted { $0.start < $1.start }
+        return Section {
+            ForEach(trips) { trip in
+                NavigationLink {
+                    TravelTripEditor(trip: trip)
+                } label: {
+                    tripRow(trip)
+                }
+                .accessibilityIdentifier("settings.travel.trip.\(trip.id.uuidString)")
+                .contextMenu {
+                    Button("common.delete", role: .destructive) { model.travel.deleteTrip(id: trip.id) }
+                }
+            }
+            .onDelete { offsets in
+                for index in offsets { model.travel.deleteTrip(id: trips[index].id) }
+            }
+            NavigationLink {
+                TravelTripEditor(trip: nil)
+            } label: {
+                Label("settings.travel.addTrip", systemImage: "plus")
+            }
+            .accessibilityIdentifier("settings.travel.addTrip")
+        } header: {
+            // On the header, not the Section: a Section identifier overrides every row's.
+            SettingsHeader("settings.travel.trips.header")
+                .accessibilityIdentifier("settings.travel.trips")
+        } footer: {
+            SettingsFootnote("settings.travel.trips.footer")
+        }
+    }
+
+    private func tripRow(_ trip: TravelTrip) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                // With the year (owner feedback 2026-11-16), in the device's language.
+                Text(trip.start.formatted(.dateTime.day().month(.abbreviated).year().hour().minute()))
+                Text(trip.end.formatted(.dateTime.day().month(.abbreviated).year()))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if trip.autoEnter {
+                Spacer()
+                Image(systemName: "bolt.fill")
+                    .foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
+            }
         }
     }
 
@@ -157,9 +212,9 @@ struct TravelSettings: View {
                     .accessibilityIdentifier("settings.travel.forget")
             }
         } header: {
-            Text("settings.travel.detection.header")
+            SettingsHeader("settings.travel.detection.header")
         } footer: {
-            Text("settings.travel.detection.footer")
+            SettingsFootnote("settings.travel.detection.footer")
         }
     }
 
@@ -169,7 +224,7 @@ struct TravelSettings: View {
                 VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                     Text(status.exiting ? "Retour en cours" : "Travel Mode activé")
                     if let at = status.enteredAt {
-                        Text("settings.sinceOffDevice \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(date: .abbreviated, time: .shortened)) \(Self.vaultCount(status.hiddenCount))")
+                        Text("settings.sinceOffDevice \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(.dateTime.day().month(.abbreviated).year().hour().minute())) \(Self.vaultCount(status.hiddenCount))")
                             .font(.footnote)
                             .foregroundStyle(.tertiary)
                     }
@@ -244,17 +299,10 @@ struct TravelSettings: View {
         working = true
         defer { working = false }
         errorMessage = nil
-        // The device owner confirms (Touch ID, Face ID or the passcode). A device without any owner
-        // authentication has nothing to check: hiding vaults is never a risk in itself.
-        if LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) {
-            guard await SystemPresenceChecker().confirm(prompt: String(localized: "settings.turnOnTravelMode")) else { return }
-        }
-        // Every write of the leaving vaults must be in iCloud first: the core refuses otherwise.
-        await model.coordinator?.syncNow()
         do {
-            status = try await model.session.enterTravel()
-            model.travel.travelChanged(active: true)
-            model.showToast(String(localized: "Travel Mode activé"))
+            status = try await model.enterTravel(reason: String(localized: "settings.turnOnTravelMode"))
+        } catch is CancellationError {
+            // The owner cancelled the confirmation: nothing to explain.
         } catch {
             errorMessage = VaultError(error).localizedMessage
             await reload()

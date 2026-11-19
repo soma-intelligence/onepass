@@ -1,8 +1,9 @@
 //! `onepass watchtower`: password and site checks over the account.
 //!
-//! Online, the breach ranges and the site catalogs are fetched with `curl`
+//! Online, the breach ranges and the breach catalog are fetched with `curl`
 //! (spec ruling 8): only the 5 hex character prefix of a password hash ever
-//! leaves the machine. `--offline` runs no command at all and uses only the
+//! leaves the machine. The site checks (2FA, passkeys) download nothing: they
+//! run on the files given (`--site-pack`, `--sites`, `--passkeys`). `--offline` runs no command at all and uses only the
 //! files given. The report holds titles, field ids, counts and dates, never
 //! a field value.
 
@@ -22,6 +23,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
+use onepass_core::site_pack;
 use onepass_core::watchtower::{
     BreachCatalog, Check, Detail, DirRangeSource, Finding, Options, PwnedStatus, RangeSource,
     Report, SiteDirectory, Sources, analyze,
@@ -36,8 +38,6 @@ use super::vault::{all, find_vault};
 use crate::session::{CliError, Ctx, stored, with_session};
 
 const RANGE_URL: &str = "https://api.pwnedpasswords.com/range/";
-const TWOFA_URL: &str = "https://api.2fa.directory/v4/all.json";
-const PASSKEYS_URL: &str = "https://passkeys-api.2fa.directory/v1/all.json";
 const BREACHES_URL: &str = "https://haveibeenpwned.com/api/v3/breaches";
 
 /// Largest catalog file read (spec 3.4).
@@ -55,6 +55,10 @@ pub struct WatchtowerArgs {
     /// Directory of `<PREFIX>.txt` range files (PwnedPasswordsDownloader).
     #[arg(long)]
     hibp_dir: Option<PathBuf>,
+    /// A site pack file (unsigned, for local checks). Wins over `--sites`
+    /// and `--passkeys`.
+    #[arg(long)]
+    site_pack: Option<PathBuf>,
     /// 2fa.directory v4 `all.json`.
     #[arg(long)]
     sites: Option<PathBuf>,
@@ -168,10 +172,7 @@ fn catalog<T>(
     parse: impl Fn(&[u8]) -> onepass_core::Result<T>,
 ) -> Result<Option<T>, CliError> {
     if let Some(path) = file {
-        let bytes = read_catalog(path)?;
-        return parse(&bytes)
-            .map(Some)
-            .map_err(|_| CliError::usage(format!("{} is not a valid {what}", path.display())));
+        return file_catalog(path, what, parse).map(Some);
     }
     let Some(runner) = runner else {
         return Ok(None);
@@ -185,26 +186,42 @@ fn catalog<T>(
     }
 }
 
-fn load_catalogs(a: &WatchtowerArgs, mut runner: Option<Runner<'_>>) -> Result<Catalogs, CliError> {
-    let twofa = catalog(
-        a.sites.as_deref(),
-        TWOFA_URL,
-        "2FA directory",
-        runner.as_deref_mut(),
-        SiteDirectory::from_2fa_directory,
-    )?;
-    let passkeys = catalog(
-        a.passkeys.as_deref(),
-        PASSKEYS_URL,
-        "passkey directory",
-        runner.as_deref_mut(),
-        |b| {
+/// A catalog read from a file; a bad file is an error.
+fn file_catalog<T>(
+    path: &Path,
+    what: &str,
+    parse: impl Fn(&[u8]) -> onepass_core::Result<T>,
+) -> Result<T, CliError> {
+    let bytes = read_catalog(path)?;
+    parse(&bytes).map_err(|_| CliError::usage(format!("{} is not a valid {what}", path.display())))
+}
+
+/// The site directory of the files given. Nothing is downloaded: the pack
+/// comes from the app's signed release channel, not from this command.
+fn site_directory(a: &WatchtowerArgs) -> Result<Option<SiteDirectory>, CliError> {
+    if let Some(path) = a.site_pack.as_deref() {
+        let dir = file_catalog(path, "site pack", |b| {
+            site_pack::parse(b).map(|p| SiteDirectory::from_site_pack(&p))
+        })?;
+        return Ok(Some(dir));
+    }
+    let twofa = match a.sites.as_deref() {
+        Some(path) => Some(file_catalog(
+            path,
+            "2FA directory",
+            SiteDirectory::from_2fa_directory,
+        )?),
+        None => None,
+    };
+    let passkeys = match a.passkeys.as_deref() {
+        Some(path) => Some(file_catalog(path, "passkey directory", |b| {
             let mut d = SiteDirectory::default();
             d.add_passkeys_directory(b)?;
             Ok(b.to_vec())
-        },
-    )?;
-    let sites = match (twofa, passkeys) {
+        })?),
+        None => None,
+    };
+    Ok(match (twofa, passkeys) {
         (None, None) => None,
         (dir, keys) => {
             let mut dir = dir.unwrap_or_default();
@@ -213,7 +230,11 @@ fn load_catalogs(a: &WatchtowerArgs, mut runner: Option<Runner<'_>>) -> Result<C
             }
             Some(dir)
         }
-    };
+    })
+}
+
+fn load_catalogs(a: &WatchtowerArgs, runner: Option<Runner<'_>>) -> Result<Catalogs, CliError> {
+    let sites = site_directory(a)?;
     let breaches = catalog(
         a.breaches.as_deref(),
         BREACHES_URL,
@@ -230,7 +251,7 @@ pub fn run(ctx: &Ctx, a: WatchtowerArgs) -> Result<(), CliError> {
     let catalogs = load_catalogs(&a, runner.as_deref_mut())?;
 
     // Items are read under the lock; the range lookups run after it.
-    let (items, names) = with_session(ctx, |repo| {
+    let (items, names, key_use_since) = with_session(ctx, |repo| {
         let vaults = all(repo)?;
         let chosen: Vec<usize> = match a.vault.as_deref() {
             Some(v) => vec![find_vault(&vaults, v)?],
@@ -243,10 +264,14 @@ pub fn run(ctx: &Ctx, a: WatchtowerArgs) -> Result<(), CliError> {
             names.insert(v.id, v.meta.name.clone());
             items.extend(stored(repo.items(v))?);
         }
-        Ok((items, names))
+        // A failed read means the warm-up is not established: no key is
+        // reported dormant.
+        let since = repo.key_use_since().ok().flatten();
+        Ok((items, names, since))
     })?;
 
-    let opts = Options::new(OffsetDateTime::now_utc().date());
+    let now = OffsetDateTime::now_utc();
+    let opts = Options::new(now.date()).with_key_use(now, key_use_since);
     let mut dir_source;
     let mut curl_source;
     let pwned: Option<&mut dyn RangeSource> = match (&a.hibp_dir, runner.as_deref_mut()) {
@@ -300,10 +325,20 @@ fn detail_text(d: &Detail) -> String {
         Detail::KeyBits { algorithm, bits } => format!("{algorithm} {bits} bits"),
         Detail::Age { days } => format!("{days} days"),
         Detail::Duplicate { other } => format!("duplicate of {other}"),
-        Detail::Site { documentation } => match documentation {
-            Some(url) => format!("documentation: {url}"),
-            None => String::new(),
-        },
+        Detail::Site {
+            documentation,
+            settings_url,
+            ..
+        } => {
+            let mut parts = Vec::new();
+            if let Some(url) = documentation {
+                parts.push(format!("documentation: {url}"));
+            }
+            if let Some(url) = settings_url {
+                parts.push(format!("settings: {url}"));
+            }
+            parts.join(", ")
+        }
     }
 }
 
@@ -543,13 +578,19 @@ mod tests {
         );
         assert_eq!(
             detail_text(&Detail::Site {
-                documentation: Some("https://example.com/2fa".into())
+                documentation: Some("https://example.com/2fa".into()),
+                host: "example.com".into(),
+                settings_url: None,
+                recipe: false,
             }),
             "documentation: https://example.com/2fa"
         );
         assert_eq!(
             detail_text(&Detail::Site {
-                documentation: None
+                documentation: None,
+                host: "example.com".into(),
+                settings_url: None,
+                recipe: false,
             }),
             ""
         );

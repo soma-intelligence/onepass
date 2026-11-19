@@ -12,6 +12,7 @@ on:
       - "mailbox/**"
       - "core/onepass-mailbox/**"
       - "core/onepass-mailbox-proto/**"
+      - "core/onepass-ffi/tests/org_e2e.rs"
       - "core/Cargo.lock"
       - "core/rust-toolchain.toml"
       - ".github/workflows/mailbox.yml"
@@ -20,6 +21,7 @@ on:
       - "mailbox/**"
       - "core/onepass-mailbox/**"
       - "core/onepass-mailbox-proto/**"
+      - "core/onepass-ffi/tests/org_e2e.rs"
       - "core/Cargo.lock"
       - "core/rust-toolchain.toml"
       - ".github/workflows/mailbox.yml"
@@ -140,7 +142,9 @@ jobs:
           key: mailbox-e2e
       - name: Build the e2e test
         working-directory: core
-        run: cargo test -p onepass-mailbox --test conformance_e2e --no-run
+        run: |
+          cargo test -p onepass-mailbox --test conformance_e2e --no-run
+          cargo test -p onepass-ffi --features dev-fast-kdf --test org_e2e --no-run
       - name: Start the local stack
         working-directory: mailbox
         run: npx --yes "supabase@$SUPABASE_CLI" start
@@ -187,6 +191,15 @@ jobs:
           ONEPASS_MAILBOX_E2E_INVITE="$invite" \
           ONEPASS_MAILBOX_E2E_ADMIN="$GITHUB_WORKSPACE/mailbox/scripts/e2e-admin.sh" \
             cargo test -p onepass-mailbox --test conformance_e2e -- --nocapture
+      # The organisation flow of the apps through the FFI (publish, invite,
+      # join request, accept, roles, suspend, remove, hostile writes). It
+      # mints its own `org` invite with e2e-admin.sh org-invite.
+      - name: Organisation flow against the served function
+        run: |
+          cd core
+          ONEPASS_MAILBOX_E2E_URL=http://127.0.0.1:57421/functions/v1/mailbox \
+          ONEPASS_MAILBOX_E2E_ADMIN="$GITHUB_WORKSPACE/mailbox/scripts/e2e-admin.sh" \
+            cargo test -p onepass-ffi --features dev-fast-kdf --test org_e2e -- --nocapture
       # pg_cron posts to mailbox-push (every 10 s) and the mailbox-gc job's
       # command posts to mailbox-gc, through pg_net and Kong, with the cron
       # key from Vault.

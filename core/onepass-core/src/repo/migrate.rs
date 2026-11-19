@@ -216,7 +216,10 @@ fn legacy_intro_record(
 
 /// The genesis at the root of the chain from `head`, walked back by parent
 /// hash; `None` when a record of the chain is missing.
-fn root_of(records: &[LineageRecord], head: [u8; 32]) -> Option<(&Signed<GenesisBody>, [u8; 32])> {
+pub(crate) fn root_of(
+    records: &[LineageRecord],
+    head: [u8; 32],
+) -> Option<(&Signed<GenesisBody>, [u8; 32])> {
     let mut h = head;
     for _ in 0..=records.len() {
         let r = records.iter().find(|r| r.hash() == h)?;
@@ -388,6 +391,7 @@ impl<S: RecordStore> Repository<S> {
                     identity_pub: identity.clone(),
                     creator: my_entry.clone(),
                     created_at: now(),
+                    org: None,
                 };
                 let g = LineageRecord::Genesis(sign_genesis(body, device_keys, &keyset.identity)?);
                 let h = g.hash();

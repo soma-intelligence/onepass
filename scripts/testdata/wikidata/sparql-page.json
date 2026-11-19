@@ -1,0 +1,831 @@
+{
+ "head": {
+  "vars": [
+   "item",
+   "itemLabel",
+   "sitelinks",
+   "logoStatement",
+   "logo",
+   "logoRank",
+   "logoStart",
+   "logoEnd",
+   "siteStatement",
+   "site",
+   "siteRank"
+  ]
+ },
+ "results": {
+  "bindings": [
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_logo_2001.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://www.acme.test/en/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "logoStart": {
+     "type": "literal",
+     "value": "2001-01-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    },
+    "logoEnd": {
+     "type": "literal",
+     "value": "2015-03-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l2"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_logo_2015.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://www.acme.test/en/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "logoStart": {
+     "type": "literal",
+     "value": "2015-03-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l3"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_bad.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#DeprecatedRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://www.acme.test/en/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_logo_2001.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s2"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://old.acme.test/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#DeprecatedRank"
+    },
+    "logoStart": {
+     "type": "literal",
+     "value": "2001-01-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    },
+    "logoEnd": {
+     "type": "literal",
+     "value": "2015-03-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l2"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_logo_2015.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s2"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://old.acme.test/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#DeprecatedRank"
+    },
+    "logoStart": {
+     "type": "literal",
+     "value": "2015-03-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l3"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_bad.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#DeprecatedRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s2"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://old.acme.test/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#DeprecatedRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_logo_2001.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s3"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://www.facebook.com/acme"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "logoStart": {
+     "type": "literal",
+     "value": "2001-01-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    },
+    "logoEnd": {
+     "type": "literal",
+     "value": "2015-03-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l2"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_logo_2015.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s3"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://www.facebook.com/acme"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "logoStart": {
+     "type": "literal",
+     "value": "2015-03-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "30",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-l3"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_bad.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#DeprecatedRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q100-s3"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://www.facebook.com/acme"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q200"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Acme Fan Club"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "2",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q200-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Acme_fan.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q200-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://acme.test"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q300"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Sharealike"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "5",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q300-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Sharealike.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#PreferredRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q300-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://sharealike.test/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q300"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Sharealike"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "5",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q300-l2"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Sharealike_other.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q300-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://sharealike.test/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "logoStart": {
+     "type": "literal",
+     "value": "2020-01-01T00:00:00Z",
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q400"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Widemark"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "4",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q400-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Widemark.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q400-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://widemark.test"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q500"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Unsafe Co"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "4",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q500-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/unsafe.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q500-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://unsafe.test"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q600"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Withings"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "40",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q600-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Withings_logo.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q600-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://www.withings.com/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q700"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Air Canada"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "50",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q700-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Air_Canada.png"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q700-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://www.aircanada.com/ca/en/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q800"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Hosted Shop"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "3",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q800-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Hosted.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q800-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://hosted.shopify.test/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q900"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Tampered"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "3",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q900-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Tampered.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q900-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://tampered.test/"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1000"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Linkhub Only"
+    },
+    "sitelinks": {
+     "type": "literal",
+     "value": "3",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "logoStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q1000-l1"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Linkhub.svg"
+    },
+    "logoRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    },
+    "siteStatement": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/statement/Q1000-s1"
+    },
+    "site": {
+     "type": "uri",
+     "value": "https://linktr.ee/linkhubonly"
+    },
+    "siteRank": {
+     "type": "uri",
+     "value": "http://wikiba.se/ontology#NormalRank"
+    }
+   }
+  ]
+ }
+}

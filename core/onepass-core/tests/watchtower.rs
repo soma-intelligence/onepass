@@ -314,17 +314,17 @@ mod sites {
         // Wrong-typed entries are skipped, not fatal.
         assert_eq!(d.len(), 3);
         assert!(!d.is_empty());
-        let com = d.lookup("example.com").unwrap();
+        let com = d.lookup("example.com").unwrap().1;
         assert!(com.totp && !com.u2f && !com.passkey);
         assert_eq!(
             com.documentation.as_deref(),
             Some("https://example.com/help/2fa")
         );
-        let org = d.lookup("example.org").unwrap();
+        let org = d.lookup("example.org").unwrap().1;
         assert!(!org.totp && !org.u2f && !org.passkey);
         assert_eq!(org.documentation, None);
         // Domains are lower-cased.
-        assert!(d.lookup("keys.example.net").unwrap().u2f);
+        assert!(d.lookup("keys.example.net").unwrap().1.u2f);
         assert!(d.lookup("bad.example.net").is_none());
         assert!(d.lookup("worse.example.net").is_none());
         assert!(d.lookup("example.invalid").is_none());
@@ -340,11 +340,11 @@ mod sites {
     #[test]
     fn subdomain_matches_parent() {
         let d = directory();
-        assert!(d.lookup("login.example.com").unwrap().totp);
-        assert!(d.lookup("a.b.example.com").unwrap().totp);
-        assert!(d.lookup("LOGIN.Example.Com").unwrap().totp);
+        assert!(d.lookup("login.example.com").unwrap().1.totp);
+        assert!(d.lookup("a.b.example.com").unwrap().1.totp);
+        assert!(d.lookup("LOGIN.Example.Com").unwrap().1.totp);
         // The most specific entry wins.
-        assert!(d.lookup("x.keys.example.net").unwrap().u2f);
+        assert!(d.lookup("x.keys.example.net").unwrap().1.u2f);
         // Suffix on a label boundary only.
         assert!(d.lookup("notexample.com").is_none());
         assert!(d.lookup("com").is_none());
@@ -358,22 +358,123 @@ mod sites {
     #[test]
     fn passkeys_merge() {
         let d = directory();
-        let com = d.lookup("example.com").unwrap();
+        let com = d.lookup("example.com").unwrap().1;
         assert!(com.totp && com.passkey);
         // The 2FA documentation wins over the passkeys one.
         assert_eq!(
             com.documentation.as_deref(),
             Some("https://example.com/help/2fa")
         );
-        let org = d.lookup("example.org").unwrap();
+        let org = d.lookup("example.org").unwrap().1;
         assert!(!org.totp && org.passkey);
         assert_eq!(
             org.documentation.as_deref(),
             Some("https://example.org/passkeys")
         );
-        let net = d.lookup("example.net").unwrap();
+        let net = d.lookup("example.net").unwrap().1;
         assert!(!net.passkey && !net.totp);
         assert_eq!(d.len(), 4);
+    }
+
+    use onepass_core::site_pack::{PackSite, SitePack, SiteSetup};
+
+    fn pack_site(additional: &[&str]) -> PackSite {
+        PackSite {
+            twofa: vec!["totp".into()],
+            passkey: Some(onepass_core::site_pack::PasskeyLevel::Signin),
+            help: None,
+            additional_domains: additional.iter().map(|s| s.to_string()).collect(),
+            setup_totp: None,
+            setup_passkey: None,
+        }
+    }
+
+    fn pack(sites: Vec<(&str, PackSite)>) -> SiteDirectory {
+        SiteDirectory::from_site_pack(&SitePack {
+            version: 1,
+            sites: sites.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(),
+        })
+    }
+
+    #[test]
+    fn psl_stops_at_registrable_domain() {
+        let d = pack(vec![
+            ("bbc.co.uk", pack_site(&[])),
+            ("github.io", pack_site(&[])),
+        ]);
+        assert_eq!(d.lookup("news.bbc.co.uk").unwrap().0, "bbc.co.uk");
+        assert!(d.lookup("evil.github.io").is_none());
+        assert!(d.lookup("co.uk").is_none());
+    }
+
+    #[test]
+    fn additional_domain_maps_to_its_site() {
+        let d = pack(vec![("example.com", pack_site(&["example-accounts.net"]))]);
+        let (key, info) = d.lookup("login.example-accounts.net").unwrap();
+        assert_eq!(key, "example.com");
+        assert!(info.totp);
+    }
+
+    #[test]
+    fn own_domain_beats_additional_domain() {
+        let mut other = pack_site(&[]);
+        other.twofa = vec!["u2f".into()];
+        let d = pack(vec![("a.test", pack_site(&["b.test"])), ("b.test", other)]);
+        let (key, info) = d.lookup("b.test").unwrap();
+        assert_eq!(key, "b.test");
+        assert!(info.u2f && !info.totp);
+        // The first site in sorted order keeps a contested additional domain.
+        let d = pack(vec![
+            ("a.test", pack_site(&["x.test"])),
+            ("c.test", pack_site(&["x.test"])),
+        ]);
+        assert_eq!(d.lookup("x.test").unwrap().0, "a.test");
+    }
+
+    #[test]
+    fn second_url_host_is_the_one_reported() {
+        let d = pack(vec![("example.com", pack_site(&[]))]);
+        let mut it = login("Two", STRONG, "https://nothere.test");
+        it.urls.push(ItemUrl {
+            label: String::new(),
+            url: "https://example.com/login".into(),
+            rule: MatchRule::Domain,
+            primary: false,
+        });
+        let r = run(&[it], Some(&d), None);
+        let f = of(&r, Check::Missing2fa);
+        assert_eq!(f.len(), 1);
+        assert!(matches!(&f[0].detail, Detail::Site { host, .. } if host == "example.com"));
+    }
+
+    #[test]
+    fn findings_carry_settings_url_and_recipe_flag() {
+        use onepass_core::site_pack::{RecipeStep, Step};
+        let mut site = pack_site(&[]);
+        site.setup_totp = Some(SiteSetup {
+            url: "https://example.com/totp".into(),
+            recipe: None,
+        });
+        site.setup_passkey = Some(SiteSetup {
+            url: "https://example.com/passkey".into(),
+            recipe: Some(vec![RecipeStep {
+                step: Step::Done,
+                timeout_s: 60,
+            }]),
+        });
+        let d = pack(vec![("example.com", site)]);
+        let it = login("Bare", STRONG, "https://example.com");
+        let r = run(&[it], Some(&d), None);
+        let m = of(&r, Check::Missing2fa);
+        assert!(
+            matches!(&m[0].detail, Detail::Site { settings_url: Some(u), recipe: false, .. }
+            if u == "https://example.com/totp")
+        );
+        let p = of(&r, Check::PasskeyAvailable);
+        assert!(
+            matches!(&p[0].detail, Detail::Site { settings_url: Some(u), recipe: true, .. }
+            if u == "https://example.com/passkey")
+        );
     }
 
     #[test]
@@ -412,10 +513,11 @@ mod sites {
         want.sort();
         assert_eq!(ids, want);
         assert!(m.iter().all(|f| f.severity == Severity::Low));
-        assert!(m.iter().all(|f| f.detail
-            == Detail::Site {
-                documentation: Some("https://example.com/help/2fa".into())
-            }));
+        assert!(m.iter().all(|f| matches!(
+            &f.detail,
+            Detail::Site { documentation: Some(d), host, .. }
+                if d == "https://example.com/help/2fa" && host.ends_with("example.com")
+        )));
 
         let p = of(&r, Check::PasskeyAvailable);
         let mut ids: Vec<Id> = p.iter().map(|f| f.item_id).collect();

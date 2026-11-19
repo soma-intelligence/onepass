@@ -81,6 +81,32 @@ fn send_strips_history_and_usage() {
 }
 
 #[test]
+fn send_clears_the_custom_icon() {
+    let (mut zs, mut a, mut b, v, item) = pair();
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.resize(64, 1);
+    a.dev
+        .repo()
+        .set_custom_icon(&v, item.id, "image/png", &png)
+        .unwrap();
+    let id = send(&mut a, &mut b, &v, &item);
+    settle(&mut zs, &mut [&mut a, &mut b]);
+    let into = b.dev.vault_named("Personnel");
+    let taken = b
+        .dev
+        .repo()
+        .accept_received_item(id, &into, NOW + 2)
+        .unwrap();
+    assert!(taken.custom_icon.is_none());
+    // The sender keeps its own icon.
+    let mine = a.dev.repo().items(&v).unwrap();
+    assert!(
+        mine.iter()
+            .any(|i| i.id == item.id && i.custom_icon.is_some())
+    );
+}
+
+#[test]
 fn ttl_bounds() {
     let (_zs, mut a, mut b, v, item) = pair();
     let bob = account_id(&mut b.dev);

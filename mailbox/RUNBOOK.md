@@ -221,6 +221,18 @@ cd ../mailbox && scripts/hosted-admin.sh e2e-teardown   # mailboxes, objects, pl
 `reset-rate`, called by the suite before every case, empties all rate windows:
 run the suite only while nobody else uses the instance.
 
+## Organisation mailboxes (OnePass Business)
+
+- Plan `org`: 16 GiB, 200 000 records, 4096 credentials, 600 requests a minute, batches of 20 000 operations, no children.
+- Create the mailbox with `scripts/hosted-admin.sh invite org 1 7`, and give the invite to the organisation's first owner only. Never set `open_signup_plan` to `org`.
+- Kinds 29 and 30 (org lineage and roster) are write-once: a put on an existing key is a `conflict` carrying the current row, a delete is `403 forbidden`.
+- The trigger `records_org_immutable` refuses any other change to those rows outside maintenance, which is what lets the purge of a deleted mailbox remove them (migration 20261113120000).
+- Plan `managed`: a managed member's own account mailbox on the organisation's server. The `free` row with 32 credentials (256 MiB, 100 000 records, 120 requests a minute, 16 shared and 256 contact children). Migration 20261113130000 writes the row itself.
+- Its invites are minted by the organisation, not by the operator: a manager (role 3) of the org mailbox calls `POST /v1/mailboxes/{m}/org-invites` (`api_org_invite`), one use, valid 1 to 168 hours, 200 a UTC day per org mailbox (`429` after). Any other caller, a role below 3, a mailbox not on plan `org` or a child answers `403 forbidden`. The member's device spends the token with the ordinary create call. Never set `open_signup_plan` to `managed`, and do not mint `managed` invites with `hosted-admin.sh` unless an organisation asks for it.
+- Member credentials on the org mailbox itself come and go with the existing grant, role change and revoke calls (`api_grant_credential`, `api_set_credential_role`, `api_revoke_credential`), made by the organisation's managers. Nothing to do on the operator side.
+- Invitees post their join request with a Write credential limited to kind 32 (`put_kinds`). Such a writer may announce blobs (`api_blob_announce`, migration 20261114120000: a reader is still refused, `403 forbidden`), because a join request is larger than the inline limit. The commit still refuses any put of another kind and any delete, so a blob only ever lands under kind 32. Nothing to do on the operator side.
+- A live join request is replaced only by the credential that wrote it first: `records.first_writer` keeps the credential whose put created the key (or landed on a tombstone), and a put of kind 32 by any other credential on a live row of another (or unknown) first writer is `403 forbidden`, managers included (migration 20261114130000, R42). A manager may still delete the row (Decline). Rows written before that migration have no first writer, so nobody can rewrite them: delete the row (a manager) if an invitee needs to post again. Nothing else to do on the operator side.
+
 ## Troubleshooting
 
 ### Revoked credentials and the credential row cap

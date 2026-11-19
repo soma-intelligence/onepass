@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use onepass_core::Id;
 use onepass_core::model::{self, Item};
+use onepass_core::repo::profile::ItemRef;
 use onepass_core::store::{RecordKind, RecordStore};
 use onepass_core::sync::{RemoteChange, SyncStore};
 use onepass_core::vault::Vault;
@@ -12,6 +13,8 @@ use time::{Duration, OffsetDateTime};
 
 use crate::convert::*;
 use crate::error::{OnePassError, invalid};
+use crate::key_use::FfiKeyUseAction;
+use crate::pairing::FfiItemRef;
 use crate::rotation::FfiRemoteCommit;
 use crate::types::*;
 
@@ -257,6 +260,24 @@ impl Session {
         })
     }
 
+    /// Name the main identity and the main credit card of the account
+    /// profile for every device, dated now, the name and photo untouched
+    /// (`None` names none). `NotFound` for an item that is not there (or
+    /// trashed), `Validation` for one of another type. The profile after
+    /// the call.
+    pub fn set_profile_main(
+        &self,
+        identity: Option<FfiItemRef>,
+        card: Option<FfiItemRef>,
+    ) -> Result<FfiProfile, OnePassError> {
+        let identity = identity.as_ref().map(item_ref_to_core).transpose()?;
+        let card = card.as_ref().map(item_ref_to_core).transpose()?;
+        self.with(|repo| {
+            let p = repo.set_profile_main(identity, card, time::OffsetDateTime::now_utc())?;
+            Ok(profile_to_ffi(p))
+        })
+    }
+
     /// Publish a profile this device kept locally (from before the profile
     /// synced) when the account has none: it loses to any real edit. The
     /// account profile after the call.
@@ -279,6 +300,56 @@ impl Session {
                 out.extend(repo.items(&v)?.iter().map(summary));
             }
             Ok(out)
+        })
+    }
+
+    /// Remember a use of the item inside the app (its password or one-time
+    /// code copied, its website opened): counted every time, never a
+    /// ranking signal of a fill, the item's `updated_at` unchanged. A use
+    /// that hands out a secret passes its `action` and the label of the
+    /// `field` touched, noted in the same write as a key use (channel App,
+    /// client "OnePass"; never the value); `None` for one that hands out
+    /// none (the website opened), `field` then ignored. The item's summary
+    /// after the write, for the "recently used" and "frequently used"
+    /// lists.
+    pub fn note_app_use(
+        &self,
+        vault_id: String,
+        item_id: String,
+        action: Option<FfiKeyUseAction>,
+        field: String,
+    ) -> Result<FfiItemSummary, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        let key_use = action.map(|a| (a.into(), field.as_str()));
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            let item =
+                repo.record_app_use(&vault, item_id, time::OffsetDateTime::now_utc(), key_use)?;
+            Ok(summary(&item))
+        })
+    }
+
+    /// Record a key use inside the app that is no use of the item for its
+    /// counter (a reveal, a copy of a secret other than the password):
+    /// the "recently used" and "frequently used" lists do not move. Hourly
+    /// coalescing applies; `true` when the item was written.
+    pub fn record_app_key_use(
+        &self,
+        vault_id: String,
+        item_id: String,
+        action: FfiKeyUseAction,
+        field: String,
+    ) -> Result<bool, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            Ok(repo.record_app_key_use(
+                &vault,
+                item_id,
+                action.into(),
+                &field,
+                time::OffsetDateTime::now_utc(),
+            )?)
         })
     }
 
@@ -384,6 +455,53 @@ impl Session {
             Ok(repo
                 .read_attachment(&vault, item_id, attachment_id)?
                 .to_vec())
+        })
+    }
+
+    /// Set the item's custom icon from an image of at most 64 KiB (PNG, JPEG
+    /// or WebP), as a new item version. Returns the item as stored.
+    pub fn set_custom_icon(
+        &self,
+        vault_id: String,
+        item_id: String,
+        mime: String,
+        bytes: Vec<u8>,
+    ) -> Result<FfiItem, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        let bytes = zeroize::Zeroizing::new(bytes);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            repo.set_custom_icon(&vault, item_id, &mime, &bytes)?;
+            Ok(item_to_ffi(&find_item(repo, &vault, item_id)?))
+        })
+    }
+
+    /// Remove the item's custom icon and delete its encrypted chunks.
+    /// Returns the item as stored.
+    pub fn clear_custom_icon(
+        &self,
+        vault_id: String,
+        item_id: String,
+    ) -> Result<FfiItem, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            repo.clear_custom_icon(&vault, item_id)?;
+            Ok(item_to_ffi(&find_item(repo, &vault, item_id)?))
+        })
+    }
+
+    /// The decrypted bytes of the item's custom icon. `NotFound` when it has
+    /// none or its chunk is not synced to this device yet.
+    pub fn custom_icon_data(
+        &self,
+        vault_id: String,
+        item_id: String,
+    ) -> Result<Vec<u8>, OnePassError> {
+        let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
+        self.with(|repo| {
+            let vault = find_vault(repo, vault_id)?;
+            Ok(repo.read_custom_icon(&vault, item_id)?.to_vec())
         })
     }
 
@@ -693,9 +811,22 @@ impl SyncStoreHandle {
 }
 
 fn profile_to_ffi(p: onepass_core::repo::profile::Profile) -> FfiProfile {
+    let item_ref = |r: ItemRef| FfiItemRef {
+        vault_id: id_hex(r.vault_id),
+        item_id: id_hex(r.item_id),
+    };
     FfiProfile {
         name: p.name,
         photo: p.photo,
         updated_at: p.updated_at.unix_timestamp(),
+        main_identity: p.main_identity.map(item_ref),
+        main_card: p.main_card.map(item_ref),
     }
+}
+
+fn item_ref_to_core(r: &FfiItemRef) -> Result<ItemRef, OnePassError> {
+    Ok(ItemRef {
+        vault_id: parse_id(&r.vault_id)?,
+        item_id: parse_id(&r.item_id)?,
+    })
 }

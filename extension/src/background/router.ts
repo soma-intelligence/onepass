@@ -219,6 +219,7 @@ function form(v: unknown): FormInfo {
     fields: list(o.fields, MAX_FIELDS, field),
   };
   if (o.submitRef !== undefined) f.submitRef = ref(o.submitRef);
+  if (o.signupStep !== undefined && bool(o.signupStep)) f.signupStep = true;
   return f;
 }
 
@@ -364,6 +365,7 @@ export function parseCsToBg(m: unknown): CsToBg | null {
           formKind: member<FormKind>(o.formKind, FORM_KINDS),
         };
         if (o.auto !== undefined) r.auto = bool(o.auto);
+        if (o.signupStep !== undefined && bool(o.signupStep)) r.signupStep = true;
         return r;
       }
       case "close_menu":
@@ -426,6 +428,11 @@ export function parseCsToBg(m: unknown): CsToBg | null {
       case "ghost_menu":
       case "page_typed":
         return { type: o.type };
+      case "setup_codes_found": {
+        const codes = list(o.codes, MAX_RECOVERY_CODES, recoveryCode);
+        if (codes.length === 0) throw new Invalid();
+        return { type: "setup_codes_found", codes };
+      }
       default:
         return null;
     }
@@ -433,6 +440,20 @@ export function parseCsToBg(m: unknown): CsToBg | null {
     return null;
   }
 }
+
+/** The bridge's bound on recovery codes (`save_recovery_codes`): 1 to 32 codes. */
+const MAX_RECOVERY_CODES = 32;
+const RECOVERY_CODE_RE = /^[A-Za-z0-9-]{4,64}$/;
+
+/** One recovery code as the bridge takes it: 4 to 64 of `[A-Za-z0-9-]` once every space is removed ("1234 5678"). */
+function recoveryCode(v: unknown): string {
+  const s = str(v, 256).replace(/\s+/g, "");
+  if (!RECOVERY_CODE_RE.test(s)) throw new Invalid();
+  return s;
+}
+
+/** Longest setup key the card's paste field sends (spaces and dashes included). */
+const MAX_SETUP_KEY = 512;
 
 function edits(v: unknown): SaveEdits {
   const o = obj(v);
@@ -534,6 +555,22 @@ export function parseUiToBg(m: unknown): UiToBg | null {
       case "overlay_create":
       case "overlay_never":
         return { type: o.type, token: token(o.token) };
+      case "setup_init":
+      case "setup_codes_save":
+      case "setup_close":
+        return { type: o.type, token: token(o.token) };
+      case "setup_save": {
+        const s: UiToBg = { type: o.type, token: token(o.token), itemId: o.itemId === null ? null : itemId(o.itemId) };
+        if (o.username !== undefined) s.username = str(o.username, MAX_USERNAME);
+        if (o.replace !== undefined) s.replace = bool(o.replace);
+        return s;
+      }
+      case "setup_paste":
+        return { type: o.type, token: token(o.token), key: str(o.key, MAX_SETUP_KEY, 1) };
+      case "popup_scan_qr":
+        return { type: o.type };
+      case "setup_resize":
+        return { type: o.type, token: token(o.token), height: height(o.height) };
       case "ghost_pill":
         return { type: o.type, token: token(o.token), rect: pillRect(o.rect), over: bool(o.over) };
       case "menu_profile": {

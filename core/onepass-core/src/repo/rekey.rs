@@ -4,7 +4,7 @@
 //! removed side's erasure, and the shared rebase of a write that lost the
 //! manifest race.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::reseal::item_record;
 use super::{Repository, Use, entry, split_item_record};
@@ -948,6 +948,51 @@ fn open_item_row(vaults: &[Vault], data: &[u8]) -> Option<Item> {
 }
 
 impl Repository<SyncStore> {
+    /// The records my pending item writes replaced, opened, by item id:
+    /// the confirmed row of each pending item deletion of `zone` (kept by
+    /// the store while that deletion waits, even once the server removed
+    /// it).
+    fn pending_ancestors(
+        &self,
+        zone: Zone,
+        vaults: &[Vault],
+        rows: &[crate::store::ZonePendingRow],
+    ) -> Result<BTreeMap<Id, Item>> {
+        let mut out = BTreeMap::new();
+        for (kind, blob, _, data) in rows {
+            if *kind != RecordKind::Item || data.is_some() {
+                continue;
+            }
+            let Some(rec) = self.store.zone_item_ancestor(zone, *blob)? else {
+                continue;
+            };
+            if let Some(item) = open_item_row(vaults, &rec.data) {
+                out.insert(item.id, item);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Write my pending `item` again over the server's head. A write that
+    /// changed only the usage memory or the key-use log of the record it
+    /// replaced (`ancestor`) is memory, never an edit: its trailers are
+    /// merged into the server's current item, and it is dropped when the
+    /// item is gone there. Any other write is saved as it is.
+    fn replay_item(&mut self, vault: &Vault, item: Item, ancestor: Option<&Item>) -> Result<()> {
+        if !ancestor.is_some_and(|a| crate::sync::usage_only(&item, a)) {
+            return self.shared_save_item(vault, item);
+        }
+        let loaded = self.shared_served(vault, Use::Read)?;
+        let Some((_, rec)) = loaded.listed(item.id) else {
+            return Ok(());
+        };
+        let remote = vault.open_item(rec)?;
+        match crate::sync::resolve(&item, remote, false) {
+            Some(out) => self.shared_save_item(vault, out),
+            None => Ok(()),
+        }
+    }
+
     /// Rebase the shared vaults whose pending manifest lost the race on the
     /// server (gap 3 of Task 9): each is followed to its newest body first.
     /// A member's own writes (items, deletions, meta) are read back with
@@ -1048,6 +1093,7 @@ impl Repository<SyncStore> {
             .flat_map(|p| p.resealed.iter().map(|r| r.2))
             .collect();
         let rows = self.store.zone_pending(zone)?;
+        let ancestors = self.pending_ancestors(zone, &vaults, &rows)?;
         let mut saves = Vec::new();
         let mut drop = Vec::new();
         for (kind, id, _, data) in &rows {
@@ -1188,7 +1234,8 @@ impl Repository<SyncStore> {
             let vault = self.open_shared(vault_id)?;
             for mut item in saves {
                 item.vault_id = vault_id;
-                self.shared_save_item(&vault, item)?;
+                let ancestor = ancestors.get(&item.id);
+                self.replay_item(&vault, item, ancestor)?;
             }
             applied = true;
         }
@@ -1293,6 +1340,7 @@ impl Repository<SyncStore> {
         let mut vaults = self.generation_vaults(&state)?;
         vaults.extend(before);
         let rows = self.store.zone_pending(zone)?;
+        let ancestors = self.pending_ancestors(zone, &vaults, &rows)?;
         let mut saves = Vec::new();
         let mut deleted_blobs = Vec::new();
         let mut meta = None;
@@ -1347,7 +1395,8 @@ impl Repository<SyncStore> {
             }
             for mut item in saves {
                 item.vault_id = vault_id;
-                self.shared_save_item(&vault, item)?;
+                let ancestor = ancestors.get(&item.id);
+                self.replay_item(&vault, item, ancestor)?;
             }
             for item_id in deletes {
                 let loaded = self.shared_served(&vault, Use::Read)?;

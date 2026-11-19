@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BgToCs, CsToBg, FieldRole, FormKind, PageAnalysis, ProviderId, UiToBg } from "../src/shared/messages";
 import type { RequestFor, ResponseFor } from "../src/bridge/client";
 import { type Extra, FORMS_ROLES, type IdentityFill, isCsToBg } from "../src/shared/messages";
+import { parseCsToBg, parseUiToBg } from "../src/background/router";
 
 describe("messages types", () => {
   it("accepts a well-formed page analysis", () => {
@@ -53,6 +54,39 @@ describe("messages types", () => {
       ],
     };
     expect(reply.vaults.map((v) => v.shared === true)).toEqual([false, true]);
+  });
+
+  it("types the setup card's messages and routes them from their own pages", () => {
+    const save: UiToBg = { type: "setup_save", token: "t".repeat(22), itemId: null, username: "alex@atlas.dev", replace: true };
+    const scan: UiToBg = { type: "popup_scan_qr" };
+    const found: CsToBg = { type: "setup_codes_found", codes: ["ab12-cd34"] };
+    const show: BgToCs = { type: "show_frame", kind: "setup", url: "chrome-extension://x/setup.html#t" };
+    expect([save.type, scan.type, found.type, show.kind]).toEqual(["setup_save", "popup_scan_qr", "setup_codes_found", "setup"]);
+    expect(isCsToBg(found)).toBe(true);
+    const tok = "A".repeat(22);
+    expect(parseUiToBg({ type: "setup_save", token: tok, itemId: null, extra: "x" })).toEqual({ type: "setup_save", token: tok, itemId: null });
+    expect(parseUiToBg({ type: "setup_save", token: tok, itemId: "it_a", username: "u", replace: true })).toEqual({
+      type: "setup_save",
+      token: tok,
+      itemId: "it_a",
+      username: "u",
+      replace: true,
+    });
+    expect(parseUiToBg({ type: "setup_save", token: tok })).toBeNull();
+    expect(parseUiToBg({ type: "setup_save", token: tok, itemId: null, replace: "yes" })).toBeNull();
+    expect(parseUiToBg({ type: "setup_paste", token: tok, key: "abcd efgh" })).toEqual({ type: "setup_paste", token: tok, key: "abcd efgh" });
+    expect(parseUiToBg({ type: "setup_paste", token: tok, key: "" })).toBeNull();
+    expect(parseUiToBg({ type: "setup_resize", token: tok, height: 180 })).toEqual({ type: "setup_resize", token: tok, height: 180 });
+    expect(parseUiToBg({ type: "setup_resize", token: tok, height: "180" })).toBeNull();
+    for (const type of ["setup_init", "setup_codes_save", "setup_close"]) expect(parseUiToBg({ type, token: tok })).toEqual({ type, token: tok });
+    expect(parseUiToBg({ type: "popup_scan_qr", tabId: 3 })).toEqual({ type: "popup_scan_qr" });
+    expect(parseCsToBg({ type: "setup_codes_found", codes: [" ab12-cd34 ", "ef56gh78", "1234 5678"] })).toEqual({
+      type: "setup_codes_found",
+      codes: ["ab12-cd34", "ef56gh78", "12345678"],
+    });
+    for (const codes of [[], ["ab1"], ["ab c"], ["ab12_cd34"], ["x".repeat(65)], Array(33).fill("ab12-cd34"), "ab12-cd34"]) {
+      expect(parseCsToBg({ type: "setup_codes_found", codes })).toBeNull();
+    }
   });
 
   it("isCsToBg validates the discriminant", () => {

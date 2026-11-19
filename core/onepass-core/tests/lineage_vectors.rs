@@ -17,14 +17,15 @@ use onepass_core::crypto::{
 use onepass_core::device_keys::{DEVICE_POP_DOMAIN, DeviceKeys, DevicePublic, sign_pop};
 use onepass_core::devices::{DeviceKind, DeviceMode};
 use onepass_core::lineage::{
-    GENESIS_DOMAIN, GENESIS_IDENTITY_DOMAIN, GenesisBody, INTRO_DOMAIN, IntroBody,
-    LEGACY_DEVICE_DOMAIN, LegacyIntroBody, LineageRecord, ROTATION_DOMAIN,
+    GENESIS_DOMAIN, GENESIS_FORMAT_MANAGED, GENESIS_IDENTITY_DOMAIN, GenesisBody, INTRO_DOMAIN,
+    IntroBody, LEGACY_DEVICE_DOMAIN, LegacyIntroBody, LineageRecord, ROTATION_DOMAIN,
     ROTATION_IDENTITY_DOMAIN, RosterEntry, RotationBody, RotationReason, Signed, SignedIntro,
     SignedLegacyIntro, delivery_id, identity_id, intro_id, rotation_code, sign_genesis, sign_intro,
     sign_legacy_intro, sign_rotation, verify_genesis, verify_intro, verify_intro_identity,
     verify_legacy_intro, verify_rotation,
 };
 use onepass_core::manifest::SeenManifest;
+use onepass_core::org::OrgId;
 use onepass_core::{Error, Id, IntegrityError};
 
 fn sha256(parts: &[&[u8]]) -> [u8; 32] {
@@ -170,6 +171,7 @@ fn lineage_hash_prefixes() {
             identity_pub: identity().1.clone(),
             creator: entry(&a, "iPhone"),
             created_at: 1_761_000_000,
+            org: None,
         },
         device_sig: dummy_hybrid(),
         identity_sig: dummy_identity_sig(),
@@ -574,6 +576,7 @@ fn genesis_and_intros_sign_and_verify() {
             identity_pub: ivk.clone(),
             creator: entry(&a, "iPhone"),
             created_at: 1,
+            org: None,
         },
         &a.keys,
         ikey,
@@ -675,6 +678,7 @@ fn generate_vectors() {
             identity_pub: ivk.clone(),
             creator: entry(&a, "iPhone"),
             created_at: 1_761_000_000,
+            org: None,
         },
         &a.keys,
         ikey,
@@ -690,6 +694,34 @@ fn generate_vectors() {
             ("code", rotation_code(&genesis.hash()).to_string()),
             ("generation", "0".into()),
             ("identity_id", h(&identity_id(ivk).0)),
+        ],
+    );
+
+    // Business E1 (Task 2): a managed account's genesis, format 2 with
+    // its org. Written alongside the frozen files above, which stay as
+    // committed (restore them with git after a run).
+    let managed = LineageRecord::Genesis(
+        sign_genesis(
+            GenesisBody {
+                format: 2,
+                account_id: account,
+                identity_pub: ivk.clone(),
+                creator: entry(&a, "iPhone"),
+                created_at: 1_761_000_000,
+                org: Some([0x0A; 16]),
+            },
+            &a.keys,
+            ikey,
+        )
+        .unwrap(),
+    );
+    write(
+        "genesis_managed.hex",
+        vec![
+            ("record", h(&managed.encode())),
+            ("hash", h(&managed.hash())),
+            ("id", h(&managed.record_id().0)),
+            ("generation", "0".into()),
         ],
     );
 
@@ -801,4 +833,98 @@ fn recover_roster_is_rotator_only() {
     // The same roster is fine for any other reason.
     body.reason = RotationReason::Revoke;
     LineageRecord::decode(&unsigned_rotation(body).encode()).unwrap();
+}
+
+/// Business E1 (Task 2): a personal account's genesis keeps format 1 and
+/// its bytes; the org field only exists in format 2.
+#[test]
+fn personal_genesis_bytes_unchanged() {
+    let v = read_vector("genesis.hex");
+    let bytes = hex(&v, "record");
+    let LineageRecord::Genesis(g) = LineageRecord::decode(&bytes).unwrap() else {
+        panic!("a genesis")
+    };
+    assert_eq!(g.body.format, 1);
+    assert_eq!(g.body.org, None);
+    assert_eq!(g.body.org(), None);
+    let rec = LineageRecord::Genesis(g);
+    assert_eq!(rec.org(), None);
+    assert_eq!(rec.encode(), bytes);
+}
+
+#[test]
+fn managed_genesis_golden() {
+    let v = read_vector("genesis_managed.hex");
+    let bytes = hex(&v, "record");
+    let rec = LineageRecord::decode(&bytes).unwrap();
+    assert_eq!(rec.encode(), bytes);
+    assert_eq!(rec.hash().as_slice(), hex(&v, "hash"));
+    assert_eq!(rec.record_id().0.as_slice(), hex(&v, "id"));
+    assert_eq!(rec.generation().to_string(), v["generation"]);
+    assert_eq!(rec.org(), Some(OrgId([0x0A; 16])));
+    let LineageRecord::Genesis(g) = &rec else {
+        panic!("a genesis")
+    };
+    assert_eq!(g.body.format, GENESIS_FORMAT_MANAGED);
+    assert_eq!(g.body.format, 2);
+    assert_eq!(g.body.org, Some([0x0A; 16]));
+    assert_eq!(g.body.org(), Some(OrgId([0x0A; 16])));
+    verify_genesis(g).unwrap();
+    // The org is hashed and signed: another org breaks both.
+    let mut other = g.clone();
+    other.body.org = Some([0x0B; 16]);
+    assert_ne!(LineageRecord::Genesis(other.clone()).hash(), rec.hash());
+    assert_eq!(
+        verify_genesis(&other),
+        Err(Error::Integrity(IntegrityError::Signature))
+    );
+    // The body is the personal one plus `Some(org)` at the end.
+    let mut personal = g.body.clone();
+    personal.format = 1;
+    personal.org = None;
+    let mut expect = postcard_of(&personal);
+    expect[0] = 2;
+    expect.push(1);
+    expect.extend_from_slice(&[0x0A; 16]);
+    assert_eq!(postcard_of(&g.body), expect);
+}
+
+#[test]
+fn genesis_format_and_org_must_agree() {
+    let a = dev(1);
+    let (_, ivk) = identity();
+    let body = |format: u8, org: Option<[u8; 16]>| GenesisBody {
+        format,
+        account_id: id(0xA0),
+        identity_pub: ivk.clone(),
+        creator: entry(&a, "iPhone"),
+        created_at: 1_761_000_000,
+        org,
+    };
+    let encoded = |b: GenesisBody| {
+        LineageRecord::Genesis(Signed {
+            body: b,
+            device_sig: dummy_hybrid(),
+            identity_sig: dummy_identity_sig(),
+        })
+        .encode()
+    };
+    // The two shapes that exist decode (structure only, dummy signatures).
+    LineageRecord::decode(&encoded(body(1, None))).unwrap();
+    LineageRecord::decode(&encoded(body(2, Some([7; 16])))).unwrap();
+    for (format, org) in [
+        (1, Some([7; 16])),
+        (2, None),
+        (3, None),
+        (3, Some([7; 16])),
+        (0, None),
+    ] {
+        assert!(
+            matches!(
+                LineageRecord::decode(&encoded(body(format, org))),
+                Err(Error::InvalidFormat(_))
+            ),
+            "format {format} org {org:?}"
+        );
+    }
 }

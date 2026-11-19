@@ -1,0 +1,22 @@
+<div class="brand">{{brand}}</div>
+<h1>Activer la validation en deux étapes</h1>
+<p>Scanne ce QR code avec ton application d'authentification, puis saisis le code.</p>
+<p class="error" id="error">{{error}}</p>
+<!-- A canvas drawn from another origin's image (no CORS): its pixels cannot be read. -->
+<canvas id="qr" width="200" height="200"></canvas>
+<script>
+  (() => {
+    const canvas = document.getElementById("qr");
+    const img = new Image();
+    img.onload = () => {
+      canvas.getContext("2d").drawImage(img, 0, 0, 200, 200);
+      canvas.dataset.drawn = "1";
+    };
+    img.src = "{{src}}";
+  })();
+</script>
+<form id="verify" action="/2fa/verify" method="post">
+  <label for="code">Code de vérification</label>
+  <input id="code" name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+  <button id="submit" type="submit">Vérifier</button>
+</form>

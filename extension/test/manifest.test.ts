@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -71,12 +71,20 @@ describe.each(BROWSERS)("manifest %s", (b) => {
     expect(load(b).web_accessible_resources[0]?.matches).toEqual(PAGES);
   });
 
-  it("exposes only the four pages and their scripts (the ghost like the menu)", () => {
+  it("exposes only the five pages and their scripts (the ghost like the menu, the setup card like the save prompt)", () => {
     const m = load(b);
     expect(m.web_accessible_resources).toHaveLength(1);
     expect([...(m.web_accessible_resources[0]?.resources ?? [])].sort()).toEqual(
-      ["ghost.html", "ghost.js", "menu.html", "menu.js", "overlay.html", "overlay.js", "save.html", "save.js"].sort(),
+      ["ghost.html", "ghost.js", "menu.html", "menu.js", "overlay.html", "overlay.js", "save.html", "save.js", "setup.html", "setup.js"].sort(),
     );
+  });
+
+  it("the setup scanner is injected on demand: in no content_scripts and no web_accessible_resources", () => {
+    const m = load(b);
+    const js = m.content_scripts.flatMap((c) => (c as unknown as { js?: string[] }).js ?? []);
+    expect(js).not.toContain("setup-scan.js");
+    expect(m.web_accessible_resources.flatMap((w) => w.resources)).not.toContain("setup-scan.js");
+    expect(existsSync(join(root, "dist", b, "setup-scan.js"))).toBe(true);
   });
 
   it("sets popup and CSP", () => {

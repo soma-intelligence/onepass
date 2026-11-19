@@ -152,6 +152,7 @@ public actor MailboxMigration {
             case .offline: return .blocked(.offline)
             case .failed(let message): return .failed(message)
             case .iCloud: return .failed("iCloud")
+            case .tokenRefused: return .failed("member token")
             }
             try await record(state)
         }

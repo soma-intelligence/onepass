@@ -118,30 +118,30 @@
       }
     },
     "accounts.error.serverUnavailable" : {
-      "comment" : "Add account sheet: a managed (organisation) account cannot be created yet.",
+      "comment" : "Add account sheet: the managed (organisation) account names a server address that is not valid.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This account connects to your organization's server, which isn't available in this version yet."
+            "value" : "This organisation's server address isn't valid."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta cuenta se conecta al servidor de tu organización, que aún no está disponible en esta versión."
+            "value" : "La dirección del servidor de esta organización no es válida."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce compte se connecte au serveur de ton organisation, qui n'est pas encore disponible dans cette version."
+            "value" : "L'adresse du serveur de cette organisation n'est pas valide."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo account si collega al server della tua organizzazione, che non è ancora disponibile in questa versione."
+            "value" : "L'indirizzo del server di questa organizzazione non è valido."
           }
         }
       }
@@ -1040,6 +1040,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Campo nascosto"
+          }
+        }
+      }
+    },
+    "editing.newSection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New section"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva sección"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvelle section"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuova sezione"
           }
         }
       }
@@ -2668,6 +2697,324 @@
         }
       }
     },
+    "keyUse.action.copied" : {
+      "comment" : "Key-use log row: the secret was copied.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copied"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copié"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copiato"
+          }
+        }
+      }
+    },
+    "keyUse.action.filled" : {
+      "comment" : "Key-use log row: the item was filled by AutoFill.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "filled"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "rellenado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "rempli"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "compilato"
+          }
+        }
+      }
+    },
+    "keyUse.action.injected" : {
+      "comment" : "Key-use log row: the secret was injected into a command's environment.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "injected"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "inyectado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "injecté"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iniettato"
+          }
+        }
+      }
+    },
+    "keyUse.action.revealed" : {
+      "comment" : "Key-use log row: the secret was shown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "revealed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "revelado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "révélé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "rivelato"
+          }
+        }
+      }
+    },
+    "keyUse.action.signed" : {
+      "comment" : "Key-use log row: the SSH key signed a request.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "signed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "firmado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "signé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "firmato"
+          }
+        }
+      }
+    },
+    "keyUse.action.totp" : {
+      "comment" : "Key-use log row: a one-time code was produced.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "código"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "code"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "codice"
+          }
+        }
+      }
+    },
+    "keyUse.countSince %@ %@" : {
+      "comment" : "Item key-use summary, second part: every use since the month of the first one. %1$@ is 'keyUse.times' ('365 fois'), %2$@ a month, with its year when not this year ('mars', 'mars 2026').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ since %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ desde %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ depuis %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ da %2$@"
+          }
+        }
+      }
+    },
+    "keyUse.lastUsed %@" : {
+      "comment" : "Item key-use summary, first part. %@ is a relative date such as 'il y a 2 h' or 'hier'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usada %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisée %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usata %@"
+          }
+        }
+      }
+    },
+    "keyUse.times %lld" : {
+      "comment" : "Item key-use summary: the number of uses, inside 'keyUse.countSince'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld time"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld times"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld vez"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld veces"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fois"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fois"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld volta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld volte"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "keychain.keychainDidntKeepData" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2750,6 +3097,470 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Password"
+          }
+        }
+      }
+    },
+    "org.error.conflict" : {
+      "comment" : "Org error: another admin changed the member list at the same time.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Someone else changed the members at the same time. Try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otra persona cambió los miembros al mismo tiempo. Inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quelqu'un d'autre a modifié les membres en même temps. Réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qualcun altro ha modificato i membri nello stesso momento. Riprova."
+          }
+        }
+      }
+    },
+    "org.error.fork" : {
+      "comment" : "Org refusal: the server showed two conflicting member lists.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server showed two different member lists. Contact your administrator."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor mostró dos listas de miembros distintas. Contacta con tu administrador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a montré deux listes de membres différentes. Contacte ton administrateur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server ha mostrato due elenchi di membri diversi. Contatta il tuo amministratore."
+          }
+        }
+      }
+    },
+    "org.error.keysUnavailable" : {
+      "comment" : "Org error: this device's signing keys can't be read.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device's keys aren't available right now"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las claves de este dispositivo no están disponibles ahora mismo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les clés de cet appareil ne sont pas disponibles pour le moment"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chiavi di questo dispositivo non sono disponibili al momento"
+          }
+        }
+      }
+    },
+    "org.error.mdmInvalid" : {
+      "comment" : "Org refusal: the device management profile for the organisation is not valid.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device's management profile for the organisation isn't valid. Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de gestión de este dispositivo para la organización no es válido. No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil de gestion de cet appareil pour l'organisation n'est pas valide. Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo di gestione di questo dispositivo per l'organizzazione non è valido. Non è stato modificato nulla."
+          }
+        }
+      }
+    },
+    "org.error.notAllowed" : {
+      "comment" : "Org error: this account's roles don't allow the change.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your role can't make this change"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu rol no permite este cambio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton rôle ne permet pas cette modification"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il tuo ruolo non consente questa modifica"
+          }
+        }
+      }
+    },
+    "org.error.ownersKeepSelf" : {
+      "comment" : "Org error: the new owners must include this account.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You need to stay one of the owners to make this change"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tienes que seguir siendo propietario para hacer este cambio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu dois rester parmi les propriétaires pour faire ce changement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devi restare tra i proprietari per fare questa modifica"
+          }
+        }
+      }
+    },
+    "org.error.ownersPending" : {
+      "comment" : "Org error: an earlier change of owners is still being completed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A change of owners is already in progress. Finish it before making another."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya hay un cambio de propietarios en curso. Termínalo antes de hacer otro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un changement de propriétaires est déjà en cours. Termine-le avant d'en faire un autre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È già in corso un cambio di proprietari. Completalo prima di farne un altro."
+          }
+        }
+      }
+    },
+    "org.error.pinMismatch" : {
+      "comment" : "Org refusal: the server's organisation fingerprint differs from the pinned one.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This server shows a different organisation than the one you pinned. Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor muestra una organización distinta de la que fijaste. No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce serveur montre une autre organisation que celle que tu as épinglée. Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo server mostra un'organizzazione diversa da quella che hai fissato. Non è stato modificato nulla."
+          }
+        }
+      }
+    },
+    "org.error.quorum" : {
+      "comment" : "Org refusal: the change needs another owner's approval, not supported yet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another owner needs to approve this. That comes in a later version."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro propietario tiene que aprobarlo. Llegará en una versión posterior."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un autre propriétaire doit approuver ce changement. Ce sera possible dans une prochaine version."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un altro proprietario deve approvarlo. Arriverà in una versione successiva."
+          }
+        }
+      }
+    },
+    "org.error.rollback" : {
+      "comment" : "Org refusal: the server replayed an older member list.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server showed an older member list. Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor mostró una lista de miembros antigua. No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a montré une ancienne liste de membres. Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server ha mostrato un elenco di membri precedente. Non è stato modificato nulla."
+          }
+        }
+      }
+    },
+    "org.error.unreadable" : {
+      "comment" : "Org refusal: the server's organisation data does not verify.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server sent organisation data that doesn't check out. Nothing was changed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de la organización enviados por el servidor no son válidos. No se ha cambiado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données de l'organisation envoyées par le serveur ne sont pas valides. Rien n'a été modifié."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dati dell'organizzazione inviati dal server non sono validi. Non è stato modificato nulla."
+          }
+        }
+      }
+    },
+    "org.presence.joinPrompt" : {
+      "comment" : "Biometric prompt before this device signs the request to join an organisation.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign your request to join the organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma tu solicitud para unirte a la organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signe ta demande pour rejoindre l'organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma la tua richiesta di entrare nell'organizzazione"
+          }
+        }
+      }
+    },
+    "org.presence.prompt" : {
+      "comment" : "Biometric prompt before signing a change to the organisation's members.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign this change to your organisation"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma este cambio en tu organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signe cette modification de ton organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma questa modifica alla tua organizzazione"
+          }
+        }
+      }
+    },
+    "org.refusal.dnsMismatch" : {
+      "comment" : "Join refused: the domain's DNS record names another fingerprint.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This invitation doesn't match the organisation's domain. Don't join, and tell your administrator."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta invitación no coincide con el dominio de la organización. No te unas y avisa a tu administrador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette invitation ne correspond pas au domaine de l'organisation. Ne la rejoins pas et préviens ton administrateur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo invito non corrisponde al dominio dell'organizzazione. Non unirti e avvisa il tuo amministratore."
+          }
+        }
+      }
+    },
+    "org.refusal.mdmInvalid" : {
+      "comment" : "Join refused: the MDM profile's OnePass keys are not usable.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your device's management profile has an invalid OnePass setting. Contact your administrator."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El perfil de gestión de tu dispositivo tiene un ajuste de OnePass no válido. Contacta con tu administrador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le profil de gestion de ton appareil contient un réglage OnePass non valide. Contacte ton administrateur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il profilo di gestione del tuo dispositivo ha un'impostazione OnePass non valida. Contatta il tuo amministratore."
+          }
+        }
+      }
+    },
+    "org.refusal.mdmMismatch" : {
+      "comment" : "Join refused: the invitation names another organisation than the MDM profile.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This invitation is for a different organisation than the one managing this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta invitación es para una organización distinta de la que gestiona este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette invitation est pour une autre organisation que celle qui gère cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo invito è per un'organizzazione diversa da quella che gestisce questo dispositivo."
           }
         }
       }
@@ -3156,6 +3967,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Troppi tentativi. L'account ricevuto è stato cancellato da questo dispositivo: ricomincia l'abbinamento."
+          }
+        }
+      }
+    },
+    "profile.facts.kind.business" : {
+      "comment" : "Profile, Account card: kind of account",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Business"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profesional"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Professionnel"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Professionale"
+          }
+        }
+      }
+    },
+    "profile.facts.kind.managed" : {
+      "comment" : "Profile, Account card: kind of account, run by an organisation",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Managed by an organization"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestionada por una organización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Géré par une organisation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestito da un'organizzazione"
+          }
+        }
+      }
+    },
+    "profile.facts.kind.personal" : {
+      "comment" : "Profile, Account card: kind of account",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personnel"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personale"
           }
         }
       }
@@ -6775,7 +7676,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les clés de %1$@ ont changé le %2$@. Pour lui rendre l'accès, vérifiez-vous en personne avec le QR."
+            "value" : "Les clés de %1$@ ont changé le %2$@. Pour lui rendre l'accès, scanne son QR code en personne et laisse-le scanner le tien."
           }
         },
         "it" : {

@@ -219,7 +219,7 @@ export function titleFromSite(site: string): string {
 
 export interface SaveDeps {
   ext: Pick<BgExt, "tabs" | "runtime">;
-  session: Pick<Session, "request">;
+  session: Pick<Session, "request"> & Partial<Pick<Session, "withWake">>;
   /** The popup's profile; no form here, so no page context. */
   generator: Pick<FormGenerator, "generate">;
   neverSave: NeverSave;
@@ -228,7 +228,7 @@ export interface SaveDeps {
   onSaved?: (tabId: number, origin: string, itemId: string) => Promise<void>;
   /** `storage.local`: the vault last used per site (no secret). None: the first vault. */
   area?: StorageArea;
-  /** Brings the app forward before an unlock (a card opened while locked). */
+  /** Launches the app for an unlock when it does not answer (a card opened while locked). */
   openApp?: () => Promise<boolean>;
   /** The top-frame origin of `tabId` when it is a page: what the card's `unlock` names. */
   unlockOrigin?: (tabId: number) => Promise<string | undefined>;
@@ -601,8 +601,17 @@ export class SavePrompts {
       const native = this.deps.nativeUnlock ? await this.deps.nativeUnlock().catch(() => false) : null;
       if (native === false) throw new BgError("locked");
       if (native === null) {
-        await this.deps.openApp?.().catch(() => false);
-        const u = await this.host.unlock(await this.deps.unlockOrigin?.(h.tabId).catch(() => undefined));
+        const origin = await this.deps.unlockOrigin?.(h.tabId).catch(() => undefined);
+        const unlock = () => this.host.unlock(origin);
+        // A running app asks Touch ID over the browser and comes forward only when it is refused:
+        // the launch link (which brings the window forward at once) only when it does not answer.
+        let u: { locked: boolean };
+        if (this.deps.session.withWake) {
+          u = await this.deps.session.withWake(() => this.deps.openApp?.().catch(() => false), unlock);
+        } else {
+          await this.deps.openApp?.().catch(() => false);
+          u = await unlock();
+        }
         if (u.locked) throw new BgError("locked");
       }
       const r = await this.deps.session.request({

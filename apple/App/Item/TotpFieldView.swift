@@ -10,6 +10,18 @@ struct TotpCodeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        classicBody
+    }
+
+    /// "538262" gives ["538", "262"]; other lengths of 6 or more are split in halves, a shorter
+    /// code stays whole.
+    static func groups(_ code: String) -> [String] {
+        guard code.count >= 6 else { return [code] }
+        let half = code.index(code.startIndex, offsetBy: code.count / 2)
+        return [String(code[..<half]), String(code[half...])]
+    }
+
+    private var classicBody: some View {
         // Every frame while shown, so the ring drains smoothly; once a second with Reduce Motion.
         TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
             if let code = Self.code(secret, at: context.date) {
@@ -59,10 +71,55 @@ struct TotpFieldView: View {
     let field: FfiField
     var captured = false
     let onCopy: (String) -> Void
+    @Environment(\.rxCards) private var rxCards
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// RX: the template's "TOTP" label reads "Code de vérification"; a label the person typed stays.
+    private var label: String {
+        if rxCards, field.displayLabel.caseInsensitiveCompare("TOTP") == .orderedSame {
+            return String(localized: "rx.item.verificationCode")
+        }
+        return field.displayLabel.detailLabelCase
+    }
 
     var body: some View {
+        #if os(iOS) || os(macOS)
+        if rxCards, !captured {
+            rxCard
+        } else {
+            classicRow
+        }
+        #else
+        classicRow
+        #endif
+    }
+
+    /// RX: the verification code card (DesignKit `RXCodeCard`, D-CODE-SIZE): the label, the 30 pt
+    /// digits centred with the 36 pt ring. The whole card is one button that copies the code.
+    private var rxCard: some View {
+        Button(action: copyCurrent) {
+            // Every frame so the ring drains smoothly; once a second with Reduce Motion.
+            TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : 1.0 / 30)) { context in
+                if let code = TotpCodeView.code(field.value.text, at: context.date) {
+                    let exact = TotpCodeView.exactRemaining(period: code.period, at: context.date)
+                    RXCodeCard(
+                        label: Text(label), code: code.code, remaining: Int(code.remaining),
+                        fraction: exact / Double(max(code.period, 1)))
+                } else {
+                    RXCardMessage(Text("item.invalidSecretPasteBase32"))
+                }
+            }
+            .padding(.vertical, Theme.RX.Space.m)
+            .padding(.horizontal, Theme.RX.Space.l)
+        }
+        .rxPress()
+        .accessibilityHint(Text("Copier le code"))
+        .accessibilityIdentifier("field.copy.\(field.id)")
+    }
+
+    private var classicRow: some View {
         DetailRow(
-            label: field.displayLabel.detailLabelCase, copyIdentifier: "field.copy.\(field.id)",
+            label: label, copyIdentifier: "field.copy.\(field.id)",
             copyLabel: Text("Copier le code"), onCopy: copyCurrent, showsMenu: false
         ) {
             if captured {
@@ -78,6 +135,7 @@ struct TotpFieldView: View {
         } menu: {
             EmptyView()
         }
+        .centeredOnValue(rxCards)
     }
 
     private func copyCurrent() {

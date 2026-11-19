@@ -516,6 +516,7 @@ mod rotation {
                     identity_pub: identity_pub.clone(),
                     creator: entry(&me, "iPhone"),
                     created_at: 1_700_000_000,
+                    org: None,
                 },
                 &keys,
                 &account.keyset().identity,

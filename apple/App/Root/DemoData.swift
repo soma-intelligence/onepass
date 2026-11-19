@@ -36,6 +36,10 @@ import UIKit
 ///   `-OnePassDemoShowWork YES` shows the business account (locked); `-OnePassDemoAddAccount YES`
 ///   opens "Ajouter un compte".
 /// - `-OnePassDemoBulkItems <n>`: n more fictional logins (a large vault for measurements).
+/// - `-OnePassDemoOrg YES`: Réglages > Organisation shows a made-up organisation in memory
+///   (`DemoOrgBackend`, no server): the demo account is its owner, with members and a join request.
+///   `-OnePassDemoOrg join`: the demo account is a member waiting for its administrator (join code).
+///   On the Mac, `-OnePassSnapshotOnly organisation` renders that page, light then dark.
 enum DemoData {
     static let password = "demo-onepass-2026"
     static let displayName = "Camille Durand"
@@ -224,6 +228,7 @@ extension AppModel {
                 if defaults.bool(forKey: "OnePassDemoSecondAccount") { try await seedSecondDemoAccount() }
                 // `-OnePassDemoSharing YES [-OnePassDemoRecoveryAlert YES]`: the sharing screens.
                 if defaults.bool(forKey: "OnePassDemoSharing") { showDemoSharing() }
+                if let org = defaults.string(forKey: "OnePassDemoOrg"), org != "NO" { showDemoOrg(org) }
                 demoPreparing = false
                 if defaults.bool(forKey: "OnePassDemoLocked") { lock() }
                 // `-OnePassDemoAccountChanged YES`: the "Le compte iCloud a changé" banner.
@@ -445,6 +450,9 @@ private struct DemoSeeder {
             "last_name": .text(value: "Durand"),
             "email": .email(value: "camille.durand@exemple.fr"),
             "mobile_phone": .phone(value: "+33 6 00 00 00 00"),
+            "address": .address(value: FfiAddress(
+                line1: "12 rue de l'Exemple", line2: "", city: "Paris", postalCode: "75011", region: "",
+                country: "France")),
         ], favorite: true)
         try await add(.idCard, "Carte d'identité", personal, [
             "country": .text(value: "France"),
@@ -549,6 +557,28 @@ private struct DemoSeeder {
         try await session.trash(itemID: draft.id, vaultID: draft.vaultId)
         _ = forge
         try await addBulk(personal: personal, atlas: atlas, family: family)
+        try await noteDemoUses()
+    }
+
+    /// A few in-app uses, so "Utilisés fréquemment" and "Utilisés récemment" are not empty. The last
+    /// title in the list is the most recent use.
+    private func noteDemoUses() async throws {
+        let uses: [(String, Int)] = [
+            ("Gmail", 9), ("Compte Google", 4), ("Visa Banque Exemple", 2), ("Forge Atlas", 6),
+        ]
+        for (title, count) in uses {
+            guard let summary = session.summaries.first(where: { $0.title == title }) else { continue }
+            for _ in 0..<count {
+                try await session.noteAppUse(vaultID: summary.vaultId, itemID: summary.id)
+            }
+        }
+        // Gmail's "Utilisation" section: a few in-app key uses (App channel, this device).
+        if let gmail = session.summaries.first(where: { $0.title == "Gmail" }) {
+            for action in [FfiKeyUseAction.revealed, .copied] {
+                try await session.recordAppKeyUse(
+                    vaultID: gmail.vaultId, itemID: gmail.id, action: action, field: "Mot de passe")
+            }
+        }
     }
 
     /// `-OnePassDemoBulkItems <n>`: n more fictional logins over the three vaults, so a large vault

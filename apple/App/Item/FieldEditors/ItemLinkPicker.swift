@@ -65,7 +65,10 @@ struct ItemPickerList: View {
                     onPick(summary)
                 } label: {
                     HStack(spacing: Theme.Space.m) {
-                        ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 30)
+                        ItemIconSource(summary) { icon in
+                            ItemIcon(type: summary.itemType, title: summary.title, siteIcon: icon, size: 30,
+                                domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
+                        }
                         VStack(alignment: .leading) {
                             Text(summary.title).foregroundStyle(.primary)
                             if !summary.listSubtitle.isEmpty {
@@ -242,10 +245,10 @@ struct ProviderMark: View {
     }
 }
 
-/// The username row of a login in the editor. With no sign-in provider: the username field and an
-/// "Avec…" menu at its end (Google, Apple, GitHub, Microsoft, then the others). With one: the
-/// provider and the account item it uses, "Changer" to pick another account and a cross back to a
-/// typed username. Picking a provider asks which account item it uses (`SignInAccountChooser`).
+/// The username row of a login in the editor: the username field, and while no sign-in provider
+/// is set an "Avec…" menu at its end (Google, Apple, GitHub, Microsoft, then the others). A chosen
+/// provider gets its own row under the password (`SignInRow`); the username stays as typed.
+/// Picking a provider asks which account item it uses (`SignInAccountChooser`).
 struct LoginUsernameRow<Field: View>: View {
     @Environment(AppModel.self) private var model
     @Binding var item: FfiItem
@@ -255,42 +258,9 @@ struct LoginUsernameRow<Field: View>: View {
     @State private var choosing: LoginProvider?
 
     var body: some View {
-        Group {
-            if let current = item.signInProvider {
-                // The chosen account stands in for the username; a tap offers to change it or to go
-                // back to a typed username.
-                Menu {
-                    Button("item.changeAccount", systemImage: "arrow.triangle.2.circlepath") {
-                        choosing = LoginProvider(rawValue: current.provider)
-                    }
-                    .accessibilityIdentifier("editor.signIn.account")
-                    Button("item.useUsernameInstead", systemImage: "person.text.rectangle", role: .destructive) {
-                        item.setSignInProvider(nil, accountItemID: nil)
-                    }
-                    .accessibilityIdentifier("editor.signIn.none")
-                } label: {
-                    HStack(spacing: Theme.Space.m) {
-                        VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                            EditorLabel(label)
-                            SignInAccountLine(provider: current.provider, accountItemID: current.accountItemID)
-                        }
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(.rect)
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .accessibilityIdentifier("editor.signIn.current")
-            } else {
-                HStack(alignment: .center, spacing: Theme.Space.m) {
-                    EditorRow(label: label, message: message) { field }
-                    providerMenu
-                }
-            }
+        HStack(alignment: .center, spacing: Theme.Space.m) {
+            EditorRow(label: label, message: message) { field }
+            if item.signInProvider == nil { providerMenu }
         }
         .sheet(item: $choosing) { provider in
             SignInAccountChooser(provider: provider, ownID: item.id) { accountID in
@@ -345,7 +315,10 @@ struct SignInAccountLine: View {
         let account = model.session.summaries.first { $0.id == accountItemID && $0.trashedAt == nil }
         HStack(spacing: Theme.Space.m) {
             if let account {
-                ItemIcon(type: account.itemType, title: account.title, siteIcon: model.iconLoader.cachedIcon(for: account.primaryUrl, title: account.title), size: 30)
+                ItemIconSource(account) { icon in
+                    ItemIcon(type: account.itemType, title: account.title, siteIcon: icon, size: 30,
+                        domain: ItemIconResolver.registrableDomain(account.primaryUrl))
+                }
             } else {
                 ProviderMark(provider: LoginProvider(rawValue: provider), size: 30)
             }
@@ -367,7 +340,7 @@ struct SignInAccountLine: View {
 
 /// "Quel compte Google utilises-tu ?": the logins that look like that account, then "Choisir un autre
 /// élément…" for any item.
-private struct SignInAccountChooser: View {
+struct SignInAccountChooser: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let provider: LoginProvider
@@ -389,7 +362,10 @@ private struct SignInAccountChooser: View {
                             onPick(summary.id)
                         } label: {
                             HStack(spacing: Theme.Space.m) {
-                                ItemIcon(type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.cachedIcon(for: summary.primaryUrl, title: summary.title), size: 30)
+                                ItemIconSource(summary) { icon in
+                                    ItemIcon(type: summary.itemType, title: summary.title, siteIcon: icon, size: 30,
+                                        domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
+                                }
                                 VStack(alignment: .leading) {
                                     Text(summary.title).foregroundStyle(.primary)
                                     if !summary.listSubtitle.isEmpty {

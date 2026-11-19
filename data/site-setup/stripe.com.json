@@ -1,0 +1,7 @@
+{
+  "domain": "stripe.com",
+  "setup_totp": {
+    "url": "https://dashboard.stripe.com/settings/user",
+    "steps": []
+  }
+}

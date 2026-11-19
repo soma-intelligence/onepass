@@ -13,6 +13,7 @@ use time::{Date, Month};
 
 use crate::id::Id;
 use crate::model::{FieldValue, Item, ItemType, LoginMethod};
+use crate::site_pack::{SitePack, SiteSetup};
 use crate::{Error, Result};
 
 use super::checks::{Check, Detail, Finding, excluded, password_changed_on, passwords, push};
@@ -35,12 +36,18 @@ pub struct SiteInfo {
     /// Where the site documents its setup. The 2FA directory wins over the
     /// passkeys directory.
     pub documentation: Option<String>,
+    /// Where and how to set up TOTP, from a site pack.
+    pub setup_totp: Option<SiteSetup>,
+    /// Where and how to set up a passkey, from a site pack.
+    pub setup_passkey: Option<SiteSetup>,
 }
 
 /// Sites offering 2FA or passkeys, keyed by lower-case domain.
 #[derive(Debug, Default, Clone)]
 pub struct SiteDirectory {
     sites: HashMap<String, SiteInfo>,
+    /// Additional domain to the key of its site. Own domains win.
+    aliases: HashMap<String, String>,
 }
 
 impl SiteDirectory {
@@ -64,6 +71,7 @@ impl SiteDirectory {
                 u2f: has("u2f"),
                 passkey: false,
                 documentation: documentation(entry),
+                ..SiteInfo::default()
             };
             dir.merge(domain, info);
         }
@@ -85,17 +93,59 @@ impl SiteDirectory {
                 u2f: false,
                 passkey: allowed("passwordless") || allowed("mfa"),
                 documentation: documentation(entry),
+                ..SiteInfo::default()
             };
             self.merge(domain, info);
         }
         Ok(())
     }
 
-    /// Entry of the host, or of its closest parent domain. Labels are
-    /// removed from the left down to two labels; no public suffix list.
-    pub fn lookup(&self, host: &str) -> Option<&SiteInfo> {
+    /// Loads a parsed site pack. Own domains are inserted first, then the
+    /// additional domains in sorted site order, never over an existing key.
+    pub fn from_site_pack(pack: &SitePack) -> SiteDirectory {
+        let mut dir = SiteDirectory::default();
+        for (domain, site) in &pack.sites {
+            let Some(domain) = normalize_domain(domain) else {
+                continue;
+            };
+            let has = |name: &str| site.twofa.iter().any(|m| m == name);
+            let info = SiteInfo {
+                totp: has("totp"),
+                u2f: has("u2f"),
+                passkey: site.passkey.is_some(),
+                documentation: site.help.clone(),
+                setup_totp: site.setup_totp.clone(),
+                setup_passkey: site.setup_passkey.clone(),
+            };
+            dir.merge(domain, info);
+        }
+        for (domain, site) in &pack.sites {
+            let Some(key) = normalize_domain(domain) else {
+                continue;
+            };
+            for extra in &site.additional_domains {
+                let Some(extra) = normalize_domain(extra) else {
+                    continue;
+                };
+                if !dir.sites.contains_key(&extra) {
+                    dir.aliases.entry(extra).or_insert_with(|| key.clone());
+                }
+            }
+        }
+        dir
+    }
+
+    /// Entry of the host, or of its closest parent domain down to the
+    /// registrable domain (public suffix list), with the key of the site.
+    /// An additional domain finds the entry of its site.
+    pub fn lookup(&self, host: &str) -> Option<(&str, &SiteInfo)> {
         let host = normalize_domain(host)?;
-        candidates(&host).find_map(|d| self.sites.get(d))
+        candidates(&host).find_map(|d| {
+            self.sites
+                .get_key_value(d)
+                .or_else(|| self.sites.get_key_value(self.aliases.get(d)?))
+                .map(|(k, v)| (k.as_str(), v))
+        })
     }
 
     /// Number of domains.
@@ -115,6 +165,12 @@ impl SiteDirectory {
         slot.passkey |= info.passkey;
         if slot.documentation.is_none() {
             slot.documentation = info.documentation;
+        }
+        if slot.setup_totp.is_none() {
+            slot.setup_totp = info.setup_totp;
+        }
+        if slot.setup_passkey.is_none() {
+            slot.setup_passkey = info.setup_passkey;
         }
     }
 }
@@ -241,10 +297,12 @@ fn normalize_domain(d: &str) -> Option<String> {
     (!d.is_empty() && d.len() <= MAX_HOST_LEN).then(|| d.to_ascii_lowercase())
 }
 
-/// The host, then each parent domain, down to two labels.
+/// The host, then each parent domain, down to its registrable domain
+/// (public suffix list). A host without one is tried as is only.
 fn candidates(host: &str) -> impl Iterator<Item = &str> {
+    let stop = psl::domain_str(host).map_or(host.len(), str::len);
     std::iter::successors(Some(host), |h| h.split_once('.').map(|(_, rest)| rest))
-        .take_while(|h| h.contains('.'))
+        .take_while(move |h| h.len() >= stop)
 }
 
 /// `YYYY-MM-DD`.
@@ -303,22 +361,39 @@ pub(crate) fn site_findings(items: &[&Item], dir: &SiteDirectory, out: &mut Vec<
             continue;
         }
         let hosts = item_hosts(item);
-        let infos: Vec<&SiteInfo> = hosts.iter().filter_map(|h| dir.lookup(h)).collect();
+        let infos: Vec<(&String, &SiteInfo)> = hosts
+            .iter()
+            .filter_map(|h| dir.lookup(h).map(|(_, info)| (h, info)))
+            .collect();
+        let detail = |host: &String, info: &SiteInfo, setup: &Option<SiteSetup>| Detail::Site {
+            documentation: info.documentation.clone(),
+            host: host.clone(),
+            settings_url: setup.as_ref().map(|s| s.url.clone()),
+            recipe: setup
+                .as_ref()
+                .is_some_and(|s| s.recipe.as_ref().is_some_and(|r| !r.is_empty())),
+        };
         if !has_totp(item)
-            && let Some(info) = infos.iter().find(|i| i.totp || i.u2f)
+            && let Some((host, info)) = infos.iter().find(|(_, i)| i.totp || i.u2f)
         {
-            let detail = Detail::Site {
-                documentation: info.documentation.clone(),
-            };
-            push(out, item, Check::Missing2fa, None, detail);
+            push(
+                out,
+                item,
+                Check::Missing2fa,
+                None,
+                detail(host, info, &info.setup_totp),
+            );
         }
         if !has_passkey(item)
-            && let Some(info) = infos.iter().find(|i| i.passkey)
+            && let Some((host, info)) = infos.iter().find(|(_, i)| i.passkey)
         {
-            let detail = Detail::Site {
-                documentation: info.documentation.clone(),
-            };
-            push(out, item, Check::PasskeyAvailable, None, detail);
+            push(
+                out,
+                item,
+                Check::PasskeyAvailable,
+                None,
+                detail(host, info, &info.setup_passkey),
+            );
         }
     }
 }
@@ -399,11 +474,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn candidates_stop_at_two_labels() {
+    fn candidates_stop_at_registrable_domain() {
         let c: Vec<_> = candidates("a.b.example.com").collect();
         assert_eq!(c, ["a.b.example.com", "b.example.com", "example.com"]);
-        assert_eq!(candidates("localhost").count(), 0);
-        assert_eq!(candidates("[::1]").count(), 0);
+        let c: Vec<_> = candidates("news.bbc.co.uk").collect();
+        assert_eq!(c, ["news.bbc.co.uk", "bbc.co.uk"]);
+        assert_eq!(candidates("localhost").count(), 1);
+        assert_eq!(candidates("co.uk").count(), 1);
     }
 
     #[test]

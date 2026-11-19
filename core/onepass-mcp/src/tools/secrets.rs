@@ -23,7 +23,8 @@ use onepass_core::generator::{
     CharsetOptions, PassphraseOptions, Recipe, Wordlist, entropy_bits, generate,
 };
 use onepass_core::model::{
-    Field, FieldType, FieldValue, Item, ItemType, ItemUrl, MatchRule, new_item, validate,
+    Field, FieldType, FieldValue, Item, ItemType, ItemUrl, KeyUseAction, MatchRule, new_item,
+    validate,
 };
 use onepass_core::reference::{SecretRef, otp_field_of};
 use onepass_core::totp::{
@@ -290,6 +291,19 @@ impl<P: VaultPort> McpTools<P> {
             field_id,
             r,
         })
+    }
+
+    /// Records the use of the field `l` points at, by its label.
+    fn note_located(&mut self, client: &ClientInfo, l: &Located, action: KeyUseAction) {
+        let label = l.field().map(|f| f.label.clone()).unwrap_or_default();
+        self.note_key_use(client, l.vault.id, l.item.id, action, &label);
+    }
+
+    /// One `Injected` entry per field handed to a command or a template.
+    fn note_injected(&mut self, client: &ClientInfo, located: &[Located]) {
+        for l in located {
+            self.note_located(client, l, KeyUseAction::Injected);
+        }
     }
 
     /// The vault every located reference is in, when there is only one.
@@ -686,6 +700,7 @@ impl<P: VaultPort> McpTools<P> {
             timeout: Duration::from_secs(timeout),
         };
         let out = self.workspace.run(&req)?;
+        self.note_injected(client, &located);
         let secrets: Vec<(&str, &str)> = req
             .env
             .iter()
@@ -775,6 +790,7 @@ impl<P: VaultPort> McpTools<P> {
             overwrite,
             self.forbidden_dir(),
         )?;
+        self.note_injected(client, &located);
         Ok(json!({"replaced": refs.len(), "output_path": output_path}))
     }
 
@@ -931,6 +947,7 @@ impl<P: VaultPort> McpTools<P> {
         let on = call.approved_on.clone();
         self.strong_auth("totp_code", &l, on.as_deref())?;
         let code = self.read_value(&l.vault, &l.r)?;
+        self.note_located(client, &l, KeyUseAction::Totp);
         Ok(json!({
             "code": code.as_str(),
             "seconds_remaining": seconds_remaining(&cfg, now()),
@@ -962,6 +979,7 @@ impl<P: VaultPort> McpTools<P> {
         let on = call.approved_on.clone();
         self.strong_auth("reveal_secret", &l, on.as_deref())?;
         let value = self.read_value(&l.vault, &l.r)?;
+        self.note_located(client, &l, KeyUseAction::Revealed);
         Ok(super::untrusted(json!({"value": value.as_str()})))
     }
 }

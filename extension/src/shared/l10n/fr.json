@@ -330,5 +330,26 @@
   "popup.signInPill": "Pastille de connexion",
   "popup.signInPillHelp": "Elle apparaît d'elle-même sur une page de connexion ou d'inscription. Rien n'est rempli sans ton clic.",
   "popup.pillNeverSites": "Jamais sur ces sites",
-  "popup.removeSite": "Retirer {site}"
+  "popup.removeSite": "Retirer {site}",
+  "setup.previousCode": "Ancien code",
+  "popup.scanQr": "Scanner le QR code 2FA",
+  "setup.title": "Ajouter le code 2FA à {item} ?",
+  "setup.from": "{issuer}, {account}",
+  "setup.mismatch": "Le code est pour {account}. Ce login est {username}.",
+  "setup.add": "Ajouter",
+  "setup.replaceTitle": "{item} a déjà un code 2FA. Le remplacer ?",
+  "setup.replaceNote": "L'ancien code reste sur le login.",
+  "setup.replace": "Remplacer",
+  "setup.cancel": "Annuler",
+  "setup.newLogin": "Nouveau login",
+  "setup.pasteTitle": "Aucun QR code trouvé. Colle la clé de configuration.",
+  "setup.unlock": "Déverrouiller OnePass",
+  "setup.saved": "Enregistré. Appuie sur le bouton du site pour confirmer.",
+  "setup.code": "Ton code",
+  "setup.codesTitle": {
+    "one": "Enregistrer {count} code de récupération sur {item} ?",
+    "other": "Enregistrer {count} codes de récupération sur {item} ?"
+  },
+  "setup.codesSave": "Enregistrer",
+  "setup.recoveryLabel": "Codes de récupération"
 }

@@ -303,6 +303,7 @@ Deno.test("routes of small messages take at most SMALL_BODY, 413 past it without
       ["PUT", `/v1/mailboxes/${MHEX}/credentials/${MHEX}/role`],
       ["PUT", `/v1/mailboxes/${MHEX}/locator`],
       ["POST", `/v1/mailboxes/${MHEX}/children`],
+      ["POST", `/v1/mailboxes/${MHEX}/org-invites`],
       ["PUT", `/v1/mailboxes/${MHEX}/push`],
       ["PUT", `/v1/mailboxes/${MHEX}/push-targets/${MHEX}`],
     ]
@@ -1360,6 +1361,69 @@ Deno.test("POST children is one api_create_child call, 200 MailboxCreated; bad b
     const db = new FakeDb(withKey(k));
     await assertError(await handler(deps(db))(await signed(k, "POST", target, body), IP), "malformed");
     assert(!db.fns().includes("api_create_child"));
+  }
+});
+
+/** CreateOrgInvite: version, uses and ttl_hours as postcard varints. */
+function orgInviteBody(uses: number, ttlHours: number): Uint8Array {
+  const varint = (n: number) => (n < 0x80 ? [n] : [(n & 0x7f) | 0x80, n >> 7]);
+  return new Uint8Array([1, ...varint(uses), ...varint(ttlHours)]);
+}
+
+Deno.test("POST org-invites is one api_org_invite call, 200 OrgInviteCreated; bad bodies never reach SQL", async () => {
+  const k = await newKey();
+  const token = new Uint8Array(32).fill(0x44);
+  const target = `/v1/mailboxes/${MHEX}/org-invites`;
+  for (const ttl of [1, 24, 168]) {
+    const db = new FakeDb(withKey(k, () => [ok({ token })]));
+    const r = await handler(deps(db))(await signed(k, "POST", target, orgInviteBody(1, ttl)), IP);
+    assertEquals(r.status, 200);
+    const got = await bytes(r);
+    assertEquals(got, proto.encodeOrgInviteCreated({ token }));
+    assertEquals(got, new Uint8Array([1, 32, ...token]));
+    assertEquals(db.fns(), ["ip_gate", "credential_key", "api_org_invite"]);
+    const args = db.calls[2].args;
+    assertEquals(args.slice(0, 4).map((x) => x.value), [k.id, args[1].value, args[2].value, M]);
+    assertEquals(args.slice(4).map((x) => [x.type, x.value]), [
+      ["smallint", 1],
+      ["smallint", ttl],
+    ]);
+  }
+
+  // In-band refusals keep their codes; raised ones too.
+  for (const code of ["forbidden", "malformed"] as Code[]) {
+    const db = new FakeDb(withKey(k, () => [{ status: code, retry_after: null }]));
+    await assertError(await handler(deps(db))(await signed(k, "POST", target, orgInviteBody(1, 24)), IP), code);
+  }
+  const limited = new FakeDb(withKey(k, () => [{ status: "rate_limited", retry_after: 3600 }]));
+  await assertError(
+    await handler(deps(limited))(await signed(k, "POST", target, orgInviteBody(1, 24)), IP),
+    "rate_limited",
+    3600,
+  );
+  const frozen = new FakeDb(withKey(k, () => {
+    throw { code: "OP403", message: "frozen" };
+  }));
+  await assertError(await handler(deps(frozen))(await signed(k, "POST", target, orgInviteBody(1, 24)), IP), "frozen");
+  // A token that is no 32 bytes is a server bug: never sent to the client.
+  const short = new FakeDb(withKey(k, () => [ok({ token: new Uint8Array(31) })]));
+  await assertError(await handler(deps(short))(await signed(k, "POST", target, orgInviteBody(1, 24)), IP), "retry");
+
+  // Several uses, no or too long a ttl, a short body, trailing bytes, none.
+  for (
+    const body of [
+      orgInviteBody(2, 24),
+      orgInviteBody(0, 24),
+      orgInviteBody(1, 0),
+      orgInviteBody(1, 169),
+      orgInviteBody(1, 24).slice(0, 2),
+      new Uint8Array([...orgInviteBody(1, 24), 0]),
+      new Uint8Array(),
+    ]
+  ) {
+    const db = new FakeDb(withKey(k));
+    await assertError(await handler(deps(db))(await signed(k, "POST", target, body), IP), "malformed");
+    assert(!db.fns().includes("api_org_invite"));
   }
 });
 

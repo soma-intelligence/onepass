@@ -53,6 +53,20 @@ pub enum IntegrityError {
     /// A `SyncHome` older than the one this device already accepted, or a
     /// fork of it (`crate::synchome`).
     SyncHomeRollback,
+    /// An org lineage older than the one this device already accepted.
+    OrgLineageRollback,
+    /// Two different org lineage records at one generation.
+    OrgLineageFork,
+    /// An org change without the owner quorum.
+    OrgQuorum,
+    /// An org roster older than the one this device already accepted.
+    OrgRosterRollback,
+    /// Two different org rosters at one sequence.
+    OrgRosterFork,
+    /// An org change the signer's role does not allow.
+    OrgRoleDenied,
+    /// The org fingerprint changed from the pinned one.
+    OrgPinMismatch,
 }
 
 impl fmt::Display for IntegrityError {
@@ -85,6 +99,13 @@ impl fmt::Display for IntegrityError {
             Self::MembershipFork => "membership fork detected",
             Self::FamilyRollback => "family rollback detected",
             Self::SyncHomeRollback => "sync home rollback detected",
+            Self::OrgLineageRollback => "org lineage rollback detected",
+            Self::OrgLineageFork => "org lineage fork detected",
+            Self::OrgQuorum => "org owner quorum not met",
+            Self::OrgRosterRollback => "org roster rollback detected",
+            Self::OrgRosterFork => "org roster fork detected",
+            Self::OrgRoleDenied => "org role does not allow this change",
+            Self::OrgPinMismatch => "org fingerprint does not match the pinned one",
         };
         f.write_str(s)
     }
@@ -187,6 +208,38 @@ mod tests {
         assert!(!e.to_string().contains("secret"));
         assert_eq!(e.to_string(), "store error");
         assert!(format!("{e:?}").contains("secret"));
+    }
+
+    #[test]
+    fn org_integrity_display() {
+        assert_eq!(
+            IntegrityError::OrgLineageRollback.to_string(),
+            "org lineage rollback detected"
+        );
+        assert_eq!(
+            IntegrityError::OrgLineageFork.to_string(),
+            "org lineage fork detected"
+        );
+        assert_eq!(
+            IntegrityError::OrgQuorum.to_string(),
+            "org owner quorum not met"
+        );
+        assert_eq!(
+            IntegrityError::OrgRosterRollback.to_string(),
+            "org roster rollback detected"
+        );
+        assert_eq!(
+            IntegrityError::OrgRosterFork.to_string(),
+            "org roster fork detected"
+        );
+        assert_eq!(
+            IntegrityError::OrgRoleDenied.to_string(),
+            "org role does not allow this change"
+        );
+        assert_eq!(
+            IntegrityError::OrgPinMismatch.to_string(),
+            "org fingerprint does not match the pinned one"
+        );
     }
 
     #[test]

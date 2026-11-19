@@ -47,6 +47,7 @@ import { KeyRelay, type MenuField, type MenuRecord, MenuTokens } from "./menu";
 import { isSafari, openApp as openAppNative, openTransport } from "./native";
 import { type NativeVault, type NativeVaultCall, nativeVault } from "./safari";
 import { NeverSave } from "./never-save";
+import { OpenSignIn } from "./open-sign-in";
 import { FillNotes } from "./notes";
 import { HostCompat } from "./host-compat";
 import { Overlays, type UnlockAsked, removeFrame, resizeFrame } from "./overlay";
@@ -57,6 +58,8 @@ import { Planner, type PlanOrigins, type RunOutcome, framesFromSender, mainRoles
 import { PopupBackend, alternativesFirst, loginFields, rankedIds } from "./popup";
 import { type Handlers, createRouter, parsePlanContextBody } from "./router";
 import { type SavePending, SavePrompts } from "./save";
+import { SetupCards } from "./setup/card";
+import { SetupScan } from "./setup/scan";
 import { type SuggestionRecord, Suggestions } from "./suggest";
 import type { ModelSession } from "./model";
 import { BgError, type BridgeLike, Session, toBgError } from "./session";
@@ -300,20 +303,38 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     await unlockOp(owed.tabId).catch(() => undefined);
   };
   /**
-   * After a trusted gesture found the vault locked or the app missing (never on iOS): the app
-   * comes forward and is asked to unlock (Touch ID; it gives the front back to the browser once
-   * unlocked). "unlocked": open already; "asked": its unlock shows; "launching": opened, not
-   * answering yet (the unlock is asked once it does); "failed": neither opened nor reached, or
-   * `tabId` may not ask (`mayAsk`: not the tab in front, or too many asks this minute).
+   * After a trusted gesture found the vault locked or the app missing (never on iOS): the app is
+   * asked to unlock. Running, it asks Touch ID over the browser and comes forward only when Touch
+   * ID is refused or the password is due (giving the front back once unlocked); not answering,
+   * the launch link opens it (`withWake`) and the unlock goes once it answers. "unlocked": open
+   * already; "asked": its unlock shows; "launching": opened, not answering yet (the unlock is
+   * asked once it does); "failed": neither opened nor reached, or `tabId` may not ask (`mayAsk`:
+   * not the tab in front, or too many asks this minute).
    */
   const askAppUnlock = async (tabId: number, fresh = false): Promise<UnlockAsked> => {
     if (!(await mayAsk(tabId, fresh))) return "failed";
-    const opened = await wakeApp(fresh);
+    const r = await unlockOrLaunch(tabId, () => wakeApp(fresh));
+    if ("locked" in r) return r.locked ? "asked" : "unlocked";
+    return r.opened ? "launching" : "failed";
+  };
+  /**
+   * The bridge `unlock` of a trusted gesture in `tabId`, the app launched (`launch`, the link that
+   * also brings its window forward) only when it does not answer. A running app asks Touch ID over
+   * the browser and comes forward by itself only when Touch ID is refused or the password is due.
+   * Settled with the vault's lock state, or with the request's error and whether the app opened.
+   */
+  const unlockOrLaunch = async (
+    tabId: number,
+    launch: () => Promise<boolean>,
+  ): Promise<{ locked: boolean } | { error: unknown; opened: boolean }> => {
+    let woke: Promise<boolean> | undefined;
     try {
-      if (!(await unlockOp(tabId))) return "unlocked";
-      return opened ? "asked" : "failed";
-    } catch {
-      return opened ? "launching" : "failed";
+      return { locked: await session.withWake(() => (woke ??= launch()), () => unlockOp(tabId)) };
+    } catch (error) {
+      const code = toBgError(error).code;
+      // Not answering, and the opening did not launch it (it failed some other way): now.
+      if (woke === undefined && (code === "host_missing" || code === "timeout")) woke = launch();
+      return { error, opened: woke !== undefined && (await woke) };
     }
   };
   const frames = new Frames(ext.webNavigation);
@@ -336,6 +357,14 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     providersShown: (t, d) => chainRef.current?.providersShown?.(t, d) ?? Promise.resolve([]),
     acting: (t) => chainRef.current?.acting?.(t) ?? Promise.resolve(null),
   };
+  /** A click on a card of ours in the page: Face ID right there on iOS (the click is the one attempt), the app elsewhere. */
+  const cardUnlock = async (tabId: number): Promise<UnlockAsked> => {
+    const state = await vaultOf({ op: "vault_state" }).catch(() => null);
+    if (!state) return askAppUnlock(tabId, true);
+    if (!state.locked) return "unlocked";
+    const after = await vaultOf({ op: "unlock_biometric" }).catch(() => null);
+    return after !== null && !after.locked ? "unlocked" : "failed";
+  };
   const overlays: Overlays = new Overlays({
     ext,
     area: store.session,
@@ -343,14 +372,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     session,
     chain: lateChain,
     frames,
-    // A click on the card: Face ID right there on iOS (the click is the one attempt), the app elsewhere.
-    askUnlock: async (tabId) => {
-      const state = await vaultOf({ op: "vault_state" }).catch(() => null);
-      if (!state) return askAppUnlock(tabId, true);
-      if (!state.locked) return "unlocked";
-      const after = await vaultOf({ op: "unlock_biometric" }).catch(() => null);
-      return after !== null && !after.locked ? "unlocked" : "failed";
-    },
+    askUnlock: cardUnlock,
     // A chain locked mid-way: the app is asked; on iOS the worker never prompts by itself.
     askUnlockChain: async (tabId) => ((await hasNativeVault()) ? "failed" : askAppUnlock(tabId)),
     unlockOp: (tabId) => unlockOp(tabId),
@@ -437,6 +459,17 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     ...(opts.now ? { now: opts.now } : {}),
   });
   filler.onFilled = (tabId, origin, kind, itemId) => saveFlow.noteFilled(tabId, origin, kind, itemId);
+  // Two-factor setup (spec section 1): the popup's scan and the card it shows in the page.
+  const setupCards = new SetupCards({
+    ext,
+    session,
+    filler,
+    analyses,
+    lastUsed: (tabId, origin) => saveFlow.lastLoginFilled(tabId, origin),
+    askUnlock: (tabId) => cardUnlock(tabId),
+    ...(opts.now ? { now: opts.now } : {}),
+  });
+  const setupScan = new SetupScan({ ext, cards: setupCards });
   const providerFlows = new ProviderFlows({
     area: store.session,
     session,
@@ -449,6 +482,22 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   const suggestions = new Suggestions({ generator, filler, saveFlow, area: ext.storage.local, ...(opts.now ? { now: opts.now } : {}) });
   /** Menu token to the suggestion its preview row shows (opened from the ghost, or on the menu's first preview). */
   const menuSuggestions = new Map<string, string>();
+  // Open and sign in from the app: the chain starts on the pending item's sign-in page.
+  const openSignIn = new OpenSignIn({
+    session,
+    chain,
+    chainRunning,
+    frames,
+    unlock: async (tabId) => {
+      const state = await vaultOf({ op: "vault_state" });
+      if (state) {
+        if (!state.locked) return true;
+        const after = await vaultOf({ op: "unlock_biometric" });
+        return after !== null && !after.locked;
+      }
+      return !(await unlockOp(tabId));
+    },
+  });
   session.onLocked(() => {
     saveFlow.clearGenerated();
     suggestions.clear();
@@ -789,9 +838,19 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     ...(opts.now ? { now: opts.now } : {}),
   });
 
+  /**
+   * The identities that have an e-mail, for a lone e-mail step of a sign-up: the e-mail is the
+   * row's subtitle (display only; the pick fills it through `fill_identity`).
+   */
+  const signupEmails = async (origin: string): Promise<Summary[]> => {
+    const r = await session.request({ op: "list_fillable", ctx: "menu", origin, kind: "identity" });
+    return r.items.filter((x) => x.kind === "identity" && x.email).map((x) => ({ ...x, subtitle: x.email ?? x.subtitle }));
+  };
+
   /** The menu would list something for this form on `origin` (locked, unpaired: no). */
-  const offersAnything = async (origin: string, formKind: string): Promise<boolean> => {
+  const offersAnything = async (origin: string, formKind: string, signupStep = false): Promise<boolean> => {
     try {
+      if (signupStep && (await signupEmails(origin)).length > 0) return true;
       if (formKind === "card" || formKind === "identity" || formKind === "address") {
         const kind = formKind === "card" ? "card" : "identity";
         return (await session.request({ op: "list_fillable", ctx: "menu", origin, kind })).items.length > 0;
@@ -920,10 +979,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       open_menu: async (m, from) => {
         if (!isPage(from.origin)) throw new BgError("insecure_origin");
         // A click into the field opens the menu only when it has something to offer there.
-        if (m.auto && !NEW_PASSWORD_FORMS.has(m.formKind) && !(await offersAnything(from.origin, m.formKind))) throw new BgError("not_found");
+        if (m.auto && !NEW_PASSWORD_FORMS.has(m.formKind) && !(await offersAnything(from.origin, m.formKind, m.signupStep === true))) throw new BgError("not_found");
         // One surface: the menu replaces an offered overlay; a running chain keeps the page.
         if (await overlays.yieldTo(from.tabId)) throw new BgError("not_allowed");
         const field: MenuField = { formRef: m.formRef, fieldRef: m.fieldRef, formKind: m.formKind };
+        if (m.signupStep && m.formKind === "login") field.signupStep = true;
         // Right after a plan of this very document answered "menu": its alternatives first.
         const key = `${from.tabId}:${from.frameId}`;
         const left = m.auto ? undefined : planMenus.get(key);
@@ -1112,6 +1172,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         if (from.frameId === 0) await overlays.foldAuto(from.tabId, from.documentId);
         return {};
       },
+      setup_codes_found: async (m, from) => setupCards.codesFound(m, from),
       menu_key: async (m, from) => {
         // Only to the menu of this very frame (and document).
         const token = await menus.forFrame(from.tabId, from.frameId, from.documentId);
@@ -1128,6 +1189,9 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           items = (await session.request({ op: "list_fillable", ctx: "menu", origin: rec.origin, kind })).items;
         } else {
           items = (await session.request({ op: "list_for_origin", ctx: "menu", origin: rec.origin })).items;
+          // A lone e-mail step of a sign-up: the identities' e-mails first (shown as the row's
+          // subtitle), the site's logins below. A pick fills the e-mail only, nothing is sent.
+          if (rec.signupStep) items = [...(await signupEmails(rec.origin)), ...items];
         }
         // The gesture that opened this menu asked the app to unlock, and the vault is open by its
         // first look (a fast Touch ID): the gesture's own fill resumes now, there is no row to pick.
@@ -1367,15 +1431,16 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         const at = now();
         // Not the tab in front, or too many asks this minute: the app stays where it is.
         if (!(await mayAsk(rec.tabId, true))) throw new BgError("refused");
-        const opened = await openApp().catch(() => false);
         let locked = true;
         let sent = true;
-        try {
-          locked = await unlockOp(rec.tabId);
-        } catch (e) {
+        // A running app asks Touch ID over the browser (its window comes forward only when
+        // refused); the launch link only when it does not answer.
+        const r = await unlockOrLaunch(rec.tabId, () => openApp().catch(() => false));
+        if ("locked" in r) locked = r.locked;
+        else {
           // Launched and not answering yet: the menu waits, the unlock is asked once it does.
-          const code = toBgError(e).code;
-          if (!opened || (code !== "host_missing" && code !== "timeout")) throw e;
+          const code = toBgError(r.error).code;
+          if (!r.opened || (code !== "host_missing" && code !== "timeout")) throw r.error;
           sent = false;
         }
         await askedUnlock(m.token, rec, at, sent);
@@ -1491,7 +1556,14 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       save_resize: async (m, from) => savePrompts.resize(m.token, from, m.height, m.width),
       save_fold: async (m, from) => savePrompts.fold(m.token, from),
       save_unfold: async (m, from) => savePrompts.unfold(m.token, from),
+      setup_init: async (m, from) => setupCards.init(m.token, from),
+      setup_save: async (m, from) => setupCards.save(m.token, from, m.itemId, m.username, m.replace),
+      setup_paste: async (m, from) => setupCards.paste(m.token, from, m.key),
+      setup_codes_save: async (m, from) => setupCards.codesSave(m.token, from),
+      setup_close: async (m, from) => setupCards.close(m.token, from),
+      setup_resize: async (m, from) => setupCards.resize(m.token, from, m.height),
       ...popup.handlers(),
+      popup_scan_qr: async () => setupScan.scan(),
       popup_pending: async () => ({ pending: await savePrompts.pendingList() }),
       popup_pending_decide: async (m) => savePrompts.decidePending(m.id, m.decision),
     },
@@ -1541,7 +1613,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     overlays,
     autoPill,
     saves: savePrompts,
+    setupCards,
+    setupScan,
     analyses,
+    openSignIn,
     popup,
     handlers,
     /** The classifier model of a model build (loaded on first use), null in the default build. */
@@ -1556,6 +1631,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       menus.install(ext);
       overlays.tokens.install(ext);
       savePrompts.tokens.install(ext);
+      setupCards.install(ext);
       analyses.install(ext);
       runner?.install(ext);
       analyses.onAnalysis((a, cs) => {
@@ -1564,6 +1640,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         void autoPill.onAnalysis(cs.tabId, cs.frameId).catch(() => undefined);
         if (cs.frameId !== 0) return;
         void providerFlows.onAnalysis(a, cs).catch(() => undefined);
+        void openSignIn.onAnalysis(a, cs).catch(() => undefined);
       });
       ext.webNavigation.onCommitted.addListener((d) => {
         // A new document takes its held suggestions with it (a new top one, every frame's).
@@ -1587,6 +1664,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         for (const [m, st] of menuSuggestions) if (!suggestions.recordOf(st)) menuSuggestions.delete(m);
         savePrompts.forgetTab(tabId);
         notes.onTabRemoved(tabId);
+        openSignIn.forgetTab(tabId);
         for (const k of planMenus.keys()) if (k.startsWith(`${tabId}:`)) planMenus.delete(k);
         for (const k of lockedGestures.keys()) if (k.startsWith(`${tabId}:`)) lockedGestures.delete(k);
         for (const k of replays.keys()) if (k.startsWith(`${tabId}:`)) replays.delete(k);

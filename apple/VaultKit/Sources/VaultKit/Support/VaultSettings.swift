@@ -85,6 +85,93 @@ public final class VaultSettings: @unchecked Sendable {
         static let autofillTip = "onepass.autofillTipDismissed"
         static let revokedErase = "onepass.revokedErasePending"
         static let revokedLocked = "onepass.revokedLocked"
+        static let orgMailboxID = "onepass.org.mailboxID"
+        static let orgJoinNonce = "onepass.org.joinNonce"
+        static let orgJoinPosted = "onepass.org.joinPosted"
+        static let orgCreator = "onepass.org.creator"
+        static let orgJoinWaiting = "onepass.org.joinWaiting"
+        static let orgMemberTokenRefused = "onepass.org.memberTokenRefused"
+        static let orgJoinCode = "onepass.org.joinCode"
+        static let orgDomain = "onepass.org.domain"
+        static let orgInviteDomain = "onepass.org.inviteDomain"
+    }
+
+    // MARK: - Managed account (OnePass Business)
+
+    /// The org mailbox (32 hex) of this managed account's organisation, known once the org is created
+    /// or the join link is read.
+    public var orgMailboxID: String? {
+        get { defaults.string(forKey: Key.orgMailboxID) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.orgMailboxID) } else { defaults.removeObject(forKey: Key.orgMailboxID) }
+        }
+    }
+
+    /// The invitation nonce (64 hex) of the join link, kept while the join is pending: a join request
+    /// cut off before it was posted is rebuilt from it at the next unlock.
+    public var orgJoinNonce: String? {
+        get { defaults.string(forKey: Key.orgJoinNonce) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.orgJoinNonce) } else { defaults.removeObject(forKey: Key.orgJoinNonce) }
+        }
+    }
+
+    /// The join request reached the org server (it is posted once).
+    public var orgJoinPosted: Bool {
+        get { defaults.bool(forKey: Key.orgJoinPosted) }
+        set { defaults.set(newValue, forKey: Key.orgJoinPosted) }
+    }
+
+    /// This account created its organisation (an interrupted creation is not resumed: it shows as
+    /// unfinished).
+    public var orgCreator: Bool {
+        get { defaults.bool(forKey: Key.orgCreator) }
+        set { defaults.set(newValue, forKey: Key.orgCreator) }
+    }
+
+    /// The join request waits for a presence check: biometrics could not answer at unlock (R34). The
+    /// app asks for the password and posts with `ManagedAccountResume.sendJoinRequest`.
+    public var orgJoinWaiting: Bool {
+        get { defaults.bool(forKey: Key.orgJoinWaiting) }
+        set { defaults.set(newValue, forKey: Key.orgJoinWaiting) }
+    }
+
+    /// The org server refused the member token of the account mailbox (spent, expired or off the
+    /// managed plan, R36). A joiner needs a new link; the setup is not retried until it is cleared.
+    public var orgMemberTokenRefused: Bool {
+        get { defaults.bool(forKey: Key.orgMemberTokenRefused) }
+        set { defaults.set(newValue, forKey: Key.orgMemberTokenRefused) }
+    }
+
+    /// The join code (5 words) of the posted join request, which the member reads to an administrator.
+    /// Not secret: the administrator computes the same words from the request. Cleared once accepted.
+    public var orgJoinCode: [String]? {
+        get { defaults.stringArray(forKey: Key.orgJoinCode) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.orgJoinCode) } else { defaults.removeObject(forKey: Key.orgJoinCode) }
+        }
+    }
+
+    /// The domain of the invitation this account joined with: the one its DNS pin checked, shown on
+    /// the fingerprint's source line. Never an administrator's typing (`orgInviteDomain`).
+    public var orgDomain: String? {
+        get { defaults.string(forKey: Key.orgDomain) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.orgDomain) } else { defaults.removeObject(forKey: Key.orgDomain) }
+        }
+    }
+
+    /// The domain an administrator last typed for an invitation: only a prefill (the next invitation,
+    /// the DNS record name to publish), never shown as checked.
+    public var orgInviteDomain: String? {
+        get { defaults.string(forKey: Key.orgInviteDomain) }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Key.orgInviteDomain)
+            } else {
+                defaults.removeObject(forKey: Key.orgInviteDomain)
+            }
+        }
     }
 
     /// This device was found revoked and its erase has not completed yet (L6): the app shows the

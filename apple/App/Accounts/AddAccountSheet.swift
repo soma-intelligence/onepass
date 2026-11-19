@@ -4,7 +4,8 @@ import VaultKit
 
 /// Ajouter un compte (multi-account spec 7): the kind, a name and a color, then either a new account
 /// (its own sign up, its own Secret Key) or one that exists (its Emergency Kit). An organisation account
-/// needs its server, not built yet: the choice is shown and explained, never offered (ruling P10).
+/// is joined with an invitation, or created on a Mac or an iPad (`OrgConsole.isConsoleDevice`): its
+/// slot is made later, with its server, by the organisation sheet the root shows.
 struct AddAccountSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -59,23 +60,41 @@ struct AddAccountSheet: View {
                 } header: {
                     Text("accounts.add.look")
                 }
-                Section {
-                    Button {
-                        begin(signIn: false)
-                    } label: {
-                        Label("accounts.add.create", systemImage: "person.badge.plus")
+                if kind == .managed {
+                    Section {
+                        Button {
+                            openOrgSheet(.join(nil, look))
+                        } label: {
+                            Label("accounts.add.org.join", systemImage: "envelope.open")
+                        }
+                        .accessibilityIdentifier("accounts.add.org.join")
+                        if OrgConsole.isConsoleDevice {
+                            Button {
+                                openOrgSheet(.create(look))
+                            } label: {
+                                Label("accounts.add.org.create", systemImage: "building.2")
+                            }
+                            .accessibilityIdentifier("accounts.add.org.create")
+                        }
                     }
-                    .accessibilityIdentifier("accounts.add.create")
-                    Button {
-                        begin(signIn: true)
-                    } label: {
-                        Label("accounts.add.signIn", systemImage: "doc.text.viewfinder")
+                } else {
+                    Section {
+                        Button {
+                            begin(signIn: false)
+                        } label: {
+                            Label("accounts.add.create", systemImage: "person.badge.plus")
+                        }
+                        .accessibilityIdentifier("accounts.add.create")
+                        Button {
+                            begin(signIn: true)
+                        } label: {
+                            Label("accounts.add.signIn", systemImage: "doc.text.viewfinder")
+                        }
+                        .accessibilityIdentifier("accounts.add.signIn")
+                    } footer: {
+                        Text("accounts.add.footer")
                     }
-                    .accessibilityIdentifier("accounts.add.signIn")
-                } footer: {
-                    Text("accounts.add.footer")
                 }
-                .disabled(kind == .managed)
             }
             .formStyle(.grouped)
             .navigationTitle("accounts.add")
@@ -95,9 +114,7 @@ struct AddAccountSheet: View {
     }
 
     private func kindRow(_ option: Kind) -> some View {
-        let available = option != .managed || model.accounts.serverAvailable(option.core)
-        return Button {
-            guard available else { return }
+        Button {
             if color == AccountProfile.defaultColor(for: kind.core) {
                 color = AccountProfile.defaultColor(for: option.core)
             }
@@ -113,7 +130,7 @@ struct AddAccountSheet: View {
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(option.title).foregroundStyle(.primary)
-                    Text(available ? option.subtitle : "accounts.add.kind.managed.unavailable")
+                    Text(option.subtitle)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -125,11 +142,21 @@ struct AddAccountSheet: View {
                 }
             }
             .contentShape(.rect)
-            .opacity(available ? 1 : 0.5)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(kind == option ? .isSelected : [])
         .accessibilityIdentifier("accounts.add.kind.\(option)")
+    }
+
+    /// The name and colour chosen here, for the organisation sheet.
+    private var look: OrgAccountLook {
+        OrgAccountLook(label: label.trimmingCharacters(in: .whitespacesAndNewlines), color: color)
+    }
+
+    /// The organisation sheet is the root's: this sheet (and Settings under it) closes first.
+    private func openOrgSheet(_ sheet: OrgSheet) {
+        dismiss()
+        Task { await model.presentOrgSheet(sheet, afterSheet: true) }
     }
 
     private func begin(signIn: Bool) {

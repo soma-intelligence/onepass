@@ -16,6 +16,7 @@ use crate::crypto::{HybridSignature, HybridSigningKey, IdentityKey, IdentityVeri
 use crate::device_keys::DeviceKeys;
 use crate::devices::{DeviceKind, DeviceMode};
 use crate::manifest::SeenManifest;
+use crate::org::OrgId;
 use crate::{Error, Id, Result};
 
 pub mod ack;
@@ -28,7 +29,7 @@ pub mod wipe;
 pub use ack::{
     ACK_DOMAIN, AckBody, AckStatus, SignedAck, ack_id, ack_statuses, sign_ack, verify_ack,
 };
-pub(crate) use codec::{check_entry, decode_strict_with};
+pub(crate) use codec::{check_entry, check_hybrid_sig, check_identity_sig, decode_strict_with};
 pub use codec::{check_genesis, check_intro, check_legacy_intro, check_rotation};
 pub use legacy::{LegacyAnchor, LegacyIntros, accept_legacy_intros, legacy_intro_id};
 pub use verify::{
@@ -37,6 +38,9 @@ pub use verify::{
 
 /// Format byte of every body.
 pub const LINEAGE_FORMAT: u8 = 1;
+/// Format byte of a managed account's genesis (OnePass Business): format 1
+/// plus the organisation id.
+pub const GENESIS_FORMAT_MANAGED: u8 = 2;
 /// Most devices in a roster.
 pub const MAX_ROSTER: usize = 64;
 
@@ -77,13 +81,89 @@ pub struct RosterEntry {
     pub introduced_by: Option<Id>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The genesis of an account. A personal account's genesis is format 1
+/// (`LINEAGE_FORMAT`) without `org`, byte for byte as before OnePass
+/// Business; a managed account's is format 2 (`GENESIS_FORMAT_MANAGED`)
+/// and names its organisation in `org`. `check_genesis` refuses any other
+/// pairing of format and org.
+///
+/// Encoded by hand (postcard only): the five fields of format 1, then
+/// `org` as `Option<[u8; 16]>` only when it is `Some`. The decoder reads
+/// `org` only after a format 2; the strict decoder's canonical re-encoding
+/// rejects every other shape.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenesisBody {
     pub format: u8,
     pub account_id: Id,
     pub identity_pub: IdentityVerifyingKey,
     pub creator: RosterEntry,
     pub created_at: i64,
+    /// The organisation of a managed account (format 2 only).
+    pub org: Option<[u8; 16]>,
+}
+
+impl GenesisBody {
+    /// The organisation of a managed account, `None` for a personal one.
+    pub fn org(&self) -> Option<OrgId> {
+        self.org.map(OrgId)
+    }
+}
+
+impl Serialize for GenesisBody {
+    fn serialize<Se: serde::Serializer>(&self, s: Se) -> std::result::Result<Se::Ok, Se::Error> {
+        use serde::ser::SerializeTuple;
+        let mut t = s.serialize_tuple(if self.org.is_some() { 6 } else { 5 })?;
+        t.serialize_element(&self.format)?;
+        t.serialize_element(&self.account_id)?;
+        t.serialize_element(&self.identity_pub)?;
+        t.serialize_element(&self.creator)?;
+        t.serialize_element(&self.created_at)?;
+        if self.org.is_some() {
+            t.serialize_element(&self.org)?;
+        }
+        t.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for GenesisBody {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = GenesisBody;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a genesis body")
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> std::result::Result<GenesisBody, A::Error> {
+                use serde::de::Error as _;
+                let missing = || A::Error::custom("genesis body");
+                let format: u8 = seq.next_element()?.ok_or_else(missing)?;
+                let account_id = seq.next_element()?.ok_or_else(missing)?;
+                let identity_pub = seq.next_element()?.ok_or_else(missing)?;
+                let creator = seq.next_element()?.ok_or_else(missing)?;
+                let created_at = seq.next_element()?.ok_or_else(missing)?;
+                let org = if format == GENESIS_FORMAT_MANAGED {
+                    seq.next_element::<Option<[u8; 16]>>()?
+                        .ok_or_else(missing)?
+                } else {
+                    None
+                };
+                Ok(GenesisBody {
+                    format,
+                    account_id,
+                    identity_pub,
+                    creator,
+                    created_at,
+                    org,
+                })
+            }
+        }
+        d.deserialize_tuple(6, V)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -250,6 +330,15 @@ impl LineageRecord {
         match self {
             LineageRecord::Genesis(s) => s.body.account_id,
             LineageRecord::Rotation(s) => s.body.account_id,
+        }
+    }
+
+    /// The organisation named by a format 2 genesis; `None` for a personal
+    /// genesis and for every rotation.
+    pub fn org(&self) -> Option<OrgId> {
+        match self {
+            LineageRecord::Genesis(s) => s.body.org(),
+            LineageRecord::Rotation(_) => None,
         }
     }
 

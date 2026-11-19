@@ -22,6 +22,7 @@ struct AboutSettings: View {
 
     var body: some View {
         Form {
+            Group {
             Section {
                 Text("settings.onepassOpenSourceAgpl")
                     .accessibilityIdentifier("settings.about.license")
@@ -45,8 +46,14 @@ struct AboutSettings: View {
                     Text(verbatim: "ML-KEM-1024 · ML-DSA-87 · SLH-DSA")
                 }
                     .accessibilityIdentifier("settings.about.crypto")
+                // Site pack licences (2FA Directory MIT, 2factorauth/passkeys CC BY 4.0), as in NOTICE.
+                Text("settings.about.dataSources")
+                    .accessibilityIdentifier("settings.about.dataSources")
             }
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("À propos")
     }
 }
@@ -67,7 +74,7 @@ private struct UpdatesSection: View {
                     .accessibilityIdentifier("settings.about.updates.checkNow")
             } label: {
                 if let date = updater.lastUpdateCheckDate {
-                    Text("settings.about.updates.lastCheck \(date.formatted(date: .abbreviated, time: .shortened))")
+                    Text("settings.about.updates.lastCheck \(date.formatted(.dateTime.day().month(.abbreviated).year().hour().minute()))")
                 }
             }
         } header: {

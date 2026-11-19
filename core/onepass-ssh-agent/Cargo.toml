@@ -11,6 +11,8 @@ onepass-core = { path = "../onepass-core" }
 onepass-guard = { path = "../onepass-guard" }
 aws-lc-rs.workspace = true
 zeroize.workspace = true
+# Instant of a recorded key use.
+time = { version = "0.3", default-features = false, features = ["std"] }
 data-encoding.workspace = true
 # Client records (code identity as JSON) and grant keys.
 serde_json.workspace = true

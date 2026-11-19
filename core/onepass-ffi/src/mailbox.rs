@@ -18,11 +18,12 @@ use onepass_core::store::{RecordKind, SIDE_KIND_MAILBOX_ENROLL_REQUEST};
 use onepass_core::sync::{RebaseReport, SyncStore, VaultSyncHealth};
 use onepass_core::synchome::{SyncBackend, SyncHomeBody};
 use onepass_mailbox::{
-    Credential, CredentialKey, Endpoint, MailboxClient, MailboxError, RdvRole, Rendezvous,
-    WakeListener,
+    Credential, CredentialKey, Endpoint, MailboxApi, MailboxClient, MailboxError, RdvRole,
+    Rendezvous, WakeListener,
 };
 use onepass_mailbox_proto::{
-    CredentialRole, ErrorCode, PushKind, SignedEnrollTicket, decode, encode,
+    CredentialRole, ErrorCode, MailboxId, ORG_INVITE_TOKEN_LEN, PushKind, SignedEnrollTicket,
+    decode, encode,
 };
 use onepass_sync::{MailboxTransport, RoundHooks, RoundReport, RoundStatus, SyncDriver};
 use time::OffsetDateTime;
@@ -35,7 +36,7 @@ use crate::session::{Session, identity_left};
 
 /// What the server sees of a device's label: none. The app names devices in
 /// the account's own (encrypted) device list.
-const LABEL: &[u8] = b"";
+pub(crate) const LABEL: &[u8] = b"";
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -58,7 +59,7 @@ impl From<MailboxError> for OnePassError {
     }
 }
 
-fn mailbox_id(hex: &str) -> Result<[u8; 16], OnePassError> {
+pub(crate) fn mailbox_id(hex: &str) -> Result<[u8; 16], OnePassError> {
     if hex.len() != 32 {
         return Err(invalid("mailbox id"));
     }
@@ -67,7 +68,7 @@ fn mailbox_id(hex: &str) -> Result<[u8; 16], OnePassError> {
         .ok_or_else(|| invalid("mailbox id"))
 }
 
-fn credential(seed: &[u8]) -> Result<Credential, OnePassError> {
+pub(crate) fn credential(seed: &[u8]) -> Result<Credential, OnePassError> {
     Credential::from_seed(seed).map_err(|_| invalid("credential seed"))
 }
 
@@ -307,7 +308,7 @@ pub fn mailbox_generate_credential() -> Result<FfiMailboxCredential, OnePassErro
 
 /// A new Ed25519 credential from a seed of the core's hedged generator
 /// (`fill_random`, security README section 17), never the OS one alone.
-fn fresh_credential() -> Result<Credential, OnePassError> {
+pub(crate) fn fresh_credential() -> Result<Credential, OnePassError> {
     let seed = Zeroizing::new(onepass_core::crypto::random_array::<32>()?);
     Credential::from_seed(&seed[..]).map_err(|_| invalid("credential seed"))
 }
@@ -410,6 +411,93 @@ pub fn mailbox_create(
         mailbox_id: bytes_hex(&created.mailbox_id),
         incarnation: created.incarnation,
     })
+}
+
+/// `limits.max_credentials` of plan `managed` (seed.sql, migration
+/// 20261113130000): the one field where that row differs from `free`, so the
+/// only way a client sees which plan its mailbox got (`MailboxInfo` has no
+/// plan field, R16). An operator who retunes the managed row must change
+/// this constant too, or member mailbox setups fail closed.
+pub(crate) const MANAGED_PLAN_MAX_CREDENTIALS: u16 = 32;
+
+/// Spends the one-use `managed` token (32 bytes, R32) to create the
+/// mailbox of `client`'s credential, and opens it. No plan check here
+/// (`check_managed_mailbox`, R36): the app records the new mailbox first,
+/// so a reply lost between the two is re-checked, never created again. A
+/// token the server does not know (spent, expired, never minted) is
+/// `Validation { field: "member token" }`.
+pub(crate) fn create_managed_mailbox(
+    client: &mut dyn MailboxApi,
+    token: &[u8],
+) -> Result<(MailboxId, u64), OnePassError> {
+    if token.len() != ORG_INVITE_TOKEN_LEN {
+        return Err(invalid("member token"));
+    }
+    let created = match client.create(Some(token), LABEL) {
+        Ok(c) => c,
+        Err(MailboxError::Server(ErrorCode::NotFound)) => {
+            return Err(OnePassError::Validation {
+                field: "member token".into(),
+                reason: "the server does not take this token (spent or expired)".into(),
+            });
+        }
+        Err(e) => return Err(e.into()),
+    };
+    Ok((created.mailbox_id, created.incarnation))
+}
+
+/// Checks that the open mailbox of `client` is on the managed row (R16).
+/// Any other plan fails closed with `Validation { field: "mailbox plan" }`
+/// (never `MailboxUnavailable`, which the apps retry as offline).
+pub(crate) fn check_managed_mailbox(client: &dyn MailboxApi) -> Result<(), OnePassError> {
+    let info = client.info()?;
+    if info.limits.max_credentials != MANAGED_PLAN_MAX_CREDENTIALS {
+        return Err(OnePassError::Validation {
+            field: "mailbox plan".into(),
+            reason: "the server did not put this mailbox on the managed plan".into(),
+        });
+    }
+    Ok(())
+}
+
+/// Create a managed member's own account mailbox on its organisation's
+/// server with the one-use `managed` token `token` (32 bytes: the join
+/// link's, or one the creator minted with `OrgClient::mint_member_token`),
+/// managed by the credential of `credential_seed`. The app stores the
+/// mailbox id, then calls `mailbox_check_managed` before using it (R16,
+/// R36). A spent or unknown token is `Validation { field: "member token" }`.
+#[uniffi::export]
+pub fn mailbox_create_managed(
+    endpoint: FfiMailboxEndpoint,
+    credential_seed: Vec<u8>,
+    token: Vec<u8>,
+) -> Result<FfiMailboxHome, OnePassError> {
+    let seed = Zeroizing::new(credential_seed);
+    let token = Zeroizing::new(token);
+    let base_url = endpoint.base_url.clone();
+    let mut client = MailboxClient::new(endpoint.into(), credential(&seed)?)?;
+    let (mailbox_id, incarnation) = create_managed_mailbox(&mut client, &token)?;
+    Ok(FfiMailboxHome {
+        base_url,
+        mailbox_id: bytes_hex(&mailbox_id),
+        incarnation,
+    })
+}
+
+/// Checks that mailbox `mailbox_id` (32 hex), made with
+/// `mailbox_create_managed`, is on the managed plan (R16): fails closed
+/// with `Validation { field: "mailbox plan" }` otherwise.
+#[uniffi::export]
+pub fn mailbox_check_managed(
+    endpoint: FfiMailboxEndpoint,
+    credential_seed: Vec<u8>,
+    mailbox_id: String,
+) -> Result<(), OnePassError> {
+    let seed = Zeroizing::new(credential_seed);
+    let mailbox = self::mailbox_id(&mailbox_id)?;
+    let mut client = MailboxClient::new(endpoint.into(), credential(&seed)?)?;
+    client.open(mailbox);
+    check_managed_mailbox(&client)
 }
 
 /// Join the mailbox a pairing grant names, with its enroll ticket

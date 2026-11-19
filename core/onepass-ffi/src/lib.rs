@@ -19,7 +19,9 @@ mod error;
 mod family;
 mod hardening;
 mod import;
+mod key_use;
 mod mailbox;
+mod org;
 mod pairing;
 mod remote;
 mod rotation;
@@ -63,7 +65,9 @@ use error::invalid;
 pub use family::*;
 pub use hardening::*;
 pub use import::*;
+pub use key_use::*;
 pub use mailbox::*;
+pub use org::*;
 pub use pairing::*;
 pub use remote::*;
 pub use rotation::*;
@@ -105,7 +109,9 @@ pub(crate) fn create(
 }
 
 /// Key rotation v2 (spec 6.2, 15 step 6): `create` with this device's
-/// keys, name, kind and mode, the genesis written with the account.
+/// keys, name, kind and mode, the genesis written with the account. `org`:
+/// a managed account (OnePass Business), its genesis naming the org.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_v2(
     db_path: &str,
     password: &str,
@@ -114,6 +120,7 @@ pub(crate) fn create_v2(
     name: &str,
     kind: onepass_core::devices::DeviceKind,
     mode: onepass_core::devices::DeviceMode,
+    org: Option<onepass_core::repo::ManagedGenesis>,
 ) -> Result<FfiCreatedAccount, OnePassError> {
     let store = open_store(db_path)?;
     match store.account_state()? {
@@ -122,7 +129,7 @@ pub(crate) fn create_v2(
         AccountState::PinnedButMissing => return Err(account_missing()),
     }
     let (mut repo, secret_key) =
-        Repository::create_account_v2(store, password, kdf, keys, name, kind, mode)?;
+        Repository::create_account_v2_with_org(store, password, kdf, keys, name, kind, mode, org)?;
     repo.persist_device_state()?;
     let session = Session::new(repo)?;
     Ok(FfiCreatedAccount {
@@ -398,6 +405,59 @@ pub fn totp_now(secret_or_uri: String, unix_seconds: u64) -> Result<FfiTotpCode,
 #[uniffi::export]
 pub fn previous_otp_field_prefix() -> String {
     onepass_core::totp::PREVIOUS_OTP_FIELD_PREFIX.to_owned()
+}
+
+/// What `attach_otp` did to the item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiOtpAttach {
+    Added,
+    Same,
+    Conflict,
+    Replaced,
+}
+
+/// The item after `attach_otp` and what happened to it. Holds a one-time
+/// password seed: never logged.
+#[derive(Clone, PartialEq, uniffi::Record)]
+pub struct FfiAttachOtp {
+    pub item: types::FfiItem,
+    pub outcome: FfiOtpAttach,
+}
+
+impl std::fmt::Debug for FfiAttachOtp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FfiAttachOtp")
+            .field("item", &"[redacted]")
+            .field("outcome", &self.outcome)
+            .finish()
+    }
+}
+
+/// Writes a one-time password seed on a Login (the core's `attach_otp`): an
+/// `otpauth://totp/` URI or a bare base32 secret. A different stored code is
+/// replaced only when `replace` is set, and then kept in a concealed
+/// `previous_otp_<n>` field labelled `previous_label`. The item is returned,
+/// not stored: the caller saves it.
+#[uniffi::export]
+pub fn attach_otp(
+    item: types::FfiItem,
+    value: String,
+    replace: bool,
+    previous_label: String,
+) -> Result<FfiAttachOtp, OnePassError> {
+    let value = Zeroizing::new(value);
+    let now = time::OffsetDateTime::now_utc();
+    let mut core = convert::item_to_core(&item, &convert::Kept::new(None, true), now)?;
+    let outcome = match totp::attach_otp(&mut core, &value, replace, &previous_label)? {
+        totp::OtpAttach::Added => FfiOtpAttach::Added,
+        totp::OtpAttach::Same => FfiOtpAttach::Same,
+        totp::OtpAttach::Conflict => FfiOtpAttach::Conflict,
+        totp::OtpAttach::Replaced => FfiOtpAttach::Replaced,
+    };
+    Ok(FfiAttachOtp {
+        item: convert::item_to_ffi(&core),
+        outcome,
+    })
 }
 
 /// The accounts of an `otpauth://` or `otpauth-migration://` link opened by

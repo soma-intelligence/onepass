@@ -32,6 +32,8 @@ export interface MenuField {
   notice?: MenuNotice;
   /** That plan is a signup whose form can make a passkey: the user picks password or passkey (ids and refs only). */
   signup?: PlanOut;
+  /** Page-influenced hint, like `formKind`: a lone e-mail step of a sign-up, the identities' e-mails listed first. */
+  signupStep?: true;
 }
 
 export interface MenuRecord extends MenuField {
@@ -81,6 +83,7 @@ export class MenuTokens {
     if (field.first) rec.first = [...field.first];
     if (field.planned) rec.planned = { roles: [...field.planned.roles], intent: field.planned.intent };
     if (field.signup) rec.signup = field.signup;
+    if (field.signupStep) rec.signupStep = true;
     if (field.notice) rec.notice = field.notice;
     if (cs.documentId !== undefined) rec.documentId = cs.documentId;
     this.mem.set(token, rec);

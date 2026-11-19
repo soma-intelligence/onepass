@@ -18,17 +18,21 @@ struct AgentsSettings: View {
 
     var body: some View {
         Form {
-            if let agents = model.phoneAgents, agents.isAvailable {
-                content(agents)
-            } else {
-                Section {
-                    Label("settings.requiresIcloudVersionOf", systemImage: "icloud.slash")
-                        .foregroundStyle(.secondary)
-                } footer: {
-                    Text("settings.agentRequestsGoThrough")
+            Group {
+                if let agents = model.phoneAgents, agents.isAvailable {
+                    content(agents)
+                } else {
+                    Section {
+                        Label("settings.requiresIcloudVersionOf", systemImage: "icloud.slash")
+                            .foregroundStyle(.secondary)
+                    } footer: {
+                        SettingsFootnote("settings.agentRequestsGoThrough")
+                    }
                 }
             }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Agents")
         .disabled(busy)
         .task { await model.phoneAgents?.refresh() }
@@ -76,11 +80,11 @@ struct AgentsSettings: View {
                     .foregroundStyle(.orange)
             }
         } footer: {
-            Text("settings.agents.footer")
+            SettingsFootnote("settings.agents.footer")
         }
 
         ForEach(agents.macs) { mac in
-            Section(mac.name) {
+            Section {
                 LabeledContent("settings.remoteUnlock") {
                     mac.unlockEnrolled ? Text("app.on") : Text("app.off")
                 }
@@ -99,6 +103,8 @@ struct AgentsSettings: View {
                     }
                     .accessibilityIdentifier("agents.forget")
                 }
+            } header: {
+                SettingsHeader(Text(verbatim: mac.name))
             }
         }
         .confirmationDialog(
@@ -115,16 +121,18 @@ struct AgentsSettings: View {
         }
 
         if !agents.log.isEmpty {
-            Section("app.log") {
+            Section {
                 ForEach(agents.log) { line in
                     VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(verbatim: "\(line.client) · \(AgentRequestText.actionTitle(line.action))")
                             .font(.callout)
-                        Text(verbatim: "\(line.decision) · \(line.mac) · \(line.date.formatted(date: .abbreviated, time: .shortened))")
+                        Text(verbatim: "\(line.decision) · \(line.mac) · \(line.date.formatted(.dateTime.day().month(.abbreviated).year().hour().minute()))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
+            } header: {
+                SettingsHeader("app.log")
             }
         }
     }

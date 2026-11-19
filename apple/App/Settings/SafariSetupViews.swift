@@ -87,17 +87,20 @@ struct SafariExtensionSection: View {
                     .foregroundStyle(.green)
                     .accessibilityIdentifier("safari.setup.seen")
             }
-            SafariSetupSteps()
+            // The three steps and the note on what OnePass can know sit behind the info button
+            // (owner feedback 2026-11-16: less text under the cards).
             Button("safari.setup.openSettings", systemImage: "gear") { SafariExtensionSetup.openSettings() }
                 .accessibilityIdentifier("safari.setup.open")
             #endif
         } header: {
+            #if os(macOS)
             Text(verbatim: "Safari")
+            #else
+            SettingsHeader(Text(verbatim: "Safari"), info: SafariSetupSteps.text, id: "safari.setup.info")
+            #endif
         } footer: {
             #if os(macOS)
             Text("safari.setup.mac.footer")
-            #else
-            Text("safari.setup.ios.footer")
             #endif
         }
         .task { await model.refreshSafariExtensionState() }
@@ -115,6 +118,13 @@ struct SafariSetupSteps: View {
             step(3, "safari.setup.ios.step3")
         }
         .font(.footnote)
+    }
+
+    /// The steps as one text, for the info button of Réglages > Remplissage automatique.
+    static var text: Text {
+        Text(verbatim: "1. ") + Text("safari.setup.ios.step1") + Text(verbatim: "\n2. ") + Text("safari.setup.ios.step2")
+            + Text(verbatim: "\n3. ") + Text("safari.setup.ios.step3") + Text(verbatim: "\n\n")
+            + Text("safari.setup.ios.footer")
     }
 
     private func step(_ n: Int, _ text: LocalizedStringKey) -> some View {

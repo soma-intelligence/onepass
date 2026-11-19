@@ -1041,6 +1041,21 @@ button.sc-chip:hover { color: var(--text); }
 .pp-pending-row .sc-quiet { margin-left: auto; }
 .pp-pending-row .t1 { font-size: var(--type-footnote); font-weight: 600; white-space: normal; text-wrap: pretty; }
 
+/* The two-factor setup card (setup.html): the save card's shape; its logins as the vault list,
+   two lines each; the code shown when no field took it. */
+.sc-pick { padding-top: var(--space-xs); padding-bottom: var(--space-xs); }
+.sc-pick .stack { flex-grow: 1; min-width: 0; gap: 1px; }
+.sc-pick .t1 { font-size: var(--type-body); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-pick .t2 { font-size: var(--type-footnote); color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup .sc-row > .mark { flex-shrink: 0; }
+.setup .sc-note { margin: 0; font-size: var(--type-footnote); color: var(--text2); overflow-wrap: anywhere; }
+.setup .sc-warn { color: var(--warn-ink); }
+.sc-codebox { margin: 0 var(--space-l) var(--space-m); padding: var(--space-s) var(--space-m); border-radius: var(--r-m); background: var(--fill-2); display: flex; flex-direction: column; gap: var(--space-xxs); }
+.sc-code-row { display: flex; align-items: baseline; gap: var(--space-s); }
+.sc-code { font-family: var(--mono); font-size: var(--type-title); font-weight: 700; letter-spacing: .08em; font-variant-numeric: tabular-nums; color: var(--text); user-select: all; }
+.sc-count { margin-left: auto; font-size: var(--type-footnote); color: var(--text3); font-variant-numeric: tabular-nums; }
+.sc-expired .sc-code { color: var(--text3); text-decoration: line-through; }
+
 /* Touch screens (iPhone, iPad): the save card keeps its quiet size, its buttons grow to a
    finger's reach; the one-click pill's and the progress card's close and "Sign in" too (44 px).
    Last in the file so it wins over the rules above; `:root.touch` as above. */

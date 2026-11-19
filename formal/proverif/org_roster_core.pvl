@@ -1,0 +1,302 @@
+(* Modèle formel OnePass Business (plan B, E1) : liste signée des membres
+   d'une organisation (roster), lignée des propriétaires et épingle de
+   l'organisation. Déclarations et processus partagés par org_roster.pv et
+   son témoin négatif org_roster_no_role_check.pv (même processus System,
+   seul le booléen check_roles change).
+
+   Code modélisé (le modèle suit le CODE, plus strict que le plan) :
+   - core/onepass-core/src/org/lineage.rs : verify_signatures, quorum
+     n/2+1 sur des COMPTES propriétaires distincts de la génération
+     parente, plus la signature de l'identité de l'organisation (D4) ;
+   - core/onepass-core/src/org/rules.rs : resolve_signer, check_entry,
+     grantable, accept_next_roster ; décisions X7 à X11 du registre
+     d'exécution du plan ;
+   - core/onepass-core/src/org/pin.rs : pin_org, advance_lineage (une
+     empreinte différente est OrgPinMismatch, jamais suivie) ;
+   - core/onepass-core/src/org/identity.rs : org_fingerprint, empreinte
+     de la genèse entière (X16).
+
+   Distribution (spec 15, A11, T-ADM) :
+   - identité de l'organisation skI : la genèse qui la nomme est épinglée
+     par son empreinte (MDM ou DNS), calculée sur la genèse entière (clé
+     d'identité et propriétaires, X16). Les propriétaires peuvent ouvrir
+     l'identité (D4) : elle fuit avec O3.
+   - O1 : propriétaire, appareil dO1 honnête, plus un ancien appareil
+     dO1old que le roster épinglé liste encore mais qu'aucune tête de
+     lignée ne nomme (X11), perdu : sa clé est à l'attaquant.
+   - O2 : propriétaire, appareil dO2 honnête.
+   - O3 : propriétaire de la génération g0, deux appareils d3a et d3b,
+     compromis (clés à l'attaquant), retiré par le changement g0 -> g1
+     que O1 et O2 signent. Le roster épinglé le liste encore comme Owner
+     (roster resté sur une tête plus ancienne, cas X8).
+   - A : Admin, honnête. Ajoute Bob.
+   - U : UserManager et Auditor, compromis (T-ADM, gestionnaire
+     malveillant).
+   - P : Provisioner, compromis (agent A11).
+   - Bob : nouveau membre honnête ; Mallory : nom choisi par l'attaquant.
+   Le serveur (boîte de l'organisation, CloudKit) est le canal public c.
+
+   Abstractions (chacune est un choix borné, pas un oubli) :
+   - Rôles bornés à Owner, Admin, UserManager, Auditor, Provisioner ;
+     PolicyManager n'est pas modélisé (il se comporte comme Auditor dans
+     GRANT : accordable par Owner, Admin et un UserManager qui le détient).
+   - Un roster est réduit à UN changement signé : add(m) (nouveau membre
+     Invited) ou grant(m, r) (le rôle r donné à m). Le code compare deux
+     corps complets (check_transition) ; ici seul le droit du signataire
+     sur ce changement est modélisé.
+   - Le roster épinglé est la table pinned_roles(clé d'appareil, compte,
+     rôle), une ligne par rôle, remplie par la configuration de confiance
+     (l'épingle déjà acceptée). Une clé qui n'y est pas n'a aucun droit
+     dans le modèle. Écart au brief : la table porte aussi le compte,
+     pour l'autorité Owner par compte et par appareil (X8, X11).
+   - L'autorité Owner vaut seulement pour un appareil listé dans la tête
+     de lignée courante pour ce compte (table head_owner, X8, X11). La
+     tête courante du client roster est g1, fixée par la configuration
+     (celle qu'un client à jour a vérifiée) ; le client lignée vérifie à
+     part l'acceptation d'un enregistrement de lignée. Les deux ne sont
+     pas chaînés dans un même client.
+   - GRANT(S) : Owner ou Admin accordent Admin, UserManager, Auditor,
+     Provisioner ; un UserManager accorde UserManager, Auditor,
+     Provisioner seulement s'il détient lui-même ce rôle (règle de
+     l'ensemble englobant) et jamais Admin ; le bit Owner n'est jamais
+     accordé par un roster (il suit la lignée, miroir du code).
+   - Quorum : le client lignée exige exactement deux signatures
+     d'appareils de deux COMPTES distincts de la génération parente, plus
+     la signature de l'identité. Deux vaut n/2+1 pour g0 (n = 3) et g1
+     (n = 2), les seules générations du modèle ; les autres n ne sont pas
+     modélisés (testés par one_owner_of_two_is_refused,
+     two_owners_of_three_pass).
+   - L'épingle est la comparaison de l'empreinte fpr(genèse) avec la
+     valeur épinglée, où la genèse genesis(clé d'identité, propriétaires)
+     porte la clé et l'ensemble des propriétaires (X16) ; la provenance de
+     la valeur (MDM, DNS, TOFU) est hors modèle. Le client lignée reçoit
+     la clé d'identité de la genèse épinglée (lineage.identity_pub). Les
+     signatures des propriétaires sur la genèse (D5) ne sont pas
+     modélisées : l'attaquant tient déjà les appareils de O3.
+
+   Limites documentées (propriétés que ces abstractions ne capturent pas) :
+   - Chaîne du roster (seq, prev_hash, fourche, retour en arrière, trou
+     NotFound) et de la lignée (parent = tête, OrgLineageRollback, fourche)
+     : non modélisées, couvertes par les tests de rules.rs, pin.rs et par
+     le fuzzing des décodeurs. Le point de contrôle du roster porté par
+     OwnersChanged (X17, rosters jugés sous la génération précédente
+     jusqu'au point de contrôle fixé par son hash) n'est pas modélisé
+     non plus : le client roster juge tout sous g1.
+   - Miroir des propriétaires (X9), synchronisation des clés d'un Owner
+     (X10), prise de contrôle par appareils ou activation (X7), clés
+     figées des membres (X12), suspension et retrait par un Provisioner,
+     état Removed terminal, rebase (X13) : non modélisés.
+   - Une seule signature d'appareil invalide fait tomber l'enregistrement
+     de lignée dans le code ; le modèle ne lit que deux signatures.
+   - Voie X11 de resolve_signer (rules.rs) : un appareil absent du roster
+     épinglé mais listé par la tête de lignée pour un Owner Active signe
+     avec les rôles de cette entrée. Non modélisée ; ici les appareils de
+     g1 sont honnêtes, donc la voie n'ouvrirait aucune attaque nouvelle.
+   - Un ancien propriétaire perd Owner mais garde ses autres rôles (X8) ;
+     O3 ne détient que Owner, ce chemin n'est pas exercé.
+   - fpr est un constructeur libre : pas de collision d'empreinte
+     (hypothèse sur SHA-256). La signature de genèse n'ajoute rien à
+     l'épingle dans ce scénario, puisque skI fuit avec O3 : c'est
+     l'empreinte de la genèse entière qui refuse une genèse jumelle (même
+     identité, autres propriétaires, requête de la genèse jumelle).
+   - R6 (personne ne donne Provisioner) est vraie aussi parce qu'aucun
+     signataire honnête ne donne ce rôle ; la mutation qui retire la
+     règle de l'ensemble englobant rend R6 fausse (vérifiée à la revue),
+     ce qui montre que la règle porte la requête.
+   - La signature d'identité n'apporte rien dans ce scénario (l'identité
+     fuit avec O3) : la requête de lignée repose sur le quorum seul. Son
+     rôle propre (lier la lignée à l'organisation épinglée) n'est montré
+     que par la requête d'épingle.
+   - La règle des comptes distincts n'a pas de témoin négatif dans un
+     fichier séparé : l'événement QuorumCandidate, émis juste avant le
+     test a1 <> a2, montre que l'attaquant y arrive avec deux appareils de
+     O3 sur un corps qu'aucun honnête n'a signé (requête de sanité
+     attendue false), donc que ce test est ce qui l'arrête.
+   - Le témoin négatif retire tout le contrôle des rôles (rôles du roster
+     épinglé et tête de lignée pour Owner) d'un coup ; la part de la tête
+     de lignée est isolée par les requêtes sur O3 (seul rôle : Owner) et
+     sur l'ancien appareil de O1, vraies ici, fausses dans le témoin. *)
+
+(* core/onepass-core/src/org/mod.rs : ORG_ROSTER_DOMAIN, ORG_CHANGE_DOMAIN,
+   ORG_GENESIS_DOMAIN *)
+const dom_org_roster: bitstring.
+const dom_org_change: bitstring.
+const dom_org_genesis: bitstring.
+
+(* core/onepass-core/src/org/roster.rs : Role *)
+const role_owner: bitstring.
+const role_admin: bitstring.
+const role_um: bitstring.
+const role_aud: bitstring.
+const role_prov: bitstring.
+
+(* Comptes. *)
+const o1: bitstring.
+const o2: bitstring.
+const o3: bitstring.
+const acct_admin: bitstring.
+const acct_um: bitstring.
+const acct_prov: bitstring.
+free bob: bitstring.
+free mallory: bitstring.
+
+(* Générations de la lignée : g0 (genèse, O1 O2 O3), g1 (O3 retiré),
+   g_evil (un ensemble choisi par l'attaquant, pour la requête témoin). *)
+const g0: bitstring.
+const g1: bitstring.
+free g_evil: bitstring.
+
+(* Appareils clients qui vérifient. *)
+const dev1: bitstring.
+const dev2: bitstring.
+
+(* Corps signés. *)
+fun add(bitstring): bitstring [data].
+fun grant(bitstring, bitstring): bitstring [data].
+fun owners_changed(bitstring, bitstring): bitstring [data].
+fun genesis(pkey, bitstring): bitstring [data].
+
+(* Empreinte de l'organisation (identity.rs, org_fingerprint, X16) :
+   SHA-256 sur le hash de la genèse entière. *)
+fun fpr(bitstring): bitstring.
+
+(* Roster épinglé : clé d'appareil, compte, rôle. *)
+table pinned_roles(pkey, bitstring, bitstring).
+(* Têtes de lignée : génération, compte propriétaire, clé d'appareil. *)
+table head_owner(bitstring, bitstring, pkey).
+
+event OrgIdentity(pkey).
+event RoleHolderSigned(bitstring).
+event HonestOwnerSigned(bitstring).
+event AddAcceptedFrom(bitstring, bitstring, bitstring).
+event MemberAccepted(bitstring, bitstring).
+event GrantAccepted(bitstring, bitstring, bitstring).
+event ChangeAcceptedBy(bitstring, bitstring, bitstring).
+event GenesisPinned(bitstring, pkey, bitstring).
+event GenesisCandidate(bitstring, pkey, bitstring).
+event QuorumCandidate(bitstring, bitstring, bitstring, bitstring).
+event LineageAccepted(bitstring, bitstring).
+
+(* Un détenteur de rôle honnête (Owner O1 ou Admin A) signe un corps. *)
+let HonestSigner(sk: skey, b: bitstring) =
+  event RoleHolderSigned(b);
+  out(c, (pk(sk), b, sign_dom(sk, dom_org_roster, b))).
+
+(* Un propriétaire honnête co-signe le changement de lignée. *)
+let HonestOwnerApprove(sk: skey, b: bitstring) =
+  event HonestOwnerSigned(b);
+  out(c, (pk(sk), sign_dom(sk, dom_org_change, b))).
+
+(* Acceptation d'un changement de roster signé par la clé vk (déjà
+   vérifiée), dont le roster épinglé dit (compte sm, rôle r). *)
+let Accept(d: bitstring, sm: bitstring, r: bitstring, b: bitstring) =
+  event ChangeAcceptedBy(d, sm, b);
+  let add(m) = b in
+    ( event AddAcceptedFrom(d, m, r);
+      event MemberAccepted(d, m) )
+  else let grant(m, gr) = b in
+    event GrantAccepted(d, m, gr).
+
+(* Contrôle des rôles (rules.rs, check_entry et grantable) pour un
+   signataire de rôle r effectif. *)
+let CheckedAccept(d: bitstring, vk: pkey, sm: bitstring, r: bitstring, b: bitstring) =
+  let add(m) = b in
+    ( if r = role_owner || r = role_admin || r = role_um then
+        Accept(d, sm, r, b) )
+  else let grant(m, gr) = b in
+    ( if r = role_owner || r = role_admin then
+        ( if gr = role_admin || gr = role_um || gr = role_aud || gr = role_prov then
+            Accept(d, sm, r, b) )
+      else if r = role_um then
+        ( if gr = role_um || gr = role_aud || gr = role_prov then
+            (* Règle de l'ensemble englobant : le UserManager détient gr. *)
+            get pinned_roles(=vk, =sm, =gr) in
+              Accept(d, sm, r, b) ) ).
+
+(* Client qui reçoit un roster du serveur (accept_next_roster). *)
+let RosterClient(d: bitstring, check_roles: bool) =
+  in(c, (vk: pkey, b: bitstring, s: bitstring));
+  if verify_dom(vk, dom_org_roster, b, s) then
+  get pinned_roles(=vk, sm, r) in
+  if check_roles then
+    ( if r = role_owner then
+        (* X8, X11 : Owner seulement pour un appareil de ce compte dans la
+           tête de lignée courante g1. *)
+        ( get head_owner(=g1, =sm, =vk) in
+            CheckedAccept(d, vk, sm, r, b) )
+      else
+        CheckedAccept(d, vk, sm, r, b) )
+  else
+    Accept(d, sm, r, b).
+
+(* Client qui épingle la genèse servie (pin_org) : l'empreinte de la
+   genèse entière doit être celle épinglée, sinon OrgPinMismatch, jamais
+   suivie. La signature est vérifiée d'abord (pin_org vérifie la genèse
+   avant de comparer) : GenesisCandidate marque une genèse signée qui
+   arrive à la comparaison. *)
+let PinClient(d: bitstring, pinned: bitstring) =
+  in(c, (gb: bitstring, sG: bitstring));
+  let genesis(vkG, ow) = gb in
+  if verify_dom(vkG, dom_org_genesis, gb, sG) then
+  event GenesisCandidate(d, vkG, ow);
+  if fpr(gb) = pinned then
+  event GenesisPinned(d, vkG, ow).
+
+(* Client qui applique un changement de lignée (OrgLineage::apply,
+   verify_signatures) : identité épinglée, deux appareils de deux comptes
+   distincts de la génération parente. *)
+let LineageClient(d: bitstring, pinned_identity: pkey) =
+  in(c, (vkI: pkey, par: bitstring, nh: bitstring, sI: bitstring,
+         vk1: pkey, s1: bitstring, vk2: pkey, s2: bitstring));
+  if vkI = pinned_identity then
+  let b = owners_changed(par, nh) in
+  if verify_dom(vkI, dom_org_change, b, sI) then
+  if verify_dom(vk1, dom_org_change, b, s1) then
+  if verify_dom(vk2, dom_org_change, b, s2) then
+  get head_owner(=par, a1, =vk1) in
+  get head_owner(=par, a2, =vk2) in
+  event QuorumCandidate(d, b, a1, a2);
+  if a1 <> a2 then
+  event LineageAccepted(d, b).
+
+(* Le système entier, identique pour le modèle et son témoin négatif. *)
+let System(check_roles: bool) =
+  new skI: skey;
+  new dO1: skey; new dO1old: skey; new dO2: skey;
+  new d3a: skey; new d3b: skey;
+  new dA: skey; new dU: skey; new dP: skey;
+  event OrgIdentity(pk(skI));
+  out(c, (pk(skI), pk(dO1), pk(dO1old), pk(dO2), pk(d3a), pk(d3b),
+          pk(dA), pk(dU), pk(dP)));
+  (* Compromis : O3 (ses deux appareils et l'identité qu'il peut ouvrir),
+     l'ancien appareil perdu de O1, le UserManager U, le Provisioner P. *)
+  out(c, (skI, d3a, d3b, dO1old, dU, dP));
+  (* Lignée : g0 = {O1 : dO1 ; O2 : dO2 ; O3 : d3a, d3b}, g1 = {O1, O2}. *)
+  insert head_owner(g0, o1, pk(dO1));
+  insert head_owner(g0, o2, pk(dO2));
+  insert head_owner(g0, o3, pk(d3a));
+  insert head_owner(g0, o3, pk(d3b));
+  insert head_owner(g1, o1, pk(dO1));
+  insert head_owner(g1, o2, pk(dO2));
+  (* Roster épinglé (resté sur une tête plus ancienne : O3 y est Owner,
+     dO1old y est un appareil de O1). *)
+  insert pinned_roles(pk(dO1), o1, role_owner);
+  insert pinned_roles(pk(dO1old), o1, role_owner);
+  insert pinned_roles(pk(dO2), o2, role_owner);
+  insert pinned_roles(pk(d3a), o3, role_owner);
+  insert pinned_roles(pk(d3b), o3, role_owner);
+  insert pinned_roles(pk(dA), acct_admin, role_admin);
+  insert pinned_roles(pk(dU), acct_um, role_um);
+  insert pinned_roles(pk(dU), acct_um, role_aud);
+  insert pinned_roles(pk(dP), acct_prov, role_prov);
+  (* Genèse et changement g0 -> g1 signés par l'identité. *)
+  out(c, (genesis(pk(skI), g0), sign_dom(skI, dom_org_genesis, genesis(pk(skI), g0))));
+  out(c, sign_dom(skI, dom_org_change, owners_changed(g0, g1)));
+  ( HonestSigner(dA, add(bob))
+  | HonestSigner(dO1, grant(bob, role_admin))
+  | HonestOwnerApprove(dO1, owners_changed(g0, g1))
+  | HonestOwnerApprove(dO2, owners_changed(g0, g1))
+  | !RosterClient(dev1, check_roles)
+  | !RosterClient(dev2, check_roles)
+  | !PinClient(dev1, fpr(genesis(pk(skI), g0)))
+  | !LineageClient(dev1, pk(skI)) ).

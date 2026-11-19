@@ -53,11 +53,12 @@ const STATUS_OK = { locked: false, account: "alex@atlas.dev", vaults: 2 };
 
 async function setup(
   a: Answer = answer,
-  opts: { paired?: boolean; openError?: Error; pair?: ConstructorParameters<typeof FakeClient>[2] } = {},
+  opts: { paired?: boolean; openError?: Error; pair?: ConstructorParameters<typeof FakeClient>[2]; appDown?: boolean } = {},
 ) {
   const ext = new FakeExt();
   const pairings = new MemoryPairingStore();
   if (opts.paired !== false) await new Store(ext, pairings).setPairing(record());
+  const opened = { n: 0 };
   const client = new FakeClient(
     a,
     async () => {
@@ -69,10 +70,15 @@ async function setup(
         throw new BridgeError("host", "refused", "not_allowed");
       }),
   );
-  const opened = { n: 0 };
   const bg = createBackground(ext, {
     pairings,
-    newClient: () => client,
+    // Not running until the launch link opens it.
+    newClient: () =>
+      opts.appDown && opened.n === 0
+        ? new FakeClient(answer, async () => {
+            throw new BridgeError("transport", "Specified native messaging host not found.");
+          })
+        : client,
     sleep: async () => undefined,
     now: () => 42,
     openApp: async () => {
@@ -91,11 +97,19 @@ async function setup(
 }
 
 describe("popup background", () => {
-  it("Déverrouiller dans OnePass brings the app forward and asks it to unlock", async () => {
+  it("Déverrouiller dans OnePass with the app running: the unlock alone, Touch ID over the browser", async () => {
     const { send, client, opened } = await setup();
     expect(await send({ type: "popup_unlock" })).toHaveProperty("ok");
-    expect(opened.n).toBe(1);
+    // The launch link would bring the window forward before Touch ID: the app does it only when refused.
+    expect(opened.n).toBe(0);
     // Over a page: the unlock names its origin (the tab's top frame).
+    expect(client.requests.at(-1)).toEqual({ op: "unlock", origin: SITE });
+  });
+
+  it("Déverrouiller dans OnePass with the app not running: the launch link opens it, then the unlock goes", async () => {
+    const { send, client, opened } = await setup(answer, { appDown: true });
+    expect(await send({ type: "popup_unlock" })).toHaveProperty("ok");
+    expect(opened.n).toBe(1);
     expect(client.requests.at(-1)).toEqual({ op: "unlock", origin: SITE });
   });
 

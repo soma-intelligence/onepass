@@ -40,4 +40,6 @@ fuzz_target!(|data: &[u8]| {
     run::<Located>(data);
     run::<ChildKind>(data);
     run::<CreateChild>(data);
+    run::<CreateOrgInvite>(data);
+    run::<OrgInviteCreated>(data);
 });

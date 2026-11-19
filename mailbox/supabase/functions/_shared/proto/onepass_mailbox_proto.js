@@ -130,6 +130,21 @@ export function decodeCreateChild(bytes) {
 }
 
 /**
+ * `{ uses, ttl_hours }`, one use and 1 to 168 hours.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeCreateOrgInvite(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeCreateOrgInvite(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {Uint8Array} bytes
  * @returns {any}
  */
@@ -167,6 +182,21 @@ export function decodeLocateRequest(bytes) {
     const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.decodeLocateRequest(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * `{ token }`, 32 bytes.
+ * @param {Uint8Array} bytes
+ * @returns {any}
+ */
+export function decodeOrgInviteCreated(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decodeOrgInviteCreated(ptr0, len0);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -277,6 +307,20 @@ export function encodeConfig(v) {
  * @param {any} v
  * @returns {Uint8Array}
  */
+export function encodeCreateOrgInvite(v) {
+    const ret = wasm.encodeCreateOrgInvite(v);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v1;
+}
+
+/**
+ * @param {any} v
+ * @returns {Uint8Array}
+ */
 export function encodeCreated(v) {
     const ret = wasm.encodeCreated(v);
     if (ret[3]) {
@@ -321,6 +365,20 @@ export function encodeInfo(v) {
  */
 export function encodeLocated(v) {
     const ret = wasm.encodeLocated(v);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v1;
+}
+
+/**
+ * @param {any} v
+ * @returns {Uint8Array}
+ */
+export function encodeOrgInviteCreated(v) {
+    const ret = wasm.encodeOrgInviteCreated(v);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }

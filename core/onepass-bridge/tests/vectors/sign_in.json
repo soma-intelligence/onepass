@@ -1,0 +1,90 @@
+{
+  "cases": [
+    {
+      "at": 1800000001,
+      "item_id": "0192f1a0-5a1e-7000-8000-00000000a7a5",
+      "item_id_again": null,
+      "name": "same_site",
+      "origin": "https://www.atlas-cloud.test",
+      "top_origin": "https://www.atlas-cloud.test"
+    },
+    {
+      "at": 1800000001,
+      "item_id": "0192f1a0-5a1e-7000-8000-00000000a7a5",
+      "item_id_again": null,
+      "name": "exact_host",
+      "origin": "https://atlas-cloud.test",
+      "top_origin": "https://atlas-cloud.test"
+    },
+    {
+      "at": 1800000001,
+      "item_id": null,
+      "item_id_again": null,
+      "name": "wrong_host",
+      "origin": "https://evil.test",
+      "top_origin": "https://evil.test"
+    },
+    {
+      "at": 1800000001,
+      "item_id": null,
+      "item_id_again": null,
+      "name": "lookalike",
+      "origin": "https://atlas-cloud.test.evil.test",
+      "top_origin": "https://atlas-cloud.test.evil.test"
+    },
+    {
+      "at": 1800000060,
+      "item_id": null,
+      "item_id_again": null,
+      "name": "expired",
+      "origin": "https://www.atlas-cloud.test",
+      "top_origin": "https://www.atlas-cloud.test"
+    },
+    {
+      "at": 1800000001,
+      "item_id": null,
+      "item_id_again": null,
+      "name": "http",
+      "origin": "http://atlas-cloud.test",
+      "top_origin": "http://atlas-cloud.test"
+    },
+    {
+      "at": 1800000001,
+      "item_id": null,
+      "item_id_again": null,
+      "name": "cross_site_frame",
+      "origin": "https://www.atlas-cloud.test",
+      "top_origin": "https://evil.test"
+    },
+    {
+      "at": 1800000001,
+      "item_id": null,
+      "item_id_again": null,
+      "name": "same_site_other_origin_frame",
+      "origin": "https://login.atlas-cloud.test",
+      "top_origin": "https://www.atlas-cloud.test"
+    }
+  ],
+  "item_id": "0192f1a0-5a1e-7000-8000-00000000a7a5",
+  "item_url": "https://atlas-cloud.test/login",
+  "recorded_at": 1800000000,
+  "reply_none": {
+    "id": 7,
+    "ok": {
+      "item_id": null
+    }
+  },
+  "reply_some": {
+    "id": 7,
+    "ok": {
+      "item_id": "0192f1a0-5a1e-7000-8000-00000000a7a5"
+    }
+  },
+  "request": {
+    "id": 7,
+    "op": "take_sign_in",
+    "origin": "https://www.atlas-cloud.test",
+    "top_origin": "https://www.atlas-cloud.test"
+  },
+  "ttl": 60
+}

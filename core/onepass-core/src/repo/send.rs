@@ -74,6 +74,7 @@ impl<S: RecordStore> Repository<S> {
         item.events.clear();
         item.usage.clear();
         item.usage_forgotten.clear();
+        item.key_uses = Default::default();
         item.attachments.clear();
         item.custom_icon = None;
         let plain = zeroize::Zeroizing::new(

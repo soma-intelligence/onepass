@@ -1,0 +1,369 @@
+//! Invitation and join request (spec 5.6, plan B Task 9). An admin invites
+//! a member: a fresh account id and a random nonce, the roster keeps only
+//! `invite_commit(org, account, nonce)` (D1). The member creates a managed
+//! account whose genesis (format 2) names the org and that account id, and
+//! sends a join request signed by the genesis creator device under
+//! `ORG_JOIN_DOMAIN`. The admin verifies it against the pinned roster and
+//! the org fingerprint, then activates the member (Invited -> Active).
+//!
+//! `join_code` is display only: five words derived from the account id and
+//! identity key; the member reads them on its screen and the admin compares
+//! them with the words of the request in the console, which catches a
+//! request swapped by a server that saw the invitation nonce (README 20.7,
+//! ruling R9a). Nothing verifies it and no decision rests on it.
+
+use serde::{Deserialize, Serialize};
+
+use super::identity::fingerprint_words;
+use super::{
+    MAX_DISPLAY_NAME_BYTES, MAX_ORG_RECORD_BYTES, MemberState, ORG_FORMAT, ORG_JOIN_CODE_PREFIX,
+    ORG_JOIN_DOMAIN, OrgId, OrgMember, RoleSet, RosterBody, invite_commit, member_kem_hash, sha256,
+};
+use crate::crypto::{HybridKemPublic, HybridSignature, IdentityVerifyingKey, random_array};
+use crate::device_keys::{DeviceKeys, DevicePublic};
+use crate::generator::Wordlist;
+use crate::lineage::{
+    GENESIS_FORMAT_MANAGED, GenesisBody, LineageRecord, Signed, check_hybrid_sig,
+    decode_strict_with, verify_genesis,
+};
+use crate::{Error, Id, IntegrityError, Result, ValidationError};
+
+/// Most bytes of the account genesis carried by a join request.
+pub const MAX_JOIN_GENESIS_BYTES: usize = 64 * 1024;
+/// Devices of a join request in E1: exactly the genesis creator.
+const JOIN_DEVICES: usize = 1;
+
+fn bad(what: &'static str) -> Error {
+    Error::InvalidFormat(what)
+}
+
+fn invalid(field: &str, reason: &'static str) -> Error {
+    Error::Validation(ValidationError {
+        field: field.into(),
+        reason,
+    })
+}
+
+fn wrong_context() -> Error {
+    IntegrityError::WrongContext.into()
+}
+
+/// Control characters, and invisible or direction-changing characters that
+/// would let a display name pass for another (ruling R9b): soft hyphen,
+/// zero-width and directional marks (the Arabic letter mark included),
+/// bidi embeddings and isolates, word joiner and invisible operators, BOM,
+/// the combining grapheme joiner, the Mongolian vowel separator, line and
+/// paragraph separators, interlinear annotation characters and the tag
+/// block.
+fn refused_name_char(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{00AD}'
+                | '\u{034F}'
+                | '\u{061C}'
+                | '\u{180E}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{2028}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+                | '\u{FFF9}'..='\u{FFFB}'
+                | '\u{E0000}'..='\u{E007F}'
+        )
+}
+
+/// What the invite carries besides the server URL and the org fingerprint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Invitation {
+    pub account_id: Id,
+    pub nonce: [u8; 32],
+}
+
+/// The roster after `prev` with a new Invited member: a fresh account id,
+/// `invite_commit(org, account, nonce)` with a random nonce, `roles` and
+/// `scim_id_hash`, no identity, device or KEM hash.
+pub fn invite_member(
+    prev: &RosterBody,
+    scim_id_hash: [u8; 32],
+    roles: RoleSet,
+) -> Result<(RosterBody, Invitation)> {
+    let account_id = Id::new();
+    let nonce = random_array::<32>()?;
+    let mut next = prev.next()?;
+    let m = OrgMember {
+        account_id,
+        account_identity_pub: None,
+        scim_id_hash,
+        invite_commit: invite_commit(prev.org_id, account_id, &nonce),
+        account_kem_hash: [0; 32],
+        roles,
+        state: MemberState::Invited,
+        devices: Vec::new(),
+    };
+    match next
+        .members
+        .binary_search_by(|x| x.account_id.cmp(&account_id))
+    {
+        Ok(_) => return Err(invalid("account id", "already in the roster")),
+        Err(i) => next.members.insert(i, m),
+    }
+    next.check()?;
+    Ok((next, Invitation { account_id, nonce }))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JoinRequestBody {
+    pub format: u8,
+    pub org_id: OrgId,
+    pub account_id: Id,
+    pub invite_nonce: [u8; 32],
+    /// The org fingerprint the member pinned from the invite.
+    pub pinned_fpr: [u8; 32],
+    /// `LineageRecord::Genesis` of the member's managed account, at most
+    /// `MAX_JOIN_GENESIS_BYTES`.
+    #[serde(with = "serde_bytes")]
+    pub account_genesis: Vec<u8>,
+    /// Exactly one in E1: the genesis creator device.
+    pub devices: Vec<DevicePublic>,
+    /// At most `MAX_DISPLAY_NAME_BYTES` of UTF-8, no control char, shown
+    /// to the admin only.
+    pub display_name: String,
+    /// Ed25519 public key of the member's org mailbox credential.
+    pub mailbox_credential: [u8; 32],
+    /// The account KEM key, hashed into the roster on activation.
+    pub account_kem_pub: HybridKemPublic,
+    pub issued_at: i64,
+}
+
+impl JoinRequestBody {
+    /// `postcard(self)`, the signed message.
+    pub fn encode(&self) -> Vec<u8> {
+        postcard::to_allocvec(self).expect("join request body encodes")
+    }
+
+    /// Every shape rule (what `SignedJoinRequest::decode` enforces).
+    pub fn check(&self) -> Result<()> {
+        if self.format != ORG_FORMAT {
+            return Err(bad("join request format"));
+        }
+        if self.account_genesis.len() > MAX_JOIN_GENESIS_BYTES {
+            return Err(bad("join request genesis size"));
+        }
+        if self.devices.len() != JOIN_DEVICES {
+            return Err(bad("join request device count"));
+        }
+        for d in &self.devices {
+            DevicePublic::decode(&d.encode()).map_err(|_| bad("join request device"))?;
+        }
+        if self.display_name.len() > MAX_DISPLAY_NAME_BYTES
+            || self.display_name.chars().any(refused_name_char)
+        {
+            return Err(bad("join request display name"));
+        }
+        HybridKemPublic::from_bytes(&self.account_kem_pub.to_bytes())
+            .map_err(|_| bad("join request kem key"))?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedJoinRequest {
+    pub body: JoinRequestBody,
+    /// By `body.devices[0]` under `ORG_JOIN_DOMAIN` over `postcard(body)`.
+    pub device_sig: HybridSignature,
+}
+
+impl SignedJoinRequest {
+    /// Canonical postcard encoding.
+    pub fn encode(&self) -> Vec<u8> {
+        postcard::to_allocvec(self).expect("join request encodes")
+    }
+
+    /// Strict: size cap before parsing, the whole buffer, canonical
+    /// re-encoding, `JoinRequestBody::check`, the signature length. No
+    /// signature is checked and the genesis is not parsed.
+    pub fn decode(b: &[u8]) -> Result<SignedJoinRequest> {
+        if b.len() > MAX_ORG_RECORD_BYTES {
+            return Err(bad("join request size"));
+        }
+        let req: SignedJoinRequest = decode_strict_with(b, bad("join request"))?;
+        req.body.check()?;
+        check_hybrid_sig(&req.device_sig)?;
+        Ok(req)
+    }
+}
+
+/// Checks `body`, signs it with `keys` and refuses keys that do not match
+/// `body.devices[0]`.
+pub fn sign_join_request(body: JoinRequestBody, keys: &DeviceKeys) -> Result<SignedJoinRequest> {
+    body.check()?;
+    let msg = body.encode();
+    let device_sig = keys.sign(ORG_JOIN_DOMAIN, &msg)?;
+    body.devices[0]
+        .sign_pub
+        .verify(ORG_JOIN_DOMAIN, &msg, &device_sig)
+        .map_err(|_| invalid("join request signer", "keys do not match devices[0]"))?;
+    Ok(SignedJoinRequest { body, device_sig })
+}
+
+/// A verified join request, what `activate_member` writes into the roster:
+/// the identity, the devices' fingerprints and `member_kem_hash` of
+/// `account_kem_pub`. Plan C grants `mailbox_credential` read access.
+/// Only `verify_join_request` builds one (private fields, read through
+/// the getters).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedJoin {
+    account_id: Id,
+    account_identity_pub: IdentityVerifyingKey,
+    devices: Vec<DevicePublic>,
+    display_name: String,
+    mailbox_credential: [u8; 32],
+    account_kem_pub: HybridKemPublic,
+}
+
+impl VerifiedJoin {
+    pub fn account_id(&self) -> Id {
+        self.account_id
+    }
+
+    pub fn account_identity_pub(&self) -> &IdentityVerifyingKey {
+        &self.account_identity_pub
+    }
+
+    pub fn devices(&self) -> &[DevicePublic] {
+        &self.devices
+    }
+
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    pub fn mailbox_credential(&self) -> &[u8; 32] {
+        &self.mailbox_credential
+    }
+
+    pub fn account_kem_pub(&self) -> &HybridKemPublic {
+        &self.account_kem_pub
+    }
+}
+
+/// The join code: the first group of 5 words of `fingerprint_words(h,
+/// list)` with `h = SHA-256(ORG_JOIN_CODE_PREFIX || account_id ||
+/// postcard(identity_pub))`. It depends only on the account identity, so
+/// a server that saw the invitation nonce cannot grind it by varying the
+/// rest of a request: matching it needs another identity key whose words
+/// collide. Display only.
+pub fn join_code(
+    account_id: Id,
+    identity_pub: &IdentityVerifyingKey,
+    list: Wordlist,
+) -> [String; 5] {
+    let id_enc = postcard::to_allocvec(identity_pub).expect("identity key encodes");
+    let h = sha256(&[ORG_JOIN_CODE_PREFIX, &account_id.0, &id_enc]);
+    let [first, ..] = fingerprint_words(&h, list);
+    first
+}
+
+/// `join_code` of the account named by the request's genesis, decoded
+/// strictly (a Rotation record is `WrongContext`). No signature is
+/// checked: the code is for display, `verify_join_request` decides.
+pub fn join_code_of(req: &SignedJoinRequest, list: Wordlist) -> Result<[String; 5]> {
+    let g = decode_genesis(&req.body.account_genesis)?;
+    Ok(join_code(g.body.account_id, &g.body.identity_pub, list))
+}
+
+/// The join request's genesis: a strict `LineageRecord::decode`, a
+/// Rotation record is `WrongContext`.
+fn decode_genesis(b: &[u8]) -> Result<Signed<GenesisBody>> {
+    if b.len() > MAX_JOIN_GENESIS_BYTES {
+        return Err(bad("join request genesis size"));
+    }
+    match LineageRecord::decode(b)? {
+        LineageRecord::Genesis(g) => Ok(g),
+        LineageRecord::Rotation(_) => Err(wrong_context()),
+    }
+}
+
+/// Verifies a join request against the pinned `roster` and the admin's
+/// pinned `org_fpr`. Order: shape; org id (`WrongContext`); the member
+/// exists and is Invited (`Validation`); `invite_commit` (`WrongContext`);
+/// `pinned_fpr == org_fpr` (`OrgPinMismatch`); the genesis decodes as a
+/// `LineageRecord::Genesis` and `verify_genesis` holds (its own errors),
+/// then format 2, org, account id and `devices[0]` equal to the creator
+/// (`WrongContext`); last the device signature (`Signature`).
+pub fn verify_join_request(
+    req: &SignedJoinRequest,
+    roster: &RosterBody,
+    org_fpr: &[u8; 32],
+) -> Result<VerifiedJoin> {
+    let body = &req.body;
+    body.check()?;
+    check_hybrid_sig(&req.device_sig)?;
+    if body.org_id != roster.org_id {
+        return Err(wrong_context());
+    }
+    let m = roster
+        .member(body.account_id)
+        .ok_or_else(|| invalid("join request account", "not in the roster"))?;
+    if m.state != MemberState::Invited {
+        return Err(invalid("join request account", "member is not invited"));
+    }
+    if invite_commit(body.org_id, body.account_id, &body.invite_nonce) != m.invite_commit {
+        return Err(wrong_context());
+    }
+    if body.pinned_fpr != *org_fpr {
+        return Err(IntegrityError::OrgPinMismatch.into());
+    }
+    let g = decode_genesis(&body.account_genesis)?;
+    verify_genesis(&g)?;
+    let gb = &g.body;
+    let device = &body.devices[0];
+    if gb.format != GENESIS_FORMAT_MANAGED
+        || gb.org != Some(body.org_id.0)
+        || gb.account_id != body.account_id
+        || gb.creator.device_id != device.device_id
+        || gb.creator.sign_pub != device.sign_pub
+        || gb.creator.kem_pub != device.kem_pub
+    {
+        return Err(wrong_context());
+    }
+    device
+        .sign_pub
+        .verify(ORG_JOIN_DOMAIN, &body.encode(), &req.device_sig)?;
+    Ok(VerifiedJoin {
+        account_id: body.account_id,
+        account_identity_pub: gb.identity_pub.clone(),
+        devices: body.devices.clone(),
+        display_name: body.display_name.clone(),
+        mailbox_credential: body.mailbox_credential,
+        account_kem_pub: body.account_kem_pub.clone(),
+    })
+}
+
+/// The roster after `prev` with the joined member Active: its identity,
+/// its devices' fingerprints (sorted) and `member_kem_hash(account_kem_pub)`;
+/// everything else kept. The member must be Invited (`Validation`).
+pub fn activate_member(prev: &RosterBody, joined: &VerifiedJoin) -> Result<RosterBody> {
+    let mut next = prev.next()?;
+    let m = next
+        .members
+        .iter_mut()
+        .find(|m| m.account_id == joined.account_id)
+        .ok_or_else(|| invalid("joined account", "not in the roster"))?;
+    if m.state != MemberState::Invited {
+        return Err(invalid("joined account", "member is not invited"));
+    }
+    let mut devices: Vec<_> = joined
+        .devices
+        .iter()
+        .map(DevicePublic::fingerprint)
+        .collect();
+    devices.sort_unstable();
+    m.account_identity_pub = Some(joined.account_identity_pub.clone());
+    m.devices = devices;
+    m.account_kem_hash = member_kem_hash(&joined.account_kem_pub);
+    m.state = MemberState::Active;
+    next.check()?;
+    Ok(next)
+}

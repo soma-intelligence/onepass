@@ -1318,3 +1318,38 @@ fn a_new_login_on_a_claimed_domain_defaults_to_its_account() {
     assert!(titles_of(&t.rig.session).contains(&"Elsewhere".to_owned()));
     ext.end();
 }
+
+#[test]
+fn key_use_of_a_bridge_fill_names_the_browser() {
+    let t = two();
+    let (mut ext, mut ch) = open(&t.rig);
+    listed(&mut ext, &mut ch, 1, ATLAS);
+    fill_of(&mut ext, &mut ch, 2, &t.work_item);
+    let noted = ext.request(
+        &mut ch,
+        json!({"id": 3, "op": "note_fill", "ctx": "chain", "item_id": hyphenated(&t.work_item),
+               "origin": ATLAS, "roles": ["username", "current_password"], "intent": "login",
+               "steps": ["fill"]}),
+    );
+    assert!(noted.get("ok").is_some(), "{noted}");
+    ext.end();
+    let log = t
+        .work
+        .item_key_uses(t.work_vault.clone(), t.work_item.clone())
+        .unwrap();
+    assert_eq!(log.len(), 1, "{log:?}");
+    assert_eq!(
+        (
+            log[0].channel,
+            log[0].action,
+            log[0].client.as_str(),
+            log[0].field.as_str()
+        ),
+        (
+            FfiKeyUseChannel::AutoFill,
+            FfiKeyUseAction::Filled,
+            "Chrome",
+            ""
+        )
+    );
+}

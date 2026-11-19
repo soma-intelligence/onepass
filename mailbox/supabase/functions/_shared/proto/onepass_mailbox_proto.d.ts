@@ -25,6 +25,11 @@ export function decodeCreate(bytes: Uint8Array): any;
  */
 export function decodeCreateChild(bytes: Uint8Array): any;
 
+/**
+ * `{ uses, ttl_hours }`, one use and 1 to 168 hours.
+ */
+export function decodeCreateOrgInvite(bytes: Uint8Array): any;
+
 export function decodeEnroll(bytes: Uint8Array): any;
 
 /**
@@ -36,6 +41,11 @@ export function decodeGrant(bytes: Uint8Array): any;
  * `{ mailbox_id }`.
  */
 export function decodeLocateRequest(bytes: Uint8Array): any;
+
+/**
+ * `{ token }`, 32 bytes.
+ */
+export function decodeOrgInviteCreated(bytes: Uint8Array): any;
 
 /**
  * `{ locator }`.
@@ -57,6 +67,8 @@ export function encodeCommitResponse(v: any): Uint8Array;
 
 export function encodeConfig(v: any): Uint8Array;
 
+export function encodeCreateOrgInvite(v: any): Uint8Array;
+
 export function encodeCreated(v: any): Uint8Array;
 
 export function encodeError(v: any): Uint8Array;
@@ -64,6 +76,8 @@ export function encodeError(v: any): Uint8Array;
 export function encodeInfo(v: any): Uint8Array;
 
 export function encodeLocated(v: any): Uint8Array;
+
+export function encodeOrgInviteCreated(v: any): Uint8Array;
 
 export function encodeRecord(v: any): Uint8Array;
 
@@ -106,9 +120,11 @@ export interface InitOutput {
     readonly decodeCommit: (a: number, b: number) => [number, number, number];
     readonly decodeCreate: (a: number, b: number) => [number, number, number];
     readonly decodeCreateChild: (a: number, b: number) => [number, number, number];
+    readonly decodeCreateOrgInvite: (a: number, b: number) => [number, number, number];
     readonly decodeEnroll: (a: number, b: number) => [number, number, number];
     readonly decodeGrant: (a: number, b: number) => [number, number, number];
     readonly decodeLocateRequest: (a: number, b: number) => [number, number, number];
+    readonly decodeOrgInviteCreated: (a: number, b: number) => [number, number, number];
     readonly decodeSetLocator: (a: number, b: number) => [number, number, number];
     readonly decodeSetPush: (a: number, b: number) => [number, number, number];
     readonly decodeSetRole: (a: number, b: number) => [number, number, number];
@@ -116,10 +132,12 @@ export interface InitOutput {
     readonly encodeChanges: (a: any) => [number, number, number, number];
     readonly encodeCommitResponse: (a: any) => [number, number, number, number];
     readonly encodeConfig: (a: any) => [number, number, number, number];
+    readonly encodeCreateOrgInvite: (a: any) => [number, number, number, number];
     readonly encodeCreated: (a: any) => [number, number, number, number];
     readonly encodeError: (a: any) => [number, number, number, number];
     readonly encodeInfo: (a: any) => [number, number, number, number];
     readonly encodeLocated: (a: any) => [number, number, number, number];
+    readonly encodeOrgInviteCreated: (a: any) => [number, number, number, number];
     readonly encodeRecord: (a: any) => [number, number, number, number];
     readonly parseChangesQuery: (a: number, b: number) => [number, number, number];
     readonly parseSignatureHeaders: (a: number, b: number, c: number, d: number) => [number, number, number];

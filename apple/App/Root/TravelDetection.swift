@@ -11,6 +11,8 @@ import os
 /// accuracy fix; with "Always" already granted, significant location changes too (no continuous
 /// GPS). The fix becomes a geohash cell on the device and is compared with the usual cells learned
 /// there (`TravelDetector`); nothing leaves the device, not even to Apple's geocoder.
+/// Planned trips and the time zone count too (spec 2026-11-14): `TravelPlanner` picks the card, and
+/// a trip marked automatic turns Travel Mode on at the first unlock in its window.
 @MainActor
 @Observable
 final class TravelDetection: NSObject, CLLocationManagerDelegate {
@@ -18,7 +20,7 @@ final class TravelDetection: NSObject, CLLocationManagerDelegate {
     nonisolated static let notificationID = "travel.suggest"
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "travel")
 
-    /// The Réglages switch. Off by default.
+    /// The Réglages switch (places and time zone). Off by default. Planned trips work without it.
     var enabled: Bool {
         didSet {
             defaults.set(enabled, forKey: Self.enabledKey)
@@ -27,37 +29,80 @@ final class TravelDetection: NSObject, CLLocationManagerDelegate {
                 check(travelling: nil, force: true)
             } else {
                 stopBackground()
-                suggestion = .none
+                placeSuggestion = .none
+                refresh()
             }
         }
     }
 
-    /// What the card shows.
-    private(set) var suggestion: TravelSuggestion = .none
+    /// What the card shows (`TravelPlanner.decide`).
+    private(set) var prompt: TravelPrompt = .none
+    /// The card has something to ask (`.autoEnter` is AppModel's to act on, never a card).
+    var showsCard: Bool {
+        switch prompt {
+        case .suggest, .welcomeBack: true
+        case .none, .autoEnter: false
+        }
+    }
+    /// Planned trips (Réglages > Voyages).
+    private(set) var trips: [TravelTrip] = []
+    /// Why the last automatic entry failed, shown under the trip's card.
+    private(set) var lastAutoError: String?
     /// How many usual places are known (Réglages).
     private(set) var usualCount = 0
 
+    /// The clock of every planner call (`-travel-now` in DEBUG).
+    @ObservationIgnored var now: () -> Date = { .now }
+
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let store: TravelPlacesStore?
+    @ObservationIgnored private let reminders: any TravelReminderCenter
     @ObservationIgnored private var places = TravelPlaces()
+    /// The detector's last answer for a fix (`.none` before the first one).
+    @ObservationIgnored private var placeSuggestion: TravelSuggestion = .none
+    /// "Plus tard" on a starting trip: hidden until the next return to the foreground only, since
+    /// its window lasts the whole trip.
+    @ObservationIgnored private var hiddenTripID: UUID?
     @ObservationIgnored private var manager: CLLocationManager?
     /// Travel Mode state for the fix in flight (`nil`: the last one known).
     @ObservationIgnored private var pendingTravelling: Bool??
     @ObservationIgnored private var inBackground = false
+    /// The file was read (or there is none). Until then nothing is written: a launch while the
+    /// device is locked (a CloudKit push) cannot read it, and saving would replace the planned
+    /// trips with nothing.
+    @ObservationIgnored private var loaded = false
+    /// A Travel Mode entry is running (automatic or not): a second one is dropped, and the trip's
+    /// card stays hidden until it ends.
+    @ObservationIgnored private(set) var entering = false
 
-    init(defaults: UserDefaults = .standard, keychain: any KeychainStore = SystemKeychain(accessGroup: nil)) {
+    init(
+        defaults: UserDefaults = .standard, keychain: any KeychainStore = SystemKeychain(accessGroup: nil),
+        reminders: any TravelReminderCenter = SystemTravelReminderCenter()
+    ) {
         self.defaults = defaults
+        self.reminders = reminders
         enabled = defaults.bool(forKey: Self.enabledKey)
         store = (try? TravelPlacesStore.defaultURL()).map { TravelPlacesStore(url: $0, keychain: keychain) }
         super.init()
-        places = store?.load() ?? TravelPlaces()
-        usualCount = TravelDetector.usualCells(places).count
+        ensureLoaded()
         #if DEBUG
-        // Screenshots and UI tests: `-travel-seed-home 48.8566,2.3522` learns that place at once.
         let args = ProcessInfo.processInfo.arguments
+        // `-travel-now <seconds since 1970>` replaces the clock of every planner call.
+        if let i = args.firstIndex(of: "-travel-now"), i + 1 < args.count, let seconds = Double(args[i + 1]) {
+            let fixed = Date(timeIntervalSince1970: seconds)
+            now = { fixed }
+        }
+        // Screenshots and UI tests: `-travel-seed-home 48.8566,2.3522` learns that place at once.
         if let i = args.firstIndex(of: "-travel-seed-home"), i + 1 < args.count {
             let parts = args[i + 1].split(separator: ",").compactMap { Double($0) }
             if parts.count == 2 { seedHome(latitude: parts[0], longitude: parts[1]) }
+        }
+        // `-travel-seed-trip <hours>,<YES|NO>`: a week long trip leaving in `hours`, automatic or not.
+        if let i = args.firstIndex(of: "-travel-seed-trip"), i + 1 < args.count {
+            let parts = args[i + 1].split(separator: ",")
+            if parts.count == 2, let hours = Double(parts[0]) {
+                seedTrip(inHours: hours, autoEnter: parts[1] == "YES")
+            }
         }
         #endif
         if enabled {
@@ -69,34 +114,130 @@ final class TravelDetection: NSObject, CLLocationManagerDelegate {
     // MARK: - Checks
 
     /// On the foreground: `travelling` is the session's Travel Mode state (`nil` when locked: the
-    /// last one known). Throttled unless `force`.
+    /// last one known). The planner decides every time; the position request stays throttled to
+    /// every 3 hours unless `force`.
     func check(travelling: Bool?, force: Bool = false) {
-        guard enabled else { return }
+        // The foreground is where a file unreadable at a locked launch is read again.
+        guard ensureLoaded(), inUse else { return }
+        let before = places
         if let travelling { places.travelActive = travelling }
-        restoreCard()
-        let now = Date.now.timeIntervalSince1970
-        if !force, let last = places.lastCheck, now - last < TravelDetector.throttle { return }
-        let manager = makeManager()
-        switch manager.authorizationStatus {
-        case .authorizedWhenInUse, .authorizedAlways: break
-        // Never asked from here: Nearby asks, when the user opens it.
-        default: return
+        if enabled {
+            if !places.travelActive {
+                // The time zone is observed like a cell: it works without the location permission.
+                let date = now()
+                TravelPlanner.observe(
+                    &places, timeZone: .current, at: date, day: Int(date.timeIntervalSince1970 / 86_400))
+            }
+            restoreCard()
         }
+        let allowed = locationAllowed
+        decide(place: allowed ? placeSuggestion : nil, unlocked: false)
+        // Every inactive to active (a Face ID prompt) lands here: write only what changed.
+        if places != before { save() }
+        guard allowed else { return }
+        let seconds = now().timeIntervalSince1970
+        if !force, let last = places.lastCheck, seconds - last < TravelDetector.throttle { return }
         pendingTravelling = .some(travelling)
-        manager.requestLocation()
+        makeManager().requestLocation()
+    }
+
+    /// The vault was just unlocked: the id of the trip to enter Travel Mode for on its own, marked
+    /// tried first (one automatic attempt per trip, whatever comes of it), else `nil`.
+    func unlocked(travelling: Bool) -> UUID? {
+        guard ensureLoaded(), inUse else { return nil }
+        places.travelActive = travelling
+        decide(place: locationAllowed ? placeSuggestion : nil, unlocked: true)
+        guard case .autoEnter(let id) = prompt else {
+            save()
+            return nil
+        }
+        TravelPlanner.markAutoTried(&places, id: id)
+        lastAutoError = nil
+        prompt = .none
+        save()
+        return id
+    }
+
+    /// The automatic entry did not happen: the trip's card asks instead, with the reason (`nil`
+    /// when the owner cancelled the presence check: nothing to explain).
+    func autoEnterFailed(id: UUID, message: String?) {
+        guard !places.travelActive else { return }
+        lastAutoError = message
+        prompt = .suggest(.tripStarting(id), notify: false)
+    }
+
+    /// A Travel Mode entry starts: `false` when one is already running (the caller drops its own).
+    func beginEntry() -> Bool {
+        guard !entering else { return false }
+        entering = true
+        if case .suggest(.tripStarting, _) = prompt { prompt = .none }
+        return true
+    }
+
+    func endEntry() {
+        entering = false
     }
 
     /// Travel Mode turned on or off in this app: the card follows at once.
     func travelChanged(active: Bool) {
+        ensureLoaded()
         places.travelActive = active
         if active {
             TravelDetector.accepted(&places)
-            suggestion = .none
+            TravelPlanner.entered(&places, now: now())
+            placeSuggestion = .none
+            lastAutoError = nil
+            prompt = .none
+            // Already in Travel Mode: the reminders have nothing left to say.
+            for trip in places.trips { reminders.remove(ids: TravelTripReminders.ids(for: trip.id)) }
         } else {
             places.welcomeDismissed = false
-            if suggestion == .welcomeBack { suggestion = .none }
+            if prompt == .welcomeBack { prompt = .none }
+            for trip in places.trips { scheduleReminders(trip) }
         }
         save()
+    }
+
+    // MARK: - Trips
+
+    /// Create the trip or replace the one with the same id, and its reminders. Throws
+    /// `TravelPlannerError`.
+    func saveTrip(_ trip: TravelTrip) throws {
+        guard ensureLoaded() else { throw TripsUnreadable() }
+        try TravelPlanner.save(&places, trip: trip, now: now())
+        save()
+        reminders.remove(ids: TravelTripReminders.ids(for: trip.id))
+        let upcoming = places.travelActive ? [] : TravelTripReminders.reminders(for: trip, now: now(), calendar: .current)
+        let center = reminders
+        Task {
+            // Asked once, when the first trip is saved; never from anywhere else.
+            await Self.requestNotificationsIfUndetermined()
+            for reminder in upcoming { await center.schedule(reminder) }
+        }
+        refresh()
+    }
+
+    func deleteTrip(id: UUID) {
+        guard ensureLoaded() else { return }
+        TravelPlanner.delete(&places, id: id)
+        reminders.remove(ids: TravelTripReminders.ids(for: id))
+        if hiddenTripID == id { hiddenTripID = nil }
+        save()
+        refresh()
+    }
+
+    private func scheduleReminders(_ trip: TravelTrip) {
+        reminders.remove(ids: TravelTripReminders.ids(for: trip.id))
+        let upcoming = TravelTripReminders.reminders(for: trip, now: now(), calendar: .current)
+        guard !upcoming.isEmpty else { return }
+        let center = reminders
+        Task { for reminder in upcoming { await center.schedule(reminder) } }
+    }
+
+    private static func requestNotificationsIfUndetermined() async {
+        let center = UNUserNotificationCenter.current()
+        guard await center.notificationSettings().authorizationStatus == .notDetermined else { return }
+        _ = try? await center.requestAuthorization(options: [.alert, .sound])
     }
 
     // MARK: - Answers
@@ -105,40 +246,74 @@ final class TravelDetection: NSObject, CLLocationManagerDelegate {
     func answerYes() {
         // Until the next check reads the session: a cancelled confirmation asks again then.
         TravelDetector.accepted(&places)
-        suggestion = .none
+        placeSuggestion = .none
+        lastAutoError = nil
+        prompt = .none
         save()
         clearNotification()
     }
 
-    /// "Non": this place becomes a usual one.
+    /// "Non": the place or the time zone becomes usual, or the trip is deleted.
     func answerNo() {
-        if case .suggest(let cell, _) = suggestion { TravelDetector.teach(&places, cell: cell) }
-        suggestion = .none
+        guard case .suggest(let reason, _) = prompt else { return }
+        TravelPlanner.answerNo(&places, reason: reason, timeZone: .current, now: now())
+        switch reason {
+        case .away: placeSuggestion = .none
+        case .tripStarting(let id): reminders.remove(ids: TravelTripReminders.ids(for: id))
+        default: break
+        }
+        lastAutoError = nil
+        prompt = .none
         usualCount = TravelDetector.usualCells(places).count
         save()
         clearNotification()
     }
 
-    /// "Plus tard": quiet until home.
+    /// "Plus tard": a place or a time zone stays quiet until home; a starting trip until the next
+    /// return to the foreground.
     func answerNotNow() {
-        TravelDetector.snooze(&places)
-        suggestion = .none
+        guard case .suggest(let reason, _) = prompt else { return }
+        switch reason {
+        case .tripStarting(let id): hiddenTripID = id
+        default:
+            TravelDetector.snooze(&places)
+            placeSuggestion = .none
+        }
+        lastAutoError = nil
+        prompt = .none
         save()
         clearNotification()
     }
 
     func dismissWelcome() {
         places.welcomeDismissed = true
-        suggestion = .none
+        TravelPlanner.dismissWelcome(&places, now: now())
+        placeSuggestion = .none
+        prompt = .none
         save()
     }
 
-    /// Réglages > Oublier les lieux appris.
+    /// Réglages > Oublier les lieux appris: the learned places, usual time zones and place
+    /// snoozes. Planned trips and their reminders stay.
     func forgetPlaces() {
+        guard ensureLoaded() else { return }
+        var kept = places
+        kept.seen = [:]
+        kept.taught = []
+        kept.usualOffsets = [:]
+        kept.tripSnoozed = false
+        kept.tripNotified = false
+        kept.pendingCell = nil
+        kept.lastCheck = nil
+        // A new key: the old cells cannot be read from any copy of the old file.
         try? store?.wipe()
-        places = TravelPlaces()
+        places = kept
         usualCount = 0
-        suggestion = .none
+        placeSuggestion = .none
+        lastAutoError = nil
+        prompt = .none
+        trips = places.trips
+        if inUse { refresh() }
     }
 
     // MARK: - Location
@@ -171,6 +346,9 @@ final class TravelDetection: NSObject, CLLocationManagerDelegate {
 
     func appMovedToBackground(_ background: Bool) {
         inBackground = background
+        // "Plus tard" on a starting trip lasts until the next return from the background, not
+        // the next Face ID prompt.
+        if background { hiddenTripID = nil }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -191,29 +369,105 @@ final class TravelDetection: NSObject, CLLocationManagerDelegate {
 
     /// One fix: the verdict, the card, the one notification of a trip seen from the background.
     func process(latitude: Double, longitude: Double) {
-        guard enabled else { return }
-        let travelling = (pendingTravelling ?? nil) ?? places.travelActive
+        guard enabled, ensureLoaded() else { return }
+        if let travelling = pendingTravelling ?? nil { places.travelActive = travelling }
         pendingTravelling = nil
         let cell = TravelDetector.cell(latitude: latitude, longitude: longitude)
-        let day = Int(Date.now.timeIntervalSince1970 / 86_400)
-        places.lastCheck = Date.now.timeIntervalSince1970
-        let result = TravelDetector.check(&places, cell: cell, day: day, travelling: travelling)
+        let seconds = now().timeIntervalSince1970
+        places.lastCheck = seconds
+        let result = TravelDetector.check(
+            &places, cell: cell, day: Int(seconds / 86_400), travelling: places.travelActive)
         usualCount = TravelDetector.usualCells(places).count
-        suggestion = result
+        decide(place: result, unlocked: false)
+        // Kept for the next decisions without a fix: the notification belongs to this one only.
+        if case .suggest(let cell, _) = result {
+            placeSuggestion = .suggest(cell: cell, notify: false)
+        } else {
+            placeSuggestion = result
+        }
         save()
-        if case .suggest(_, let notify) = result, notify, inBackground { postNotification() }
+        if case .suggest(.away, true) = prompt, inBackground { postNotification() }
+    }
+
+    /// The planner's answer for this instant becomes the card. Trips count with or without the
+    /// switch; places and the time zone only with it.
+    private func decide(place: TravelSuggestion?, unlocked: Bool) {
+        let signals = TravelSignals(
+            now: now(), travelling: places.travelActive, unlocked: unlocked, place: enabled ? place : nil,
+            timeZone: .current, atAirport: false)
+        var next = TravelPlanner.decide(&places, signals)
+        switch next {
+        case .suggest(.tripStarting(let id), _) where id == hiddenTripID || entering:
+            next = .none
+        case .suggest(.away, _), .suggest(.newTimeZone, _), .suggest(.atAirport, _), .suggest(.flightFound, _):
+            if !enabled { next = .none }
+        default:
+            break
+        }
+        if case .suggest(.tripStarting(let id), _) = next, case .suggest(.tripStarting(id), _) = prompt {
+            // The same trip's card: its error stays.
+        } else {
+            lastAutoError = nil
+        }
+        prompt = next
+        trips = places.trips
+    }
+
+    /// The decision again after a change made in the app (trip saved, switch turned off).
+    private func refresh() {
+        decide(place: locationAllowed ? placeSuggestion : nil, unlocked: false)
+        save()
+    }
+
+    /// The switch is on or a trip is planned. Otherwise nothing runs and nothing is written: the
+    /// local file and its key exist only for an owner who uses travel detection.
+    private var inUse: Bool { enabled || !places.trips.isEmpty }
+
+    /// The switch is on and the app already has the location permission (never asked from here:
+    /// Nearby asks, when the user opens it).
+    private var locationAllowed: Bool {
+        guard enabled else { return false }
+        switch makeManager().authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways: return true
+        default: return false
+        }
     }
 
     /// The card of a trip still waiting for an answer, from the stored state (a relaunch from the
     /// notification).
     private func restoreCard() {
-        if let cell = places.pendingCell, !places.travelActive, suggestion == .none {
-            suggestion = .suggest(cell: cell, notify: false)
+        if let cell = places.pendingCell, !places.travelActive, placeSuggestion == .none {
+            placeSuggestion = .suggest(cell: cell, notify: false)
+            if prompt == .none { prompt = .suggest(.away(cell: cell), notify: false) }
         }
     }
 
     private func save() {
+        trips = places.trips
+        guard loaded else {
+            Self.log.notice("travel places not read yet: not saved")
+            return
+        }
         do { try store?.save(places) } catch { Self.log.error("travel places not saved") }
+    }
+
+    /// Reads the file if it was not read yet: `false` while it cannot be (device locked).
+    @discardableResult
+    private func ensureLoaded() -> Bool {
+        if loaded { return true }
+        switch store?.open() ?? .missing {
+        case .missing:
+            break
+        case .opened(let stored):
+            places = stored
+        case .unreadable:
+            Self.log.notice("travel places unreadable for now")
+            return false
+        }
+        loaded = true
+        usualCount = TravelDetector.usualCells(places).count
+        trips = places.trips
+        return true
     }
 
     // MARK: - Notification
@@ -242,14 +496,28 @@ final class TravelDetection: NSObject, CLLocationManagerDelegate {
         center.removePendingNotificationRequests(withIdentifiers: [Self.notificationID])
     }
 
+    /// The trips file exists but cannot be read now: saving would replace it.
+    struct TripsUnreadable: LocalizedError {
+        var errorDescription: String? { String(localized: "trip.error.unreadable") }
+    }
+
     #if DEBUG
     /// UI tests and screenshots: learn `cell` as usual right away (`-travel-seed-home lat,lon`).
     func seedHome(latitude: Double, longitude: Double) {
         let cell = TravelDetector.cell(latitude: latitude, longitude: longitude)
-        let today = Int(Date.now.timeIntervalSince1970 / 86_400)
+        let today = Int(now().timeIntervalSince1970 / 86_400)
         for day in (today - TravelDetector.usualDays)..<today { TravelDetector.observe(&places, cell: cell, day: day) }
         places.lastCheck = nil
         usualCount = TravelDetector.usualCells(places).count
+        save()
+    }
+
+    /// UI tests: one trip leaving in `hours`, a week long. A fixed id, so a relaunch replaces it.
+    func seedTrip(inHours hours: Double, autoEnter: Bool) {
+        let id = UUID(uuidString: "7A3E1C2B-0000-4000-8000-00000000A11E")!
+        let start = now().addingTimeInterval(hours * 3600)
+        let trip = TravelTrip(id: id, start: start, end: start.addingTimeInterval(7 * 86_400), autoEnter: autoEnter)
+        try? TravelPlanner.save(&places, trip: trip, now: now())
         save()
     }
     #endif

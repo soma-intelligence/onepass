@@ -87,6 +87,30 @@ describe("router", () => {
     void bg;
   });
 
+  it("setup_resize is accepted only from setup.html", async () => {
+    const { ext } = await setup();
+    const token = "A".repeat(22);
+    const m = { type: "setup_resize", token, height: 180 };
+    // From the card's page the router answers (an unknown token is the handler's business).
+    expect(await ext.send(m, uiSender(`setup.html#${token}`, 7))).not.toBe(NO_REPLY);
+    for (const page of [`save.html#${token}`, `menu.html#${token}`, "popup.html", `overlay.html#${token}`]) {
+      expect(await ext.send(m, uiSender(page, 7))).toBe(NO_REPLY);
+    }
+    expect(await ext.send(m, csSender(`${SITE}/setup.html`, 7, 0, { documentId: "doc-1" }))).toBe(NO_REPLY);
+    expect(ext.sentToTabs).toEqual([]);
+  });
+
+  it("setup_resize refuses a negative, fractional or over-2000 height", async () => {
+    const { ext } = await setup();
+    const token = "A".repeat(22);
+    for (const height of [0, 1, 2000]) expect(parseUiToBg({ type: "setup_resize", token, height })).toEqual({ type: "setup_resize", token, height });
+    for (const height of [-1, -0.5, 1.5, 180.25, 2001, 1e6, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(parseUiToBg({ type: "setup_resize", token, height })).toBeNull();
+      expect(await ext.send({ type: "setup_resize", token, height }, uiSender(`setup.html#${token}`, 7))).toBe(NO_REPLY);
+    }
+    expect(ext.sentToTabs).toEqual([]);
+  });
+
   it("each UI family is accepted only from its own page", async () => {
     const { ext } = await setup();
     expect(await ext.send({ type: "popup_status" }, uiSender("popup.html"))).toEqual({

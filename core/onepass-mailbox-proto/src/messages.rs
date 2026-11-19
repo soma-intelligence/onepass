@@ -834,6 +834,64 @@ impl Message for CreateChild {
     }
 }
 
+// ------------------------------------------------------------ org invites
+
+/// The only use count an org invite carries.
+pub const ORG_INVITE_USES: u16 = 1;
+/// The longest an org invite stays valid, in hours (7 days).
+pub const ORG_INVITE_TTL_MAX_HOURS: u16 = 168;
+/// Length of an org invite token.
+pub const ORG_INVITE_TOKEN_LEN: usize = 32;
+
+/// `POST /v1/mailboxes/{m}/org-invites` (a manager of an org mailbox): mints
+/// an invite of plan `managed` for one member's own account mailbox, one use
+/// (`ORG_INVITE_USES`), valid `ttl_hours`, 1 to `ORG_INVITE_TTL_MAX_HOURS`.
+/// Answered with `OrgInviteCreated`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateOrgInvite {
+    pub uses: u16,
+    pub ttl_hours: u16,
+}
+
+impl Message for CreateOrgInvite {
+    fn check(&self) -> Result<(), ProtoError> {
+        if self.uses != ORG_INVITE_USES {
+            return Err(ProtoError::Format("org invite uses"));
+        }
+        if !(1..=ORG_INVITE_TTL_MAX_HOURS).contains(&self.ttl_hours) {
+            return Err(ProtoError::Format("org invite ttl"));
+        }
+        Ok(())
+    }
+}
+
+/// `200` of `POST /v1/mailboxes/{m}/org-invites`: the invite token, exactly
+/// `ORG_INVITE_TOKEN_LEN` bytes. The server keeps only its SHA-256; the
+/// member's device spends it as the `invite` of `CreateMailbox`.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrgInviteCreated {
+    #[serde(with = "crate::bytes::vec")]
+    pub token: Vec<u8>,
+}
+
+/// The token is a secret: never printed.
+impl fmt::Debug for OrgInviteCreated {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OrgInviteCreated")
+            .field("token", &format_args!("<{} bytes>", self.token.len()))
+            .finish()
+    }
+}
+
+impl Message for OrgInviteCreated {
+    fn check(&self) -> Result<(), ProtoError> {
+        if self.token.len() != ORG_INVITE_TOKEN_LEN {
+            return Err(ProtoError::Format("org invite token length"));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1132,6 +1190,66 @@ mod tests {
         bad_kind[1] = 2;
         assert!(decode::<CreateChild>(&bad_kind).is_err());
         assert!(decode::<CreateChild>(&want[..want.len() - 1]).is_err());
+    }
+
+    /// An org invite request is two varints (uses, then ttl in hours), one
+    /// use and 1 to 168 hours only; the answer is the 32 byte token with its
+    /// length, never shorter or longer, nothing after it.
+    #[test]
+    fn org_invite_messages() {
+        rt(CreateOrgInvite {
+            uses: 1,
+            ttl_hours: 1,
+        });
+        rt(CreateOrgInvite {
+            uses: 1,
+            ttl_hours: ORG_INVITE_TTL_MAX_HOURS,
+        });
+        rt(OrgInviteCreated {
+            token: vec![5; ORG_INVITE_TOKEN_LEN],
+        });
+        assert_eq!(
+            encode(&CreateOrgInvite {
+                uses: 1,
+                ttl_hours: 168,
+            }),
+            [PROTO_VERSION, 1, 0xa8, 0x01]
+        );
+        let mut want = vec![PROTO_VERSION, 32];
+        want.extend([5u8; 32]);
+        assert_eq!(encode(&OrgInviteCreated { token: vec![5; 32] }), want);
+        for (uses, ttl_hours) in [(0, 24), (2, 24), (1, 0), (1, 169), (u16::MAX, u16::MAX)] {
+            assert!(
+                matches!(
+                    decode::<CreateOrgInvite>(&encode(&CreateOrgInvite { uses, ttl_hours })),
+                    Err(ProtoError::Format(_))
+                ),
+                "accepted uses {uses} ttl {ttl_hours}"
+            );
+        }
+        for len in [0, 31, 33, 64] {
+            assert!(
+                matches!(
+                    decode::<OrgInviteCreated>(&encode(&OrgInviteCreated {
+                        token: vec![5; len],
+                    })),
+                    Err(ProtoError::Format(_))
+                ),
+                "accepted a token of {len} bytes"
+            );
+        }
+        let mut trailing = want.clone();
+        trailing.push(0);
+        assert_eq!(
+            decode::<OrgInviteCreated>(&trailing),
+            Err(ProtoError::Format("trailing"))
+        );
+        assert!(decode::<OrgInviteCreated>(&want[..want.len() - 1]).is_err());
+        assert_eq!(
+            decode::<CreateOrgInvite>(&[PROTO_VERSION, 1, 24, 0]),
+            Err(ProtoError::Format("trailing"))
+        );
+        assert!(decode::<CreateOrgInvite>(&[PROTO_VERSION, 1]).is_err());
     }
 
     /// A locator is 16 raw bytes; a lookup answers 1 to 8 distinct mailbox

@@ -41,6 +41,7 @@ struct SyncSettings: View {
 
     var body: some View {
         Form {
+            Group {
             Section {
                 if model.router != nil {
                     LabeledContent("settings.sync.backend", value: model.syncBackendName)
@@ -92,10 +93,13 @@ struct SyncSettings: View {
                     }
                     .accessibilityIdentifier("settings.ignoredDeletions")
                 } footer: {
-                    Text("settings.onepassKeptTheseItems")
+                    SettingsFootnote("settings.onepassKeptTheseItems")
                 }
             }
+            }
+            .rxSettingsRows()
         }
+        .rxSettingsSkin()
         .settingsPage("Sync")
         .sheet(isPresented: $migrating) { MigrationSheet() }
         .sheet(item: Binding(get: { safeExitKind.map(RefusedKind.init) }, set: { safeExitKind = $0?.kind })) {
@@ -143,15 +147,20 @@ struct SyncSettings: View {
     @ViewBuilder private var footer: some View {
         switch line {
         case .disabled:
-            Text("settings.sync.footer.local")
+            SettingsFootnote("settings.sync.footer.local")
         case .refused:
-            Text("settings.sync.footer.refused")
+            SettingsFootnote("settings.sync.footer.refused")
         case .waiting:
-            Text("settings.sync.footer.stale")
+            SettingsFootnote("settings.sync.footer.stale")
         case .accountChanged:
-            Text("settings.deviceNowSignedIn")
+            // One line; the whole story (why, and the two ways out) behind the info button.
+            HStack(alignment: .firstTextBaseline) {
+                SettingsFootnote("settings.sync.accountChanged.short")
+                Spacer(minLength: 0)
+                SettingsInfoButton(Text("settings.deviceNowSignedIn"), id: "settings.sync.accountChanged.info")
+            }
         default:
-            Text("settings.sync.footer")
+            SettingsFootnote("settings.sync.footer")
         }
     }
 

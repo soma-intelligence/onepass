@@ -118,7 +118,7 @@ export interface ContentScript {
   readonly internals: { readonly root: ShadowRoot; readonly refs: RefRegistry };
 }
 
-const FRAME_KINDS: ReadonlySet<string> = new Set<FrameKind>(["menu", "overlay", "save", "ghost"]);
+const FRAME_KINDS: ReadonlySet<string> = new Set<FrameKind>(["menu", "overlay", "save", "ghost", "setup"]);
 const MAX_VALUE = 4096;
 
 function str(v: unknown): v is string {
@@ -281,6 +281,7 @@ export function createContentScript(o: ContentOptions): ContentScript {
     menuArmed = false;
     const req: CsToBg = { type: "open_menu", fieldRef: t.fieldRef, formRef: t.form.ref, formKind: t.form.kind };
     if (auto) req.auto = true;
+    if (t.form.signupStep && req.type === "open_menu") req.signupStep = true;
     const reply = await send(req);
     if (seq !== menuSeq || !parts || stopped || !t.el.isConnected) return;
     const raw = replyUrl(reply);

@@ -201,3 +201,8 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "duplicates"
 required-features = ["dev-fast-kdf"]
+
+# OnePass Business E1: managed account genesis (plan B, Task 2).
+[[test]]
+name = "org_managed"
+required-features = ["dev-fast-kdf"]

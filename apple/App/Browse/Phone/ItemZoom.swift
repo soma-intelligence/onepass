@@ -4,7 +4,8 @@ import VaultKit
 
 /// iPhone: an item opens by zooming out of the row that was tapped, and closes back into it.
 /// PhoneTabsView owns the namespace and hands it down its navigation stacks; every row that pushes
-/// `PhoneRoute.item` marks itself as the source, the item detail as the destination.
+/// `PhoneRoute.item` marks itself as the source, the item detail as the destination. Under Reduce
+/// Motion every page keeps the automatic push instead of the zoom.
 extension EnvironmentValues {
     @Entry var itemZoomNamespace: Namespace.ID?
 }
@@ -15,9 +16,79 @@ extension View {
         modifier(ItemZoomSource(ref: ref))
     }
 
+    /// A row, tile or card that pushes `route`: the pushed page zooms out of it.
+    func routeZoomSource(_ route: PhoneRoute) -> some View {
+        modifier(RouteZoomSource(route: route))
+    }
+
+    /// Any view that pushes a page (Réglages rows, perk tiles, the plan card): marked with `id` in
+    /// the namespace of the environment, nothing without one.
+    func zoomSource<ID: Hashable>(_ id: ID) -> some View {
+        modifier(ZoomSource(id: id))
+    }
+
+    /// The page pushed from `zoomSource(id)`: it zooms out of that view, and back in when it closes.
+    func zoomDestination<ID: Hashable>(_ id: ID) -> some View {
+        modifier(ZoomDestination(id: id))
+    }
+
     /// The item detail of `ref`: it zooms out of its row, and back in when it closes.
     func itemZoomDestination(_ ref: ItemRef, in namespace: Namespace.ID) -> some View {
-        navigationTransition(.zoom(sourceID: ref, in: namespace))
+        modifier(ZoomTransition(id: ref, namespace: namespace))
+    }
+}
+
+private struct RouteZoomSource: ViewModifier {
+    let route: PhoneRoute
+    @Environment(\.itemZoomNamespace) private var namespace
+
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.matchedTransitionSource(id: route, in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ZoomSource<ID: Hashable>: ViewModifier {
+    let id: ID
+    @Environment(\.itemZoomNamespace) private var namespace
+
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ZoomDestination<ID: Hashable>: ViewModifier {
+    let id: ID
+    @Environment(\.itemZoomNamespace) private var namespace
+
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.modifier(ZoomTransition(id: id, namespace: namespace))
+        } else {
+            content
+        }
+    }
+}
+
+/// The zoom out of `id`, or the automatic push under Reduce Motion.
+private struct ZoomTransition<ID: Hashable>: ViewModifier {
+    let id: ID
+    let namespace: Namespace.ID
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content.navigationTransition(.automatic)
+        } else {
+            content.navigationTransition(.zoom(sourceID: id, in: namespace))
+        }
     }
 }
 

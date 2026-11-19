@@ -1,0 +1,54 @@
+# Domaines qui n'ont jamais d'icone dans le pack (icon_pack.py --blocklist).
+# Une ligne : un domaine (www. ignore; lui et tous ses sous-domaines) ou *.suffixe (le suffixe et tout
+# hote en dessous).
+# Verifie sur le domaine liste ET sur l'hote ou la page atterrit apres redirection.
+# Liste de depart, le proprietaire l'etend.
+
+# Extensions adultes
+*.xxx
+*.porn
+*.adult
+*.sex
+*.sexy
+
+# Extensions de jeux d'argent
+*.bet
+*.casino
+*.poker
+*.bingo
+
+# Sites adultes
+pornhub.com
+xvideos.com
+xnxx.com
+xhamster.com
+redtube.com
+youporn.com
+spankbang.com
+eporner.com
+chaturbate.com
+stripchat.com
+brazzers.com
+onlyfans.com
+
+# Jeux d'argent
+bet365.com
+stake.com
+888casino.com
+pokerstars.com
+draftkings.com
+fanduel.com
+betway.com
+williamhill.com
+unibet.com
+bwin.com
+betclic.fr
+winamax.fr
+
+# DNS dynamique gratuit et tunnels, souvent detournes pour heberger des logiciels malveillants
+*.duckdns.org
+*.ddns.net
+*.hopto.org
+*.zapto.org
+*.no-ip.biz
+*.serveo.net

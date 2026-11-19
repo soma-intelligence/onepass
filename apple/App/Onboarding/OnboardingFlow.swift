@@ -505,13 +505,17 @@ final class OnboardingModel {
     // MARK: - Actions
 
     private func createAccount() async {
+        // A managed account lives on its organisation's server: no iCloud check, no sync choice.
+        let managed = model.managedOnboarding?.slot == model.accounts.activeSlot
         let choice = effectiveSyncChoice
-        let onICloud = choice == .iCloud
+        let onICloud = !managed && choice == .iCloud
         busyMessage = cloudKitEnabled && onICloud ? String(localized: "onboarding.checkingIcloud") : String(localized: "onboarding.creatingVault")
         defer { busyMessage = nil }
         errorMessage = nil
         offerRestore = false
-        if onICloud {
+        if managed {
+            // Nothing to check: the account mailbox is made on the org server after the account.
+        } else if onICloud {
             guard await checkICloudBeforeCreation() else { return }
         } else {
             // The new vault must never reach iCloud: the iCloud sync stops before it exists.
@@ -526,10 +530,22 @@ final class OnboardingModel {
         clearGeneratedPassword()
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-            let key = try await session.createAccount(password: typed, displayName: name, mode: mode)
+            let key = managed
+                ? try await model.createManagedAccount(password: typed, displayName: name, mode: mode)
+                : try await session.createAccount(password: typed, displayName: name, mode: mode)
             // The password is kept only when the biometric step follows.
             credentials.accountCreated(secretKey: key, password: typed, keepPasswordForBiometrics: biometricsOffered)
-            if !onICloud, let bytes = credentials.secretKey {
+            if managed, let bytes = credentials.secretKey {
+                // In the background: publish or join, then the account mailbox. The join request is
+                // signed with the password just typed as the presence check (R31), wiped after.
+                let copy = bytes.withData { SecretBytes(copying: $0) }
+                let password = typed.withData { SecretBytes(copying: $0) }
+                Task {
+                    await model.finishManagedOnboarding(secretKey: copy, password: password)
+                    copy.wipe()
+                    password.wipe()
+                }
+            } else if !onICloud, let bytes = credentials.secretKey {
                 // In the background: the account is usable at once, on this device (spec D.2, 3).
                 let copy = bytes.withData { SecretBytes(copying: $0) }
                 Task { await model.runMailboxSetup(secretKey: copy) }
@@ -998,6 +1014,10 @@ struct OnboardingFlow: View {
             if !needed, app.session.state == .noAccount, model?.restoreOnly == true {
                 model = OnboardingModel(model: app, restoreOnly: false)
             }
+        }
+        // "Join an organisation" names the member over this onboarding (its sheet closes on Join).
+        .onChange(of: app.managedOnboarding?.displayName) { _, name in
+            if let name { model?.displayName = name }
         }
         .onChange(of: app.session.state) { old, new in
             // A lock after the creation or restore unlocked the session (spec 4 point 5).

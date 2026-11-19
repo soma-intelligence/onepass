@@ -5,6 +5,10 @@ import PackageDescription
 // not the VaultKit product, which does not build on watchOS. VaultKit's manifest
 // reads ONEPASS_FFI_XCFRAMEWORK (path relative to the VaultKit directory), so
 // `make test` passes the same variable to both packages.
+//
+// DesignBridgeKit and DesignBridgeTesting (vendored in apple/Vendor/DesignBridge, see its README) hold the
+// shared behaviour primitives (toast, rolling numbers, motion, states, glass) and the snapshot matrix.
+let designBridge = "../Vendor/DesignBridge"
 let package = Package(
     name: "DesignKit",
     defaultLocalization: "fr",
@@ -13,17 +17,26 @@ let package = Package(
         .library(name: "DesignKit", targets: ["DesignKit"])
     ],
     dependencies: [
-        .package(path: "../VaultKit")
+        .package(path: "../VaultKit"),
+        .package(path: "\(designBridge)/DesignBridgeKit"),
+        .package(path: "\(designBridge)/DesignBridgeTesting"),
     ],
     targets: [
         .target(
             name: "DesignKit",
-            dependencies: [.product(name: "OnePassCore", package: "VaultKit")],
+            dependencies: [
+                .product(name: "OnePassCore", package: "VaultKit"),
+                .product(name: "DesignBridgeKit", package: "DesignBridgeKit"),
+            ],
             resources: [.process("Resources")]
         ),
         .testTarget(
             name: "DesignKitTests",
-            dependencies: ["DesignKit", .product(name: "VaultKit", package: "VaultKit")]
+            dependencies: [
+                "DesignKit", .product(name: "VaultKit", package: "VaultKit"),
+                // Snapshot matrix: renders on the iOS simulator only (`xcodebuild test`).
+                .product(name: "DesignBridgeSnapshots", package: "DesignBridgeTesting"),
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

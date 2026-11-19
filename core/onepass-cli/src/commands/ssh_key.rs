@@ -850,6 +850,7 @@ mod tests {
             confirm_each_use: false,
             hosts: hosts.iter().map(|h| h.to_string()).collect(),
             git_signing: false,
+            key_field_label: "Private key".into(),
         };
         let keys = [
             info("A\nHost *", &["a.test", "bad host"]),

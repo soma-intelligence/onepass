@@ -26,6 +26,8 @@ public final class VaultSession {
     public private(set) var isTravelling = false
     /// Recently opened item ids, newest first. Memory only, emptied on lock.
     public private(set) var recents: [String] = []
+    /// When each of `recents` was opened, for `recentlyUsed` (opened counts as recent, not as a use).
+    @ObservationIgnored var openedAt: [String: Date] = [:]
     /// Searches typed in this session, newest first (`RecentSearches`). Memory only, emptied on lock.
     public private(set) var recentSearches: [String] = []
     public var lastError: VaultError?
@@ -79,6 +81,11 @@ public final class VaultSession {
     @ObservationIgnored var profileTask: Task<Void, Never>?
     /// How long an edit of the profile waits before its write (typing a name writes once).
     @ObservationIgnored var profileWriteDelay: Duration = .milliseconds(800)
+    /// The main identity the account profile names, as last read from the vault (`mainIdentity`
+    /// resolves it). Emptied on lock.
+    public internal(set) var profileMainIdentity: FfiItemRef?
+    /// The main credit card the account profile names (`mainCard` resolves it). Emptied on lock.
+    public internal(set) var profileMainCard: FfiItemRef?
 
     /// Contacts, shared vaults, invitations, identity changes, family and received items
     /// (`refreshSharing`, sharing plan 4). Emptied on lock.
@@ -631,20 +638,32 @@ public final class VaultSession {
     public func createAccount(password: SecretBytes, displayName: String, mode: DeviceMode) async throws
         -> SecretBytes
     {
+        try await createAccount(password: password, displayName: displayName, mode: mode) { path, bytes, kdf in
+            try kdf.map { try createAccountWithKdfBytes(dbPath: path, password: bytes, kdf: $0) }
+                ?? createAccountBytes(dbPath: path, password: bytes)
+        }
+    }
+
+    /// The flow shared by personal and managed accounts: `make` creates the account in the core from
+    /// the store path, the password bytes and the environment's KDF (`nil`: the core's default), off
+    /// the main actor; then the "Personnel" vault, the profile, the Secret Key in the keychain, the
+    /// settings and the install, as `createAccount(password:displayName:mode:)` documents. `device`: this
+    /// device as `make` registered it (default: `deviceIdentity(mode:)`).
+    func createAccount(
+        password: SecretBytes, displayName: String, mode: DeviceMode, device: DeviceIdentity? = nil,
+        make: @escaping @Sendable (String, Data, FfiKdfParams?) throws -> FfiCreatedAccount
+    ) async throws -> SecretBytes {
         try checkStoreUsable()
         if session != nil || state == .locked { throw fail(.accountExists) }
         let path = dbPath
         let kdf = environment.accountKdf
-        let device = Self.deviceIdentity(mode: mode)
+        let device = device ?? Self.deviceIdentity(mode: mode)
         let gen = beginUnlocking()
         let created: Created
         do {
             created = try await background {
                 if try hasAccount(dbPath: path) { throw VaultError.accountExists }
-                let account = try password.withData { bytes in
-                    try kdf.map { try createAccountWithKdfBytes(dbPath: path, password: bytes, kdf: $0) }
-                        ?? createAccountBytes(dbPath: path, password: bytes)
-                }
+                let account = try password.withData { try make(path, $0, kdf) }
                 // The core hands the Secret Key back as a `String` (UniFFI lift): copied into a wipeable
                 // buffer at once, the `String` dies with this closure (R5).
                 let secretKey = SecretBytes(utf8: account.secretKey)
@@ -1061,6 +1080,9 @@ public final class VaultSession {
         summaries = []
         allVaults = []
         recents = []
+        openedAt = [:]
+        profileMainIdentity = nil
+        profileMainCard = nil
         recentSearches = []
         isTravelling = false
         locationIndex = LocationIndex()
@@ -1197,9 +1219,11 @@ public final class VaultSession {
     /// The full item, for the detail view only (which forgets it when closed).
     public func loadItem(vaultID: String, itemID: String) async throws -> FfiItem {
         let item = try await read { try $0.item(vaultId: vaultID, itemId: itemID) }
+        openedAt[itemID] = environment.clock.now
         recents.removeAll { $0 == itemID }
         recents.insert(itemID, at: 0)
         if recents.count > Self.maxRecents { recents.removeLast(recents.count - Self.maxRecents) }
+        openedAt = openedAt.filter { recents.contains($0.key) }
         return item
     }
 
@@ -1238,6 +1262,7 @@ public final class VaultSession {
     public func deletePermanently(itemID: String, vaultID: String) async throws {
         try await write { try $0.deleteItem(vaultId: vaultID, itemId: itemID) }
         recents.removeAll { $0 == itemID }
+        openedAt[itemID] = nil
     }
 
     public func move(itemID: String, from source: String, to destination: String) async throws {
@@ -1285,6 +1310,43 @@ public final class VaultSession {
             throw failure
         }
         guard gen == generation else { throw fail(.passwordRequired) }
+        return bytes
+    }
+
+    /// Sets the icon the person chose for the item (`mime` an image type the core accepts), as a
+    /// new version. Returns the item as stored, its `customIconId` new.
+    public func setCustomIcon(itemID: String, vaultID: String, mime: String, bytes: Data) async throws -> FfiItem {
+        try await write {
+            try $0.setCustomIcon(vaultId: vaultID, itemId: itemID, mime: mime, bytes: bytes)
+        }
+    }
+
+    /// Removes the item's chosen icon: its automatic icon shows again. Returns the item as stored.
+    public func clearCustomIcon(itemID: String, vaultID: String) async throws -> FfiItem {
+        try await write {
+            try $0.clearCustomIcon(vaultId: vaultID, itemId: itemID)
+        }
+    }
+
+    /// The chosen icon of an item known only by its ids (an AutoFill candidate), from the list.
+    public func customIconKey(itemID: String, vaultID: String) -> CustomIconKey? {
+        summaries.first { $0.id == itemID && $0.vaultId == vaultID }.flatMap(CustomIconKey.init)
+    }
+
+    /// The decrypted bytes of the item's chosen icon, in memory only (`CustomIconStore`). No icon,
+    /// or one not synced yet, is `.notFound`. Rows read it in the background: it does not count as
+    /// activity for the auto-lock.
+    public func customIconData(itemID: String, vaultID: String) async throws -> Data {
+        // Never `fail`: a row's background read leaves `lastError` to what the person did.
+        guard let session else { throw VaultError.passwordRequired }
+        let gen = generation
+        let bytes: Data
+        do {
+            bytes = try await background { try session.customIconData(vaultId: vaultID, itemId: itemID) }
+        } catch {
+            throw VaultError(error)
+        }
+        guard gen == generation else { throw VaultError.passwordRequired }
         return bytes
     }
 
@@ -1410,6 +1472,74 @@ public final class VaultSession {
             notifySync { await $0.localChangesWritten() }
         }
         return written
+    }
+
+    /// Remembers a use of the item inside the app (its password or one-time code copied, its
+    /// website opened), for Récemment utilisés and Fréquemment utilisés. Opening an item is no use.
+    /// Never ranks an AutoFill choice. A use that hands out a secret passes its `action` and the
+    /// stored label of the `field` touched: the same write notes it in the item's key-use log
+    /// (never the value); nil for one that hands out none (its website opened). Fire and forget:
+    /// nothing when locked; the item's summary is replaced in place (no list reload) and the sync
+    /// layer told.
+    public func noteAppUse(
+        vaultID: String, itemID: String, action: FfiKeyUseAction? = nil, field: String = ""
+    ) async throws {
+        guard session != nil else { return }
+        let summary = try await readUnmapped {
+            try $0.noteAppUse(vaultId: vaultID, itemId: itemID, action: action, field: field)
+        }
+        if let index = summaries.firstIndex(where: { $0.id == itemID && $0.vaultId == vaultID }) {
+            summaries[index] = summary
+            summariesRevision &+= 1
+        }
+        notifySync { await $0.localChangesWritten() }
+    }
+
+    /// The item's key-use log, most recent use first: channel, action, device, client and field
+    /// label, never a value. Uses this device still queues show once flushed.
+    public func itemKeyUses(vaultID: String, itemID: String) async throws -> [FfiKeyUse] {
+        try await read { try $0.itemKeyUses(vaultId: vaultID, itemId: itemID) }
+    }
+
+    /// Records a key use inside the app that is no use of the item for Récemment utilisés and
+    /// Fréquemment utilisés (a reveal, a copy of a secret other than the password): the summary does
+    /// not move. Fire and forget: nothing when locked; the sync layer is told when the item was
+    /// written (hourly coalescing).
+    public func recordAppKeyUse(
+        vaultID: String, itemID: String, action: FfiKeyUseAction, field: String
+    ) async throws {
+        guard session != nil else { return }
+        let written = try await readUnmapped {
+            try $0.recordAppKeyUse(vaultId: vaultID, itemId: itemID, action: action, field: field)
+        }
+        if written { notifySync { await $0.localChangesWritten() } }
+    }
+
+    /// Empties the item's key-use log on every device once synced ("Clear log"); its
+    /// `updated_at` is unchanged. The sync layer is told.
+    public func clearKeyUses(vaultID: String, itemID: String) async throws {
+        try await read { try $0.clearKeyUses(vaultId: vaultID, itemId: itemID) }
+        notifySync { await $0.localChangesWritten() }
+    }
+
+    /// Folds this device's queued key uses an hour old or more into their items (unlock, scene
+    /// foreground). Best effort: nothing when locked; an error leaves the rows queued for the next
+    /// try and is thrown as is, without `lastError` nor counting as activity (no user action). An
+    /// integrity error still ends in "Données refusées", as `readUnmapped` does. The sync layer is
+    /// told when a use was applied.
+    @discardableResult
+    public func flushKeyUseQueue() async throws -> UInt32 {
+        guard let session else { return 0 }
+        let gen = generation
+        let applied: UInt32
+        do {
+            applied = try await background { try session.flushKeyUseQueue() }
+        } catch {
+            if case .integrity = VaultError(error) { _ = handle(error, generation: gen) }
+            throw error
+        }
+        if applied > 0 { notifySync { await $0.localChangesWritten() } }
+        return applied
     }
 
     /// `autofillCandidates(service:includeAll:)` for a typed service: an app matches only the Logins
@@ -2064,6 +2194,9 @@ public final class VaultSession {
         summariesRevision &+= 1
         let known = Set(snapshot.summaries.map(\.id))
         recents.removeAll { !known.contains($0) }
+        openedAt = openedAt.filter { known.contains($0.key) }
+        profileMainIdentity = snapshot.profile?.mainIdentity
+        profileMainCard = snapshot.profile?.mainCard
         syncProfile(snapshot.profile)
     }
 

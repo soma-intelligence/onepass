@@ -20,6 +20,7 @@ struct Sidebar: View {
     @State private var duplicates = DuplicatesLoader()
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     #if os(macOS)
     /// Height of the window's title bar and toolbar, which the sidebar column does not report as
     /// a safe area (macOS 26): the account header starts below it.
@@ -53,6 +54,30 @@ struct Sidebar: View {
 
     var body: some View {
         #if os(macOS)
+        if rxDesign {
+            RXMacSidebar(
+                creatingVault: $creatingVault, editingVaultID: $editingVaultID,
+                duplicateGroups: duplicates.groups.count)
+                .task(id: session.summariesRevision) { await duplicates.load(session) }
+                .sheet(isPresented: $creatingVault) {
+                    VaultEditorView(vault: nil) { creatingVault = false }
+                }
+                .sheet(isPresented: Binding(get: { editingVaultID != nil }, set: { if !$0 { editingVaultID = nil } })) {
+                    if let vault = session.vaults.first(where: { $0.id == editingVaultID }) {
+                        VaultEditorView(vault: vault) { editingVaultID = nil }
+                    }
+                }
+        } else {
+            nativeColumn
+        }
+        #else
+        list
+        #endif
+    }
+
+    #if os(macOS)
+    /// The native column (the RX look off).
+    @ViewBuilder private var nativeColumn: some View {
         // Mac: the sidebar column reports no top safe area, so a list there starts under the traffic
         // lights. The account row sits above the list, below the title bar (its height read from
         // the window): never under the window buttons, its menu stays clickable.
@@ -103,16 +128,23 @@ struct Sidebar: View {
             }
         }
         .animation(.spring(duration: 0.28, bounce: 0.15), value: accountMenuOpen)
+        #if DEBUG
+        // Screenshots: `-OnePassDemoAccountPanel YES` opens the panel once the window is there, as
+        // on the iPhone.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "OnePassDemoAccountPanel") else { return }
+            try? await Task.sleep(for: .milliseconds(1200))
+            accountMenuOpen = true
+        }
+        #endif
         // The whole column, header included, on the system's translucent sidebar material: the
         // desktop shows through, blurred, behind the account row and the list alike.
         .background { SidebarMaterial().ignoresSafeArea() }
         // Light appearance: a brighter, airier column (a white wash over the blur, the desktop
         // still showing through), so it no longer reads as a gray panel.
         .background { SidebarLightWash().ignoresSafeArea() }
-        #else
-        list
-        #endif
     }
+    #endif
 
     private var list: some View {
         let counts = session.counts()
@@ -123,6 +155,12 @@ struct Sidebar: View {
             }
             #endif
             Section {
+                #if os(macOS)
+                // The RX look's Accueil (Penpot "Mac · Home"), first while the switch is on.
+                if rxDesign || model.page == .home {
+                    pageRow("rx.mac.home", symbol: "house.fill", color: Theme.accent, page: .home, id: "sidebar.home")
+                }
+                #endif
                 row("Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent, count: counts.all,
                     filter: .all, id: "library.all")
                 row("Favoris", symbol: "star.fill", color: Self.favoritesColor, count: counts.favorites,
@@ -176,7 +214,7 @@ struct Sidebar: View {
                 #if !os(macOS)
                 Divider()
                 #endif
-                if model.travel.suggestion != .none {
+                if model.travel.showsCard {
                     TravelSuggestionCard(compact: true)
                         .padding(Theme.Space.m)
                         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
@@ -421,6 +459,7 @@ struct AccountHeader: View {
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
             .accessibilityLabel(Text("browse.account \(model.settings.displayName)"))
+            .accessibilityAddTraits(model.page == .profile ? .isSelected : [])
             .accessibilityIdentifier("account.menu")
         } else {
             systemMenu
@@ -446,9 +485,16 @@ struct AccountHeader: View {
         .padding(5)
         .padding(.trailing, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(hovering || open ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
+        .background(accountRowFill(highlighted: hovering || open),
             in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
         .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
+    }
+
+    /// The account row's fill: selected while the Profil page shows (no sidebar row stands for
+    /// it), the hover fill otherwise.
+    private func accountRowFill(highlighted: Bool) -> AnyShapeStyle {
+        if model.page == .profile { return AnyShapeStyle(.fill.secondary) }
+        return highlighted ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear)
     }
 
     /// iPad and visionOS: the system menu.
@@ -456,6 +502,8 @@ struct AccountHeader: View {
         Menu {
             AccountsMenuItems()
             Section {
+                Button("Profil", systemImage: "person.crop.circle") { model.page = .profile }
+                    .accessibilityIdentifier("account.profile")
                 Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
                     .accessibilityIdentifier("account.newVault")
                 Button("Importer…", systemImage: "square.and.arrow.down") { model.showImport = true }
@@ -463,7 +511,7 @@ struct AccountHeader: View {
                     .accessibilityIdentifier("account.import")
                 Button("Réglages…", systemImage: "gearshape") {
                     #if os(macOS)
-                    openSettings()
+                    if !model.openSettingsInWindow() { openSettings() }
                     #else
                     model.showSettings = true
                     #endif
@@ -496,7 +544,7 @@ struct AccountHeader: View {
             .padding(5)
             .padding(.trailing, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(hovering ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(.clear),
+            .background(accountRowFill(highlighted: hovering),
                 in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
             .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
         }
@@ -507,6 +555,7 @@ struct AccountHeader: View {
         .animation(.easeOut(duration: 0.12), value: hovering)
         .visionHoverEffect()
         .accessibilityLabel(Text("browse.account \(model.settings.displayName)"))
+        .accessibilityAddTraits(model.page == .profile ? .isSelected : [])
         .accessibilityIdentifier("account.menu")
         .sheet(isPresented: $creatingVault) {
             VaultEditorView(vault: nil) { creatingVault = false }
@@ -515,9 +564,10 @@ struct AccountHeader: View {
 }
 
 #if os(macOS)
-/// The account panel (Mac): who is signed in and on which device, then Nouveau coffre, Importer,
-/// Configurer un appareil, Réglages, and Verrouiller apart in red. Glass card, rows highlighted under the pointer with
-/// their shortcut on the right. Escape closes it.
+/// The account panel (Mac): the iPhone's account panel (who is signed in and on which kind of
+/// device, Ajouter un compte, Réglages, Nouveau coffre, Importer, Configurer un appareil, then
+/// Verrouiller apart in red), with the menu bar shortcuts on the right. Glass card under the
+/// account row, Escape closes it.
 struct AccountMenuPanel: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
@@ -525,147 +575,36 @@ struct AccountMenuPanel: View {
     let close: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // The account row above already shows who: only the kind of device here.
-            Text(model.settings.deviceMode == .shared ? "Appareil partagé" : "Appareil personnel")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
-                .padding(.bottom, Theme.Space.xxs)
-            divider
-            // The accounts of this Mac (multi-account spec 7): switch, add, search all when chosen.
-            ForEach(model.accounts.profiles) { profile in
-                MacAccountRow(profile: profile) {
-                    close()
-                    model.runAccountAction(.switchTo(profile.slot))
-                }
-                .accessibilityIdentifier("accounts.row.\(profile.isPrimary ? "primary" : profile.slot)")
-            }
-            AccountMenuRow(title: "accounts.add", symbol: "plus", shortcut: nil) {
+        AccountPanel { action in
+            switch action {
+            case .newVault:
+                newVault()
+            case .settings:
                 close()
-                model.runAccountAction(.add)
-            }
-            .accessibilityIdentifier("accounts.add")
-            if model.accounts.unifiedSearch, model.accounts.hasSeveralAccounts {
-                AccountMenuRow(title: "accounts.searchAll", symbol: "magnifyingglass", shortcut: nil) {
-                    close()
-                    model.runAccountAction(.searchAll)
-                }
-                .accessibilityIdentifier("accounts.searchAll")
-            }
-            divider
-            AccountMenuRow(title: "Nouveau coffre…", symbol: "plus.circle", shortcut: nil, action: newVault)
-                .accessibilityIdentifier("account.newVault")
-            AccountMenuRow(title: "Importer…", symbol: "square.and.arrow.down", shortcut: "⇧⌘I") {
+                if !model.openSettingsInWindow() { openSettings() }
+            case .profile:
+                close()
+                model.page = .profile
+            case .importItems:
                 close()
                 model.showImport = true
-            }
-            .accessibilityIdentifier("account.import")
-            AccountMenuRow(title: "Configurer un appareil…", symbol: "qrcode", shortcut: nil) {
+            case .setUpDevice:
                 close()
                 model.showDeviceSetup = true
-            }
-            .accessibilityIdentifier("account.setUpDevice")
-            AccountMenuRow(title: "Réglages…", symbol: "gearshape", shortcut: "⌘,") {
+            case .scanCode:
                 close()
-                openSettings()
-            }
-            .accessibilityIdentifier("account.settings")
-            divider
-            AccountMenuRow(title: "Verrouiller", symbol: "lock", shortcut: "⌘L", destructive: true) {
+                model.showOtpScanner = true
+            case .lock:
                 close()
                 model.perform(.lock)
-            }
-            .accessibilityIdentifier("account.lock")
-            if model.accounts.unlockedProfiles.count > 1 {
-                AccountMenuRow(title: "accounts.lockAll", symbol: "lock.fill", shortcut: nil, destructive: true) {
-                    close()
-                    model.runAccountAction(.lockAll)
-                }
-                .accessibilityIdentifier("accounts.lockAll")
+            case .account(let action):
+                close()
+                model.runAccountAction(action)
             }
         }
-        .padding(5)
-        // Never wider than the sidebar column (the panel was cut at its edge when it is narrow).
-        .frame(maxWidth: 252)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16, style: .continuous))
+        .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
         .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
         .onExitCommand(perform: close)
-    }
-
-    private var divider: some View {
-        Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
-    }
-}
-
-/// An account in the account panel: its avatar, name and a check on the account shown.
-private struct MacAccountRow: View {
-    @Environment(AppModel.self) private var model
-    let profile: AccountProfile
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        let active = profile.slot == model.accounts.activeSlot
-        Button(action: action) {
-            HStack(spacing: 10) {
-                AccountBadgeAvatar(
-                    initials: model.initials(of: profile), photo: active ? model.profileImage : nil,
-                    color: AccountStyle.color(profile.color), badge: AccountStyle.badge(profile), size: 22)
-                Text(verbatim: model.displayName(of: profile)).font(.body).lineLimit(1)
-                Spacer(minLength: 12)
-                if active {
-                    Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold))
-                } else if model.accounts.madeSession(profile.slot)?.state != .unlocked {
-                    Image(systemName: "lock.fill").font(.system(size: 11)).foregroundStyle(.tertiary)
-                }
-            }
-            .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(hovering ? AnyShapeStyle(Theme.accent.opacity(0.9)) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
-            .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityAddTraits(active ? .isSelected : [])
-    }
-}
-
-/// A row of the account panel.
-private struct AccountMenuRow: View {
-    let title: LocalizedStringKey
-    let symbol: String
-    let shortcut: String?
-    var destructive = false
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 18)
-                Text(title).font(.body)
-                Spacer(minLength: 12)
-                if let shortcut {
-                    Text(verbatim: shortcut)
-                        .font(.callout)
-                        .foregroundStyle(hovering ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.tertiary))
-                }
-            }
-            .foregroundStyle(hovering ? AnyShapeStyle(.white) : destructive ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(hovering ? AnyShapeStyle((destructive ? Color.red : Theme.accent).opacity(0.9)) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
-            .contentShape(.rect(cornerRadius: Theme.Radius.control, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
     }
 }
 #endif
@@ -880,7 +819,7 @@ struct SettingsButton: View {
     var body: some View {
         Button("Réglages", systemImage: "gearshape") {
             #if os(macOS)
-            openSettings()
+            if !model.openSettingsInWindow() { openSettings() }
             #else
             model.showSettings = true
             #endif

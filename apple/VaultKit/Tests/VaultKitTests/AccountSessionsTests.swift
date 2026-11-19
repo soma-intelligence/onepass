@@ -36,7 +36,17 @@ final class AccountsHarness {
         accounts = AccountSessions(store: store, primary: primary, defaults: defaults) { _, url, settings in
             environment(url, settings)
         }
+        relaunch = { [store, defaults] in
+            AccountSessions(store: store, primary: primary, defaults: defaults) { _, url, settings in
+                environment(url, settings)
+            }
+        }
     }
+
+    private var relaunch: (() -> AccountSessions)!
+
+    /// The accounts as a new launch sees them: no added account's session is open yet.
+    func relaunched() -> AccountSessions { relaunch() }
 
     /// Creates the account of `slot`'s session and binds it.
     func createAccount(in slot: String, name: String) async throws {

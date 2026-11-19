@@ -80,6 +80,15 @@ const answer: Answer = (r) => {
           ...(planFor ? [summary("it_03", { title: "Atlas Team", subtitle: "team@atlas.dev" })] : []),
         ],
       };
+    case "list_fillable":
+      return r.kind === "identity"
+        ? {
+            items: [
+              summary("id_01", { kind: "identity", title: "Alex Martin", subtitle: "Alex Martin", email: "alex@atlas.dev", has_password: false, match: null }),
+              summary("id_02", { kind: "identity", title: "Sans e-mail", subtitle: "Sam Doe", has_password: false, match: null }),
+            ],
+          }
+        : { items: [] };
     case "vaults":
       if (vaultsFor) return vaultsFor(r);
       return { vaults: [{ id: "v1", name: "Personnel", color: null }, { id: "v2", name: "Projet Atlas", color: "#0E7490" }] };
@@ -202,6 +211,34 @@ describe("menu extras", () => {
     expect(await ext.send({ type: "menu_init", token }, ui)).toEqual({ err: "invalid" });
   });
 
+  it("an email-only sign-up step lists the identities' e-mails first, and a pick fills the e-mail only", async () => {
+    const { ext, chain, client } = await setup();
+    const open = async (signupStep: boolean) => {
+      const r = (await ext.send(
+        { type: "open_menu", fieldRef: "e1", formRef: "f1", formKind: "login", ...(signupStep ? { signupStep: true } : {}) },
+        csSender(`${SITE}/login`, 7, 0, { documentId: "doc-1" }),
+      )) as { ok: { url: string } };
+      const token = hashOf(r.ok.url);
+      const ui = uiSender(`menu.html#${token}`, 7);
+      const init = (await ext.send({ type: "menu_init", token }, ui)) as { ok: { items: { item_id: string; subtitle: string }[] } };
+      return { token, ui, items: init.ok.items };
+    };
+    // A plain sign-in step: the site's logins only.
+    expect((await open(false)).items.map((x) => x.item_id)).toEqual(["it_01", "it_02"]);
+    // The sign-up step: identities with an e-mail first (the e-mail as subtitle), then the logins.
+    const { token, ui, items } = await open(true);
+    expect(items.map((x) => [x.item_id, x.subtitle])).toEqual([
+      ["id_01", "alex@atlas.dev"],
+      ["it_01", "alex@atlas.dev"],
+      ["it_02", "alex@atlas.dev"],
+    ]);
+    expect(await ext.send({ type: "menu_pick", token, itemId: "id_01" }, ui)).toEqual({ ok: {} });
+    // An identity fill: no chain, no sign-in, nothing sent.
+    expect(chain.calls).toEqual([]);
+    expect(client.requests.filter((r) => r.op === "fill_identity").map((r) => r.item_id)).toEqual(["id_01"]);
+    expect(client.requests.some((r) => r.op === "fill_login")).toBe(false);
+  });
+
   it("menu_pick on a password change form only fills (no chain)", async () => {
     const { ext, chain } = await setup();
     const r = (await ext.send(
@@ -240,7 +277,8 @@ describe("menu extras", () => {
       appLocked = true;
       listLocked = true;
       expect(await ext.send({ type: "menu_pick", token, itemId: "it_01" }, ui)).toEqual({ ok: {} });
-      expect(opened.n).toBe(1);
+      // Running: the app asks Touch ID over the browser, no launch link.
+      expect(opened.n).toBe(0);
       expect(client.requests.filter((r) => r.op === "unlock")).toHaveLength(1);
       expect(chain.calls).toEqual([]);
       const card = cardOf(ext);
@@ -257,7 +295,7 @@ describe("menu extras", () => {
       clock.t += 1500;
       await ext.send({ type: "overlay_state", token: card.token }, card.ui);
       expect(chain.calls).toHaveLength(1);
-      expect(opened.n).toBe(1);
+      expect(opened.n).toBe(0);
     });
 
     it("a provider row waits and resumes with its provider and the picked account", async () => {
@@ -506,8 +544,9 @@ describe("menu extras", () => {
     const { token, ui } = await menu(ext);
     expect(await ext.send({ type: "menu_unlock", token }, ui)).toEqual({ ok: { locked: false } });
     expect(client.requests.at(-1)).toEqual({ op: "unlock", origin: SITE });
-    // The click's process brings the app forward (macOS ignores the app's own activation).
-    expect(opened.n).toBe(1);
+    // The app answers: it asks Touch ID over the browser, the launch link (which would bring its
+    // window forward first) stays closed.
+    expect(opened.n).toBe(0);
     expect(await ext.send({ type: "menu_close", token }, ui)).toEqual({ ok: {} });
     expect(ext.sentToTabs.at(-1)?.message).toEqual({ type: "remove_frame", kind: "menu" });
   });
@@ -605,7 +644,8 @@ describe("overlay", () => {
     it("the app comes forward with its unlock; the card waits; unlocked, the chain starts once with what was clicked", async () => {
       const t = await lockedCard();
       expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_02", provider: "google", accountId: "g_pro" }, t.ui)).toEqual({ ok: { waiting: "locked" } });
-      expect(t.opened.n).toBe(1);
+      // Running: Touch ID over the browser, no launch link.
+      expect(t.opened.n).toBe(0);
       expect(t.unlocks()).toBe(1);
       expect(t.chain.calls).toEqual([]);
       // What is kept: ids and a time on the card's own token, in storage.session (a restart keeps it).
@@ -631,7 +671,7 @@ describe("overlay", () => {
       await t.state();
       expect(t.chain.calls).toHaveLength(1);
       expect((t.ext.session.data.get(`overlay:${t.token}`) as { pending?: unknown }).pending).toBeUndefined();
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
       expect(t.unlocks()).toBe(1);
     });
 
@@ -665,7 +705,11 @@ describe("overlay", () => {
 
     it("the app cannot be opened: locked as before, nothing waits; another start error is not an unlock", async () => {
       let t = await lockedCard(undefined, false);
+      // Not answering, and the launch link fails.
+      const down = vi.spyOn(t.bg.session, "request").mockRejectedValue(new BgError("host_missing"));
       expect(await t.ext.send({ type: "overlay_start", token: t.token, itemId: "it_01" }, t.ui)).toEqual({ err: "locked" });
+      expect(t.opened.n).toBe(1);
+      down.mockRestore();
       t.unlock();
       t.clock.t += 1500;
       expect(await t.state()).toEqual({ ok: { chain: null } });
@@ -793,7 +837,7 @@ describe("overlay", () => {
       const t = await generic();
       await t.ext.send({ type: "overlay_init", token: t.token }, t.ui);
       expect(await t.ext.send({ type: "overlay_unlock", token: t.token }, t.ui)).toEqual({ ok: { waiting: "locked" } });
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
       expect(t.client.requests.filter((r) => r.op === "unlock")).toHaveLength(1);
       expect(t.ext.session.data.get(`overlay:${t.token}`)).toMatchObject({ pending: { kind: "page", sent: true } });
       expect(await t.ext.send({ type: "overlay_state", token: t.token }, t.ui)).toEqual({ ok: { chain: null, waiting: "locked" } });
@@ -807,7 +851,8 @@ describe("overlay", () => {
       await t.ext.send({ type: "overlay_state", token: t.token }, t.ui);
       expect(smart(t.ext)).toHaveLength(1);
       // The plan that smart fill sends is the resumed gesture: it asks the app nothing more.
-      expect(t.opened.n).toBe(1);
+      expect(t.opened.n).toBe(0);
+      expect(t.client.requests.filter((r) => r.op === "unlock")).toHaveLength(1);
       // Open now: the card lists the site's sign-ins like any card.
       const init = (await t.ext.send({ type: "overlay_init", token: t.token }, t.ui)) as { ok: { accounts: unknown[]; generic?: boolean } };
       expect(init.ok.accounts).toHaveLength(2);
@@ -1337,7 +1382,8 @@ describe("save prompt", () => {
     checkAnswer = { status: "same", item_id: "it_01" };
     try {
       expect(await ext.send({ type: "save_decide", token, decision: "save", edits }, uiSender("save.html", 7))).toEqual({ ok: { outcome: "already" } });
-      expect(opened.n).toBe(1);
+      // Running: Touch ID over the browser, no launch link.
+      expect(opened.n).toBe(0);
       expect(client.requests.map((r) => r.op)).toEqual(expect.arrayContaining(["unlock", "check_credentials"]));
       // The card's unlock names the top origin of its tab.
       expect(client.requests.find((r) => r.op === "unlock")).toEqual({ op: "unlock", origin: SITE });

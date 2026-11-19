@@ -9,8 +9,10 @@
 // Real provider pages are never reached: accounts.google.com is the local,
 // fictional chooser of server.ts. A provider page answers "204 No Content"
 // once (page.route), so a running chain waits mid-step for its picture.
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Page } from "@playwright/test";
+import { chromium, test as plain, type Page } from "@playwright/test";
+import QRCode from "qrcode";
 import { END_SHOWN_MS } from "../src/background/chain/driver";
 import { type Ext, expect, paired } from "./fixtures";
 import { FX } from "./server";
@@ -215,4 +217,119 @@ for (const scheme of ["dark", "light"] as const) {
     await ext.settle();
     await shot(page, "save-link", scheme);
   });
+}
+
+// ---- the two-factor setup card (setup.html) ----
+//
+// Every state of the card, as the user sees it in the top right corner of a site's security page:
+// the built `setup.html` in a 340 px frame, its worker answered by a stub (no host, no vault, no
+// seed: fictional issuer, accounts and code). The frame takes the height the card reports
+// (`setup_resize`), like the content script does. File names: `setup-<state>-<scheme>[-en].png`.
+
+const SETUP_DIST = join(import.meta.dirname, "..", "dist", "chromium");
+const SETUP_TOKEN = "AbCdEfGhIjKlMnOpQrStUv";
+const SETUP_STATES = ["confirm", "mismatch", "replace", "list", "newlogin", "paste", "code", "codes"] as const;
+
+/** The stub worker, run in the card's frame before its script (state from `?s=`). */
+function setupStub(lang: string): void {
+  if (!location.pathname.startsWith("/__setup/")) return;
+  const s = new URLSearchParams(location.search).get("s") ?? "confirm";
+  const alex = { itemId: "it_01", title: "Atlas Cloud", username: "alex@atlas.dev", hasTotp: s === "replace", associated: false };
+  const sam = { itemId: "it_02", title: "Atlas (work)", username: "sam@atlas.dev", hasTotp: false, associated: false };
+  const docs = { itemId: "it_03", title: "Atlas Docs", username: "alex@atlas.dev", hasTotp: false, associated: true };
+  const base = { mode: "confirm", issuer: "Atlas Cloud", account: "alex@atlas.dev", candidates: [alex], selected: "it_01", mismatch: false };
+  const init =
+    s === "mismatch"
+      ? { ...base, account: "pat@atlas.dev", mismatch: true }
+      : s === "list" || s === "newlogin"
+        ? { ...base, candidates: [alex, sam, docs] }
+        : s === "paste"
+          ? { ...base, mode: "paste", issuer: "atlas-cloud.test", account: "" }
+          : s === "codes"
+            ? { ...base, mode: "codes", issuer: "atlas-cloud.test", account: "", codeCount: 10 }
+            : base;
+  const reply = (m: { type: string; height?: number }): unknown => {
+    switch (m.type) {
+      case "setup_init":
+        return { ok: init };
+      case "setup_resize":
+        parent.postMessage({ setupHeight: m.height }, "*");
+        return { ok: {} };
+      case "setup_save":
+        return { ok: s === "replace" ? { status: "exists" } : s === "code" ? { status: "saved", code: "482913", remaining: 21 } : { status: "saved" } };
+      default:
+        return { ok: {} };
+    }
+  };
+  (globalThis as unknown as { chrome: unknown }).chrome = {
+    runtime: { id: "setup-shots", sendMessage: async (m: { type: string }) => reply(m) },
+    i18n: { getUILanguage: () => lang },
+  };
+}
+
+/** A fictional security page with a setup QR (test secret), the card's frame in the corner. */
+async function setupPage(): Promise<string> {
+  const qr = await QRCode.toDataURL("otpauth://totp/Atlas%20Cloud:alex%40atlas.dev?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Atlas%20Cloud", { margin: 1, width: 180 });
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font: 15px/1.5 -apple-system, system-ui, sans-serif; background: Canvas; color: CanvasText; }
+    main { max-width: 520px; margin: 64px 0 0 72px; }
+    h1 { font-size: 24px; margin: 0 0 8px; } p { opacity: .7; margin: 0 0 24px; }
+    img { display: block; border-radius: 8px; background: #fff; }
+    label { display: block; margin: 24px 0 6px; } input { font: inherit; padding: 8px 10px; width: 160px; }
+    iframe { position: fixed; top: 16px; right: 16px; width: 340px; height: 120px; border: 0; border-radius: 12px; color-scheme: normal;
+      box-shadow: 0 0 0 .5px rgba(0,0,0,.16), 0 6px 20px rgba(0,0,0,.16); }
+  </style></head><body><main>
+    <h1>Two-factor authentication</h1><p>Scan this code with your authenticator app, then enter the 6-digit code.</p>
+    <img src="${qr}" width="180" height="180" alt="">
+    <label for="otp">Code</label><input id="otp" autocomplete="one-time-code">
+  </main><iframe id="card"></iframe>
+  <script>addEventListener("message", (e) => { if (e.data && e.data.setupHeight) document.getElementById("card").style.height = e.data.setupHeight + "px"; });</script>
+  </body></html>`;
+}
+
+for (const lang of ["fr", "en"] as const) {
+  for (const scheme of ["light", "dark"] as const) {
+    plain(`setup_card_shots_${lang}_${scheme}`, async () => {
+      plain.skip(!OUT, "set ONEPASS_E2E_SHOTS to a directory");
+      const browser = await chromium.launch({ channel: "chromium", headless: true });
+      try {
+        const page = await browser.newPage({ viewport: { width: 1000, height: 600 }, colorScheme: scheme, deviceScaleFactor: 2 });
+        // Nothing leaves the machine: every request is answered here.
+        const html = await setupPage();
+        await page.route("**/*", async (route) => {
+          const u = new URL(route.request().url());
+          if (u.hostname !== "atlas-cloud.test") return route.abort("blockedbyclient");
+          if (u.pathname === "/security") return route.fulfill({ contentType: "text/html", body: html });
+          const file = u.pathname.replace(/^\/__setup\//, "");
+          if (!["setup.html", "setup.js", "theme.css"].includes(file)) return route.fulfill({ status: 404, body: "" });
+          const type = file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : "text/html";
+          return route.fulfill({ contentType: type, body: readFileSync(join(SETUP_DIST, file)) });
+        });
+        await page.addInitScript(setupStub, lang);
+        for (const state of SETUP_STATES) {
+          await page.goto(`${ATLAS}/security`);
+          const src = `${ATLAS}/__setup/setup.html?s=${state}#${SETUP_TOKEN}`;
+          await page.locator("#card").evaluate((f, url) => ((f as HTMLIFrameElement).src = url), src);
+          const card = page.frameLocator("#card");
+          await expect(card.locator(".save-card, .saved")).toBeVisible();
+          // Past the click guard of a freshly shown card.
+          await wait(400);
+          if (state === "replace" || state === "code") {
+            await card.locator("button.sc-primary").click();
+            await expect(card.locator(state === "code" ? ".sc-code" : ".sc-note")).toBeVisible();
+          } else if (state === "newlogin") {
+            await card.locator("button.sc-pick").last().click();
+            await expect(card.locator("input.sc-identifier")).toBeVisible();
+          } else if (state === "paste") {
+            await card.locator("input.sc-key").fill("JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP");
+          }
+          await wait(250);
+          await page.screenshot({ path: join(OUT ?? "", `setup-${state}-${scheme}${lang === "fr" ? "" : "-en"}.png`) });
+        }
+      } finally {
+        await browser.close();
+      }
+    });
+  }
 }

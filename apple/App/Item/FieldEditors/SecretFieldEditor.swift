@@ -11,6 +11,8 @@ struct SecretFieldEditor: View {
     @Environment(AppModel.self) private var model
     let field: FfiField
     @Binding var value: FfiFieldValue
+    /// The live code under a one-time password. The editor's card rows leave it to the item page.
+    var showsLiveCode = true
     @Environment(\.requestGenerator) private var requestGenerator
     @State private var revealed = false
     #if os(iOS) || os(visionOS)
@@ -20,6 +22,11 @@ struct SecretFieldEditor: View {
     #endif
     @State private var generating = false
     @State private var scanning = false
+    /// Keyboard focus of the masked field (UIKit) and of the revealed one (SwiftUI).
+    @State private var secureFocused = false
+    @FocusState private var plainFocused: Bool
+    @Environment(\.editorFocusID) private var chainID
+    @Environment(\.editorAdvance) private var advance
     /// The value the generator just put in, with its recipe bits (the meter shows those for it).
     @State private var generated: GeneratedValue?
 
@@ -42,7 +49,7 @@ struct SecretFieldEditor: View {
                 Button {
                     revealed.toggle()
                 } label: {
-                    Image(systemName: revealed ? "eye.slash" : "eye")
+                    Image(systemName: revealed ? "eye.slash" : "eye").editorTapTarget()
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(revealed ? Text("Masquer") : Text("Révéler"))
@@ -50,26 +57,31 @@ struct SecretFieldEditor: View {
                     Button {
                         openGenerator()
                     } label: {
-                        Image(systemName: "wand.and.stars")
+                        Image(systemName: "wand.and.stars").editorTapTarget()
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(Text("Générer"))
                     .accessibilityIdentifier("editor.generate.\(field.id)")
                 }
                 #if os(iOS)
-                if field.kind == .otp, SecretKeyScanner.isSupported {
+                // Shown whenever the device has a camera that can scan: the sheet explains a denied access.
+                if field.kind == .otp, SecretKeyScanner.isDeviceSupported {
                     Button {
                         scanning = true
                     } label: {
-                        Image(systemName: "qrcode.viewfinder")
+                        Image(systemName: "qrcode.viewfinder").editorTapTarget()
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(Text("Scanner un QR code"))
                     .accessibilityIdentifier("editor.scanOtp.\(field.id)")
                 }
+                #elseif os(macOS)
+                if field.kind == .otp {
+                    OtpScanButton { value = .otp(value: $0) }
+                }
                 #endif
             }
-            if field.kind == .otp, !value.text.isEmpty {
+            if field.kind == .otp, showsLiveCode, !value.text.isEmpty {
                 if captured {
                     Text(verbatim: FieldRow.mask).font(.callout.monospacedDigit())
                 } else {
@@ -139,9 +151,15 @@ struct SecretFieldEditor: View {
         // The label is above the row: no placeholder repeating it inside the field.
         if revealed && !captured {
             TextField(field.displayLabel, text: text, prompt: Text(""), axis: field.kind == .mnemonic ? .vertical : .horizontal)
+                .editorChained($plainFocused)
         } else {
             // Emptied as it leaves the screen: iOS never offers to save the value (ruling X24).
-            SecretInputField(title: field.displayLabel, text: text, monospaced: true, identifier: "editor.field.\(field.id)")
+            SecretInputField(
+                title: field.displayLabel, text: text, focused: $secureFocused,
+                submitNext: chainID != nil && advance != nil,
+                onSubmit: { if let chainID { advance?(chainID) } },
+                monospaced: true, identifier: "editor.field.\(field.id)")
+                .modifier(EditorChainedSecureFocus(focused: $secureFocused))
         }
     }
 }
@@ -214,7 +232,7 @@ struct SshKeyEditor: View {
                 Button {
                     revealed.toggle()
                 } label: {
-                    Image(systemName: revealed ? "eye.slash" : "eye")
+                    Image(systemName: revealed ? "eye.slash" : "eye").editorTapTarget()
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(revealed ? Text("Masquer") : Text("Révéler"))
@@ -251,5 +269,18 @@ struct SshKeyEditor: View {
         .onChange(of: model.session.concealGeneration) { revealed = false }
         // Screen captured (iOS, visionOS): masked now, and still masked once the capture ends.
         .onChange(of: captured) { _, now in if now { revealed = false } }
+    }
+}
+
+extension View {
+    /// A 44 pt hit area around a small icon button of the editor (eye, wand, QR, minus).
+    /// Touch screens only: the Mac pointer needs no extra room.
+    @ViewBuilder func editorTapTarget() -> some View {
+        #if os(iOS) || os(visionOS)
+        frame(minWidth: Theme.RX.Metrics.minTapTarget, minHeight: Theme.RX.Metrics.minTapTarget)
+            .contentShape(.rect)
+        #else
+        self
+        #endif
     }
 }

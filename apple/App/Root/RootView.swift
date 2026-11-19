@@ -25,6 +25,8 @@ struct RootView: View {
     #if DEBUG
     @State private var demoDoorPlayed = false
     #endif
+    /// The animated splash of a cold launch (`RXSplash`), once per process.
+    @State private var splashing = RootView.splashOnLaunch
     #endif
     /// Credentials handed over by another app (Credential Exchange), waiting for the unlock.
     @State private var credentialExchange: CredentialExchangeRequest?
@@ -44,6 +46,12 @@ struct RootView: View {
                 MainActor.assumeIsolated { if let seam { doorSeam = seam } }
             }
             .overlay { doorOverlay }
+            .overlay {
+                if splashing {
+                    RXSplash(landing: doorSeam) { splashing = false }
+                        .transition(.identity)
+                }
+            }
             // A catch as the dial turns, a firmer one as the bolt releases and the door parts.
             .sensoryFeedback(trigger: door.phase) { _, phase in
                 switch phase {
@@ -79,6 +87,12 @@ struct RootView: View {
                 model.finishAddingAccountIfNeeded()
                 model.consumePendingRoute()
             }
+            #if DEBUG
+            // The demo account is seeded: a route that arrived meanwhile runs now.
+            .onChange(of: model.demoPreparing) { _, preparing in
+                if !preparing { model.consumePendingRoute() }
+            }
+            #endif
             // The services bound to the primary account follow its state, whichever account shows.
             .onChange(of: model.primarySession.state) { _, state in
                 model.primaryStateChanged(state)
@@ -97,7 +111,7 @@ struct RootView: View {
                 ImportSheet(credentialExchange: request.token)
             }
             .onOpenURL { url in
-                // The three `onepass://` links and the verification code links; anything else is
+                // The `onepass://` links and the verification code links; anything else is
                 // ignored. A code link waits for the unlock like the others.
                 #if os(macOS)
                 if BrowserBridge.isUnlockLink(url) {
@@ -105,7 +119,11 @@ struct RootView: View {
                     return
                 }
                 #endif
-                if let link = OnePassLink(url: url) {
+                // An organisation invitation first: its link carries secrets the core reads only
+                // once the vault is open.
+                if OrgConsole.isJoinLink(url) {
+                    model.handle(.orgJoin(url.absoluteString))
+                } else if let link = OnePassLink(url: url) {
                     model.open(link)
                 } else if OtpLink.handles(url) {
                     model.handle(.otpLink(url.absoluteString))
@@ -136,6 +154,14 @@ struct RootView: View {
             .sheet(isPresented: Binding(
                 get: { model.showAddAccount }, set: { model.showAddAccount = $0 })) {
                 AddAccountSheet()
+            }
+            // Joining or creating an organisation (an invitation link, or "Add an account"). Shown
+            // over the onboarding of its managed slot once that slot exists.
+            .sheet(item: Binding(get: { model.orgSheet }, set: { model.orgSheet = $0 })) { sheet in
+                switch sheet {
+                case .join(let invite, let look): OrgJoinSheet(invite: invite, look: look)
+                case .create(let look): OrgCreateSheet(look: look)
+                }
             }
             .sheet(isPresented: Binding(
                 get: { model.showAllAccountsSearch && model.accounts.unifiedSearch },
@@ -206,12 +232,10 @@ struct RootView: View {
     private var doorKeepsLock: Bool { door.keepsLockOnTop }
     private var doorHoldsPresentations: Bool { door.holdsPresentations }
     private var doorShowsVault: Bool { door.showsVaultUnderneath }
-    private var vaultScale: CGFloat { door.vaultScale }
     #else
     private var doorKeepsLock: Bool { false }
     private var doorHoldsPresentations: Bool { false }
     private var doorShowsVault: Bool { false }
-    private var vaultScale: CGFloat { 1 }
     #endif
 
     private enum Route: Hashable {
@@ -266,9 +290,11 @@ struct RootView: View {
             // One view per account: nothing typed or shown for one account stays for another.
             ZStack {
                 if route == .unlocked || doorShowsVault {
+                    // Never scaled under the door: the native Liquid Glass tab bar does not follow
+                    // an animated scale and jumped into place when it ended; a scale below 1 also
+                    // showed the window's black ground in the safe areas.
                     BrowseRoot()
                         .id(model.accounts.activeSlot)
-                        .scaleEffect(vaultScale)
                         .transition(.opacity)
                 }
                 if route == .lock || doorKeepsLock {
@@ -307,6 +333,19 @@ struct RootView: View {
 }
 
 #if os(iOS)
+// MARK: - Splash
+
+extension RootView {
+    /// Debug captures and UI tests can skip it with `-OnePassNoSplash YES`.
+    static var splashOnLaunch: Bool {
+        #if DEBUG
+        !UserDefaults.standard.bool(forKey: "OnePassNoSplash")
+        #else
+        true
+        #endif
+    }
+}
+
 // MARK: - Vault door
 
 extension RootView {
@@ -368,7 +407,7 @@ extension RootView {
     }
 
     /// The dial is at rest a quarter turn on: the lock screen is captured as it is on screen and
-    /// replaced by its picture in two panels, which part while the vault settles to full size.
+    /// replaced by its picture in two panels, which part over the vault.
     private func turnFinished(generation: Int) {
         guard generation == doorGeneration, door.phase == .turning else { return }
         guard let snapshot = captureWindow() else {

@@ -1,0 +1,82 @@
+{
+  "format": 1,
+  "sites": {
+    "amazon.com": {
+      "additional_domains": [
+        "amazon.de",
+        "amazon.fr"
+      ],
+      "help": "https://www.amazon.com/passkeys",
+      "passkey": "mfa",
+      "twofa": [
+        "sms",
+        "totp"
+      ]
+    },
+    "dropbox.com": {
+      "additional_domains": [],
+      "passkey": "signin"
+    },
+    "github.com": {
+      "additional_domains": [
+        "githubusercontent.com"
+      ],
+      "help": "https://docs.github.com/authentication/securing-your-account-with-two-factor-authentication-2fa",
+      "passkey": "signin",
+      "setup_passkey": {
+        "steps": [],
+        "url": "https://github.com/settings/security",
+        "verified": {
+          "browser": "chromium",
+          "date": "2026-11-20"
+        }
+      },
+      "setup_totp": {
+        "steps": [
+          {
+            "do": "goto",
+            "url": "https://github.com/settings/security"
+          },
+          {
+            "do": "reauth"
+          },
+          {
+            "do": "click",
+            "name": [
+              "Enable two-factor"
+            ],
+            "role": "button"
+          },
+          {
+            "do": "click",
+            "name": [
+              "Authenticator app"
+            ],
+            "role": "radio"
+          },
+          {
+            "do": "expect_qr"
+          }
+        ],
+        "url": "https://github.com/settings/security",
+        "verified": {
+          "browser": "chromium",
+          "date": "2026-11-20"
+        }
+      },
+      "twofa": [
+        "custom-software",
+        "sms",
+        "totp",
+        "u2f"
+      ]
+    },
+    "ovh.com": {
+      "additional_domains": [],
+      "twofa": [
+        "totp"
+      ]
+    }
+  },
+  "version": 2026112001
+}

@@ -32,7 +32,11 @@ enum SettingsTiming {
 /// from milestone 2b, Travel Mode and, on the Mac, Développeur from milestone 7): a grouped list on
 /// iPhone and iPad, tabs in the Mac `Settings` window.
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, security, autofill, sync, accounts, vaults, contacts, family, devices, travel, crypto, developer, about
+    case general, security, autofill, sync, accounts, vaults, contacts, family, organisation, devices, travel, crypto,
+        developer, about
+    #if DEBUG
+    case iconCheck
+    #endif
 
     var id: String { rawValue }
 
@@ -46,11 +50,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .vaults: "Coffres"
         case .contacts: "settings.contacts.title"
         case .family: "settings.family.title"
+        case .organisation: "org.title"
         case .devices: "Appareils"
         case .travel: "Travel Mode"
         case .crypto: "crypto.title"
         case .developer: "Développeur"
         case .about: "À propos"
+        #if DEBUG
+        case .iconCheck: "Icônes à vérifier"
+        #endif
         }
     }
 
@@ -64,11 +72,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .vaults: "lock.rectangle.stack.fill"
         case .contacts: "person.crop.circle.badge.checkmark"
         case .family: "figure.2.and.child.holdinghands"
+        case .organisation: "building.2.fill"
         case .devices: "laptopcomputer.and.iphone"
         case .travel: "airplane"
         case .crypto: "bitcoinsign.circle"
         case .developer: "chevron.left.forwardslash.chevron.right"
         case .about: "info.circle"
+        #if DEBUG
+        case .iconCheck: "photo.badge.checkmark"
+        #endif
         }
     }
 
@@ -82,17 +94,26 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .vaults: Color(red: 0.49, green: 0.23, blue: 0.93)
         case .contacts: Color(red: 0.16, green: 0.60, blue: 0.86)
         case .family: Color(red: 0.93, green: 0.36, blue: 0.45)
+        case .organisation: Color(red: 0.35, green: 0.34, blue: 0.84)
         case .devices: Color(red: 0.0, green: 0.55, blue: 0.70)
         case .travel: Color(red: 0.0, green: 0.55, blue: 0.75)
         case .crypto: Color(red: 0.95, green: 0.58, blue: 0.10)
         case .developer: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
         case .about: Theme.accent
+        #if DEBUG
+        case .iconCheck: Color(red: 0x47 / 255, green: 0x55 / 255, blue: 0x69 / 255)
+        #endif
         }
     }
 
-    /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab.
+    /// The page's drawn tile in Assets (Settings/settings-<page>), chosen in the icon lab. Organisation
+    /// has none yet: its symbol on its tint.
     var artwork: String? {
-        "settings-\(rawValue)"
+        if self == .organisation { return nil }
+        #if DEBUG
+        if self == .iconCheck { return nil }
+        #endif
+        return "settings-\(rawValue)"
     }
 
     /// The page's content, without its own navigation container.
@@ -106,6 +127,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .vaults: VaultsSettings()
         case .contacts: ContactsView()
         case .family: FamilyView()
+        case .organisation: OrganisationSettings()
         case .devices: DevicesSettings()
         case .travel: TravelSettings()
         case .crypto: CryptoSettingsView()
@@ -116,8 +138,30 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             EmptyView()
             #endif
         case .about: AboutSettings()
+        #if DEBUG
+        case .iconCheck: IconCheckSettings()
+        #endif
         }
     }
+}
+
+/// Where Réglages pushes, by value, through the stack's path: a page of `SettingsPage`, or a page
+/// outside that list (the plan page; on iPhone Profil, Apple Watch, Agents, Personnaliser
+/// l'accueil, the profile QR code and the perk tiles). Each stack draws them with one
+/// `navigationDestination(for:)`, so the path holds every pushed page and the demo launch
+/// arguments open a page by setting the path.
+enum SettingsRoute: Hashable {
+    case page(SettingsPage)
+    /// RX: the page of the Plus card.
+    case plan
+    #if os(iOS)
+    case profile, homeCards, watch, agents
+    /// RX: the profile QR code, pushed in Réglages (the Mac shows it in a sheet).
+    case profileQR
+    /// RX: the page of a perk tile (`RXPerkCarousel.Perk.id`), zooming out of the tile rather than
+    /// out of the row of the same page.
+    case perk(String)
+    #endif
 }
 
 #if os(iOS) || os(visionOS)
@@ -127,73 +171,175 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var path: [SettingsPage] = SettingsView.initialPath
+    @State private var path: [SettingsRoute] = SettingsView.initialPath
+    /// RX (iPhone): the zoom from a row or tile of Réglages into its page.
+    @Namespace private var settingsZoom
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
-    /// Screenshots (Debug): `-OnePassDemoSettingsPage <page>` opens that page.
-    private static var initialPath: [SettingsPage] {
+    /// Screenshots (Debug): `-OnePassDemoSettingsPage <page>` opens that page; in the RX look,
+    /// `-OnePassDemoRXSettings plan|profileQR` opens the plan page or the profile QR code.
+    private static var initialPath: [SettingsRoute] {
+        var path: [SettingsRoute] = []
         #if DEBUG
-        if let name = UserDefaults.standard.string(forKey: "OnePassDemoSettingsPage"),
-            let page = SettingsPage(rawValue: name)
-        {
-            return [page]
+        let defaults = UserDefaults.standard
+        if let name = defaults.string(forKey: "OnePassDemoSettingsPage"), let page = SettingsPage(rawValue: name) {
+            path = [.page(page)]
+        }
+        #if os(iOS)
+        let rx = AppModel.browseDefaults.object(forKey: RXDesign.storageKey) as? Bool ?? RXDesign.launchDefault
+        switch rx ? defaults.string(forKey: "OnePassDemoRXSettings") : nil {
+        case "plan": path.append(.plan)
+        case "profileQR": path.append(.profileQR)
+        default: break
         }
         #endif
-        return []
+        #endif
+        return path
     }
 
     var body: some View {
         NavigationStack(path: $path) {
-            List {
-                Section {
-                    NavigationLink {
-                        ProfileSettings()
-                    } label: {
-                        SettingsAccountHeader()
-                    }
-                    .accessibilityIdentifier("settings.account")
+            root
+                // The one destination of the stack: every row, tile and card pushes by value.
+                .navigationDestination(for: SettingsRoute.self) { route in
+                    destination(route)
+                        #if os(iOS)
+                        // The pushed page needs the namespace too, or its zoom has no source.
+                        .environment(\.itemZoomNamespace, rxDesign ? settingsZoom : nil)
+                        #endif
                 }
-                Section {
-                    row(.general)
-                    row(.security)
-                    row(.autofill)
-                    row(.sync)
-                }
-                Section {
-                    row(.accounts)
-                    row(.vaults)
-                    row(.contacts)
-                    row(.family)
-                    row(.devices)
-                    row(.travel)
-                    row(.crypto)
-                    #if os(iOS)
-                    watchRow
-                    agentsRow
-                    #endif
-                }
-                Section {
-                    row(.about)
-                } footer: {
-                    Text("settings.onepassOpenSourceAgpl")
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, Theme.Space.s)
-                }
-            }
-            .settingsPage("Réglages")
-            .navigationDestination(for: SettingsPage.self) { page in
-                page.content
-            }
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("OK") { dismiss() }
-                        .accessibilityIdentifier("settings.done")
-                }
-            }
+                #if os(iOS)
+                // RX: rows, perk tiles and the plan card zoom into the page they open; the classic
+                // list has no namespace, so its pages push as usual.
+                .environment(\.itemZoomNamespace, rxDesign ? settingsZoom : nil)
+                #endif
         }
+        #if os(iOS)
+        // RX: Réglages are a full screen cover, which has no drag to dismiss; every frosted page
+        // closes them when pulled down past its top (RXPullDownToDismiss).
+        .environment(\.rxPullDownDismiss, rxDesign ? { dismiss() } : nil)
+        #endif
         // Not a tap gesture on the stack or the pages: on iOS 27 it swallows the taps of the
         // navigation rows and pickers below it. Opening or leaving a page counts as activity.
         .onChange(of: path) { model.session.noteActivity() }
-        .onAppear { SettingsTiming.mark("shown") }
+        .onAppear {
+            SettingsTiming.mark("shown")
+            // A page asked by another screen (Profil > Synchronisation, Sécurité): opened on top.
+            if let request = model.settingsPageRequest {
+                model.settingsPageRequest = nil
+                path = [.page(request)]
+            }
+        }
+    }
+
+    /// The classic grouped list (the RX look off).
+    private var classicList: some View {
+        List {
+            Section {
+                NavigationLink {
+                    ProfileSettings()
+                } label: {
+                    SettingsAccountHeader()
+                }
+                .accessibilityIdentifier("settings.account")
+            }
+            Section {
+                row(.general)
+                row(.security)
+                row(.autofill)
+                row(.sync)
+            }
+            Section {
+                row(.accounts)
+                row(.vaults)
+                row(.contacts)
+                row(.family)
+                row(.organisation)
+                row(.devices)
+                row(.travel)
+                row(.crypto)
+                #if os(iOS)
+                watchRow
+                agentsRow
+                #endif
+            }
+            Section {
+                row(.about)
+                #if DEBUG
+                row(.iconCheck)
+                #endif
+            } footer: {
+                Text("settings.onepassOpenSourceAgpl")
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Theme.Space.s)
+            }
+        }
+        .settingsPage("Réglages")
+        .toolbar { doneItem }
+    }
+
+    /// The root: the RX Réglages while the look is on (iPhone), else the classic list.
+    @ViewBuilder private var root: some View {
+        #if os(iOS)
+        if rxDesign {
+            RXSettingsHome()
+        } else {
+            classicList
+        }
+        #else
+        classicList
+        #endif
+    }
+
+    /// The page of a route. "OK" on every page of `SettingsPage`: opened straight on one, it still
+    /// closes the sheet. In the RX look each page zooms out of the row, tile or card that opened it
+    /// (nothing without the namespace, so the classic list pushes as usual).
+    @ViewBuilder private func destination(_ route: SettingsRoute) -> some View {
+        switch route {
+        case .page(let page):
+            #if os(iOS)
+            page.content
+                .toolbar { doneItem }
+                .zoomDestination(page)
+            #else
+            page.content
+                .toolbar { doneItem }
+            #endif
+        case .plan:
+            #if os(iOS)
+            RXPlanPage().zoomDestination(RXSettingsHome.planZoomID)
+            #else
+            RXPlanPage()
+            #endif
+        #if os(iOS)
+        case .profile:
+            ProfileSettings().zoomDestination("settings.account")
+        case .homeCards:
+            RXHomeCardsSettings().zoomDestination("rx.settings.homeCards")
+        case .watch:
+            WatchSettings().zoomDestination("settings.watch")
+        case .agents:
+            AgentsSettings().zoomDestination("settings.agents")
+        case .profileQR:
+            RXProfileQRPage().zoomDestination(RXSettingsHome.profileQRZoomID)
+        case .perk(let id):
+            if let perk = RXPerkCarousel.perks.first(where: { $0.id == id }) {
+                perk.page.content
+                    .zoomDestination("perk.\(perk.id)")
+            }
+        #endif
+        }
+    }
+
+    /// The system close button of the sheet, on the root and on every page (the same role and
+    /// identifier as the RX root's).
+    private var doneItem: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            // Monochrome in the frosted Réglages, as on the root.
+            Button(role: .close) { dismiss() }
+                .tint(rxDesign ? Theme.RX.Palette.textPrimary.color : nil)
+                .accessibilityIdentifier("settings.done")
+        }
     }
 
     #if os(iOS)
@@ -221,7 +367,7 @@ struct SettingsView: View {
     #endif
 
     private func row(_ page: SettingsPage) -> some View {
-        NavigationLink(value: page) {
+        NavigationLink(value: SettingsRoute.page(page)) {
             SettingsRowLabel(title: page.title, symbol: page.symbol, color: page.tint, artwork: page.artwork)
         }
         .accessibilityIdentifier("settings.\(page.rawValue)")
@@ -289,14 +435,14 @@ extension View {
     /// iPad: an inline title over the app's page color, content fading under the bar with the
     /// shared header fade.
     func settingsPage(_ title: LocalizedStringKey) -> some View {
-        formStyle(.grouped)
+        modifier(SettingsFormStyle())
             .navigationTitle(title)
             #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             #if os(iOS)
             .scrollContentBackground(.hidden)
-            .background(Theme.page.ignoresSafeArea())
+            .modifier(ClassicSettingsBackground())
             // Buttons and values in the accent keep 4.5:1 on the dark cards too.
             .tint(Theme.readableAccent)
             .headerFade()
@@ -304,16 +450,75 @@ extension View {
     }
 }
 
+/// The grouped form everywhere, except inside the Réglages page of the Mac main window (RX look),
+/// where the form draws as RX cards (`RXMacFormStyle`).
+private struct SettingsFormStyle: ViewModifier {
+    #if os(macOS)
+    @Environment(\.rxMacSettingsPage) private var inRXPage
+    @Environment(\.rxMacSettingsDepth) private var depth
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    /// Pushed over another settings form of the popup: a back button above the cards.
+    @State private var pushed = false
+    #endif
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        if inRXPage, rxDesign {
+            content
+                .formStyle(RXMacFormStyle())
+                .environment(\.rxSettings, true)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if pushed { RXMacSettingsBackBar { dismiss() } }
+                }
+                .onAppear {
+                    guard let depth else { return }
+                    pushed = depth.current > 0
+                    depth.appeared()
+                }
+                .onDisappear { depth?.disappeared() }
+        } else {
+            content.formStyle(.grouped)
+        }
+        #else
+        content.formStyle(.grouped)
+        #endif
+    }
+}
+
+#if os(iOS)
+/// The background of a settings page: the page colour, or in the RX look the screen under
+/// Réglages blurred (RXFrostedBackdrop), with no colour from the navigation stack.
+private struct ClassicSettingsBackground: ViewModifier {
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+
+    func body(content: Content) -> some View {
+        if rxDesign {
+            content
+                .modifier(RXPullDownToDismiss())
+                .background(RXFrostedBackdrop().ignoresSafeArea())
+                .containerBackground(Color.clear, for: .navigation)
+        } else {
+            content.background(Theme.page.ignoresSafeArea())
+        }
+    }
+}
+#endif
+
 #if os(macOS)
 /// The Mac `Settings` window (⌘,): pages in a sidebar of colored tiles, the page on the right.
 /// Nothing is shown while the vault is locked.
 struct MacSettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var page: SettingsPage? = .general
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
 
     var body: some View {
         Group {
-            if model.session.state == .unlocked {
+            if model.session.state == .unlocked, rxDesign {
+                // The RX look opens Réglages in the main window: this window hands over and closes.
+                RXSettingsWindowRedirect()
+            } else if model.session.state == .unlocked {
                 NavigationSplitView {
                     List(selection: $page) {
                         Section {
@@ -324,6 +529,7 @@ struct MacSettingsView: View {
                             row(.vaults)
                             row(.contacts)
                             row(.family)
+                            row(.organisation)
                             row(.devices)
                             row(.travel)
                             row(.crypto)
@@ -331,6 +537,9 @@ struct MacSettingsView: View {
                         }
                         Section {
                             row(.about)
+                            #if DEBUG
+                            row(.iconCheck)
+                            #endif
                         }
                     }
                     .listStyle(.sidebar)
@@ -361,6 +570,8 @@ struct MacSettingsView: View {
     /// A page asked by another screen (Développeur page cards).
     private func takeRequest() {
         guard let request = model.settingsPageRequest else { return }
+        // The RX page takes the request itself.
+        guard !rxDesign else { return }
         page = request
         model.settingsPageRequest = nil
     }

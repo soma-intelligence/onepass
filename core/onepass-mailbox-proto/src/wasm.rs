@@ -15,9 +15,10 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     BlobAnnounce, BlobLookup, BlobUrls, ChangesPage, ChangesQuery, CommitRequest, CommitResponse,
-    CreateChild, CreateMailbox, Enroll, EnrollTicket, ErrorBody, GrantCredential, LocateRequest,
-    Located, MailboxCreated, MailboxInfo, Message, ServerConfig, ServerRecord, SetCredentialRole,
-    SetLocator, SetPush, SignatureParams, SignedEnrollTicket, decode, encode,
+    CreateChild, CreateMailbox, CreateOrgInvite, Enroll, EnrollTicket, ErrorBody, GrantCredential,
+    LocateRequest, Located, MailboxCreated, MailboxInfo, Message, OrgInviteCreated, ServerConfig,
+    ServerRecord, SetCredentialRole, SetLocator, SetPush, SignatureParams, SignedEnrollTicket,
+    decode, encode,
 };
 
 fn err(e: impl Display) -> JsError {
@@ -89,6 +90,28 @@ pub fn decode_set_locator(bytes: &[u8]) -> Result<JsValue, JsError> {
 #[wasm_bindgen(js_name = decodeCreateChild)]
 pub fn decode_create_child(bytes: &[u8]) -> Result<JsValue, JsError> {
     dec::<CreateChild>(bytes)
+}
+
+/// `{ uses, ttl_hours }`, one use and 1 to 168 hours.
+#[wasm_bindgen(js_name = decodeCreateOrgInvite)]
+pub fn decode_create_org_invite(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<CreateOrgInvite>(bytes)
+}
+
+#[wasm_bindgen(js_name = encodeCreateOrgInvite)]
+pub fn encode_create_org_invite(v: JsValue) -> Result<Vec<u8>, JsError> {
+    enc::<CreateOrgInvite>(v)
+}
+
+/// `{ token }`, 32 bytes.
+#[wasm_bindgen(js_name = decodeOrgInviteCreated)]
+pub fn decode_org_invite_created(bytes: &[u8]) -> Result<JsValue, JsError> {
+    dec::<OrgInviteCreated>(bytes)
+}
+
+#[wasm_bindgen(js_name = encodeOrgInviteCreated)]
+pub fn encode_org_invite_created(v: JsValue) -> Result<Vec<u8>, JsError> {
+    enc::<OrgInviteCreated>(v)
 }
 
 #[wasm_bindgen(js_name = decodeBlobAnnounce)]

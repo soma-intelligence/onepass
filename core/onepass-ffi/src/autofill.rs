@@ -14,7 +14,8 @@ use onepass_core::fill_plan::score::{
     score,
 };
 use onepass_core::model::usage::{
-    SiteUsage, StepKind, associated_pick_host, associated_pick_key, form_shape_hash, last_used_on,
+    APP_USE_KEY, SiteUsage, StepKind, associated_pick_host, associated_pick_key, form_shape_hash,
+    last_used_on,
 };
 use onepass_core::model::{
     self, Field, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule,
@@ -267,6 +268,7 @@ impl LastUsed {
         let sites: BTreeSet<&str> = items
             .iter()
             .flat_map(|i| i.usage.iter().map(|u| u.site.as_str()))
+            .filter(|s| *s != APP_USE_KEY)
             .collect();
         let by_site = |pool: &[&Item]| -> HashMap<String, Id> {
             sites
@@ -515,13 +517,12 @@ pub(crate) fn to_candidate(item: &Item, q: PlanQuality) -> Candidate {
     }
 }
 
-/// When the Login was last filled anywhere (nanoseconds, 0 for never).
+/// When the Login was last filled anywhere (nanoseconds, 0 for never). A
+/// use inside the app (`APP_USE_KEY`) never ranks a fill.
 fn last_use_nanos(item: &Item) -> i64 {
-    item.usage
-        .iter()
-        .map(|u| i64::try_from(u.last_at.unix_timestamp_nanos()).unwrap_or(i64::MAX))
-        .max()
-        .unwrap_or(0)
+    item.last_fill_at().map_or(0, |at| {
+        i64::try_from(at.unix_timestamp_nanos()).unwrap_or(i64::MAX)
+    })
 }
 
 /// Puts the passkey in the first empty `passkeys` field, or in a copy right
@@ -926,9 +927,15 @@ impl Session {
                     site: pick,
                     ..usage.clone()
                 };
-                written = repo.record_usage(&vault, item_id, pick, now, true)?;
+                written = repo.record_usage(&vault, item_id, pick, now, true, "")?;
             }
-            written |= repo.record_usage(&vault, item_id, usage, now, force)?;
+            // The key use names the app filled; a browser stays unnamed (the
+            // system never says which one asks).
+            let client = match &target {
+                Target::App(id) => id.as_str(),
+                Target::Site(_) => "",
+            };
+            written |= repo.record_usage(&vault, item_id, usage, now, force, client)?;
             // The pick, for the device's autofill history (best effort:
             // off, Travel Mode or a failing write never fails the fill).
             let _ = repo.record_autofill_event(AutofillEvent {
@@ -979,8 +986,9 @@ impl Session {
                 .into_iter()
                 .flat_map(|i| i.usage.into_iter().map(|u| u.site))
                 // A pick through an associated domain belongs to its site's
-                // entry and is forgotten with it: no line of its own.
-                .filter(|s| associated_pick_host(s).is_none())
+                // entry and is forgotten with it: no line of its own. The
+                // uses inside the app are no site.
+                .filter(|s| associated_pick_host(s).is_none() && s != APP_USE_KEY)
                 .collect();
             Ok(sites.into_iter().collect())
         })
@@ -1189,8 +1197,8 @@ mod tests {
                 let vault = find_vault(repo, vault_id)?;
                 let t0 = now - time::Duration::minutes(10);
                 let t1 = now - time::Duration::minutes(5);
-                repo.record_usage(&vault, a, bridge(t0), t0, false)?;
-                repo.record_usage(&vault, b, bridge(t1), t1, false)?;
+                repo.record_usage(&vault, a, bridge(t0), t0, false, "")?;
+                repo.record_usage(&vault, b, bridge(t1), t1, false, "")?;
                 Ok(())
             })
             .unwrap();

@@ -3,6 +3,7 @@
 use std::fmt;
 
 use onepass_core::{Error, IntegrityError};
+use onepass_mailbox::OrgStoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
 pub enum OnePassError {
@@ -81,6 +82,9 @@ pub enum OnePassError {
     /// Sharing: this account's new identity waits for a manager's
     /// confirmation; the vault reads but does not write yet.
     IdentityPending,
+    /// Organization: the organization does not match the fingerprint this
+    /// device pinned.
+    OrgPinMismatch,
 }
 
 impl fmt::Display for OnePassError {
@@ -114,6 +118,9 @@ impl fmt::Display for OnePassError {
             Self::ContactNotVerified => f.write_str("the contact must be verified in person"),
             Self::MembershipFork => f.write_str("the server showed two member lists"),
             Self::IdentityPending => f.write_str("new identity waiting for a manager"),
+            Self::OrgPinMismatch => {
+                f.write_str("the organisation does not match its pinned fingerprint")
+            }
         }
     }
 }
@@ -149,6 +156,13 @@ pub(crate) fn integrity_kind(e: IntegrityError) -> &'static str {
         IntegrityError::MembershipFork => "membership_fork",
         IntegrityError::FamilyRollback => "family_rollback",
         IntegrityError::SyncHomeRollback => "sync_home_rollback",
+        IntegrityError::OrgLineageRollback => "org_lineage_rollback",
+        IntegrityError::OrgLineageFork => "org_lineage_fork",
+        IntegrityError::OrgQuorum => "org_quorum",
+        IntegrityError::OrgRosterRollback => "org_roster_rollback",
+        IntegrityError::OrgRosterFork => "org_roster_fork",
+        IntegrityError::OrgRoleDenied => "org_role_denied",
+        IntegrityError::OrgPinMismatch => "org_pin_mismatch",
     }
 }
 
@@ -158,6 +172,7 @@ impl From<Error> for OnePassError {
             Error::Crypto => Self::Crypto,
             Error::WrongPassword => Self::WrongPassword,
             Error::Integrity(IntegrityError::MembershipFork) => Self::MembershipFork,
+            Error::Integrity(IntegrityError::OrgPinMismatch) => Self::OrgPinMismatch,
             Error::Integrity(i) => Self::Integrity {
                 kind: integrity_kind(i).to_owned(),
             },
@@ -204,6 +219,18 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for OnePassError {
     }
 }
 
+/// An org store failure: a write-once record already holding other bytes,
+/// or a rewrite that lost its race, is a conflict; a mailbox failure is the
+/// mailbox's.
+impl From<OrgStoreError> for OnePassError {
+    fn from(e: OrgStoreError) -> Self {
+        match e {
+            OrgStoreError::Taken | OrgStoreError::Contended => Self::Conflict,
+            OrgStoreError::Mailbox(e) => e.into(),
+        }
+    }
+}
+
 pub(crate) fn invalid(what: &str) -> OnePassError {
     OnePassError::InvalidInput {
         what: what.to_owned(),
@@ -243,6 +270,43 @@ mod tests {
             v("role", "manager only"),
             OnePassError::Validation { .. }
         ));
+    }
+
+    #[test]
+    fn org_integrity_kinds_are_snake_case() {
+        for (e, k) in [
+            (IntegrityError::OrgLineageRollback, "org_lineage_rollback"),
+            (IntegrityError::OrgLineageFork, "org_lineage_fork"),
+            (IntegrityError::OrgQuorum, "org_quorum"),
+            (IntegrityError::OrgRosterRollback, "org_roster_rollback"),
+            (IntegrityError::OrgRosterFork, "org_roster_fork"),
+            (IntegrityError::OrgRoleDenied, "org_role_denied"),
+        ] {
+            assert_eq!(
+                OnePassError::from(Error::Integrity(e)),
+                OnePassError::Integrity { kind: k.into() }
+            );
+        }
+        assert_eq!(
+            OnePassError::from(Error::Integrity(IntegrityError::OrgPinMismatch)),
+            OnePassError::OrgPinMismatch
+        );
+    }
+
+    #[test]
+    fn org_store_taken_is_conflict() {
+        assert_eq!(
+            OnePassError::from(OrgStoreError::Taken),
+            OnePassError::Conflict
+        );
+        assert_eq!(
+            OnePassError::from(OrgStoreError::Contended),
+            OnePassError::Conflict
+        );
+        assert_eq!(
+            OnePassError::from(OrgStoreError::Mailbox(onepass_mailbox::MailboxError::Stale)),
+            OnePassError::ClockSkew
+        );
     }
 
     #[test]

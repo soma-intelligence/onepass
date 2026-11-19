@@ -1,0 +1,8 @@
+{
+  "OVH": {
+    "domain": "ovh.com",
+    "tfa": [
+      "totp"
+    ]
+  }
+}
