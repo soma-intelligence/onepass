@@ -73,8 +73,9 @@ struct ItemEditorView: View {
             #endif
             #if os(macOS)
             // Fields scrolling up fade out under the toolbar instead of running behind Annuler and
-            // Enregistrer (they float without glass of their own).
-            .scrollEdgeEffectStyle(.hard, for: .top)
+            // Enregistrer (they float without glass of their own). RX: a soft fade, so the
+            // title bar stays see-through with no band behind it.
+            .scrollEdgeEffectStyle(rxCards ? .soft : .hard, for: .top)
             .scrollIndicators(.never)
             #endif
             .defaultScrollAnchor(.top)

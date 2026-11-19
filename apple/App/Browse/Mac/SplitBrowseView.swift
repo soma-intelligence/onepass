@@ -79,6 +79,7 @@ private struct ItemsPane: View {
     /// Not secret: the list column's width.
     @AppStorage("onepass.browse.listWidth", store: AppModel.browseDefaults) private var listWidth = 330.0
     @State private var dragStart: Double?
+    @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     /// The window's title bar (toolbar included), measured from the window.
     @State private var barHeight: CGFloat = 52
 
@@ -116,6 +117,8 @@ private struct ItemsPane: View {
                 // empty bar of the title bar's height gives the room back: rows and cards start
                 // below it, and the detail's scroll view gets the system's soft edge under it.
                 .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: barHeight) }
+                // RX: the title bar is see-through; rows and cards only fade softly under it.
+                .scrollEdgeEffectStyle(rxDesign ? .soft : .automatic, for: .top)
             }
             .ignoresSafeArea(.container, edges: .top)
             .background { TitlebarHeightReader(height: $barHeight) }
