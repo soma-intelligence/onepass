@@ -66,7 +66,8 @@ struct LockView: View {
     private static let columnWidth: CGFloat = 300
     #else
     private static let glyphSize: CGFloat = 84
-    private static let dialSize: CGFloat = 120
+    /// Also where the launch splash lands its mark (`RXSplash`): the dial's hub is half of it.
+    static let dialSize: CGFloat = 120
     private static let fieldHeight: CGFloat = 50
     private static let buttonHeight: CGFloat = 36
     private static let columnWidth: CGFloat = 340

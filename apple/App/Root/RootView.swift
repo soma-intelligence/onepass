@@ -48,7 +48,7 @@ struct RootView: View {
             .overlay { doorOverlay }
             .overlay {
                 if splashing {
-                    RXSplash { splashing = false }
+                    RXSplash(landing: doorSeam) { splashing = false }
                         .transition(.identity)
                 }
             }
@@ -232,12 +232,10 @@ struct RootView: View {
     private var doorKeepsLock: Bool { door.keepsLockOnTop }
     private var doorHoldsPresentations: Bool { door.holdsPresentations }
     private var doorShowsVault: Bool { door.showsVaultUnderneath }
-    private var vaultScale: CGFloat { door.vaultScale }
     #else
     private var doorKeepsLock: Bool { false }
     private var doorHoldsPresentations: Bool { false }
     private var doorShowsVault: Bool { false }
-    private var vaultScale: CGFloat { 1 }
     #endif
 
     private enum Route: Hashable {
@@ -292,9 +290,11 @@ struct RootView: View {
             // One view per account: nothing typed or shown for one account stays for another.
             ZStack {
                 if route == .unlocked || doorShowsVault {
+                    // Never scaled under the door: the native Liquid Glass tab bar does not follow
+                    // an animated scale and jumped into place when it ended; a scale below 1 also
+                    // showed the window's black ground in the safe areas.
                     BrowseRoot()
                         .id(model.accounts.activeSlot)
-                        .scaleEffect(vaultScale)
                         .transition(.opacity)
                 }
                 if route == .lock || doorKeepsLock {
@@ -407,7 +407,7 @@ extension RootView {
     }
 
     /// The dial is at rest a quarter turn on: the lock screen is captured as it is on screen and
-    /// replaced by its picture in two panels, which part while the vault settles to full size.
+    /// replaced by its picture in two panels, which part over the vault.
     private func turnFinished(generation: Int) {
         guard generation == doorGeneration, door.phase == .turning else { return }
         guard let snapshot = captureWindow() else {

@@ -4,17 +4,28 @@ import SwiftUI
 
 /// The first second of a cold launch. It carries on from the launch screen (`LaunchMark`, the bare
 /// tile, on `LaunchBackground`, both at the same place): the six dots of the mark land one by one,
-/// the bar draws upward, then the mark lifts and the splash fades onto the screen under it (the
-/// lock screen, whose Face ID try already runs). Reduce Motion: the whole mark, then a plain fade.
+/// the bar draws upward, then the mark travels to the lock screen's dial and shrinks onto its hub
+/// while the splash ground fades, so the mark becomes the hub (one icon on screen, never two).
+/// Reduce Motion: the whole mark, then a plain fade.
 struct RXSplash: View {
+    /// The global y of the lock screen's dial center (`VaultSeamKey`), where the mark lands. Nil
+    /// (no dial under the splash: onboarding, vault) leaves the mark where it is.
+    let landing: CGFloat?
     let finished: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dotsShown = 0
     @State private var barShown = false
+    /// The mark has moved onto the dial's hub.
+    @State private var landed = false
+    /// The ground has faded: the screen below shows.
+    @State private var revealed = false
+    /// The mark itself has faded onto the hub.
     @State private var leaving = false
 
     /// The launch screen's tile, in points (`LaunchMark` is 96 pt).
     static let size: CGFloat = 96
+    /// The dial's hub (`VaultDial` draws its glyph at half its size), as a scale of the mark.
+    static let hubScale: CGFloat = LockView.dialSize * 0.5 / size
     /// The dots on the mark's 100 grid, in landing order: left column, then right, top to bottom.
     private static let dots: [CGPoint] = [
         CGPoint(x: 23.5, y: 24), CGPoint(x: 23.5, y: 50), CGPoint(x: 23.5, y: 76),
@@ -22,12 +33,17 @@ struct RXSplash: View {
     ]
 
     var body: some View {
-        ZStack {
-            Color("LaunchBackground")
-                .opacity(leaving ? 0 : 1)
-            mark
-                .scaleEffect(leaving ? 1.14 : 1)
-                .opacity(leaving ? 0 : 1)
+        GeometryReader { proxy in
+            let center = proxy.frame(in: .global).midY
+            ZStack {
+                Color("LaunchBackground")
+                    .opacity(revealed ? 0 : 1)
+                mark
+                    .scaleEffect(landed ? Self.hubScale : 1)
+                    .offset(y: landed ? (landing ?? center) - center : 0)
+                    .opacity(leaving ? 0 : 1)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .ignoresSafeArea()
         .allowsHitTesting(!leaving)
@@ -72,7 +88,10 @@ struct RXSplash: View {
             dotsShown = Self.dots.count
             barShown = true
             await pause(250)
-            withAnimation(.easeOut(duration: 0.25)) { leaving = true }
+            withAnimation(.easeOut(duration: 0.25)) {
+                revealed = true
+                leaving = true
+            }
             await pause(260)
             finished()
             return
@@ -84,8 +103,14 @@ struct RXSplash: View {
         }
         withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) { barShown = true }
         await pause(320)
-        withAnimation(.easeIn(duration: 0.26)) { leaving = true }
-        await pause(270)
+        // The mark travels onto the hub; the ground holds until it is nearly there, so the dial's
+        // own glyph never shows beside the travelling one.
+        withAnimation(.smooth(duration: 0.34)) { landed = true }
+        withAnimation(.easeIn(duration: 0.2).delay(0.24)) { revealed = true }
+        await pause(440)
+        // On the hub: the mark gives way to the dial's glyph, at the same place and size.
+        withAnimation(.easeOut(duration: 0.14)) { leaving = true }
+        await pause(150)
         finished()
     }
 
