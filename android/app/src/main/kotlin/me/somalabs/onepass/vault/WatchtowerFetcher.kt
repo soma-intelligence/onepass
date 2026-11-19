@@ -16,14 +16,17 @@ import me.somalabs.onepass.core.FfiRangeResponse
  * (iPhone: `WatchtowerFetcher`). The core makes no network call: it lists the
  * SHA-1 prefixes it could not look up (5 hex characters per distinct
  * password), these ranges come from Have I Been Pwned with the Add-Padding
- * header, and the core compares the suffixes on the device. The 2fa.directory
- * catalogs and the HIBP breach catalog are downloaded whole and kept a week
- * in the cache; ranges stay in memory an hour and are dropped on lock.
+ * header, and the core compares the suffixes on the device. The HIBP breach
+ * catalog is downloaded whole and kept a week in the cache; ranges stay in
+ * memory an hour and are dropped on lock. The 2FA and passkey checks read the
+ * site pack shipped with the app (docs/site-pack.md): never a request per
+ * site. As on iPhone, no newer pack is downloaded until the app carries the
+ * pack's public key.
  *
  * HTTPS only, no cookie, no credential; nothing about the vault is sent but
  * the prefixes.
  */
-class WatchtowerFetcher(context: Context) {
+class WatchtowerFetcher(private val context: Context) {
     private val prefs = context.getSharedPreferences("watchtower", Context.MODE_PRIVATE)
     private val dir = File(context.cacheDir, "watchtower")
 
@@ -37,7 +40,16 @@ class WatchtowerFetcher(context: Context) {
     @Synchronized
     fun clear() = ranges.clear()
 
-    class Directories(val twofa: ByteArray?, val passkeys: ByteArray?, val breaches: ByteArray?)
+    class Directories(val sitePack: ByteArray?, val breaches: ByteArray?)
+
+    /** The shipped site pack, read once; null when missing or not a pack the core accepts. */
+    private val sitePack: ByteArray? by lazy {
+        runCatching {
+            val bytes = context.assets.open(SITE_PACK_ASSET).use { it.readBytes() }
+            me.somalabs.onepass.core.sitePackVersion(bytes)
+            bytes
+        }.getOrNull()
+    }
 
     /** The catalogs on disk (fresh or not when offline), downloaded first when [network]. */
     fun directories(network: Boolean): Directories {
@@ -53,7 +65,7 @@ class WatchtowerFetcher(context: Context) {
             }
             return if (f.exists()) runCatching { f.readBytes() }.getOrNull() else null
         }
-        return Directories(one("2fa.json", TWOFA_URL), one("passkeys.json", PASSKEYS_URL), one("breaches.json", BREACHES_URL))
+        return Directories(sitePack, one("breaches.json", BREACHES_URL))
     }
 
     /** The ranges of [prefixes], from memory when fresh, else downloaded six at a time. A failed one is left out. */
@@ -116,8 +128,7 @@ class WatchtowerFetcher(context: Context) {
 
     companion object {
         const val RANGE_BASE = "https://api.pwnedpasswords.com/range/"
-        const val TWOFA_URL = "https://api.2fa.directory/v4/all.json"
-        const val PASSKEYS_URL = "https://passkeys-api.2fa.directory/v1/all.json"
+        const val SITE_PACK_ASSET = "onepass-sites.json"
         const val BREACHES_URL = "https://haveibeenpwned.com/api/v3/breaches"
         private const val MAX_RANGE = 4 shl 20
         private const val MAX_CATALOG = 16 shl 20

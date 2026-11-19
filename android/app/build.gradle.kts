@@ -40,6 +40,10 @@ android {
         noCompress += listOf("bin")
     }
 
+    // The site pack (docs/site-pack.md) shipped with the iPhone and Mac apps:
+    // one copy in the repository, read by Watchtower's 2FA and passkey checks.
+    sourceSets["main"].assets.srcDir(rootProject.file("../apple/SitePack"))
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

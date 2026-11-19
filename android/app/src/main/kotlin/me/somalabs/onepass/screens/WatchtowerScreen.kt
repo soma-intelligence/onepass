@@ -101,7 +101,7 @@ class WatchtowerScreen(private val a: MainActivity) {
             is FfiPwnedStatus.Unavailable -> if (checking) a.t("Vérification des fuites…", "Checking for breaches…") else a.t("Fuites non vérifiées (pas de réseau).", "Breaches not checked (no network).")
             is FfiPwnedStatus.Disabled -> a.t("Vérification des fuites désactivée.", "Breach check turned off.")
         }
-        Source.SITES -> if (r.sitesChecked) null else if (checking) a.t("Vérification des fuites…", "Checking for breaches…") else a.t("Active « Vérifier les fuites » pour télécharger le catalogue des sites.", "Turn on “Check for breaches” to download the site catalog.")
+        Source.SITES -> if (r.sitesChecked) null else a.t("Catalogue des sites indisponible.", "Site catalog unavailable.")
         Source.BREACH_CATALOG -> if (!a.watchFetcher.checkBreaches) a.t("Active « Vérifier les fuites » pour télécharger le catalogue des sites piratés.", "Turn on “Check for breaches” to download the list of breached sites.")
             else if (checking) a.t("Vérification des fuites…", "Checking for breaches…") else null
     }
@@ -125,7 +125,7 @@ class WatchtowerScreen(private val a: MainActivity) {
         val fetcher = a.watchFetcher
         val breaches = fetcher.checkBreaches
         fun options(ranges: List<me.somalabs.onepass.core.FfiRangeResponse>?, d: me.somalabs.onepass.vault.WatchtowerFetcher.Directories) =
-            FfiWatchtowerOptions(30u, 365u, ranges, d.twofa, d.passkeys, emptyList(), d.breaches)
+            FfiWatchtowerOptions(30u, 365u, ranges, emptyList(), d.breaches, d.sitePack)
         a.background({ s.watchtowerReport(options(if (breaches) emptyList() else null, fetcher.directories(false))) }) { r ->
             r.onFailure { computing = false; a.toast(a.message(it)) }
             val first = r.getOrNull() ?: return@background
@@ -166,8 +166,8 @@ class WatchtowerScreen(private val a: MainActivity) {
         }
         row.addView(a.barIcon(R.drawable.ic_info, a.t("Ce qui est envoyé", "What is sent")) {
             android.app.AlertDialog.Builder(a).setTitle(a.t("Ce qui est envoyé", "What is sent"))
-                .setMessage(a.t("Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. Les catalogues de 2fa.directory et la liste des sites piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune requête réseau.",
-                    "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The 2fa.directory catalogs and the list of breached sites are downloaded whole and kept for a week. When off, no network request."))
+                .setMessage(a.t("Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine ; les vérifications 2FA et passkeys lisent le catalogue des sites livré avec l'app. Désactivé, aucune requête réseau.",
+                    "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The list of breached sites is downloaded whole and kept for a week; the 2FA and passkey checks read the site catalog shipped with the app. When off, no network request."))
                 .setPositiveButton("OK", null).show()
         }, row.childCount - 1)
         return ui.card(row)
