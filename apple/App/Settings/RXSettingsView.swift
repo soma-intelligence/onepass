@@ -313,7 +313,7 @@ struct RXPerkCarousel: View {
             tile(perk)
         }
         .zoomSource("perk.\(perk.id)")
-        #else
+        #elseif os(macOS)
         if let select {
             // In the Réglages page of the main window: the page opens in place.
             Button { select(.page(perk.page)) } label: { tile(perk) }
@@ -321,6 +321,10 @@ struct RXPerkCarousel: View {
             NavigationLink(value: SettingsRoute.page(perk.page)) {
                 tile(perk)
             }
+        }
+        #else
+        NavigationLink(value: SettingsRoute.page(perk.page)) {
+            tile(perk)
         }
         #endif
     }
