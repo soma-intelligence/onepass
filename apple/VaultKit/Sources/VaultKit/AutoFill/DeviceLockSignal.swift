@@ -20,11 +20,10 @@ public protocol DeviceLockWatch: AnyObject, Sendable {
 /// The system's lock signal. The only place that names it: swap `lockStateName` (or this type) if
 /// the system stops posting it.
 ///
-/// iOS and visionOS: a Darwin notification read as a counter (`notify_register_check`, then
-/// `notify_check` at each use). A counter, not a callback, because the provider's process is
-/// suspended between two requests: a post made meanwhile is still seen at the next use.
-/// `lockStateName` is an UNDOCUMENTED system name (SpringBoard posts it when the device locks and
-/// when it unlocks); `notify.h` itself is public API, usable from an app extension.
+/// iOS and visionOS: no signal. The only one known (SpringBoard's lock state Darwin name) makes
+/// App Store processing reject the binary (ITMS-90699, "Apps are not allowed to listen to device
+/// lock notifications"), so `watch()` answers nil there and the caller keeps no unlock window
+/// (fail closed): every AutoFill request unlocks again, as before the window existed.
 ///
 /// macOS: no Darwin name is known for the screen lock. The process is not suspended there, so the
 /// distributed "screen is locked" notification (the one the app already locks on, undocumented
@@ -32,8 +31,6 @@ public protocol DeviceLockWatch: AnyObject, Sendable {
 public struct SystemDeviceLockSignal: DeviceLockSignal {
     #if os(macOS)
     static let lockStateName = "com.apple.screenIsLocked"
-    #else
-    static let lockStateName = "com.apple.springboard.lockstate"
     #endif
 
     public init() {}
@@ -42,7 +39,7 @@ public struct SystemDeviceLockSignal: DeviceLockSignal {
         #if os(macOS)
         Watch()
         #else
-        DarwinNotifyWatch(name: Self.lockStateName)
+        nil
         #endif
     }
 
