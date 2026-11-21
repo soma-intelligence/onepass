@@ -40,6 +40,23 @@ k256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
 ripemd = "0.1"
 sha3 = "0.10"
 
+# Chip reading (scan module): BAC/PACE secure messaging, DG decoding and
+# passive authentication of an eMRTD. Verify-side only.
+des = "0.9"
+aes = "0.9"
+cbc = "0.2"
+cmac = "0.8"
+cms = "0.3.0-rc.2"
+x509-cert = "0.3"
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
+p384 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
+bp256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
+bp384 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
+ecdsa = { version = "0.17", default-features = false, features = ["algorithm", "digest"] }
+rsa = { version = "0.10", default-features = false, features = ["std"] }
+sha1 = "0.11"
+sha2 = "0.11"
+
 # mlock for the page-locked key slots (crypto::locked).
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
