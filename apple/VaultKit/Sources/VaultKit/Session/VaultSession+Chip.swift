@@ -1,0 +1,17 @@
+import Foundation
+import OnePassCore
+
+/// A passport chip read turned into an item (NFC documents P1, spec 6.1 and 6.2). Neither call
+/// stores anything: the scan screen saves with `save`, then attaches the portrait.
+extension VaultSession {
+    /// A new passport item in this vault, filled from the chip.
+    public func itemFromChip(vaultID: String, read chip: FfiChipRead) async throws -> FfiItem {
+        try await read { try $0.itemFromChip(vaultId: vaultID, read: chip) }
+    }
+
+    /// A later read merged into a passport: blank fields filled, the user's own values kept and
+    /// reported as conflicts, the chip section refreshed.
+    public func mergeChip(item: FfiItem, read chip: FfiChipRead) async throws -> FfiChipMerge {
+        try await read { try $0.mergeChip(item: item, read: chip) }
+    }
+}

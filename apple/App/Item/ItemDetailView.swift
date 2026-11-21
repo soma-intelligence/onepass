@@ -127,6 +127,10 @@ struct ItemDetailView: View {
         .onChange(of: session.externalChangeRevision) {
             Task { await remoteChanged() }
         }
+        // A chip read saved into this passport (Scanner la puce).
+        .onChange(of: model.scanRevision) {
+            Task { await reload(ref, keepOnFailure: true) }
+        }
         .alert(
             "Élément modifié entre-temps",
             isPresented: Binding(get: { remoteVersion != nil }, set: { if !$0 { remoteVersion = nil } })
@@ -777,6 +781,16 @@ struct ItemDetailView: View {
                     openWindow(id: ItemWindow.id, value: ItemWindow.key(item))
                 }
                 .accessibilityIdentifier("item.openWindow")
+                Divider()
+            }
+            #endif
+            #if os(iOS)
+            // A passport's chip read again: fills what is blank, keeps what the user typed (spec 6.1).
+            if item.itemType == .passport, !isReadOnly(item), !locked(item), !standalone,
+                UIDevice.current.userInterfaceIdiom == .phone
+            {
+                Button("scan.detail.scanChip", systemImage: "wave.3.right") { model.scanChip(of: item) }
+                    .accessibilityIdentifier("item.scanChip")
                 Divider()
             }
             #endif
