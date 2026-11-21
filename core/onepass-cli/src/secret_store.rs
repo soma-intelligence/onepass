@@ -30,6 +30,12 @@ pub fn entry_name(account: Id) -> String {
     format!("secretkey.{account}")
 }
 
+/// The entry of an account's Guarded Kit guard `G` (hex), kept so an
+/// unlock with the password does not go to the realms each time.
+pub fn guard_entry(account: Id) -> String {
+    format!("guard.{account}")
+}
+
 /// The entry of the Secret Key a rotation drew and has not committed yet
 /// (K6, spec 7.1): next to `entry_name`, never replacing it before the
 /// rotation commits.

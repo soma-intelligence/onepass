@@ -66,6 +66,22 @@ pub struct MemoryRealmStore {
     records: HashMap<GuardId, GuardRecord>,
 }
 
+impl MemoryRealmStore {
+    /// Records held.
+    pub fn len(&self) -> usize {
+        self.records.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+
+    /// Forget every record (a realm that lost its state, in tests).
+    pub fn clear(&mut self) {
+        self.records.clear();
+    }
+}
+
 impl RealmStore for MemoryRealmStore {
     fn get(&self, id: &GuardId) -> Option<GuardRecord> {
         self.records.get(id).cloned()
@@ -109,6 +125,10 @@ impl<S: RealmStore> Realm<S> {
         &self.store
     }
 
+    pub fn store_mut(&mut self) -> &mut S {
+        &mut self.store
+    }
+
     /// Answer one request at Unix time `now`. Always returns a signed
     /// response, refusals included.
     pub fn handle(&mut self, request: &[u8], now: u64) -> Result<Vec<u8>, GuardError> {
@@ -117,8 +137,11 @@ impl<S: RealmStore> Realm<S> {
             Err(_) => ResponseBody::Refused(RefusalCode::Malformed),
         };
         let request_hash = request_hash(request);
-        let sig = ed25519_sign(&self.response_seed, &response_message(&request_hash, &body)?)
-            .map_err(|_| GuardError::Crypto)?;
+        let sig = ed25519_sign(
+            &self.response_seed,
+            &response_message(&request_hash, &body)?,
+        )
+        .map_err(|_| GuardError::Crypto)?;
         encode_response(&SignedResponse {
             request_hash,
             body,

@@ -123,9 +123,11 @@ public enum EmergencyKit {
 
     /// The one page PDF. Throws `invalidSecretKey` when the key does not parse. `server`: the
     /// sync server of an account that is not on the OnePass server (a line and the QR carry it);
-    /// nil for the OnePass server and iCloud.
+    /// nil for the OnePass server and iCloud. `guarded`: the account's Guarded Kit is on, the kit
+    /// says its restore goes online with limited attempts (spec 2026-11-20, section 9).
     public static func pdf(
-        secretKey: String, accountID: String, displayName: String, createdAt: Date, server: URL? = nil
+        secretKey: String, accountID: String, displayName: String, createdAt: Date, server: URL? = nil,
+        guarded: Bool = false
     ) throws -> Data {
         guard let key = try? normalizeSecretKey(text: secretKey) else {
             throw EmergencyKitError.invalidSecretKey
@@ -143,7 +145,7 @@ public enum EmergencyKit {
         context.beginPDFPage(nil)
         draw(
             in: context, secretKey: key, accountID: accountID,
-            displayName: displayName, createdAt: createdAt, server: server)
+            displayName: displayName, createdAt: createdAt, server: server, guarded: guarded)
         context.endPDFPage()
         context.closePDF()
         return data as Data
@@ -151,7 +153,7 @@ public enum EmergencyKit {
 
     private static func draw(
         in context: CGContext, secretKey: String, accountID: String,
-        displayName: String, createdAt: Date, server: URL?
+        displayName: String, createdAt: Date, server: URL?, guarded: Bool
     ) {
         let contentWidth = pageWidth - 2 * margin
         var y = pageHeight - margin
@@ -198,6 +200,9 @@ public enum EmergencyKit {
         y = text(String(localized: "emergencyKit.created \(formatter.string(from: createdAt))", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
         if let server {
             y = text(String(localized: "kit.server \(server.absoluteString)", bundle: VaultKitStrings.bundle), font: body, top: y) - 4
+        }
+        if guarded {
+            y = text(String(localized: "emergencyKit.guarded", bundle: VaultKitStrings.bundle), font: strong, top: y) - 4
         }
         y -= 20
 

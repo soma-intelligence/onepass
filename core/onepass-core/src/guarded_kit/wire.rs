@@ -37,7 +37,10 @@ pub enum Request {
         share_ct: Vec<u8>,
     },
     /// Restore, phase 1: one counted attempt.
-    Evaluate { guard_id: GuardId, blinded: [u8; 32] },
+    Evaluate {
+        guard_id: GuardId,
+        blinded: [u8; 32],
+    },
     /// Restore, phase 2: the tag check that releases the share.
     Unlock { guard_id: GuardId, tag: [u8; 32] },
     /// Owner poll: attempts and failures since the last success. `nonce`
@@ -59,13 +62,20 @@ pub enum Request {
 /// What a realm answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResponseBody {
-    Registered { guard_id: GuardId },
-    Evaluated { evaluation: [u8; 32], remaining: u8 },
+    Registered {
+        guard_id: GuardId,
+    },
+    Evaluated {
+        evaluation: [u8; 32],
+        remaining: u8,
+    },
     Unlocked {
         #[serde(with = "serde_bytes")]
         share_ct: Vec<u8>,
     },
-    WrongTag { remaining: u8 },
+    WrongTag {
+        remaining: u8,
+    },
     /// Unknown guard, or erased after its last attempt.
     Gone,
     Status {
@@ -115,7 +125,10 @@ pub fn request_hash(request: &[u8]) -> [u8; 32] {
 }
 
 /// Bytes the realm signs for `body` answering `request_hash`.
-pub fn response_message(request_hash: &[u8; 32], body: &ResponseBody) -> Result<Vec<u8>, GuardError> {
+pub fn response_message(
+    request_hash: &[u8; 32],
+    body: &ResponseBody,
+) -> Result<Vec<u8>, GuardError> {
     let mut m = RESPONSE_DOMAIN.to_vec();
     m.extend_from_slice(request_hash);
     m.extend(postcard::to_allocvec(body).map_err(|_| GuardError::Malformed("response"))?);

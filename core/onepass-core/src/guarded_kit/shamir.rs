@@ -58,11 +58,7 @@ fn inv(a: u8) -> u8 {
 /// Split `secret` into `n` shares, any `threshold` of which rebuild it.
 ///
 /// Errors: `threshold` below 2 or above `n`, or `n` above 255.
-pub fn split(
-    secret: &[u8; SECRET_LEN],
-    threshold: u8,
-    n: u8,
-) -> Result<Vec<Share>, GuardError> {
+pub fn split(secret: &[u8; SECRET_LEN], threshold: u8, n: u8) -> Result<Vec<Share>, GuardError> {
     if threshold < 2 || threshold > n {
         return Err(GuardError::Config("threshold"));
     }

@@ -121,7 +121,19 @@ GuardDescriptor {
 ```
 
 - `guard_id` values are sealed under the Secret Key so that **storage alone cannot burn the attempts**: only a holder of the Secret Key (a kit holder or a device) can locate the guard at the realms.
-- After unlock, the descriptor is checked against the account parameters signed by the identity (`account-params` gains `guard: Option<(version, descriptor_hash)>`), like the Argon2id parameters.
+- **Where it lives (as built, 2026-11-21).** The descriptor is not a record of its own: it sits in the account parameters, signed by the identity like the Argon2id parameters, and written in the same transaction as the keyset it guards, so no torn write can leave one without the other.
+
+```
+AccountParams.guard: Option<GuardParams>
+GuardParams { descriptor: GuardDescriptor, keep_ct }
+keep_ct = seal(HKDF(kem_secret, "onepass/guard/keep/v1"), BlobKind::GuardKeep (23),
+               aad { blob_id = account_id, vault_id = version (last 4 bytes, BE), schema 1 },
+               postcard(Kept { G, Locator }))
+```
+
+  Params with a guard are encoded as v3: `"OPP3" || postcard(account_id, kdf, identity_pub, signing_pub, kem_pub, epoch, guard, identity_sig)`, signed under the domain `account-params/v3` over every field before the signature. Params without a guard keep the v2 encoding, byte for byte. Removing or editing the guard in storage breaks the signature (`ParamsUnsigned`), so a kit holder cannot turn the realms off by editing the store.
+- `keep_ct` gives `G` to every unlocked device (password, biometrics, pairing): it needs the account KEM secret, which only an opened keyset gives. A kit holder without the keyset does not get it. The device uses it to poll the realms, register again and turn the guard off.
+- Turning the guard on or off keeps the KDF salt (so `x` stays the same) and moves the params to `epoch + 1`.
 - A pinned realm list that no longer contains a realm of `realm_set_hash` makes the app re-register (section 8.3).
 
 ## 8. Lifecycle
@@ -132,7 +144,10 @@ Opt-in only (decision Q1): off for every account, new or old, until the user tur
 
 ### 8.2 Password change, key rotation v2
 
-Both change `x` or the Secret Key: re-register under a new `version`, then delete the old guard at each realm with the owner key. A rotation (README 16) draws a new `G`, so the new owner key is unknown to a removed device, which loses its rights with the old guard.
+Both change `x` or the Secret Key: re-register under a new `version`, then delete the old guard at each realm with the owner key.
+
+- **Password change (as built).** `change_password_guarded` registers the same `G` for the new `x` under `version + 1`, writes the params and the keyset in one transaction, then deletes the old version at the realms. The plain `change_password` refuses a guarded account (`GuardError::Required`).
+- **Key rotation (as built, a compromise).** A rotation (README 16) writes params without a guard: the account comes out of it unguarded, and the app turns the guard on again right after, which draws a new `G`. A removed device thus loses the owner rights with the old `G`. Re-registering inside the rotation transaction was left out: the rotation path is signed by several parties and already the most complex write of the core. The apps show the guard as off after a rotation until it is on again.
 
 ### 8.3 Realm list change in a release
 
@@ -150,9 +165,9 @@ The app re-registers at the next unlock with `G` unchanged (new shares only): no
 - Restore screen: remaining attempts, shown from the first failure.
 - Kit PDF: one line, "Restauration en ligne, essais limités."
 - Watch, widgets, AutoFill extension: no change (they never restore).
-- Same feature, same copy and same release on every client (decision Q6): iPhone, iPad, Mac, Vision Pro, Android, Windows and the CLI.
+- Same feature, same copy and same release on every client (decision Q6): iPhone, iPad, Mac, Vision Pro, Android and the CLI. There is no Windows client in the repository today, so Windows has nothing to ship; Android has no app screen yet, only the Kotlin bindings of the core, which carry the guard calls.
 - Before turning it on, the confirmation sheet states the loss case of 8.4 and that Soma runs all three realms.
-- CLI: `onepass guard enable | status | rotate | disable`. `disable` re-seals under `AUK_v1` after the password and deletes the guard at the realms.
+- CLI: `onepass guard enable | status | rotate [--same-guard] | disable`. `disable` re-seals under `AUK_v1` after the password and deletes the guard at the realms. The CLI keeps `G` in its secret store (entry `guard.<account id>`, with the guard version), so its own unlocks stay offline; without it, the unlock asks the realms.
 
 ## 10. Formal model
 
@@ -171,11 +186,14 @@ Results go to `docs/security/formal/results.md`.
 ## 11. Implementation
 
 - **Core** (`core/onepass-core/src/guarded_kit/`, done): `shamir.rs` (GF(2^8), constant time), `oprf.rs` (RFC 9497 OPRF mode, ristretto255-SHA512, written on `curve25519-dalek` 4 and aws-lc SHA-512 with RFC 9380 `expand_message_xmd`, checked against the RFC 9497 A.1.1 vectors; the `voprf` crate was dropped because its 0.5 release pulls `crypto-bigint` 0.5, flagged by RUSTSEC-2026-0387; `curve25519-dalek` is the one new dependency, exempted in `supply-chain/`, and `crypto-review.md` gains a section), `wire.rs`, `realm.rs` (realm logic over a `RealmStore`, memory store for tests), `client.rs` (register, restore, status, delete over an app-provided `RealmTransport`), `descriptor.rs`. `crypto/kdf.rs` gains `stretch_password`, `guard_input` and `derive_auk_v2`; blob kinds `GuardShare` (21) and `GuardLocator` (22). The module has its own `GuardError`, so the crate's `Error` (mapped exhaustively by the FFI) does not change. Pinned realm list: `guarded_kit::pinned_realms()`, empty until the realms are deployed.
-- **Not done yet**: `account.rs` carrying `guard` in the signed parameters, the repository path that re-seals the keyset under `AUK_v2` and stores the descriptor, the realm HTTP server (`realm/`) on rollback-resistant storage (R1), and deployment.
-- **FFI**: UniFFI objects `GuardRegistration`, `GuardRestore`, bound for Swift, Kotlin (Android) and the Windows client; each sees opaque bytes. `G` goes to each platform's secure storage (Keychain, Android Keystore, DPAPI), as the mailbox credential does (README 18.2).
+- **Account and repository** (done 2026-11-21): `account.rs` carries `guard` in the signed parameters (section 7.3); `unlock_guarded_at` takes a `GuardAccess` (none, a kept `G`, or the realms) and refuses a guarded account without one before any derivation. `repo/guard.rs`: `enable_guard`, `renew_guard` (same or new `G`), `disable_guard`, `change_password_guarded`, `guard_state`, `guard_secret`, `guard_health`; `Repository::unlock_guarded` and `restore_from_kit_guarded`. Tests: `core/onepass-core/tests/guarded_kit_repo.rs` (10). Fuzz target `guard_realm` on the realm messages, in the CI matrix.
+- **FFI** (done): no objects, plain calls. A foreign trait `FfiRealmTransport` (`call(url, request) -> response`) that each app implements over HTTPS; `unlock_with_password_guarded`, `restore_from_kit_guarded`, `guard_version` (read without keys, so the app knows whether its kept `G` is current) and `verify_password_guarded` (a local check that never calls the realms), and `Session` methods `guard_state`, `guard_secret`, `enable_guard`, `renew_guard`, `disable_guard`, `change_password_guarded`, `guard_health`. Errors `GuardRequired`, `GuardWrongPassword { remaining }`, `GuardUnavailable { reached, needed }`, `GuardRealm`. `FfiTestRealmNet` (three realms in the process) exists only in `dev-fast-kdf` builds, for the app tests. `G` goes to each platform's secure storage (Keychain on Apple), as the mailbox credential does (README 18.2).
+- **Clients** (2026-11-21): Apple app (settings toggle, unlock and kit restore through the realms, password change, kit PDF line), CLI (`onepass guard`), Android bindings with a JVM test. No Windows client exists. The Android app screens are not written.
+- **Typos never reach the realms.** A device keeps `G` with its guard version. While the version in storage matches, the unlock uses the kept `G` only: a wrong password is refused on the device and spends no realm attempt. The realms are asked only without a kept `G` or after a version change (guard renewed or password changed on another device). Otherwise ten typos on one's own phone would erase the guard at a realm for good.
+- **Not done**: the realm HTTP server (`realm/`) on rollback-resistant storage (R1), and its deployment. Until then `pinned_realms()` is empty and turning the guard on fails with "no realm pinned" on every client.
 - **Release gate** (decision Q6): the feature ships only when every client passes the restore and burnt-realm tests; no platform gets it alone.
 - **Realm server** (`realm/`): small Rust service, same crates, built reproducibly (`docs/security/reproducible-builds.md`), its measurement published per release.
-- **Tests** (`core/onepass-core/tests/guarded_kit.rs`, done, 19 tests): restore with kit and realms, one realm down, T - 1 realms, wrong password stops after one tag, success resets the counter, limit erases for good, total guesses bounded by `N x limit / T`, one compromised realm cannot test passwords, two can (witness), fake realm skipped by pinning, forged and replayed responses refused, only the owner manages, status reports failures, bad key share refused, version bound, descriptor and locator, AUK v1 never equals v2, registration needs every realm, malformed request. Unit tests: GF(2^8) against a reference multiply, Shamir 2-of-3 and 3-of-5, threshold OPRF against the whole key, RFC 9497 appendix A vector. Still to add: a fuzz target on realm message decoding, and the repository tests once the account path exists.
+- **Tests** (`core/onepass-core/tests/guarded_kit.rs`, done, 19 tests): restore with kit and realms, one realm down, T - 1 realms, wrong password stops after one tag, success resets the counter, limit erases for good, total guesses bounded by `N x limit / T`, one compromised realm cannot test passwords, two can (witness), fake realm skipped by pinning, forged and replayed responses refused, only the owner manages, status reports failures, bad key share refused, version bound, descriptor and locator, AUK v1 never equals v2, registration needs every realm, malformed request. Unit tests: GF(2^8) against a reference multiply, Shamir 2-of-3 and 3-of-5, threshold OPRF against the whole key, RFC 9497 appendix A vector. The fuzz target and the repository tests were added on 2026-11-21 (see above).
 
 ## 12. Founder decisions (2026-11-20)
 

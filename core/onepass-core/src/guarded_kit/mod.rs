@@ -13,6 +13,7 @@
 pub mod client;
 pub mod descriptor;
 pub mod oprf;
+pub mod params;
 pub mod realm;
 pub mod shamir;
 pub mod wire;
@@ -23,6 +24,7 @@ use zeroize::Zeroizing;
 
 pub use client::{GuardStatus, RealmTransport, delete, register, restore, status};
 pub use descriptor::{GuardDescriptor, Locator, Placement, realm_set_hash};
+pub use params::{GuardAccess, GuardParams, GuardState};
 
 use crate::crypto::fill_random;
 
@@ -82,15 +84,23 @@ pub enum GuardError {
     Unexpected,
     /// The tag check failed: wrong password. `remaining` is the fewest
     /// attempts left at the realms asked (0: that realm erased its share).
-    WrongPassword { remaining: u8 },
+    WrongPassword {
+        remaining: u8,
+    },
     /// Fewer than the threshold of realms gave their share.
-    Unavailable { reached: u8, needed: u8 },
+    Unavailable {
+        reached: u8,
+        needed: u8,
+    },
     /// A released share did not open: a realm bug or a forged share.
     ShareRefused,
     /// The locator did not open with this Secret Key.
     LocatorRefused,
     /// Transport failure, set by the app's transport. Never sensitive.
     Transport(String),
+    /// The account is guarded and no guard (`G`) nor realm access was
+    /// given.
+    Required,
 }
 
 impl fmt::Display for GuardError {
@@ -110,6 +120,7 @@ impl fmt::Display for GuardError {
             Self::ShareRefused => f.write_str("a realm share did not open"),
             Self::LocatorRefused => f.write_str("guard locator did not open"),
             Self::Transport(_) => f.write_str("realm unreachable"),
+            Self::Required => f.write_str("the account needs its guard"),
         }
     }
 }

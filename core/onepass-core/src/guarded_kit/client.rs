@@ -9,8 +9,7 @@ use super::descriptor::{Locator, Placement};
 use super::oprf;
 use super::shamir::{self, SECRET_LEN, Share};
 use super::wire::{
-    GuardId, Request, ResponseBody, delete_message, encode_request, open_response,
-    status_message,
+    GuardId, Request, ResponseBody, delete_message, encode_request, open_response, status_message,
 };
 use super::{GuardError, GuardSecret, RealmInfo};
 use crate::Id;
@@ -67,7 +66,11 @@ fn share_key(
     index: u8,
     version: u32,
 ) -> Result<SymmetricKey, GuardError> {
-    hkdf32(&[], y, &[SHARE_KEY_INFO, &binding(realm_id, index, version)])
+    hkdf32(
+        &[],
+        y,
+        &[SHARE_KEY_INFO, &binding(realm_id, index, version)],
+    )
     .map_err(|_| GuardError::Crypto)
 }
 
@@ -285,8 +288,8 @@ pub fn status(
 ) -> Result<GuardStatus, GuardError> {
     let owner = owner_seed(guard)?;
     let nonce = random_array::<16>().map_err(|_| GuardError::Crypto)?;
-    let sig = ed25519_sign(&owner, &status_message(guard_id, &nonce))
-        .map_err(|_| GuardError::Crypto)?;
+    let sig =
+        ed25519_sign(&owner, &status_message(guard_id, &nonce)).map_err(|_| GuardError::Crypto)?;
     match call(
         transport,
         realm,
@@ -326,8 +329,8 @@ pub fn delete(
         let Some(realm) = pinned.iter().find(|r| r.id == p.realm_id) else {
             continue;
         };
-        let sig = ed25519_sign(&owner, &delete_message(&p.guard_id))
-            .map_err(|_| GuardError::Crypto)?;
+        let sig =
+            ed25519_sign(&owner, &delete_message(&p.guard_id)).map_err(|_| GuardError::Crypto)?;
         if let Ok(ResponseBody::Deleted | ResponseBody::Gone) = call(
             transport,
             realm,

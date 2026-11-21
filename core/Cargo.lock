@@ -2097,6 +2097,7 @@ dependencies = [
  "libc",
  "onepass-core",
  "onepass-guard",
+ "onepass-mailbox",
  "onepass-mcp",
  "onepass-peer",
  "onepass-ssh-agent",

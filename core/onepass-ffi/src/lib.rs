@@ -17,6 +17,7 @@ mod devices;
 mod duplicates;
 mod error;
 mod family;
+mod guard;
 mod hardening;
 mod import;
 mod key_use;
@@ -63,6 +64,7 @@ pub use duplicates::*;
 pub use error::OnePassError;
 use error::invalid;
 pub use family::*;
+pub use guard::*;
 pub use hardening::*;
 pub use import::*;
 pub use key_use::*;
@@ -81,7 +83,7 @@ pub use zones::*;
 
 uniffi::setup_scaffolding!();
 
-fn open_store(db_path: &str) -> Result<SyncStore, OnePassError> {
+pub(crate) fn open_store(db_path: &str) -> Result<SyncStore, OnePassError> {
     Ok(SyncStore::open(Path::new(db_path))?)
 }
 

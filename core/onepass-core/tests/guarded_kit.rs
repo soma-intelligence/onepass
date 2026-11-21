@@ -7,14 +7,14 @@ use onepass_core::Id;
 use onepass_core::crypto::{
     KdfParams, SecretKey, derive_auk, derive_auk_v2, guard_input, stretch_password,
 };
+use onepass_core::guarded_kit::client::tag_of;
+use onepass_core::guarded_kit::oprf;
+use onepass_core::guarded_kit::realm::RealmStore;
 use onepass_core::guarded_kit::realm::{DEFAULT_LIMIT, MemoryRealmStore, Realm};
 use onepass_core::guarded_kit::wire::{
     Request, ResponseBody, SignedResponse, encode_request, encode_response, open_response,
     request_hash, response_message,
 };
-use onepass_core::guarded_kit::client::tag_of;
-use onepass_core::guarded_kit::oprf;
-use onepass_core::guarded_kit::realm::RealmStore;
 use onepass_core::guarded_kit::{
     GuardDescriptor, GuardError, GuardSecret, GuardStatus, Locator, RealmInfo, RealmTransport,
     delete, register, restore, status,
@@ -242,7 +242,9 @@ fn total_guesses_bounded_by_realms_times_limit() {
         .placements
         .iter()
         .enumerate()
-        .filter(|(i, p)| status(&net, &net.infos[*i], &p.guard_id, &g).unwrap() != GuardStatus::Gone)
+        .filter(|(i, p)| {
+            status(&net, &net.infos[*i], &p.guard_id, &g).unwrap() != GuardStatus::Gone
+        })
         .count();
     assert!(alive < 2, "{alive}");
 }

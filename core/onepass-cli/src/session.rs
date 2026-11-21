@@ -19,20 +19,24 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use onepass_core::account::AccountParams;
 use onepass_core::crypto::{KdfParams, SecretKey};
 use onepass_core::device_keys::{DeviceKeys, SoftwarePqHalf};
 use onepass_core::devices::{DeviceKind, DeviceMode};
+use onepass_core::guarded_kit::{
+    self, GuardAccess, GuardError, GuardSecret, RealmInfo, RealmTransport,
+};
 use onepass_core::repo::follow::{
     QuarantineChoice, QuarantineTick, quarantine_resolve, quarantine_tick, reject_rotation,
 };
 use onepass_core::repo::travel::SEALED_TRAVEL_STATE_LEN;
 use onepass_core::repo::{DeviceState, Repository};
-use onepass_core::store::{RecordStore, SqliteStore};
+use onepass_core::store::{RecordKind, RecordStore, SqliteStore};
 use onepass_core::{Error, Id};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use crate::secret_store::{SecretStore, StoreError, entry_name, pending_entry};
+use crate::secret_store::{SecretStore, StoreError, entry_name, guard_entry, pending_entry};
 
 const DEVICE_FILE: &str = "device.bin";
 const STORE_FILE: &str = "vault.sqlite";
@@ -161,7 +165,8 @@ impl From<Error> for CliError {
             | Error::InvalidFormat(_)
             | Error::Crypto
             | Error::Store(_)
-            | Error::OutdatedKit { .. } => CliError::usage(e),
+            | Error::OutdatedKit { .. }
+            | Error::Guard(_) => CliError::usage(e),
         }
     }
 }
@@ -1360,7 +1365,10 @@ fn guard_lock(ctx: &Ctx, at_rest: &Stored) -> Result<(), CliError> {
     }
 }
 
-/// Unlock the store with one Secret Key.
+/// Unlock the store with one Secret Key. A Guarded Kit account (spec
+/// 2026-11-20) needs its guard `G`: the one this device kept in the secret
+/// store for the current guard version, else from the realms (one attempt
+/// spent at T of them). The `G` that opened is kept for the next unlock.
 fn unlock_with(
     ctx: &Ctx,
     password: &str,
@@ -1369,7 +1377,108 @@ fn unlock_with(
 ) -> Result<Repository<SqliteStore>, CliError> {
     let key = SecretKey::parse(key_text)?;
     let store = stored(SqliteStore::open(&ctx.store_path()))?;
-    stored(Repository::unlock(store, password, &key, state))
+    let Some((account, version)) = guarded(&store)? else {
+        return stored(Repository::unlock(store, password, &key, state));
+    };
+    let kept = kept_guard(ctx, account, version);
+    let pinned = guarded_kit::pinned_realms();
+    let transport;
+    let access = match &kept {
+        Some(g) => GuardAccess::Secret(g),
+        None => {
+            transport = HttpRealms::new()?;
+            GuardAccess::Realms {
+                transport: &transport,
+                pinned: &pinned,
+            }
+        }
+    };
+    let (repo, _auk, g) = stored(Repository::unlock_guarded(
+        store, password, &key, state, access,
+    ))?;
+    if kept.is_none()
+        && let Some(g) = g
+    {
+        keep_guard(ctx, account, version, &g);
+    }
+    Ok(repo)
+}
+
+/// The account id and guard version of a guarded store, read from the
+/// newest account parameters before any unlock (the unlock checks their
+/// signature; a forged guard here only picks where `G` comes from).
+fn guarded(store: &SqliteStore) -> Result<Option<(Id, u32)>, CliError> {
+    let records = stored(store.list(RecordKind::AccountParams))?;
+    let Some(newest) = records.iter().max_by_key(|r| r.version) else {
+        return Ok(None);
+    };
+    let params = stored(AccountParams::decode(&newest.data))?;
+    Ok(params
+        .guard
+        .map(|g| (params.account_id, g.descriptor.version)))
+}
+
+/// Guard `G` of `account` kept by this device for guard `version`.
+fn kept_guard(ctx: &Ctx, account: Id, version: u32) -> Option<GuardSecret> {
+    let text = ctx.secrets.get(&guard_entry(account)).ok()??;
+    let (v, hex) = text.split_once(':')?;
+    if v.parse::<u32>().ok()? != version {
+        return None;
+    }
+    let bytes = Zeroizing::new(from_hex(hex)?);
+    let g: [u8; 32] = bytes.as_slice().try_into().ok()?;
+    Some(GuardSecret::from_bytes(g))
+}
+
+/// Keep `G` of `account` (guard `version`) in the secret store, best
+/// effort: without it the next unlock asks the realms again.
+pub fn keep_guard(ctx: &Ctx, account: Id, version: u32, g: &GuardSecret) {
+    let mut text = Zeroizing::new(format!("{version}:"));
+    for b in g.expose() {
+        text.push_str(&format!("{b:02x}"));
+    }
+    if let Err(e) = ctx.secrets.set(&guard_entry(account), &text) {
+        eprintln!(
+            "warning: the guard could not be kept in the {} ({e}): the next unlock asks the realms",
+            ctx.secrets.name()
+        );
+    }
+}
+
+/// Remove the kept guard of `account`, best effort.
+pub fn forget_guard(ctx: &Ctx, account: Id) {
+    let _ = ctx.secrets.delete(&guard_entry(account));
+}
+
+fn from_hex(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
+        .collect()
+}
+
+/// The Guarded Kit realms over HTTPS (TLS 1.3, web roots). The core checks
+/// every answer against the realm keys it pins: the transport is not
+/// trusted.
+pub struct HttpRealms(onepass_mailbox::OpaquePost);
+
+impl HttpRealms {
+    pub fn new() -> Result<HttpRealms, CliError> {
+        onepass_mailbox::OpaquePost::new()
+            .map(HttpRealms)
+            .map_err(|e| CliError::usage(format!("cannot reach the realms: {e}")))
+    }
+}
+
+impl RealmTransport for HttpRealms {
+    fn call(&self, realm: &RealmInfo, request: &[u8]) -> Result<Vec<u8>, GuardError> {
+        self.0
+            .post(&realm.url, request)
+            .map_err(|e| GuardError::Transport(e.to_string()))
+    }
 }
 
 impl Session {
@@ -1918,6 +2027,23 @@ pub fn no_account(ctx: &Ctx) -> CliError {
 /// reading items updates the last manifest seen. The lock is taken after
 /// the prompt (a pending prompt never blocks other commands) and held from
 /// the first read of `device.bin` until the state is saved.
+/// Like [`with_session`], for the steps that need the password again
+/// (`onepass guard`): `f` gets the open session and the password.
+pub fn with_password_session<T>(
+    ctx: &Ctx,
+    f: impl FnOnce(&mut Session, &str) -> Result<T, CliError>,
+) -> Result<T, CliError> {
+    if !ctx.has_account() {
+        return Err(no_account(ctx));
+    }
+    let password = read_password("Password: ")?;
+    let _lock = lock(ctx)?;
+    let mut session = Session::open(ctx, &password)?;
+    flush_key_uses(&mut session.repo);
+    let result = f(&mut session, &password);
+    save_after(ctx, &session, result)
+}
+
 pub fn with_session<T>(
     ctx: &Ctx,
     f: impl FnOnce(&mut Repository<SqliteStore>) -> Result<T, CliError>,

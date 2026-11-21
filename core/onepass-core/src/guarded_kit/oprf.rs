@@ -76,7 +76,10 @@ fn hash_to_scalar(msg: &[&[u8]], dst: &[u8]) -> Scalar {
     Scalar::from_bytes_mod_order_wide(&expand_xmd_64(msg, dst))
 }
 
-fn finalize_hash(input: &[u8], element: &RistrettoPoint) -> Result<Zeroizing<[u8; OUTPUT_LEN]>, GuardError> {
+fn finalize_hash(
+    input: &[u8],
+    element: &RistrettoPoint,
+) -> Result<Zeroizing<[u8; OUTPUT_LEN]>, GuardError> {
     let len = u16::try_from(input.len()).map_err(|_| GuardError::Config("oprf input length"))?;
     let e = element.compress().to_bytes();
     Ok(Zeroizing::new(sha512(&[
@@ -91,7 +94,9 @@ fn finalize_hash(input: &[u8], element: &RistrettoPoint) -> Result<Zeroizing<[u8
 /// DeserializeElement: a canonical encoding of a point other than the
 /// identity.
 fn element(bytes: &[u8]) -> Result<RistrettoPoint, GuardError> {
-    let b: [u8; ELEMENT_LEN] = bytes.try_into().map_err(|_| GuardError::Malformed("element"))?;
+    let b: [u8; ELEMENT_LEN] = bytes
+        .try_into()
+        .map_err(|_| GuardError::Malformed("element"))?;
     let p = CompressedRistretto(b)
         .decompress()
         .ok_or(GuardError::Malformed("element"))?;
@@ -321,8 +326,14 @@ mod tests {
         let expected = hex(
             "527759c3d9366f277d8c6020418d96bb393ba2afb20ff90df23fb7708264e2f3ab9135e3bd69955851de4b1f9fe8a0973396719b7912ba9ee8aa7d0b5e24bcf6",
         );
-        assert_eq!(b.finalize(&input, &ev).unwrap().as_slice(), expected.as_slice());
-        assert_eq!(evaluate_full(&sk, &input).unwrap().as_slice(), expected.as_slice());
+        assert_eq!(
+            b.finalize(&input, &ev).unwrap().as_slice(),
+            expected.as_slice()
+        );
+        assert_eq!(
+            evaluate_full(&sk, &input).unwrap().as_slice(),
+            expected.as_slice()
+        );
     }
 
     #[test]
@@ -331,13 +342,19 @@ mod tests {
         let a = blind(b"input").unwrap();
         let b = blind(b"input").unwrap();
         assert_ne!(a.message, b.message, "blinds are fresh");
-        let ya = a.finalize(b"input", &evaluate(&k, &a.message).unwrap()).unwrap();
+        let ya = a
+            .finalize(b"input", &evaluate(&k, &a.message).unwrap())
+            .unwrap();
         assert_eq!(*ya, *evaluate_full(&k, b"input").unwrap());
-        let yb = b.finalize(b"input", &evaluate(&k, &b.message).unwrap()).unwrap();
+        let yb = b
+            .finalize(b"input", &evaluate(&k, &b.message).unwrap())
+            .unwrap();
         assert_eq!(*ya, *yb);
 
         let c = blind(b"other").unwrap();
-        let yc = c.finalize(b"other", &evaluate(&k, &c.message).unwrap()).unwrap();
+        let yc = c
+            .finalize(b"other", &evaluate(&k, &c.message).unwrap())
+            .unwrap();
         assert_ne!(*ya, *yc);
 
         let k2 = new_key().unwrap();
@@ -372,7 +389,12 @@ mod tests {
         let bl = blind(b"x").unwrap();
         let evals: Vec<(u8, [u8; 32])> = [4usize, 0, 2]
             .iter()
-            .map(|&i| (shares[i].index, evaluate(&shares[i].key, &bl.message).unwrap()))
+            .map(|&i| {
+                (
+                    shares[i].index,
+                    evaluate(&shares[i].key, &bl.message).unwrap(),
+                )
+            })
             .collect();
         let e = combine_evaluations(&evals).unwrap();
         assert_eq!(*bl.finalize(b"x", &e).unwrap(), *full);

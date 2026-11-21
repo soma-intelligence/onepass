@@ -49,7 +49,12 @@ use crate::crypto::aead::{OpenStage, open_detailed};
 use crate::crypto::{
     Aad, BlobKind, DEV_KDF_FLOOR, HybridKemPublic, HybridKemSecret, HybridSigningKey,
     HybridVerifyingKey, IdentityKey, IdentitySignature, IdentityVerifyingKey, KDF_FLOOR, KdfParams,
-    SecretKey, SymmetricKey, derive_auk, seal,
+    SecretKey, SymmetricKey, derive_auk, derive_auk_stretched, derive_auk_v2, guard_input, seal,
+    stretch_password,
+};
+use crate::guarded_kit::params::resolve as resolve_guard;
+use crate::guarded_kit::{
+    GuardAccess, GuardDescriptor, GuardError, GuardParams, GuardSecret, Locator,
 };
 use crate::{Error, Id, IntegrityError, Result, ValidationError};
 
@@ -59,6 +64,10 @@ const PARAMS_DOMAIN: &[u8] = b"account-params";
 const PARAMS_DOMAIN_V2: &[u8] = b"account-params/v2";
 /// Prefix of a v2 params record.
 const PARAMS_V2_PREFIX: &[u8; 4] = b"OPP2";
+/// Prefix of a v3 params record: v2 plus the Guarded Kit's `guard`.
+const PARAMS_V3_PREFIX: &[u8; 4] = b"OPP3";
+/// Signature domain of the v3 account parameters.
+const PARAMS_DOMAIN_V3: &[u8] = b"account-params/v3";
 /// Schema version bound into a v1 keyset blob.
 const KEYSET_SCHEMA: u16 = 1;
 /// Schema version bound into a v2 keyset blob.
@@ -100,6 +109,10 @@ pub struct AccountParams {
     /// each change of the signed params (master password change). Signed;
     /// a device refuses an epoch below the one it pinned.
     pub epoch: u64,
+    /// The Guarded Kit (spec `2026-11-20-guarded-kit-design.md`), signed
+    /// with the rest: `Some` makes the record v3 (`"OPP3"`) and the keyset
+    /// sealed under `AUK_v2`. `None` keeps the v1 or v2 layout unchanged.
+    pub guard: Option<GuardParams>,
 }
 
 /// The account's secret keys.
@@ -422,12 +435,128 @@ impl Account {
         pinned: Option<&PinnedAccount>,
         min_epoch: u64,
     ) -> Result<(Account, Auk)> {
+        let (account, auk, _) = Self::unlock_guarded_at(
+            password,
+            secret_key,
+            params_record,
+            keyset_record,
+            pinned,
+            min_epoch,
+            GuardAccess::None,
+        )?;
+        Ok((account, auk))
+    }
+
+    /// `unlock_exporting_auk_at` on an account that may be guarded (Guarded
+    /// Kit, spec 7.2): with signed params carrying a guard, `G` comes from
+    /// `guard` (kept by the device, or asked from the realms) and the keyset
+    /// opens under `AUK_v2`; `G` is handed back so the device can keep it.
+    /// Unguarded params ignore `guard` and hand back `None`.
+    ///
+    /// Errors, besides `unlock`'s: a guarded account with
+    /// `GuardAccess::None` is `Error::Guard(GuardError::Required)`, before
+    /// any derivation; at the realms, a wrong password is
+    /// `Error::Guard(GuardError::WrongPassword { remaining })` and too few
+    /// realms `Error::Guard(GuardError::Unavailable { .. })`. A kept `G`
+    /// that no longer matches (a guard renewed elsewhere) is
+    /// `Error::WrongPassword`: ask the realms then.
+    pub fn unlock_guarded_at(
+        password: &str,
+        secret_key: &SecretKey,
+        params_record: &[u8],
+        keyset_record: &[u8],
+        pinned: Option<&PinnedAccount>,
+        min_epoch: u64,
+        guard: GuardAccess<'_>,
+    ) -> Result<(Account, Auk, Option<GuardSecret>)> {
         let params = verify_params(params_record, pinned, min_epoch)?;
-        let key = derive_auk(password, secret_key, &params.kdf)?;
+        if params.guard.is_some() && matches!(guard, GuardAccess::None) {
+            return Err(GuardError::Required.into());
+        }
+        let (key, g) = derive_for(password, secret_key, &params, guard)?;
         let auk = Auk::from_bytes(*key.expose());
         let mut account = open_keyset(&key, params, keyset_record)?;
         account.secret_key_tag = Some(KeyTag::of(&account.params.account_id, secret_key));
-        Ok((account, auk))
+        Ok((account, auk, g))
+    }
+
+    /// The guard `G` and its locator, for an unlocked guarded account
+    /// (`None` when the guard is off). Opened from the params with the
+    /// account's KEM secret (`guarded_kit::params`).
+    pub fn guard(&self) -> Result<Option<(GuardSecret, Locator)>> {
+        match &self.params.guard {
+            None => Ok(None),
+            Some(g) => Ok(Some(g.open_kept(&self.keyset.kem)?)),
+        }
+    }
+
+    /// The same keys and the same KDF parameters (same salt, so the same
+    /// guard input `x`) under params at the next epoch with `guard` (a
+    /// guard just registered for `x`, or `None` to turn it off), the keyset
+    /// resealed under `AUK_v2` or `AUK_v1`. `stretched` is
+    /// `stretch_password` of the current password under the current params:
+    /// the caller checked it by opening `self` from the stored records.
+    pub(crate) fn reguard(
+        self,
+        stretched: &[u8; 32],
+        secret_key: &SecretKey,
+        guard: Option<(&GuardSecret, GuardDescriptor, &Locator)>,
+    ) -> Result<Rekeyed> {
+        let current = &self.params;
+        let kdf = current.kdf.clone();
+        self.reparam(kdf, stretched, secret_key, guard)
+    }
+
+    /// The signed params at the next epoch with `kdf` and `guard`, the
+    /// keyset sealed under the key of `stretched` (and `G`), proven to open.
+    fn reparam(
+        self,
+        kdf: KdfParams,
+        stretched: &[u8; 32],
+        secret_key: &SecretKey,
+        guard: Option<(&GuardSecret, GuardDescriptor, &Locator)>,
+    ) -> Result<Rekeyed> {
+        let current = &self.params;
+        let epoch = current
+            .epoch
+            .checked_add(1)
+            .ok_or(Error::InvalidFormat("account params"))?;
+        let (guard_params, g) = match guard {
+            None => (None, None),
+            Some((g, descriptor, locator)) => {
+                if descriptor.account_id != current.account_id {
+                    return Err(Error::InvalidFormat("guard descriptor"));
+                }
+                (
+                    Some(GuardParams::new(descriptor, g, locator, &self.keyset.kem)?),
+                    Some(g),
+                )
+            }
+        };
+        let params = sign_params_guarded(
+            current.account_id,
+            kdf,
+            current.signing_pub.clone(),
+            current.kem_pub.clone(),
+            epoch,
+            guard_params,
+            &self.keyset.identity,
+        )?;
+        let key = match g {
+            None => derive_auk_stretched(stretched, secret_key, &params.kdf)?,
+            Some(g) => derive_auk_v2(stretched, secret_key, g.expose(), &params.kdf)?,
+        };
+        let keyset_record = seal_keyset(&key, &params, &self.keyset)?;
+        let params_record = params.encode()?;
+        // Prove the new pair opens before anything is written.
+        let mut account = open_keyset(&key, params, &keyset_record)?;
+        account.secret_key_tag = Some(KeyTag::of(&account.params.account_id, secret_key));
+        Ok(Rekeyed {
+            account,
+            auk: Auk::from_bytes(*key.expose()),
+            params_record,
+            keyset_record,
+        })
     }
 
     /// Unlock with an Account Unlock Key kept from an earlier unlock. The
@@ -468,6 +597,23 @@ impl Account {
     ///
     /// Errors: an epoch at `u64::MAX` is `InvalidFormat("account params")`.
     pub(crate) fn rekey(self, secret_key: &SecretKey, new_password: &str) -> Result<Rekeyed> {
+        if self.params.guard.is_some() {
+            return Err(GuardError::Required.into());
+        }
+        self.rekey_with(secret_key, new_password, None)
+    }
+
+    /// `rekey` on a guarded account (spec 8.2): the new password gives a
+    /// new guard input `x`, so `register` registers `G` again for it at the
+    /// realms (a new version) and returns the descriptor and locator; the
+    /// params carry them and the keyset is sealed under `AUK_v2`. The old
+    /// version stays at the realms until the caller deletes it.
+    pub(crate) fn rekey_with(
+        self,
+        secret_key: &SecretKey,
+        new_password: &str,
+        register: Option<RegisterGuard<'_>>,
+    ) -> Result<Rekeyed> {
         let current = &self.params;
         let (m_kib, t, p) = enforced_floor();
         let kdf = KdfParams {
@@ -479,30 +625,15 @@ impl Account {
         if !within_ceiling(&kdf) {
             return Err(Error::InvalidFormat("kdf params"));
         }
-        let epoch = current
-            .epoch
-            .checked_add(1)
-            .ok_or(Error::InvalidFormat("account params"))?;
-        let params = sign_params(
-            current.account_id,
-            kdf,
-            current.signing_pub.clone(),
-            current.kem_pub.clone(),
-            epoch,
-            &self.keyset.identity,
-        )?;
-        let key = derive_auk(new_password, secret_key, &params.kdf)?;
-        let keyset_record = seal_keyset(&key, &params, &self.keyset)?;
-        let params_record = params.encode()?;
-        // Prove the new pair opens before anything is written.
-        let mut account = open_keyset(&key, params, &keyset_record)?;
-        account.secret_key_tag = Some(KeyTag::of(&account.params.account_id, secret_key));
-        Ok(Rekeyed {
-            account,
-            auk: Auk::from_bytes(*key.expose()),
-            params_record,
-            keyset_record,
-        })
+        let stretched = stretch_password(new_password, &kdf)?;
+        match register {
+            None => self.reparam(kdf, &stretched, secret_key, None),
+            Some((g, register)) => {
+                let x = guard_input(&stretched, &kdf)?;
+                let (descriptor, locator) = register(&x)?;
+                self.reparam(kdf, &stretched, secret_key, Some((g, descriptor, &locator)))
+            }
+        }
     }
 
     /// Key rotation (spec 6.6, ruling K1): a fresh keyset (KEM, signing and
@@ -629,16 +760,10 @@ pub(crate) fn signed_params(
 ) -> Result<AccountParams> {
     let params = AccountParams::decode(params_record)?;
     let unsigned = Error::Integrity(IntegrityError::ParamsUnsigned);
-    let msg = signed_message(
-        &params.account_id,
-        &params.kdf,
-        &params.signing_pub,
-        &params.kem_pub,
-        params.epoch,
-    )?;
+    let (msg, domain) = message_of(&params)?;
     params
         .identity_pub
-        .verify(params_domain(params.epoch), &msg, &params.identity_sig)
+        .verify(domain, &msg, &params.identity_sig)
         .map_err(|_| unsigned.clone())?;
     if let Some(pin) = pinned
         && (pin.account_id != params.account_id || pin.identity_pub != params.identity_pub)
@@ -710,34 +835,79 @@ fn open_keyset(auk: &SymmetricKey, params: AccountParams, keyset_record: &[u8]) 
     })
 }
 
+/// What `rekey_with` registers a guard with: `G`, and a closure that
+/// registers it for a guard input `x` and returns the descriptor and the
+/// locator.
+pub(crate) type RegisterGuard<'a> = (
+    &'a GuardSecret,
+    &'a mut dyn FnMut(&[u8; 32]) -> Result<(GuardDescriptor, Locator)>,
+);
+
+/// The key the keyset of `params` is sealed under: `AUK_v1` when the guard
+/// is off, `AUK_v2` with the `G` that `guard` gives when it is on.
+fn derive_for(
+    password: &str,
+    secret_key: &SecretKey,
+    params: &AccountParams,
+    guard: GuardAccess<'_>,
+) -> Result<(SymmetricKey, Option<GuardSecret>)> {
+    match &params.guard {
+        None => Ok((derive_auk(password, secret_key, &params.kdf)?, None)),
+        Some(gp) => {
+            let stretched = stretch_password(password, &params.kdf)?;
+            let x = guard_input(&stretched, &params.kdf)?;
+            let g = resolve_guard(guard, gp, secret_key, &x)?;
+            let key = derive_auk_v2(&stretched, secret_key, g.expose(), &params.kdf)?;
+            Ok((key, Some(g)))
+        }
+    }
+}
+
 fn within_ceiling(kdf: &KdfParams) -> bool {
     let (m_kib, t, p) = KDF_CEILING;
     kdf.m_kib <= m_kib && kdf.t <= t && kdf.p <= p
 }
 
-fn params_domain(epoch: u64) -> &'static [u8] {
+fn params_domain(epoch: u64, guarded: bool) -> &'static [u8] {
     if epoch == 0 {
         PARAMS_DOMAIN
+    } else if guarded {
+        PARAMS_DOMAIN_V3
     } else {
         PARAMS_DOMAIN_V2
     }
 }
 
-/// Canonical postcard encoding of the signed fields: without the epoch at
-/// epoch 0 (v1), with it from epoch 1 (v2).
 fn signed_message(
     account_id: &Id,
     kdf: &KdfParams,
     signing_pub: &HybridVerifyingKey,
     kem_pub: &HybridKemPublic,
     epoch: u64,
+    guard: Option<&GuardParams>,
 ) -> Result<Vec<u8>> {
-    if epoch == 0 {
-        postcard::to_allocvec(&(account_id, kdf, signing_pub, kem_pub))
-    } else {
-        postcard::to_allocvec(&(account_id, kdf, signing_pub, kem_pub, epoch))
+    match (epoch, guard) {
+        (0, None) => postcard::to_allocvec(&(account_id, kdf, signing_pub, kem_pub)),
+        (0, Some(_)) => return Err(Error::InvalidFormat("account params")),
+        (_, None) => postcard::to_allocvec(&(account_id, kdf, signing_pub, kem_pub, epoch)),
+        (_, Some(g)) => postcard::to_allocvec(&(account_id, kdf, signing_pub, kem_pub, epoch, g)),
     }
     .map_err(|_| Error::InvalidFormat("account params"))
+}
+
+/// The message and domain `identity_sig` covers in `params`.
+fn message_of(params: &AccountParams) -> Result<(Vec<u8>, &'static [u8])> {
+    Ok((
+        signed_message(
+            &params.account_id,
+            &params.kdf,
+            &params.signing_pub,
+            &params.kem_pub,
+            params.epoch,
+            params.guard.as_ref(),
+        )?,
+        params_domain(params.epoch, params.guard.is_some()),
+    ))
 }
 
 fn sign_params(
@@ -748,8 +918,27 @@ fn sign_params(
     epoch: u64,
     identity: &IdentityKey,
 ) -> Result<AccountParams> {
-    let msg = signed_message(&account_id, &kdf, &signing_pub, &kem_pub, epoch)?;
-    let identity_sig = identity.sign(params_domain(epoch), &msg)?;
+    sign_params_guarded(account_id, kdf, signing_pub, kem_pub, epoch, None, identity)
+}
+
+fn sign_params_guarded(
+    account_id: Id,
+    kdf: KdfParams,
+    signing_pub: HybridVerifyingKey,
+    kem_pub: HybridKemPublic,
+    epoch: u64,
+    guard: Option<GuardParams>,
+    identity: &IdentityKey,
+) -> Result<AccountParams> {
+    let msg = signed_message(
+        &account_id,
+        &kdf,
+        &signing_pub,
+        &kem_pub,
+        epoch,
+        guard.as_ref(),
+    )?;
+    let identity_sig = identity.sign(params_domain(epoch, guard.is_some()), &msg)?;
     Ok(AccountParams {
         account_id,
         kdf,
@@ -758,6 +947,7 @@ fn sign_params(
         kem_pub,
         identity_sig,
         epoch,
+        guard,
     })
 }
 
@@ -782,8 +972,21 @@ type ParamsV2 = (
     IdentitySignature,
 );
 
+/// The v3 record layout: v2 with the guard before the signature.
+type ParamsV3 = (
+    Id,
+    KdfParams,
+    IdentityVerifyingKey,
+    HybridVerifyingKey,
+    HybridKemPublic,
+    u64,
+    GuardParams,
+    IdentitySignature,
+);
+
 impl AccountParams {
-    /// The stored record: v1 at epoch 0, v2 (`"OPP2"` prefix) from epoch 1.
+    /// The stored record: v1 at epoch 0, v2 (`"OPP2"` prefix) from epoch 1,
+    /// v3 (`"OPP3"`) when the Guarded Kit is on.
     pub fn encode(&self) -> Result<Vec<u8>> {
         let bad = |_| Error::InvalidFormat("account params");
         if self.epoch == 0 {
@@ -795,6 +998,22 @@ impl AccountParams {
                 &self.kem_pub,
                 &self.identity_sig,
             ))
+            .map_err(bad);
+        }
+        if let Some(guard) = &self.guard {
+            return postcard::to_extend(
+                &(
+                    &self.account_id,
+                    &self.kdf,
+                    &self.identity_pub,
+                    &self.signing_pub,
+                    &self.kem_pub,
+                    self.epoch,
+                    guard,
+                    &self.identity_sig,
+                ),
+                PARAMS_V3_PREFIX.to_vec(),
+            )
             .map_err(bad);
         }
         postcard::to_extend(
@@ -827,15 +1046,9 @@ impl AccountParams {
         if params.identity_pub != *identity {
             return Err(bad);
         }
-        let msg = signed_message(
-            &params.account_id,
-            &params.kdf,
-            &params.signing_pub,
-            &params.kem_pub,
-            params.epoch,
-        )?;
+        let (msg, domain) = message_of(&params)?;
         identity
-            .verify(params_domain(params.epoch), &msg, &params.identity_sig)
+            .verify(domain, &msg, &params.identity_sig)
             .map_err(|_| bad)?;
         Ok(params)
     }
@@ -849,6 +1062,24 @@ impl AccountParams {
     /// as v1: a v1 record starts with the account id, which could begin with
     /// those four bytes.
     pub fn decode(record: &[u8]) -> Result<AccountParams> {
+        if let Some(body) = record.strip_prefix(PARAMS_V3_PREFIX)
+            && let Ok((
+                (account_id, kdf, identity_pub, signing_pub, kem_pub, epoch, guard, identity_sig),
+                [],
+            )) = postcard::take_from_bytes::<ParamsV3>(body)
+            && epoch >= 1
+        {
+            return Ok(AccountParams {
+                account_id,
+                kdf,
+                identity_pub,
+                signing_pub,
+                kem_pub,
+                identity_sig,
+                epoch,
+                guard: Some(guard),
+            });
+        }
         if let Some(body) = record.strip_prefix(PARAMS_V2_PREFIX)
             && let Ok((
                 (account_id, kdf, identity_pub, signing_pub, kem_pub, epoch, identity_sig),
@@ -864,6 +1095,7 @@ impl AccountParams {
                 kem_pub,
                 identity_sig,
                 epoch,
+                guard: None,
             });
         }
         match postcard::take_from_bytes::<ParamsV1>(record) {
@@ -876,6 +1108,7 @@ impl AccountParams {
                     kem_pub,
                     identity_sig,
                     epoch: 0,
+                    guard: None,
                 })
             }
             _ => Err(Error::InvalidFormat("account params")),
@@ -886,13 +1119,7 @@ impl AccountParams {
 /// SHA-256 of the params' signed message: binds a v2 keyset to these exact
 /// params (epoch, KDF and salt, public keys).
 fn params_hash(params: &AccountParams) -> Result<[u8; 32]> {
-    let msg = signed_message(
-        &params.account_id,
-        &params.kdf,
-        &params.signing_pub,
-        &params.kem_pub,
-        params.epoch,
-    )?;
+    let (msg, _) = message_of(params)?;
     let mut out = [0u8; 32];
     out.copy_from_slice(digest(&SHA256, &msg).as_ref());
     Ok(out)

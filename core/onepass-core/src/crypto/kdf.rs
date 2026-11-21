@@ -108,8 +108,18 @@ pub fn derive_auk(
     params: &KdfParams,
 ) -> Result<SymmetricKey> {
     let stretched = stretch_password(password, params)?;
+    derive_auk_stretched(&stretched, secret_key, params)
+}
+
+/// [`derive_auk`] from a password already stretched by
+/// [`stretch_password`] under `params`.
+pub fn derive_auk_stretched(
+    stretched: &[u8; 32],
+    secret_key: &SecretKey,
+    params: &KdfParams,
+) -> Result<SymmetricKey> {
     let mut ikm: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(64));
-    ikm.extend_from_slice(stretched.as_slice());
+    ikm.extend_from_slice(stretched);
     ikm.extend_from_slice(&secret_key.0);
     hkdf32(&params.salt, &ikm, &[AUK_INFO])
 }

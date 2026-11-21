@@ -1276,6 +1276,36 @@
         }
       }
     },
+    "emergencyKit.guarded" : {
+      "comment" : "Emergency Kit PDF, one line when the Guarded Kit is on (spec 2026-11-20, section 9).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Online restore, limited attempts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restauración en línea, intentos limitados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restauration en ligne, essais limités."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristino online, tentativi limitati."
+          }
+        }
+      }
+    },
     "emergencyKit.ifLoseThem" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2693,6 +2723,174 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Questa versione di OnePass è troppo vecchia per iCloud. Aggiorna OnePass."
+          }
+        }
+      }
+    },
+    "guard.error.realm" : {
+      "comment" : "Guarded Kit: one of the servers that protect the Emergency Kit refused or answered wrongly.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A server that protects your Emergency Kit refused the request. Try again later."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un servidor que protege tu Emergency Kit ha rechazado la solicitud. Vuelve a intentarlo más tarde."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un serveur qui protège ton kit d'urgence a refusé la demande. Réessaie plus tard."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un server che protegge il tuo Emergency Kit ha rifiutato la richiesta. Riprova più tardi."
+          }
+        }
+      }
+    },
+    "guard.error.required" : {
+      "comment" : "Guarded Kit: a master password check on this device without the current guard secret (the protection changed on another device). Lock, then unlock with the password, which fetches it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emergency Kit protection changed on another device. Lock OnePass, unlock it with your master password, then try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protección del Emergency Kit ha cambiado en otro dispositivo. Bloquea OnePass, desbloquéalo con tu contraseña maestra y vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protection du kit d'urgence a changé sur un autre appareil. Verrouille OnePass, déverrouille-le avec ton mot de passe maître, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protezione dell'Emergency Kit è cambiata su un altro dispositivo. Blocca OnePass, sbloccalo con la tua password principale, poi riprova."
+          }
+        }
+      }
+    },
+    "guard.error.unavailable" : {
+      "comment" : "Guarded Kit: too few of the servers that protect the Emergency Kit answered. Nothing was spent.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The servers that protect your Emergency Kit aren't answering. Check your connection and try again in a moment. No attempt was counted."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los servidores que protegen tu Emergency Kit no responden. Comprueba tu conexión y vuelve a intentarlo en un momento. No se ha contado ningún intento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les serveurs qui protègent ton kit d'urgence ne répondent pas. Vérifie ta connexion et réessaie dans un moment. Aucun essai n'a été compté."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I server che proteggono il tuo Emergency Kit non rispondono. Controlla la connessione e riprova tra poco. Nessun tentativo è stato conteggiato."
+          }
+        }
+      }
+    },
+    "guard.error.wrongPassword %lld" : {
+      "comment" : "Guarded Kit: wrong master password at the realms (unlock or Emergency Kit restore), with the attempts left before the kit stops working.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Wrong password. You have %lld attempt left."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Wrong password. You have %lld attempts left."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Contraseña incorrecta. Te queda %lld intento."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Contraseña incorrecta. Te quedan %lld intentos."
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mot de passe incorrect. Il te reste %lld essai."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mot de passe incorrect. Il te reste %lld essais."
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Password errata. Ti resta %lld tentativo."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Password errata. Ti restano %lld tentativi."
+                }
+              }
+            }
           }
         }
       }

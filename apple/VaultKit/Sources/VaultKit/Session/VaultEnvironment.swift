@@ -87,6 +87,9 @@ public struct VaultEnvironment: Sendable {
     public var storeChanges = StoreChangeNotifier()
     /// Local notifications of the sharing model (a vault key renewed). None by default.
     public var notifier: any LocalNotifying = NoLocalNotifier()
+    /// The Guarded Kit realms (spec 2026-11-20, section 7): HTTPS POST to the URLs the core pins.
+    /// Tests hand the in-process realms of `FfiTestRealmNet` instead.
+    public var realmTransport: any FfiRealmTransport = URLSessionRealmTransport()
 
     public init(
         databaseURL: URL, keychain: any KeychainStore, biometrics: BiometricUnlock,

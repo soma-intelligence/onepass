@@ -598,6 +598,10 @@ struct LockView: View {
                     ? String(localized: "lock.wrongPasswordLeft \(left)")
                     : String(localized: "lock.incorrectPassword")
                 withAnimation(.linear(duration: 0.42)) { refusals += 1 }
+            case .guardWrongPassword:
+                // Guarded Kit: the realms counted the attempt; their count is the one that matters.
+                message = failure.localizedMessage
+                withAnimation(.linear(duration: 0.42)) { refusals += 1 }
             case .lockedOut:
                 message = nil
             default:

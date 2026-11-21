@@ -58,6 +58,9 @@ pub enum BlobKind {
     GuardShare = 21,
     /// The Guarded Kit locator, sealed under the Secret Key.
     GuardLocator = 22,
+    /// The Guarded Kit's guard and locator, kept for the devices under a
+    /// key of the account keyset (`guarded_kit::params`).
+    GuardKeep = 23,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -321,6 +324,7 @@ mod tests {
             (BlobKind::OrgKeyset, 20),
             (BlobKind::GuardShare, 21),
             (BlobKind::GuardLocator, 22),
+            (BlobKind::GuardKeep, 23),
         ];
         for (kind, code) in all {
             assert_eq!(kind as u8, code);
