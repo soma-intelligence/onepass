@@ -63,7 +63,7 @@ settings:
     ONEPASS_SPARKLE_PUBLIC_KEY: ""
     # Base URL of the hosted OnePass server (Info.plist key `OnePassMailboxURL`, founder decision
     # F2). Release builds accept https only; Debug builds also take the local Supabase stack.
-    ONEPASS_MAILBOX_URL: https://mailbox.somalabs.me/functions/v1/mailbox
+    ONEPASS_MAILBOX_URL: https://aixgegcostjptashxlzf.supabase.co/functions/v1/mailbox
     # New accounts on the mailbox (X1b Task 6): NO until the hosted server is live (custom domain
     # and DNS deferred by the founder). YES shows "Où est rangé mon coffre ?" and makes the OnePass
     # server the default of a new account.

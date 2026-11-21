@@ -63,6 +63,10 @@ final class AppModel {
     @ObservationIgnored let coordinator: SyncCoordinator?
     /// The mailbox coordinator, for an account on a OnePass server (cross-platform spec D.3).
     @ObservationIgnored private(set) var mailbox: MailboxSyncCoordinator?
+    /// The primary account's zone transport (shared vaults, contacts, family), handed to its sync
+    /// coordinators; nil without a sync store, with demo data, in UI tests, or without a hosted
+    /// server in this build.
+    @ObservationIgnored let zones: AccountZones?
     /// What the session's sync goes through: the current coordinator of either kind.
     @ObservationIgnored let router: SyncRouter?
     /// "Serveur OnePass", the host of a self-host, or "iCloud" (Réglages > Sync).
@@ -291,6 +295,7 @@ final class AppModel {
         var syncStore: SyncStoreHandle?
         var syncDatabaseURL: URL?
         var pendingSetupChoice: SyncChoice?
+        var zones: AccountZones?
         var storeSplit = false
         #if ONEPASS_CLOUDKIT
         let remote: (any RemoteRecordStore)? = demo == nil
@@ -342,6 +347,8 @@ final class AppModel {
                 environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), container: container)
                 #endif
                 if let store {
+                    // UI tests never reach the hosted server.
+                    zones = isolated ? nil : AccountZones.make(store: store, keychain: environment.keychain)
                     let backend: SyncBackendState
                     do {
                         backend = try SyncBackendState.readNow(store: store)
@@ -352,13 +359,13 @@ final class AppModel {
                     syncBackendName = backend.displayName(hosted: MailboxEndpoints.hosted())
                     switch backend {
                     case .iCloud:
-                        let iCloud = SyncCoordinator(store: store, remote: isolated ? nil : remote)
+                        let iCloud = SyncCoordinator(store: store, remote: isolated ? nil : remote, zones: zones?.sync)
                         coordinator = iCloud
                         router = SyncRouter(current: iCloud)
                     case .mailbox(let home):
                         mailbox = Self.openMailbox(
                             home: home, databaseURL: databaseURL, keychain: environment.keychain,
-                            serverName: syncBackendName)
+                            serverName: syncBackendName, zones: zones)
                         router = mailbox.map { SyncRouter(current: $0) }
                     case .pendingSetup(let choice):
                         // Nothing leaves the device until the setup, resumed by `start`, is done.
@@ -382,6 +389,7 @@ final class AppModel {
         self.syncStore = syncStore
         self.syncDatabaseURL = syncDatabaseURL
         self.pendingSetupChoice = pendingSetupChoice
+        self.zones = zones
         self.remote = remote
         let session = VaultSession(environment: environment)
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
@@ -634,7 +642,8 @@ final class AppModel {
         let client = try await session.restoreMailbox(
             restore, home: home, secretKey: secretKey, store: syncStore, unlock: unlock)
         syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
-        let coordinator = MailboxSyncCoordinator(sync: client, serverName: syncBackendName)
+        zones?.useAccountMailbox(home, keychain: session.environment.keychain)
+        let coordinator = MailboxSyncCoordinator(sync: client, serverName: syncBackendName, zones: zones?.sync)
         mailbox = coordinator
         await router.switchTo(coordinator)
         await coordinator.enterForeground()
@@ -651,9 +660,10 @@ final class AppModel {
             setup: MailboxSetup(provisioning: provisioning, credentials: credentials, store: syncStore),
             provisioning: provisioning, credentials: credentials, remote: remote, cloudKit: coordinator,
             router: router,
-            makeCoordinator: { sync, home in
+            makeCoordinator: { [zones] sync, home in
                 let name = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
-                return MailboxSyncCoordinator(sync: sync, serverName: name)
+                zones?.useAccountMailbox(home, keychain: keychain)
+                return MailboxSyncCoordinator(sync: sync, serverName: name, zones: zones?.sync)
             })
         return MailboxMigration(store: syncStore, parts: parts)
     }
@@ -675,10 +685,11 @@ final class AppModel {
 
     /// The mailbox coordinator the router switched to, for the scene phases and the wake.
     /// The system gave an APNs token: an account on a mailbox registers it (once per token,
-    /// X1b Task 10). An iCloud account needs nothing (CloudKit pushes on its own).
+    /// X1b Task 10), and every account registers it on its zone mailboxes (sharing spec 13.7). An
+    /// iCloud account needs nothing more (CloudKit pushes on its own).
     func didRegisterPush(token: Data) {
-        guard let mailbox, let syncStore else { return }
-        let push = PushRegistration(sync: mailbox.client, store: syncStore)
+        guard let syncStore, mailbox != nil || zones != nil else { return }
+        let push = PushRegistration(sync: mailbox?.client, store: syncStore, zones: zones?.sync)
         Task { await push.didRegister(token: token) }
     }
 
@@ -689,7 +700,7 @@ final class AppModel {
             if let coordinator { await coordinator.syncNow() }
             return coordinator != nil
         }
-        let push = PushRegistration(sync: mailbox.client, store: syncStore)
+        let push = PushRegistration(sync: mailbox.client, store: syncStore, zones: zones?.sync)
         return await push.didReceiveSilent { await router.syncNow() }
     }
 
@@ -738,7 +749,7 @@ final class AppModel {
             syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
             if let opened = Self.openMailbox(
                 home: home, databaseURL: syncDatabaseURL, keychain: session.environment.keychain,
-                serverName: syncBackendName) {
+                serverName: syncBackendName, zones: zones) {
                 mailbox = opened
                 await router.switchTo(opened)
                 await opened.enterForeground()
@@ -749,8 +760,11 @@ final class AppModel {
 
     /// The mailbox client of an account on a OnePass server, signed by this device's credential.
     /// Without its seed (Keychain restored elsewhere, item deleted) nothing syncs and the log says so.
+    /// `zones`: the account's zone transport, set to make its zones under this mailbox and run after
+    /// each private round.
     static func openMailbox(
-        home: MailboxHome, databaseURL: URL, keychain: any KeychainStore, serverName: String
+        home: MailboxHome, databaseURL: URL, keychain: any KeychainStore, serverName: String,
+        zones: AccountZones? = nil
     ) -> MailboxSyncCoordinator? {
         do {
             guard let seed = try MailboxCredentialStore(keychain: keychain).seed(mailboxID: home.mailboxID) else {
@@ -761,7 +775,9 @@ final class AppModel {
                 try MailboxSync.open(
                     dbPath: databaseURL.path, endpoint: home.endpoint, mailboxId: home.mailboxID, credentialSeed: $0)
             }
-            return MailboxSyncCoordinator(sync: FfiMailboxSyncAdapter(sync: sync), serverName: serverName)
+            zones?.useAccountMailbox(home, keychain: keychain)
+            return MailboxSyncCoordinator(
+                sync: FfiMailboxSyncAdapter(sync: sync), serverName: serverName, zones: zones?.sync)
         } catch {
             log.error("mailbox client not opened, sync disabled")
             return nil
@@ -1265,6 +1281,10 @@ final class AppModel {
             iconEpoch &+= 1
             resumeMailboxSetup()
             resumeMigration()
+            // Key rotation v2 (spec 15): an account from before it gets this device's keys, after
+            // the unlock and never in its way (logged, tried again at the next unlock).
+            let unlocked = session
+            Task { await unlocked.migrateToV2AfterUnlock() }
             if activeProfile?.isManaged == true {
                 let slot = accounts.activeSlot
                 Task { await resumeManagedAccount(slot) }

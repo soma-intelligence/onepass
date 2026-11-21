@@ -1363,3 +1363,44 @@ fn rotation_acks_show_who_followed() {
     assert!(of(&acks, &a_id).acknowledged);
     assert!(of(&acks, &b_id).acknowledged);
 }
+
+/// The apps' personal creation: the password crosses as bytes and the
+/// account starts on lineage v2 (contact cards need it); bytes that are not
+/// UTF-8 create nothing.
+#[test]
+fn create_account_v2_bytes_starts_on_v2() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(dir.path());
+    let keys = Keys::new();
+    let refused = create_account_v2_bytes(
+        path.clone(),
+        vec![0xff, 0xfe],
+        Some(FAST),
+        keys.c(),
+        keys.half(),
+        "iPhone de Camille".into(),
+        FfiDeviceKind::Phone,
+        FfiDeviceMode::Personal,
+    );
+    assert!(refused.is_err());
+    assert!(!has_account(path.clone()).unwrap());
+    let created = create_account_v2_bytes(
+        path.clone(),
+        PASSWORD.as_bytes().to_vec(),
+        Some(FAST),
+        keys.c(),
+        keys.half(),
+        "iPhone de Camille".into(),
+        FfiDeviceKind::Phone,
+        FfiDeviceMode::Personal,
+    )
+    .unwrap();
+    assert_eq!(
+        created.session.lineage_status().unwrap().state,
+        FfiLineageState::Current
+    );
+    assert_eq!(
+        created.session.migrate_to_v2(keys.c(), keys.half()).unwrap(),
+        FfiMigration::Already
+    );
+}

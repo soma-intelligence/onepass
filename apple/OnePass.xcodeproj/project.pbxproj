@@ -3019,7 +3019,7 @@
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
 				ONEPASS_MAILBOX_SIGNUP = NO;
-				ONEPASS_MAILBOX_URL = "https://mailbox.somalabs.me/functions/v1/mailbox";
+				ONEPASS_MAILBOX_URL = "https://aixgegcostjptashxlzf.supabase.co/functions/v1/mailbox";
 				ONEPASS_SPARKLE_PUBLIC_KEY = "";
 				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				ONLY_ACTIVE_ARCH = YES;
@@ -3331,7 +3331,7 @@
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
 				ONEPASS_MAILBOX_SIGNUP = NO;
-				ONEPASS_MAILBOX_URL = "https://mailbox.somalabs.me/functions/v1/mailbox";
+				ONEPASS_MAILBOX_URL = "https://aixgegcostjptashxlzf.supabase.co/functions/v1/mailbox";
 				ONEPASS_SPARKLE_PUBLIC_KEY = "";
 				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -3468,7 +3468,7 @@
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
 				ONEPASS_MAILBOX_SIGNUP = NO;
-				ONEPASS_MAILBOX_URL = "https://mailbox.somalabs.me/functions/v1/mailbox";
+				ONEPASS_MAILBOX_URL = "https://aixgegcostjptashxlzf.supabase.co/functions/v1/mailbox";
 				ONEPASS_SPARKLE_PUBLIC_KEY = "";
 				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -3727,7 +3727,7 @@
 				ONEPASS_CLOUDKIT_CONTAINER = iCloud.me.somalabs.onepass;
 				ONEPASS_KEYCHAIN_GROUP = me.somalabs.onepass.shared;
 				ONEPASS_MAILBOX_SIGNUP = NO;
-				ONEPASS_MAILBOX_URL = "https://mailbox.somalabs.me/functions/v1/mailbox";
+				ONEPASS_MAILBOX_URL = "https://aixgegcostjptashxlzf.supabase.co/functions/v1/mailbox";
 				ONEPASS_SPARKLE_PUBLIC_KEY = "";
 				ONEPASS_UPDATE_FEED_URL = "https://github.com/soma-intelligence/onepass/releases/latest/download/appcast.xml";
 				PRODUCT_NAME = "$(TARGET_NAME)";

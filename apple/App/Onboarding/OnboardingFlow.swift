@@ -532,7 +532,8 @@ final class OnboardingModel {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             let key = managed
                 ? try await model.createManagedAccount(password: typed, displayName: name, mode: mode)
-                : try await session.createAccount(password: typed, displayName: name, mode: mode)
+                : try await session.createPersonalAccount(
+                    password: typed, displayName: name, mode: mode, slot: model.accounts.activeSlot)
             // The password is kept only when the biometric step follows.
             credentials.accountCreated(secretKey: key, password: typed, keepPasswordForBiometrics: biometricsOffered)
             if managed, let bytes = credentials.secretKey {

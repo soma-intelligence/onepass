@@ -128,11 +128,13 @@ public final class CryptoKitPqHalf: FfiPqDeviceHalf, @unchecked Sendable {
     }
 }
 
-/// A managed account's device keys in this device's Keychain: `device.<accountID>` once the account
-/// exists, `device.pending.<slot>` from their creation (before the core gives the account its id)
-/// until `adoptPending`. The item: u32 big-endian classical length, the classical halves
-/// (`generateClassicalDeviceKeys`), then the `CryptoKitPqHalf` blob.
-public struct ManagedDeviceKeys: DeviceKeySource {
+/// An account's device keys in this device's Keychain, personal and managed accounts alike:
+/// `device.<accountID>` once the account exists, `device.pending.<slot>` from their creation (before
+/// the core gives the account its id) until `adoptPending`. The item: u32 big-endian classical
+/// length, the classical halves (`generateClassicalDeviceKeys`), then the `CryptoKitPqHalf` blob.
+/// `SystemKeychain` writes it `WhenUnlockedThisDeviceOnly`, never synchronizable: the keys never
+/// leave this device through iCloud Keychain.
+public struct AccountDeviceKeys: DeviceKeySource {
     public static func key(accountID: String) -> String { "device.\(accountID)" }
     public static func pendingKey(slot: String) -> String { "device.pending.\(slot)" }
 
@@ -169,6 +171,27 @@ public struct ManagedDeviceKeys: DeviceKeySource {
             try keychain.write(key(accountID: accountID), pending)
         }
         try? keychain.delete(pendingKey(slot: slot))
+    }
+
+    /// The keys of `accountID` for its migration to key rotation v2 (spec 15): the stored ones when
+    /// the Keychain holds them, else fresh keys written first and read back, so the migration only
+    /// ever signs with keys this device keeps. Stored keys are never replaced: an item that does not
+    /// read throws `Crypto`, a Keychain error is thrown as is, and nothing is written in either case.
+    public static func existingOrCreate(
+        keychain: any KeychainStore, accountID: String, secureEnclave: Bool = SecureEnclave.isAvailable
+    ) throws -> DeviceKeyPair {
+        let keys = AccountDeviceKeys(keychain: keychain, accountID: accountID)
+        do {
+            return try keys.deviceKeys()
+        } catch OnePassError.NotFound {
+            // None yet: made below.
+        }
+        let classical = try generateClassicalDeviceKeys()
+        let pq = try CryptoKitPqHalf.generate(secureEnclave: secureEnclave)
+        var stored = item(classical: classical, pq: pq)
+        defer { stored.wipe() }
+        try keychain.write(key(accountID: accountID), stored)
+        return try keys.deviceKeys()
     }
 
     /// Forgets the pending keys of `slot` (a creation cancelled or failed), quietly.
@@ -244,3 +267,6 @@ extension Data {
         return copy(start..<offset)
     }
 }
+
+/// The name of `AccountDeviceKeys` from before personal accounts had device keys.
+public typealias ManagedDeviceKeys = AccountDeviceKeys
