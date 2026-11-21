@@ -96,10 +96,18 @@ enum Rng {
 /// Bytes asked for first, to learn a file's length: enough for a 3-byte
 /// tag and the `83` length form.
 const HEADER_LEN: usize = 8;
-/// Bytes asked for per READ BINARY.
-const CHUNK: usize = 0xE0;
+/// Bytes asked for per READ BINARY (B0). The wrapped answer must fit a
+/// short response (256 bytes): 223 bytes pad to 224, so DO87 (4 header
+/// bytes and 224) plus DO99 (4) plus DO8E (10) is 242 for 3DES and AES
+/// alike, where 0xE0 would pad to 240 and overflow (258).
+const CHUNK: usize = 0xDF;
+/// File bytes per B1 read: the DO53 around them (53 81 n) must stay within
+/// the same 223-byte plaintext budget as `CHUNK`.
+const CHUNK_B1: usize = CHUNK - 3;
 /// Largest file accepted (a DG2 is tens of kilobytes).
 const MAX_FILE: usize = 1 << 20;
+/// Largest EF.CardAccess read unprotected; bigger means BAC.
+const MAX_CARD_ACCESS: usize = 4096;
 /// Highest offset READ BINARY (B0) can carry in P1-P2.
 const MAX_B0_OFFSET: usize = 0x7FFF;
 /// 6Cxx / 61xx answers followed in a row before giving up.
@@ -121,6 +129,7 @@ struct FileRead {
     /// The last command asked with the odd INS (answer in DO53).
     odd: bool,
     asked: usize,
+    max: usize,
 }
 
 impl FileRead {
@@ -131,18 +140,24 @@ impl FileRead {
             total: None,
             odd: false,
             asked: 0,
+            max: if fid == EF_CARD_ACCESS {
+                MAX_CARD_ACCESS
+            } else {
+                MAX_FILE
+            },
         }
     }
 
     /// The next READ BINARY: B0 up to offset 0x7FFF, B1 with DO54 beyond.
     fn next_cmd(&mut self) -> Command {
         let off = self.buf.len();
+        self.odd = off > MAX_B0_OFFSET;
+        let chunk = if self.odd { CHUNK_B1 } else { CHUNK };
         let n = match self.total {
             None => HEADER_LEN,
-            Some(t) => t.saturating_sub(off).min(CHUNK),
+            Some(t) => t.saturating_sub(off).min(chunk),
         };
         self.asked = n;
-        self.odd = off > MAX_B0_OFFSET;
         if !self.odd {
             return Command::read_binary(off as u16, n as u8);
         }
@@ -182,7 +197,7 @@ impl FileRead {
         self.buf.extend_from_slice(chunk);
         if self.total.is_none() {
             let t = tlv::file_length(&self.buf).ok_or(IcaoError::Protocol("file-header"))?;
-            if t > MAX_FILE {
+            if t > self.max {
                 return Err(IcaoError::Protocol("file-too-large"));
             }
             self.total = Some(t);
@@ -551,7 +566,12 @@ impl IcaoSession {
             }
             EF_DG1 => {
                 match parse_dg1(&buf) {
-                    Ok(m) if m == self.scanned => {}
+                    // The access key fields: names and optional data may
+                    // differ from an imperfect OCR, the result uses DG1's.
+                    Ok(m)
+                        if m.document_number == self.scanned.document_number
+                            && m.birth_date == self.scanned.birth_date
+                            && m.expiry_date == self.scanned.expiry_date => {}
                     // The chip holds another document than the one scanned.
                     Ok(_) => return self.fail(IcaoError::AccessDenied),
                     Err(e) => return self.fail(e),

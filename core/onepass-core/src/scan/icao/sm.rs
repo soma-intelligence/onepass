@@ -182,6 +182,9 @@ pub struct SecureChannel {
     ks_enc: Zeroizing<Vec<u8>>,
     ks_mac: Zeroizing<Vec<u8>>,
     ssc: Zeroizing<Vec<u8>>,
+    /// INS of the last wrapped command: an odd one is answered in DO85,
+    /// an even one in DO87.
+    odd_ins: bool,
 }
 
 impl std::fmt::Debug for SecureChannel {
@@ -210,6 +213,7 @@ impl SecureChannel {
             ks_enc: Zeroizing::new(ks_enc.to_vec()),
             ks_mac: Zeroizing::new(ks_mac.to_vec()),
             ssc: Zeroizing::new(ssc.to_vec()),
+            odd_ins: false,
         })
     }
 
@@ -266,6 +270,7 @@ impl SecureChannel {
     /// DO87, encodes Le as DO97 and appends the MAC as DO8E.
     pub fn wrap(&mut self, cmd: &Command) -> Command {
         self.increment_ssc();
+        self.odd_ins = cmd.ins & 1 == 1;
         let bs = self.cipher.block_size();
         let prim = Prim::new(self.cipher, &self.ks_enc).expect("lengths checked in new");
         let header = [cmd.cla | 0x0C, cmd.ins, cmd.p1, cmd.p2];
@@ -314,9 +319,10 @@ impl SecureChannel {
         }
     }
 
-    /// Verify the MAC (DO8E) of a protected response, then decrypt DO87 (or
-    /// DO85, the form without padding-content indicator a chip may use for
-    /// an odd INS) and read the status from DO99. The MAC is checked before
+    /// Verify the MAC (DO8E) of a protected response, then decrypt DO87
+    /// (answer to an even INS) or DO85 (answer to an odd INS, without
+    /// padding-content indicator; the INS is the last one wrapped) and read
+    /// the status from DO99. The MAC is checked before
     /// any decryption.
     ///
     /// A response with no data is an unprotected chip answer: its status is
@@ -346,8 +352,8 @@ impl SecureChannel {
             // The only valid order is DO87 or DO85 (optional), DO99, DO8E,
             // each once.
             match t.tag {
-                0x87 if stage == 0 => do87 = Some((raw, t.value, false)),
-                0x85 if stage == 0 => do87 = Some((raw, t.value, true)),
+                0x87 if stage == 0 && !self.odd_ins => do87 = Some((raw, t.value, false)),
+                0x85 if stage == 0 && self.odd_ins => do87 = Some((raw, t.value, true)),
                 0x99 if stage <= 1 => do99 = Some((raw, t.value)),
                 0x8E if stage == 2 => do8e = Some(t.value),
                 _ => return Err(IcaoError::Protocol("unexpected object in response")),
@@ -895,6 +901,55 @@ mod tests {
             })
             .unwrap();
         assert_eq!(out.data, plain);
+    }
+
+    #[test]
+    fn crypto_object_must_match_the_ins_parity() {
+        let (mut ch, ke, km) = aes_pair(16, Cipher::Aes128);
+        let even = Command {
+            cla: 0x00,
+            ins: 0xB0,
+            p1: 0x00,
+            p2: 0x00,
+            data: vec![],
+            le: Some(4),
+        };
+        let odd = Command {
+            cla: 0x00,
+            ins: 0xB1,
+            p1: 0x00,
+            p2: 0x00,
+            data: vec![0x54, 0x02, 0x80, 0x00],
+            le: Some(7),
+        };
+        // Odd INS answered with DO87: refused.
+        let _ = ch.wrap(&odd);
+        let r = reference::aes_chip_response(&ke, &km, ch.ssc(), Some(&[0x53, 0x01, 9]));
+        assert!(matches!(ch.unwrap(&r), Err(IcaoError::Protocol(_))));
+        // Even INS answered with DO85: refused.
+        let (mut ch, ke, km) = aes_pair(16, Cipher::Aes128);
+        let _ = ch.wrap(&even);
+        let mut ssc = [0u8; 16];
+        ssc[15] = 2;
+        let iv = reference::aes_cbc_encrypt(&ke, &[0; 16], &ssc);
+        let ct = reference::aes_cbc_encrypt(&ke, &iv, &pad_for_test(vec![1, 2, 3, 4], 16));
+        let mut body = crate::scan::tlv::encode(0x85, &ct);
+        body.extend_from_slice(&[0x99, 0x02, 0x90, 0x00]);
+        let mut mi = ssc.to_vec();
+        mi.extend_from_slice(&body);
+        let mac = reference::aes_cmac8(&km, &pad_for_test(mi, 16));
+        body.extend_from_slice(&[0x8E, 0x08]);
+        body.extend_from_slice(&mac);
+        let r = Response {
+            data: body,
+            sw: 0x9000,
+        };
+        assert!(matches!(ch.unwrap(&r), Err(IcaoError::Protocol(_))));
+        // The even INS with DO87 still unwraps.
+        let (mut ch, ke, km) = aes_pair(16, Cipher::Aes128);
+        let _ = ch.wrap(&even);
+        let r = reference::aes_chip_response(&ke, &km, ch.ssc(), Some(&[1, 2, 3, 4]));
+        assert_eq!(ch.unwrap(&r).unwrap().data, vec![1, 2, 3, 4]);
     }
 
     #[test]

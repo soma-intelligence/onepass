@@ -726,7 +726,11 @@ impl FakeChip {
     }
 
     fn transmit(&mut self, apdu: &[u8]) -> Vec<u8> {
-        let out = self.process(apdu);
+        let mut out = self.process(apdu);
+        // A short APDU answer holds at most 256 data bytes.
+        if out.len() > SHORT_MAX + 2 {
+            out = vec![0x67, 0x00];
+        }
         self.log.push((apdu.to_vec(), out.clone()));
         out
     }
@@ -1195,11 +1199,81 @@ fn reads_file_in_chunks_with_long_length() {
 
 #[test]
 fn dg1_mismatch_fails() {
-    // Same document number and dates (the access keys work), another name.
+    // The chip opens with the scanned keys, but its DG1 holds another
+    // document number (SOD re-signed over it, so only the check catches it).
+    let mut chip = FakeChip::specimen();
+    let d1 = dg1(&mrz_lines(SURNAME, GIVEN, "L898902C4"));
+    let s = sod(&d1, &chip.files[&EF_DG2]);
+    chip.files.insert(EF_DG1, d1);
+    chip.files.insert(EF_SOD, s);
+    let (step, _) = run(&mut session_for(&specimen()), &mut chip);
+    assert!(matches!(step, Step::Failed(IcaoError::AccessDenied)));
+}
+
+#[test]
+fn dg1_name_difference_is_accepted() {
+    // Same document number and dates, another name (an OCR slip the check
+    // digits do not cover): the read goes on and returns the chip's MRZ.
     let other = mrz_lines("ERIKSON", GIVEN, NUMBER);
     let mut chip = FakeChip::passport(&other, &portrait_bytes(800));
     let (step, _) = run(&mut session_for(&specimen()), &mut chip);
-    assert!(matches!(step, Step::Failed(IcaoError::AccessDenied)));
+    let r = read_ok(step);
+    assert_eq!(r.status, ChipStatus::Verified);
+    assert_eq!(r.mrz.surname, "ERIKSON");
+    assert!(r.mrz == mrz(&other));
+}
+
+/// Largest data field of a short response APDU.
+const SHORT_MAX: usize = 256;
+
+#[test]
+fn chunks_fit_short_apdu_under_aes() {
+    // PACE (AES) then BAC (3DES), DG2 past offset 0x7FFF so both B0 and
+    // B1 reads run: every answer fits a short APDU and full chunks are used.
+    for card_access in [true, false] {
+        let jpeg = portrait_bytes(40 * 1024);
+        let mut chip = FakeChip::passport(&specimen(), &jpeg);
+        if !card_access {
+            chip.card_access = None;
+        }
+        let (step, _) = run(&mut session_for(&specimen()), &mut chip);
+        let r = read_ok(step);
+        assert_eq!(r.portrait.unwrap().bytes, jpeg);
+        assert!(chip.log.iter().all(|(_, r)| r.len() <= SHORT_MAX + 2));
+        assert!(!chip.log.iter().any(|(_, r)| r == &[0x67, 0x00]));
+        // A full B0 chunk (223 bytes) wraps to 242 bytes plus 9000.
+        let reads = |ins: u8| {
+            chip.log
+                .iter()
+                .filter(move |(c, _)| c.get(1) == Some(&ins))
+                .map(|(_, r)| r.len())
+                .max()
+                .unwrap()
+        };
+        assert_eq!(reads(0xB0), 244);
+        assert_eq!(reads(0xB1), 243);
+    }
+}
+
+#[test]
+fn oversized_card_access_falls_back_to_bac() {
+    let mut chip = FakeChip::specimen();
+    let mut ca = card_access(&[12]);
+    // Declares a 5000-byte SET: past the 4096-byte cap.
+    ca = [vec![0x31, 0x82, 0x13, 0x88], ca[2..].to_vec()].concat();
+    ca.resize(5004, 0);
+    chip.card_access = Some(ca);
+    let (step, _) = run(&mut session_for(&specimen()), &mut chip);
+    read_ok(step);
+    assert!(chip.used_bac());
+    assert!(!chip.used_pace());
+    // Only the header was read before giving up.
+    let ca_reads = chip
+        .log
+        .iter()
+        .filter(|(c, _)| c.starts_with(&[0x00, 0xB0]))
+        .count();
+    assert_eq!(ca_reads, 1);
 }
 
 #[test]
