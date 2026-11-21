@@ -183,6 +183,13 @@ mod tests {
         assert_eq!(hex(ch.ks_enc()), hex(&fx("ks_enc")));
         assert_eq!(hex(ch.ks_mac()), hex(&fx("ks_mac")));
         assert_eq!(hex(ch.ssc()), hex(&fx("ssc0")));
+        // K.ICC and KSseed: K.IFD xor K.ICC.
+        let seed: Vec<u8> = fx("k_ifd")
+            .iter()
+            .zip(fx("k_icc"))
+            .map(|(a, b)| a ^ b)
+            .collect();
+        assert_eq!(hex(&seed), hex(&fx("ks_seed")));
     }
 
     #[test]
@@ -210,7 +217,7 @@ mod tests {
             data: fx("ext_auth_resp_data"),
             sw: 0x9000,
         };
-        assert!(ex.finish(&r).is_err());
+        assert!(matches!(ex.finish(&r), Err(IcaoError::Protocol(_))));
     }
 
     #[test]

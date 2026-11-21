@@ -140,16 +140,16 @@ pub(super) fn mac8(cipher: Cipher, key: &[u8], padded: &[u8]) -> Result<[u8; 8],
             }
             let k1 = Des::new_from_slice(&key[..8]).map_err(|_| IcaoError::Crypto)?;
             let k2 = Des::new_from_slice(&key[8..]).map_err(|_| IcaoError::Crypto)?;
-            let mut h = [0u8; 8];
+            let mut h = Zeroizing::new([0u8; 8]);
             for blk in padded.as_chunks::<8>().0 {
                 for (a, b) in h.iter_mut().zip(blk) {
                     *a ^= b;
                 }
-                k1.encrypt_block((&mut h).into());
+                k1.encrypt_block((&mut *h).into());
             }
-            k2.decrypt_block((&mut h).into());
-            k1.encrypt_block((&mut h).into());
-            out = h;
+            k2.decrypt_block((&mut *h).into());
+            k1.encrypt_block((&mut *h).into());
+            out = *h;
         }
         _ => {
             macro_rules! cmac8 {
@@ -217,15 +217,18 @@ impl SecureChannel {
         self.cipher
     }
 
-    pub fn ks_enc(&self) -> &[u8] {
+    #[cfg(test)]
+    pub(crate) fn ks_enc(&self) -> &[u8] {
         &self.ks_enc
     }
 
-    pub fn ks_mac(&self) -> &[u8] {
+    #[cfg(test)]
+    pub(crate) fn ks_mac(&self) -> &[u8] {
         &self.ks_mac
     }
 
-    pub fn ssc(&self) -> &[u8] {
+    #[cfg(test)]
+    pub(crate) fn ssc(&self) -> &[u8] {
         &self.ssc
     }
 
@@ -278,6 +281,7 @@ impl SecureChannel {
             dos.extend_from_slice(&tlv::encode(0x87, &v));
         }
         if let Some(le) = cmd.le {
+            // Le above 256 (extended length) is out of P1 scope.
             let v: Vec<u8> = if le > 256 {
                 le.to_be_bytes().to_vec()
             } else {
@@ -325,20 +329,24 @@ impl SecureChannel {
         let mut do87: Option<(&[u8], &[u8])> = None; // (raw, value)
         let mut do99: Option<(&[u8], &[u8])> = None;
         let mut do8e: Option<&[u8]> = None;
+        let mut stage = 0u8;
         while !rest.is_empty() {
             let start = data.len() - rest.len();
             let (t, after) =
                 tlv::parse_one(rest).map_err(|_| IcaoError::Protocol("malformed response"))?;
             let raw = &data[start..data.len() - after.len()];
-            let dup = match t.tag {
-                0x87 => do87.replace((raw, t.value)).is_some(),
-                0x99 => do99.replace((raw, t.value)).is_some(),
-                0x8E => do8e.replace(t.value).is_some(),
+            // The only valid order is DO87 (optional), DO99, DO8E, each once.
+            match t.tag {
+                0x87 if stage == 0 => do87 = Some((raw, t.value)),
+                0x99 if stage <= 1 => do99 = Some((raw, t.value)),
+                0x8E if stage == 2 => do8e = Some(t.value),
                 _ => return Err(IcaoError::Protocol("unexpected object in response")),
-            };
-            if dup || (do8e.is_some() && !after.is_empty()) {
-                return Err(IcaoError::Protocol("malformed response"));
             }
+            stage = match t.tag {
+                0x87 => 1,
+                0x99 => 2,
+                _ => 3,
+            };
             rest = after;
         }
         let (raw99, v99) = do99.ok_or(IcaoError::Protocol("missing status object"))?;
@@ -410,15 +418,15 @@ mod tests {
 
     #[test]
     fn sm_appendix_d_chain_select_then_read_binary() {
-        // SELECT EF.COM at SSC ...27, the chip's bare answer at ...28 (D.4
-        // does not print it, so a reference chip builds it), READ BINARY at
-        // ...29 and its answer at ...2A, as in D.4.
+        // SELECT EF.COM at SSC ...27, the chip's protected answer at ...28,
+        // READ BINARY at ...29 and its answer at ...2A, all as printed in D.4.
         let mut ch = channel();
         let w = ch.wrap(&plain("select_plain", None));
         assert_eq!(hex(&w.to_bytes()), hex(&fx("select_protected")));
-        let ans =
-            reference::chip_response(Cipher::TripleDes, &fx("ks_enc"), &fx("ks_mac"), &ch, None);
-        ch.unwrap(&ans).unwrap();
+        let raw = fx("select_resp_protected");
+        let ans = ch.unwrap(&Response::parse(&raw).unwrap()).unwrap();
+        assert!(ans.data.is_empty());
+        assert_eq!(ans.sw, 0x9000);
         assert_eq!(hex(ch.ssc()), "887022120C06C228");
         let w = ch.wrap(&plain("read_plain", Some(4)));
         assert_eq!(hex(&w.to_bytes()), hex(&fx("read_protected")));
@@ -482,6 +490,29 @@ mod tests {
             sw: 0x9000,
         };
         assert!(matches!(ch.unwrap(&r), Err(IcaoError::Protocol(_))));
+    }
+
+    #[test]
+    fn sm_unwrap_rejects_misordered_objects() {
+        // DO99 before DO87: the official answer's objects, swapped.
+        let mut ch = at_read_answer();
+        let raw = fx("read_resp_protected");
+        let r = Response::parse(&raw).unwrap();
+        let (d87, rest) = crate::scan::tlv::parse_one(&r.data).unwrap();
+        let n87 = r.data.len() - rest.len();
+        let _ = d87;
+        let mut data = rest[..4].to_vec(); // DO99
+        data.extend_from_slice(&r.data[..n87]);
+        data.extend_from_slice(&rest[4..]);
+        let bad = Response { data, sw: 0x9000 };
+        assert!(matches!(ch.unwrap(&bad), Err(IcaoError::Protocol(_))));
+        // DO8E before DO99.
+        let mut ch = at_read_answer();
+        let mut data = r.data[..n87].to_vec();
+        data.extend_from_slice(&rest[4..]);
+        data.extend_from_slice(&rest[..4]);
+        let bad = Response { data, sw: 0x9000 };
+        assert!(matches!(ch.unwrap(&bad), Err(IcaoError::Protocol(_))));
     }
 
     #[test]
