@@ -4,8 +4,10 @@
 //! - Have I Been Pwned ranges (k-anonymity): only the 5 hex character
 //!   prefixes of SHA-1 hashes the core asks for (`missing_prefixes`), with
 //!   `Add-Padding`, kept in memory for an hour and dropped at lock;
-//! - the 2fa.directory and passkeys catalogs and the HIBP list of breached
-//!   sites, downloaded whole and kept a week on disk.
+//! - the HIBP list of breached sites, downloaded whole and kept a week on
+//!   disk. Two-factor and passkey support come from the site pack the app
+//!   ships (`SITE_PACK`), as on iPhone and Android: nothing is downloaded
+//!   from 2fa.directory.
 //!
 //! No password, hash or item ever leaves: the core compares the rest here.
 
@@ -15,8 +17,6 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 const RANGE_URL: &str = "https://api.pwnedpasswords.com/range/";
-const TWOFA_URL: &str = "https://api.2fa.directory/v4/all.json";
-const PASSKEYS_URL: &str = "https://passkeys-api.2fa.directory/v1/all.json";
 const BREACHES_URL: &str = "https://haveibeenpwned.com/api/v3/breaches";
 const RANGE_LIMIT: u64 = 4 * 1024 * 1024;
 const CATALOG_LIMIT: u64 = 16 * 1024 * 1024;
@@ -128,11 +128,14 @@ fn get(agent: &ureq::Agent, url: &str, padding: bool, limit: u64) -> Option<Vec<
         .ok()
 }
 
+/// The signed site pack of the Apple apps (docs/site-pack.md), one copy in the repository: the
+/// source of `missing_2fa` and `passkey_available`. No newer pack is fetched until the app carries
+/// the pack's public key, as on iPhone and Android.
+pub const SITE_PACK: &[u8] = include_bytes!("../../../apple/SitePack/onepass-sites.json");
+
 /// The catalogs at hand.
 #[derive(Default)]
 pub struct Catalogs {
-    pub twofa: Option<Vec<u8>>,
-    pub passkeys: Option<Vec<u8>>,
     pub breaches: Option<Vec<u8>>,
 }
 
@@ -170,8 +173,6 @@ pub fn catalogs(data: &Path, network: bool) -> Catalogs {
         }
     };
     Catalogs {
-        twofa: one("2fa-directory.json", TWOFA_URL),
-        passkeys: one("passkeys-directory.json", PASSKEYS_URL),
         breaches: one("hibp-breaches.json", BREACHES_URL),
     }
 }

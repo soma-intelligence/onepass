@@ -206,7 +206,7 @@ try {
   const secretKey = (await A.text("//div[@class='secret-key']")).replace(/\s/g, "");
   await A.click("//input[@id='ok']");
   await A.click(button("Continuer"));
-  await A.find("//h1[normalize-space(.)='Bonjour Camille']", 60000);
+  await A.find("//*[contains(@class,'hero-greeting') and normalize-space(.)='Bonjour Camille']", 60000);
   await settings(A, "Sync");
   const aIdle = await syncState(A, "idle");
   check("A's mailbox is set up and synced", aIdle === true, String(aIdle));

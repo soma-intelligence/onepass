@@ -2011,3 +2011,857 @@ input.check-box {
 #lock-alerts {
   max-width: 420px;
 }
+
+/* ==== RX (the Mac app's design: apple/DesignKit RXTokens and the RXMac* views) ===========================
+   Inter, the Penpot palette, cards of radius 24 with no border, the wallpaper hero on Accueil, the item's
+   colour wash, the half-circle Watchtower gauge, the Settings popup without blur. Later rules win. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("assets/fonts/InterVariable.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --accent: #5856d6;
+  --readable-accent: #5856d6;
+  --accent-soft: rgba(88, 86, 214, 0.12);
+  --page: #f2f2f7;
+  --card: #ffffff;
+  --raised: #ffffff;
+  --field: #e9e9ee;
+  --glass: rgba(255, 255, 255, 0.72);
+  --label: #0b0b0f;
+  --secondary: #6b6b73;
+  --tertiary: #a0a0a8;
+  --separator: #e3e3e8;
+  --sidebar: rgba(250, 250, 252, 0.9);
+  --red: #e5484d;
+  --green: #11a866;
+  --raised-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --readable-accent: #a3a2e8;
+    --accent-soft: rgba(163, 162, 232, 0.18);
+    --page: #000000;
+    --card: #161618;
+    --raised: #2c2c2e;
+    --field: #1f1f22;
+    --glass: rgba(118, 118, 128, 0.24);
+    --label: #ffffff;
+    --secondary: #a1a1a6;
+    --tertiary: #6e6e73;
+    --separator: #2a2a2e;
+    --sidebar: #111113;
+    --red: #ff5b61;
+    --green: #3fd68f;
+  }
+}
+
+html,
+body {
+  font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -0.1px;
+}
+.large-title,
+.list-title,
+.item-head h2 {
+  letter-spacing: -0.8px;
+}
+.card {
+  border-radius: 24px;
+  box-shadow: none;
+  border: 0;
+}
+
+/* ---- sidebar (RXMacSidebar) ---- */
+.shell {
+  grid-template-columns: 248px 1fr;
+}
+.sidebar {
+  border-right: 1px solid var(--separator);
+}
+.sidebar-top {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 16px 16px 4px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 0 0 8px;
+}
+.brand-glyph {
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  width: 20px;
+}
+.brand-name {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.brand .round {
+  width: 30px;
+  height: 30px;
+}
+.side-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--secondary);
+  font-size: 15px;
+}
+.side-search span {
+  flex: 1;
+}
+.side-search kbd {
+  font: 500 12px "Inter", sans-serif;
+  color: var(--tertiary);
+}
+.sidebar-scroll {
+  padding: 12px 16px 16px;
+  mask-image: linear-gradient(to bottom, transparent, #000 12px);
+}
+.sidebar h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tertiary);
+  margin: 16px 8px 4px;
+}
+.section-add {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--tertiary);
+  border-radius: 6px;
+}
+.section-add:hover {
+  background: var(--field);
+}
+.nav {
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 8px;
+  margin-bottom: 2px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+.nav:hover {
+  background: var(--field);
+}
+.nav.active {
+  background: var(--accent-soft);
+}
+.nav.active .nav-label {
+  color: var(--readable-accent);
+  font-weight: 500;
+}
+.nav-glyph {
+  width: 20px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.nav .monogram {
+  font-size: 9px !important;
+  font-weight: 700;
+}
+.tag-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.count {
+  color: var(--tertiary);
+}
+.sidebar-foot {
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--separator);
+}
+.sidebar-foot .account {
+  min-height: 60px;
+  gap: 12px;
+  padding: 0 8px;
+}
+.account-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.account-name {
+  font-weight: 500;
+  font-size: 15px;
+}
+.account-sub {
+  font-size: 13px;
+  color: var(--secondary);
+}
+
+/* ---- Accueil (RXMacHome) ---- */
+.rx-home {
+  padding: 16px 24px 32px;
+}
+.rx-home > * {
+  max-width: 832px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.rx-home > * + * {
+  margin-top: 16px;
+}
+.rx-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+.hero {
+  position: relative;
+  min-height: 300px;
+  border-radius: 28px;
+  overflow: hidden;
+  color: #fff;
+  display: flex;
+}
+.hero.light {
+  color: #141414;
+}
+.hero-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hero-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.2) 50%, transparent),
+    linear-gradient(180deg, transparent 50%, rgba(0, 0, 0, 0.25));
+}
+.hero.light .hero-veil {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.15) 50%, transparent),
+    linear-gradient(180deg, transparent 50%, rgba(255, 255, 255, 0.25));
+}
+.hero-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 32px;
+}
+.hero-words {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: flex-start;
+  text-align: left;
+}
+.hero-greeting {
+  font-size: 15px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+.hero-status {
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -1.57px;
+  line-height: 1.05;
+}
+.hero-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 13px;
+}
+.glass-chip,
+.glass-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 0 0 0.5px rgba(255, 255, 255, 0.2);
+  color: inherit;
+}
+.hero.light .glass-chip,
+.hero.light .glass-capsule {
+  background: rgba(255, 255, 255, 0.45);
+}
+.glass-chip {
+  padding: 8px 12px;
+}
+.score-chip.pending {
+  opacity: 0;
+}
+.score-chip b {
+  font-weight: 600;
+}
+.dim {
+  opacity: 0.6;
+}
+.hero-count {
+  font-weight: 600;
+  opacity: 0.75;
+}
+.hero-actions {
+  display: flex;
+  gap: 8px;
+}
+.hero-primary,
+.glass-capsule {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 15px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 0.15s;
+}
+.hero-primary {
+  border-radius: 999px;
+  background: #fff;
+  color: #141414;
+}
+.hero.light .hero-primary {
+  background: #141414;
+  color: #fff;
+}
+.hero-primary:active,
+.glass-capsule:active,
+.quick:active {
+  transform: scale(0.97);
+}
+.rx-card {
+  background: var(--card);
+  border-radius: 24px;
+  padding-bottom: 8px;
+}
+.rx-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.see-all {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--readable-accent);
+}
+.rx-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.rx-rows {
+  padding: 0 8px;
+}
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 8px;
+  border-radius: 10px;
+  transition: background 0.12s;
+}
+.home-row:hover {
+  background: var(--field);
+}
+.home-row .row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.home-row .row-title {
+  font-weight: 500;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-row .row-sub {
+  font-size: 13px;
+  color: var(--secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rx-empty {
+  padding: 4px 16px 12px;
+  color: var(--secondary);
+  font-size: 13px;
+}
+.fav-strip {
+  display: flex;
+  padding: 4px 8px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fav-tile {
+  flex: none;
+  width: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px 0;
+}
+.fav-art {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--field);
+  display: grid;
+  place-items: center;
+  transition: transform 0.18s;
+}
+.fav-tile:hover .fav-art {
+  transform: scale(1.06);
+}
+.fav-title {
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.3;
+  height: 2.6em;
+  overflow: hidden;
+}
+.rx-home .empty-state {
+  padding: 24px;
+  text-align: center;
+}
+
+/* ---- item (ItemDetailView, the identity wash) ---- */
+.detail {
+  position: relative;
+  background: var(--page);
+}
+.detail::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 58%;
+  background: var(--wash, none);
+  pointer-events: none;
+  animation: wash-in 0.25s ease-out;
+}
+@keyframes wash-in {
+  from {
+    opacity: 0;
+  }
+}
+.detail > * {
+  position: relative;
+}
+.detail-scroll > * {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.detail-scroll {
+  scrollbar-width: none;
+}
+.item-head {
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  margin: 4px auto 8px;
+}
+.item-head > :first-child {
+  filter: drop-shadow(0 6px 9px rgba(0, 0, 0, 0.12));
+  margin-bottom: 4px;
+}
+.item-head h2 {
+  font-size: 34px;
+  line-height: 1.1;
+}
+.item-sub {
+  font-size: 15px;
+}
+.item-head .chips {
+  justify-content: center;
+  margin: 0;
+}
+.vault-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 2px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.1);
+  font-size: 13px;
+  font-weight: 600;
+}
+.vault-chip .monogram {
+  border-radius: 5px;
+  font-size: 8px !important;
+}
+.quicks {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin: 16px auto 8px;
+}
+.quick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 92px;
+  transition: transform 0.15s;
+}
+.quick-disc {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--readable-accent);
+  display: grid;
+  place-items: center;
+  box-shadow: var(--raised-shadow);
+}
+.quick-label {
+  font-size: 15px;
+  font-weight: 500;
+}
+.detail .card {
+  border-radius: 18px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+@media (prefers-color-scheme: dark) {
+  .detail .card {
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07);
+  }
+}
+.caps {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+.pill {
+  background: var(--glass);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* ---- Watchtower (RXMacWatchtower) ---- */
+.wt-status {
+  margin: -14px 4px 16px;
+}
+.wt-top-row {
+  display: grid;
+  grid-template-columns: minmax(270px, 1fr) 1.4fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.gauge-card {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.dial .track,
+.dial .fill {
+  fill: none;
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+.dial .track {
+  stroke: color-mix(in srgb, var(--secondary) 20%, transparent);
+}
+.dial-figure {
+  font-size: 46px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  fill: var(--label);
+}
+.dial-word {
+  font-size: 17px;
+  font-weight: 600;
+  fill: var(--secondary);
+}
+.wt-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wt-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 24px;
+  text-align: left;
+  box-shadow: var(--raised-shadow);
+  color: #fff;
+}
+.wt-alert:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.wt-alert.red {
+  background: linear-gradient(180deg, #d33b39, #b42a2d);
+}
+.wt-alert.green {
+  background: linear-gradient(180deg, #1d8450, #0f6e41);
+}
+.wt-alert.plain {
+  background: var(--card);
+  color: var(--label);
+}
+.alert-disc {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 50%;
+  background: #fff;
+  color: #b42a2d;
+  display: grid;
+  place-items: center;
+}
+.wt-alert.green .alert-disc {
+  color: #0f6e41;
+}
+.wt-alert.plain .alert-disc {
+  background: var(--raised);
+  color: var(--secondary);
+}
+.wt-alert .row-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.alert-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+.alert-body {
+  font-size: 13px;
+  opacity: 0.92;
+}
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 24px;
+  background: var(--card);
+}
+.stat-tile:disabled {
+  opacity: 0.55;
+}
+.stat-disc {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #fff;
+  display: grid;
+  place-items: center;
+}
+.stat-count {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stat-label {
+  font-size: 13px;
+  color: var(--secondary);
+}
+.wt-section {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 24px 4px 8px;
+}
+.wt-card {
+  border-radius: 24px;
+}
+.wt-card.alert {
+  background: linear-gradient(180deg, #d33b39, #b42a2d);
+}
+
+/* ---- Réglages popup (RXMacSettings): dimmed, never blurred, a glass close button ---- */
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+dialog.sheet {
+  border-radius: 24px;
+  border: 1px solid var(--separator);
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.35);
+}
+dialog.sheet[open] {
+  animation: pop 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+dialog.sheet.settings {
+  width: min(860px, calc(100vw - 48px));
+  height: min(620px, calc(100vh - 48px));
+  position: relative;
+}
+.settings .sheet-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 0;
+  z-index: 2;
+  display: flex;
+}
+.settings .sheet-bar .sheet-title {
+  display: none;
+}
+.settings .sheet-bar > :first-child {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  font-size: 0;
+  display: grid;
+  place-items: center;
+  background: var(--glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 0.5px var(--separator);
+}
+.settings .sheet-bar > :first-child::after {
+  content: "\2715";
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--label);
+}
+.settings .sheet-body {
+  padding: 0;
+}
+.settings-side {
+  background: var(--card);
+  border-right: 1px solid var(--separator);
+  padding: 16px 12px;
+}
+.settings-side .card {
+  background: transparent;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--separator);
+  border-radius: 0;
+  margin-bottom: 8px;
+}
+.settings-side .card:last-child {
+  border-bottom: 0;
+}
+.settings-side .nav.active {
+  background: var(--accent-soft);
+}
+.settings-pane {
+  padding: 16px 24px 32px;
+}
+.settings-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+.settings-pane .card {
+  border-radius: 16px;
+}
+.wp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.wp-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--field);
+  font-size: 13px;
+  font-weight: 600;
+}
+.wp-chip.on {
+  background: var(--accent);
+  color: #fff;
+}
+.wp-tones {
+  align-self: flex-start;
+}
+.wp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+.wp-tile {
+  position: relative;
+  aspect-ratio: 120 / 68;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--separator);
+}
+.wp-tile.on {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+.wp-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.wp-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+.wp-tones button {
+  padding: 6px 14px;
+}
+.wt-alert .row-text {
+  align-items: flex-start;
+  text-align: left;
+}

@@ -664,6 +664,8 @@ mod tests {
             vault_id: "v".into(),
             item_type: FfiItemType::Login,
             title: "Example".into(),
+            icon_category: false,
+            custom_icon_id: None,
             tags: vec![],
             favorite: false,
             color: None,

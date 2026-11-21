@@ -25,6 +25,7 @@ import {
   watchCards,
   type WatchCard,
 } from "./catalog";
+import { categoryIdentity, currentWallpaper, identityColor, identityWash, isLightWallpaper, setWallpaper, wallpaperName, wallpaperThemes, wallpaperUrl, type Tone } from "./rx";
 
 // ---- IPC types (mirror src-tauri/src/view.rs and commands.rs) -----------------
 
@@ -852,12 +853,15 @@ function renderSidebar(): void {
       h("span", { class: "nav-label" }, label),
       count === null ? null : h("span", { class: "count" }, String(count)),
     );
+  // RX (RXMacSidebar): the account row sits at the foot of the sidebar, its menu opening upwards.
   const account = h(
     "button",
     { class: "account", title: t("Compte", "Account") },
-    monogram(initials(ui.name), "var(--accent)", 30),
-    h("span", { class: "account-name" }, ui.name || t("Mon compte", "My account")),
-    icon("chevron_down", 16, "accent"),
+    monogram(initials(ui.name), "var(--accent)", 32, true),
+    h("span", { class: "account-text" },
+      h("span", { class: "account-name" }, ui.name || t("Mon compte", "My account")),
+      h("span", { class: "account-sub" }, t("Appareil personnel", "Personal Device"))),
+    icon("chevron_down", 16, "tertiary"),
   );
   account.addEventListener("click", () =>
     menu(account, [
@@ -871,34 +875,48 @@ function renderSidebar(): void {
   const score = ui.report?.score;
   const cats = categories().filter((c) => live.some((i) => i.itemType === c.key));
   const tags = [...new Set(live.flatMap((i) => i.tags))].sort((a, b) => a.localeCompare(b));
+  // RX rows (RXMacSidebar): a 20 px glyph in the row's colour, no tile behind it.
+  const glyph = (name: IconName, color: string) => {
+    const g = h("span", { class: "nav-glyph" }, icon(name, 18));
+    g.style.color = color;
+    return g;
+  };
+  const allItems = { kind: "list", filter: { kind: "all" }, title: t("Tous les éléments", "All Items") } as Page;
+  const search = h("button", { class: "side-search", title: t("Rechercher", "Search"), onclick: () => {
+    go(allItems);
+    (document.querySelector(".search-input") as HTMLInputElement | null)?.focus();
+  } }, icon("search", 18), h("span", {}, t("Rechercher", "Search")), h("kbd", {}, "Ctrl F"));
   sidebarEl.replaceChildren(
-    h("div", { class: "sidebar-top" }, account, h("button", { class: "round", title: t("Nouvel élément", "New Item"), "aria-label": t("Nouvel élément", "New Item"), onclick: () => newItem() }, icon("add", 20))),
+    h("div", { class: "sidebar-top" },
+      h("div", { class: "brand" }, h("span", { class: "brand-glyph" }, icon("grid", 16)), h("span", { class: "brand-name" }, "OnePass"),
+        h("button", { class: "round", title: t("Nouvel élément", "New Item"), "aria-label": t("Nouvel élément", "New Item"), onclick: () => newItem() }, icon("add", 18))),
+      search),
     h(
       "div",
       { class: "sidebar-scroll" },
-      nav(t("Accueil", "Home"), tile("home_fill", "var(--accent)", 22), null, { kind: "home" }),
-      nav(t("Tous les éléments", "All Items"), tile("grid", "var(--accent)", 22), live.length, { kind: "list", filter: { kind: "all" }, title: t("Tous les éléments", "All Items") }),
-      nav(t("Favoris", "Favorites"), tile("star_fill", "var(--orange)", 22), live.filter((i) => i.favorite).length, { kind: "list", filter: { kind: "favorites" }, title: t("Favoris", "Favorites") }),
-      nav("Watchtower", tile("watchtower", "#E14D3C", 22), score ?? null, { kind: "watchtower" }),
-      ui.duplicates.length || ui.page.kind === "duplicates" ? nav(t("Doublons possibles", "Possible Duplicates"), tile("duplicates", "var(--orange)", 22), ui.duplicates.length, { kind: "duplicates" }) : null,
-      h("h3", {}, t("Coffres", "Vaults")),
+      nav(t("Accueil", "Home"), glyph("home_fill", "var(--accent)"), null, { kind: "home" }),
+      nav(t("Tous les éléments", "All Items"), glyph("grid", "var(--accent)"), live.length, allItems),
+      nav(t("Favoris", "Favorites"), glyph("star_fill", "var(--orange)"), live.filter((i) => i.favorite).length, { kind: "list", filter: { kind: "favorites" }, title: t("Favoris", "Favorites") }),
+      nav("Watchtower", glyph("watchtower", "#E14D3C"), score ?? null, { kind: "watchtower" }),
+      ui.duplicates.length || ui.page.kind === "duplicates" ? nav(t("Doublons possibles", "Possible Duplicates"), glyph("duplicates", "var(--orange)"), ui.duplicates.length, { kind: "duplicates" }) : null,
+      h("h3", {}, t("Coffres", "Vaults"), h("button", { class: "section-add", title: t("Nouveau coffre", "New Vault"), "aria-label": t("Nouveau coffre", "New Vault"), onclick: () => vaultEditor(null) }, icon("add", 14))),
       ...ui.vaults
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((v) => {
-          const b = nav(v.name, monogram(v.name.slice(0, 1).toUpperCase(), vaultColor(v.color), 22), live.filter((i) => i.vaultId === v.id).length, { kind: "list", filter: { kind: "vault", id: v.id }, title: v.name });
+          const b = nav(v.name, monogram(v.name.slice(0, 1).toUpperCase(), vaultColor(v.color), 20, true), live.filter((i) => i.vaultId === v.id).length, { kind: "list", filter: { kind: "vault", id: v.id }, title: v.name });
           if (v.sharedRole) b.querySelector(".nav-label")!.after(h("span", { class: "shared-mark", title: t("Partagé", "Shared") }, icon("share", 14, "secondary")));
           return b;
         }),
-      h("button", { class: "nav add", onclick: () => vaultEditor(null) }, icon("add", 18, "accent"), h("span", { class: "nav-label accent" }, t("Nouveau coffre", "New Vault"))),
       cats.length ? h("h3", {}, t("Catégories", "Categories")) : null,
-      ...cats.map((c) => nav(c.plural, art(c.key, 22), live.filter((i) => i.itemType === c.key).length, { kind: "list", filter: { kind: "category", key: c.key }, title: c.plural })),
+      ...cats.map((c) => nav(c.plural, art(c.key, 20), live.filter((i) => i.itemType === c.key).length, { kind: "list", filter: { kind: "category", key: c.key }, title: c.plural })),
       tags.length ? h("h3", {}, "Tags") : null,
-      ...tags.map((tag) => nav(tag, icon("tag", 20, "secondary"), live.filter((i) => i.tags.includes(tag)).length, { kind: "list", filter: { kind: "tag", tag }, title: tag })),
-      h("div", { class: "sidebar-gap" }),
-      nav(t("Archive", "Archive"), icon("archive", 20, "secondary"), ui.items.filter((i) => i.archived && !i.trashed).length, { kind: "list", filter: { kind: "archive" }, title: t("Archive", "Archive") }),
-      nav(t("Supprimés récemment", "Recently Deleted"), icon("trash", 20, "secondary"), ui.items.filter((i) => i.trashed).length, { kind: "list", filter: { kind: "trash" }, title: t("Supprimés récemment", "Recently Deleted") }),
+      ...tags.map((tag) => nav(tag, h("span", { class: "nav-glyph" }, h("i", { class: "tag-dot" })), live.filter((i) => i.tags.includes(tag)).length, { kind: "list", filter: { kind: "tag", tag }, title: tag })),
+      h("h3", {}, t("Plus", "More")),
+      nav(t("Archive", "Archive"), glyph("archive", "var(--secondary)"), ui.items.filter((i) => i.archived && !i.trashed).length, { kind: "list", filter: { kind: "archive" }, title: t("Archive", "Archive") }),
+      nav(t("Supprimés récemment", "Recently Deleted"), glyph("trash", "var(--secondary)"), ui.items.filter((i) => i.trashed).length, { kind: "list", filter: { kind: "trash" }, title: t("Supprimés récemment", "Recently Deleted") }),
     ),
+    h("div", { class: "sidebar-foot" }, account),
   );
 }
 
@@ -919,70 +937,65 @@ function renderMain(): void {
 function homePage(): HTMLElement {
   const live = active();
   const first = ui.name.split(/\s+/).find(Boolean);
-  const title = first ? t(`Bonjour ${first}`, `Hi ${first}`) : t("Accueil", "Home");
-  if (!live.length) {
-    const fan = h("div", { class: "fan" }, ...["login", "creditCard", "identity", "secureNote"].map((k, i) => {
-      const a = art(k, 64);
-      a.style.transform = `rotate(${i * 8 - 12}deg)`;
-      return a;
-    }));
-    return h(
-      "div",
-      { class: "page" },
-      h("h1", { class: "large-title" }, title),
-      sharingBanners(),
-      h("div", { class: "empty-state" }, fan, h("h2", {}, t("Ton coffre est vide", "Your Vault Is Empty")),
-        h("p", { class: "secondary" }, t("Mots de passe, cartes, identités, notes : tout ce que tu ranges ici est chiffré sur tes appareils.", "Passwords, cards, identities, notes: everything you keep here is encrypted on your devices.")),
-        h("button", { class: "capsule prominent", onclick: () => newItem() }, t("Créer ton premier élément", "Create Your First Item"))),
-    );
-  }
-  const homeTile = (label: string, ic: IconName, color: string, value: Node, page: Page) =>
-    h("button", { class: "home-tile card", onclick: () => go(page) }, h("span", { class: "tile-top" }, tile(ic, color, 34), value), h("span", { class: "tile-label" }, label));
-  const figure = (n: number | string, color?: string) => {
-    const f = h("span", { class: "figure" }, String(n));
-    if (color) f.style.color = color;
-    return f;
-  };
-  const score = ui.report?.score;
-  const fold = (key: string, label: string, ic: IconName, color: string, list: Summary[], empty: string) => {
-    const open = !ui.folded.has(key);
-    const head = h(
-      "button",
-      { class: "fold-head", "aria-expanded": String(open), onclick: () => (open ? ui.folded.add(key) : ui.folded.delete(key), renderMain()) },
-      tile(ic, color, 32),
-      h("span", { class: "row-text" }, h("span", { class: "row-title bold" }, label), list.length ? h("span", { class: "row-sub tertiary" }, countLabel(list.length)) : null),
-      icon("chevron_down", 18, "accent" + (open ? "" : " folded")),
-    );
-    return h("div", { class: "card list-card" }, head, open ? (list.length ? h("div", {}, ...list.slice(0, 8).map((s) => itemRow(s, true))) : h("p", { class: "fold-empty" }, empty)) : null);
-  };
+  const greeting = first ? t(`Bonjour ${first}`, `Hi ${first}`) : t("Bonjour", "Hi");
   const byId = new Map(live.map((i) => [i.id, i]));
-  const profile = live.filter((i) => i.itemType === "identity").sort((a, b) => a.title.localeCompare(b.title))[0];
-  return h(
-    "div",
-    { class: "page" },
-    h("h1", { class: "large-title" }, title),
+  const r = ui.report;
+  const score = r?.score;
+
+  // RX hero (RXMacHome): the wallpaper picked in Réglages, two veils, the state in words.
+  const wp = currentWallpaper();
+  const light = isLightWallpaper(wp);
+  const status = score === undefined ? t("Vérification…", "Checking…")
+    : score >= 80 ? t("Tout va bien", "All Good") : score >= 60 ? t("Presque parfait", "Almost There") : t("À vérifier", "Needs a Look");
+  const chip = h("span", { class: "glass-chip score-chip" + (score === undefined ? " pending" : "") },
+    icon("watchtower", 16), h("b", {}, t("Score", "Score")), h("b", {}, String(score ?? 100), h("span", { class: "dim" }, "/100")));
+  (chip.firstChild as SVGElement).style.color = score === undefined ? "inherit" : scoreColor(score);
+  const words = h("button", { class: "hero-words", onclick: () => go({ kind: "watchtower" }), "aria-label": `${greeting}. ${status}` },
+    h("span", { class: "hero-greeting" }, greeting),
+    h("span", { class: "hero-status" }, status),
+    h("span", { class: "hero-chips" }, chip, h("span", { class: "hero-count" }, countLabel(live.length))));
+  const hero = h("section", { class: "hero" + (light ? " light" : "") },
+    h("img", { class: "hero-photo", src: wallpaperUrl(wp), alt: "", draggable: false }),
+    h("div", { class: "hero-veil" }),
+    h("div", { class: "hero-body" }, words,
+      h("div", { class: "hero-actions" },
+        h("button", { class: "hero-primary", onclick: () => newItem() }, icon("add", 18), t("Nouvel élément", "New Item")),
+        h("button", { class: "glass-capsule", onclick: () => generator(null) }, icon("wand", 18), t("Générer", "Generate")))));
+
+  const cardHead = (title: string, page?: Page) =>
+    h("div", { class: "rx-card-head" }, h("span", {}, title), page ? h("button", { class: "see-all", onclick: () => go(page) }, t("Tout voir", "See All")) : null);
+  const homeRow = (lead: Node, title: string, sub: string, trailing: Node | null, onclick: () => void) =>
+    h("button", { class: "home-row", onclick }, lead, h("span", { class: "row-text" }, h("span", { class: "row-title" }, title), sub ? h("span", { class: "row-sub" }, sub) : null), trailing);
+
+  const recentCount = Math.min(6, Math.max(3, ui.vaults.length));
+  const recents = ui.recents.map((id) => byId.get(id)).filter((s): s is Summary => !!s).slice(0, recentCount);
+  const recentsCard = h("div", { class: "rx-card" }, cardHead(t("Récents", "Recents")),
+    recents.length
+      ? h("div", { class: "rx-rows" }, ...recents.map((s) => homeRow(itemArt(s, 32), s.title || t("Sans titre", "Untitled"), secondLine(s), null, () => openItem(s))))
+      : h("p", { class: "rx-empty" }, t("Les éléments ouverts apparaissent ici jusqu'au verrouillage.", "Items you open appear here until OnePass locks.")));
+  const vaultsCard = h("div", { class: "rx-card" }, cardHead(t("Coffres", "Vaults")),
+    h("div", { class: "rx-rows" }, ...ui.vaults.slice().sort((a, b) => a.name.localeCompare(b.name)).map((v) =>
+      homeRow(monogram(v.name.slice(0, 1).toUpperCase(), vaultColor(v.color), 32), v.name, countLabel(live.filter((i) => i.vaultId === v.id).length),
+        icon("chevron_right", 16, "tertiary"), () => go({ kind: "list", filter: { kind: "vault", id: v.id }, title: v.name })))));
+
+  const favs = live.filter((i) => i.favorite).sort((a, b) => a.title.localeCompare(b.title));
+  const strip = h("div", { class: "fav-strip" }, ...favs.map((s) =>
+    h("button", { class: "fav-tile", onclick: () => openItem(s), title: s.title }, h("span", { class: "fav-art" }, itemArt(s, 40)), h("span", { class: "fav-title" }, s.title || t("Sans titre", "Untitled")))));
+  const favCard = h("div", { class: "rx-card" }, cardHead(t("Favoris", "Favorites"), { kind: "list", filter: { kind: "favorites" }, title: t("Favoris", "Favorites") }),
+    favs.length ? strip : h("p", { class: "rx-empty" }, t("Touche l'étoile d'un élément pour le retrouver ici.", "Tap an item's star to find it here.")));
+
+  const empty = live.length ? null : h("div", { class: "rx-card empty-state" },
+    h("h2", {}, t("Ton coffre est vide", "Your Vault Is Empty")),
+    h("p", { class: "secondary" }, t("Mots de passe, cartes, identités, notes : tout ce que tu ranges ici est chiffré sur tes appareils.", "Passwords, cards, identities, notes: everything you keep here is encrypted on your devices.")),
+    h("button", { class: "capsule prominent", onclick: () => newItem() }, t("Créer ton premier élément", "Create Your First Item")));
+
+  return h("div", { class: "page rx-home" },
+    h("h1", { class: "rx-title" }, t("Accueil", "Home")),
+    hero,
     sharingBanners(),
-    h(
-      "div",
-      { class: "tiles" },
-      homeTile(t("Tous les éléments", "All Items"), "grid", "var(--accent)", figure(live.length), { kind: "list", filter: { kind: "all" }, title: t("Tous les éléments", "All Items") }),
-      homeTile(t("Favoris", "Favorites"), "star_fill", "var(--orange)", figure(live.filter((i) => i.favorite).length), { kind: "list", filter: { kind: "favorites" }, title: t("Favoris", "Favorites") }),
-      homeTile("Watchtower", "watchtower", "#E14D3C", score === undefined ? icon("chevron_right", 20, "tertiary") : figure(score, scoreColor(score)), { kind: "watchtower" }),
-      homeTile(t("Archive", "Archive"), "archive", "#8E8E93", figure(ui.items.filter((i) => i.archived && !i.trashed).length), { kind: "list", filter: { kind: "archive" }, title: t("Archive", "Archive") }),
-    ),
-    h(
-      "div",
-      { class: "home-cards" },
-      profile
-        ? h("div", { class: "card list-card" }, h("button", { class: "row", onclick: () => openItem(profile) }, art("identity", 40),
-            h("span", { class: "row-text" }, h("span", { class: "row-title bold" }, t("Profil", "Profile")), h("span", { class: "row-sub" }, profile.title)), icon("chevron_right", 18, "chev")))
-        : null,
-      fold("favorites", t("Favoris", "Favorites"), "star_fill", "var(--orange)", live.filter((i) => i.favorite).sort((a, b) => a.title.localeCompare(b.title)),
-        t("Touche l'étoile d'un élément pour le retrouver ici.", "Tap an item's star to find it here.")),
-      fold("recents", t("Récents", "Recents"), "history", "#8C8C8C", ui.recents.map((id) => byId.get(id)).filter((s): s is Summary => !!s),
-        t("Les éléments ouverts apparaissent ici jusqu'au verrouillage.", "Items you open appear here until OnePass locks.")),
-    ),
-  );
+    empty,
+    live.length ? h("div", { class: "rx-pair" }, recentsCard, vaultsCard) : null,
+    live.length ? favCard : null);
 }
 
 function openItem(s: Summary): void {
@@ -1151,21 +1164,37 @@ async function renderDetail(): Promise<void> {
 
   const vault = ui.vaults.find((v) => v.id === item.vaultId);
   const chips = h("div", { class: "chips" });
-  if (vault) {
-    const c = h("span", { class: "chip" }, vault.name);
-    c.style.setProperty("--chip", vaultColor(vault.color));
-    chips.append(c);
-  }
+  if (vault) chips.append(h("span", { class: "vault-chip" }, monogram(vault.name.slice(0, 1).toUpperCase(), vaultColor(vault.color), 16), vault.name));
   if (item.archived) chips.append(h("span", { class: "chip gray" }, t("Archivé", "Archived")));
   if (item.trashed) chips.append(h("span", { class: "chip red" }, t("Dans la corbeille", "In Trash")));
+
+  // RX quick actions (ItemDetailView): "Ouvrir" for an item with a site, "Partager".
+  const quick = (ic: IconName, label: string, onclick: () => void) =>
+    h("button", { class: "quick", onclick }, h("span", { class: "quick-disc" }, icon(ic, 20)), h("span", { class: "quick-label" }, label));
+  const site = item.urls[0]?.url;
+  const quicks = keep(
+    site && openable(site) ? quick("globe", t("Ouvrir", "Open"), () => void openUrl(site)) : null,
+    !item.trashed && sharing.zonesReady ? quick("share", t("Partager", "Share"), () => sendItemSheet(item)) : null,
+  );
+
+  // The item's colour washes in from the top corners (IdentityTint), the category's until its icon is read.
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  detailEl.style.setProperty("--wash", identityWash(categoryIdentity(item.itemType), dark));
+  const iconIndex = siteIcons.get(item.id);
+  if (iconIndex !== undefined) void iconImage(iconIndex).then(async (img) => {
+    if (!img || ui.selected !== item.id) return;
+    const c = await identityColor(item.itemType, img.src);
+    if (ui.selected === item.id) detailEl.style.setProperty("--wash", identityWash(c, dark));
+  });
 
   const sections = item.sections.map((s) => ({ ...s, fields: s.fields.filter((f) => f.hasValue) })).filter((s) => s.fields.length);
   detailEl.replaceChildren(
     toolbar,
     h("div", { class: "detail-scroll" },
-      h("header", { class: "item-head" }, itemArt(item, 64),
-        h("div", {}, h("h2", {}, item.title || t("Sans titre", "Untitled")), h("div", { class: "secondary" }, [cat.singular, sel.subtitle].filter(Boolean).join(" · ")))),
-      chips,
+      h("header", { class: "item-head" }, itemArt(item, 76),
+        h("h2", {}, item.title || t("Sans titre", "Untitled")), h("div", { class: "secondary item-sub" }, [cat.singular, sel.subtitle].filter(Boolean).join(" · ")),
+        chips),
+      quicks.length ? h("div", { class: "quicks" }, ...quicks) : null,
       ...sections.flatMap((s) => [h("div", { class: "caps" }, sectionLabel(s, cat.singular)), h("div", { class: "card" }, ...s.fields.map((f) => fieldRow(f, args)))]),
       ...(item.urls.length
         ? [h("div", { class: "caps" }, t("Sites web", "Websites")),
@@ -1971,43 +2000,47 @@ function generator(into: ((p: string) => void) | null): void {
 // ---- Watchtower ----------------------------------------------------------------------------------
 
 function dial(score: number | undefined): SVGSVGElement {
-  const size = 210;
+  // RX ScoreGauge: the upper half circle, 16 thick with round caps, red to green along the arc,
+  // the number under it. Box 230 x 125, as on the Mac.
+  const w = 230, hgt = 150;
   const svg = document.createElementNS(SVG, "svg");
-  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
-  svg.setAttribute("width", String(size));
-  svg.setAttribute("height", String(size));
+  svg.setAttribute("viewBox", `0 0 ${w} ${hgt}`);
+  svg.setAttribute("width", String(w));
+  svg.setAttribute("height", String(hgt));
   svg.setAttribute("class", "dial");
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", t("Score de sécurité", "Security Score") + (score === undefined ? "" : ` ${score}/100, ${scoreLabel(score)}`));
-  const c = size / 2;
-  const r = c - 7;
-  const pt = (deg: number, rad: number) => [c + rad * Math.cos((deg * Math.PI) / 180), c + rad * Math.sin((deg * Math.PI) / 180)] as const;
+  const cx = w / 2, cy = 117, r = Math.min(w / 2, 125) - 8;
+  const grad = document.createElementNS(SVG, "linearGradient");
+  grad.setAttribute("id", "dial-grad");
+  grad.setAttribute("gradientUnits", "userSpaceOnUse");
+  grad.setAttribute("x1", String(cx - r));
+  grad.setAttribute("x2", String(cx + r));
+  for (const [o, c] of [[0, "var(--red)"], [0.4, "var(--orange)"], [0.6, "var(--yellow)"], [0.8, "var(--green)"], [1, "var(--green)"]] as const) {
+    const s = document.createElementNS(SVG, "stop");
+    s.setAttribute("offset", String(o));
+    s.style.stopColor = c;
+    grad.append(s);
+  }
+  const defs = document.createElementNS(SVG, "defs");
+  defs.append(grad);
+  svg.append(defs);
   const arc = (fraction: number) => {
-    const end = 135 + 270 * fraction;
-    const [x1, y1] = pt(135, r);
-    const [x2, y2] = pt(end, r);
-    return `M ${x1} ${y1} A ${r} ${r} 0 ${270 * fraction > 180 ? 1 : 0} 1 ${x2} ${y2}`;
+    const a = Math.PI * (1 - fraction);
+    return `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r * Math.cos(a)} ${cy - r * Math.sin(a)}`;
   };
-  const path = (d: string, cls: string, color?: string) => {
+  const path = (d: string, cls: string, stroke?: string) => {
     const p = document.createElementNS(SVG, "path");
     p.setAttribute("d", d);
     p.setAttribute("class", cls);
-    if (color) p.style.stroke = color;
+    if (stroke) p.setAttribute("stroke", stroke);
     svg.append(p);
   };
   path(arc(1), "track");
-  const color = score === undefined ? "var(--secondary)" : scoreColor(score);
-  if (score) path(arc(Math.min(score, 99.9) / 100), "fill", color);
-  const lit = score === undefined ? -1 : Math.round((score / 100) * 40);
-  for (let i = 0; i <= 40; i++) {
-    const deg = 135 + (270 * i) / 40;
-    const [x1, y1] = pt(deg, c - 29);
-    const [x2, y2] = pt(deg, c - 22);
-    path(`M ${x1} ${y1} L ${x2} ${y2}`, i <= lit ? "tick lit" : "tick", i <= lit ? color : undefined);
-  }
+  if (score) path(arc(Math.min(score, 99.9) / 100), "fill", "url(#dial-grad)");
   const text = (s: string, y: number, cls: string, fill?: string) => {
     const el = document.createElementNS(SVG, "text");
-    el.setAttribute("x", String(c));
+    el.setAttribute("x", String(cx));
     el.setAttribute("y", String(y));
     el.setAttribute("class", cls);
     el.setAttribute("text-anchor", "middle");
@@ -2015,8 +2048,8 @@ function dial(score: number | undefined): SVGSVGElement {
     el.textContent = s;
     svg.append(el);
   };
-  text(score === undefined ? "–" : String(score), c + 14, "dial-figure");
-  text((score === undefined ? t("Analyse…", "Analyzing…") : scoreLabel(score)).toUpperCase(), c + 40, "dial-word", score === undefined ? undefined : color);
+  text(score === undefined ? "–" : String(score), cy - 8, "dial-figure");
+  text(score === undefined ? t("Analyse…", "Analyzing…") : scoreLabel(score), cy + 26, "dial-word", score === undefined ? undefined : scoreColor(score));
   return svg;
 }
 
@@ -2083,15 +2116,49 @@ function watchtowerPage(): HTMLElement {
     "div",
     { class: "page" },
     h("h1", { class: "large-title" }, "Watchtower"),
-    h("div", { class: "wt-hero" }, dial(r?.score),
-      h("div", {},
-        h("p", { class: "secondary lead" }, t("Watchtower repère les mots de passe à changer et les sites où tu peux renforcer la sécurité de tes comptes.",
-          "Watchtower finds passwords to change and sites where you can make your accounts more secure.")),
-        r ? h("p", { class: "tertiary" }, plural(r.itemsAnalyzed, t("1 élément analysé", "1 item analyzed"), t("%d éléments analysés", "%d items analyzed"))) : null)),
+    h("p", { class: "secondary wt-status" }, r ? plural(r.itemsAnalyzed, t("1 élément analysé", "1 item analyzed"), t("%d éléments analysés", "%d items analyzed")) + (r.pwned === "checked" ? t(" · fuites vérifiées", " · breaches checked") : "")
+      : t("Analyse…", "Analyzing…")),
+    // RX top row (RXMacWatchtower): the gauge card beside the alert and the three counts.
+    h("div", { class: "wt-top-row" },
+      h("div", { class: "rx-card gauge-card" }, dial(r?.score)),
+      h("div", { class: "wt-side" }, ...(r ? [wtAlert(r), h("div", { class: "stat-tiles" },
+        statTile(r, "weak", t("Faibles", "Weak"), "#FF7A45", "lock"),
+        statTile(r, "reused", t("Réutilisés", "Reused"), "#A35BF0", "duplicate"),
+        statTile(r, "2fa", t("2FA disponible", "2FA Available"), "#14B8A6", "two_factor"))] : []))),
     strength,
     r ? breachSetting(r) : null,
+    h("h2", { class: "wt-section" }, t("Améliorer", "Improve")),
     h("div", { class: "wt-grid" }, ...cards),
   );
+}
+
+const cardIds = (r: Report, id: string): string[] => {
+  const card = watchCards().find((c) => c.id === id);
+  return card ? [...new Set(r.checks.filter((c) => card.checks.includes(c.check)).flatMap((c) => c.itemIds))] : [];
+};
+
+/** The RX alert card: red with the compromised count, green when nothing is exposed, plain when breaches were not checked. */
+function wtAlert(r: Report): HTMLElement {
+  const card = watchCards().find((c) => c.id === "compromised")!;
+  const ids = cardIds(r, "compromised");
+  const note = unavailable(card, r);
+  const kind = note ? "plain" : ids.length ? "red" : "green";
+  const title = note ? t("Fuites non vérifiées", "Breaches Not Checked") : ids.length
+    ? plural(ids.length, t("1 mot de passe compromis", "1 compromised password"), t("%d mots de passe compromis", "%d compromised passwords"))
+    : t("Aucun problème", "No Issues");
+  const body = note ?? (ids.length ? card.message : t("Aucun mot de passe exposé ou compromis.", "No exposed or compromised passwords."));
+  return h("button", { class: "wt-alert " + kind, disabled: !ids.length, onclick: () => go({ kind: "list", filter: { kind: "ids", ids }, title: card.title }) },
+    h("span", { class: "alert-disc" }, icon(kind === "green" ? "shield_lock" : "warning", 20)),
+    h("span", { class: "row-text" }, h("span", { class: "alert-title" }, title), h("span", { class: "alert-body" }, body)),
+    ids.length ? icon("chevron_right", 16) : null);
+}
+
+function statTile(r: Report, id: string, label: string, color: string, ic: IconName): HTMLElement {
+  const ids = cardIds(r, id);
+  const disc = h("span", { class: "stat-disc" }, icon(ic, 16));
+  disc.style.background = color;
+  return h("button", { class: "stat-tile", disabled: !ids.length, onclick: () => go({ kind: "list", filter: { kind: "ids", ids }, title: label }) },
+    disc, h("span", { class: "stat-count" }, String(ids.length)), h("span", { class: "stat-label" }, label));
 }
 
 /** "Vérifier les fuites", with what is sent (the iPhone's BreachSettingCard). */
@@ -2107,8 +2174,8 @@ function breachSetting(r: Report): HTMLElement {
       toast(message(e));
     }
   });
-  const sent = h("p", { class: "footnote", hidden: true }, t("Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. Les catalogues de 2fa.directory et la liste des sites piratés sont téléchargés en entier et gardés une semaine. Désactivé, aucune requête réseau.",
-    "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The 2fa.directory catalogs and the list of breached sites are downloaded whole and kept for a week. When off, no network request."));
+  const sent = h("p", { class: "footnote", hidden: true }, t("Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine. Les sites qui proposent la double authentification ou les passkeys viennent du catalogue fourni avec l'app. Désactivé, aucune requête réseau.",
+    "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The list of breached sites is downloaded whole and kept for a week. Sites that offer two-factor authentication or passkeys come from the catalog shipped with the app. When off, no network request."));
   const info = h("button", { class: "bar-text small-link", type: "button", onclick: () => (sent.hidden = !sent.hidden) }, t("Ce qui est envoyé", "What is sent"));
   return h("div", { class: "card list-card breach-card" },
     h("label", { class: "toggle-row", for: "check-breaches" }, tile("compromised", "var(--red)", 30),
@@ -2150,6 +2217,32 @@ function openSettings(start = "general"): void {
   void show(start);
 }
 
+/** The Home hero's wallpaper (RXWallpaperSettings, Mac): theme chips, the tone, a grid of thumbnails. Applied at once. */
+let wallpaperTheme: string | null = null;
+function wallpaperPicker(redraw: () => void): Node[] {
+  const current = currentWallpaper();
+  const m = /^wp-([a-z]+)-([1-6])(?:-(noir|clair))?$/.exec(current);
+  const theme = wallpaperThemes().find((x) => x.key === (wallpaperTheme ?? m?.[1])) ?? wallpaperThemes()[0]!;
+  const tone = (theme.key === m?.[1] ? (m?.[3] ?? "") : "") as Tone;
+  const chips = h("div", { class: "wp-chips" }, ...wallpaperThemes().map((x) =>
+    h("button", { class: "wp-chip" + (x.key === theme.key ? " on" : ""), onclick: () => { wallpaperTheme = x.key; redraw(); } }, x.name)));
+  const pick = (name: string) => {
+    setWallpaper(name);
+    if (ui.page.kind === "home") renderMain();
+    redraw();
+  };
+  const tones = theme.tones
+    ? h("div", { class: "segmented wp-tones" }, ...([["", t("Naturel", "Natural")], ["noir", t("Noir", "Black")], ["clair", t("Clair", "Light")]] as [Tone, string][]).map(([v, label]) =>
+        h("button", { class: v === tone ? "on" : "", onclick: () => pick(wallpaperName(theme.key, Number(m?.[1] === theme.key ? m[2] : 1), v)) }, label)))
+    : null;
+  const grid = h("div", { class: "wp-grid" }, ...[1, 2, 3, 4, 5, 6].map((n) => {
+    const name = wallpaperName(theme.key, n, theme.tones ? tone : "");
+    return h("button", { class: "wp-tile" + (name === current ? " on" : ""), title: `${theme.name} ${n}`, onclick: () => pick(name) },
+      h("img", { src: wallpaperUrl(name, true), alt: "", draggable: false }), name === current ? h("span", { class: "wp-check", "aria-hidden": "true" }, "✓") : null);
+  }));
+  return [h("div", { class: "caps" }, t("Fond d'écran de l'accueil", "Home Wallpaper")), h("div", { class: "card pad wp-card" }, chips, tones, grid)];
+}
+
 async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
   const title = settingsPages().flat().find((p) => p.key === key)?.title ?? "";
   const head = h("h2", { class: "settings-title" }, title);
@@ -2158,7 +2251,7 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
   switch (key) {
     case "general": {
       const status = await call<Status>("status");
-      return [head, h("div", { class: "card list-card" }, row(t("Verrouillage automatique", "Auto-Lock"), t(`${status.autoLockMinutes} minutes`, `${status.autoLockMinutes} minutes`)),
+      return [head, ...wallpaperPicker(redraw), h("div", { class: "caps" }, t("Général", "General")), h("div", { class: "card list-card" }, row(t("Verrouillage automatique", "Auto-Lock"), t(`${status.autoLockMinutes} minutes`, `${status.autoLockMinutes} minutes`)),
         row(t("Langue", "Language"), t("Français (système)", "English (system)")),
         iconsToggle(status.siteIcons, redraw)),
         h("p", { class: "footnote" }, t("OnePass se verrouille aussi quand la session Windows se verrouille.", "OnePass also locks when the Windows session locks.")),

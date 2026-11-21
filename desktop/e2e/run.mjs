@@ -172,7 +172,7 @@ try {
   await click(button("Continuer"));
 
   // Accueil, empty
-  await find("//h1[normalize-space(.)='Bonjour Camille']");
+  await find("//*[contains(@class,'hero-greeting') and normalize-space(.)='Bonjour Camille']");
   check("Accueil greets by first name", true);
   check("the Personnel vault exists", await exists(nav("Personnel")));
   await shot("06-accueil-vide");
@@ -332,7 +332,7 @@ try {
   await click(nav("Routeurs Wi-Fi"));
   check("a category lists its items", (await exists(row("Box maison"))) && !(await exists(row("GitHub"))));
   await click(nav("Accueil"));
-  await find("//h1[normalize-space(.)='Bonjour Camille']");
+  await find("//*[contains(@class,'hero-greeting') and normalize-space(.)='Bonjour Camille']");
   await sleep(800);
   await shot("14-accueil");
 
@@ -374,7 +374,7 @@ try {
   check("Archiver moves the router to Archive", !!(await find(row("Box maison"), 5000).catch(() => null)));
 
   // Vault, settings
-  await click("//nav//button[.//span[normalize-space(.)='Nouveau coffre']]");
+  await click("//nav//button[@title='Nouveau coffre']");
   await type("//input[@id='v-name']", "Travail");
   await click("//dialog[@open]//button[@title='orange']");
   await click(sheetAction("Enregistrer"));
@@ -403,7 +403,7 @@ try {
   await clear("//input[@id='pw']");
   await type("//input[@id='pw']", PASSWORD);
   await click("//button[@title='Déverrouiller']");
-  await find("//h1[normalize-space(.)='Bonjour Camille']", 60000);
+  await find("//*[contains(@class,'hero-greeting') and normalize-space(.)='Bonjour Camille']", 60000);
   check("the right password unlocks", true);
 
   // Windows Hello (answered "verified" by the debug build's stand-in)
@@ -424,7 +424,7 @@ try {
   check("the lock screen offers Windows Hello", true);
   await shot("30-verrouille-windows-hello");
   await click("//button[@aria-label='Déverrouiller avec Windows Hello']");
-  await find("//h1[normalize-space(.)='Bonjour Camille']", 30000);
+  await find("//*[contains(@class,'hero-greeting') and normalize-space(.)='Bonjour Camille']", 30000);
   check("Windows Hello unlocks without the password", true);
 
   // Encrypted backup, restore, import from another manager, plaintext CSV

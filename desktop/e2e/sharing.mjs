@@ -177,7 +177,7 @@ async function newAccount(I, name) {
   await I.find("//div[@class='secret-key']", 120000);
   await I.click("//input[@id='ok']");
   await I.click(button("Continuer"));
-  await I.find(`//h1[normalize-space(.)='Bonjour ${name}']`, 60000);
+  await I.find(`//*[contains(@class,'hero-greeting') and normalize-space(.)='Bonjour ${name}']`, 60000);
   await settings(I, "Sync");
   const idle = await syncState(I, "idle");
   await closeSheet(I);
@@ -264,7 +264,7 @@ try {
   await closeSheet(B);
 
   // ---- a shared vault --------------------------------------------------------------------------
-  await A.click("//nav//button[.//span[normalize-space(.)='Nouveau coffre']]");
+  await A.click("//nav//button[@title='Nouveau coffre']");
   await A.type("//input[@id='v-name']", "Maison");
   await A.click(sheetAction("Enregistrer"));
   await newLogin(A, "Code alarme", "Maison");

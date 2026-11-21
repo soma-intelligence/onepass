@@ -784,10 +784,9 @@ pub async fn watchtower(state: State<'_, AppState>, online: bool) -> UiResult<Wa
         expiry_warning_days: 30,
         old_password_days: 365,
         ranges,
-        twofa_directory: catalogs.twofa.clone(),
-        passkeys_directory: catalogs.passkeys.clone(),
         excluded_vault_ids: vec![],
         breach_catalog: catalogs.breaches.clone(),
+        site_pack: Some(crate::breach::SITE_PACK.to_vec()),
     };
     let first_options = options(on.then(|| state.ranges.held()));
     let s1 = s.clone();
