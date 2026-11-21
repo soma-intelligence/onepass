@@ -3,4 +3,6 @@
 //!
 //! Nothing here logs or prints APDU bytes or MRZ content.
 
+pub mod apdu;
 pub mod mrz;
+pub mod tlv;
