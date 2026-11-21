@@ -484,3 +484,19 @@ mailbox_unsigned_ticket_broken.pv | event(Enrolled(mbx_h[],k_4)) ==> event(Ticke
 mailbox_unsigned_ticket_broken.pv | event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4)) | true
 # Sanité.
 mailbox_unsigned_ticket_broken.pv | not event(NewcomerRead(m_13)) | false
+
+# guard.pv : Guarded Kit (spec 2026-11-20), kit volé, stockage hostile, un realm compromis (T - 1).
+# G1 : aucun essai de mot de passe hors ligne.
+guard.pv | Weak secret pw | true
+# G2 : keyset secret.
+guard.pv | not attacker_p1(keyset_secret[]) | true
+# G3 : hors ligne (phase 1, plus de realm), une part de clé n'évalue pas l'OPRF.
+guard.pv | not attacker_p1(evalb(guard_oprf_key[],late[])) | true
+# G4 : aucun appareil ne dérive ses tags sous une clé OPRF de l'attaquant (realms épinglés).
+guard.pv | not event(DeviceOprf(oprf(evil[],x_2))) | true
+# Sanité : la restauration honnête va au bout.
+guard.pv | not event(Restored(keyset_secret[])) | false
+# guard_t_realms.pv : témoin négatif de G3, deux realms compromis (T) : retour au niveau sans garde (limite documentée).
+guard_t_realms.pv | not attacker_p1(evalb(guard_oprf_key[],late[])) | false
+# guard_unpinned.pv : témoin négatif de G4, clés des realms lues dans le stockage : l'épinglage est nécessaire.
+guard_unpinned.pv | not event(DeviceOprf(oprf(evil[],x_2))) | false
