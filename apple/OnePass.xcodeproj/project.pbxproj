@@ -288,6 +288,7 @@
 		FA3F1D0B10908B378CF4ADDF /* ConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC56C781305F7023C4148362 /* ConfigurationView.swift */; };
 		FB411F7806F39B54F7C84C1D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */; };
 		FE293B57FD1438D41BA37D51 /* EntryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89189A5B59E73F9B657D77B /* EntryListView.swift */; };
+		FE5274E0B57D84977EBA389A /* csca-masterlist.ml in Resources */ = {isa = PBXBuildFile; fileRef = 4775EC7869C88E74CD884196 /* csca-masterlist.ml */; };
 		FE604CA8F8BDE5C06A3E588A /* DateFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488E4CE89D1B50E9FFA9002E /* DateFieldEditor.swift */; };
 		FF01FB2E2A790E88B00A0CCA /* SecretInputField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863713D1483535E8956E5D18 /* SecretInputField.swift */; };
 /* End PBXBuildFile section */
@@ -491,6 +492,7 @@
 		46BB0DFE499C7B52D15F7EA0 /* AutoFillSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoFillSettings.swift; sourceTree = "<group>"; };
 		46D1ACF819F71AF4273989AD /* ConcealedValueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConcealedValueView.swift; sourceTree = "<group>"; };
 		470584D1B48820546C712920 /* CoinIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinIcon.swift; sourceTree = "<group>"; };
+		4775EC7869C88E74CD884196 /* csca-masterlist.ml */ = {isa = PBXFileReference; path = "csca-masterlist.ml"; sourceTree = "<group>"; };
 		488E4CE89D1B50E9FFA9002E /* DateFieldEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFieldEditor.swift; sourceTree = "<group>"; };
 		49841660587A002A57EE289D /* PublicSessionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicSessionMonitor.swift; sourceTree = "<group>"; };
 		4A28B0CFB737900012034BCE /* EditorFieldRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorFieldRow.swift; sourceTree = "<group>"; };
@@ -972,6 +974,7 @@
 			children = (
 				17FDCEFF95D8CB4ED8362F26 /* AppShortcuts.xcstrings */,
 				63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */,
+				4775EC7869C88E74CD884196 /* csca-masterlist.ml */,
 				19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */,
 			);
 			path = Resources;
@@ -1783,6 +1786,7 @@
 				6632869371D8005F4FA8616D /* InfoPlist.xcstrings in Resources */,
 				45A42F714F279F1DECDF9060 /* Localizable.xcstrings in Resources */,
 				A4381FA9F265F6360D1A4C49 /* PrivacyInfo.xcprivacy in Resources */,
+				FE5274E0B57D84977EBA389A /* csca-masterlist.ml in Resources */,
 				D830BB8FBE565123BF120EC6 /* onepass-icons.bin in Resources */,
 				75AF7B61E81E77C5EF6CB528 /* onepass-sites.json in Resources */,
 				42700330B6EEC92BE7F45846 /* site-pack-manifest.json in Resources */,

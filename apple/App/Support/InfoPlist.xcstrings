@@ -14,6 +14,36 @@
       },
       "shouldTranslate" : false
     },
+    "NFCReaderUsageDescription" : {
+      "comment" : "",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass reads the chip of your documents and cards to keep them in your vault. Nothing leaves your phone unencrypted."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass lee el chip de tus documentos y tarjetas para guardarlos en tu bóveda. Nada sale de tu teléfono sin cifrar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OnePass lit la puce de tes documents et cartes pour les ranger dans ton coffre. Rien ne quitte ton téléphone sans chiffrement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass legge il chip dei tuoi documenti e delle tue carte per conservarli nella tua cassaforte. Niente lascia il tuo telefono senza crittografia."
+          }
+        }
+      }
+    },
     "NSCameraUsageDescription" : {
       "comment" : "",
       "extractionState" : "extracted_with_value",

@@ -95,6 +95,8 @@ targets:
         excludes:
           - "Support/Info.plist"
           - "Support/*.entitlements"
+          # Provenance of the CSCA master list (the .ml next to it ships as a resource).
+          - "Resources/csca-masterlist.README.md"
       # Site icon pack (docs/icon-pack.md), shipped once in the app: the AutoFill extension reads it
       # from the containing app, or from the copy the app puts in the App Group.
       - path: IconPack/onepass-icons.bin
@@ -194,6 +196,12 @@ targets:
         # Connect until the classification is settled.
         NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
         NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
+        # Passport chip (NFC documents P1): Core NFC on iPhone (the NFC Tag Reading capability is
+        # `com.apple.developer.nfc.readersession.formats` = TAG in the iOS entitlements). P1 selects
+        # the eMRTD applet only; the payment card AIDs of spec 5.3 arrive with the cards phase.
+        # Translated in App/Support/InfoPlist.xcstrings.
+        NFCReaderUsageDescription: "OnePass lit la puce de tes documents et cartes pour les ranger dans ton coffre. Rien ne quitte ton téléphone sans chiffrement."
+        com.apple.developer.nfc.readersession.iso7816.select-identifiers: [A0000002471001]
         # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
         NSLocalNetworkUsageDescription: "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
         NSBonjourServices: [_onepass-pair._tcp, _onepass-contact._tcp]
