@@ -1,0 +1,65 @@
+# OnePass
+
+> OnePass is an open source, post-quantum password manager for iPhone, iPad, Mac, Apple Watch and Vision Pro, made by Soma Labs. It keeps passwords, passkeys and TOTP codes end to end encrypted on the user's devices and in their own private iCloud (CloudKit). A Rust core does all the cryptography: Argon2id plus a 256-bit Secret Key, AES-256-GCM-SIV, hybrid ML-KEM-1024 + X25519 key wrapping, hybrid ML-DSA-87 + Ed25519 signatures and an SLH-DSA account identity. The apps are native SwiftUI and free on the App Store; the code is AGPL-3.0-or-later.
+
+- Platforms: iOS, iPadOS, macOS, watchOS and visionOS 26 or later; browser extension for Safari, Chrome and Firefox (Chrome and Firefox need the Mac app). No Android, Windows or Linux app.
+- Status: 1.0 on the App Store; latest source tag v0.3.0. No external security audit yet (planned for milestone 8).
+- Sync: CloudKit only in released apps. A self-hostable sync server (mailbox, on Supabase) is in the repository and is work in progress.
+- Developer tools: MCP server for AI agents with per-request approval, SSH agent, a development CLI (`onepass`).
+- Several reference docs (security whitepaper, core, apps and extension READMEs) are written in French; guides and comparisons are in English.
+
+## Docs
+
+- [README](https://github.com/soma-intelligence/onepass/blob/main/README.md): overview, features, security model, comparison, install, build, roadmap, FAQ
+- [Security policy](https://github.com/soma-intelligence/onepass/blob/main/SECURITY.md): how to report a vulnerability, timelines, safe harbor, scope
+- [Security whitepaper and threat model](https://github.com/soma-intelligence/onepass/blob/main/docs/security/README.md): exact cryptographic construction, attacks tested, known gaps (French)
+- [Crypto review](https://github.com/soma-intelligence/onepass/blob/main/docs/security/crypto-review.md): every primitive, library versions and code references (French)
+- [Formal model results](https://github.com/soma-intelligence/onepass/blob/main/docs/security/formal/results.md): ProVerif queries and results
+- [Release pipeline](https://github.com/soma-intelligence/onepass/blob/main/docs/security/release-pipeline.md): how releases are built, signed, attested and verified (French)
+- [Reproducible builds](https://github.com/soma-intelligence/onepass/blob/main/docs/security/reproducible-builds.md): which release files rebuild bit for bit and how to check (French)
+- [Contributing](https://github.com/soma-intelligence/onepass/blob/main/CONTRIBUTING.md): build, test, rules for changes, CLA
+- [AGENTS.md](https://github.com/soma-intelligence/onepass/blob/main/AGENTS.md): layout, build and test commands, rules for coding agents
+
+## Guides
+
+- [Import from another password manager](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/import-from-other-password-managers.md): 1Password, Bitwarden, Apple Passwords, browsers, LastPass, Dashlane, Proton Pass, KeePass and more
+- [Post-quantum cryptography in OnePass](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/post-quantum-encryption.md): ML-KEM-1024, ML-DSA-87, SLH-DSA and how the hybrids combine
+- [Threat model](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/threat-model.md): what OnePass protects against and what is out of scope
+- [Master password, Secret Key and Emergency Kit](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/master-password-secret-key-emergency-kit.md): key derivation, where secrets live, recovery
+- [iCloud sync and what Apple sees](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/icloud-sync.md): CloudKit records, metadata exposed, tamper detection
+- [Can I self-host OnePass sync?](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/self-hosted-sync-server.md): the mailbox server and its status
+- [Passkeys](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/passkeys.md): passkeys in AutoFill and the browser extension
+- [2FA codes and QR setup](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/two-factor-codes-totp.md): TOTP storage, one-click 2FA setup from a page's QR code
+- [Browser extension](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/browser-extension.md): Safari, Chrome and Firefox setup, pairing, limits
+- [MCP server for AI agents](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/mcp-server-ai-agents.md): let Claude Code, Codex or Cursor use a secret without seeing it
+- [SSH agent](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/ssh-agent.md): keys, approvals, supported formats
+- [Command line (CLI)](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/command-line-cli.md): commands, exit codes, onepass:// references, limits
+- [Travel Mode](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/travel-mode.md): remove vaults before a border crossing, bring them back verified
+- [Apple Watch, Vision Pro, widgets and Shortcuts](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/apple-watch-vision-pro-widgets.md): what each surface shows
+- [Watchtower and breached passwords](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/breached-password-check.md): k-anonymity check, offline mode
+- [Add a new device](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/add-a-device.md): QR pairing, device list, public computer mode
+- [Export and back up](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/export-and-backup.md): encrypted archives, plaintext CSV, restore
+- [Verify a download](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/verify-a-download.md): checksums, SLSA provenance, notarization, rebuilds
+- [Has OnePass been audited?](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/security-audit-status.md): audit status and the evidence that exists
+- [Android, Windows and Linux](https://github.com/soma-intelligence/onepass/blob/main/docs/guides/android-windows-linux.md): platform status
+
+## Comparisons
+
+- [OnePass vs 1Password](https://github.com/soma-intelligence/onepass/blob/main/docs/comparison/onepass-vs-1password.md): license, crypto, platforms, price, migration
+- [OnePass vs Bitwarden](https://github.com/soma-intelligence/onepass/blob/main/docs/comparison/onepass-vs-bitwarden.md): two open source managers, desk review scores, migration
+- [OnePass vs Apple Passwords](https://github.com/soma-intelligence/onepass/blob/main/docs/comparison/onepass-vs-apple-passwords.md): built-in option against a separate manager
+- [OnePass vs KeePassXC](https://github.com/soma-intelligence/onepass/blob/main/docs/comparison/onepass-vs-keepassxc.md): synced Apple app against a local file, KDBX migration
+- [OnePass vs Proton Pass](https://github.com/soma-intelligence/onepass/blob/main/docs/comparison/onepass-vs-proton-pass.md): audits, AI agent access, migration
+- [Sources for the closed source comparison](https://github.com/soma-intelligence/onepass/blob/main/docs/comparison/closed-source-sources.md): dated vendor sources
+
+## Optional
+
+- [Rust core README](https://github.com/soma-intelligence/onepass/blob/main/core/README.md): crates, CLI, MCP server, SSH agent, Travel Mode details (French)
+- [Apple apps README](https://github.com/soma-intelligence/onepass/blob/main/apple/README.md): targets, build commands, per-milestone limits (French)
+- [Extension README](https://github.com/soma-intelligence/onepass/blob/main/extension/README.md): build, load, pairing, tests (French)
+- [Mailbox server README](https://github.com/soma-intelligence/onepass/blob/main/mailbox/README.md): self-hosting the sync server on Supabase
+- [Formal models](https://github.com/soma-intelligence/onepass/blob/main/formal/README.md): ProVerif models and how to run them (French)
+- [Design specs](https://github.com/soma-intelligence/onepass/tree/main/docs/specs): one design spec per milestone
+- [Autofill lab report](https://github.com/soma-intelligence/onepass/blob/main/docs/lab/2026-10-26-autofill-lab-run.md): first 200-site run, fill rate and leaks
+- [Wi-Fi on Windows and Linux](https://github.com/soma-intelligence/onepass/blob/main/docs/wifi-windows-linux.md): the CLI Wi-Fi agent (French)
+- [License](https://github.com/soma-intelligence/onepass/blob/main/LICENSE): GNU AGPL v3.0 or later
