@@ -35,8 +35,11 @@ pub struct Command {
     pub p1: u8,
     pub p2: u8,
     pub data: Vec<u8>,
-    /// Expected response length. 256 is sent as `00` in the short form;
-    /// values above 256 switch the command to the extended form.
+    /// Expected response length. In the short form `Some(0)` and
+    /// `Some(256)` both mean 256 bytes and encode `00`. Values above 256, or
+    /// data above 255 bytes, switch the command to the extended form, where
+    /// `Some(0)` is invalid (it would encode `0000`, which means 65536) and
+    /// is rejected by a `debug_assert!`. Data is limited to 65535 bytes.
     pub le: Option<u16>,
 }
 
@@ -50,8 +53,10 @@ impl Command {
     /// Short form, or extended form when the data or Le need it.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = vec![self.cla, self.ins, self.p1, self.p2];
+        debug_assert!(self.data.len() <= 65535, "APDU data over 65535 bytes");
         let extended = self.data.len() > 255 || self.le.is_some_and(|l| l > 256);
         if extended {
+            debug_assert!(self.le != Some(0), "Le 0 is invalid in the extended form");
             if !self.data.is_empty() {
                 out.push(0x00);
                 out.extend_from_slice(&(self.data.len() as u16).to_be_bytes());
@@ -61,7 +66,6 @@ impl Command {
                 if self.data.is_empty() {
                     out.push(0x00);
                 }
-                // 65536 is 0000.
                 out.extend_from_slice(&le.to_be_bytes());
             }
         } else {
@@ -191,6 +195,32 @@ mod tests {
             Command::get_challenge().to_bytes(),
             vec![0x00, 0x84, 0x00, 0x00, 0x08]
         );
+    }
+
+    #[test]
+    fn apdu_le_256_short_form() {
+        let c = Command {
+            cla: 0,
+            ins: 0xB0,
+            p1: 0,
+            p2: 0,
+            data: Vec::new(),
+            le: Some(256),
+        };
+        assert_eq!(c.to_bytes(), vec![0x00, 0xB0, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn apdu_le_zero_means_256_short_form() {
+        let c = Command {
+            cla: 0,
+            ins: 0xB0,
+            p1: 0,
+            p2: 0,
+            data: Vec::new(),
+            le: Some(0),
+        };
+        assert_eq!(c.to_bytes(), vec![0x00, 0xB0, 0x00, 0x00, 0x00]);
     }
 
     #[test]
