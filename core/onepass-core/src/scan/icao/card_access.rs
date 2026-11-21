@@ -4,6 +4,8 @@
 use x509_cert::der::oid::ObjectIdentifier;
 
 use super::IcaoError;
+use super::pace::{PaceCurve, cipher_for};
+use super::sm::Cipher;
 use crate::scan::tlv;
 
 /// id-PACE (0.4.0.127.0.7.2.2.4) in DER content octets.
@@ -15,6 +17,28 @@ const MALFORMED: IcaoError = IcaoError::Protocol("card-access-malformed");
 pub struct PaceInfo {
     pub oid: ObjectIdentifier,
     pub parameter_id: u8,
+}
+
+/// The PACEInfo to run: the first supported entry (ECDH GM with AES on
+/// a standardized curve), preferring the strongest AES when several are.
+pub fn select_pace(infos: &[PaceInfo]) -> Option<&PaceInfo> {
+    let strength = |i: &PaceInfo| match cipher_for(&i.oid) {
+        Ok(Cipher::Aes128) => 1,
+        Ok(Cipher::Aes192) => 2,
+        Ok(Cipher::Aes256) => 3,
+        _ => 0,
+    };
+    let mut best: Option<(&PaceInfo, u8)> = None;
+    for i in infos {
+        let st = strength(i);
+        if st == 0 || PaceCurve::from_parameter_id(i.parameter_id).is_none() {
+            continue;
+        }
+        if best.is_none_or(|(_, b)| st > b) {
+            best = Some((i, st));
+        }
+    }
+    best.map(|(i, _)| i)
 }
 
 /// A small non-negative DER INTEGER, if it fits a byte.
@@ -54,7 +78,7 @@ pub fn parse_card_access(b: &[u8]) -> Result<Vec<PaceInfo>, IcaoError> {
         // PACEInfo: version INTEGER (2), then parameterId INTEGER.
         // PACEDomainParameterInfo has a SEQUENCE here and is skipped.
         let Ok((version, fields)) = tlv::parse_one(fields) else {
-            return Err(MALFORMED);
+            continue;
         };
         if version.tag != 0x02 || small_int(version.value) != Some(2) {
             continue;
@@ -109,6 +133,56 @@ mod tests {
         let infos = parse_card_access(&tlv::encode(0x31, &set)).unwrap();
         assert_eq!(infos.len(), 1);
         assert_eq!(infos[0].parameter_id, 13);
+    }
+
+    #[test]
+    fn card_access_skips_pace_oid_without_fields() {
+        // A SecurityInfo under id-PACE that holds only its OID.
+        let bare = unhex("300C060A04007F00070202040202");
+        let mut set = bare;
+        set.extend_from_slice(&unhex(&g1("pace_info")));
+        let infos = parse_card_access(&tlv::encode(0x31, &set)).unwrap();
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].parameter_id, 13);
+    }
+
+    fn info(oid: &str, id: u8) -> PaceInfo {
+        PaceInfo {
+            oid: ObjectIdentifier::new_unwrap(oid),
+            parameter_id: id,
+        }
+    }
+
+    #[test]
+    fn select_pace_skips_unsupported_and_prefers_strongest_aes() {
+        // ECDH IM, then DH GM, then ECDH GM AES-128 on brainpoolP256r1.
+        let mut set = Vec::new();
+        for (oid, id) in [
+            ("0.4.0.127.0.7.2.2.4.4.2", 13u8),
+            ("0.4.0.127.0.7.2.2.4.1.2", 2),
+        ] {
+            let mut body = tlv::encode(0x06, info(oid, id).oid.as_bytes());
+            body.extend_from_slice(&[0x02, 0x01, 0x02, 0x02, 0x01, id]);
+            set.extend_from_slice(&tlv::encode(0x30, &body));
+        }
+        set.extend_from_slice(&unhex(&g1("pace_info")));
+        let infos = parse_card_access(&tlv::encode(0x31, &set)).unwrap();
+        assert_eq!(infos.len(), 3);
+        assert_eq!(select_pace(&infos), Some(&infos[2]));
+
+        // Several supported: the strongest AES wins; an unsupported curve
+        // (P-224, id 11) with AES-256 does not count.
+        let infos = vec![
+            info("0.4.0.127.0.7.2.2.4.2.2", 13),
+            info("0.4.0.127.0.7.2.2.4.2.4", 11),
+            info("0.4.0.127.0.7.2.2.4.2.3", 12),
+            info("0.4.0.127.0.7.2.2.4.2.4", 16),
+            info("0.4.0.127.0.7.2.2.4.2.4", 15),
+        ];
+        assert_eq!(select_pace(&infos), Some(&infos[3]));
+        assert_eq!(select_pace(&infos[..1]), Some(&infos[0]));
+        assert_eq!(select_pace(&[info("0.4.0.127.0.7.2.2.4.1.2", 2)]), None);
+        assert_eq!(select_pace(&[]), None);
     }
 
     #[test]

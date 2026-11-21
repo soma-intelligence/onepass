@@ -252,7 +252,7 @@ fn token_input(oid: &ObjectIdentifier, pk: &[u8]) -> Vec<u8> {
 }
 
 /// The cipher of a supported PACE OID, or `pace-unsupported`.
-fn cipher_for(oid: &ObjectIdentifier) -> Result<Cipher, IcaoError> {
+pub(super) fn cipher_for(oid: &ObjectIdentifier) -> Result<Cipher, IcaoError> {
     let b = oid.as_bytes();
     if b.len() != ID_PACE_ECDH_GM.len() + 1 || b[..ID_PACE_ECDH_GM.len()] != ID_PACE_ECDH_GM {
         return Err(UNSUPPORTED);
@@ -315,6 +315,8 @@ const OUT_OF_ORDER: IcaoError = IcaoError::Protocol("pace-out-of-order");
 
 pub struct PaceExchange {
     oid: ObjectIdentifier,
+    parameter_id: u8,
+    with_reference: bool,
     cipher: Cipher,
     curve: PaceCurve,
     rnd: PaceRandom,
@@ -363,6 +365,8 @@ impl PaceExchange {
         }
         Ok(PaceExchange {
             oid: info.oid,
+            parameter_id: info.parameter_id,
+            with_reference: false,
             cipher,
             curve,
             rnd,
@@ -375,18 +379,34 @@ impl PaceExchange {
         })
     }
 
-    /// MSE:Set AT: the PACE OID (80) and the MRZ as password (83 01 01).
-    pub fn msg_set_at(&self) -> Command {
+    /// Also send the domain parameter reference (DO84) in MSE:Set AT.
+    /// 9303-11 4.4.4.1 requires it when the chip offers more than one set
+    /// of domain parameters for PACE: set it exactly when
+    /// `parse_card_access` yields more than one distinct `parameter_id`.
+    pub fn with_parameter_reference(mut self) -> Self {
+        self.with_reference = true;
+        self
+    }
+
+    /// MSE:Set AT: the PACE OID (80), the MRZ as password (83 01 01) and,
+    /// with `with_parameter_reference`, the parameter ID (84 01 id).
+    pub fn msg_set_at(&self) -> Result<Command, IcaoError> {
+        if self.step != Step::SetAt {
+            return Err(OUT_OF_ORDER);
+        }
         let mut data = tlv::encode(0x80, self.oid.as_bytes());
         data.extend_from_slice(&tlv::encode(0x83, &[0x01]));
-        Command {
+        if self.with_reference {
+            data.extend_from_slice(&tlv::encode(0x84, &[self.parameter_id]));
+        }
+        Ok(Command {
             cla: 0x00,
             ins: 0x22,
             p1: 0xC1,
             p2: 0xA4,
             data,
             le: None,
-        }
+        })
     }
 
     pub fn on_set_at(&mut self, r: &Response) -> Result<(), IcaoError> {
@@ -401,8 +421,11 @@ impl PaceExchange {
     }
 
     /// Step 1: ask for the encrypted nonce (empty 7C).
-    pub fn msg_nonce(&self) -> Command {
-        general_authenticate(false, &[])
+    pub fn msg_nonce(&self) -> Result<Command, IcaoError> {
+        if self.step != Step::Nonce {
+            return Err(OUT_OF_ORDER);
+        }
+        Ok(general_authenticate(false, &[]))
     }
 
     /// Decrypt the nonce and answer with the terminal's mapping key (81).
@@ -562,9 +585,12 @@ pub(crate) mod tests {
     #[test]
     fn pace_gm_brainpool_appendix_g() {
         let mut x = exchange_g1();
-        assert_eq!(hex(&x.msg_set_at().to_bytes()), g1("mse_set_at_cmd"));
+        assert_eq!(
+            hex(&x.msg_set_at().unwrap().to_bytes()),
+            g1("mse_set_at_cmd")
+        );
         x.on_set_at(&resp("mse_set_at_resp")).unwrap();
-        assert_eq!(hex(&x.msg_nonce().to_bytes()), g1("ga1_cmd"));
+        assert_eq!(hex(&x.msg_nonce().unwrap().to_bytes()), g1("ga1_cmd"));
         let map = x.on_nonce(&resp("ga1_resp")).unwrap();
         assert_eq!(hex(&map.to_bytes()), g1("ga2_cmd"));
         let key = x.on_map(&resp("ga2_resp")).unwrap();
@@ -576,6 +602,30 @@ pub(crate) mod tests {
         assert_eq!(hex(ch.ks_enc()), g1("ks_enc"));
         assert_eq!(hex(ch.ks_mac()), g1("ks_mac"));
         assert_eq!(ch.ssc(), &[0u8; 16]);
+    }
+
+    #[test]
+    fn pace_set_at_with_parameter_reference() {
+        // The G.1 command with DO84 = 84 01 0D after DO83, Lc 0F + 3 = 12.
+        let x = exchange_g1().with_parameter_reference();
+        let mut want = b("mse_set_at_cmd");
+        assert_eq!(want[4], 0x0F);
+        want[4] = 0x12;
+        want.extend_from_slice(&[0x84, 0x01, 0x0D]);
+        assert_eq!(hex(&x.msg_set_at().unwrap().to_bytes()), hex(&want));
+        assert_eq!(
+            hex(&exchange_g1().msg_set_at().unwrap().to_bytes()),
+            g1("mse_set_at_cmd")
+        );
+    }
+
+    #[test]
+    fn pace_messages_check_the_step() {
+        let mut x = exchange_g1();
+        assert!(matches!(x.msg_nonce(), Err(IcaoError::Protocol(_))));
+        x.on_set_at(&resp("mse_set_at_resp")).unwrap();
+        assert!(matches!(x.msg_set_at(), Err(IcaoError::Protocol(_))));
+        assert!(x.msg_nonce().is_ok());
     }
 
     fn run_to_token(x: &mut PaceExchange) {
