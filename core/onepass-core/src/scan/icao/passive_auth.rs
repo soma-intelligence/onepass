@@ -249,8 +249,15 @@ fn hash_alg(a: &AlgId<'_>) -> Result<Hash, Fail> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Scheme {
     Pkcs1(Hash),
-    Pss { hash: Hash, salt: usize },
-    Ecdsa(Hash),
+    Pss {
+        hash: Hash,
+        salt: usize,
+    },
+    /// `plain`: BSI TR-03111 r||s encoding, otherwise X9.62 DER.
+    Ecdsa {
+        hash: Hash,
+        plain: bool,
+    },
 }
 
 /// The signature scheme of `sig_alg`. `digest` is the SignerInfo digest
@@ -262,14 +269,62 @@ fn scheme(sig_alg: &AlgId<'_>, digest: Option<Hash>) -> Result<Scheme, Fail> {
         (RSA_SHA256, Scheme::Pkcs1(Hash::Sha256)),
         (RSA_SHA384, Scheme::Pkcs1(Hash::Sha384)),
         (RSA_SHA512, Scheme::Pkcs1(Hash::Sha512)),
-        (ECDSA_SHA1, Scheme::Ecdsa(Hash::Sha1)),
-        (ECDSA_SHA256, Scheme::Ecdsa(Hash::Sha256)),
-        (ECDSA_SHA384, Scheme::Ecdsa(Hash::Sha384)),
-        (ECDSA_SHA512, Scheme::Ecdsa(Hash::Sha512)),
-        (ECDSA_PLAIN_SHA1, Scheme::Ecdsa(Hash::Sha1)),
-        (ECDSA_PLAIN_SHA256, Scheme::Ecdsa(Hash::Sha256)),
-        (ECDSA_PLAIN_SHA384, Scheme::Ecdsa(Hash::Sha384)),
-        (ECDSA_PLAIN_SHA512, Scheme::Ecdsa(Hash::Sha512)),
+        (
+            ECDSA_SHA1,
+            Scheme::Ecdsa {
+                hash: Hash::Sha1,
+                plain: false,
+            },
+        ),
+        (
+            ECDSA_SHA256,
+            Scheme::Ecdsa {
+                hash: Hash::Sha256,
+                plain: false,
+            },
+        ),
+        (
+            ECDSA_SHA384,
+            Scheme::Ecdsa {
+                hash: Hash::Sha384,
+                plain: false,
+            },
+        ),
+        (
+            ECDSA_SHA512,
+            Scheme::Ecdsa {
+                hash: Hash::Sha512,
+                plain: false,
+            },
+        ),
+        (
+            ECDSA_PLAIN_SHA1,
+            Scheme::Ecdsa {
+                hash: Hash::Sha1,
+                plain: true,
+            },
+        ),
+        (
+            ECDSA_PLAIN_SHA256,
+            Scheme::Ecdsa {
+                hash: Hash::Sha256,
+                plain: true,
+            },
+        ),
+        (
+            ECDSA_PLAIN_SHA384,
+            Scheme::Ecdsa {
+                hash: Hash::Sha384,
+                plain: true,
+            },
+        ),
+        (
+            ECDSA_PLAIN_SHA512,
+            Scheme::Ecdsa {
+                hash: Hash::Sha512,
+                plain: true,
+            },
+        ),
     ];
     if let Some(s) = table
         .into_iter()
@@ -285,7 +340,10 @@ fn scheme(sig_alg: &AlgId<'_>, digest: Option<Hash>) -> Result<Scheme, Fail> {
         return Ok(Scheme::Pkcs1(hash?));
     }
     if is(o, &EC_PUBLIC_KEY) {
-        return Ok(Scheme::Ecdsa(hash?));
+        return Ok(Scheme::Ecdsa {
+            hash: hash?,
+            plain: false,
+        });
     }
     Err(Fail::Unverifiable)
 }
@@ -493,9 +551,13 @@ fn public_key(spki: &[u8]) -> Result<Key, Fail> {
     Err(Fail::Unverifiable)
 }
 
-/// r||s from a DER ECDSA-Sig-Value, or a plain r||s of the right length.
-fn ec_rs(sig: &[u8], len: usize) -> Option<Vec<u8>> {
-    let der = only(sig)
+/// r||s from the encoding the signature algorithm names: a plain r||s of
+/// the right length (BSI OIDs) or a DER ECDSA-Sig-Value (X9.62 OIDs).
+fn ec_rs(sig: &[u8], len: usize, plain: bool) -> Option<Vec<u8>> {
+    if plain {
+        return (sig.len() == 2 * len).then(|| sig.to_vec());
+    }
+    only(sig)
         .and_then(|e| expect(e, 0x30))
         .and_then(|e| items(e.value))
         .and_then(|parts| match parts.as_slice() {
@@ -511,8 +573,7 @@ fn ec_rs(sig: &[u8], len: usize) -> Option<Vec<u8>> {
                 Some(out)
             }
             _ => None,
-        });
-    der.or_else(|| (sig.len() == 2 * len).then(|| sig.to_vec()))
+        })
 }
 
 macro_rules! ec_verify {
@@ -585,9 +646,9 @@ pub(super) fn verify(
             };
             ok.then_some(()).ok_or(Fail::Invalid)
         }
-        (Scheme::Ecdsa(h), Key::Ec(curve, point)) => {
-            let z = h.digest(msg);
-            let rs = ec_rs(sig, curve.field_len()).ok_or(Fail::Invalid)?;
+        (Scheme::Ecdsa { hash, plain }, Key::Ec(curve, point)) => {
+            let z = hash.digest(msg);
+            let rs = ec_rs(sig, curve.field_len(), plain).ok_or(Fail::Invalid)?;
             match curve {
                 Curve::P256 => ec_verify!(p256::NistP256, &point, &z, &rs),
                 Curve::P384 => ec_verify!(p384::NistP384, &point, &z, &rs),
@@ -616,6 +677,9 @@ pub(super) struct Cert<'a> {
     pub spki: &'a [u8],
     pub ski: Option<&'a [u8]>,
     pub aki: Option<&'a [u8]>,
+    /// The TBS `signature` field is byte for byte the outer
+    /// `signatureAlgorithm` (RFC 5280 4.1.1.2).
+    pub algs_match: bool,
 }
 
 impl<'a> Cert<'a> {
@@ -625,6 +689,7 @@ impl<'a> Cert<'a> {
             return None;
         };
         let tbs = expect(*tbs, 0x30)?;
+        let outer_alg = sig_alg.raw;
         let sig_alg = alg_id(*sig_alg)?;
         let sig = bit_string(*sig)?;
 
@@ -633,7 +698,8 @@ impl<'a> Cert<'a> {
             f.next();
         }
         let serial = uint(expect(f.next()?, 0x02)?.value);
-        let _inner_alg = alg_id(f.next()?)?;
+        let inner_alg = f.next()?;
+        alg_id(inner_alg)?;
         let issuer = expect(f.next()?, 0x30)?.raw;
         let validity = items(expect(f.next()?, 0x30)?.value)?;
         let [nb, na] = validity.as_slice() else {
@@ -675,6 +741,7 @@ impl<'a> Cert<'a> {
             spki,
             ski,
             aki,
+            algs_match: inner_alg.raw == outer_alg,
         })
     }
 
@@ -685,28 +752,35 @@ impl<'a> Cert<'a> {
 
 /// Finds the CSCA in `ml` that issued `cert` and checks the certificate
 /// signature with it. `valid` says whether a CSCA that signed it is usable
-/// (its validity). A CSCA picked by key identifier that does not verify
-/// the signature means a forged certificate: `Invalid`. One picked by name
-/// only may be another key of the same authority: `Unverifiable`.
+/// (its validity). Candidates are the CSCAs whose key identifier matches the
+/// certificate AKI and those whose subject matches its issuer name.
+///
+/// `Invalid` only when a CSCA matching both the AKI and the issuer name
+/// fails the signature: a forged certificate. A failure against a CSCA
+/// matched one way only may be a key id collision or another key of the
+/// same authority: `Unverifiable`. A certificate whose TBS and outer
+/// signature algorithms differ is `Invalid`.
 pub(super) fn check_issuer(
     cert: &Cert<'_>,
     ml: &MasterList,
     valid: impl Fn(&Cert<'_>) -> bool,
 ) -> Result<(), Fail> {
-    let (candidates, by_key_id) = ml.candidates(cert.aki, cert.issuer);
-    let mut bad_signature = false;
-    for der in candidates {
+    if !cert.algs_match {
+        return Err(Fail::Invalid);
+    }
+    let mut forged = false;
+    for (der, by_key_id) in ml.candidates(cert.aki, cert.issuer) {
         let Some(ca) = Cert::parse(der) else {
             continue;
         };
         match verify(ca.spki, &cert.sig_alg, None, cert.tbs, cert.sig) {
             Ok(()) if valid(&ca) => return Ok(()),
             Ok(()) => {}
-            Err(Fail::Invalid) => bad_signature = true,
-            Err(Fail::Unverifiable) => {}
+            Err(Fail::Invalid) if by_key_id && ca.subject == cert.issuer => forged = true,
+            Err(_) => {}
         }
     }
-    if bad_signature && by_key_id {
+    if forged {
         Err(Fail::Invalid)
     } else {
         Err(Fail::Unverifiable)
@@ -863,7 +937,8 @@ pub(super) fn check_signer<'a>(s: &Signed<'a>) -> Result<(Cert<'a>, Option<Date>
 ///
 /// The CSCA must be valid when it issued the DS (the DS `notBefore`); the
 /// DS must be valid at the SOD signing time when the SOD carries one,
-/// otherwise at `at`. Outside either: `Unverifiable`.
+/// otherwise at `at`. Outside either: `Unverifiable`. `dgs` must hold DG1,
+/// or the result is at best `Unverifiable`.
 pub fn verify_sod(sod: &[u8], dgs: &[(u8, &[u8])], ml: &MasterList, at: Date) -> ChipStatus {
     match run(sod, dgs, ml, at) {
         Ok(()) => ChipStatus::Verified,
@@ -919,6 +994,10 @@ fn run(sod: &[u8], dgs: &[(u8, &[u8])], ml: &MasterList, at: Date) -> Result<(),
     let (ds, signing_time) = check_signer(&signed)?;
     check_issuer(&ds, ml, |csca| csca.valid_on(ds.not_before))?;
     if !ds.valid_on(signing_time.unwrap_or(at)) {
+        return Err(Fail::Unverifiable);
+    }
+    // Without DG1 nothing ties the verified chip to the document read.
+    if !dgs.iter().any(|&(n, _)| n == 1) {
         return Err(Fail::Unverifiable);
     }
     Ok(())

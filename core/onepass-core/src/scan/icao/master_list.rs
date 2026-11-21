@@ -49,22 +49,26 @@ impl MasterList {
     }
 
     /// The CSCAs that may have issued a certificate with this authority key
-    /// identifier and issuer name: by key identifier first, by name if none
-    /// matches. The flag says the match was by key identifier.
-    pub(super) fn candidates(&self, aki: Option<&[u8]>, issuer: &[u8]) -> (Vec<&[u8]>, bool) {
-        let pick = |ix: &Vec<usize>| -> Vec<&[u8]> {
-            ix.iter()
-                .filter_map(|&i| self.certs.get(i))
-                .map(Vec::as_slice)
-                .collect()
-        };
-        if let Some(ix) = aki.and_then(|k| self.by_key_id.get(k)) {
-            return (pick(ix), true);
+    /// identifier and issuer name: those whose key identifier matches, then
+    /// those whose subject matches, each once. The flag marks a key
+    /// identifier match.
+    pub(super) fn candidates(&self, aki: Option<&[u8]>, issuer: &[u8]) -> Vec<(&[u8], bool)> {
+        let by_key = aki.and_then(|k| self.by_key_id.get(k));
+        let by_name = self.by_subject.get(issuer);
+        let mut seen = Vec::new();
+        let mut out = Vec::new();
+        for (ix, key_match) in [(by_key, true), (by_name, false)] {
+            for &i in ix.into_iter().flatten() {
+                if seen.contains(&i) {
+                    continue;
+                }
+                if let Some(der) = self.certs.get(i) {
+                    seen.push(i);
+                    out.push((der.as_slice(), key_match));
+                }
+            }
         }
-        match self.by_subject.get(issuer) {
-            Some(ix) => (pick(ix), false),
-            None => (Vec::new(), false),
-        }
+        out
     }
 }
 

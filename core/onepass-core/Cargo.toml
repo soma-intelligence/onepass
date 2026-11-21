@@ -46,7 +46,6 @@ des = { version = "0.9", features = ["zeroize"] }
 aes = { version = "0.9", features = ["zeroize"] }
 cbc = "0.2"
 cmac = { version = "0.8", features = ["zeroize"] }
-cms = "0.3.0-rc.2"
 x509-cert = "0.3"
 p256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
 p384 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
