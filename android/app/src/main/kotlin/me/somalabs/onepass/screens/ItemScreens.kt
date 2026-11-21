@@ -34,6 +34,7 @@ import me.somalabs.onepass.ui.Category
 import me.somalabs.onepass.ui.Ios
 import me.somalabs.onepass.ui.RxArt
 import me.somalabs.onepass.ui.backdropPage
+import me.somalabs.onepass.ui.washPage
 import me.somalabs.onepass.ui.glassChip
 import me.somalabs.onepass.ui.quickAction
 import me.somalabs.onepass.ui.quickActionRow
@@ -133,7 +134,13 @@ class ItemScreens(private val a: MainActivity) {
         val more = a.barIcon(R.drawable.ic_more, a.t("Actions", "Actions")) { v -> actions(v, item) }
         val trailing = if (trashed) listOf(more) else listOf(star, edit, more)
         val primaryUrl = (item.urls.firstOrNull { it.primary } ?: item.urls.firstOrNull())?.url
-        return a.backdropPage(RxArt.item, a.rxBar(trailing)) {
+        // RX keeps the item's own colour behind its header (Tesla red, a card's brand), not the generic art.
+        val brand = if (item.itemType == FfiItemType.CREDIT_CARD) {
+            item.sections.flatMap { it.fields }.firstOrNull { it.id == "number" }?.let { display(it.value) }?.takeIf { it.isNotBlank() }
+                ?.let { runCatching { me.somalabs.onepass.core.cardBrand(it) }.getOrNull() }?.takeIf { it != "unknown" }
+        } else null
+        val identity = me.somalabs.onepass.ui.IdentityTint.color(brand, siteIcon(item.itemType, primaryUrl, item.title)?.bitmap, 0xFF000000.toInt() or cat.hex, ui.accent)
+        return a.washPage(identity, a.rxBar(trailing)) {
             // The RX item hero: the art with the favourite star, the title, "Catégorie · sous-titre", the vault chip.
             val head = LinearLayout(a).apply {
                 orientation = LinearLayout.VERTICAL

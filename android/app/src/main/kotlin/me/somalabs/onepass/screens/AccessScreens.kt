@@ -23,6 +23,13 @@ import me.somalabs.onepass.core.passwordStrengthBits
 import me.somalabs.onepass.ui.Ios
 
 /**
+ * What a master password needs to be accepted, here and in Réglages > Mot de passe maître.
+ * A five-word generated passphrase (about 65 bits) passes.
+ */
+internal const val MASTER_MIN_BITS = 60.0
+internal const val MASTER_MIN_LENGTH = 10
+
+/**
  * What comes before the vault, as on iPhone: the three intro cards
  * (OnboardingIntro), "Bienvenue dans OnePass / Comment veux-tu commencer ?",
  * the master password, the Secret Key to store, and the lock screen
@@ -169,10 +176,20 @@ class AccessScreens(private val a: MainActivity) {
             if (p.isEmpty()) return
             val bits = passwordStrengthBits(p)
             val level = listOf(40.0, 60.0, 80.0, 100.0).count { bits >= it }
-            val color = when (level) { 0, 1 -> ui.red; 2 -> ui.orange; else -> ui.green }
+            // The verdict follows the rule "Créer un coffre" applies (MASTER_MIN_*), so a generated
+            // five-word passphrase (about 65 bits) reads as accepted, not as too weak.
+            val enough = p.length >= MASTER_MIN_LENGTH && bits >= MASTER_MIN_BITS
+            val color = if (enough) ui.green else if (level >= 1) ui.orange else ui.red
             for (i in 0 until 4) meter.addView(View(a).apply { background = ui.rounded(if (i < level) color else ui.fill, 2) }, LinearLayout.LayoutParams(0, ui.dp(4), 1f).apply { marginEnd = ui.dp(4) })
-            meter.addView(ui.text(if (level >= 3) a.t("Assez solide pour ton coffre", "Strong enough for your vault") else a.t("Trop faible", "Too Weak"), 12f, ui.secondary).apply { setPadding(ui.dp(6), 0, 0, 0) })
+            meter.addView(ui.text(if (enough) a.t("Assez solide pour ton coffre", "Strong enough for your vault") else a.t("Trop faible", "Too Weak"), 12f, ui.secondary).apply { setPadding(ui.dp(6), 0, 0, 0) })
         }
+        val clearError = object : android.text.TextWatcher {
+            override fun afterTextChanged(e: android.text.Editable?) { err.text = "" }
+            override fun beforeTextChanged(s: CharSequence?, x: Int, y: Int, z: Int) {}
+            override fun onTextChanged(s: CharSequence?, x: Int, y: Int, z: Int) {}
+        }
+        pw.addTextChangedListener(clearError)
+        pw2.addTextChangedListener(clearError)
         pw.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(e: android.text.Editable?) = drawMeter()
             override fun beforeTextChanged(s: CharSequence?, x: Int, y: Int, z: Int) {}
@@ -191,7 +208,7 @@ class AccessScreens(private val a: MainActivity) {
             val p1 = pw.text.toString()
             when {
                 p1 != pw2.text.toString() -> err.text = a.t("Les deux saisies doivent être identiques.", "Both entries must match.")
-                p1.length < 10 || passwordStrengthBits(p1) < 60 -> err.text = a.t("Pas encore assez solide : ajoute un mot, ou touche Générer.", "Not strong enough yet. Add a word, or tap Generate.")
+                p1.length < MASTER_MIN_LENGTH || passwordStrengthBits(p1) < MASTER_MIN_BITS -> err.text = a.t("Pas encore assez solide : ajoute un mot, ou touche Générer.", "Not strong enough yet. Add a word, or tap Generate.")
                 else -> {
                     go.isEnabled = false
                     go.text = a.t("Création du coffre...", "Creating Vault...")

@@ -38,9 +38,7 @@ import me.somalabs.onepass.ui.rxRow
  */
 fun MainActivity.itemIcon(type: FfiItemType, sizeDp: Int, favorite: Boolean = false, url: String? = null, title: String? = null): View {
     val box = FrameLayout(this).apply { layoutParams = LinearLayout.LayoutParams(ui.dp(sizeDp), ui.dp(sizeDp)) }
-    val pack = me.somalabs.onepass.ui.IconPack.shared
-    val brand = if (pack == null || type !in brandTypes) null else me.somalabs.onepass.ui.IconPack.host(url)?.let { pack.forHost(it) }
-        ?: title?.takeIf { url.isNullOrBlank() }?.let { pack?.forTitle(it) }
+    val brand = siteIcon(type, url, title)
     // Large (the item hero, Favoris): the brand alone, as RX draws it; small: on its rounded tile.
     // A colour logo stays on its white tile in the dark appearance (a black mark would vanish).
     val bare = sizeDp >= 64 && (brand?.monochrome == true || !ui.dark)
@@ -74,6 +72,13 @@ fun MainActivity.itemIcon(type: FfiItemType, sizeDp: Int, favorite: Boolean = fa
 }
 
 /** The kinds that can carry a site's brand icon. */
+/** The brand icon of an item from the icon pack: by web address, or by title for an item without one. */
+fun siteIcon(type: FfiItemType, url: String?, title: String?): me.somalabs.onepass.ui.IconPack.Icon? {
+    val pack = me.somalabs.onepass.ui.IconPack.shared
+    return if (pack == null || type !in brandTypes) null else me.somalabs.onepass.ui.IconPack.host(url)?.let { pack.forHost(it) }
+        ?: title?.takeIf { url.isNullOrBlank() }?.let { pack.forTitle(it) }
+}
+
 private val brandTypes = setOf(FfiItemType.LOGIN, FfiItemType.PASSWORD, FfiItemType.API_CREDENTIAL, FfiItemType.SUBSCRIPTION, FfiItemType.MEMBERSHIP, FfiItemType.REWARD_PROGRAM, FfiItemType.EMAIL)
 
 /** The second line of a list row: the subtitle, or the category's name (ItemListRow). */

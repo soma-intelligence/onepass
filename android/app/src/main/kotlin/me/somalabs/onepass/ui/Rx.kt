@@ -92,8 +92,6 @@ fun MainActivity.heroPage(photo: Int, darkPhoto: Boolean, hero: LinearLayout.() 
  * `bar` stays on top (the back button, the glass actions); `content` scrolls under it.
  */
 fun MainActivity.backdropPage(photo: Int, bar: View?, content: LinearLayout.() -> Unit): View {
-    val frame = FrameLayout(this).apply { tag = EDGE; setBackgroundColor(ui.page) }
-    val height = ui.dp(380) + statusTop
     val art = FrameLayout(this)
     art.addView(ImageView(this).apply {
         setImageResource(photo)
@@ -106,6 +104,23 @@ fun MainActivity.backdropPage(photo: Int, bar: View?, content: LinearLayout.() -
         background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
             intArrayOf(Color.argb(0, Color.red(p), Color.green(p), Color.blue(p)), Color.argb(0x66, Color.red(p), Color.green(p), Color.blue(p)), p))
     }, FrameLayout.LayoutParams(MATCH, MATCH))
+    return backdropFrame(art, ui.dp(380) + statusTop, bar, content)
+}
+
+/**
+ * An item's page: its identity color washes in from the top corners (IdentityTint.wash), in a box
+ * 58% of the screen tall, fixed under the content like the iPhone's (not moving with the page).
+ */
+fun MainActivity.washPage(color: Int, bar: View?, content: LinearLayout.() -> Unit): View {
+    val wash = View(this).apply {
+        background = IdentityTint.wash(color, ui.dark)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+    return backdropFrame(wash, (resources.displayMetrics.heightPixels * 0.58f).toInt(), bar, content, moves = false)
+}
+
+private fun MainActivity.backdropFrame(art: View, height: Int, bar: View?, content: LinearLayout.() -> Unit, moves: Boolean = true): View {
+    val frame = FrameLayout(this).apply { tag = EDGE; setBackgroundColor(ui.page) }
     frame.addView(art, FrameLayout.LayoutParams(MATCH, height))
     val barHeight = if (bar != null) ui.dp(60) else 0
     val col = LinearLayout(this).apply {
@@ -117,7 +132,7 @@ fun MainActivity.backdropPage(photo: Int, bar: View?, content: LinearLayout.() -
         isFillViewport = true
         isVerticalScrollBarEnabled = false
         addView(col)
-        setOnScrollChangeListener { _, _, y, _, _ -> art.translationY = -y.toFloat() }
+        if (moves) setOnScrollChangeListener { _, _, y, _, _ -> art.translationY = -y.toFloat() }
     }, FrameLayout.LayoutParams(MATCH, MATCH))
     bar?.let {
         frame.addView(it, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.TOP).apply { topMargin = statusTop })

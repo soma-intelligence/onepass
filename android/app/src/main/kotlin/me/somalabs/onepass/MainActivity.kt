@@ -42,8 +42,8 @@ import me.somalabs.onepass.wifi.WifiAutomation
 
 /**
  * The app shell, laid out like the iPhone app (`PhoneTabsView`): three tabs
- * (Accueil, Éléments, Watchtower) in a floating capsule with a round search
- * button beside it, one navigation stack per tab, the root toolbar (account
+ * (Accueil, Éléments, Watchtower, Rechercher) in an Android navigation bar
+ * (`showTabBar`), one navigation stack per tab, the root toolbar (account
  * avatar and its menu on the left, options and "+" on the right), sheets.
  * Screens live in `screens/`; the look in `ui/Ios`.
  *
@@ -169,6 +169,8 @@ class MainActivity : Activity() {
                 statusTop = insets.systemWindowInsetTop
             }
             fitPage()
+            // The navigation bar reaches under the gesture bar: redraw it for the new inset.
+            if (tabBar != null) v.post { if (tabBar != null) showTabBar() }
             insets
         }
         setContentView(root)
@@ -450,49 +452,56 @@ class MainActivity : Activity() {
 
     // ---- tab bar ------------------------------------------------------------------------------
 
+    /**
+     * An Android navigation bar (Material 3 layout, not the iPhone capsule): full width at the
+     * bottom, opaque so nothing reads through it, rounded top corners, four destinations with
+     * Search among them, and the active one marked by a pill behind its icon. It reaches under
+     * the gesture bar (the root's bottom padding) so the system strip takes its colour.
+     */
     private fun showTabBar() {
         tabBar?.let { root.removeView(it) }
+        val inset = root.paddingBottom
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val capsule = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            background = ui.rounded(ui.tabBar, 32, ui.hairline)
-            elevation = ui.dp(10).toFloat()
-            setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4))
+            gravity = Gravity.TOP
+            val top = ui.dp(24).toFloat()
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(ui.card)
+                cornerRadii = floatArrayOf(top, top, top, top, 0f, 0f, 0f, 0f)
+                setStroke(maxOf(1, ui.dp(0.5)), ui.hairline)
+            }
+            elevation = ui.dp(8).toFloat()
+            setPadding(ui.dp(8), ui.dp(12), ui.dp(8), ui.dp(6) + inset)
         }
         fun item(t: Tab, icon: Int, iconOn: Int, label: String) {
             val on = tab == t
+            val tint = if (on) ui.readableAccent else ui.secondary
             val cell = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(5))
-                if (on) background = ui.rounded(ui.tabActive, 28)
+                gravity = Gravity.CENTER_HORIZONTAL
                 contentDescription = label
                 isClickable = true
+                isSelected = on
                 setOnClickListener { selectTab(t) }
             }
-            cell.addView(ui.glyph(if (on) iconOn else icon, if (on) ui.readableAccent else ui.label, 26))
-            cell.addView(ui.text(label, 11f, if (on) ui.readableAccent else ui.label, 600).apply { gravity = Gravity.CENTER; maxLines = 1; setPadding(0, ui.dp(3), 0, 0) })
-            capsule.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val pill = FrameLayout(this).apply {
+                background = ui.pressable(if (on) ui.rounded(ui.accentSoft, 16) else null, 16)
+                isDuplicateParentStateEnabled = true
+                addView(ui.glyph(if (on) iconOn else icon, tint, 24), FrameLayout.LayoutParams(ui.dp(24), ui.dp(24), Gravity.CENTER))
+            }
+            cell.addView(pill, LinearLayout.LayoutParams(ui.dp(64), ui.dp(32)))
+            cell.addView(ui.text(label, 12f, if (on) ui.label else ui.secondary, if (on) 700 else 500).apply {
+                gravity = Gravity.CENTER; maxLines = 1; setPadding(0, ui.dp(4), 0, 0)
+            })
+            bar.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         item(Tab.HOME, R.drawable.ic_home, R.drawable.ic_home_fill, t("Accueil", "Home"))
         item(Tab.ITEMS, R.drawable.ic_items, R.drawable.ic_items_fill, t("Éléments", "Items"))
         item(Tab.WATCHTOWER, R.drawable.ic_watchtower, R.drawable.ic_watchtower, "Watchtower")
-        bar.addView(capsule, LinearLayout.LayoutParams(0, ui.dp(64), 1f))
-        val search = FrameLayout(this).apply {
-            val on = tab == Tab.SEARCH
-            background = ui.rounded(ui.tabBar, 32, ui.hairline)
-            elevation = ui.dp(10).toFloat()
-            contentDescription = t("Rechercher", "Search")
-            isClickable = true
-            setOnClickListener { selectTab(Tab.SEARCH) }
-            addView(ui.glyph(R.drawable.ic_search, if (on) ui.accent else ui.label, 28), FrameLayout.LayoutParams(ui.dp(28), ui.dp(28), Gravity.CENTER))
-        }
-        bar.addView(search, LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)).apply { marginStart = ui.dp(12) })
+        item(Tab.SEARCH, R.drawable.ic_search, R.drawable.ic_search, t("Rechercher", "Search"))
+        root.clipToPadding = false
         val lp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
-        lp.setMargins(ui.dp(16), 0, ui.dp(16), ui.dp(10))
+        lp.bottomMargin = -inset
         root.addView(bar, lp)
         tabBar = bar
     }

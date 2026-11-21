@@ -346,7 +346,7 @@ class SettingsScreens(private val a: MainActivity) {
             val n = new1.text.toString()
             when {
                 n != new2.text.toString() -> err.text = a.t("Les deux saisies doivent être identiques.", "Both entries must match.")
-                me.somalabs.onepass.core.passwordStrengthBits(n) < 60 || n.length < 10 -> err.text = a.t("Pas encore assez solide : ajoute un mot, ou touche Générer.", "Not strong enough yet. Add a word, or tap Generate.")
+                me.somalabs.onepass.core.passwordStrengthBits(n) < MASTER_MIN_BITS || n.length < MASTER_MIN_LENGTH -> err.text = a.t("Pas encore assez solide : ajoute un mot, ou touche Générer.", "Not strong enough yet. Add a word, or tap Generate.")
                 else -> {
                     val cur = current.text.toString().toCharArray()
                     val nw = n.toCharArray()
