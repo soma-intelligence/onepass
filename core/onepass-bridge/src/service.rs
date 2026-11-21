@@ -154,6 +154,12 @@ impl VaultInfo {
 /// development host each implement it.
 pub trait VaultAccess {
     fn status(&self) -> VaultStatus;
+    /// The `status` request's answer: `locked` only for a vault that is
+    /// locked; a vault that failed otherwise answers its error, so the
+    /// extension never shows "locked" for an open vault whose read failed.
+    fn checked_status(&self) -> Result<VaultStatus> {
+        Ok(self.status())
+    }
     /// Ask the user to unlock. `true` when the vault is unlocked after the
     /// call. `origin_host`: the host of the page the user's gesture was on,
     /// when the extension said (an older one does not).
@@ -770,7 +776,7 @@ impl<V: VaultAccess> Service<V> {
         }
         match req {
             Request::Status { .. } => {
-                let s = self.vault.status();
+                let s = self.vault.checked_status().map_err(app_code)?;
                 return Ok(Response::Status {
                     locked: s.locked,
                     account: s.account,
