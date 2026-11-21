@@ -387,6 +387,10 @@ pub struct FfiItemSummary {
     /// types, an empty number or one of fewer than 8 digits.
     #[uniffi(default = None)]
     pub card_last4: Option<String>,
+    /// Issuing country of a passport as stored ("FRA", "France"), so a list
+    /// draws the booklet's family. `None` for other types or a blank value.
+    #[uniffi(default = None)]
+    pub issuing_country: Option<String>,
     /// Passkeys stored in the item (`Passkey` field values): the "Passkeys" list counts and
     /// filters on it.
     #[uniffi(default = 0)]

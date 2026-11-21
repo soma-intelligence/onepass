@@ -2582,6 +2582,44 @@ fn card_summary_carries_last4_never_the_number() {
     assert_eq!(note.card_last4, None);
 }
 
+#[test]
+fn passport_summary_carries_its_issuing_country() {
+    let fx = fixture();
+    let mut pass = fx
+        .session
+        .new_item(
+            fx.vault_id.clone(),
+            FfiItemType::Passport,
+            "Passeport".into(),
+        )
+        .unwrap();
+    fill(&mut pass);
+    for f in pass.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == "issuing_country" {
+            f.value = text("FRA");
+        }
+    }
+    fx.session.save_item(pass).unwrap();
+    let mut note = fx
+        .session
+        .new_item(fx.vault_id.clone(), FfiItemType::SecureNote, "Note".into())
+        .unwrap();
+    fill(&mut note);
+    fx.session.save_item(note).unwrap();
+
+    let summaries = fx.session.item_summaries().unwrap();
+    let pass = summaries
+        .iter()
+        .find(|s| s.item_type == FfiItemType::Passport)
+        .unwrap();
+    assert_eq!(pass.issuing_country.as_deref(), Some("FRA"));
+    let note = summaries
+        .iter()
+        .find(|s| s.item_type == FfiItemType::SecureNote)
+        .unwrap();
+    assert_eq!(note.issuing_country, None);
+}
+
 // ---- key-use log (app and AutoFill) ----------------------------------------
 
 mod key_use {
