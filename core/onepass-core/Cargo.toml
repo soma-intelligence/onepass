@@ -42,8 +42,8 @@ sha3 = "0.10"
 
 # Chip reading (scan module): BAC/PACE secure messaging, DG decoding and
 # passive authentication of an eMRTD. Verify-side only.
-des = "0.9"
-aes = "0.9"
+des = { version = "0.9", features = ["zeroize"] }
+aes = { version = "0.9", features = ["zeroize"] }
 cbc = "0.2"
 cmac = "0.8"
 cms = "0.3.0-rc.2"

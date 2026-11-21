@@ -1,0 +1,38 @@
+# ICAO Doc 9303 Part 11 (8th ed.), Appendix D, BAC and secure messaging
+# worked example (also Doc 9303 Part 1 Vol 2, 6th ed., Appendix 5).
+# Values reproduced from memory of the widely published copies of that
+# appendix (the JMRTD and NFCPassportReader test suites use the same
+# figures); the ICAO PDF itself was not reachable offline. Every value is
+# cross-checked by the tests that consume it: a wrong digit anywhere breaks
+# the chain (key derivation, MAC, decryption) so a transcription error
+# cannot pass silently.
+# Format: name = value. Hex unless the name starts with "text_".
+
+# D.2 key derivation
+text_mrz_info = L898902C<369080619406236
+kseed = 239AB9CB282DAF66231DC5A4DF6BFBAE
+k_enc = AB94FDECF2674FDFB9B391F85D7F76F2
+k_mac = 7962D9ECE03D1ACD4C76089DCE131543
+
+# D.3 mutual authentication
+rnd_icc = 4608F91988702212
+rnd_ifd = 781723860C06C226
+k_ifd = 0B795240CB7049B01C19B33E32804F0B
+e_ifd = 72C29C2371CC9BDB65B779B8E8D37B29ECC154AA56A8799FAE2F498F76ED92F2
+m_ifd = 5F1448EEA8AD90A7
+ext_auth_apdu = 008200002872C29C2371CC9BDB65B779B8E8D37B29ECC154AA56A8799FAE2F498F76ED92F25F1448EEA8AD90A728
+ext_auth_resp_data = 46B9342A41396CD7386BF5803104D7CEDC122B9132139BAF2EEDC94EE178534F2F2D235D074D7449
+k_icc = 0B4F80323EB3191CB04970CB4052790B
+ks_seed = 0036D272F5C350ACAC50C3F572D23600
+ks_enc = 979EC13B1CBFE9DCD01AB0FED307EAE5
+ks_mac = F1CB1F1FB5ADF208806B89DC579DC1F8
+ssc0 = 887022120C06C226
+
+# D.4 secure messaging. SSC chain: SELECT command ...27, its answer ...28
+# (not printed in D.4), READ BINARY command ...29, its answer ...2A.
+select_plain = 00A4020C02011E
+select_protected = 0CA4020C158709016375432908C044F68E08BF8B92D635FF24F800
+read_plain = 00B0000004
+read_protected = 0CB000000D9701048E08ED6705417E96BA5500
+read_resp_protected = 8709019FF0EC34F9922651990290008E08AD55CC17140B2DED9000
+read_resp_plain = 60145F01
