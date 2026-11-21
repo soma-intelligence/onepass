@@ -37,8 +37,8 @@ End to end encrypted, kept on your devices and in your own private iCloud. Free,
 
 </div>
 
-> [!WARNING]
-> OnePass is **pre-release software (v0.3.x)** and has not had an external security audit yet (planned for milestone 8). Please don't keep real secrets in it until the first audited release. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use OnePass day to day.
+> [!IMPORTANT]
+> OnePass 1.0 is on the App Store for iPhone, iPad, Apple Watch, Mac and Vision Pro. Its core **has not had an external security audit yet** (planned for milestone 8): the design, the formal models and the tests are public, but no outside firm has reviewed them. Weigh that before OnePass holds your only copy of a secret, and keep an encrypted export. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use OnePass day to day.
 
 ## A quick tour
 
@@ -358,7 +358,7 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 
 #### Where each choice fits
 
-- **Pick OnePass if** you live in Apple's ecosystem, want a password manager whose code you and others can read, and want post-quantum encryption and agent access built in. Do not pick it yet for real secrets: it has no outside audit, no family sharing in a release, no Android or Windows app and no self-hosted server.
+- **Pick OnePass if** you live in Apple's ecosystem, want a password manager whose code you and others can read, and want post-quantum encryption and agent access built in. Wait if you need proof from outside: it has no external audit yet, no family sharing in a release, no Android or Windows app and no self-hosted server.
 - **Pick 1Password, NordPass, Dashlane or Keeper if** you need Android, Windows or Linux apps, family or business sharing today, and a longer track record. The tables above show how they differ on the points that can be checked.
 - **Pick Apple Passwords if** you want the simplest option and only use Apple devices, with Windows as an occasional second platform.
 - **Pick LastPass with care.** The 2022 breach is documented, and the vendor has since raised its iteration defaults ([LastPass][lp-support]).
