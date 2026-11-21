@@ -4,6 +4,7 @@
 
 pub mod bac;
 pub mod card_access;
+pub mod dg;
 pub mod pace;
 pub mod sm;
 
