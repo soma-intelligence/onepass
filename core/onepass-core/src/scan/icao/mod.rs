@@ -1,13 +1,17 @@
-//! ICAO 9303 part 11 chip access: BAC key derivation and secure messaging.
+//! ICAO 9303 part 11 chip access: BAC, PACE and secure messaging.
 //!
 //! Nothing here logs or prints key material or APDU bytes.
 
 pub mod bac;
+pub mod card_access;
+pub mod pace;
 pub mod sm;
 
 use std::fmt;
 
 pub use bac::{BacExchange, BacKeys, derive_bac_keys};
+pub use card_access::{PaceInfo, parse_card_access};
+pub use pace::{PaceCurve, PaceExchange, PaceRandom};
 pub use sm::{Cipher, SecureChannel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
