@@ -3,7 +3,7 @@
 > OnePass is an open source, post-quantum password manager for iPhone, iPad, Mac, Apple Watch and Vision Pro, made by Soma Labs. It keeps passwords, passkeys and TOTP codes end to end encrypted on the user's devices and in their own private iCloud (CloudKit). A Rust core does all the cryptography: Argon2id plus a 256-bit Secret Key, AES-256-GCM-SIV, hybrid ML-KEM-1024 + X25519 key wrapping, hybrid ML-DSA-87 + Ed25519 signatures and an SLH-DSA account identity. The apps are native SwiftUI and free on the App Store; the code is AGPL-3.0-or-later.
 
 - Platforms: iOS, iPadOS, macOS, watchOS and visionOS 26 or later; browser extension for Safari, Chrome and Firefox (Chrome and Firefox need the Mac app). No Android, Windows or Linux app.
-- Status: 1.0 on the App Store; latest source tag v0.3.0. No external security audit yet (planned for milestone 8).
+- Status: 1.0.2 on the App Store (2026-11-21); latest source tag v0.3.0. No external security audit yet (planned for milestone 8).
 - Sync: CloudKit only in released apps. A self-hostable sync server (mailbox, on Supabase) is in the repository and is work in progress.
 - Developer tools: MCP server for AI agents with per-request approval, SSH agent, a development CLI (`onepass`).
 - Several reference docs (security whitepaper, core, apps and extension READMEs) are written in French; guides and comparisons are in English.
