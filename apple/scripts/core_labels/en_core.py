@@ -6,6 +6,11 @@ OVERRIDE = {
     ("Base", "database"): "Database",
 }
 LABEL = {
+"Puce": "Chip",
+"Photo": "Photo",
+"Statut de la puce": "Chip status",
+"Lu le": "Read on",
+"Code du document": "Document code",
 "Numéro de TVA": "VAT number", "Immatriculation (SIRET, RCS)": "Company registration number",
 "Abonnement": "Subscription", "Accès API": "API access", "Acheté le": "Purchased on", "Adhésion": "Membership",
 "Adhésion le": "Member since", "Admin": "Admin", "Adresse": "Address", "Adresse MAC": "MAC address",
@@ -101,6 +106,9 @@ LABEL = {
 }
 # Menu options whose English differs (others display as stored).
 MENU = {
+"Authentifié par la puce": "Authenticated by the chip",
+"Lu sur la puce, signature non vérifiable": "Read from the chip, signature not verifiable",
+"Signature invalide": "Invalid signature",
 "2,4 GHz": "2.4 GHz", "Alarme": "Alarm", "Annuel": "Yearly", "Aucune": "None", "Autre": "Other",
 "Casier": "Locker", "Clé API": "API key", "Courant": "Checking", "Crédit": "Credit", "Diplomatique": "Diplomatic",
 "Débit": "Debit", "Désactivé": "Disabled", "Développement": "Development", "Féminin": "Female",

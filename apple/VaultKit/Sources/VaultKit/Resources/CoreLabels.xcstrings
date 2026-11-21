@@ -6841,6 +6841,96 @@
         }
       }
     },
+    "field.passport.chip_read_on" : {
+      "comment" : "Field of the passport template (core id chip_read_on).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read on"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído el"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu le"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letto il"
+          }
+        }
+      }
+    },
+    "field.passport.chip_status" : {
+      "comment" : "Field of the passport template (core id chip_status).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip status"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado del chip"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statut de la puce"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato del chip"
+          }
+        }
+      }
+    },
+    "field.passport.document_code" : {
+      "comment" : "Field of the passport template (core id document_code).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código del documento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code du document"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice del documento"
+          }
+        }
+      }
+    },
     "field.passport.expiry" : {
       "comment" : "Field of the passport template (core id expiry).",
       "extractionState" : "manual",
@@ -7137,6 +7227,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tipo"
+          }
+        }
+      }
+    },
+    "field.passport.portrait" : {
+      "comment" : "Field of the passport template (core id portrait).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto"
           }
         }
       }
@@ -10771,6 +10891,36 @@
         }
       }
     },
+    "menu.Authentifié par la puce" : {
+      "comment" : "Option of a menu field (stored value stays French).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Authenticated by the chip"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autenticado por el chip"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Authentifié par la puce"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autenticato dal chip"
+          }
+        }
+      }
+    },
     "menu.Autre" : {
       "comment" : "Option of a menu field (stored value stays French).",
       "extractionState" : "manual",
@@ -11187,6 +11337,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Software"
+          }
+        }
+      }
+    },
+    "menu.Lu sur la puce, signature non vérifiable" : {
+      "comment" : "Option of a menu field (stored value stays French).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read from the chip, signature not verifiable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído del chip, firma no verificable"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu sur la puce, signature non vérifiable"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letto dal chip, firma non verificabile"
           }
         }
       }
@@ -11637,6 +11817,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Di servizio"
+          }
+        }
+      }
+    },
+    "menu.Signature invalide" : {
+      "comment" : "Option of a menu field (stored value stays French).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid signature"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma no válida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signature invalide"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma non valida"
           }
         }
       }
@@ -12507,6 +12717,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tessera"
+          }
+        }
+      }
+    },
+    "section.passport.chip" : {
+      "comment" : "Section of the passport template (core id chip).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puce"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip"
           }
         }
       }

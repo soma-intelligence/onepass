@@ -6,6 +6,7 @@
 use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
 
+use crate::error::{Error, ValidationError};
 use crate::id::Id;
 use crate::model::field::{Field, FieldValue};
 use crate::model::item::Item;
@@ -149,7 +150,9 @@ fn field_mut<'a>(item: &'a mut Item, id: &str) -> Option<&'a mut Field> {
 /// A new passport item from a chip read, titled "Passeport" and the ICAO
 /// issuing state code. The portrait is not stored here: the app attaches it.
 pub fn chip_read_to_item(read: &ChipRead, vault_id: Id, today: Date) -> Item {
-    let title = format!("Passeport {}", read.mrz.issuing_state);
+    let title = format!("Passeport {}", read.mrz.issuing_state.trim())
+        .trim()
+        .to_string();
     let mut item = new_item(ItemType::Passport, vault_id, &title);
     for (id, v) in identity_values(read, today)
         .into_iter()
@@ -162,6 +165,16 @@ pub fn chip_read_to_item(read: &ChipRead, vault_id: Id, today: Date) -> Item {
     item
 }
 
+/// Empty, or text-like and blank (as `validate` counts it).
+fn is_blank(v: &FieldValue) -> bool {
+    match v {
+        FieldValue::Empty => true,
+        FieldValue::Text(s) | FieldValue::Menu(s) => s.trim().is_empty(),
+        FieldValue::Concealed(s) => s.trim().is_empty(),
+        _ => false,
+    }
+}
+
 /// Display form of a value, for comparison and conflict reports.
 fn shown(v: &FieldValue) -> String {
     match v {
@@ -172,11 +185,12 @@ fn shown(v: &FieldValue) -> String {
     }
 }
 
-/// Merges a later chip read into an existing passport item (spec 6.1).
+/// Merges a later chip read into an existing passport item (spec 6.1). Fails
+/// with a validation error when `existing` is not a passport.
 ///
-/// Rule: identity fields that are empty are filled; a non-empty stored value
+/// Rule: identity fields that are empty or blank are filled; a non-empty stored value
 /// is a user edit and is kept, and when it differs from the scanned one (ignoring
-/// case and surrounding spaces) a `FieldConflict` is reported. The chip section
+/// case, Unicode-aware, and surrounding spaces) a `FieldConflict` is reported. The chip section
 /// (`chip_status`, `chip_read_on`, `document_code`) is machine data and is always
 /// refreshed from the read. Items created before the chip fields existed get the
 /// missing sections and fields added first. Title and everything else are kept.
@@ -184,7 +198,13 @@ pub fn merge_chip_read(
     existing: &Item,
     read: &ChipRead,
     today: Date,
-) -> (Item, Vec<FieldConflict>) {
+) -> Result<(Item, Vec<FieldConflict>), Error> {
+    if existing.item_type != ItemType::Passport {
+        return Err(Error::Validation(ValidationError {
+            field: "item_type".into(),
+            reason: "not a passport",
+        }));
+    }
     let mut item = existing.clone();
     for ts in template(ItemType::Passport) {
         match item.sections.iter_mut().find(|s| s.id == ts.id) {
@@ -206,12 +226,12 @@ pub fn merge_chip_read(
         let Some(f) = field_mut(&mut item, id) else {
             continue;
         };
-        if f.value == FieldValue::Empty {
+        if is_blank(&f.value) {
             f.value = scanned;
             continue;
         }
         let (a, b) = (shown(&f.value), shown(&scanned));
-        if !a.trim().eq_ignore_ascii_case(b.trim()) {
+        if a.trim().to_lowercase() != b.trim().to_lowercase() {
             conflicts.push(FieldConflict {
                 field_id: id.into(),
                 stored: a,
@@ -225,7 +245,7 @@ pub fn merge_chip_read(
         }
     }
     item.updated_at = OffsetDateTime::now_utc();
-    (item, conflicts)
+    Ok((item, conflicts))
 }
 
 #[cfg(test)]
@@ -375,7 +395,7 @@ mod tests {
             "chip_status",
             FieldValue::Menu("Signature invalide".into()),
         );
-        let (merged, conflicts) = merge_chip_read(&item, &read, today);
+        let (merged, conflicts) = merge_chip_read(&item, &read, today).unwrap();
         // Same id, user title kept.
         assert_eq!(merged.id, item.id);
         assert_eq!(merged.title, "Mon passeport");
@@ -403,9 +423,68 @@ mod tests {
         let mut item = new_item(ItemType::Passport, Id::new(), "Ancien");
         item.sections.retain(|s| s.id != "chip");
         item.sections[0].fields.retain(|f| f.id != "portrait");
-        let (merged, conflicts) = merge_chip_read(&item, &specimen(ChipStatus::Verified), today);
+        let (merged, conflicts) =
+            merge_chip_read(&item, &specimen(ChipStatus::Verified), today).unwrap();
         assert!(conflicts.is_empty());
         assert_eq!(text(&merged, "document_code"), "P");
         assert_eq!(get(&merged, "portrait"), FieldValue::Empty);
+    }
+
+    #[test]
+    fn merge_rejects_non_passport() {
+        let item = new_item(ItemType::Login, Id::new(), "Site");
+        let r = merge_chip_read(
+            &item,
+            &specimen(ChipStatus::Verified),
+            date!(2026 - 11 - 21),
+        );
+        assert!(matches!(r, Err(Error::Validation(_))));
+    }
+
+    #[test]
+    fn apostrophe_name_and_sex_x() {
+        let mut r = specimen(ChipStatus::Verified);
+        r.mrz.surname = "O'BRIEN".into();
+        r.mrz.sex = 'X';
+        let it = chip_read_to_item(&r, Id::new(), date!(2026 - 11 - 21));
+        assert_eq!(text(&it, "last_name"), "O'Brien");
+        assert_eq!(text(&it, "sex"), "Autre");
+    }
+
+    #[test]
+    fn empty_issuing_state_gives_trimmed_title() {
+        let mut r = specimen(ChipStatus::Verified);
+        r.mrz.issuing_state = String::new();
+        let it = chip_read_to_item(&r, Id::new(), date!(2026 - 11 - 21));
+        assert_eq!(it.title, "Passeport");
+    }
+
+    #[test]
+    fn merge_of_same_read_has_no_conflicts() {
+        let today = date!(2026 - 11 - 21);
+        let read = specimen(ChipStatus::Verified);
+        let item = chip_read_to_item(&read, Id::new(), today);
+        let (merged, conflicts) = merge_chip_read(&item, &read, today).unwrap();
+        assert!(conflicts.is_empty());
+        assert_eq!(merged.sections, item.sections);
+    }
+
+    #[test]
+    fn merge_fills_empty_dates_and_blank_text_and_compares_unicode_case() {
+        let today = date!(2026 - 11 - 21);
+        let mut read = specimen(ChipStatus::Verified);
+        read.mrz.given_names = "ÉRIC".into();
+        let mut item = new_item(ItemType::Passport, Id::new(), "P");
+        set(&mut item, "last_name", FieldValue::Text("  ".into()));
+        set(&mut item, "first_names", FieldValue::Text("éric".into()));
+        let (m, c) = merge_chip_read(&item, &read, today).unwrap();
+        assert!(c.is_empty());
+        assert_eq!(text(&m, "last_name"), "Eriksson");
+        assert_eq!(text(&m, "first_names"), "éric");
+        assert_eq!(
+            get(&m, "birth_date"),
+            FieldValue::Date(date!(1974 - 08 - 12))
+        );
+        assert_eq!(get(&m, "expiry"), FieldValue::Date(date!(2012 - 04 - 15)));
     }
 }
