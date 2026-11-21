@@ -53,7 +53,7 @@ p384 = { version = "0.14", default-features = false, features = ["arithmetic", "
 bp256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
 bp384 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
 ecdsa = { version = "0.17", default-features = false, features = ["algorithm", "digest"] }
-rsa = { version = "0.10", default-features = false, features = ["std"] }
+rsa = { version = "0.10", default-features = false, features = ["std", "pkcs1v15"] }
 sha1 = "0.11"
 sha2 = "0.11"
 

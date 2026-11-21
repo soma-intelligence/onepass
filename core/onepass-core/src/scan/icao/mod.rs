@@ -1,18 +1,23 @@
-//! ICAO 9303 part 11 chip access: BAC, PACE and secure messaging.
+//! ICAO 9303 part 11 chip access: BAC, PACE and secure messaging, then
+//! passive authentication against a CSCA master list.
 //!
 //! Nothing here logs or prints key material or APDU bytes.
 
 pub mod bac;
 pub mod card_access;
 pub mod dg;
+pub mod master_list;
 pub mod pace;
+pub mod passive_auth;
 pub mod sm;
 
 use std::fmt;
 
 pub use bac::{BacExchange, BacKeys, derive_bac_keys};
 pub use card_access::{PaceInfo, parse_card_access};
+pub use master_list::{MasterList, load_master_list};
 pub use pace::{PaceCurve, PaceExchange, PaceRandom};
+pub use passive_auth::{ChipStatus, verify_sod};
 pub use sm::{Cipher, SecureChannel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
