@@ -16,7 +16,7 @@ use std::fmt;
 
 pub use bac::{BacExchange, BacKeys, derive_bac_keys};
 pub use card_access::{PaceInfo, parse_card_access};
-pub use master_list::{MasterList, load_master_list};
+pub use master_list::{MasterList, load_master_list, load_master_list_pinned};
 pub use pace::{PaceCurve, PaceExchange, PaceRandom};
 pub use passive_auth::{ChipStatus, verify_sod};
 pub use session::{AccessKey, ChipRead, IcaoSession, Step};

@@ -21,7 +21,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use onepass_core::scan::icao::dg::{ImageFormat, Portrait};
 use onepass_core::scan::icao::{
-    AccessKey, ChipRead, ChipStatus, IcaoError, IcaoSession, Step, load_master_list,
+    AccessKey, ChipRead, ChipStatus, IcaoError, IcaoSession, MasterList, Step, load_master_list,
+    load_master_list_pinned,
 };
 use onepass_core::scan::mrz::{Mrz, MrzError, parse_td3};
 use onepass_core::scan::to_item::{chip_read_to_item, merge_chip_read};
@@ -242,12 +243,21 @@ impl fmt::Debug for FfiIcaoSession {
 impl FfiIcaoSession {
     fn build(
         mrz_lines: &[String],
-        master_list: &[u8],
+        master_list: MasterList,
         today: Date,
     ) -> Result<IcaoSession, OnePassError> {
         let mrz = parse_lines(mrz_lines)?;
-        let ml = load_master_list(master_list).map_err(|_| invalid("master list"))?;
-        Ok(IcaoSession::new(AccessKey::Mrz(mrz), ml, today))
+        Ok(IcaoSession::new(AccessKey::Mrz(mrz), master_list, today))
+    }
+
+    fn strict(master_list: &[u8]) -> Result<MasterList, OnePassError> {
+        load_master_list(master_list).map_err(|_| invalid("master list"))
+    }
+
+    fn wrap(session: IcaoSession) -> Arc<Self> {
+        Arc::new(FfiIcaoSession {
+            inner: Mutex::new(session),
+        })
     }
 
     fn lock(&self) -> MutexGuard<'_, IcaoSession> {
@@ -265,10 +275,26 @@ impl FfiIcaoSession {
     /// against this CSCA master list (CMS, ICAO 9303-12) at today's date.
     #[uniffi::constructor]
     pub fn new(mrz_lines: Vec<String>, master_list: Vec<u8>) -> Result<Arc<Self>, OnePassError> {
-        let session = Self::build(&mrz_lines, &master_list, OffsetDateTime::now_utc().date())?;
-        Ok(Arc::new(FfiIcaoSession {
-            inner: Mutex::new(session),
-        }))
+        let ml = Self::strict(&master_list)?;
+        let session = Self::build(&mrz_lines, ml, OffsetDateTime::now_utc().date())?;
+        Ok(Self::wrap(session))
+    }
+
+    /// As `new`, for a master list the app ships whose signer chain the core
+    /// cannot verify (the BSI list): its bytes must hash to
+    /// `master_list_sha256` (32 bytes), the list signer is not checked.
+    #[uniffi::constructor]
+    pub fn new_pinned(
+        mrz_lines: Vec<String>,
+        master_list: Vec<u8>,
+        master_list_sha256: Vec<u8>,
+    ) -> Result<Arc<Self>, OnePassError> {
+        let pin: [u8; 32] = master_list_sha256
+            .try_into()
+            .map_err(|_| invalid("master list digest"))?;
+        let ml = load_master_list_pinned(&master_list, &pin).map_err(|_| invalid("master list"))?;
+        let session = Self::build(&mrz_lines, ml, OffsetDateTime::now_utc().date())?;
+        Ok(Self::wrap(session))
     }
 
     /// The first command.
@@ -332,10 +358,9 @@ impl FfiIcaoSession {
             pace_map_sk: random.pace_map_sk,
             pace_eph_sk: random.pace_eph_sk,
         };
-        let session = Self::build(&mrz_lines, &master_list, today)?.with_rng(rng);
-        Ok(Arc::new(FfiIcaoSession {
-            inner: Mutex::new(session),
-        }))
+        let ml = Self::strict(&master_list)?;
+        let session = Self::build(&mrz_lines, ml, today)?.with_rng(rng);
+        Ok(Self::wrap(session))
     }
 }
 

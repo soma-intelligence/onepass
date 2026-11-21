@@ -243,3 +243,31 @@ fn merge_chip_keeps_user_edits_and_reports_conflicts() {
         .unwrap();
     assert!(s.merge_chip(login, read(FfiChipStatus::Verified)).is_err());
 }
+
+/// The app's path: the shipped BSI list (its signer is not verifiable by
+/// the core), pinned by its SHA-256.
+#[test]
+fn pinned_session_takes_the_shipped_master_list() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../apple/App/Resources/csca-masterlist.ml"
+    );
+    let ml = std::fs::read(path).unwrap();
+    let pin = unhex("2bc0f28b35d83f2fc2d1495b1c715add358dfb9ba343e9788bc27a19ced13a9f");
+    // The strict constructor refuses it.
+    assert!(FfiIcaoSession::new(specimen(), ml.clone()).is_err());
+    let s = FfiIcaoSession::new_pinned(specimen(), ml.clone(), pin.clone()).unwrap();
+    assert_eq!(
+        s.start(),
+        FfiIcaoStep::Send {
+            apdu: unhex("00A4020C02011C")
+        }
+    );
+    let mut wrong = pin.clone();
+    wrong[31] ^= 1;
+    assert!(matches!(
+        FfiIcaoSession::new_pinned(specimen(), ml.clone(), wrong),
+        Err(OnePassError::InvalidInput { what }) if what == "master list"
+    ));
+    assert!(FfiIcaoSession::new_pinned(specimen(), ml, pin[..31].to_vec()).is_err());
+}
