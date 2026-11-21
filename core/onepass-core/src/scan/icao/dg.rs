@@ -9,7 +9,8 @@ use super::IcaoError;
 use crate::scan::mrz::{Mrz, parse_td3};
 use crate::scan::tlv;
 
-/// Tags of the data groups listed in EF.COM, in file order.
+/// LDS tags of the data groups listed in EF.COM, in file order. These are
+/// tags (0x61 = DG1, 0x75 = DG2, 0x63 = DG3), not data group numbers.
 pub fn parse_com(b: &[u8]) -> Result<Vec<u8>, IcaoError> {
     let body = tlv::find(b, &[0x60]).ok_or(IcaoError::Protocol("EF.COM has no tag 60"))?;
     let list = tlv::find(body, &[0x5C]).ok_or(IcaoError::Protocol("EF.COM has no tag list"))?;
@@ -19,11 +20,13 @@ pub fn parse_com(b: &[u8]) -> Result<Vec<u8>, IcaoError> {
 /// The MRZ held in DG1 (`61` / `5F1F`), TD3 only.
 pub fn parse_dg1(b: &[u8]) -> Result<Mrz, IcaoError> {
     let mrz = tlv::find(b, &[0x61, 0x5F1F]).ok_or(IcaoError::Protocol("DG1 has no MRZ"))?;
-    let text = std::str::from_utf8(mrz).map_err(|_| IcaoError::Protocol("DG1 MRZ is not text"))?;
-    if text.len() != 88 {
+    if !mrz.is_ascii() || mrz.len() != 88 {
         return Err(IcaoError::Protocol("DG1 MRZ is not TD3"));
     }
-    parse_td3(&[&text[..44], &text[44..]]).map_err(|_| IcaoError::Protocol("DG1 MRZ is invalid"))
+    let (l1, l2) = mrz.split_at(44);
+    let l1 = std::str::from_utf8(l1).map_err(|_| IcaoError::Protocol("DG1 MRZ is not text"))?;
+    let l2 = std::str::from_utf8(l2).map_err(|_| IcaoError::Protocol("DG1 MRZ is not text"))?;
+    parse_td3(&[l1, l2]).map_err(|_| IcaoError::Protocol("DG1 MRZ is invalid"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,18 +53,35 @@ const JP2_BOX: [u8; 12] = [
 ];
 const J2K_CODESTREAM: [u8; 4] = [0xFF, 0x4F, 0xFF, 0x51];
 
-/// First image start in an ISO 19794-5 block, with its format.
+/// Format of an image starting at `rest`, if it begins with a known marker.
+fn image_format(rest: &[u8]) -> Option<ImageFormat> {
+    if rest.starts_with(&JPEG_SOI) {
+        Some(ImageFormat::Jpeg)
+    } else if rest.starts_with(&JP2_BOX) || rest.starts_with(&J2K_CODESTREAM) {
+        Some(ImageFormat::Jpeg2000)
+    } else {
+        None
+    }
+}
+
+/// Image start in an ISO/IEC 19794-5 block, with its format.
+///
+/// With the `FAC\0` magic the structure is walked: 14-byte general header,
+/// 20-byte facial information (feature point count N at offsets 4..6),
+/// 8 * N bytes of feature points, 12-byte image information, then the image,
+/// which must begin with a known marker. Only when the magic is missing
+/// (a non-conforming chip) does it fall back to scanning for the first
+/// JPEG, JPEG 2000 or codestream marker.
 fn find_image(block: &[u8]) -> Option<(usize, ImageFormat)> {
-    (0..block.len()).find_map(|i| {
-        let rest = &block[i..];
-        if rest.starts_with(&JPEG_SOI) {
-            Some((i, ImageFormat::Jpeg))
-        } else if rest.starts_with(&JP2_BOX) || rest.starts_with(&J2K_CODESTREAM) {
-            Some((i, ImageFormat::Jpeg2000))
-        } else {
-            None
-        }
-    })
+    if block.starts_with(b"FAC\x00") {
+        let count = usize::from(u16::from_be_bytes([*block.get(18)?, *block.get(19)?]));
+        let at = 14usize
+            .checked_add(20)?
+            .checked_add(count.checked_mul(8)?)?
+            .checked_add(12)?;
+        return image_format(block.get(at..)?).map(|f| (at, f));
+    }
+    (0..block.len()).find_map(|i| image_format(&block[i..]).map(|f| (i, f)))
 }
 
 /// The portrait held in DG2 (`75` / `7F61` / `7F60` / `5F2E` or `7F2E`).
@@ -110,27 +130,40 @@ mod tests {
         v
     }
 
-    /// ISO 19794-5 block: "FAC\0" header, facial header, one feature-free
-    /// image info record, then the image.
-    fn face_block(image: &[u8]) -> Vec<u8> {
+    /// ISO 19794-5 block: 14-byte general header, 20-byte facial
+    /// information with `features` feature points (filled with `fill`),
+    /// 12-byte image information, then the image.
+    fn face_block_with(image: &[u8], features: usize, fill: &[u8]) -> Vec<u8> {
         let mut v = b"FAC\x00010\x00".to_vec();
-        v.extend([0, 0, 0, 0, 0, 0, 0, 1]); // length (ignored) + face count
-        v.extend([0u8; 20]); // facial header, image info
+        v.extend([0, 0, 0, 0]); // record length (unchecked)
+        v.extend([0, 1]); // one face
+        let mut info = [0u8; 20];
+        info[4..6].copy_from_slice(&(features as u16).to_be_bytes());
+        v.extend(info);
+        for i in 0..features * 8 {
+            v.push(fill[i % fill.len()]);
+        }
+        v.extend([0u8; 12]);
         v.extend_from_slice(image);
         v
     }
 
+    fn face_block(image: &[u8]) -> Vec<u8> {
+        face_block_with(image, 0, &[0])
+    }
+
     fn dg2(block_tag: u32, image: &[u8]) -> Vec<u8> {
-        let bit = tlv::encode(
-            0x7F60,
-            &[
-                tlv::encode(0xA1, &[0x80, 0x02, 0x01, 0x01]).as_slice(),
-                tlv::encode(block_tag, &face_block(image)).as_slice(),
-            ]
-            .concat(),
-        );
-        let group = tlv::encode(0x7F61, &[tlv::encode(0x02, &[1]), bit].concat());
-        tlv::encode(0x75, &group)
+        dg2_blocks(&[(block_tag, face_block(image))])
+    }
+
+    fn dg2_blocks(blocks: &[(u32, Vec<u8>)]) -> Vec<u8> {
+        let mut inner = tlv::encode(0x02, &[blocks.len() as u8]);
+        for (tag, block) in blocks {
+            let header = tlv::encode(0xA1, &[0x80, 0x02, 0x01, 0x01]);
+            let data = tlv::encode(*tag, block);
+            inner.extend(tlv::encode(0x7F60, &[header, data].concat()));
+        }
+        tlv::encode(0x75, &tlv::encode(0x7F61, &inner))
     }
 
     #[test]
@@ -195,5 +228,54 @@ mod tests {
         };
         let s = format!("{p:?}");
         assert!(s.contains("3 bytes") && !s.contains("222") && !s.contains("DE"));
+    }
+
+    #[test]
+    fn dg1_rejects_non_ascii() {
+        // 2-byte char at bytes 43..45, total 88 bytes.
+        let mut m = MRZ.as_bytes().to_vec();
+        m.splice(43..45, "\u{e9}".bytes());
+        assert_eq!(m.len(), 88);
+        let dg1 = tlv::encode(0x61, &tlv::encode(0x5F1F, &m));
+        assert!(parse_dg1(&dg1).is_err());
+    }
+
+    #[test]
+    fn dg2_ignores_marker_bytes_inside_header() {
+        let img = jpeg();
+        let fp = [0xFF, 0xD8, 0xFF, 0xE0, 0x11, 0x22, 0x33, 0x44];
+        let block = face_block_with(&img, 2, &fp);
+        let p = parse_dg2(&dg2_blocks(&[(0x5F2E, block)])).unwrap();
+        assert_eq!(p.bytes, img);
+    }
+
+    #[test]
+    fn dg2_takes_second_template_when_first_has_no_image() {
+        let img = jp2();
+        let first = face_block(&[1, 2, 3, 4]);
+        let second = face_block(&img);
+        let p = parse_dg2(&dg2_blocks(&[(0x5F2E, first), (0x5F2E, second)])).unwrap();
+        assert_eq!(p.format, ImageFormat::Jpeg2000);
+        assert_eq!(p.bytes, img);
+    }
+
+    #[test]
+    fn dg2_fac_block_with_bad_marker_is_rejected() {
+        // A JPEG marker hidden after a wrong offset must not be found.
+        let mut block = face_block(&[0, 0, 0, 0]);
+        block.extend(jpeg());
+        assert!(parse_dg2(&dg2_blocks(&[(0x5F2E, block)])).is_err());
+    }
+
+    #[test]
+    fn truncated_inputs_are_errors() {
+        let full = dg2(0x5F2E, &jpeg());
+        assert!(parse_dg2(&full[..full.len() - 10]).is_err());
+        assert!(parse_dg2(&full[..5]).is_err());
+        let block = face_block_with(&jpeg(), 0, &[0]);
+        assert!(parse_dg2(&dg2_blocks(&[(0x5F2E, block[..20].to_vec())])).is_err());
+        let com = tlv::encode(0x60, &tlv::encode(0x5C, &[0x61]));
+        assert!(parse_com(&com[..com.len() - 1]).is_err());
+        assert!(parse_com(&[]).is_err());
     }
 }
