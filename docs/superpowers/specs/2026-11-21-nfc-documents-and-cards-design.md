@@ -1,6 +1,6 @@
 # Pièces d'identité lues par NFC, rendu « document » animé, cartes bancaires par NFC
 
-Date : 2026-11-21. Statut : besoin validé par le fondateur en conversation (lecture des pièces d'identité, beau rendu animé des passeports et cartes FR et US, ajout de carte bancaire par NFC). Spec à relire avant le plan.
+Date : 2026-11-21. Statut : besoin validé par le fondateur en conversation (lecture des pièces d'identité, beau rendu animé des passeports et cartes FR et US, ajout de carte bancaire par NFC). Questions ouvertes tranchées le 2026-11-21 (section 12). Spec à relire avant le plan.
 
 ## 1. But
 
@@ -118,7 +118,7 @@ Erreurs, chaque fois avec une action :
 
 ### 6.3 Permis et State ID américains
 
-Caméra sur le verso, lecture du PDF417 avec `DataScannerViewController` (symbologie `.pdf417`). Le noyau parse l'AAMVA. Statut « Lu depuis le code-barres » (non signé). Le recto est pris en photo pour `scan_front` (le portrait n'est pas dans le code-barres).
+Caméra sur le verso, lecture du PDF417 avec `DataScannerViewController` (symbologie `.pdf417`). Le noyau parse l'AAMVA. Statut « Lu depuis le code-barres » (non signé). Le recto est pris en photo pour `scan_front` (le portrait n'est pas dans le code-barres). Vision (`VNDetectFaceRectanglesRequest`) détecte le visage sur ce scan et découpe le portrait (cadre du visage agrandi de 60 %, rapport 3:4) dans `portrait`. Sans visage détecté, ou si l'utilisateur choisit « Garder le scan entier », `portrait` reste vide et le rendu montre une vignette du scan.
 
 Les autres permis (FR, UE) : photo recto et verso, OCR, statut « Saisi ».
 
@@ -189,8 +189,8 @@ Le statut est figé à la date de lecture : « Authentifié par la puce le 21 no
 
 Ajouts aux modèles existants, rétrocompatibles (champs optionnels, anciens éléments inchangés) :
 
-- `IdCard` et `Passport` : `portrait` (fichier, photo de la puce, JPEG ; un JPEG 2000 est converti en JPEG sur l'appareil avant chiffrement), `signature_image` (fichier, DG7, optionnel), `chip_status` (menu caché : valeurs de la section 7.3), `chip_read_on` (date), `document_code` (texte, P, PD, PS, ID ; alimente `passport_type`).
-- `DriverLicense` : `portrait` (fichier, découpé du scan recto si l'utilisateur accepte), `chip_status` (`barcode` ou `manual`), `document_discriminator` (texte, champ AAMVA DCF).
+- `IdCard` et `Passport` : `portrait` (fichier, photo de la puce, JPEG ; un JPEG 2000 est converti en JPEG sur l'appareil avant chiffrement), `signature_image` (fichier, DG7, lu s'il existe), `show_signature` (oui ou non, caché, non par défaut : interrupteur « Afficher la signature » dans le détail ; sans lui, le rendu ne montre pas la signature), `chip_status` (menu caché : valeurs de la section 7.3), `chip_read_on` (date), `document_code` (texte, P, PD, PS, ID ; alimente `passport_type`).
+- `DriverLicense` : `portrait` (fichier, découpé automatiquement du scan recto, section 6.3), `chip_status` (`barcode` ou `manual`), `document_discriminator` (texte, champ AAMVA DCF).
 - `CreditCard` : aucun nouveau champ. `card_type` reçoit la liste des réseaux lus.
 - Les noms et prénoms MRZ (majuscules, `<`) sont remplacés par ceux de DG11 si présents, sinon remis en casse lisible (« DUPONT JEAN PIERRE » devient « Dupont », « Jean Pierre »).
 - Choix de la famille de rendu : calculé à l'affichage depuis le type et le pays (code ICAO à trois lettres), rien n'est stocké.
@@ -219,9 +219,9 @@ Ajouts aux modèles existants, rétrocompatibles (champs optionnels, anciens él
 
 Chaque phase est livrable seule.
 
-## 12. Questions ouvertes
+## 12. Décisions (2026-11-21)
 
-1. **Noyau ou bibliothèque Swift ?** La spec met BAC, PACE et la vérification dans le noyau Rust (testable sans appareil, repris par Android). L'alternative rapide est d'embarquer `NFCPassportReader` (Swift, MIT, OpenSSL) dans `apple/Vendor`. Recommandation : le noyau, en se servant de `NFCPassportReader` comme référence pour les détails propres aux appareils.
-2. **Photo du permis US** : découper automatiquement le portrait du scan recto (Vision, détection de visage), ou laisser le scan entier ?
-3. **Garder ou non la signature manuscrite (DG7)** : elle est utile pour le rendu, mais c'est une donnée de plus à protéger. Proposition : la lire, mais l'afficher seulement si l'utilisateur l'active.
-4. **Nom de la mention** : « Copie numérique, non officielle » convient-il, ou faut-il un libellé plus court sur la carte ID-1 ?
+1. **Lecture de la puce dans le noyau Rust.** BAC, PACE, secure messaging, décodage des DG et authentification passive vivent dans `core/onepass-core/src/scan/`. `NFCPassportReader` (Swift, MIT) sert seulement de référence pour les particularités des appareils, il n'est pas embarqué.
+2. **Portrait du permis US recadré automatiquement** par Vision depuis le scan recto (section 6.3). L'utilisateur peut garder le scan entier.
+3. **Signature manuscrite (DG7) lue, affichée seulement sur demande.** Stockée chiffrée dans `signature_image`, masquée par défaut, interrupteur « Afficher la signature » dans le détail de l'élément (section 9).
+4. **Mention « Copie numérique, non officielle »** partout, sur le livret comme sur la carte ID-1. En anglais : « Digital copy, not an official document ».
