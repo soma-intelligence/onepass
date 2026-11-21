@@ -410,6 +410,10 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           awaitUnlock: (t) => overlays.awaitUnlock(t),
         },
         neverOffer: (site) => neverSave.has(site),
+        autoGate: {
+          mayOffer: async (cs, signedIn) => (autoPillRef.current ? autoPillRef.current.mayOffer(cs.tabId, cs.origin, signedIn) : true),
+          offered: async (cs) => autoPillRef.current?.offered(cs.tabId, cs.origin),
+        },
         cross: (cs, itemId) => crossForChain(cs, itemId),
         menuOpen: (t) => menus.hasTab(t),
         replan: (cs, itemId) => replanForChain(cs, itemId),

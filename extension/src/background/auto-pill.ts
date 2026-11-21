@@ -175,6 +175,29 @@ export class AutoPill {
     }
   }
 
+  /**
+   * The chain's own offer of the card (driver.ts `offerOverlay`) goes through this gate: nothing on
+   * a signed-in page, with the setting off, on a never-listed site, or where a card already showed
+   * for this site in this tab (closed with x included, across a reload).
+   */
+  async mayOffer(tabId: number, origin: string, signedIn: boolean): Promise<boolean> {
+    if (signedIn) return false;
+    const site = parseOrigin(origin)?.site;
+    if (!site) return true;
+    if (await this.wasShown(`${tabId}|${site}`)) return false;
+    const settings = await readAutoPill(this.deps.local);
+    return settings.enabled && !settings.never.includes(site);
+  }
+
+  /** The chain's offer showed the card: the same as one shown by itself, for this site and tab. */
+  async offered(tabId: number, origin: string): Promise<void> {
+    const site = parseOrigin(origin)?.site;
+    if (!site) return;
+    const key = `${tabId}|${site}`;
+    this.shown.add(key);
+    await this.edit((list) => (list.includes(key) ? list : [...list, key]));
+  }
+
   /** "Never on this site", for the registrable domain of `origin`. */
   async never(origin: string): Promise<void> {
     const site = parseOrigin(origin)?.site;

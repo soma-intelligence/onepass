@@ -165,6 +165,15 @@ export interface ChainDeps {
   /** The user set "never offer here" for this registrable domain (never-save.ts): no generic card there. */
   neverOffer?: (site: string) => Promise<boolean>;
   /**
+   * The card that shows by itself has one gate (auto-pill.ts): once per site and tab (x keeps it
+   * closed across a reload), never on a signed-in page, never with the setting off or the site in
+   * the never-list. The offer below asks it first and tells it when it showed. Absent: no gate.
+   */
+  autoGate?: {
+    mayOffer(cs: CsContext, signedIn: boolean): Promise<boolean>;
+    offered(cs: CsContext): Promise<void>;
+  };
+  /**
    * A plan of the page in frame `cs` for the chain's item (`plan_fill` on the
    * page context the content script reports), or null when the plan has no
    * login group of that item. Absent: an unknown page stops the chain.
@@ -969,6 +978,9 @@ export class ChainRunner implements ChainDriver {
     const offers = sso ? (it: Summary) => signsInWith(it, sso.providers) : passkey ? () => false : canSignIn;
     const seen = this.seen(cs.tabId, cs.documentId ?? `${cs.origin}#${this.navs.get(cs.tabId) ?? 0}`);
     if (seen.closed || seen.shapes.has(shape) || seen.shapes.size >= MAX_OFFERS) return;
+    // The same gate as the card that shows by itself: one card per site and tab, none where a
+    // session is open (real-site bench 2026-11-21: x then a reload brought this offer back).
+    if (this.deps.autoGate && !(await this.deps.autoGate.mayOffer(cs, a.signedIn === true))) return;
     seen.shapes.add(shape);
     // One surface: the user is in the inline menu, which offers the same sign-ins.
     if (await this.deps.menuOpen?.(cs.tabId)) return;
@@ -986,6 +998,7 @@ export class ChainRunner implements ChainDriver {
     }
     // Not shown for want of the host or the content script: the next analysis may retry.
     if (!shown) seen.shapes.delete(shape);
+    else await this.deps.autoGate?.offered(cs).catch(() => undefined);
   }
 
   // ---- state and timers ----

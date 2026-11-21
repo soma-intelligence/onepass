@@ -175,3 +175,18 @@ paired.describe("english", () => {
     await expect(overlay.locator(".ov-cancel")).toHaveAttribute("aria-label", "Cancel");
   });
 });
+
+// Real-site bench, 2026-11-21 (cloudflare.com): the card closed with x came back after a reload.
+paired("card_closed_with_x_stays_closed_after_reload", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/login`);
+  const overlay = await ext.extFrame(page, "overlay");
+  await ext.settle();
+  await overlay.locator(".ov-pill .ov-close").click();
+  await expect.poll(() => ext.findExtFrame(page, "overlay")).toBeUndefined();
+  await page.reload();
+  await page.locator("#email").waitFor();
+  // Long enough for the page to be read and the card to come back if it were going to.
+  await new Promise((r) => setTimeout(r, 4_000));
+  expect(ext.findExtFrame(page, "overlay")).toBeUndefined();
+});

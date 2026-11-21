@@ -314,6 +314,12 @@ export function createIcons(opts: IconsOptions): Icons {
         if (hit.length === 0) break;
         left = Math.min(...hit.map((o) => o.left)) - size - 4;
       }
+      // No room left inside the field (several managers' icons, real-site bench 2026-11-21): no
+      // icon rather than one over the page's label or the next field; the menu still opens on focus.
+      if (r.width >= NARROW_FIELD && left < r.left + ICON_INSET) {
+        icon.hidden = true;
+        return null;
+      }
     }
     // Client coordinates to the fixed layer's (iOS with the keyboard up: not the same).
     const o = shell.origin();
