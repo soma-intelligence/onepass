@@ -53,6 +53,11 @@ pub fn menu_options(t: ItemType, field_id: &str) -> &'static [&'static str] {
             &["Féminin", "Masculin", "Autre"]
         }
         (T::Passport, "passport_type") => &["Ordinaire", "Diplomatique", "Service", "Autre"],
+        (T::Passport, "chip_status") => &[
+            "Authentifié par la puce",
+            "Lu sur la puce, signature non vérifiable",
+            "Signature invalide",
+        ],
         (T::MedicalRecord, "blood_type") => &["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
         (T::Insurance, "insurance_type") => &[
             "Auto",
@@ -95,8 +100,8 @@ mod tests {
                 }
             }
         }
-        // 27 menus with their own options and 8 yes/no switches.
-        assert_eq!(seen, 35, "templates changed shape: {seen}");
+        // 28 menus with their own options and 8 yes/no switches.
+        assert_eq!(seen, 36, "templates changed shape: {seen}");
     }
 
     #[test]

@@ -622,27 +622,41 @@ fn id_card() -> Vec<Section> {
 }
 
 fn passport() -> Vec<Section> {
-    vec![sec(
-        "main",
-        "Passeport",
-        vec![
-            tx("issuing_country", "Pays émetteur").req(),
-            cn("number", "Numéro").req(),
-            dt("expiry", "Expiration").req(),
-            menu("passport_type", "Type"),
-            tx("last_name", "Nom"),
-            tx("first_names", "Prénoms"),
-            tx("nationality", "Nationalité"),
-            dt("birth_date", "Date de naissance"),
-            tx("birth_place", "Lieu de naissance"),
-            menu("sex", "Sexe"),
-            dt("issued_on", "Date d'émission"),
-            tx("authority", "Autorité"),
-            tx("issue_place", "Lieu de délivrance"),
-            tx("mrz", "Lignes MRZ"),
-            file("scan", "Scan"),
-        ],
-    )]
+    vec![
+        sec(
+            "main",
+            "Passeport",
+            vec![
+                tx("issuing_country", "Pays émetteur").req(),
+                cn("number", "Numéro").req(),
+                dt("expiry", "Expiration").req(),
+                menu("passport_type", "Type"),
+                tx("last_name", "Nom"),
+                tx("first_names", "Prénoms"),
+                tx("nationality", "Nationalité"),
+                dt("birth_date", "Date de naissance"),
+                tx("birth_place", "Lieu de naissance"),
+                menu("sex", "Sexe"),
+                dt("issued_on", "Date d'émission"),
+                tx("authority", "Autorité"),
+                tx("issue_place", "Lieu de délivrance"),
+                tx("mrz", "Lignes MRZ"),
+                file("scan", "Scan"),
+                file("portrait", "Photo"),
+            ],
+        ),
+        // Set by a chip read. The templates have no hidden field, so a visible
+        // section stands in for the "hidden menu" of the spec.
+        sec(
+            "chip",
+            "Puce",
+            vec![
+                menu("chip_status", "Statut de la puce"),
+                dt("chip_read_on", "Lu le"),
+                tx("document_code", "Code du document"),
+            ],
+        ),
+    ]
 }
 
 fn driver_license() -> Vec<Section> {
@@ -901,6 +915,27 @@ mod tests {
         for t in ItemType::ALL {
             assert!(!template(t).is_empty(), "{t:?}");
         }
+    }
+
+    #[test]
+    fn passport_template_has_portrait_and_chip_section() {
+        let t = template(ItemType::Passport);
+        let main = t.iter().find(|s| s.id == "main").unwrap();
+        let portrait = main.fields.iter().find(|f| f.id == "portrait").unwrap();
+        assert_eq!(portrait.kind, crate::model::field::FieldType::File);
+        assert_eq!(portrait.label, "Photo");
+        let chip = t.iter().find(|s| s.id == "chip").unwrap();
+        assert_eq!(chip.label, "Puce");
+        let ids: Vec<_> = chip.fields.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(ids, ["chip_status", "chip_read_on", "document_code"]);
+        assert_eq!(
+            crate::model::menu_options(ItemType::Passport, "chip_status"),
+            [
+                "Authentifié par la puce",
+                "Lu sur la puce, signature non vérifiable",
+                "Signature invalide"
+            ]
+        );
     }
 
     #[test]
