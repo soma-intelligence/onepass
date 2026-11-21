@@ -630,7 +630,14 @@ html:has(> body.island), body.island { background: transparent; }
 .ov-others:hover svg { color: var(--text); }
 /* Notch B: a small lip, "+N" and a chevron; the accounts show only once it opens. */
 .ov-lip { height: var(--space-xl); padding: 0 var(--space-xxs) var(--space-xxs); box-shadow: 0 8px 12px rgba(0, 0, 0, .10); }
-.ov-lip-in { display: inline-flex; align-items: center; gap: var(--space-xxs); height: calc(var(--space-l) + var(--space-xs)); padding: 0 var(--space-s); border-radius: var(--r-control); font-size: var(--type-footnote); font-weight: 600; color: var(--text2); }
+.ov-lip-in { display: inline-flex; align-items: center; gap: var(--space-xs); height: calc(var(--space-l) + var(--space-xs)); padding: 0 var(--space-m); border-radius: var(--r-control); font-size: var(--type-footnote); font-weight: 600; color: var(--text2); }
+.ov-lip { min-width: calc(var(--row-tall) * 2); }
+.ov-lip-avs { display: inline-flex; }
+.ov-lip-av { position: relative; display: inline-flex; align-items: center; justify-content: center; width: calc(var(--space-l) + var(--space-xxs)); height: calc(var(--space-l) + var(--space-xxs)); border-radius: 50%; background: color-mix(in srgb, var(--text) 12%, var(--elevated)); color: var(--text); font-size: var(--type-caption); font-weight: 700; box-shadow: 0 0 0 var(--space-xxs) var(--elevated); }
+.ov-lip-av + .ov-lip-av { margin-left: calc(var(--space-xxs) * -1); }
+.ov-lip-av:first-child { z-index: 2; }
+.ov-lip-av:nth-child(2) { z-index: 1; }
+.ov-lip-more { font-variant-numeric: tabular-nums; }
 .ov-lip:hover .ov-lip-in, .ov-lip:focus-visible .ov-lip-in { background: var(--fill-2); color: var(--text); }
 .ov-lip:active .ov-lip-in { background: var(--fill-2); opacity: .8; }
 .brand-art { position: relative; flex-shrink: 0; display: inline-flex; }

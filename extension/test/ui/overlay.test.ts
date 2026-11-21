@@ -203,6 +203,9 @@ describe("overlay", () => {
     clock.advance(300);
     expect(r.querySelector(".ov-notch-open")).toBeNull();
     expect(r.querySelector("button.ov-others")!.getAttribute("aria-label")).toBe("2 autres comptes");
+    // Two others: both initials, no "+N".
+    expect([...r.querySelectorAll(".ov-lip .ov-lip-av")].map((a) => a.textContent)).toEqual(["B", "C"]);
+    expect(r.querySelector(".ov-lip .ov-lip-more")).toBeNull();
     openPicker(r, clock);
     rows()[1]!.click();
     await flush();
@@ -214,6 +217,9 @@ describe("overlay", () => {
     const { r, handle, clock } = setup(() => null, null, withInit(crowd));
     await handle.ready;
     expect(r.querySelector(".ov-others")!.getAttribute("aria-label")).toBe("6 autres comptes");
+    // The closed lip: three initials, then the rest as "+3".
+    expect(r.querySelectorAll(".ov-lip .ov-lip-av")).toHaveLength(3);
+    expect(r.querySelector(".ov-lip .ov-lip-more")!.textContent).toBe("+3");
     openPicker(r, clock);
     expect(r.querySelector(".ov-notch-open, .ov-notch-row")).toBeNull();
     expect(r.querySelector(".ov-picker .ov-search")).not.toBeNull();

@@ -74,6 +74,8 @@ export const POLL_MS = 500;
 export const DONE_CLOSE_MS = 1_200;
 /** The notch opens in place up to this many other logins; more, and it opens the search. */
 export const NOTCH_MAX = 5;
+/** The closed notch shows this many of the other logins' initials. */
+export const LIP_AVATARS = 3;
 
 export const HELP_TEXT = t("overlay.oneClickRunsEvery");
 /** Spec 8.6 stop reasons, word for word. */
@@ -482,7 +484,14 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
             }),
           },
         },
-        h("span", { class: "ov-lip-in", attrs: { "aria-hidden": "true" } }, `+${rest.length}`, icon("chevron", 10)),
+        h(
+          "span",
+          { class: "ov-lip-in", attrs: { "aria-hidden": "true" } },
+          // Notch A+B (2026-11-21): the others' initials, up to three, then "+N" past them.
+          h("span", { class: "ov-lip-avs" }, ...rest.slice(0, LIP_AVATARS).map((x) => h("span", { class: "ov-lip-av" }, (whoOf(x).charAt(0) || "?").toUpperCase()))),
+          rest.length > LIP_AVATARS ? h("span", { class: "ov-lip-more" }, `+${rest.length - LIP_AVATARS}`) : null,
+          icon("chevron", 10),
+        ),
       );
     show(h("div", { class: "ov-pill-wrap" }, pill, notch, notchOpen ? null : neverRow()));
   };
