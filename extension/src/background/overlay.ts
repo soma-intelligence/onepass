@@ -288,12 +288,18 @@ export class Overlays {
     // No document id (Firefox, Safari): shown only by a top frame still at this origin.
     if (cs.documentId === undefined) msg.origin = cs.origin;
     const opts = cs.documentId !== undefined ? { documentId: cs.documentId } : { frameId: 0 };
+    let reply: unknown;
     try {
-      await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
+      reply = await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
     } catch (e) {
       // Not shown: no live token may claim the tab has its overlay.
       await this.tokens.drop(token);
       throw e;
+    }
+    // The page answered but did not show it (its origin moved, no such frame kind): the same.
+    if (typeof reply === "object" && reply !== null && (reply as { ok?: unknown }).ok === false) {
+      await this.tokens.drop(token);
+      throw new BgError("no_form");
     }
     return token;
   }

@@ -18,6 +18,8 @@ interface Page {
   logins: number;
   busy: boolean;
   incognito: boolean;
+  /** What the browser says of the tab's load (`tabs.get(...).status === "complete"`). */
+  loaded?: boolean;
   /** The analysis is of another document than the top frame's. */
   staleDoc?: string;
   /** Runs while the vault answers (the tab may move meanwhile). */
@@ -35,6 +37,7 @@ function setup(over: Partial<Page> = {}, session?: FakeArea) {
     ...(session ? { session } : {}),
     topFrame: async () => ({ url: page.url, documentId: page.doc }),
     incognito: async () => page.incognito,
+    loaded: async () => page.loaded ?? false,
     busy: async () => page.busy,
     page: async () => ({ origin: new URL(page.url).origin, documentId: page.staleDoc ?? page.doc, login: page.login, signup: page.signup }),
     prefilled: async (_cs, refs) => {
@@ -130,6 +133,23 @@ describe("auto sign-in pill: appearance", () => {
     t.page.login = ["f1"];
     await t.pill.onAnalysis(7, 0);
     expect(t.opened).toHaveLength(1);
+  });
+
+  it("a form that shows up after the worker restarted, on a page loaded before: the pill (Safari stops idle workers)", async () => {
+    const t = setup({ login: [] });
+    await t.pill.onReady(7);
+    t.page.login = ["f1"];
+    t.page.loaded = true;
+    const again = t.restart();
+    await again.onAnalysis(7, 0);
+    expect(t.opened).toHaveLength(1);
+  });
+
+  it("after a restart, an analysis of a page the browser says is still loading waits for its load", async () => {
+    const t = setup({ loaded: false });
+    const again = t.restart();
+    await again.onAnalysis(7, 0);
+    expect(t.opened).toEqual([]);
   });
 
   it("an analysis of a child frame never brings it", async () => {

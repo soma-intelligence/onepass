@@ -110,6 +110,25 @@ function retryable(e: unknown): boolean {
   return !(e instanceof BridgeAppError) && !(e instanceof BgError);
 }
 
+/**
+ * Requests that read and change nothing: sent again once when the session died under them. Fills,
+ * saves, unlocks and passkey ceremonies are never replayed (a gesture's ticket, a side effect).
+ */
+export const REPLAYABLE_OPS: ReadonlySet<string> = new Set([
+  "status",
+  "vaults",
+  "list_for_origin",
+  "search",
+  "list_fillable",
+  "provider_accounts",
+  "plan_fill",
+  "passkey_list",
+  "check_credentials",
+  "check_card",
+  "check_identity",
+  "client_info",
+]);
+
 export const RECONNECT_DELAYS_MS = [1000, 2000, 4000] as const;
 /**
  * After the host was found missing, an opening this soon after tries once: a page that waits for
@@ -193,16 +212,46 @@ export class Session {
     throw new BgError("internal");
   }
 
-  /** One application request; host and protocol errors become `BgError`. */
+  /**
+   * One application request; host and protocol errors become `BgError`. A read whose session died
+   * under it (the app closed an idle session, the Mac slept, Safari restarted its relay) is sent
+   * once more on a fresh session: the dead one only shows when a request uses it.
+   */
   async request<O extends Op>(req: RequestFor<O>): Promise<ResponseFor<O>> {
     const client = await this.getClient();
     try {
       return await client.request(req);
     } catch (e) {
-      const err = toBgError(e);
-      if (err.code === "locked") for (const l of this.lockedListeners) l();
-      throw err;
+      if (REPLAYABLE_OPS.has(req.op) && this.diedUnder(client, e)) return this.requestOnce(req);
+      throw this.mapped(e);
     }
+  }
+
+  private async requestOnce<O extends Op>(req: RequestFor<O>): Promise<ResponseFor<O>> {
+    const client = await this.getClient();
+    try {
+      return await client.request(req);
+    } catch (e) {
+      throw this.mapped(e);
+    }
+  }
+
+  private mapped(e: unknown): BgError {
+    const err = toBgError(e);
+    if (err.code === "locked") for (const l of this.lockedListeners) l();
+    return err;
+  }
+
+  /** The transport of `client` failed under a request: it is dropped, the next opening is fresh. */
+  private diedUnder(client: BridgeLike, e: unknown): boolean {
+    if (!(e instanceof BridgeError) || (e.code !== "transport" && e.code !== "closed")) return false;
+    if (client.isOpen) return false;
+    if (this.client === client) {
+      client.close();
+      this.client = undefined;
+      this.salt = undefined;
+    }
+    return true;
   }
 
   /**
@@ -210,13 +259,15 @@ export class Session {
    * it once per session, so it is kept with the client it came from and
    * fetched again from the next client after a reconnect.
    */
-  async fillSalt(): Promise<string> {
+  async fillSalt(again = true): Promise<string> {
     const client = await this.getClient();
     if (this.salt?.client === client) return this.salt.value;
     let salt: string;
     try {
       ({ salt } = await client.request({ op: "fill_salt", ctx: "menu" }));
     } catch (e) {
+      // A read like any other: once more on a fresh session when this one died under it.
+      if (again && this.diedUnder(client, e)) return this.fillSalt(false);
       throw toBgError(e);
     }
     if (!/^[0-9a-f]{64}$/.test(salt)) throw new BgError("internal");

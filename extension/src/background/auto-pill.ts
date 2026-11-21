@@ -42,6 +42,13 @@ export interface AutoPillDeps {
   session?: StorageArea;
   topFrame(tabId: number): Promise<{ url: string; documentId?: string } | null>;
   incognito(tabId: number): Promise<boolean>;
+  /**
+   * The browser says the tab finished loading (`tabs.get(...).status === "complete"`). Asked when
+   * an analysis comes for a tab this worker never saw load: the browser stops an idle worker
+   * (Safari and Chrome, about 30 s), and a form shown later (a login modal, an SPA route) wakes a
+   * new one whose `ready` is empty. Absent: such an analysis waits for the next load.
+   */
+  loaded?(tabId: number): Promise<boolean>;
   /** A chain runs in the tab, or the card, a menu or a save prompt is already there. */
   busy(tabId: number): Promise<boolean>;
   page(tabId: number): Promise<AutoPage | null>;
@@ -73,8 +80,14 @@ export class AutoPill {
   }
 
   /** A page analysis: of the top frame of a ready page, a form may have shown up. */
-  onAnalysis(tabId: number, frameId: number): Promise<void> {
-    if (frameId !== 0 || !this.ready.has(tabId)) return Promise.resolve();
+  async onAnalysis(tabId: number, frameId: number): Promise<void> {
+    if (frameId !== 0) return;
+    if (!this.ready.has(tabId)) {
+      // A worker started after the load: the browser knows whether the page is loaded.
+      const loaded = await this.deps.loaded?.(tabId).catch(() => false);
+      if (!loaded) return;
+      this.ready.add(tabId);
+    }
     return this.consider(tabId);
   }
 

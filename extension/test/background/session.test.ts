@@ -365,3 +365,62 @@ describe("toBgError", () => {
     expect(toBgError(new Error("boom")).code).toBe("internal");
   });
 });
+
+describe("Session: a session that died under a request", () => {
+  /** Clients in order; the first one's transport dies at its first request. */
+  function dyingFirst(store: Store) {
+    const clients: FakeClient[] = [];
+    const s = new Session({
+      store,
+      sleep: async () => undefined,
+      newClient: () => {
+        const first = clients.length === 0;
+        const c: FakeClient = new FakeClient((req) => {
+          if (first) {
+            c.drop();
+            return new BridgeError("transport");
+          }
+          return req.op === "status" ? { locked: false, account: "A", vaults: 1 } : { items: [] };
+        });
+        clients.push(c);
+        return c;
+      },
+    });
+    return { s, clients };
+  }
+
+  it("a read is sent once more on a fresh session", async () => {
+    const { store } = await paired();
+    const { s, clients } = dyingFirst(store);
+    await s.getClient();
+    expect(await s.request({ op: "status" })).toEqual({ locked: false, account: "A", vaults: 1 });
+    expect(clients).toHaveLength(2);
+    expect(clients[1]?.requests.map((r) => r.op)).toEqual(["status"]);
+  });
+
+  it("a fill is never replayed: the caller sees host_missing, the next request opens a fresh session", async () => {
+    const { store } = await paired();
+    const { s, clients } = dyingFirst(store);
+    await s.getClient();
+    expect((await rejection(s.request({ op: "fill_login", ctx: "menu", item_id: "x", vault_id: "v", origin: "https://a.test", fields: ["password"] } as never))).code).toBe("host_missing");
+    expect(clients).toHaveLength(1);
+    await s.request({ op: "status" });
+    expect(clients).toHaveLength(2);
+  });
+
+  it("an app error on an open session is not a dead session: no replay", async () => {
+    const { store } = await paired();
+    const clients: FakeClient[] = [];
+    const s = new Session({
+      store,
+      newClient: () => {
+        const c = new FakeClient(() => new BridgeAppError("locked", "vault locked"));
+        clients.push(c);
+        return c;
+      },
+    });
+    expect((await rejection(s.request({ op: "list_for_origin", ctx: "menu", origin: "https://a.test" }))).code).toBe("locked");
+    expect(clients).toHaveLength(1);
+    expect(clients[0]?.requests).toHaveLength(1);
+  });
+});
