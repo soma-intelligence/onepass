@@ -452,7 +452,8 @@ paired("S12_captcha_during_chain_stops", async ({ ext }) => {
   await expect(page).toHaveURL(`${ATLAS}/captcha-step/password`, { timeout: 30_000 });
   await expect.poll(async () => await ext.chainState(), { timeout: 20_000 }).toMatchObject({ status: "handoff", reason: "captcha" });
   const overlay = await ext.extFrame(page, "overlay");
-  await expect(overlay.locator(".ov-status")).toHaveText("CAPTCHA détecté, à toi de jouer");
+  await expect(overlay.locator(".ov-status")).toHaveText("À toi de jouer");
+  await expect(overlay.locator(".ov-stop .t2")).toHaveText("CAPTCHA détecté, à toi de jouer");
   await ext.settle(1000);
   await emptyFields(page, "#password");
   await expect(page.locator("#robot")).not.toBeChecked();

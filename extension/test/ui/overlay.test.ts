@@ -4,7 +4,7 @@ import type { UiToBg } from "../../src/shared/messages";
 import type { ChainView, OverlayAccount, StopReason } from "../../src/shared/ui";
 import type { Timers } from "../../src/ui/components";
 import { setLang } from "../../src/shared/i18n";
-import { DONE_CLOSE_MS, STEPS_PREF, mountOverlay, stopHint, stopText } from "../../src/ui/overlay";
+import { CONNECT_SLOW_MS, DONE_CLOSE_MS, STEPS_PREF, mountOverlay, stopHint, stopText } from "../../src/ui/overlay";
 import { AUTO_PILL_MS } from "../../src/shared/auto-pill";
 import { Clock, FakeWorker, HASH, type Reply, TOKEN, button, flush, root, text } from "./helpers";
 
@@ -133,7 +133,7 @@ describe("overlay", () => {
     expect(optSays(pill)).toBe("Atlas Cloud | alex@atlas.dev");
     expect(pill.querySelector(".ov-signin")!.textContent).toBe("Se connecter");
     expect(pill.querySelector(".ov-close")).not.toBeNull();
-    expect(r.querySelector(".ov-others")!.textContent).toBe("Autres identifiants");
+    expect(r.querySelector(".ov-others")!.textContent).toBe("2 autres comptes");
     // No chevron button, no rows to unfold inside the capsule.
     expect(r.querySelector(".ov-more, .row-fold, .pill-primary")).toBeNull();
     expect(r.querySelectorAll(".ov-pill")).toHaveLength(1);
@@ -170,7 +170,7 @@ describe("overlay", () => {
     const { r, handle } = setup(() => null, null, withInit(three));
     await handle.ready;
     expect(r.querySelector("button.ov-other")).toBeNull();
-    expect(r.querySelector(".ov-others")!.textContent).toBe("Autres identifiants");
+    expect(r.querySelector(".ov-others")!.textContent).toBe("2 autres comptes");
   });
 
   it("two Google ways with other accounts each: one Other logins, never a row per hidden way", async () => {
@@ -373,7 +373,8 @@ describe("overlay", () => {
       const { r, handle } = setup(() => pwd, pwd, undefined, new Map([[STEPS_PREF, true]]));
       await handle.ready;
       const details = r.querySelector<HTMLButtonElement>("button.ov-details")!;
-      expect(details.textContent).toBe("Details");
+      // Open: the button folds them ("Hide").
+      expect(details.textContent).toBe("Hide");
       expect(details.getAttribute("aria-expanded")).toBe("true");
       expect([...r.querySelectorAll<HTMLElement>(".ov-steps > li")].every((li) => !li.hidden)).toBe(true);
       expect(r.querySelector(".ov-cancel")!.textContent).toBe("Cancel");
@@ -424,6 +425,49 @@ describe("overlay", () => {
     expect(worker.sent.at(-1)).toEqual({ type: "overlay_close", token: TOKEN });
   });
 
+  it("the app slow to answer: Connexion à OnePass… after 1.5 s; it fails: the cause, what to do, Réessayer", async () => {
+    let seen = "";
+    let starts = 0;
+    const s: ReturnType<typeof setup> = setup(() => null, null, (m) => {
+      if (m.type !== "overlay_start") return null;
+      starts++;
+      // Still no answer when the slow timer fires: the card says it is reaching the app.
+      s.timers.fire(CONNECT_SLOW_MS);
+      seen = text(s.r);
+      return { err: "host_missing" };
+    });
+    await s.handle.ready;
+    button(s.r, "Se connecter").click();
+    await flush();
+    expect(seen).toContain("Connexion à OnePass…");
+    expect(text(s.r)).toContain("App OnePass introuvable");
+    expect(s.r.querySelector(".ov-hint")!.textContent).toBe("Ouvre l'app OnePass sur ce Mac, puis réessaie.");
+    s.clock.advance(300);
+    button(s.r, "Réessayer").click();
+    await flush();
+    expect(starts).toBe(2);
+  });
+
+  it("a failure a second try cannot fix has no Réessayer", async () => {
+    const s = setup(() => null, null, (m) => (m.type === "overlay_start" ? { err: "not_allowed" } : null));
+    await s.handle.ready;
+    button(s.r, "Se connecter").click();
+    await flush();
+    expect([...s.r.querySelectorAll("button")].map((b) => text(b))).not.toContain("Réessayer");
+  });
+
+  it("while it runs, a bar fed by the steps done", async () => {
+    let now: ChainView = { itemId: "it_01", status: "running", title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] };
+    const { r, handle } = setup(() => now, now);
+    await handle.ready;
+    const value = () => Number(r.querySelector(".ov-bar")!.getAttribute("aria-valuenow"));
+    const first = value();
+    now = { ...now, steps: [{ label: "x", state: "done", what: "user" }] };
+    await handle.poll();
+    expect(value()).toBeGreaterThan(first);
+    expect(value()).toBeLessThan(100);
+  });
+
   it("every stop reason, word for word, with what to do next", async () => {
     const want: Record<StopReason, string> = {
       domain: "Le domaine a changé : evil.test",
@@ -442,7 +486,11 @@ describe("overlay", () => {
       const { r, handle } = setup(() => ({ ...running, status: reason === "user" ? "stopped" : "handoff", reason, host: "evil.test" }), running);
       await handle.ready;
       await handle.poll();
-      expect(r.querySelector(".ov-status")!.textContent).toBe(sentence);
+      const handoff = ["push", "otp", "captcha", "unknown"].includes(reason);
+      // The user's turn reads "À toi de jouer", with what the page waits for under it; a failure says it as its title.
+      expect(r.querySelector(".ov-status")!.textContent).toBe(handoff ? "À toi de jouer" : sentence);
+      if (handoff) expect(r.querySelector(".ov-stop .t2")!.textContent).toBe(sentence);
+      expect(r.querySelector(".ov-stop")!.getAttribute("data-tone")).toBe(handoff ? "handoff" : reason === "domain" ? "danger" : "warn");
       if (reason !== "user") {
         expect(stopHint(reason, "atlas-cloud.test", "google").length).toBeGreaterThan(20);
         expect(r.querySelector(".ov-hint")!.textContent).toBe(stopHint(reason, "atlas-cloud.test", "google"));
@@ -635,7 +683,7 @@ describe("overlay", () => {
       expect(text(r)).not.toContain("Atlas Cloud");
       expect(text(r)).not.toContain("alex");
       expect(r.querySelector(".ov-others")).toBeNull();
-      expect(button(r, "Se connecter")).toBeTruthy();
+      expect(button(r, "Déverrouiller et se connecter")).toBeTruthy();
       expect(r.querySelector(".ov-close")).not.toBeNull();
       // A letter tile: a card that shows only while locked asks the site's server for nothing.
       expect(r.querySelector("img")).toBeNull();
@@ -646,7 +694,7 @@ describe("overlay", () => {
       let state: { chain: ChainView | null; waiting?: string } = { chain: null, waiting: "locked" };
       const { r, handle, worker, timers } = setup(() => null, null, (m) => genericInit(m) ?? (m.type === "overlay_unlock" ? { ok: { waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null));
       await handle.ready;
-      button(r, "Se connecter").click();
+      button(r, "Déverrouiller et se connecter").click();
       await flush();
       expect(worker.types()).toContain("overlay_unlock");
       expect(text(r)).toContain("Déverrouille Kelid pour continuer");
@@ -668,7 +716,7 @@ describe("overlay", () => {
         m.type === "overlay_init" ? (unlocked ? { ok: { origin: SITE, accounts, chain: null } } : genericInit(m)) : m.type === "overlay_unlock" ? { ok: { waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null,
       );
       await a.handle.ready;
-      button(a.r, "Se connecter").click();
+      button(a.r, "Déverrouiller et se connecter").click();
       await flush();
       unlocked = true;
       state = { chain: null };
@@ -685,7 +733,7 @@ describe("overlay", () => {
       );
       await b.handle.ready;
       open = true;
-      button(b.r, "Se connecter").click();
+      button(b.r, "Déverrouiller et se connecter").click();
       await flush();
       for (let i = 0; i < 8; i++) await b.handle.poll();
       await flush();
@@ -695,7 +743,7 @@ describe("overlay", () => {
     it("the app cannot be opened: said on the card", async () => {
       const { r, handle } = setup(() => null, null, (m) => genericInit(m) ?? (m.type === "overlay_unlock" ? { err: "locked" } : null));
       await handle.ready;
-      button(r, "Se connecter").click();
+      button(r, "Déverrouiller et se connecter").click();
       await flush();
       expect(text(r)).toContain("Kelid est verrouillé");
     });
@@ -790,7 +838,7 @@ describe("the card that appeared by itself (auto sign-in pill)", () => {
     await handle.ready;
     expect(text(r)).toContain("Se connecter avec Kelid");
     expect(text(r)).toContain("Jamais sur ce site");
-    button(r, "Se connecter").click();
+    button(r, "Déverrouiller et se connecter").click();
     await flush();
     expect(worker.sent.filter((m) => m.type === "overlay_unlock")).toHaveLength(1);
     timers.fire(AUTO_PILL_MS);

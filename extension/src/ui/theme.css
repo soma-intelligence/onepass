@@ -588,8 +588,11 @@ html:has(> body.island), body.island { background: transparent; }
 .ov-email { flex-shrink: 0; color: var(--text); opacity: .86; }
 .ov-line2.ov-wrap { flex-wrap: wrap; row-gap: var(--space-xs); white-space: normal; overflow: visible; }
 .ov-wrap .ov-email { flex-shrink: 1; min-width: 0; overflow-wrap: anywhere; }
-.ov-signin { flex-shrink: 0; height: var(--control-m); padding: 0 var(--space-s); border-radius: var(--r-control); font-size: var(--type-headline); font-weight: 600; color: var(--accent-ink); }
-.ov-signin:hover { background: var(--fill-2); }
+/* The offer's button: one filled row under the login, the card's only primary action. */
+.ov-pill:has(> .ov-signin) { flex-wrap: wrap; row-gap: var(--space-m); border-radius: var(--r-card); }
+.ov-pill:has(> .ov-signin) > .stack { flex: 1 1 0; }
+.ov-signin { order: 1; flex: 1 0 100%; display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 var(--space-m); border-radius: var(--r-control); font-size: var(--type-headline); font-weight: 600; background: var(--accent); color: var(--on-tint); }
+.ov-signin:hover { background: var(--accent-hover, var(--accent)); }
 .ov-pill .ov-close, .ov-picker .ov-close { margin: 0; width: 32px !important; height: 32px !important; background: none !important; box-shadow: none; color: var(--text2); }
 .ov-pill .ov-close:hover, .ov-picker .ov-close:hover { background: var(--fill-2) !important; color: var(--text); }
 .ov-others {
@@ -707,6 +710,16 @@ html:has(> body.island), body.island { background: transparent; }
 .ov-details[hidden], .ov-step[hidden] { display: none; }
 .ov-step-detail { min-width: 0; color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-step-detail::before { content: "· "; }
+/* Progress: a thin bar fed by the steps the worker reports. */
+.ov-bar { height: 4px; margin: var(--space-s) 0 0 44px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.ov-bar-fill { display: block; width: 0; height: 100%; border-radius: 2px; background: var(--accent); transition: width 300ms cubic-bezier(.23, 1, .32, 1); }
+@media (prefers-reduced-motion: reduce) { .ov-bar-fill { transition: none; } }
+/* Stop tones: grey = the user's turn, orange = failed, red = the page left the site. */
+.ov-tone-handoff .ov-alert { color: var(--text); }
+.ov-tone-warn .ov-alert { background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.ov-tone-danger { box-shadow: inset 0 0 0 1px var(--danger), var(--card-shadow); }
+.ov-tone-danger .ov-alert { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger-ink); }
+.ov-fail .ov-hint, .ov-fail .ov-foot { margin-left: var(--space-s); }
 .ov-foot { display: flex; gap: var(--space-s); margin: var(--space-m) 0 0 44px; }
 .ov-foot .btn { height: var(--control-m); padding: 0 var(--space-l); border-radius: var(--r-control); font-size: var(--type-headline); }
 .dot {
@@ -1067,7 +1080,6 @@ button.sc-chip:hover { color: var(--text); }
   .ov-close, .ov-pill .ov-close, .ov-picker .ov-close { width: 44px !important; height: 44px !important; }
   .ov-close { margin-top: var(--space-xs); }
   .ov-pill .ov-close, .ov-picker .ov-close { margin: 0; }
-  .ov-signin { height: 44px; padding: 0 var(--space-m); border-radius: var(--r-control); }
 }
 :root.touch .btn-text { min-height: var(--control-m); padding: 0 var(--space-m); font-size: var(--type-headline); }
 :root.touch .sc-more { width: var(--control-m); height: var(--control-m); }
@@ -1076,7 +1088,6 @@ button.sc-chip:hover { color: var(--text); }
 :root.touch .ov-close, :root.touch .ov-pill .ov-close, :root.touch .ov-picker .ov-close { width: 44px !important; height: 44px !important; }
 :root.touch .ov-close { margin-top: var(--space-xs); }
 :root.touch .ov-pill .ov-close, :root.touch .ov-picker .ov-close { margin: 0; }
-:root.touch .ov-signin { height: 44px; padding: 0 var(--space-m); border-radius: var(--r-control); }
 
 /* ---- ghost (spec 3.2): the suggested password in grey over its new-password field, and at
    the field's right edge the "Use" pill with its Tab keycap and a chevron. The frame is

@@ -307,7 +307,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
             await pill.locator(".ov-signin").click();
             return overlay;
           }
-          await overlay.locator(".ov-others").click();
+          // Exactly one other login: it hangs under the pill as its own row, one click signs in with it.
+          const other = titled(provider ? `.ov-other[data-provider="${provider}"]` : ".ov-other:not([data-provider])");
+          if ((await other.count()) === 1) {
+            await other.click();
+            return overlay;
+          }
+          await overlay.locator(".ov-others:not(.ov-other):not(.ov-never)").click();
           await settle();
           const opt = titled(provider ? `.ov-opt[data-provider="${provider}"]` : ".ov-opt:not([data-provider])").first();
           await expect(opt).toBeVisible();

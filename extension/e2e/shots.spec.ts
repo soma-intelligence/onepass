@@ -158,7 +158,7 @@ for (const scheme of ["dark", "light"] as const) {
     await page.goto(`${ATLAS}/captcha`);
     await ext.overlayStart(page, "Atlas Cloud");
     await chainEnded(ext, "captcha");
-    await overlayText(ext, page, "CAPTCHA détecté, à toi de jouer");
+    await overlayText(ext, page, "À toi de jouer");
     await shot(page, "stop-captcha", scheme);
     // A fresh offer shows once the last outcome is old enough.
     await wait(END_SHOWN_MS + 500);
@@ -173,7 +173,7 @@ for (const scheme of ["dark", "light"] as const) {
     await page.goto(`${ATLAS}/multistep`);
     await ext.overlayStart(page, "Atlas Cloud (multi)");
     await chainEnded(ext, "otp");
-    await overlayText(ext, page, "Code reçu par SMS ou email : saisis-le");
+    await overlayText(ext, page, "À toi de jouer");
     await shot(page, "stop-otp", scheme);
     await wait(END_SHOWN_MS + 500);
 

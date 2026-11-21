@@ -333,7 +333,8 @@ paired("chain_stops_on_captcha", async ({ ext }) => {
   await page.goto(`${ATLAS}/captcha`);
   const overlay = await ext.overlayStart(page, "Atlas Cloud");
   await expect.poll(async () => await ext.chainState(), { timeout: 20_000 }).toMatchObject({ status: "handoff", reason: "captcha" });
-  await expect(overlay.locator(".ov-status")).toHaveText("CAPTCHA détecté, à toi de jouer");
+  await expect(overlay.locator(".ov-status")).toHaveText("À toi de jouer");
+  await expect(overlay.locator(".ov-stop .t2")).toHaveText("CAPTCHA détecté, à toi de jouer");
   await expect(page.locator("#email")).toHaveValue("");
   await expect(page.locator("#password")).toHaveValue("");
 });

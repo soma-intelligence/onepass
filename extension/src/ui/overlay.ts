@@ -178,6 +178,56 @@ export function stopHint(reason: StopReason, site?: string, provider?: ProviderI
 /** Stops where trying again from the site can help. */
 const RETRY: ReadonlySet<StopReason> = new Set<StopReason>(["timeout", "locked"]);
 
+/** Stops that hand the sign-in to the user (a phone, a code, a CAPTCHA, a page OnePass does not know): not a failure. */
+const HANDOFF: ReadonlySet<StopReason> = new Set<StopReason>(["push", "otp", "captcha", "unknown"]);
+
+/** How a stop reads: grey when it is the user's turn, red when the page left the site, orange otherwise. */
+export type StopTone = "handoff" | "warn" | "danger";
+
+export function stopTone(c: Pick<ChainView, "reason">): StopTone {
+  const reason = c.reason ?? "user";
+  if (HANDOFF.has(reason)) return "handoff";
+  return reason === "domain" ? "danger" : "warn";
+}
+
+/** No answer from the app after this long: the card says it is still reaching the app. */
+export const CONNECT_SLOW_MS = 1_500;
+
+/** The app could not be reached, or refused: these can work on a second try. */
+const RETRY_CODES: ReadonlySet<string> = new Set(["host_missing", "timeout", "locked", "bad_mac", "bad_frame", "internal"]);
+
+/** What to do after a failure to reach the app, one sentence per cause. */
+function errorHint(code: string): string {
+  switch (code) {
+    case "host_missing":
+      return t("overlay.hintHostMissing");
+    case "timeout":
+      return t("overlay.hintTimeout");
+    case "locked":
+      return t("overlay.unlockOnepassThenTry");
+    default:
+      return "";
+  }
+}
+
+/**
+ * How far a running chain is, 0 to 1, from the steps it reports (nothing simulated). A password
+ * login counts its steps done against those still ahead; a provider chain, its phase.
+ */
+export function chainProgress(c: ChainView, provider: boolean, left: number): number {
+  if (provider) {
+    const i = CHAIN_PHASE_ORDER.indexOf(c.phase ?? "opening");
+    return Math.max(0, i + 1) / (CHAIN_PHASE_ORDER.length + 1);
+  }
+  const done = c.steps.filter((x) => x.state === "done" && x.what !== "end").length;
+  return done / (done + left + 1);
+}
+
+const CHAIN_PHASE_ORDER: readonly ChainPhase[] = ["opening", "choosing", "provider", "back", "signin", "code"];
+
+/** What the card waits on: the app asked to unlock, the app starting, or no answer from it yet. */
+type WaitKind = OverlayWaiting | "connecting";
+
 const STATE_TEXT: Readonly<Record<StepState, string>> = {
   pending: t("overlay.pending"),
   active: t("overlay.inProgress"),
@@ -229,6 +279,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     steps: HTMLElement | null;
     now: HTMLElement | null;
     details: HTMLButtonElement | null;
+    bar?: HTMLElement;
     last: string;
   } | null = null;
   /** The steps of a running sign-in: folded by default, the user's choice kept per browser. */
@@ -236,7 +287,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   /** The way the user clicked: the progress names its account until the worker reports it. */
   let picked: OverlayAccount | null = null;
   /** The card waits for an unlock asked in the app: what it shows now (polls rebuild nothing). */
-  let waitUi: { kind: OverlayWaiting; status: HTMLElement } | null = null;
+  let waitUi: { kind: WaitKind; status: HTMLElement } | null = null;
   /** This card came up generic (locked vault): once the vault answers with no login for the site, it leaves. */
   let wasGeneric = false;
   /** The card waited for an unlock asked for its page (generic card): once over with no chain, it loads again. */
@@ -310,7 +361,12 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     return provider ? brandTile(from, letter, provider, 34, true) : siteTile(from, letter, 34, true);
   };
 
-  const renderMessage = (code: string) => {
+  /**
+   * A failure before any sign-in ran (the app missing, slow, locked, not paired): the cause in one
+   * line, what to do in one sentence, and "Réessayer" when the click came from this card and a
+   * second try can help.
+   */
+  const renderMessage = (code: string, retry?: () => void) => {
     stopPolling();
     chainUi = null;
     waitUi = null;
@@ -320,8 +376,31 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
         : code === "locked"
           ? t("ui.onepassLocked")
           : errorText(code);
-    show(shell(h("div", { class: "ov-card" }, h("div", { class: "ov-head" }, mark("s"), h("h1", { class: "ov-title" }, init ? t("overlay.signInToHost", { host: hostOf(init.origin) }) : t("overlay.oneClickSignIn"))), messageBlock(title))));
+    const hint = errorHint(code);
+    const again = retry && RETRY_CODES.has(code) ? retry : undefined;
+    show(
+      shell(
+        h(
+          "div",
+          { class: "ov-card ov-stop ov-fail ov-tone-warn", attrs: { "data-code": code } },
+          h("div", { class: "ov-head" }, mark("s"), h("h1", { class: "ov-title" }, init ? t("overlay.signInToHost", { host: hostOf(init.origin) }) : t("overlay.oneClickSignIn"))),
+          messageBlock(title),
+          hint ? h("p", { class: "ov-hint" }, hint) : null,
+          again ? h("div", { class: "ov-foot" }, h("button", { class: "btn btn-primary", attrs: { type: "button" }, on: { click: guard.wrap(again) } }, t("popup.tryAgain"))) : null,
+        ),
+      ),
+    );
   };
+
+  /** Runs `ask`; when the app has not answered after CONNECT_SLOW_MS, the card says it is reaching it. */
+  async function reaching<T>(ask: () => Promise<T>): Promise<T> {
+    const slow = timers.setTimeout(() => renderWaiting("connecting", null), CONNECT_SLOW_MS);
+    try {
+      return await ask();
+    } finally {
+      timers.clearTimeout(slow);
+    }
+  }
 
   const start = (a: OverlayAccount, accountId?: string, email?: string) => async () => {
     if (!token) return;
@@ -330,9 +409,9 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     if (a.provider) msg.provider = a.provider;
     if (a.provider && accountId !== undefined) msg.accountId = accountId;
     picked = email !== undefined ? { ...a, email, subtitle: email } : a;
-    const r = await call(deps.send, msg, parseOverlayStart);
+    const r = await reaching(() => call(deps.send, msg, parseOverlayStart));
     if (!r.ok) {
-      renderMessage(r.code);
+      renderMessage(r.code, () => void start(a, accountId, email)());
       return;
     }
     if (r.value.waiting) {
@@ -450,7 +529,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
                 }),
               },
             },
-            t("overlay.otherLogins"),
+            tn("overlay.moreOtherAccounts", list.length - 1, { more: list.length - 1 }),
             icon("chevron", 10),
           )
         : null;
@@ -592,9 +671,12 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       if (!token || asked) return;
       asked = true;
       stopFold();
-      const r = await call(deps.send, { type: "overlay_unlock", token }, parseOverlayStart);
+      const r = await reaching(() => call(deps.send, { type: "overlay_unlock", token }, parseOverlayStart));
       if (!r.ok) {
-        renderMessage(r.code);
+        renderMessage(r.code, () => {
+          asked = false;
+          void unlock();
+        });
         return;
       }
       pageWait = true;
@@ -610,7 +692,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       // A letter, never the site's icon (no request to the site while locked, see `artOf`).
       siteTile(null, host.charAt(0).toUpperCase(), 36, true),
       h("span", { class: "stack" }, h("span", { class: "t1" }, t("overlay.signInWithOnepass")), h("span", { class: "ov-line2" }, h("span", { class: "ov-email" }, t("ui.onepassLocked")))),
-      h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => void unlock()) } }, t("popup.signIn")),
+      h("button", { class: "ov-signin", attrs: { type: "button" }, on: { click: guard.wrap(() => void unlock()) } }, t("overlay.unlockAndSignIn")),
       closeButton(),
     );
     show(h("div", { class: "ov-pill-wrap" }, pill, neverRow()));
@@ -724,6 +806,8 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
     const others = [...chainUi.steps.children].filter((li) => li !== chainUi?.now) as HTMLElement[];
     for (const li of others) li.hidden = !stepsOpen;
     chainUi.details.hidden = others.length === 0;
+    const label = chainUi.details.querySelector(".ov-details-label");
+    if (label) label.textContent = stepsOpen ? t("overlay.stepsHide") : t("overlay.stepsDetails");
     chainUi.details.setAttribute("aria-expanded", String(stepsOpen));
     chainUi.details.classList.toggle("open", stepsOpen);
     chainUi.steps.classList.toggle("ov-steps-open", stepsOpen);
@@ -735,8 +819,8 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
    * is still starting: one line that says which, the account, "Annuler". The worker goes on by
    * itself once the vault opens; polls only change the line.
    */
-  function renderWaiting(kind: OverlayWaiting, c: ChainView | null): void {
-    const line = kind === "locked" ? t("ui.unlockToContinue") : t("ui.openingOnepass");
+  function renderWaiting(kind: WaitKind, c: ChainView | null): void {
+    const line = kind === "locked" ? t("ui.unlockToContinue") : kind === "connecting" ? t("overlay.connectingToOnepass") : t("ui.openingOnepass");
     if (waitUi) {
       if (waitUi.kind !== kind) waitUi.status.textContent = line;
       waitUi.kind = kind;
@@ -766,7 +850,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
         const details = h(
           "button",
           { class: "btn-link ov-details", attrs: { type: "button", "aria-controls": "ov-steps", "aria-expanded": "false" } },
-          t("overlay.stepsDetails"),
+          h("span", { class: "ov-details-label" }, t("overlay.stepsDetails")),
           icon("chevron", 10),
         ) as HTMLButtonElement;
         details.addEventListener(
@@ -779,9 +863,18 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
         );
         const now = h("li", { class: "ov-step ov-now" }, h("span", { class: "spinner", attrs: { "aria-hidden": "true" } }), status, details);
         steps.append(now);
+        // How far it is: the steps the worker reports, nothing simulated.
+        const fill = h("span", { class: "ov-bar-fill" });
+        const bar = h("div", { class: "ov-bar", attrs: { role: "progressbar", "aria-label": t("overlay.stepsDone"), "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" } }, fill);
         // Closing while it runs stops the chain, as "Annuler" does.
-        show(shell(h("div", { class: "ov-card ov-run" }, whoNode(c, cancelBtn), steps), closeButton(cancel)));
-        chainUi = { mode, status, steps, now, details, last: "" };
+        show(shell(h("div", { class: "ov-card ov-run" }, whoNode(c, cancelBtn), bar, steps), closeButton(cancel)));
+        chainUi = { mode, status, steps, now, details, bar, last: "" };
+      }
+      if (chainUi.bar) {
+        const pct = Math.round(100 * chainProgress(c, Boolean(c.provider ?? picked?.provider), ahead(c).length));
+        chainUi.bar.setAttribute("aria-valuenow", String(pct));
+        const fill = chainUi.bar.firstElementChild as HTMLElement | null;
+        if (fill) fill.style.width = `${Math.max(pct, 6)}%`;
       }
       chainUi.status.textContent = phaseText(c.phase, { ...c, provider: c.provider ?? picked?.provider, email: c.email ?? picked?.subtitle, title: c.title ?? picked?.title });
       // The steps done above the line under way, the steps still ahead under it; the line itself keeps its node.
@@ -808,21 +901,25 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
       // What was done; the end (done or stop) is the title.
       const steps = c.steps.filter((x) => (x.state === "done" || x.state === "stopped") && x.what !== "end" && !(x.what === undefined && x === c.steps.at(-1)));
       const reason = c.reason ?? "user";
+      const tone = stopTone(c);
+      const said = c.reason ? stopText(reason, c.host, c.email, c.provider) : t("chain.stopped");
       status.classList.add("warn");
-      status.append(c.reason ? stopText(reason, c.host, c.email, c.provider) : t("chain.stopped"));
+      // The user's turn is not a failure: "À toi de jouer", then what the page waits for.
+      status.append(tone === "handoff" ? t("overlay.yourTurn") : said);
       const email = c.email ?? picked?.subtitle ?? "";
+      const line2 = tone === "handoff" ? said : email;
       const hint = stopHint(reason, c.site, c.provider);
       const again = c.reason && RETRY.has(c.reason) ? retryFor(c) : undefined;
       show(
         shell(
           h(
             "div",
-            { class: "ov-card ov-stop" },
+            { class: `ov-card ov-stop ov-tone-${tone}`, attrs: { "data-tone": tone } },
             h(
               "div",
               { class: "ov-who" },
-              h("span", { class: "ov-alert", attrs: { "aria-hidden": "true" } }, icon("alert", 16)),
-              h("span", { class: "stack" }, status, email ? h("span", { class: "t2" }, email) : null),
+              h("span", { class: "ov-alert", attrs: { "aria-hidden": "true" } }, icon(tone === "handoff" ? "phone" : "alert", 16)),
+              h("span", { class: "stack" }, status, line2 ? h("span", { class: "t2" }, line2) : null),
             ),
             hint ? h("p", { class: "ov-hint" }, hint) : null,
             steps.length > 0 ? h("ul", { class: "ov-steps", attrs: { "aria-label": t("overlay.stepsDone") } }, ...steps.map(stepNode(c))) : null,
