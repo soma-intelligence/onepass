@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-icon-image"
+description = "Enables the icon_image command without any pre-configured scope."
+commands.allow = ["icon_image"]
+
+[[permission]]
+identifier = "deny-icon-image"
+description = "Denies the icon_image command without any pre-configured scope."
+commands.deny = ["icon_image"]

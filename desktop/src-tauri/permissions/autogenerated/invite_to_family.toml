@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-invite-to-family"
+description = "Enables the invite_to_family command without any pre-configured scope."
+commands.allow = ["invite_to_family"]
+
+[[permission]]
+identifier = "deny-invite-to-family"
+description = "Denies the invite_to_family command without any pre-configured scope."
+commands.deny = ["invite_to_family"]

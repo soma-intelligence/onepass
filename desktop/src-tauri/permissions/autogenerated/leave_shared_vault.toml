@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-leave-shared-vault"
+description = "Enables the leave_shared_vault command without any pre-configured scope."
+commands.allow = ["leave_shared_vault"]
+
+[[permission]]
+identifier = "deny-leave-shared-vault"
+description = "Denies the leave_shared_vault command without any pre-configured scope."
+commands.deny = ["leave_shared_vault"]

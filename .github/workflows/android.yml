@@ -5,11 +5,13 @@ on:
     paths:
       - "core/**"
       - "android/**"
+      - "apple/SitePack/**"
       - ".github/workflows/android.yml"
   pull_request:
     paths:
       - "core/**"
       - "android/**"
+      - "apple/SitePack/**"
       - ".github/workflows/android.yml"
 
 permissions:

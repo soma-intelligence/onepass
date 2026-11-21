@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preview-import"
+description = "Enables the preview_import command without any pre-configured scope."
+commands.allow = ["preview_import"]
+
+[[permission]]
+identifier = "deny-preview-import"
+description = "Denies the preview_import command without any pre-configured scope."
+commands.deny = ["preview_import"]

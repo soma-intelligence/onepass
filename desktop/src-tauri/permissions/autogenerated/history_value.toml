@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-history-value"
+description = "Enables the history_value command without any pre-configured scope."
+commands.allow = ["history_value"]
+
+[[permission]]
+identifier = "deny-history-value"
+description = "Denies the history_value command without any pre-configured scope."
+commands.deny = ["history_value"]

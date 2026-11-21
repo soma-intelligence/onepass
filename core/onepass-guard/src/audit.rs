@@ -19,13 +19,13 @@
 //! an old log together with its old authentic head is not detected.
 
 use crate::approval::Surface;
+use crate::private::{private, read_exact_at, set_private, sync_dir};
 use crate::{GuardError, LocalSigner, open_config, seal_config};
 use aws_lc_rs::digest;
 use data_encoding::HEXLOWER;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::{FileExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -247,12 +247,8 @@ impl AuditLog {
     /// Creates the log (mode 0600) if missing and enforces 0600 on an
     /// existing one. The chain is not verified here: use [`verify_log`].
     pub fn open(path: &Path) -> Result<AuditLog, GuardError> {
-        let f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(0o600)
-            .open(path)?;
-        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+        let f = private(OpenOptions::new().create(true).append(true)).open(path)?;
+        set_private(&f)?;
         Ok(AuditLog {
             path: path.to_owned(),
         })
@@ -275,11 +271,7 @@ impl AuditLog {
     /// [`GuardError::Tampered`] (writing nothing) if they disagree, except for
     /// one unsealed trailing line left by a crash, which is resealed first.
     pub fn append(&mut self, signer: &dyn LocalSigner, e: &AuditEntry) -> Result<(), GuardError> {
-        let mut f = OpenOptions::new()
-            .read(true)
-            .append(true)
-            .mode(0o600)
-            .open(&self.path)?;
+        let mut f = private(OpenOptions::new().read(true).append(true)).open(&self.path)?;
         f.lock()?;
         let state = load_state(&f, &self.path, signer)?;
 
@@ -353,7 +345,7 @@ fn read_last_line(f: &File) -> Result<Option<(String, bool)>, GuardError> {
         let n = TAIL_CHUNK.min(pos);
         pos -= n;
         let mut chunk = vec![0u8; n as usize];
-        f.read_exact_at(&mut chunk, pos)?;
+        read_exact_at(f, &mut chunk, pos)?;
         chunk.extend_from_slice(&buf);
         buf = chunk;
     }
@@ -389,14 +381,11 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = PathBuf::from(tmp);
-    let mut f: File = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&tmp)?;
+    let mut f: File =
+        private(OpenOptions::new().write(true).create(true).truncate(true)).open(&tmp)?;
     f.write_all(data)?;
     f.sync_all()?;
+    drop(f);
     fs::rename(&tmp, path)?;
     if let Some(dir) = path.parent() {
         let dir = if dir.as_os_str().is_empty() {
@@ -404,7 +393,7 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), GuardError> {
         } else {
             dir
         };
-        File::open(dir)?.sync_all()?;
+        sync_dir(dir)?;
     }
     Ok(())
 }
@@ -514,6 +503,7 @@ mod tests {
     use super::*;
     use crate::testutil::TestSigner;
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     fn entry(n: u32) -> AuditEntry {
@@ -682,6 +672,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn audit_file_mode_is_0600() {
         let dir = tempfile::tempdir().unwrap();
         let (path, _s) = make(dir.path(), 1);

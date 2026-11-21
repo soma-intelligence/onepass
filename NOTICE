@@ -57,3 +57,9 @@ QR decoder of the browser extension (extension/src/setup/qr-decode.ts)
   Apache-2.0.
 
 Word lists used by the core keep their own licenses: core/onepass-core/data/LICENSES.md.
+
+Inter typeface (android/app/src/main/assets/fonts)
+
+- Inter, https://github.com/rsms/inter
+  SIL Open Font License 1.1. Copyright (c) 2016 The Inter Project Authors. The full license is
+  shipped with the app: android/app/src/main/assets/licenses/Inter-OFL.txt.

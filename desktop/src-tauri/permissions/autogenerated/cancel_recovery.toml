@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cancel-recovery"
+description = "Enables the cancel_recovery command without any pre-configured scope."
+commands.allow = ["cancel_recovery"]
+
+[[permission]]
+identifier = "deny-cancel-recovery"
+description = "Denies the cancel_recovery command without any pre-configured scope."
+commands.deny = ["cancel_recovery"]

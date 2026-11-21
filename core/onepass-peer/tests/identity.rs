@@ -6,6 +6,10 @@
 //! Helper processes are this test binary re-invoked with `HELPER_ENV` set,
 //! which turns `peer_test_helper` into a sleeper or an identity printer.
 //! Every child is waited for with a deadline and killed only by its own pid.
+//!
+//! Unix only: socket pairs and launcher shells. The Windows branch is
+//! tested in `cred.rs`.
+#![cfg(unix)]
 
 #[cfg(not(target_os = "macos"))]
 use std::io::Write;
