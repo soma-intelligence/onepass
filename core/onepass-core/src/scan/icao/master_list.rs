@@ -5,7 +5,7 @@
 //! Loading checks that signature and keeps the CSCA certificates, indexed
 //! by subject key identifier and by subject name for the DS lookup.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use x509_cert::der::oid::ObjectIdentifier as Oid;
 
@@ -30,6 +30,16 @@ impl MasterList {
 
     pub fn is_empty(&self) -> bool {
         self.certs.is_empty()
+    }
+
+    /// The `countryName` values (ISO 3166-1 alpha-2, as printed) of the
+    /// CSCA subjects, each once.
+    pub fn country_codes(&self) -> BTreeSet<String> {
+        self.certs
+            .iter()
+            .filter_map(|der| Cert::parse(der))
+            .filter_map(|c| subject_country(c.subject))
+            .collect()
     }
 
     fn add(&mut self, der: &[u8]) -> bool {
@@ -70,6 +80,22 @@ impl MasterList {
         }
         out
     }
+}
+
+/// The first `countryName` (2.5.4.6) of a DER `Name`.
+fn subject_country(name: &[u8]) -> Option<String> {
+    const COUNTRY_NAME: [u8; 3] = [0x55, 0x04, 0x06];
+    let rdns = items(only(name)?.value)?;
+    rdns.iter()
+        .filter_map(|rdn| items(rdn.value))
+        .flatten()
+        .filter_map(|atv| items(atv.value))
+        .find_map(|parts| match parts.as_slice() {
+            [oid, value] if oid.tag == 0x06 && oid.value == COUNTRY_NAME => {
+                std::str::from_utf8(value.value).ok().map(str::to_owned)
+            }
+            _ => None,
+        })
 }
 
 /// Loads a CSCA master list: verifies its CMS signature with the signer
