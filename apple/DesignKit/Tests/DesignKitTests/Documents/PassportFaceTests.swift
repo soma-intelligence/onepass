@@ -93,19 +93,94 @@ import UniformTypeIdentifiers
         #expect(Self.string("passport.notice", "fr") == "Copie numérique, non officielle")
         #expect(Self.string("passport.notice", "en") == "Digital copy, not an official document")
         // Drawn on the open page before anything is revealed and after: the notice capsule at
-        // the right of the page's top band holds ink in both languages; the closed booklet hides it.
+        // the right of the page's top band holds ink, for every family, in light and dark, in
+        // both languages; the closed booklet hides it.
         let region = CGRect(x: 200, y: 6, width: 150, height: 22)
-        for lang in ["fr", "en"] {
-            for progress in [0.0, 1.0] {
-                let open = face(.passportGeneric, open: true, progress: progress)
-                    .environment(\.locale, Locale(identifier: lang))
-                #expect(try Self.inkPixels(open, in: region) > 20, "\(lang) at \(progress)")
+        for family in DocumentFamily.allCases {
+            for scheme in [ColorScheme.light, .dark] {
+                for lang in ["fr", "en"] {
+                    for progress in [0.0, 1.0] {
+                        let open = face(family, open: true, progress: progress)
+                            .environment(\.colorScheme, scheme)
+                            .environment(\.locale, Locale(identifier: lang))
+                        #expect(try Self.inkPixels(open, in: region) > 20, "\(family) \(scheme) \(lang) at \(progress)")
+                    }
+                    let closed = face(family, open: false)
+                        .environment(\.colorScheme, scheme)
+                        .environment(\.locale, Locale(identifier: lang))
+                    #expect(try Self.inkPixels(closed, in: region) < 20, "\(family) \(scheme) \(lang) closed")
+                }
             }
-            let closed = face(.passportGeneric, open: false).environment(\.locale, Locale(identifier: lang))
-            let closedInk = try Self.inkPixels(closed, in: region)
-            #expect(closedInk < 20)
         }
     }
+
+    /// What the masked page draws does not depend on the secrets: two passports that differ only
+    /// by their MRZ and number render to the same pixels.
+    @Test func maskedPageIgnoresTheSecrets() throws {
+        var other = Self.data
+        other.number = "X1234567Z"
+        other.mrz = "P<UTOSMITH<<JOHN<<<<<<<<<<<<<<<<<<<<<<<<<<<<\nX1234567Z0UTO8001014M3001017<<<<<<<<<<<<<<02"
+        for family in DocumentFamily.allCases {
+            let a = try Self.pixels(face(family, open: true, revealed: false))
+            let b = try Self.pixels(PassportFace(family: family, data: other, isOpen: .constant(true), secretsRevealed: false)
+                .frame(width: 360))
+            #expect(a == b, "\(family)")
+            // And the revealed page does show them.
+            let c = try Self.pixels(face(family, open: true, revealed: true))
+            #expect(a != c, "\(family)")
+        }
+    }
+
+    // MARK: Gesture, accent, sheen
+
+    /// Only a clear drag to the right closes; a vertical drag that starts on the booklet scrolls.
+    @Test func onlyAHorizontalDragCloses() {
+        #expect(PassportFace.closes(translation: CGSize(width: 120, height: 10)))
+        #expect(!PassportFace.closes(translation: CGSize(width: 40, height: 0)))
+        #expect(!PassportFace.closes(translation: CGSize(width: 90, height: 80)))
+        #expect(!PassportFace.closes(translation: CGSize(width: 10, height: 300)))
+        #expect(!PassportFace.closes(translation: CGSize(width: -120, height: 0)))
+    }
+
+    /// The generic cover follows the vault accent; the country covers keep their own tint.
+    @Test func genericCoverTakesTheVaultAccent() throws {
+        func colour(_ family: DocumentFamily, _ accent: Color?) throws -> [UInt8] {
+            let swatch = Rectangle().fill(family.coverTint(accent: accent)).frame(width: 4, height: 4)
+            return Array(try Self.pixels(swatch).prefix(4))
+        }
+        #expect(try colour(.passportGeneric, nil) != colour(.passportGeneric, .red))
+        #expect(try colour(.passportGeneric, .red) != colour(.passportGeneric, .blue))
+        #expect(try colour(.passportFR, nil) == colour(.passportFR, .red))
+        #expect(try colour(.passportUS, nil) == colour(.passportUS, .blue))
+        let plain = Array(try Self.pixels(
+            Rectangle().fill(DocumentFamily.passportGeneric.coverTint).frame(width: 4, height: 4)).prefix(4))
+        #expect(try colour(.passportGeneric, nil) == plain)
+    }
+
+    @Test func pointerTiltFollowsTheViewSize() {
+        let size = CGSize(width: 440, height: 310)
+        #expect(DocumentSheen.pointerTilt(CGPoint(x: 220, y: 155), in: size) == .zero)
+        #expect(DocumentSheen.pointerTilt(CGPoint(x: 0, y: 0), in: size) == CGSize(width: -1, height: -1))
+        #expect(DocumentSheen.pointerTilt(CGPoint(x: 440, y: 310), in: size) == CGSize(width: 1, height: 1))
+        #expect(DocumentSheen.pointerTilt(CGPoint(x: 900, y: -40), in: size) == CGSize(width: 1, height: -1))
+        #expect(DocumentSheen.pointerTilt(.zero, in: .zero) == .zero)
+    }
+
+    #if os(iOS)
+    /// One shared motion feed: subscriptions add and leave, nothing is created per view.
+    @Test func sheenMotionIsShared() {
+        let motion = SheenMotion.shared
+        let a = UUID(), b = UUID()
+        let before = motion.subscriberCount
+        motion.add(a) { _ in }
+        motion.add(b) { _ in }
+        #expect(motion.subscriberCount == before + 2)
+        motion.remove(a)
+        motion.remove(b)
+        #expect(motion.subscriberCount == before)
+        #expect(SheenMotion.shared === motion)
+    }
+    #endif
 
     // MARK: Reveal
 
@@ -125,6 +200,8 @@ import UniformTypeIdentifiers
         }
         #expect(abs(start(0) - DataPage.photoFade) < 0.002)
         #expect(abs((start(3) - start(2)) - 0.04) < 0.002)
+        // Top to bottom: expiry sits beside the birth date, the number under them, the MRZ last.
+        #expect(DataPage.revealOrder == [.surname, .givenNames, .nationality, .sex, .birthDate, .expiryDate, .number, .mrz])
     }
 
     // MARK: Rendering
@@ -173,6 +250,20 @@ import UniformTypeIdentifiers
 
     // MARK: Helpers
 
+    /// The RGBA bytes of `view` rendered at scale 1.
+    static func pixels(_ view: some View) throws -> [UInt8] {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+        let image = try #require(renderer.cgImage)
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try #require(CGContext(
+            data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return pixels
+    }
+
     /// Writes `image` as a PNG into `ONEPASS_FEEDBACK_DIR` when it is set (looking at the cells by eye).
     static func save(_ image: CGImage, _ name: String) {
         guard let folder = ProcessInfo.processInfo.environment["ONEPASS_FEEDBACK_DIR"] else { return }
@@ -205,7 +296,9 @@ import UniformTypeIdentifiers
             for x in Int(region.minX)..<min(Int(region.maxX), width) {
                 let i = (y * width + x) * 4
                 let luminance = (Int(pixels[i]) + Int(pixels[i + 1]) + Int(pixels[i + 2])) / 3
-                if pixels[i + 3] > 200, luminance < 50 { count += 1 }
+                let spread = Int(max(pixels[i], pixels[i + 1], pixels[i + 2])) - Int(min(pixels[i], pixels[i + 1], pixels[i + 2]))
+                // The page ink: dark and neutral (a navy or bordeaux cover is dark but coloured).
+                if pixels[i + 3] > 200, luminance < 50, spread < 16 { count += 1 }
             }
         }
         return count

@@ -89,9 +89,16 @@ public struct PassportFace: View {
         withAnimation(openAnimation) { isOpen = open }
     }
 
+    /// A drag that closes the booklet: to the right, far enough, and clearly more sideways than
+    /// up or down (a vertical drag that starts on the booklet still scrolls the page).
+    static func closes(translation: CGSize) -> Bool {
+        translation.width > 60 && translation.width > abs(translation.height) * 1.5
+    }
+
     public var body: some View {
         GeometryReader { geo in
             let scale = geo.size.width / DataPage.designSize.width
+            let radius = 10 * scale
             ZStack {
                 if captured {
                     CapturedPlaceholder(family: family)
@@ -103,30 +110,26 @@ public struct PassportFace: View {
                     .frame(width: DataPage.designSize.width, height: DataPage.designSize.height)
                     .scaleEffect(scale, anchor: .topLeading)
                     .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                    .documentSheen()
-                    .clipShape(.rect(cornerRadius: 10 * scale, style: .continuous))
+                    .clipShape(.rect(cornerRadius: radius, style: .continuous))
                     .opacity(isOpen ? 1 : 0)
-                    .accessibilityHidden(!isOpen)
-                    .gesture(
+                    // Simultaneous, so the scroll view under it keeps its vertical drags.
+                    .simultaneousGesture(
                         DragGesture(minimumDistance: 20)
                             .onEnded { value in
-                                if value.translation.width > 60, abs(value.translation.height) < value.translation.width {
-                                    setOpen(false)
-                                }
+                                if Self.closes(translation: value.translation) { setOpen(false) }
                             },
                         including: isOpen ? .all : .subviews
                     )
                     .accessibilityAction(named: Text("passport.close", bundle: .module)) { setOpen(false) }
+                    .accessibilityHidden(!isOpen)
 
                     Cover(family: family)
                         .frame(width: DataPage.designSize.width, height: DataPage.designSize.height)
                         .scaleEffect(scale, anchor: .topLeading)
                         .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                        .documentSheen()
-                        .clipShape(.rect(cornerRadius: 10 * scale, style: .continuous))
+                        .clipShape(.rect(cornerRadius: radius, style: .continuous))
                         .modifier(CoverHinge(angle: isOpen ? (reduceMotion ? 0 : -180) : 0, fade: reduceMotion && isOpen))
                         .allowsHitTesting(!isOpen)
-                        .accessibilityHidden(isOpen)
                         .onTapGesture { setOpen(true) }
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(coverLabel)
@@ -135,8 +138,11 @@ public struct PassportFace: View {
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { setOpen(true) }
                         .accessibilityIdentifier("document.passport.cover")
+                        .accessibilityHidden(isOpen)
                 }
             }
+            // One reflection over the whole booklet, inside its rounded frame.
+            .modifier(DocumentSheen(cornerRadius: radius))
         }
         .aspectRatio(Self.aspectRatio, contentMode: .fit)
         .shadow(color: .black.opacity(0.18), radius: 10, y: 6)
@@ -183,13 +189,14 @@ private struct CoverHinge: ViewModifier, Animatable {
 }
 
 private struct Cover: View {
+    @Environment(\.documentAccent) private var accent
     let family: DocumentFamily
 
     private var ink: Color { Theme.RX.Document.coverInk.color }
 
     var body: some View {
         ZStack {
-            Rectangle().fill(family.coverTint)
+            Rectangle().fill(family.coverTint(accent: accent))
             Grain().blendMode(.overlay).opacity(0.5)
             // The fold of the spine along the left edge.
             LinearGradient(colors: [.black.opacity(0.28), .clear], startPoint: .leading, endPoint: .init(x: 0.06, y: 0.5))
@@ -261,11 +268,12 @@ private struct Grain: View {
 
 /// Drawn instead of the booklet while the screen is captured: the cover tint alone.
 private struct CapturedPlaceholder: View {
+    @Environment(\.documentAccent) private var accent
     let family: DocumentFamily
 
     var body: some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(family.coverTint)
+            .fill(family.coverTint(accent: accent))
             .overlay {
                 Image(systemName: "eye.slash")
                     .font(.title2)
@@ -339,7 +347,7 @@ struct DataPage: View, Animatable {
     static let rowGap = 0.04
     static let rowFade = 0.18
     /// Reveal order of the rows after the portrait (the page's reading order, top to bottom).
-    static let revealOrder: [PassportRow.Kind] = [.surname, .givenNames, .nationality, .sex, .birthDate, .number, .expiryDate, .mrz]
+    static let revealOrder: [PassportRow.Kind] = [.surname, .givenNames, .nationality, .sex, .birthDate, .expiryDate, .number, .mrz]
     static var revealDuration: Double { photoFade + Double(revealOrder.count - 1) * rowGap + rowFade }
 
     /// Opacity of the portrait at `progress`.
@@ -502,6 +510,7 @@ struct DataPage: View, Animatable {
 
 /// A closed passport for list rows: the cover tint, upright (88 x 125), with the chip symbol.
 public struct PassportCoverThumbnail: View {
+    @Environment(\.documentAccent) private var accent
     private let family: DocumentFamily
     private let size: CGFloat
 
@@ -515,7 +524,7 @@ public struct PassportCoverThumbnail: View {
         let height = size
         let width = height * 88 / 125
         RoundedRectangle(cornerRadius: size * 0.1, style: .continuous)
-            .fill(family.coverTint)
+            .fill(family.coverTint(accent: accent))
             .overlay(alignment: .leading) {
                 LinearGradient(colors: [.black.opacity(0.3), .clear], startPoint: .leading, endPoint: .trailing)
                     .frame(width: width * 0.14)

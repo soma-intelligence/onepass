@@ -20,8 +20,19 @@ public enum DocumentFamily: Sendable, Hashable, CaseIterable {
         }
     }
 
-    /// The cover colour, light and dark (RX document tokens).
+    /// The cover colour, light and dark (RX document tokens), without a vault accent.
     public var coverTint: Color { coverToken.color }
+
+    /// The cover colour for a vault whose accent is `accent` (spec 7.1): the generic cover is the
+    /// neutral graphite tinted toward the accent, the country covers keep their own tint. Mixed
+    /// at 30% so the cover text keeps its contrast.
+    public func coverTint(accent: Color?) -> Color {
+        guard self == .passportGeneric, let accent else { return coverTint }
+        return coverTint.mix(with: accent, by: Self.accentShare)
+    }
+
+    /// How much of the vault accent goes into the generic cover.
+    static let accentShare = 0.3
 
     /// The country printed on the cover, as text. Nil for the generic family (no country is drawn).
     public var countryTitle: LocalizedStringKey? {
@@ -69,7 +80,8 @@ extension Theme.RX {
         public static let bordeaux = Token(light: Tone(css: "#6B1E2B")!, dark: Tone(css: "#561722")!)
         /// The US passport's evocative cover: a navy blue.
         public static let navy = Token(light: Tone(css: "#1D2B4F")!, dark: Tone(css: "#17223F")!)
-        /// Any other country: a neutral graphite, warmed a little toward the accent.
+        /// Any other country: a neutral graphite, tinted toward the vault accent at draw time
+        /// (`coverTint(accent:)`).
         public static let neutral = Token(light: Tone(css: "#434A57")!, dark: Tone(css: "#363C47")!)
         /// Text and the chip symbol on a cover.
         public static let coverInk = Token(light: Tone(css: "#EFE4CC")!, dark: Tone(css: "#E3D7BD")!)
@@ -81,5 +93,26 @@ extension Theme.RX {
         public static let pageLabel = Token(light: Tone(css: "#5E5A52")!, dark: Tone(css: "#55514A")!)
         /// The band behind the notice and the MRZ.
         public static let pageBand = Token(light: Tone(css: "#E9E4D8")!, dark: Tone(css: "#C9C3B6")!)
+    }
+}
+
+// MARK: - Vault accent
+
+private struct DocumentAccentKey: EnvironmentKey {
+    static let defaultValue: Color? = nil
+}
+
+extension EnvironmentValues {
+    /// The accent of the vault the document belongs to: the generic cover takes it (spec 7.1).
+    public var documentAccent: Color? {
+        get { self[DocumentAccentKey.self] }
+        set { self[DocumentAccentKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Tints the generic document covers inside toward `accent` (the vault's colour).
+    public func documentAccent(_ accent: Color?) -> some View {
+        environment(\.documentAccent, accent)
     }
 }

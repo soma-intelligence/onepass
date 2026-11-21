@@ -1791,6 +1791,11 @@ struct PassportBooklet: View {
         return Self.data(of: item, portrait: image)
     }
 
+    /// The colour of the item's vault: a generic booklet takes it (spec 2026-11-21 section 7.1).
+    private var vaultAccent: Color? {
+        model.session.allVaults.first { $0.id == item.vaultId }.map { VaultBadge.color(named: $0.meta.color) }
+    }
+
     private var hasSecrets: Bool { !data.number.isEmpty || !data.mrz.isEmpty }
 
     var body: some View {
@@ -1799,6 +1804,7 @@ struct PassportBooklet: View {
             PassportFace(
                 family: Self.family(of: item), data: data, isOpen: $isOpen,
                 secretsRevealed: revealed && !captured)
+                .documentAccent(vaultAccent)
                 .frame(maxWidth: 440)
                 .accessibilityIdentifier("item.passport.booklet")
             if isOpen || data.status != nil {

@@ -563,13 +563,16 @@ struct RXListRow: View {
         return summary.listSubtitle.isEmpty ? ItemCategory.of(summary.itemType).singular : summary.listSubtitle
     }
 
-    /// A passport without a chosen icon: its booklet family. The summary carries no country, so
-    /// the last word of the title stands in ("Passeport FRA", the title a chip read gives);
-    /// anything else is the generic booklet.
+    /// A passport without a chosen icon: its booklet family, from the issuing country the summary
+    /// carries ("FRA" from a chip read, "France" typed or imported).
     private var passportFamily: DocumentFamily? {
         guard summary.itemType == .passport, !showsCustomIcon else { return nil }
-        let last = summary.title.split(separator: " ").last.map(String.init) ?? ""
-        return DocumentFamily.passport(issuingCountry: last)
+        return DocumentFamily.passport(issuingCountry: summary.issuingCountry ?? "")
+    }
+
+    /// The colour of the item's vault: a generic booklet takes it (spec 2026-11-21 section 7.1).
+    private var vaultAccent: Color? {
+        model.session.allVaults.first { $0.id == summary.vaultId }.map { VaultBadge.color(named: $0.meta.color) }
     }
 
     /// Travel Mode per item, before the value: what leaves or locks harder while travelling.
@@ -585,6 +588,7 @@ struct RXListRow: View {
             if let family = passportFamily {
                 // A passport is a closed booklet in the list (spec 2026-11-21 section 7.2).
                 PassportCoverThumbnail(family: family, size: Self.iconSize)
+                    .documentAccent(vaultAccent)
                     .favoriteBadge(summary.favorite, iconSize: Self.iconSize)
             } else {
                 ItemIcon(
