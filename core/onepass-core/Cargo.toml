@@ -65,6 +65,10 @@ libc = "0.2"
 # assertions only (a release build ignores it). For the dev CLI and the
 # integration tests: never enable it in a shipped build.
 dev-fast-kdf = []
+# Exposes `IcaoSession::with_rng`, which injects the BAC and PACE randoms so
+# a chip read can be replayed byte for byte (tests/scan_session.rs). Never on
+# by default and never in a shipped build: a fixed random breaks BAC/PACE.
+scan-test-rng = []
 
 # Unlocks accounts made with fast KDF parameters: needs the dev floor.
 [[test]]
@@ -97,6 +101,11 @@ required-features = ["dev-fast-kdf"]
 [[test]]
 name = "profile_sync"
 required-features = ["dev-fast-kdf"]
+
+# IcaoSession against a fake passport, randoms injected.
+[[test]]
+name = "scan_session"
+required-features = ["scan-test-rng"]
 
 [dev-dependencies]
 # The integration tests make fast-KDF accounts (tests/common): the crate's own

@@ -9,6 +9,7 @@ pub mod dg;
 pub mod master_list;
 pub mod pace;
 pub mod passive_auth;
+pub mod session;
 pub mod sm;
 
 use std::fmt;
@@ -18,6 +19,7 @@ pub use card_access::{PaceInfo, parse_card_access};
 pub use master_list::{MasterList, load_master_list};
 pub use pace::{PaceCurve, PaceExchange, PaceRandom};
 pub use passive_auth::{ChipStatus, verify_sod};
+pub use session::{AccessKey, ChipRead, IcaoSession, Step};
 pub use sm::{Cipher, SecureChannel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

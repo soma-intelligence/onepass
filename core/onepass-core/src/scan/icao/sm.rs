@@ -275,10 +275,16 @@ impl SecureChannel {
             let mut buf = Zeroizing::new(cmd.data.clone());
             pad(&mut buf, bs);
             cbc_encrypt(&prim, &self.iv(&prim), &mut buf);
-            let mut v = Zeroizing::new(Vec::with_capacity(buf.len() + 1));
-            v.push(0x01);
-            v.extend_from_slice(&buf);
-            dos.extend_from_slice(&tlv::encode(0x87, &v));
+            if cmd.ins & 1 == 1 {
+                // Odd INS (READ BINARY B1): the data is BER-TLV, so it goes
+                // in DO85, without the padding-content indicator.
+                dos.extend_from_slice(&tlv::encode(0x85, &buf));
+            } else {
+                let mut v = Zeroizing::new(Vec::with_capacity(buf.len() + 1));
+                v.push(0x01);
+                v.extend_from_slice(&buf);
+                dos.extend_from_slice(&tlv::encode(0x87, &v));
+            }
         }
         if let Some(le) = cmd.le {
             // Le above 256 (extended length) is out of P1 scope.
@@ -308,8 +314,10 @@ impl SecureChannel {
         }
     }
 
-    /// Verify the MAC (DO8E) of a protected response, then decrypt DO87 and
-    /// read the status from DO99. The MAC is checked before any decryption.
+    /// Verify the MAC (DO8E) of a protected response, then decrypt DO87 (or
+    /// DO85, the form without padding-content indicator a chip may use for
+    /// an odd INS) and read the status from DO99. The MAC is checked before
+    /// any decryption.
     ///
     /// A response with no data is an unprotected chip answer: its status is
     /// returned as `Chip(sw)` (a `9000` with nothing in it is a protocol
@@ -326,7 +334,7 @@ impl SecureChannel {
 
         let data = &resp.data[..];
         let mut rest = data;
-        let mut do87: Option<(&[u8], &[u8])> = None; // (raw, value)
+        let mut do87: Option<(&[u8], &[u8], bool)> = None; // (raw, value, DO85)
         let mut do99: Option<(&[u8], &[u8])> = None;
         let mut do8e: Option<&[u8]> = None;
         let mut stage = 0u8;
@@ -335,15 +343,17 @@ impl SecureChannel {
             let (t, after) =
                 tlv::parse_one(rest).map_err(|_| IcaoError::Protocol("malformed response"))?;
             let raw = &data[start..data.len() - after.len()];
-            // The only valid order is DO87 (optional), DO99, DO8E, each once.
+            // The only valid order is DO87 or DO85 (optional), DO99, DO8E,
+            // each once.
             match t.tag {
-                0x87 if stage == 0 => do87 = Some((raw, t.value)),
+                0x87 if stage == 0 => do87 = Some((raw, t.value, false)),
+                0x85 if stage == 0 => do87 = Some((raw, t.value, true)),
                 0x99 if stage <= 1 => do99 = Some((raw, t.value)),
                 0x8E if stage == 2 => do8e = Some(t.value),
                 _ => return Err(IcaoError::Protocol("unexpected object in response")),
             }
             stage = match t.tag {
-                0x87 => 1,
+                0x85 | 0x87 => 1,
                 0x99 => 2,
                 _ => 3,
             };
@@ -356,7 +366,7 @@ impl SecureChannel {
         }
 
         let mut body = Zeroizing::new(Vec::new());
-        if let Some((raw87, _)) = do87 {
+        if let Some((raw87, _, _)) = do87 {
             body.extend_from_slice(raw87);
         }
         body.extend_from_slice(raw99);
@@ -367,13 +377,21 @@ impl SecureChannel {
 
         let plain = match do87 {
             None => Vec::new(),
-            Some((_, v)) => {
+            Some((_, v, is85)) => {
                 let bs = self.cipher.block_size();
-                if v.len() < 1 + bs || v[0] != 0x01 || (v.len() - 1) % bs != 0 {
+                let ct = if is85 {
+                    v
+                } else {
+                    if v.first() != Some(&0x01) {
+                        return Err(IcaoError::Protocol("malformed encrypted data"));
+                    }
+                    &v[1..]
+                };
+                if ct.is_empty() || !ct.len().is_multiple_of(bs) {
                     return Err(IcaoError::Protocol("malformed encrypted data"));
                 }
                 let prim = Prim::new(self.cipher, &self.ks_enc)?;
-                let mut buf = Zeroizing::new(v[1..].to_vec());
+                let mut buf = Zeroizing::new(ct.to_vec());
                 cbc_decrypt(&prim, &self.iv(&prim), &mut buf);
                 unpad(&buf)
                     .ok_or(IcaoError::Protocol("bad padding"))?
@@ -825,6 +843,58 @@ mod tests {
             hex(&m.finalize().into_bytes()),
             "070A16B46B4D4144F79BDD9DD04A287C"
         );
+    }
+
+    #[test]
+    fn odd_ins_uses_do85_both_ways() {
+        let (mut ch, ke, km) = aes_pair(16, Cipher::Aes128);
+        let cmd = Command {
+            cla: 0x00,
+            ins: 0xB1,
+            p1: 0x00,
+            p2: 0x00,
+            data: vec![0x54, 0x02, 0x80, 0x00],
+            le: Some(0xE3),
+        };
+        let w = ch.wrap(&cmd);
+        let (d85, rest) = crate::scan::tlv::parse_one(&w.data).unwrap();
+        assert_eq!(d85.tag, 0x85);
+        assert_eq!(d85.value.len(), 16, "no padding-content indicator");
+        let mut ssc = [0u8; 16];
+        ssc[15] = 1;
+        let iv = reference::aes_cbc_encrypt(&ke, &[0; 16], &ssc);
+        let pt = reference::aes_cbc_decrypt(&ke, &iv, d85.value);
+        assert_eq!(&pt[..5], &[0x54, 0x02, 0x80, 0x00, 0x80]);
+        let (d97, rest) = crate::scan::tlv::parse_one(rest).unwrap();
+        assert_eq!((d97.tag, d97.value), (0x97, &[0xE3][..]));
+        let (d8e, _) = crate::scan::tlv::parse_one(rest).unwrap();
+        let mut mi = ssc.to_vec();
+        mi.extend_from_slice(&pad_for_test(vec![0x0C, 0xB1, 0x00, 0x00], 16));
+        mi.extend_from_slice(&w.data[..w.data.len() - 10]);
+        assert_eq!(
+            d8e.value,
+            &reference::aes_cmac8(&km, &pad_for_test(mi, 16))[..]
+        );
+
+        // A DO85 answer (SSC 2): ciphertext without the 01 byte.
+        ssc[15] = 2;
+        let iv = reference::aes_cbc_encrypt(&ke, &[0; 16], &ssc);
+        let plain = [0x53, 0x03, 7, 8, 9];
+        let ct = reference::aes_cbc_encrypt(&ke, &iv, &pad_for_test(plain.to_vec(), 16));
+        let mut body = crate::scan::tlv::encode(0x85, &ct);
+        body.extend_from_slice(&[0x99, 0x02, 0x90, 0x00]);
+        let mut mi = ssc.to_vec();
+        mi.extend_from_slice(&body);
+        let mac = reference::aes_cmac8(&km, &pad_for_test(mi, 16));
+        body.extend_from_slice(&[0x8E, 0x08]);
+        body.extend_from_slice(&mac);
+        let out = ch
+            .unwrap(&Response {
+                data: body,
+                sw: 0x9000,
+            })
+            .unwrap();
+        assert_eq!(out.data, plain);
     }
 
     #[test]
