@@ -194,6 +194,10 @@ fn loopback_http_only_when_allowed() {
 /// repository's local stack (`mailbox/supabase/config.toml`, `[api]` port),
 /// so an org made against that stack hands out links that parse.
 #[test]
+#[cfg_attr(
+    target_os = "android",
+    ignore = "reads the repository's mailbox config, not pushed to the device"
+)]
 fn loopback_is_the_local_stack_of_this_repo() {
     let config = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),

@@ -810,6 +810,13 @@ fn cdp_card_never_clicks() {
     assert_eq!(audit[1]["field"], "filled");
     assert_eq!(audit[1]["destination"], ATLAS);
     let line = audit[1].to_string();
-    assert!(!line.contains(CARD_NUMBER) && !line.contains(CVV), "{line}");
+    assert!(!line.contains(CARD_NUMBER), "{line}");
+    // The CVV is three digits: random ids, the chain hash and the timestamp
+    // can hold "737" by chance, so it is looked for in the other values.
+    let mut rest = audit[1].as_object().unwrap().clone();
+    for random in ["item_id", "vault_id", "prev", "ts"] {
+        rest.remove(random);
+    }
+    assert!(!Value::Object(rest).to_string().contains(CVV), "{line}");
     rig.host.stop();
 }
