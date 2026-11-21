@@ -126,6 +126,24 @@ struct LostChip: APDUTransport {
     func send(_ apdu: Data) async throws -> Data { throw PassportReadError.lostContact }
 }
 
+/// Answers like the replay, but cancels the reading task during its first exchange: the reader must
+/// stop at the next turn of its loop instead of sending the rest.
+final class CancellingTransport: APDUTransport {
+    private let inner: ReplayTransport
+
+    init(_ exchange: [SessionFixture.Exchange]) {
+        inner = ReplayTransport(exchange)
+    }
+
+    var sent: Int { inner.sent }
+
+    func send(_ apdu: Data) async throws -> Data {
+        let answer = try await inner.send(apdu)
+        withUnsafeCurrentTask { $0?.cancel() }
+        return answer
+    }
+}
+
 final class ProgressLog: Sendable {
     private let values = Mutex<[Double]>([])
     func add(_ v: Double) { values.withLock { $0.append(v) } }
@@ -166,6 +184,31 @@ final class ProgressLog: Sendable {
         await #expect(throws: PassportReadError.lostContact) {
             try await reader.read(mrz: fixture.mrz) { _ in }
         }
+    }
+
+    /// Leaving the scan screen cancels the task: the read stops after the exchange in flight.
+    @Test func cancelledReadStopsSending() async throws {
+        let fixture = try SessionFixture.load()
+        let transport = CancellingTransport(fixture.exchange)
+        let reader = PassportReader(
+            transport: transport, masterList: fixture.masterList, makeSession: fixture.makeSession)
+        let task = Task { try await reader.read(mrz: fixture.mrz) { _ in } }
+        await #expect(throws: PassportReadError.cancelled) { try await task.value }
+        #expect(transport.sent == 1)
+    }
+
+    /// A cancelled task never starts a read: no APDU at all.
+    @Test func readOfACancelledTaskSendsNothing() async throws {
+        let fixture = try SessionFixture.load()
+        let transport = ReplayTransport(fixture.exchange)
+        let reader = PassportReader(
+            transport: transport, masterList: fixture.masterList, makeSession: fixture.makeSession)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await reader.read(mrz: fixture.mrz) { _ in }
+        }
+        await #expect(throws: PassportReadError.cancelled) { try await task.value }
+        #expect(transport.sent == 0)
     }
 
     @Test func accessDeniedSurfaces() async throws {

@@ -48,42 +48,92 @@ public struct MRZAccumulator: Sendable {
 
     /// The camera view that reads a passport MRZ: VisionKit's DataScannerViewController
     /// (`recognizedDataTypes: [.text()]`) feeding an `MRZAccumulator`. Calls `onMRZ` once with the
-    /// two lines. Check `DataScannerViewController.isSupported` and `.isAvailable` first.
+    /// two lines. Scanning starts once the view is on screen (VisionKit refuses earlier); a refusal
+    /// (camera denied or busy, device without the scanner) goes to `onFailure`, so the screen can
+    /// offer to type the lines instead. Check `DataScannerViewController.isSupported` and
+    /// `.isAvailable` first.
     public struct MRZScanner: UIViewControllerRepresentable {
         private let onMRZ: @MainActor ([String]) -> Void
+        private let onFailure: @MainActor (any Error) -> Void
 
-        public init(onMRZ: @escaping @MainActor ([String]) -> Void) {
+        public init(
+            onMRZ: @escaping @MainActor ([String]) -> Void,
+            onFailure: @escaping @MainActor (any Error) -> Void
+        ) {
             self.onMRZ = onMRZ
+            self.onFailure = onFailure
         }
 
-        public func makeUIViewController(context: Context) -> DataScannerViewController {
+        public func makeUIViewController(context: Context) -> Host {
             let scanner = DataScannerViewController(
                 recognizedDataTypes: [.text()], qualityLevel: .accurate,
                 recognizesMultipleItems: true, isHighFrameRateTrackingEnabled: false,
                 isHighlightingEnabled: false)
             scanner.delegate = context.coordinator
-            try? scanner.startScanning()
-            return scanner
+            return Host(scanner: scanner, onFailure: onFailure)
         }
 
-        public func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {}
+        public func updateUIViewController(_ host: Host, context: Context) {}
 
-        public static func dismantleUIViewController(
-            _ scanner: DataScannerViewController, coordinator: Coordinator
-        ) {
-            scanner.stopScanning()
+        public static func dismantleUIViewController(_ host: Host, coordinator: Coordinator) {
+            host.scanner.stopScanning()
         }
 
-        public func makeCoordinator() -> Coordinator { Coordinator(onMRZ: onMRZ) }
+        public func makeCoordinator() -> Coordinator { Coordinator(onMRZ: onMRZ, onFailure: onFailure) }
+
+        /// Holds the scanner as a child and starts it once visible: `startScanning()` throws while
+        /// the scanner is not in a window yet.
+        public final class Host: UIViewController {
+            let scanner: DataScannerViewController
+            private let onFailure: @MainActor (any Error) -> Void
+            private var started = false
+
+            init(scanner: DataScannerViewController, onFailure: @escaping @MainActor (any Error) -> Void) {
+                self.scanner = scanner
+                self.onFailure = onFailure
+                super.init(nibName: nil, bundle: nil)
+            }
+
+            @available(*, unavailable)
+            required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+            public override func viewDidLoad() {
+                super.viewDidLoad()
+                addChild(scanner)
+                scanner.view.frame = view.bounds
+                scanner.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                view.addSubview(scanner.view)
+                scanner.didMove(toParent: self)
+            }
+
+            public override func viewDidAppear(_ animated: Bool) {
+                super.viewDidAppear(animated)
+                guard !started else { return }
+                started = true
+                do {
+                    try scanner.startScanning()
+                } catch {
+                    onFailure(error)
+                }
+            }
+
+            public override func viewWillDisappear(_ animated: Bool) {
+                super.viewWillDisappear(animated)
+                scanner.stopScanning()
+                started = false
+            }
+        }
 
         @MainActor
         public final class Coordinator: NSObject, DataScannerViewControllerDelegate {
             private var accumulator = MRZAccumulator()
             private var done = false
             private let onMRZ: @MainActor ([String]) -> Void
+            private let onFailure: @MainActor (any Error) -> Void
 
-            init(onMRZ: @escaping @MainActor ([String]) -> Void) {
+            init(onMRZ: @escaping @MainActor ([String]) -> Void, onFailure: @escaping @MainActor (any Error) -> Void) {
                 self.onMRZ = onMRZ
+                self.onFailure = onFailure
             }
 
             public func dataScanner(
@@ -95,6 +145,15 @@ public struct MRZAccumulator: Sendable {
                 _ scanner: DataScannerViewController, didUpdate updated: [RecognizedItem],
                 allItems: [RecognizedItem]
             ) { feed(allItems) }
+
+            public func dataScanner(
+                _ scanner: DataScannerViewController, becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
+            ) {
+                // The camera went away while scanning (access revoked, another app took it).
+                guard !done else { return }
+                done = true
+                onFailure(error)
+            }
 
             /// Every item on screen, top to bottom, as one text: the two MRZ lines may come as two
             /// items.

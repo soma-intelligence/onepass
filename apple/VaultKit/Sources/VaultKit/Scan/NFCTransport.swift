@@ -1,18 +1,48 @@
+import Foundation
+
+/// The Core NFC reader errors a passport read tells apart, kept outside Core NFC so the mapping to
+/// `PassportReadError` is tested on every platform (`NFCTransport` converts `NFCReaderError.Code`).
+enum NFCFailure: Sendable, Equatable {
+    case userCanceled
+    case unsupportedFeature
+    case securityViolation
+    case sessionTimeout
+    /// The command was refused before it reached the chip (`readerErrorInvalidParameter`): an APDU
+    /// Core NFC cannot carry, nothing a second try fixes.
+    case invalidParameter
+    /// `readerErrorInvalidParameterLength`: same, for a command or answer length Core NFC refuses.
+    case invalidParameterLength
+    /// Anything else, a tag that went away above all.
+    case other
+
+    /// `connected`: a tag was connected during this session.
+    func readError(connected: Bool) -> PassportReadError {
+        switch self {
+        case .userCanceled: .cancelled
+        case .unsupportedFeature, .securityViolation: .nfcUnavailable
+        case .sessionTimeout: connected ? .lostContact : .noChip
+        case .invalidParameter, .invalidParameterLength: .unsupported
+        case .other: .lostContact
+        }
+    }
+}
+
 #if canImport(CoreNFC) && os(iOS)
     import CoreNFC
-    import Foundation
     import OSLog
 
-    /// Core NFC as an `APDUTransport`: opens the system sheet (`NFCTagReaderSession`, ISO 14443),
-    /// keeps the first ISO 7816 tag and sends each APDU with `sendCommand(apdu:)`. A lost tag is
-    /// `PassportReadError.lostContact` and polling starts again, so the next `send` waits for the
-    /// tag to come back. Thin on purpose: it cannot be unit tested. Logs steps only.
     /// The connected tag, handed from Core NFC's queue to the reader's task. Core NFC serialises
     /// the calls on the tag itself; only one read runs at a time.
     struct ConnectedTag: @unchecked Sendable {
         let tag: any NFCISO7816Tag
     }
 
+    /// Core NFC as an `APDUTransport`: opens the system sheet (`NFCTagReaderSession`, ISO 14443),
+    /// keeps the first ISO 7816 tag and sends each APDU with `sendCommand(apdu:)`. A lost tag is
+    /// `PassportReadError.lostContact` and polling starts again, so the next `send` waits for the
+    /// tag to come back. A read cancelled while it waits for the tag closes the sheet. Thin on
+    /// purpose: the waiting (`TagGate`) and the error mapping (`NFCFailure`) are tested apart, the
+    /// rest needs a device. Logs steps only.
     public final class NFCTransport: NSObject, APDUTransport, @unchecked Sendable {
         private static let log = Logger(subsystem: "me.somalabs.onepass", category: "scan")
 
@@ -20,10 +50,9 @@
         private let lock = NSLock()
         // Guarded by `lock`.
         private var session: NFCTagReaderSession?
-        private var tag: ConnectedTag?
-        private var waiters: [CheckedContinuation<ConnectedTag, any Error>] = []
-        private var ended: PassportReadError?
         private var everConnected = false
+        /// The connected tag, and the reads waiting for one.
+        private let gate = TagGate<ConnectedTag>()
 
         /// The device reads NFC tags.
         public static var isAvailable: Bool { NFCTagReaderSession.readingAvailable }
@@ -78,38 +107,39 @@
             }
         }
 
+        /// The tag, once connected. A cancelled read stops waiting and closes the system sheet.
         private func connectedTag() async throws -> ConnectedTag {
-            try await withCheckedThrowingContinuation { cont in
-                let ready: Result<ConnectedTag, PassportReadError>? = lock.withLock {
-                    if let tag { return .success(tag) }
-                    if let ended { return .failure(ended) }
-                    waiters.append(cont)
-                    return nil
-                }
-                switch ready {
-                case .success(let tag): cont.resume(returning: tag)
-                case .failure(let error): cont.resume(throwing: error)
-                case nil: break
-                }
+            try await gate.wait { [weak self] in
+                Self.log.info("scan: read cancelled while waiting for the tag")
+                self?.invalidate()
             }
         }
 
         private func dropTag() {
-            let session = lock.withLock { () -> NFCTagReaderSession? in
-                tag = nil
-                return self.session
-            }
+            gate.drop()
+            let session = lock.withLock { self.session }
             Self.log.info("scan: tag lost, polling again")
             session?.restartPolling()
         }
 
         static func map(_ error: any Error, connected: Bool) -> PassportReadError {
+            if let e = error as? PassportReadError { return e }
+            if error is CancellationError { return .cancelled }
             guard let nfc = error as? NFCReaderError else { return .lostContact }
-            switch nfc.code {
-            case .readerSessionInvalidationErrorUserCanceled: return .cancelled
-            case .readerErrorUnsupportedFeature, .readerErrorSecurityViolation: return .nfcUnavailable
-            case .readerSessionInvalidationErrorSessionTimeout: return connected ? .lostContact : .noChip
-            default: return .lostContact
+            return NFCFailure(nfc.code).readError(connected: connected)
+        }
+    }
+
+    extension NFCFailure {
+        init(_ code: NFCReaderError.Code) {
+            switch code {
+            case .readerSessionInvalidationErrorUserCanceled: self = .userCanceled
+            case .readerErrorUnsupportedFeature: self = .unsupportedFeature
+            case .readerErrorSecurityViolation: self = .securityViolation
+            case .readerSessionInvalidationErrorSessionTimeout: self = .sessionTimeout
+            case .readerErrorInvalidParameter: self = .invalidParameter
+            case .readerErrorInvalidParameterLength: self = .invalidParameterLength
+            default: self = .other
             }
         }
     }
@@ -118,16 +148,12 @@
         public func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {}
 
         public func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: any Error) {
-            let (waiting, mapped) = lock.withLock { () -> ([CheckedContinuation<ConnectedTag, any Error>], PassportReadError) in
-                let mapped = Self.map(error, connected: everConnected)
-                ended = mapped
-                tag = nil
+            let mapped = lock.withLock { () -> PassportReadError in
                 self.session = nil
-                defer { waiters.removeAll() }
-                return (waiters, mapped)
+                return Self.map(error, connected: everConnected)
             }
             Self.log.info("scan: NFC session ended")
-            for w in waiting { w.resume(throwing: mapped) }
+            gate.end(mapped)
         }
 
         public func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
@@ -144,14 +170,9 @@
                     session.restartPolling()
                     return
                 }
-                let waiting = self.lock.withLock { () -> [CheckedContinuation<ConnectedTag, any Error>] in
-                    self.tag = connected
-                    self.everConnected = true
-                    defer { self.waiters.removeAll() }
-                    return self.waiters
-                }
+                self.lock.withLock { self.everConnected = true }
                 Self.log.info("scan: tag connected")
-                for w in waiting { w.resume(returning: connected) }
+                self.gate.open(connected)
             }
         }
     }

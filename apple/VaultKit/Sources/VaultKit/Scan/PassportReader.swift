@@ -70,6 +70,7 @@ public struct PassportReader: Sendable {
         do {
             return try await readOnce(mrz: mrz, progress: progress)
         } catch .lostContact {
+            if Task.isCancelled { throw .cancelled }
             Self.log.info("scan: contact lost, reading again")
             progress(0)
             return try await readOnce(mrz: mrz, progress: progress)
@@ -91,6 +92,11 @@ public struct PassportReader: Sendable {
         var step = session.start()
         var exchanges = 0
         while true {
+            // Leaving the screen cancels the read: no APDU after that.
+            if Task.isCancelled {
+                Self.log.info("scan: read cancelled after \(exchanges) exchanges")
+                throw .cancelled
+            }
             switch step {
             case .send(let apdu):
                 let answer: Data
