@@ -9,7 +9,9 @@
 // - "signup": a signup form, the vault open ("Create with Kelid").
 // Nothing on a login page with nothing saved, nor with no app.
 //
-// Never when: the setting is off, the site is in the never-list, the page is not https, the
+// Never when: the page carries a sign-out control (a session is open there), a sign-in of ours
+// succeeded on the site in this browser session and the form asks no password (a lone e-mail
+// step, a newsletter box read as one), the setting is off, the site is in the never-list, the page is not https, the
 // window is private, a chain runs in the tab or another of our surfaces is there, a field of the
 // form already holds a value, or the pill already showed for this site in this tab (kept in
 // `storage.session` across a worker restart: a reload does not bring it back, another site in
@@ -21,6 +23,8 @@ import type { CsContext } from "./frames";
 
 /** `storage.session`: the `tab|site` pairs the pill showed for (a worker stopped by the browser keeps them). */
 export const AUTO_PILL_SHOWN_KEY = "auto_pill_shown";
+/** `storage.session`: the sites a chain signed in to (`done`), for the rest of the browser session. */
+export const AUTO_PILL_SIGNED_IN_KEY = "auto_pill_signed_in";
 /** Pairs kept at most (oldest dropped). */
 const MAX_SHOWN = 500;
 
@@ -34,6 +38,10 @@ export interface AutoPage {
   documentId?: string;
   login: string[];
   signup: string[];
+  /** The page carries a sign-out control: someone is signed in there. */
+  signedIn?: boolean;
+  /** A login form of the page asks a password (not a lone identifier step). */
+  password?: boolean;
 }
 
 export interface AutoPillDeps {
@@ -68,6 +76,8 @@ export class AutoPill {
   private readonly shown = new Set<string>();
   /** Writes of the mirror, one after the other. */
   private writes: Promise<void> = Promise.resolve();
+  /** Sites a chain signed in to (mirrored in `storage.session`). */
+  private readonly signedInSites = new Set<string>();
   /** Per tab: a look under way, and whether another trigger came meanwhile. */
   private readonly looking = new Map<number, { again: boolean; done: Promise<void> }>();
 
@@ -140,6 +150,31 @@ export class AutoPill {
     }
   }
 
+  /** A chain ended `done` on `site`: signed in there, the card stops offering itself on a lone identifier step. */
+  async signedIn(site: string): Promise<void> {
+    this.signedInSites.add(site);
+    const session = this.deps.session;
+    if (!session) return;
+    this.writes = this.writes.then(async () => {
+      const raw = (await session.get(AUTO_PILL_SIGNED_IN_KEY))[AUTO_PILL_SIGNED_IN_KEY];
+      const list = Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string" && x !== site) : [];
+      await session.set({ [AUTO_PILL_SIGNED_IN_KEY]: [...list, site].slice(-MAX_SHOWN) });
+    }).catch(() => undefined);
+    return this.writes;
+  }
+
+  private async wasSignedIn(site: string): Promise<boolean> {
+    if (this.signedInSites.has(site)) return true;
+    if (!this.deps.session) return false;
+    await this.writes;
+    try {
+      const raw = (await this.deps.session.get(AUTO_PILL_SIGNED_IN_KEY))[AUTO_PILL_SIGNED_IN_KEY];
+      return Array.isArray(raw) && raw.includes(site);
+    } catch {
+      return false;
+    }
+  }
+
   /** "Never on this site", for the registrable domain of `origin`. */
   async never(origin: string): Promise<void> {
     const site = parseOrigin(origin)?.site;
@@ -184,6 +219,10 @@ export class AutoPill {
     if (p.documentId !== undefined && f.documentId !== undefined && p.documentId !== f.documentId) return;
     const kind = p.login.length > 0 ? "login" : p.signup.length > 0 ? "signup" : null;
     if (!kind) return;
+    // A signed-in page (a sign-out control) offers nothing; nor, after our sign-in on the site, a
+    // login form that asks no password (the session is open, the e-mail box is something else).
+    if (p.signedIn === true) return;
+    if (kind === "login" && p.password !== true && (await this.wasSignedIn(o.site))) return;
     const cs: CsContext = { tabId, frameId: 0, origin: o.origin, ...(f.documentId !== undefined ? { documentId: f.documentId } : {}) };
     if (await this.deps.prefilled(cs, kind === "login" ? p.login : p.signup)) return;
     const vault = await this.deps.vault();

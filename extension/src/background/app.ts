@@ -393,6 +393,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   // The chain plans unknown pages; the planner starts chains.
   const plannerRef: { current: Planner | null } = { current: null };
   const notesRef: { current: FillNotes | null } = { current: null };
+  const autoPillRef: { current: AutoPill | null } = { current: null };
   const runner: ChainRunner | null = opts.chain
     ? null
     : new ChainRunner({
@@ -414,7 +415,11 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         replan: (cs, itemId) => replanForChain(cs, itemId),
         formRoles: (cs, formRef) => pageFormRoles(cs, formRef),
         // One note per fill: a chain notes its own at done.
-        onChain: (tabId) => notesRef.current?.forget(tabId),
+        onChain: (tabId, event, site) => {
+          notesRef.current?.forget(tabId);
+          // Signed in on that site: the card no longer offers itself there (auto-pill.ts).
+          if (event === "done" && site !== undefined) void autoPillRef.current?.signedIn(site).catch(() => undefined);
+        },
         ...(opts.now ? { now: opts.now } : {}),
       });
   const chain: ChainDriver = opts.chain ?? (runner as ChainRunner);
@@ -789,7 +794,15 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       const a = await analyses.top(tabId);
       if (!a) return null;
       const refs = (kind: string) => a.analysis.forms.filter((f) => f.kind === kind).map((f) => f.ref);
-      return { origin: a.origin, ...(a.documentId !== undefined ? { documentId: a.documentId } : {}), login: refs("login"), signup: refs("signup") };
+      const password = a.analysis.forms.some((f) => f.kind === "login" && f.fields.some((x) => x.role === "current_password"));
+      return {
+        origin: a.origin,
+        ...(a.documentId !== undefined ? { documentId: a.documentId } : {}),
+        login: refs("login"),
+        signup: refs("signup"),
+        ...(a.analysis.signedIn === true ? { signedIn: true } : {}),
+        ...(password ? { password: true } : {}),
+      };
     },
     prefilled: async (cs, refs) => {
       const body = await requestContext(cs);
@@ -811,6 +824,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     logins: (cs) => overlays.offers(cs),
     open: (cs, face) => overlays.openAuto(cs, face),
   });
+  autoPillRef.current = autoPill;
   const popup = new PopupBackend({
     ext,
     area: store.session,

@@ -698,7 +698,15 @@ export class Overlays {
   }
 
   async close(token: string, ui: UiContext): Promise<object> {
-    const rec = await this.record(token, ui);
+    const rec = await this.tokens.resolve(token, ui);
+    if (!rec) {
+      // A token this worker no longer knows (expired, dropped): the card's x still removes the
+      // card of the sender's own tab. The overlay is always a frame of the top document.
+      if (ui.tabId === undefined) throw new BgError("invalid");
+      this.checked.delete(token);
+      await removeFrame(this.deps.ext.tabs, { tabId: ui.tabId, frameId: 0 }, "overlay");
+      return {};
+    }
     this.checked.delete(token);
     await this.tokens.drop(token);
     await removeFrame(this.deps.ext.tabs, rec, "overlay");

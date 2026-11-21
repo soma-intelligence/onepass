@@ -176,8 +176,11 @@ export interface ChainDeps {
    * null when the content script does not answer.
    */
   formRoles?: (cs: CsContext, formRef: string) => Promise<FieldRole[] | null>;
-  /** A chain started or ended `done` in this tab (the site memory drops the tab's pending fill). */
-  onChain?: (tabId: number, event: "start" | "done") => void;
+  /**
+   * A chain started or ended `done` in this tab (the site memory drops the tab's pending fill; the
+   * card that offers itself stays quiet on a site signed in). `site`: the chain's, at `done`.
+   */
+  onChain?: (tabId: number, event: "start" | "done", site?: string) => void;
   now?: () => number;
   timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(id: unknown): void };
 }
@@ -1024,7 +1027,7 @@ export class ChainRunner implements ChainDriver {
   private async ended(s: ChainState): Promise<void> {
     try {
       if (s.status === "done") {
-        this.deps.onChain?.(s.tabId, "done");
+        this.deps.onChain?.(s.tabId, "done", s.site);
         await clearPenalty(this.deps.area, s.site);
         const { roles, intent } = noteShape(s);
         await noteFill(this.deps.session, { ctx: "chain", item_id: s.itemId, origin: s.siteOrigin, roles, intent, steps: noteSteps(s) });
