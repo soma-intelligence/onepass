@@ -1,0 +1,19 @@
+(* formal-lib: guard_core.pvl *)
+(* Negative witness of G4: the restoring device takes the realms' response
+   keys from the storage instead of the keys pinned in the release (spec 5).
+   No realm is compromised. The attacker answers as both realms with shares
+   of its own OPRF key `evil`; the device derives its tags from
+   oprf(evil, x), which the attacker recomputes for any guess (expected:
+   attack found). *)
+
+free pw: password [private].
+
+query x: bitstring; event(DeviceOprf(oprf(evil, x))).
+
+process
+  new sk: key; new salt: nonce;
+  new rsk1: skey; new rsk2: skey; new rsk3: skey;
+  out(c, (sk, salt, pk(rsk1), pk(rsk2), pk(rsk3)));
+  ( Guarded(pw, sk, n2b(salt), guard_oprf_key, rsk1, rsk2, rsk3, no, no)
+  | ! (in(c, (vk1: pkey, vk2: pkey)); Restore(pw, sk, n2b(salt), vk1, vk2))
+  | phase 1; out(c, late) )

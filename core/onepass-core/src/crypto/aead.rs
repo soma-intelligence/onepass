@@ -54,6 +54,10 @@ pub enum BlobKind {
     KeyUseQueue = 19,
     /// The org keyset sealed to one owner's account KEM key (`crate::org`).
     OrgKeyset = 20,
+    /// A Guarded Kit share sealed for one realm (`crate::guarded_kit`).
+    GuardShare = 21,
+    /// The Guarded Kit locator, sealed under the Secret Key.
+    GuardLocator = 22,
 }
 
 /// Context a blob is bound to. Opening under any other context fails.
@@ -315,6 +319,8 @@ mod tests {
             (BlobKind::AutofillHistory, 18),
             (BlobKind::KeyUseQueue, 19),
             (BlobKind::OrgKeyset, 20),
+            (BlobKind::GuardShare, 21),
+            (BlobKind::GuardLocator, 22),
         ];
         for (kind, code) in all {
             assert_eq!(kind as u8, code);

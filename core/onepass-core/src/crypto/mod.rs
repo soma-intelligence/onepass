@@ -12,7 +12,9 @@ pub mod secret_key;
 pub mod sign;
 
 pub use aead::{Aad, BlobKind, HEADER_LEN, open, padded_len, seal};
-pub use kdf::{DEV_KDF_FLOOR, KDF_FLOOR, KdfParams, derive_auk};
+pub use kdf::{
+    DEV_KDF_FLOOR, KDF_FLOOR, KdfParams, derive_auk, derive_auk_v2, guard_input, stretch_password,
+};
 pub use kem::{HybridKemPublic, HybridKemSecret, unwrap_key, wrap_key};
 pub use key::SymmetricKey;
 pub use random::{fill_random, random_array};

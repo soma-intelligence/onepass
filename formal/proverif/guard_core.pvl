@@ -1,0 +1,199 @@
+(* OnePass formal model: Guarded Kit (spec
+   docs/superpowers/specs/2026-11-20-guarded-kit-design.md), processes shared
+   by guard.pv, guard_t_realms.pv and guard_unpinned.pv.
+
+   Sources:
+   - core/onepass-core/src/crypto/kdf.rs: stretch_password, guard_input,
+     derive_auk_v2;
+   - core/onepass-core/src/guarded_kit/oprf.rs: threshold OPRF (key shares,
+     Lagrange combination of the evaluations, RFC 9497 finalize);
+   - core/onepass-core/src/guarded_kit/shamir.rs: shares of the guard G;
+   - core/onepass-core/src/guarded_kit/client.rs: register, restore, tag_of,
+     share_key;
+   - core/onepass-core/src/guarded_kit/realm.rs: Realm::handle (Evaluate,
+     Unlock);
+   - core/onepass-core/src/guarded_kit/wire.rs: signed responses bound to the
+     request.
+
+   Scenario: the Emergency Kit is stolen (the Secret Key is public) and the
+   storage is hostile (salt and sealed keyset public). Three realms, any two
+   rebuild G. The guess limit of the realms is not modeled (ProVerif does
+   not count): the realms answer without limit, and weaksecret asks whether
+   the attacker can test a password guess OFFLINE. Online guesses, the ones
+   the realms count, are not an attack for weaksecret.
+
+   Abstractions: Shamir sharing (of G over GF(2^8), of the OPRF key over the
+   scalar field) is a set of rewrite rules where any two distinct shares
+   rebuild the secret; one share reveals nothing. The OPRF blind is perfect.
+   TLS is not modeled: requests and responses travel on the public channel
+   c, and responses are signed by the realm's pinned key over the request
+   (wire.rs). *)
+
+const lbl_guard_x: bitstring.
+const lbl_auk_v2: bitstring.
+const lbl_tag_key: bitstring.
+const lbl_tag: bitstring.
+const lbl_share_key: bitstring.
+const dom_realm_response: bitstring.
+const kind_guard_share: bitstring.
+const req_evaluate: bitstring.
+const req_unlock: bitstring.
+
+const realm1: bitstring.
+const realm2: bitstring.
+const realm3: bitstring.
+(* Share indices as bound into tags and share keys. *)
+const idx1: bitstring.
+const idx2: bitstring.
+const idx3: bitstring.
+
+const yes: bitstring.
+const no: bitstring.
+
+(* The keyset content a guarded account seals under AUK v2. *)
+free keyset_secret: bitstring [private].
+
+(* Offline guessing, two ways the models check it besides weaksecret:
+   - phase 1 stops every realm (no online oracle left) and publishes a
+     fresh input `late`. An attacker who then derives evalb(k, late) can
+     evaluate the OPRF on any guess offline;
+   - `evil` is an OPRF key the attacker knows. A device that computes its
+     tags from oprf(evil, x) hands out values the attacker recomputes for
+     any guess.
+   guard_oprf_key is the guard's OPRF key k (one registration per model,
+   so a free name stands for it and queries can name it). *)
+free guard_oprf_key: key [private].
+free late: bitstring [private].
+free evil: key.
+
+(* ------------------------------------------------------------------ *)
+(* Threshold OPRF                                                      *)
+(* ------------------------------------------------------------------ *)
+
+(* One constructor per share index, and one single-rule combiner per pair
+   of distinct indices: two distinct shares rebuild, one share alone or
+   twice does not. *)
+fun ksh1(key, nonce): key.
+fun ksh2(key, nonce): key.
+fun ksh3(key, nonce): key.
+fun blind(bitstring, nonce): bitstring.
+fun evalb(key, bitstring): bitstring.
+fun oprf(key, bitstring): bitstring.
+
+reduc forall k: key, x: bitstring, r: nonce;
+  unblind(r, x, evalb(k, blind(x, r))) = oprf(k, x).
+
+(* oprf.rs: combine_evaluations, Lagrange in the exponent. *)
+reduc forall k: key, r: nonce, b: bitstring;
+  comb12(evalb(ksh1(k, r), b), evalb(ksh2(k, r), b)) = evalb(k, b).
+reduc forall k: key, r: nonce, b: bitstring;
+  comb13(evalb(ksh1(k, r), b), evalb(ksh3(k, r), b)) = evalb(k, b).
+reduc forall k: key, r: nonce, b: bitstring;
+  comb23(evalb(ksh2(k, r), b), evalb(ksh3(k, r), b)) = evalb(k, b).
+
+(* ------------------------------------------------------------------ *)
+(* Shares of the guard G (shamir.rs)                                   *)
+(* ------------------------------------------------------------------ *)
+
+fun gsh1(key, nonce): bitstring.
+fun gsh2(key, nonce): bitstring.
+fun gsh3(key, nonce): bitstring.
+
+reduc forall g: key, r: nonce; gcomb12(gsh1(g, r), gsh2(g, r)) = g.
+reduc forall g: key, r: nonce; gcomb13(gsh1(g, r), gsh3(g, r)) = g.
+reduc forall g: key, r: nonce; gcomb23(gsh2(g, r), gsh3(g, r)) = g.
+
+(* ------------------------------------------------------------------ *)
+(* Derivations (kdf.rs, client.rs)                                     *)
+(* ------------------------------------------------------------------ *)
+
+letfun guard_x(pw: password, salt: bitstring) =
+  k2b(hkdf(salt, argon(pw, salt), lbl_guard_x)).
+
+letfun auk_v2(pw: password, sk: key, g: key, salt: bitstring) =
+  hkdf(salt, (argon(pw, salt), k2b(sk), k2b(g)), lbl_auk_v2).
+
+letfun tag_of(y: bitstring, rid: bitstring, idx: bitstring) =
+  mac(hkdf(empty, y, lbl_tag_key), (lbl_tag, rid, idx)).
+
+letfun share_key(y: bitstring, rid: bitstring, idx: bitstring) =
+  hkdf(empty, y, (lbl_share_key, rid, idx)).
+
+letfun share_aad(rid: bitstring, idx: bitstring) =
+  (kind_guard_share, rid, idx).
+
+(* ------------------------------------------------------------------ *)
+(* Realm (realm.rs: Realm::handle)                                     *)
+(* ------------------------------------------------------------------ *)
+
+let Realm(rid: bitstring, rsk: skey, ks: key, tag: bitstring, sct: bitstring) =
+  (! in(c, (=rid, =req_evaluate, b: bitstring));
+     let e = evalb(ks, b) in
+     out(c, (e, sign_dom(rsk, dom_realm_response, (rid, req_evaluate, b, e)))))
+  |
+  (! in(c, (=rid, =req_unlock, t: bitstring));
+     if t = tag then
+     out(c, (sct, sign_dom(rsk, dom_realm_response, (rid, req_unlock, t, sct))))).
+
+(* ------------------------------------------------------------------ *)
+(* Registration (client.rs: register) and the three realms             *)
+(* leak_i = yes: realm i is compromised, its record is public.          *)
+(* ------------------------------------------------------------------ *)
+
+let Guarded(pw: password, sk: key, salt: bitstring, k: key,
+            rsk1: skey, rsk2: skey, rsk3: skey,
+            leak1: bitstring, leak2: bitstring) =
+  new g: key; new rg: nonce; new rk: nonce;
+  let x = guard_x(pw, salt) in
+  let y = oprf(k, x) in
+  let t1 = tag_of(y, realm1, idx1) in
+  let t2 = tag_of(y, realm2, idx2) in
+  let t3 = tag_of(y, realm3, idx3) in
+  let c1 = aead_seal(share_key(y, realm1, idx1), share_aad(realm1, idx1), gsh1(g, rg)) in
+  let c2 = aead_seal(share_key(y, realm2, idx2), share_aad(realm2, idx2), gsh2(g, rg)) in
+  let c3 = aead_seal(share_key(y, realm3, idx3), share_aad(realm3, idx3), gsh3(g, rg)) in
+  (* The keyset in the hostile storage. *)
+  out(c, aead_seal(auk_v2(pw, sk, g, salt), blob_aad(kind_keyset, empty, no_vault), keyset_secret));
+  (
+    Realm(realm1, rsk1, ksh1(k, rk), t1, c1)
+  | Realm(realm2, rsk2, ksh2(k, rk), t2, c2)
+  | Realm(realm3, rsk3, ksh3(k, rk), t3, c3)
+  | (if leak1 = yes then out(c, (ksh1(k, rk), t1, c1)))
+  | (if leak2 = yes then out(c, (ksh2(k, rk), t2, c2)))
+  ).
+
+(* ------------------------------------------------------------------ *)
+(* Restore on a new device (client.rs: restore), against realms 1 and  *)
+(* 2, under the response keys vk1 and vk2.                              *)
+(* ------------------------------------------------------------------ *)
+
+event Restored(bitstring).
+(* The OPRF output a restoring device derived its tags from. *)
+event DeviceOprf(bitstring).
+
+let Restore(pw: password, sk: key, salt: bitstring, vk1: pkey, vk2: pkey) =
+  new rb: nonce;
+  let x = guard_x(pw, salt) in
+  let b = blind(x, rb) in
+  out(c, (realm1, req_evaluate, b));
+  in(c, (e1: bitstring, s1: bitstring));
+  if verify_dom(vk1, dom_realm_response, (realm1, req_evaluate, b, e1), s1) = true then
+  out(c, (realm2, req_evaluate, b));
+  in(c, (e2: bitstring, s2: bitstring));
+  if verify_dom(vk2, dom_realm_response, (realm2, req_evaluate, b, e2), s2) = true then
+  let y = unblind(rb, x, comb12(e1, e2)) in
+  event DeviceOprf(y);
+  let t1 = tag_of(y, realm1, idx1) in
+  out(c, (realm1, req_unlock, t1));
+  in(c, (sc1: bitstring, u1: bitstring));
+  if verify_dom(vk1, dom_realm_response, (realm1, req_unlock, t1, sc1), u1) = true then
+  let t2 = tag_of(y, realm2, idx2) in
+  out(c, (realm2, req_unlock, t2));
+  in(c, (sc2: bitstring, u2: bitstring));
+  if verify_dom(vk2, dom_realm_response, (realm2, req_unlock, t2, sc2), u2) = true then
+  let sh1 = aead_open(share_key(y, realm1, idx1), share_aad(realm1, idx1), sc1) in
+  let sh2 = aead_open(share_key(y, realm2, idx2), share_aad(realm2, idx2), sc2) in
+  let g = gcomb12(sh1, sh2) in
+  in(c, kct: bitstring);
+  let ks = aead_open(auk_v2(pw, sk, g, salt), blob_aad(kind_keyset, empty, no_vault), kct) in
+  event Restored(ks).

@@ -89,6 +89,13 @@
 | emergency_kit.pv | `not event(Pinned(restore_kit_lost,a,i))` | false | false |
 | emergency_kit.pv | `not event(ItemWritten(restore_kit_lost,v_42,m_14))` | false | false |
 | emergency_kit.pv | `not event(AukDerived(restore_no_keyset))` | false | false |
+| guard.pv | `not attacker_p1(keyset_secret[])` | true | true |
+| guard.pv | `not attacker_p1(evalb(guard_oprf_key[],late[]))` | true | true |
+| guard.pv | `not event(DeviceOprf(oprf(evil[],x_2)))` | true | true |
+| guard.pv | `not event(Restored(keyset_secret[]))` | false | false |
+| guard.pv | `Weak secret pw` | true | true |
+| guard_t_realms.pv | `not attacker_p1(evalb(guard_oprf_key[],late[]))` | false | false |
+| guard_unpinned.pv | `not event(DeviceOprf(oprf(evil[],x_2)))` | false | false |
 | mailbox.pv | `not attacker(blob_access(mbx_h[]))` | true | true |
 | mailbox.pv | `event(Enrolled(mbx_h[],k_4)) ==> event(TicketIssued(mbx_h[],k_4))` | true | true |
 | mailbox.pv | `event(Switched(d,h_4)) ==> event(HomeSigned(a,h_4))` | true | true |
