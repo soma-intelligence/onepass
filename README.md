@@ -38,7 +38,7 @@ Free, AGPL-3.0-or-later, on the App Store, with every line of code public.
 </div>
 
 > [!IMPORTANT]
-> OnePass 1.0 is on the App Store for iPhone, iPad, Apple Watch, Mac and Vision Pro. Its core **has not had an external security audit yet** (planned for milestone 8): the design, the formal models and the tests are public, but no outside firm has reviewed them. Weigh that before OnePass holds your only copy of a secret, and keep an encrypted export. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use OnePass day to day.
+> OnePass is on the App Store (version 1.0.2, November 2026) for iPhone, iPad, Apple Watch, Mac and Vision Pro. Its core **has not had an external security audit yet** (planned for milestone 8): the design, the formal models and the tests are public, but no outside firm has reviewed them. Weigh that before OnePass holds your only copy of a secret, and keep an encrypted export. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use OnePass day to day.
 
 ## At a glance
 
@@ -50,7 +50,7 @@ Free, AGPL-3.0-or-later, on the App Store, with every line of code public.
 | **Stack** | Rust core (`core/`), native SwiftUI apps (`apple/`, native on the Mac too, without Catalyst), TypeScript MV3 extension (`extension/`) |
 | **Cryptography** | Argon2id + 256-bit Secret Key, AES-256-GCM-SIV, ML-KEM-1024 + X25519, ML-DSA-87 + Ed25519, SLH-DSA |
 | **Sync** | End to end encrypted over CloudKit, in your private iCloud database. Self-hosted server planned |
-| **Version** | 1.0 on the App Store. Source, Mac direct download and CLI: `v0.3.0` (latest tag, `MARKETING_VERSION` in `apple/project.yml`) |
+| **Version** | 1.0.2 on the App Store (2026-11-21). Source, Mac direct download and CLI: `v0.3.0` (latest tag, `MARKETING_VERSION` in `apple/project.yml`) |
 | **Install** | [App Store](https://apps.apple.com/app/id6831411523), [TestFlight](https://testflight.apple.com/join/MhmPEd7b) or [GitHub Releases](https://github.com/soma-intelligence/onepass/releases) (Mac) |
 | **Audit status** | No external audit yet (planned for M8). [What exists instead](docs/guides/security-audit-status.md) |
 | **Price** | Free. No subscription, no analytics, no telemetry |
