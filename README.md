@@ -6,8 +6,8 @@
 
 ### Every password, one calm place.
 
-The open source, post-quantum password manager for iPhone, iPad, Mac, Apple Watch and Vision Pro.<br>
-End to end encrypted, kept on your devices and in your own private iCloud. Free, with every line of code public.
+OnePass is an open source, post-quantum password manager for iPhone, iPad, Mac, Apple Watch and Vision Pro that keeps your passwords, passkeys and 2FA codes end to end encrypted on your devices and in your own private iCloud.<br>
+Free, AGPL-3.0-or-later, on the App Store, with every line of code public.
 
 <br>
 
@@ -33,12 +33,29 @@ End to end encrypted, kept on your devices and in your own private iCloud. Free,
 ![Post-quantum](https://img.shields.io/badge/crypto-ML--KEM--1024%20·%20ML--DSA--87%20·%20SLH--DSA-1D1D2B)
 ![No tracking](https://img.shields.io/badge/analytics-none-1D1D2B)
 
-**[Tour](#a-quick-tour)** · **[Why OnePass](#why-onepass)** · **[What's new](#whats-new)** · **[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Install](#install)** · **[Build](#build-from-source)** · **[Roadmap](#roadmap)**
+**[At a glance](#at-a-glance)** · **[Tour](#a-quick-tour)** · **[Why OnePass](#why-onepass)** · **[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Install](#install)** · **[FAQ](#faq)** · **[Docs](#documentation)** · **[Build](#build-from-source)** · **[Roadmap](#roadmap)**
 
 </div>
 
 > [!IMPORTANT]
 > OnePass 1.0 is on the App Store for iPhone, iPad, Apple Watch, Mac and Vision Pro. Its core **has not had an external security audit yet** (planned for milestone 8): the design, the formal models and the tests are public, but no outside firm has reviewed them. Weigh that before OnePass holds your only copy of a secret, and keep an encrypted export. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use OnePass day to day.
+
+## At a glance
+
+| | |
+|---|---|
+| **What it is** | A password manager for Apple devices. 26 item types: logins (with passkeys and TOTP codes), cards, bank accounts, identities, passports, SSH keys, API credentials, secure notes and more |
+| **License** | [AGPL-3.0-or-later](LICENSE), commercial license on request |
+| **Platforms** | iOS, iPadOS, macOS, watchOS and visionOS 26 or later. Browser extension for Safari, Chrome and Firefox. No Android, Windows or Linux app |
+| **Stack** | Rust core (`core/`), native SwiftUI apps (`apple/`, native on the Mac too, without Catalyst), TypeScript MV3 extension (`extension/`) |
+| **Cryptography** | Argon2id + 256-bit Secret Key, AES-256-GCM-SIV, ML-KEM-1024 + X25519, ML-DSA-87 + Ed25519, SLH-DSA |
+| **Sync** | End to end encrypted over CloudKit, in your private iCloud database. Self-hosted server planned |
+| **Version** | 1.0 on the App Store. Source, Mac direct download and CLI: `v0.3.0` (latest tag, `MARKETING_VERSION` in `apple/project.yml`) |
+| **Install** | [App Store](https://apps.apple.com/app/id6831411523), [TestFlight](https://testflight.apple.com/join/MhmPEd7b) or [GitHub Releases](https://github.com/soma-intelligence/onepass/releases) (Mac) |
+| **Audit status** | No external audit yet (planned for M8). [What exists instead](docs/guides/security-audit-status.md) |
+| **Price** | Free. No subscription, no analytics, no telemetry |
+| **Homepage** | [somalabs.me/onepass](https://somalabs.me/onepass) |
+| **Maker** | [Soma Labs](https://somalabs.me) |
 
 ## A quick tour
 
@@ -236,6 +253,24 @@ All in Settings > Developer on the Mac, and stopped as soon as the app locks (un
   <img alt="A terminal session: reading a secret by reference, a TOTP code, a passphrase and a Watchtower report" src="docs/assets/readme/terminal.svg" width="760">
 </p>
 
+## Use cases
+
+- Use OnePass to keep passwords, passkeys and one-time codes for every site on iPhone, iPad, Mac, Apple Watch and Vision Pro, synced through your own iCloud.
+- Use OnePass to move off 1Password, Bitwarden, LastPass, Dashlane, Proton Pass, Apple Passwords or KeePass ([import guide](docs/guides/import-from-other-password-managers.md)).
+- Use OnePass to set up two-factor authentication on a site from its QR code and fill the first code ([how](docs/guides/two-factor-codes-totp.md)).
+- Use OnePass to let Claude Code, Codex or Cursor run a command with an API key it never sees ([MCP guide](docs/guides/mcp-server-ai-agents.md)).
+- Use OnePass as your SSH agent, with an approval for each signature ([SSH guide](docs/guides/ssh-agent.md)).
+- Use OnePass to take sensitive vaults off your devices before a border crossing ([Travel Mode](docs/guides/travel-mode.md)).
+- Use OnePass to find weak, reused and breached passwords without sending them anywhere ([Watchtower](docs/guides/breached-password-check.md)).
+
+## How it works
+
+1. **One Rust core does all the cryptography.** `core/onepass-core` derives keys, seals every item, signs manifests, parses imports, computes TOTP codes and passkey signatures. The apps call it through UniFFI bindings (`core/onepass-ffi`), so private keys and TOTP seeds never reach Swift.
+2. **Native apps on top.** `apple/` holds one SwiftUI app for iPhone, iPad, Mac and Vision Pro, plus the Watch app, widgets, the AutoFill provider and the Safari extension. `VaultKit` wraps the core: session, sync, pairing, bridge.
+3. **Sync stores only sealed blobs.** Records go to your private CloudKit database. Every vault carries a signed, hash-chained manifest, so the app detects any record the server drops, replays or forges.
+4. **Browsers talk to the app, never to the vault.** The extension pairs with the Mac app over an ML-KEM-1024 + X25519 channel and asks only for what the current HTTPS page needs.
+5. **Agents go through approvals.** The Mac app hosts an MCP server and an SSH agent (`onepass-mcp`, `onepass-ssh-agent`, `onepass-guard`) that ask you before every secret and write a signed audit log.
+
 ## Security model
 
 The full whitepaper and threat model live in [`docs/security/README.md`](docs/security/README.md). The short version:
@@ -278,7 +313,7 @@ Crypto comes from `aws-lc-rs`, `argon2` and `slh-dsa` in Rust, and from WebCrypt
 |---|---|
 | **Known answers** | NIST ACVP vectors for ML-KEM-1024, ML-DSA-87 and SLH-DSA |
 | **Differential** | `aws-lc-rs` against `libcrux`, property tests on the AEAD |
-| **Fuzzing** | 19 `cargo-fuzz` targets, run in CI on every push |
+| **Fuzzing** | 48 `cargo-fuzz` targets in `core/fuzz`, 20 of them run in CI on every push that touches `core/` |
 | **Hostile server** | a malicious store test suite that replays every known server-side attack |
 | **Formal models** | ProVerif (`formal/`) for account creation and unlock, vault manifests, the Emergency Kit and the extension bridge, including runs where one half of each hybrid KEM is broken. `make formal`, [results](docs/security/formal/results.md) |
 | **Autofill lab** | hundreds of seeded, fictional websites served locally (`extension/lab/`). First 200-site run: 63.8% fill rate and **0 leaks** ([report](docs/lab/2026-10-26-autofill-lab-run.md)) |
@@ -287,7 +322,7 @@ Found a vulnerability? Please do not open a public issue. See [Reporting a vulne
 
 ## How OnePass compares
 
-Two honest caveats first.
+As of November 2026. Two honest caveats first.
 
 - **OnePass is the youngest product in every table below, and the only one without an outside audit.** Its design is strong on paper and its proof is thin. The vendors below have years of public scrutiny, bug bounties, audits and real users. OnePass has none of those yet (an external audit is planned for M8).
 - **Everything about other products comes from their own pages or from named reports, checked on 2026-11-02.** Each claim links to its source, and the full dated list is in [docs/comparison/closed-source-sources.md](docs/comparison/closed-source-sources.md). Where a vendor does not say, the cell says "not public" or "not found". That is not proof of absence. Prices and plans change: check the vendor before you buy. Product names are the property of their owners and are used here only to name them.
@@ -364,6 +399,8 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 - **Pick LastPass with care.** The 2022 breach is documented, and the vendor has since raised its iteration defaults ([LastPass][lp-support]).
 
 </details>
+
+One page per alternative, with how to move your data: [OnePass vs 1Password](docs/comparison/onepass-vs-1password.md) · [vs Bitwarden](docs/comparison/onepass-vs-bitwarden.md) · [vs Apple Passwords](docs/comparison/onepass-vs-apple-passwords.md) · [vs KeePassXC](docs/comparison/onepass-vs-keepassxc.md) · [vs Proton Pass](docs/comparison/onepass-vs-proton-pass.md).
 
 Spot an error or an out-of-date claim? Open an issue with a link to the vendor's page and we will correct it.
 
@@ -504,6 +541,8 @@ onepass/
 │   ├── onepass-mcp-relay      the `onepass-mcp` relay between an MCP client and the Mac app
 │   ├── onepass-native-host    native messaging host (development only)
 │   ├── onepass-peer           checks which local process is calling (code signature, hardened runtime)
+│   ├── onepass-sync, onepass-mailbox  sync driver and client of the mailbox server
+│   ├── onepass-wifi           Wi-Fi networks of the vault on Windows and Linux
 │   └── fuzz/                  cargo-fuzz targets
 ├── apple/                     SwiftUI apps (XcodeGen)
 │   ├── VaultKit               Swift package over the Rust core: session, sync, pairing, bridge
@@ -517,10 +556,14 @@ onepass/
 │   ├── src/                   background, content scripts, bridge, UI
 │   ├── e2e/                   Playwright tests
 │   └── lab/                   seeded autofill lab
+├── mailbox/                   sync server on Supabase (work in progress, self-hostable)
+├── android/                   Android groundwork: core bindings and Wi-Fi, no app yet
 ├── formal/                    ProVerif models of the protocols
 └── docs/
     ├── security/              whitepaper and threat model
     ├── specs/                 design specs per milestone
+    ├── guides/                one-question how-to pages
+    ├── comparison/            OnePass against named alternatives
     └── lab/                   autofill lab reports
 ```
 
@@ -542,6 +585,66 @@ onepass/
 | ⬜ | Later | Self-hosted server, organizations, web app (WASM), recovery codes | Planned |
 
 Each milestone has its design spec in [`docs/specs/`](docs/specs/).
+
+## FAQ
+
+**Is OnePass free?**
+Yes. The apps are free on the App Store, with no subscription, no hosted service to pay for and no ads. The code is AGPL-3.0-or-later; a commercial license is available on request.
+
+**Is OnePass open source?**
+Yes, all of it: the Rust core, the Apple apps, the browser extension, the sync server and the formal models are in this repository under AGPL-3.0-or-later.
+
+**Is OnePass a good open source alternative to 1Password?**
+For Apple-only users, it covers the same core jobs (passwords, passkeys, TOTP, AutoFill, Watchtower, Travel Mode) and adds post-quantum encryption and agent access. It lacks Android, Windows and Linux apps, family sharing in a release, and an external audit. See [OnePass vs 1Password](docs/comparison/onepass-vs-1password.md).
+
+**Has OnePass been audited?**
+Not yet. An external audit is planned for milestone 8. The whitepaper, ProVerif models, fuzzing and test vectors are public. See [audit status](docs/guides/security-audit-status.md).
+
+**What post-quantum algorithms does OnePass use?**
+ML-KEM-1024 + X25519 to wrap vault keys, ML-DSA-87 + Ed25519 to sign manifests and backups, and SLH-DSA-SHA2-256s for the account identity. See [post-quantum cryptography](docs/guides/post-quantum-encryption.md).
+
+**Does OnePass work on Android, Windows or Linux?**
+No app yet. Chrome and Firefox extensions work with the Mac app, and a development CLI runs on Linux. See [platform status](docs/guides/android-windows-linux.md).
+
+**Where is my data stored?**
+On your devices and, encrypted by OnePass before upload, in your own private iCloud database (CloudKit). There is no OnePass account server. See [iCloud sync](docs/guides/icloud-sync.md).
+
+**Can I self-host OnePass?**
+Not in a released app yet. The sync server for that work (`mailbox/`, on Supabase) is in the repository with self-hosting steps, and the roadmap lists a self-hosted server as planned. See [self-hosting](docs/guides/self-hosted-sync-server.md).
+
+**Does OnePass support passkeys?**
+Yes, in AutoFill on iPhone, iPad and Mac and in the browser extension. Private keys are created and used inside the Rust core. See [passkeys](docs/guides/passkeys.md).
+
+**How do I import from 1Password, Bitwarden or LastPass?**
+Export from the old manager, then use "Import from Another Password Manager…" in OnePass. It reads 21 formats, including 1PUX, Bitwarden JSON, LastPass CSV and KeePass 2 XML. See the [import guide](docs/guides/import-from-other-password-managers.md).
+
+**What happens if I forget my master password?**
+You need both your master password and your Secret Key (on your Emergency Kit) to unlock. The repository documents no recovery without them for a personal account; recovery codes are on the roadmap. See [master password and Secret Key](docs/guides/master-password-secret-key-emergency-kit.md).
+
+**Can AI agents use my passwords safely?**
+Through the built-in MCP server, an agent can run a command or fill a form with a secret without seeing it, only in vaults you expose, and only after you approve each request on the Mac or iPhone. See the [MCP guide](docs/guides/mcp-server-ai-agents.md).
+
+**Does OnePass collect analytics?**
+No analytics and no telemetry. The Mac app checks GitHub for its signed update feed (you can turn that off). The [Privacy](#privacy) section describes what leaves the device.
+
+**How do I verify a download?**
+Check `SHA256SUMS`, then the SLSA provenance with `gh attestation verify`, and for the Mac app its notarization. See [verify a download](docs/guides/verify-a-download.md).
+
+## Documentation
+
+**Guides** (one question per page)
+
+| Topic | Guide |
+|---|---|
+| Getting started | [Import from another password manager](docs/guides/import-from-other-password-managers.md) · [Add a new device](docs/guides/add-a-device.md) · [Export or back up a vault](docs/guides/export-and-backup.md) |
+| Everyday use | [Passkeys](docs/guides/passkeys.md) · [2FA codes and QR setup](docs/guides/two-factor-codes-totp.md) · [Browser extension](docs/guides/browser-extension.md) · [Watchtower and breached passwords](docs/guides/breached-password-check.md) · [Travel Mode](docs/guides/travel-mode.md) · [Apple Watch, Vision Pro, widgets](docs/guides/apple-watch-vision-pro-widgets.md) |
+| Developers | [MCP server for AI agents](docs/guides/mcp-server-ai-agents.md) · [SSH agent](docs/guides/ssh-agent.md) · [Command line](docs/guides/command-line-cli.md) |
+| Security | [Threat model](docs/guides/threat-model.md) · [Post-quantum cryptography](docs/guides/post-quantum-encryption.md) · [Master password, Secret Key, Emergency Kit](docs/guides/master-password-secret-key-emergency-kit.md) · [Audit status](docs/guides/security-audit-status.md) · [Verify a download](docs/guides/verify-a-download.md) |
+| Sync and platforms | [iCloud sync](docs/guides/icloud-sync.md) · [Self-hosting](docs/guides/self-hosted-sync-server.md) · [Android, Windows, Linux](docs/guides/android-windows-linux.md) |
+
+**Comparisons:** [vs 1Password](docs/comparison/onepass-vs-1password.md) · [vs Bitwarden](docs/comparison/onepass-vs-bitwarden.md) · [vs Apple Passwords](docs/comparison/onepass-vs-apple-passwords.md) · [vs KeePassXC](docs/comparison/onepass-vs-keepassxc.md) · [vs Proton Pass](docs/comparison/onepass-vs-proton-pass.md) · [sources for the closed source table](docs/comparison/closed-source-sources.md)
+
+**Reference** (several in French): [security whitepaper and threat model](docs/security/README.md) · [crypto review](docs/security/crypto-review.md) · [formal model results](docs/security/formal/results.md) · [release pipeline](docs/security/release-pipeline.md) · [reproducible builds](docs/security/reproducible-builds.md) · [design specs](docs/specs/) · [autofill lab reports](docs/lab/) · [Rust core](core/README.md) · [Apple apps](apple/README.md) · [extension](extension/README.md) · [mailbox server](mailbox/README.md) · [formal models](formal/README.md) · [Wi-Fi on Windows and Linux](docs/wifi-windows-linux.md) · [site pack](docs/site-pack.md) · [icon pack](docs/icon-pack.md) · [translations](docs/i18n.md) · [SECURITY.md](SECURITY.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) · [llms.txt](llms.txt)
 
 ## Contributing
 

@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use or refer to OnePass, please cite it as below."
+title: "OnePass"
+type: software
+authors:
+  - name: "Soma Labs"
+abstract: >-
+  OnePass is an open source, post-quantum password manager for iPhone, iPad,
+  Mac, Apple Watch and Vision Pro. A Rust core seals every item with
+  AES-256-GCM-SIV, wraps vault keys with hybrid ML-KEM-1024 + X25519, signs
+  manifests with hybrid ML-DSA-87 + Ed25519 and anchors accounts with
+  SLH-DSA, and syncs end to end encrypted through the user's private iCloud.
+version: "0.3.0"
+date-released: "2026-11-08"
+license: AGPL-3.0-or-later
+repository-code: "https://github.com/soma-intelligence/onepass"
+url: "https://somalabs.me/onepass"
+keywords:
+  - password manager
+  - post-quantum cryptography
+  - ML-KEM
+  - ML-DSA
+  - SLH-DSA
+  - passkeys
+  - end-to-end encryption
+  - iOS
+  - macOS
+  - Rust
