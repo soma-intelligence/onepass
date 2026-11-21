@@ -275,6 +275,8 @@ targets:
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-CloudKit-macOS.entitlements
           # Overrides the base iOS file (the CloudKit file carries the App Group too).
           "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-CloudKit.entitlements
+          # visionOS: the same without NFC Tag Reading (no NFC on Vision Pro).
+          "CODE_SIGN_ENTITLEMENTS[sdk=xr*]": App/Support/OnePass-CloudKit-visionOS.entitlements
         Release-Signed:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
@@ -282,7 +284,8 @@ targets:
           DEVELOPMENT_TEAM: ""
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-Signed-macOS.entitlements
           "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-Signed-iOS.entitlements
-          "CODE_SIGN_ENTITLEMENTS[sdk=xr*]": App/Support/OnePass-Signed-iOS.entitlements
+          # visionOS: the iOS file without NFC Tag Reading (no NFC on Vision Pro).
+          "CODE_SIGN_ENTITLEMENTS[sdk=xr*]": App/Support/OnePass-Signed-visionOS.entitlements
 
   # AutoFill credential provider (spec 5), embedded in OnePass.app/PlugIns. Links its own static
   # copy of the Rust core through VaultKit (ruling A15). Entitlements: iOS, every configuration:

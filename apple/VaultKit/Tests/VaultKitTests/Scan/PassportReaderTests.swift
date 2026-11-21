@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import OnePassCore
 import Synchronization
@@ -173,5 +174,30 @@ final class ProgressLog: Sendable {
         await #expect(throws: PassportReadError.accessDenied) {
             try await reader.read(mrz: fixture.mrz) { _ in }
         }
+    }
+
+    /// The app's path: a master list pinned by its SHA-256 instead of its signature.
+    @Test func pinnedMasterListOpensASession() async throws {
+        let fixture = try SessionFixture.load()
+        let pin = Data(SHA256.hash(data: fixture.masterList))
+        let reader = PassportReader(
+            transport: RefusingChip(), masterList: fixture.masterList, masterListSHA256: pin)
+        // The session was built: the chip itself refuses the keys.
+        await #expect(throws: PassportReadError.accessDenied) {
+            try await reader.read(mrz: fixture.mrz) { _ in }
+        }
+    }
+
+    @Test func pinnedMasterListWithAnotherDigestIsRefused() async throws {
+        let fixture = try SessionFixture.load()
+        var pin = Data(SHA256.hash(data: fixture.masterList))
+        pin[0] ^= 1
+        let transport = ReplayTransport(fixture.exchange)
+        let reader = PassportReader(
+            transport: transport, masterList: fixture.masterList, masterListSHA256: pin)
+        await #expect(throws: PassportReadError.unsupported) {
+            try await reader.read(mrz: fixture.mrz) { _ in }
+        }
+        #expect(transport.sent == 0)
     }
 }

@@ -170,6 +170,7 @@
 		9961C39F1CDB1708FB598A68 /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA59281B681069BA80A59493 /* Snapshot.swift */; };
 		9A139DB4499A65B483B84648 /* OrgMemberDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D5711D02DE27FEE3611DA1E /* OrgMemberDetailView.swift */; };
 		9A242C6769B71380072A5909 /* ChangePasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6608A2696A8CFEDC8DD3AD5 /* ChangePasswordSheet.swift */; };
+		9A952DB689DEB0906908E2DF /* CSCAMasterList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F16E98C8BBE8BE3E822D84 /* CSCAMasterList.swift */; };
 		9AF91C5D751590EEA1D3EB23 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 2BD7EC0A628B2ABE8D58F0A8 /* PrivacyInfo.xcprivacy */; };
 		9C373AB08DC115C907C85D82 /* MembersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3312802FBAE76D180E4D396E /* MembersView.swift */; };
 		9C46F2D4C857F51619349A63 /* DesignBridgeUITesting in Frameworks */ = {isa = PBXBuildFile; productRef = E07A56860FA4A2C7B70E91AA /* DesignBridgeUITesting */; };
@@ -411,6 +412,7 @@
 		013A476F2676DCA4286E22C9 /* VaultKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VaultKit; path = VaultKit; sourceTree = SOURCE_ROOT; };
 		0151B9E949BF8C50E53F3176 /* BarcodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeEditor.swift; sourceTree = "<group>"; };
 		01A896751814517F3556294B /* RXMacWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacWatchtower.swift; sourceTree = "<group>"; };
+		01F16E98C8BBE8BE3E822D84 /* CSCAMasterList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSCAMasterList.swift; sourceTree = "<group>"; };
 		047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelDetection.swift; sourceTree = "<group>"; };
 		0535F8E6C7385339E4582FDA /* RXSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSplash.swift; sourceTree = "<group>"; };
 		0629736662C4143CF229997B /* TagEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditor.swift; sourceTree = "<group>"; };
@@ -975,6 +977,7 @@
 				17FDCEFF95D8CB4ED8362F26 /* AppShortcuts.xcstrings */,
 				63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */,
 				4775EC7869C88E74CD884196 /* csca-masterlist.ml */,
+				01F16E98C8BBE8BE3E822D84 /* CSCAMasterList.swift */,
 				19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */,
 			);
 			path = Resources;
@@ -2084,6 +2087,7 @@
 				B2F387C1CCCBB83AC30E1E16 /* BarcodeEditor.swift in Sources */,
 				3B5912DB886A1E8510C4F27E /* BrowseRoot.swift in Sources */,
 				914EB56D92941137E477FBE9 /* BrowserBridgeViews.swift in Sources */,
+				9A952DB689DEB0906908E2DF /* CSCAMasterList.swift in Sources */,
 				C4550C8291E1A38748E6FC67 /* CategoryListView.swift in Sources */,
 				9A242C6769B71380072A5909 /* ChangePasswordSheet.swift in Sources */,
 				F44F6C0E0EFB3EA752AB6B93 /* CoinIcon.swift in Sources */,
@@ -2396,7 +2400,7 @@
 				"ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS[sdk=iphonesimulator*]" = YES;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-Signed-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/Support/OnePass-Signed-macOS.entitlements";
-				"CODE_SIGN_ENTITLEMENTS[sdk=xr*]" = "App/Support/OnePass-Signed-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=xr*]" = "App/Support/OnePass-Signed-visionOS.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
@@ -3589,6 +3593,7 @@
 				CODE_SIGN_ENTITLEMENTS = "App/Support/OnePass-CloudKit.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Support/OnePass-CloudKit.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/Support/OnePass-CloudKit-macOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=xr*]" = "App/Support/OnePass-CloudKit-visionOS.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";

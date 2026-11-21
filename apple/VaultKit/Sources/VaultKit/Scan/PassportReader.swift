@@ -46,6 +46,15 @@ public struct PassportReader: Sendable {
         }
     }
 
+    /// A master list the app ships, pinned by its SHA-256 (32 bytes) instead of its signature: the
+    /// BSI list's signer chains to a brainpoolP512r1 CSCA the core cannot verify. The app keeps
+    /// the digest next to the file (App/Resources/CSCAMasterList.swift).
+    public init(transport: any APDUTransport, masterList: Data, masterListSHA256: Data) {
+        self.init(transport: transport, masterList: masterList) { mrz, ml in
+            try FfiIcaoSession.newPinned(mrzLines: mrz, masterList: ml, masterListSha256: masterListSHA256)
+        }
+    }
+
     /// Tests: a session with fixed randoms, so a recorded read replays byte for byte.
     init(transport: any APDUTransport, masterList: Data, makeSession: @escaping SessionFactory) {
         self.transport = transport
