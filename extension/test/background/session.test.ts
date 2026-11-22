@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BridgeError } from "../../src/bridge/bytes";
 import { BridgeAppError } from "../../src/bridge/client";
 import { PairingFlow } from "../../src/background/pairing";
-import { BgError, MISSING_QUIET_MS, RECONNECT_DELAYS_MS, Session, toBgError } from "../../src/background/session";
+import { BgError, MISSING_QUIET_MS, PASSIVE_DELAYS_MS, RECONNECT_DELAYS_MS, Session, toBgError } from "../../src/background/session";
 import { MemoryPairingStore, Store } from "../../src/background/store";
 import { FakeClient, record } from "./fake-client";
 import { FakeExt } from "./fake-ext";
@@ -98,7 +98,7 @@ describe("Session", () => {
     expect(clients[1]?.isOpen).toBe(true);
   });
 
-  it("host_missing_after_initial_attempt_and_3_retries", async () => {
+  it("host_missing_after_initial_attempt_and_3_retries_when_a_gesture_launched_the_app", async () => {
     const { store } = await paired();
     const slept: number[] = [];
     let made = 0;
@@ -114,11 +114,34 @@ describe("Session", () => {
         slept.push(ms);
       },
     });
-    expect((await rejection(s.getClient())).code).toBe("host_missing");
+    expect((await rejection(s.withWake(() => true, () => s.getClient()))).code).toBe("host_missing");
     expect(RECONNECT_DELAYS_MS).toEqual([1000, 2000, 4000]);
     expect(slept).toEqual([1000, 2000, 4000]);
     // The first try plus three retries.
     expect(made).toBe(4);
+  });
+
+  it("host_missing_after_one_short_retry_when_no_gesture_waits", async () => {
+    const { store } = await paired();
+    const slept: number[] = [];
+    let made = 0;
+    const s = new Session({
+      store,
+      newClient: () => {
+        made++;
+        return new FakeClient(undefined, async () => {
+          throw new BridgeError("transport", "Specified native messaging host not found.");
+        });
+      },
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+    });
+    // A menu opening: nothing launched the app, the honest message comes within a second.
+    expect((await rejection(s.getClient())).code).toBe("host_missing");
+    expect(PASSIVE_DELAYS_MS).toEqual([1000]);
+    expect(slept).toEqual([1000]);
+    expect(made).toBe(2);
   });
 
   it("after the host was found missing, the next openings try once for a while, then retry in full again", async () => {
@@ -141,26 +164,26 @@ describe("Session", () => {
       now: () => clock.t,
     });
     expect((await rejection(s.getClient())).code).toBe("host_missing");
-    expect(made).toBe(4);
-    // A page that waits asks every second: one try each, no 7 s of retries.
+    expect(made).toBe(2);
+    // A page that waits asks every second: one try each, no retries.
     clock.t += 1000;
     expect((await rejection(s.getClient())).code).toBe("host_missing");
-    expect(made).toBe(5);
-    expect(slept).toEqual([1000, 2000, 4000]);
-    // Each miss keeps it quick; past the quiet window the retries are back.
+    expect(made).toBe(3);
+    expect(slept).toEqual([1000]);
+    // Each miss keeps it quick; past the quiet window the retry is back.
     clock.t += MISSING_QUIET_MS + 1;
     expect((await rejection(s.getClient())).code).toBe("host_missing");
-    expect(made).toBe(9);
+    expect(made).toBe(5);
     // The app is there: the quick try connects, and the next miss is patient again.
     clock.t += 1000;
     up = true;
     const c = (await s.getClient()) as FakeClient;
-    expect(made).toBe(10);
+    expect(made).toBe(6);
     up = false;
     c.drop();
     slept.length = 0;
     expect((await rejection(s.getClient())).code).toBe("host_missing");
-    expect(slept).toEqual([1000, 2000, 4000]);
+    expect(slept).toEqual([1000]);
   });
 
   it("a missing host is woken once per opening, only for the requests of a trusted gesture", async () => {
@@ -215,13 +238,13 @@ describe("Session", () => {
       store,
       newClient: () => {
         made++;
-        if (made < 3) throw new Error("no host");
+        if (made < 2) throw new Error("no host");
         return new FakeClient();
       },
       sleep: async () => undefined,
     });
     await s.getClient();
-    expect(made).toBe(3);
+    expect(made).toBe(2);
   });
 
   it("an unknown pairing is unpaired, without retry", async () => {

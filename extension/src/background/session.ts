@@ -131,6 +131,11 @@ export const REPLAYABLE_OPS: ReadonlySet<string> = new Set([
 
 export const RECONNECT_DELAYS_MS = [1000, 2000, 4000] as const;
 /**
+ * An opening no gesture waits on (a menu, a page load): nothing launched the app, so one short
+ * retry, then `host_missing`. The menu says the app is missing within about a second, not seven.
+ */
+export const PASSIVE_DELAYS_MS = [1000] as const;
+/**
  * After the host was found missing, an opening this soon after tries once: a page that waits for
  * the app asks every second, and a gesture is not held 7 s per request.
  */
@@ -359,7 +364,9 @@ export class Session {
               break;
             }
           }
-          const delay = quick ? undefined : RECONNECT_DELAYS_MS[attempt];
+          // Woken: the app is launching, the retries wait for it. Else nothing will start it.
+          const delays: readonly number[] = woken ? RECONNECT_DELAYS_MS : PASSIVE_DELAYS_MS;
+          const delay = quick ? undefined : delays[attempt];
           if (delay === undefined) {
             this.missingAt = this.now();
             throw new BgError("host_missing");
