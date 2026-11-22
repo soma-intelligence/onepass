@@ -9,6 +9,11 @@ extension VaultSession {
         try await read { try $0.itemFromChip(vaultId: vaultID, read: chip) }
     }
 
+    /// The item as stored now. Unlike `loadItem`, not counted as an opening (recents).
+    public func storedItem(vaultID: String, itemID: String) async throws -> FfiItem {
+        try await read { try $0.item(vaultId: vaultID, itemId: itemID) }
+    }
+
     /// A later read merged into a passport: blank fields filled, the user's own values kept and
     /// reported as conflicts, the chip section refreshed.
     public func mergeChip(item: FfiItem, read chip: FfiChipRead) async throws -> FfiChipMerge {

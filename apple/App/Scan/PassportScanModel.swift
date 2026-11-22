@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import os
 import VaultKit
 
 /// What the scan flow does with the read: a new passport in a vault, or a later read of a passport
@@ -56,6 +57,11 @@ final class PassportScanModel {
     /// The chip's value of each conflicting field, as the core formats it (readable case, dates,
     /// concealed number): taken when the user picks the chip's side of a conflict.
     private var scannedValues: [String: FfiFieldValue] = [:]
+    /// The read shown in the reveal: a later read is merged again into the stored item at save.
+    private var chipRead: FfiChipRead?
+    /// Saves the reveal, resumable: "Enregistrer" again after a failure goes on from what was
+    /// stored. One per read.
+    private var saver: ChipPassportSaver?
 
     init(
         target: ScanTarget, session: VaultSession,
@@ -77,6 +83,8 @@ final class PassportScanModel {
     func rescan() {
         mrz = nil
         scannedValues = [:]
+        chipRead = nil
+        saver = nil
         conflicts = []
         takeScanned = []
         phase = .camera
@@ -107,8 +115,11 @@ final class PassportScanModel {
             return
         }
         let read: FfiChipRead
+        let percent = ProgressPercent()
         do {
             read = try await link.read(mrz: mrz) { [weak self] value in
+                // One update per whole percent, not one per APDU.
+                guard percent.changed(to: value) != nil else { return }
                 Task { @MainActor in
                     guard let self, case .reading = self.phase else { return }
                     self.phase = .reading(value)
@@ -130,8 +141,14 @@ final class PassportScanModel {
     private func present(_ read: FfiChipRead) async {
         var portrait: Data?
         if let bytes = read.portrait, let format = read.portraitFormat {
-            portrait = try? PortraitConverter.jpeg(from: bytes, format: format)
+            do {
+                portrait = try PortraitConverter.jpeg(from: bytes, format: format)
+            } catch {
+                Self.log.error("scan: portrait conversion failed")
+            }
         }
+        chipRead = read
+        saver = ChipPassportSaver(store: session)
         do {
             switch target {
             case .new(let vaultID):
@@ -170,37 +187,28 @@ final class PassportScanModel {
     }
 
     /// Saves: the item first, then the portrait as an encrypted attachment linked from the
-    /// `portrait` field (a later read replaces the previous portrait). Returns the stored item.
+    /// `portrait` field (a later read replaces the previous portrait). Resumable: after a failure,
+    /// the next call goes on from what was stored. A later read is merged again into the item as
+    /// stored at save time, so edits synced since the reveal are kept. Returns the stored item.
     func save(vaultID: String) async throws -> FfiItem {
-        guard var item = resolvedItem() else { throw VaultError.other("") }
-        guard case .reveal(_, let portrait) = phase else { throw VaultError.other("") }
-        if item.vaultId != vaultID, case .new = target {
-            item.vaultId = vaultID
+        guard var item = resolvedItem(), case .reveal(_, let portrait) = phase, let saver else {
+            throw VaultError.other("")
         }
-        let previousPortrait = PassportBooklet.portraitAttachment(of: item)
-        var stored = try await session.save(item)
-        if let portrait {
-            let withFile = try await session.addAttachment(
-                itemID: stored.id, vaultID: stored.vaultId, name: "portrait.jpg", mime: "image/jpeg",
-                data: portrait)
-            let known = Set(stored.attachments.map(\.id))
-            if let added = withFile.attachments.first(where: { !known.contains($0.id) }) {
-                var linked = withFile
-                Self.setField("portrait", to: .file(value: added), in: &linked)
-                stored = try await session.save(linked)
-                if let previousPortrait, previousPortrait.id != added.id,
-                    stored.attachments.contains(where: { $0.id == previousPortrait.id })
-                {
-                    stored = try await session.removeAttachment(
-                        itemID: stored.id, vaultID: stored.vaultId, attachmentID: previousPortrait.id)
-                }
-            } else {
-                stored = withFile
-            }
+        let stored: FfiItem
+        switch target {
+        case .new:
+            item.vaultId = vaultID
+            stored = try await saver.save(item, portrait: portrait)
+        case .merge:
+            let chipValues = scannedValues.filter { takeScanned.contains($0.key) }
+            stored = try await saver.save(item, rescan: chipRead, chipValues: chipValues, portrait: portrait)
         }
         Self.log.info("scan: passport saved")
         return stored
     }
+
+    /// The vault of the saved item once the first step succeeded: the vault picker then stays on it.
+    var savedVaultID: String? { saver?.stored?.vaultId }
 
     static func setField(_ id: String, to value: FfiFieldValue, in item: inout FfiItem) {
         for s in item.sections.indices {
@@ -215,7 +223,19 @@ final class PassportScanModel {
     /// les données de la MRZ"). The core fills it as from a chip; the chip status and date are
     /// cleared since nothing was read.
     func mrzOnlyItem() async -> FfiItem? {
-        guard case .new(let vaultID) = target, let mrz, let parsed = try? mrzParse(lines: mrz) else { return nil }
+        guard case .new = target else { return nil }
+        return await mrzItem()
+    }
+
+    /// The passport the MRZ alone gives, never saved: what the "Pose ton téléphone" screen shows
+    /// (spec 6.2 step 2) and, for a new passport, the editor's draft.
+    func mrzItem() async -> FfiItem? {
+        let vaultID: String
+        switch target {
+        case .new(let id): vaultID = id
+        case .merge(let stored): vaultID = stored.vaultId
+        }
+        guard let mrz, let parsed = try? mrzParse(lines: mrz) else { return nil }
         let read = FfiChipRead(mrz: parsed, portrait: nil, portraitFormat: nil, status: .unverifiable)
         guard var item = try? await session.itemFromChip(vaultID: vaultID, read: read) else { return nil }
         Self.setField("chip_status", to: .empty, in: &item)
@@ -232,6 +252,21 @@ final class PassportScanModel {
         case .nfcUnavailable: String(localized: "scan.error.nfcUnavailable")
         case .unsupported: String(localized: "scan.error.unsupported")
         case .cancelled: String(localized: "scan.error.cancelled")
+        }
+    }
+}
+
+/// The whole-number percentage last sent for a read's progress, from any thread.
+final class ProgressPercent: Sendable {
+    private let last = OSAllocatedUnfairLock<Int?>(initialState: nil)
+
+    /// The new whole percent when `progress` (0 to 1) moved to another one, nil otherwise.
+    func changed(to progress: Double) -> Int? {
+        let percent = Int((min(max(progress, 0), 1) * 100).rounded())
+        return last.withLock { last in
+            guard last != percent else { return nil }
+            last = percent
+            return percent
         }
     }
 }
@@ -265,8 +300,12 @@ final class NFCChipLink: PassportChipLink {
         -> FfiChipRead
     {
         let transport = transport
+        let percent = ProgressPercent()
         return try await reader.read(mrz: mrz) { value in
-            transport.setAlertMessage(PassportScanModel.alertMessage(progress: value))
+            // The sheet's text changes once per whole percent, not once per APDU.
+            if percent.changed(to: value) != nil {
+                transport.setAlertMessage(PassportScanModel.alertMessage(progress: value))
+            }
             progress(value)
         }
     }
