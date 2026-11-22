@@ -691,8 +691,8 @@ impl IcaoSession {
             Rng::Os => {
                 let mut rnd = [0u8; 8];
                 let mut k = Zeroizing::new([0u8; 16]);
-                aws_lc_rs::rand::fill(&mut rnd).map_err(|_| IcaoError::Crypto)?;
-                aws_lc_rs::rand::fill(&mut *k).map_err(|_| IcaoError::Crypto)?;
+                crate::crypto::fill_random(&mut rnd).map_err(|_| IcaoError::Crypto)?;
+                crate::crypto::fill_random(&mut *k).map_err(|_| IcaoError::Crypto)?;
                 Ok((rnd, k))
             }
             #[cfg(feature = "scan-test-rng")]

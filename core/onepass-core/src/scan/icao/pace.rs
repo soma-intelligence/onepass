@@ -282,13 +282,13 @@ impl PaceRandom {
         }
     }
 
-    /// Two fresh scalars for `curve` from the OS CSPRNG.
+    /// Two fresh scalars for `curve` from the hedged generator (`crypto::random`).
     pub fn generate(curve: PaceCurve) -> Result<Self, IcaoError> {
         let draw = || -> Result<Zeroizing<Vec<u8>>, IcaoError> {
             let mut b = Zeroizing::new(vec![0u8; curve.field_len()]);
             // Rejection sampling: brainpool orders sit well below 2^n.
             for _ in 0..128 {
-                aws_lc_rs::rand::fill(&mut b).map_err(|_| IcaoError::Crypto)?;
+                crate::crypto::fill_random(&mut b).map_err(|_| IcaoError::Crypto)?;
                 if curve.valid_scalar(&b) {
                     return Ok(b);
                 }
