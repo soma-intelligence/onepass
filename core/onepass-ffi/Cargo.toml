@@ -59,12 +59,12 @@ onepass-relay = { path = "../onepass-relay" }
 [features]
 # The Swift binding generator (`cargo run --features bindgen --bin uniffi-bindgen`).
 bindgen = ["uniffi/cli"]
-# Lowers the Argon2id floor in debug builds only (see onepass-core): for the
-# tests and the Swift test framework, never for a shipped build.
 # `FfiIcaoSession::new_replayable`: fixed BAC and PACE randoms so the Swift
 # tests replay a recorded chip read (onepass-core tests/fixtures/icao). The
 # test XCFramework only (build-core.sh test), never a shipped build.
 scan-test-rng = ["onepass-core/scan-test-rng"]
+# Lowers the Argon2id floor in debug builds only (see onepass-core): for the
+# tests and the Swift test framework, never for a shipped build.
 dev-fast-kdf = [
     "onepass-core/dev-fast-kdf",
     "onepass-mailbox/testing",

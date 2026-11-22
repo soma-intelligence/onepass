@@ -44,7 +44,6 @@ sha3 = "0.10"
 # passive authentication of an eMRTD. Verify-side only.
 des = { version = "0.9", features = ["zeroize"] }
 aes = { version = "0.9", features = ["zeroize"] }
-cbc = "0.2"
 cmac = { version = "0.8", features = ["zeroize"] }
 x509-cert = "0.3"
 p256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
@@ -124,6 +123,9 @@ onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 # Differential test only (tests/slh_dsa_differential.rs): the release
 # candidate the identity key moves to once it is stable (Ruling 13).
 slh-dsa-next = { package = "slh-dsa", version = "=0.2.0-rc.5" }
+# Reference CBC for the secure messaging tests (scan/icao/sm.rs): the channel
+# itself uses hand-rolled CBC over `des` and `aes`.
+cbc = "0.2"
 
 # Two devices over fast-KDF accounts: needs the dev floor.
 [[test]]
