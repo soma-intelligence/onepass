@@ -137,7 +137,9 @@ final class PassportScanUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Anna"].waitForExistence(timeout: Self.uiTimeout), "the typed names were lost")
         XCTAssertFalse(app.staticTexts["Anna Maria"].exists, "the chip overwrote the typed names")
-        XCTAssertTrue(text(containing: "Authentifié par la puce").exists, "no chip badge after the second read")
+        // The kept "Anna" is not what the chip said: no badge over it.
+        XCTAssertFalse(
+            text(containing: "Authentifié par la puce").exists, "chip badge kept over a value the chip did not give")
         assertPortraitInDetail("no chip portrait after the second read")
         assertOnePortraitFile()
     }
