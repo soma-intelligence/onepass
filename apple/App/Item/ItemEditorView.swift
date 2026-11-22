@@ -45,7 +45,8 @@ struct ItemEditorView: View {
                                 .editorRowPadding()
                         }
                     }
-                    ForEach(item.sections.filter { !editor.draft.isFreeSection($0.id) }, id: \.id) { section in
+                    // The chip section of a passport is the reader's, never edited by hand.
+                    ForEach(editor.draft.editableTemplateSections, id: \.id) { section in
                         TemplateSectionCard(editor: editor, section: section) { sectionID, key in
                             passkeyRemoval = PasskeyRemoval(sectionID: sectionID, key: key)
                         }
@@ -223,7 +224,7 @@ struct ItemEditorView: View {
                               ItemEditorModel.anchor(sectionID: section.id, fieldIndex: row.position)))
             }
         }
-        for section in item.sections where !editor.draft.isFreeSection(section.id) {
+        for section in editor.draft.editableTemplateSections {
             add(section, rows: editor.shownRows(section))
         }
         for slot in editor.slots {
