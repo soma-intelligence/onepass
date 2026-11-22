@@ -2,11 +2,14 @@
 //! hands out command APDUs and takes the chip's responses, so the NFC
 //! transport (Core NFC on iOS, the Android reader) stays a dumb pipe.
 //!
-//! Order (ICAO 9303-11): read EF.CardAccess unprotected; PACE when it offers
-//! a supported protocol, otherwise BAC (and one BAC attempt when PACE fails);
-//! SELECT the eMRTD applet; read EF.COM, EF.SOD, DG1 and DG2 under secure
-//! messaging in chunks of 0xE0 bytes; check that DG1 holds the scanned MRZ;
-//! then passive authentication of EF.SOD against the master list.
+//! Order (ICAO 9303-11): SELECT the master file (the reader may present the
+//! chip with the eMRTD applet already selected, as Core NFC does) and read
+//! EF.CardAccess unprotected; PACE when it offers a supported protocol,
+//! otherwise BAC (and one BAC attempt when PACE fails); SELECT the eMRTD
+//! applet; read EF.COM, EF.SOD, DG1 and DG2 under secure messaging in chunks
+//! of 0xDF bytes (0xDC of file data per odd-INS read); check that DG1 holds
+//! the scanned document number and dates; then passive authentication of
+//! EF.SOD against the master list.
 //!
 //! Never panics on a chip response: anything unexpected ends the session in
 //! `Step::Failed`. Nothing here logs APDU bytes, keys or identity data, and
@@ -46,7 +49,8 @@ impl fmt::Debug for AccessKey {
 /// The outcome of a read.
 #[derive(Debug)]
 pub struct ChipRead {
-    /// The MRZ from DG1 (equal to the scanned one).
+    /// The MRZ from DG1. Its document number and dates equal the scanned
+    /// ones; names and optional data may differ (an OCR slip).
     pub mrz: Mrz,
     /// The DG2 portrait, when the chip has one that decodes.
     pub portrait: Option<Portrait>,
@@ -216,6 +220,7 @@ impl FileRead {
 
 enum Phase {
     Idle,
+    MasterFileSelect,
     CardAccessSelect,
     CardAccessRead(FileRead),
     PaceSetAt(Box<PaceExchange>),
@@ -255,6 +260,9 @@ pub struct IcaoSession {
     sizes: Vec<(u16, usize)>,
     progress_files: Vec<u16>,
     progress: f32,
+    /// PACE refused the password: if BAC fails too, the MRZ is wrong (a
+    /// PACE-only chip answers BAC with "not supported").
+    pace_denied: bool,
 }
 
 impl IcaoSession {
@@ -278,6 +286,7 @@ impl IcaoSession {
             sizes: Vec::new(),
             progress_files: Vec::new(),
             progress: 0.0,
+            pace_denied: false,
         }
     }
 
@@ -289,13 +298,15 @@ impl IcaoSession {
         self
     }
 
-    /// The first command: SELECT EF.CardAccess on the master file.
+    /// The first command: SELECT the master file, so that EF.CardAccess
+    /// (a file of the MF) can be selected next even when the reader handed
+    /// over the chip with the eMRTD applet selected.
     pub fn start(&mut self) -> Step {
         if !matches!(self.phase, Phase::Idle) {
             return self.fail(IcaoError::Protocol("session-started"));
         }
-        self.phase = Phase::CardAccessSelect;
-        self.send_plain(Command::select_ef(EF_CARD_ACCESS))
+        self.phase = Phase::MasterFileSelect;
+        self.send_plain(Command::select_mf())
     }
 
     /// 0 to 1, in proportion to the bytes of the LDS files read.
@@ -315,6 +326,13 @@ impl IcaoSession {
             match ch.unwrap(&raw) {
                 Ok(r) if r.sw >> 8 == 0x61 || r.sw >> 8 == 0x6C => self.fail(IcaoError::Chip(r.sw)),
                 Ok(r) => self.dispatch(r),
+                // Some chips answer a SELECT of a missing file with a bare
+                // 6A82 (no SM objects): the file is absent. The answer
+                // still counts in the SSC, as for a wrapped one.
+                Err(IcaoError::Chip(0x6A82)) if matches!(self.phase, Phase::FileSelect(_)) => {
+                    ch.skip_response();
+                    self.dispatch(raw)
+                }
                 // The SSC has moved: the channel is dead.
                 Err(e) => self.fail(e),
             }
@@ -373,6 +391,12 @@ impl IcaoSession {
     fn dispatch(&mut self, r: Response) -> Step {
         match std::mem::replace(&mut self.phase, Phase::Finished) {
             Phase::Idle | Phase::Finished => self.fail(IcaoError::Protocol("session-not-running")),
+            // Any answer: a chip without a master file to select still
+            // tries EF.CardAccess, and falls back to BAC without it.
+            Phase::MasterFileSelect => {
+                self.phase = Phase::CardAccessSelect;
+                self.send_plain(Command::select_ef(EF_CARD_ACCESS))
+            }
             Phase::CardAccessSelect => {
                 if !r.ok() {
                     // No EF.CardAccess (6A82) or refused: BAC.
@@ -424,21 +448,24 @@ impl IcaoSession {
                     self.phase = Phase::AppletSelect;
                     self.send_sm(Command::select_applet(&AID_EMRTD))
                 }
-                Err(_) => self.start_bac(),
+                Err(e) => {
+                    self.pace_denied = matches!(e, IcaoError::AccessDenied);
+                    self.start_bac()
+                }
             },
             Phase::BacSelect => {
                 if !r.ok() {
-                    return self.fail(IcaoError::Chip(r.sw));
+                    return self.fail_bac(IcaoError::Chip(r.sw));
                 }
                 self.phase = Phase::BacChallenge;
                 self.send_plain(Command::get_challenge())
             }
             Phase::BacChallenge => {
                 if !r.ok() {
-                    return self.fail(IcaoError::Chip(r.sw));
+                    return self.fail_bac(IcaoError::Chip(r.sw));
                 }
                 let Ok(rnd_icc) = <[u8; 8]>::try_from(r.data.as_slice()) else {
-                    return self.fail(IcaoError::Protocol("challenge-length"));
+                    return self.fail_bac(IcaoError::Protocol("challenge-length"));
                 };
                 let (rnd_ifd, k_ifd) = match self.bac_random() {
                     Ok(v) => v,
@@ -456,7 +483,7 @@ impl IcaoSession {
                     // The applet is already selected (before GET CHALLENGE).
                     self.select_file(EF_COM)
                 }
-                Err(e) => self.fail(e),
+                Err(e) => self.fail_bac(e),
             },
             Phase::AppletSelect => {
                 if !r.ok() {
@@ -611,6 +638,16 @@ impl IcaoSession {
         self.end();
         self.progress = 1.0;
         Step::Done(read)
+    }
+
+    /// BAC failed. After PACE refused the password, the chip has already
+    /// said the MRZ is wrong: that is the error, not BAC's (a PACE-only chip
+    /// does not support BAC at all).
+    fn fail_bac(&mut self, e: IcaoError) -> Step {
+        if self.pace_denied {
+            return self.fail(IcaoError::AccessDenied);
+        }
+        self.fail(e)
     }
 
     fn fail(&mut self, e: IcaoError) -> Step {

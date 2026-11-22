@@ -106,10 +106,17 @@ fn session_refuses_a_bad_master_list_or_mrz() {
 }
 
 #[test]
-fn session_starts_by_selecting_ef_card_access() {
+fn session_starts_by_selecting_the_master_file_then_ef_card_access() {
     let s = FfiIcaoSession::new(specimen(), fixture_master_list()).unwrap();
     assert_eq!(
         s.start(),
+        FfiIcaoStep::Send {
+            apdu: unhex("00A4000C023F00")
+        }
+    );
+    // Whatever the chip answers to SELECT MF, EF.CardAccess comes next.
+    assert_eq!(
+        s.on_response(unhex("6A82")),
         FfiIcaoStep::Send {
             apdu: unhex("00A4020C02011C")
         }
@@ -128,7 +135,7 @@ fn refused_bac_is_access_denied() {
             break;
         };
         let answer = match apdu[1] {
-            0xA4 if apdu[2] == 0x04 => unhex("9000"),
+            0xA4 if apdu[2] != 0x02 => unhex("9000"),
             0xA4 => unhex("6A82"),
             0x84 => unhex("01020304050607089000"),
             0x82 => unhex("6300"),
@@ -148,7 +155,11 @@ fn refused_bac_is_access_denied() {
 fn garbage_answer_is_other() {
     let s = FfiIcaoSession::new(specimen(), fixture_master_list()).unwrap();
     s.start();
-    // SELECT EF.CardAccess refused: BAC, SELECT applet refused with 6A82.
+    // SELECT MF, then SELECT EF.CardAccess refused: BAC, SELECT applet
+    // refused with 6A82.
+    let FfiIcaoStep::Send { .. } = s.on_response(unhex("9000")) else {
+        panic!("SELECT EF.CardAccess expected");
+    };
     let FfiIcaoStep::Send { .. } = s.on_response(unhex("6A82")) else {
         panic!("BAC expected");
     };
@@ -260,7 +271,7 @@ fn pinned_session_takes_the_shipped_master_list() {
     assert_eq!(
         s.start(),
         FfiIcaoStep::Send {
-            apdu: unhex("00A4020C02011C")
+            apdu: unhex("00A4000C023F00")
         }
     );
     let mut wrong = pin.clone();

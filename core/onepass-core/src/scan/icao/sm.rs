@@ -319,6 +319,12 @@ impl SecureChannel {
         }
     }
 
+    /// Count an answer that came back as a bare status word (no SM
+    /// objects) when the caller goes on with the channel.
+    pub(crate) fn skip_response(&mut self) {
+        self.increment_ssc();
+    }
+
     /// Verify the MAC (DO8E) of a protected response, then decrypt DO87
     /// (answer to an even INS) or DO85 (answer to an odd INS, without
     /// padding-content indicator; the INS is the last one wrapped) and read

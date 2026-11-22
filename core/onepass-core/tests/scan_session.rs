@@ -677,6 +677,11 @@ enum Quirk {
     WrongLeOnce,
     /// Answers GET CHALLENGE with 6108, then GET RESPONSE.
     ChallengeViaGetResponse,
+    /// Answers a protected SELECT of a missing file with a bare 6A82 (no
+    /// SM objects), counting it in the SSC.
+    BareNotFound,
+    /// Refuses SELECT of the master file (the applet stays selected).
+    NoMasterFile,
 }
 
 struct FakeChip {
@@ -686,6 +691,10 @@ struct FakeChip {
     files: HashMap<u16, Vec<u8>>,
     quirk: Quirk,
     quirk_used: bool,
+    /// BAC supported (false: a PACE-only chip).
+    bac: bool,
+    /// The eMRTD applet is the current DF. Core NFC hands the chip over
+    /// with it selected (the select-identifiers of Info.plist).
     applet: bool,
     selected: Option<u16>,
     sm: Option<ChipSm>,
@@ -711,7 +720,8 @@ impl FakeChip {
             files,
             quirk: Quirk::None,
             quirk_used: false,
-            applet: false,
+            bac: true,
+            applet: true,
             selected: None,
             sm: None,
             rnd_icc: None,
@@ -780,6 +790,12 @@ impl FakeChip {
                 return Self::sw(&[], 0x6988);
             };
             let (out, sw) = self.exec(header, &plain, le, true);
+            if self.quirk == Quirk::BareNotFound && header[1] == 0xA4 && sw == 0x6A82 {
+                self.quirk_used = true;
+                sm.inc();
+                self.sm = Some(sm);
+                return Self::sw(&[], sw);
+            }
             let resp = sm.wrap_resp(header[1], &out, sw);
             if self.sm.is_none() {
                 self.sm = Some(sm);
@@ -831,6 +847,7 @@ impl FakeChip {
                 }
                 (encode(0x53, &d), sw)
             }
+            0x84 | 0x82 if !self.bac => (vec![], 0x6D00),
             0x84 => {
                 self.rnd_icc = Some(RND_ICC);
                 if self.quirk == Quirk::ChallengeViaGetResponse && !self.quirk_used {
@@ -856,6 +873,16 @@ impl FakeChip {
 
     fn select(&mut self, p1: u8, data: &[u8], protected: bool) -> (Vec<u8>, u16) {
         match p1 {
+            // The master file (3F00, or no data): leaves the applet.
+            0x00 if data.is_empty() || data == [0x3F, 0x00] => {
+                if self.quirk == Quirk::NoMasterFile {
+                    self.quirk_used = true;
+                    return (vec![], 0x6A86);
+                }
+                self.applet = false;
+                self.selected = None;
+                (vec![], 0x9000)
+            }
             0x04 => {
                 if data != AID_EMRTD {
                     return (vec![], 0x6A82);
@@ -1126,6 +1153,86 @@ fn reads_passport_with_pace() {
 }
 
 #[test]
+fn reaches_pace_with_the_applet_selected() {
+    // Core NFC hands the chip over with the eMRTD applet selected: the
+    // session selects the master file first, so EF.CardAccess is found.
+    let mut chip = FakeChip::specimen();
+    assert!(chip.applet);
+    let (step, _) = run(&mut session_for(&specimen()), &mut chip);
+    let r = read_ok(step);
+    assert_eq!(r.status, ChipStatus::Verified);
+    assert_eq!(chip.log[0].0, [0x00, 0xA4, 0x00, 0x0C, 0x02, 0x3F, 0x00]);
+    assert_eq!(chip.log[1].0, [0x00, 0xA4, 0x02, 0x0C, 0x02, 0x01, 0x1C]);
+    assert_eq!(chip.log[1].1, [0x90, 0x00]);
+    assert!(chip.used_pace());
+    assert!(!chip.used_bac());
+}
+
+#[test]
+fn refused_master_file_select_is_ignored() {
+    // The chip refuses SELECT MF: EF.CardAccess is still tried (not found
+    // under the applet here), then BAC reads the chip.
+    let mut chip = FakeChip::specimen();
+    chip.quirk = Quirk::NoMasterFile;
+    let (step, _) = run(&mut session_for(&specimen()), &mut chip);
+    let r = read_ok(step);
+    assert_eq!(r.status, ChipStatus::Verified);
+    assert!(chip.quirk_used);
+    assert_eq!(chip.log[1].0, [0x00, 0xA4, 0x02, 0x0C, 0x02, 0x01, 0x1C]);
+    assert!(chip.used_bac());
+}
+
+#[test]
+fn pace_only_chip_reads() {
+    let mut chip = FakeChip::specimen();
+    chip.bac = false;
+    let (step, _) = run(&mut session_for(&specimen()), &mut chip);
+    assert_eq!(read_ok(step).status, ChipStatus::Verified);
+    assert!(chip.used_pace());
+}
+
+#[test]
+fn wrong_mrz_on_pace_only_chip_is_access_denied() {
+    // PACE refuses the password, BAC is not supported (6D00): the error is
+    // the refused password, not an unsupported chip.
+    let mut chip = FakeChip::specimen();
+    chip.bac = false;
+    let wrong = mrz_lines(SURNAME, GIVEN, "L898902C4");
+    let (step, _) = run(&mut session_for(&wrong), &mut chip);
+    assert!(matches!(step, Step::Failed(IcaoError::AccessDenied)));
+    assert!(chip.used_pace());
+}
+
+#[test]
+fn bare_not_found_for_dg2_finishes_without_portrait() {
+    // EF.COM lists DG2 but the chip has none, and says so with a bare
+    // 6A82 under secure messaging.
+    let mut chip = FakeChip::specimen();
+    chip.quirk = Quirk::BareNotFound;
+    chip.files.remove(&EF_DG2);
+    let (step, _) = run(&mut session_for(&specimen()), &mut chip);
+    let r = read_ok(step);
+    assert!(chip.quirk_used);
+    assert!(r.portrait.is_none());
+    assert_eq!(r.progress_files, vec![EF_COM, EF_SOD, EF_DG1]);
+}
+
+#[test]
+fn bare_not_found_for_com_reads_on() {
+    // No EF.COM, answered with a bare 6A82: DG1 and DG2 are assumed and the
+    // channel stays in step for the files after it.
+    let mut chip = FakeChip::specimen();
+    chip.quirk = Quirk::BareNotFound;
+    chip.files.remove(&EF_COM);
+    let (step, _) = run(&mut session_for(&specimen()), &mut chip);
+    let r = read_ok(step);
+    assert!(chip.quirk_used);
+    assert_eq!(r.status, ChipStatus::Verified);
+    assert_eq!(r.portrait.unwrap().bytes, portrait_bytes(1200));
+    assert_eq!(r.progress_files, vec![EF_SOD, EF_DG1, EF_DG2]);
+}
+
+#[test]
 fn falls_back_to_bac_without_card_access() {
     let mut chip = FakeChip::specimen();
     chip.card_access = None;
@@ -1187,14 +1294,14 @@ fn reads_file_in_chunks_with_long_length() {
     assert_eq!(r.portrait.unwrap().bytes, jpeg);
     // Offsets above 0x7FFF go through READ BINARY with odd INS.
     assert!(chip.log.iter().any(|(c, _)| c.get(1) == Some(&0xB1)));
-    // Every read asks for at most 0xE0 bytes (Le in DO97 of the wrapped
-    // command is checked by the chip: nothing above E0 + 3 for B1).
+    // Every read asks for at most 0xDF bytes (0xDC of file data for B1),
+    // so the DG2 alone takes at least its length over 0xDF reads.
     let reads = chip
         .log
         .iter()
         .filter(|(c, _)| matches!(c.get(1), Some(0xB0 | 0xB1)))
         .count();
-    assert!(reads >= dg2_len / 0xE0);
+    assert!(reads >= dg2_len / 0xDF);
 }
 
 #[test]

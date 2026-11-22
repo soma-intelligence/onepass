@@ -92,6 +92,18 @@ impl Command {
         }
     }
 
+    /// SELECT the master file, 3F00 (no response data).
+    pub fn select_mf() -> Self {
+        Command {
+            cla: 0x00,
+            ins: 0xA4,
+            p1: 0x00,
+            p2: 0x0C,
+            data: vec![0x3F, 0x00],
+            le: None,
+        }
+    }
+
     /// SELECT an application by AID (no response data).
     pub fn select_applet(aid: &[u8]) -> Self {
         Command {
@@ -176,6 +188,14 @@ mod tests {
         assert_eq!(
             Command::read_binary(0x8123, 0).to_bytes(),
             vec![0x00, 0xB0, 0x01, 0x23, 0x00]
+        );
+    }
+
+    #[test]
+    fn apdu_select_mf_bytes() {
+        assert_eq!(
+            Command::select_mf().to_bytes(),
+            vec![0x00, 0xA4, 0x00, 0x0C, 0x02, 0x3F, 0x00]
         );
     }
 
