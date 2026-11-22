@@ -149,6 +149,12 @@ final class AppModel {
     var scanRequest: ScanRequest?
     /// Bumped when a scan saved an item, so its detail reads it again.
     private(set) var scanRevision = 0
+    /// "Scanner" in the new item sheet: the scan flow, presented once that sheet has gone
+    /// (`newItemSheetDismissed`).
+    private var scanAfterSheet: ScanRequest?
+    /// "Garder les données de la MRZ": the passport for the editor, opened once the scan flow has
+    /// gone (`scanCoverDismissed`).
+    private var draftAfterScan: FfiItem?
     /// What the main window shows right of the sidebar: the item list and detail, or a full page
     /// (Watchtower, Développeur). Choosing an item filter in the sidebar goes back to `.items`.
     var page: BrowsePage = .items
@@ -1770,6 +1776,8 @@ final class AppModel {
         newItemDraft = nil
         // The scan holds the MRZ and the read: never kept past a lock.
         scanRequest = nil
+        scanAfterSheet = nil
+        draftAfterScan = nil
         editorDirty = false
         pendingDiscard = nil
         showNewItemPicker = false
@@ -2019,15 +2027,19 @@ final class AppModel {
         editorDirty = false
         page = .items
         let request = ScanRequest(target: .new(vaultID: vaultID))
-        guard fromSheet else {
-            scanRequest = request
-            return
-        }
-        Task {
-            try? await Task.sleep(for: .milliseconds(450))
-            guard session.state == .unlocked else { return }
+        if fromSheet {
+            scanAfterSheet = request
+        } else {
             scanRequest = request
         }
+    }
+
+    /// The iPhone's new item sheet has gone: the scan it asked for comes up now.
+    func newItemSheetDismissed() {
+        guard let request = scanAfterSheet else { return }
+        scanAfterSheet = nil
+        guard session.state == .unlocked else { return }
+        scanRequest = request
     }
 
     /// "Scanner la puce" in a passport's detail: the scan flow merges the read into it.
@@ -2047,14 +2059,18 @@ final class AppModel {
     /// "Garder les données de la MRZ" (no chip, or no NFC): the passport made from the MRZ opens in
     /// the new item editor, once the scan has gone.
     func editScannedDraft(_ item: FfiItem) {
+        draftAfterScan = item
         scanRequest = nil
-        Task {
-            try? await Task.sleep(for: .milliseconds(450))
-            guard session.state == .unlocked else { return }
-            editing = false
-            editorDirty = false
-            newItemDraft = ItemDraft(item: item)
-        }
+    }
+
+    /// The scan flow has gone: the MRZ-only passport it handed over opens in the editor now.
+    func scanCoverDismissed() {
+        guard let item = draftAfterScan else { return }
+        draftAfterScan = nil
+        guard session.state == .unlocked else { return }
+        editing = false
+        editorDirty = false
+        newItemDraft = ItemDraft(item: item)
     }
 
     /// The new item's editor closed: shows the saved item, or what was shown before.

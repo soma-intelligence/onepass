@@ -126,7 +126,8 @@ struct PhoneTabsView: View {
         // RX: logos fill their tiles (rows, tiles and the item header).
         .environment(\.itemIconMarkScale, rxDesign ? ItemIcon.rxMarkScale : 1)
         .environment(\.openPhoneTab) { tab = $0 }
-        .sheet(isPresented: newItemShown) {
+        // "Scanner" waits for this sheet to go before the scan flow covers the screen.
+        .sheet(isPresented: newItemShown, onDismiss: { model.newItemSheetDismissed() }) {
             PhoneNewItemSheet()
         }
         // The top of the visible stack is the selection: a tab switch selects that tab's item.

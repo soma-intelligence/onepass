@@ -95,7 +95,7 @@ struct BrowseRoot: View {
             }
             #if os(iOS)
             // Scanner (new item sheet) and Scanner la puce (a passport's detail): camera, chip, save.
-            .fullScreenCover(item: $model.scanRequest) { request in
+            .fullScreenCover(item: $model.scanRequest, onDismiss: { model.scanCoverDismissed() }) { request in
                 ScanCover(request: request)
             }
             .sheet(isPresented: $model.showOtpScanner) {
