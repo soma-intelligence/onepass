@@ -45546,6 +45546,36 @@
         }
       }
     },
+    "scan.hiddenWhileCaptured" : {
+      "comment" : "Passport scan: shown in place of the flow while the screen is captured.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hidden while the screen is recorded or mirrored"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oculto mientras se graba o se duplica la pantalla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Masqué pendant que l'écran est enregistré ou recopié"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nascosto mentre lo schermo è registrato o duplicato"
+          }
+        }
+      }
+    },
     "scan.manual.footer" : {
       "comment" : "Footer of the manual MRZ entry.",
       "extractionState" : "manual",

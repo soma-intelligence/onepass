@@ -25,7 +25,7 @@ struct PassportScanFlow: View {
             case .camera:
                 ScanCameraStep { model.mrzFound($0) }
             case .place:
-                ScanPlaceStep(mrz: model.mrz ?? []) { startRead() }
+                ScanPlaceStep(model: model) { startRead() }
             case .reading(let progress):
                 ScanReadingStep(progress: progress)
             case .reveal(let item, let portrait):
@@ -35,6 +35,7 @@ struct PassportScanFlow: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .modifier(ScanCaptureMask())
         .animation(.easeOut(duration: 0.2), value: phaseKey)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -81,6 +82,31 @@ struct PassportScanFlow: View {
                 if let item = await model.mrzOnlyItem() { app.editScannedDraft(item) }
             }
         }
+    }
+}
+
+/// The flow shows the document, its MRZ and the read: while the screen is recorded, mirrored or
+/// AirPlayed (`isSceneCaptured`) it is hidden, as revealed secrets are elsewhere in the app, and it
+/// is marked privacy sensitive. The app switcher is covered by the app's `PrivacyShield` window,
+/// which sits above this full screen cover too.
+private struct ScanCaptureMask: ViewModifier {
+    @Environment(\.isSceneCaptured) private var captured
+
+    func body(content: Content) -> some View {
+        content
+            .privacySensitive()
+            .opacity(captured ? 0 : 1)
+            .accessibilityHidden(captured)
+            .overlay {
+                if captured {
+                    Label("scan.hiddenWhileCaptured", systemImage: "eye.slash")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(Theme.Space.l)
+                        .accessibilityIdentifier("scan.captureMask")
+                }
+            }
     }
 }
 
@@ -219,6 +245,9 @@ private struct ManualMRZEntry: View {
             .textInputAutocapitalization(.characters)
             .autocorrectionDisabled()
             .keyboardType(.asciiCapable)
+            // Never offered to AutoFill or the keyboard's suggestions, hidden from captures.
+            .textContentType(nil)
+            .privacySensitive()
             .focused($focused, equals: index)
             .onSubmit { focused = index == 0 ? 1 : nil }
             .accessibilityIdentifier(id)
@@ -227,16 +256,20 @@ private struct ManualMRZEntry: View {
 
 // MARK: - Place and read
 
-/// "Pose ton téléphone sur le document.": the top of the iPhone's back on the passport cover, then
-/// "Lire la puce" opens the system NFC sheet.
+/// "Pose ton téléphone sur le document.": a preview of the document filled from the MRZ alone
+/// (no portrait, no chip status), the top of the iPhone's back coming down onto it, then "Lire la
+/// puce" opens the system NFC sheet (spec 6.2 step 2).
 private struct ScanPlaceStep: View {
-    let mrz: [String]
+    let model: PassportScanModel
     let onRead: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var lowered = false
+    @State private var preview: FfiItem?
+    @State private var previewOpen = true
 
     private var family: DocumentFamily {
-        let state = (try? mrzParse(lines: mrz))?.issuingState ?? ""
+        if let preview { return PassportBooklet.family(of: preview) }
+        let state = (try? mrzParse(lines: model.mrz ?? []))?.issuingState ?? ""
         return .passport(issuingCountry: state)
     }
 
@@ -244,8 +277,13 @@ private struct ScanPlaceStep: View {
         VStack(spacing: Theme.Space.xl) {
             Spacer(minLength: 0)
             ZStack(alignment: .top) {
-                PassportCoverThumbnail(family: family, size: 150)
-                // The phone, back up, comes down onto the top of the cover.
+                PassportFace(
+                    family: family, data: preview.map { PassportBooklet.data(of: $0, portrait: nil) } ?? PassportData(),
+                    isOpen: $previewOpen, secretsRevealed: false)
+                    .frame(maxWidth: 300)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("scan.place.preview")
+                // The phone, back up, comes down onto the top of the page.
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(.background)
                     .overlay {
@@ -260,12 +298,13 @@ private struct ScanPlaceStep: View {
                             .padding(8)
                     }
                     .frame(width: 92, height: 180)
-                    .offset(x: 30, y: lowered ? -96 : -150)
+                    .offset(x: 60, y: lowered ? -96 : -150)
                     .opacity(0.95)
+                    .accessibilityElement()
+                    .accessibilityLabel(Text("scan.place.illustration"))
             }
-            .frame(height: 300, alignment: .bottom)
-            .accessibilityElement()
-            .accessibilityLabel(Text("scan.place.illustration"))
+            .frame(height: 340, alignment: .bottom)
+            .padding(.horizontal, Theme.Space.l)
             VStack(spacing: Theme.Space.s) {
                 Text("scan.place.title")
                     .font(.title3.weight(.semibold))
@@ -286,6 +325,7 @@ private struct ScanPlaceStep: View {
             .padding(.bottom, Theme.Space.l)
             .accessibilityIdentifier("scan.read")
         }
+        .task(id: model.mrz) { preview = await model.mrzItem() }
         .onAppear {
             guard !reduceMotion else {
                 lowered = true
@@ -369,16 +409,10 @@ private struct ScanRevealStep: View {
                     conflicts
                 }
                 if isNew, vaults.count > 1 {
-                    Picker(selection: $vaultID) {
-                        ForEach(vaults, id: \.id) { vault in
-                            Text(vault.meta.name).tag(vault.id)
-                        }
-                    } label: {
-                        Text("term.vault")
-                    }
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 440, alignment: .leading)
-                    .accessibilityIdentifier("scan.vault")
+                    // Once the passport is stored, it stays in that vault (a retry resumes it).
+                    VaultPicker(vaultID: $vaultID)
+                        .frame(maxWidth: 440, alignment: .leading)
+                        .disabled(model.savedVaultID != nil)
                 }
                 if let saveError {
                     Text(saveError)
@@ -424,6 +458,7 @@ private struct ScanRevealStep: View {
                         Text(verbatim: label(of: conflict.fieldId))
                     }
                     .pickerStyle(.segmented)
+                    .privacySensitive()
                     .accessibilityIdentifier("scan.conflict.\(conflict.fieldId)")
                     Text(model.takeScanned.contains(conflict.fieldId) ? "scan.conflicts.chipKept" : "scan.conflicts.yoursKept")
                         .font(.caption)
