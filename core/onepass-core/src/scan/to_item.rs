@@ -8,7 +8,7 @@ use zeroize::Zeroizing;
 
 use crate::error::{Error, ValidationError};
 use crate::id::Id;
-use crate::model::field::{Field, FieldValue};
+use crate::model::field::{Field, FieldType, FieldValue};
 use crate::model::item::Item;
 use crate::model::{ItemType, new_item, template};
 use crate::scan::icao::{ChipRead, ChipStatus};
@@ -64,6 +64,14 @@ fn text(s: &str) -> FieldValue {
     }
 }
 
+fn concealed(s: &str) -> FieldValue {
+    if s.is_empty() {
+        FieldValue::Empty
+    } else {
+        FieldValue::Concealed(Zeroizing::new(s.into()))
+    }
+}
+
 fn status_label(s: ChipStatus) -> &'static str {
     match s {
         ChipStatus::Verified => "Authentifié par la puce",
@@ -87,18 +95,11 @@ fn identity_values(read: &ChipRead, today: Date) -> Vec<(&'static str, FieldValu
     let m = &read.mrz;
     let mut v = vec![
         ("issuing_country", text(&m.issuing_state)),
-        (
-            "number",
-            if m.document_number.is_empty() {
-                FieldValue::Empty
-            } else {
-                FieldValue::Concealed(Zeroizing::new(m.document_number.clone()))
-            },
-        ),
+        ("number", concealed(&m.document_number)),
         ("last_name", text(&readable_case(&m.surname))),
         ("first_names", text(&readable_case(&m.given_names))),
         ("nationality", text(&m.nationality)),
-        ("mrz", text(&m.raw)),
+        ("mrz", concealed(&m.raw)),
         (
             "passport_type",
             FieldValue::Menu(passport_type(&m.document_code).into()),
@@ -211,8 +212,16 @@ pub fn merge_chip_read(
             None => item.sections.push(ts),
             Some(s) => {
                 for f in ts.fields {
-                    if !s.fields.iter().any(|g| g.id == f.id) {
-                        s.fields.push(f);
+                    match s.fields.iter_mut().find(|g| g.id == f.id) {
+                        None => s.fields.push(f),
+                        // The MRZ of items made before it was concealed.
+                        Some(g) if g.id == "mrz" && g.kind == FieldType::Text => {
+                            g.kind = FieldType::Concealed;
+                            if let FieldValue::Text(t) = &mut g.value {
+                                g.value = FieldValue::Concealed(Zeroizing::new(std::mem::take(t)));
+                            }
+                        }
+                        Some(_) => {}
                     }
                 }
             }
@@ -314,7 +323,10 @@ mod tests {
             FieldValue::Date(date!(1974 - 08 - 12))
         );
         assert_eq!(text(&item, "sex"), "Féminin");
-        assert_eq!(text(&item, "mrz"), format!("{L1}\n{L2}"));
+        assert_eq!(
+            get(&item, "mrz"),
+            FieldValue::Concealed(Zeroizing::new(format!("{L1}\n{L2}")))
+        );
         assert_eq!(text(&item, "passport_type"), "Ordinaire");
         assert_eq!(text(&item, "document_code"), "P");
         assert_eq!(text(&item, "chip_status"), "Authentifié par la puce");
@@ -428,6 +440,34 @@ mod tests {
         assert!(conflicts.is_empty());
         assert_eq!(text(&merged, "document_code"), "P");
         assert_eq!(get(&merged, "portrait"), FieldValue::Empty);
+    }
+
+    #[test]
+    fn merge_conceals_the_mrz_of_old_items() {
+        let today = date!(2026 - 11 - 21);
+        let read = specimen(ChipStatus::Verified);
+        let mut item = chip_read_to_item(&read, Id::new(), today);
+        let f = item
+            .sections
+            .iter_mut()
+            .flat_map(|s| &mut s.fields)
+            .find(|f| f.id == "mrz")
+            .unwrap();
+        f.kind = FieldType::Text;
+        f.value = FieldValue::Text(format!("{L1}\n{L2}"));
+        let (merged, conflicts) = merge_chip_read(&item, &read, today).unwrap();
+        assert!(conflicts.is_empty());
+        let f = merged
+            .sections
+            .iter()
+            .flat_map(|s| &s.fields)
+            .find(|f| f.id == "mrz")
+            .unwrap();
+        assert_eq!(f.kind, FieldType::Concealed);
+        assert_eq!(
+            f.value,
+            FieldValue::Concealed(Zeroizing::new(format!("{L1}\n{L2}")))
+        );
     }
 
     #[test]

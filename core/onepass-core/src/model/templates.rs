@@ -640,7 +640,8 @@ fn passport() -> Vec<Section> {
                 dt("issued_on", "Date d'émission"),
                 tx("authority", "Autorité"),
                 tx("issue_place", "Lieu de délivrance"),
-                tx("mrz", "Lignes MRZ"),
+                // Masked like the number (spec 7.4).
+                cn("mrz", "Lignes MRZ"),
                 file("scan", "Scan"),
                 file("portrait", "Photo"),
             ],
@@ -921,6 +922,8 @@ mod tests {
     fn passport_template_has_portrait_and_chip_section() {
         let t = template(ItemType::Passport);
         let main = t.iter().find(|s| s.id == "main").unwrap();
+        let mrz = main.fields.iter().find(|f| f.id == "mrz").unwrap();
+        assert_eq!(mrz.kind, crate::model::field::FieldType::Concealed);
         let portrait = main.fields.iter().find(|f| f.id == "portrait").unwrap();
         assert_eq!(portrait.kind, crate::model::field::FieldType::File);
         assert_eq!(portrait.label, "Photo");
