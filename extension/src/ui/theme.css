@@ -94,6 +94,9 @@
   --accent-tint: rgba(110, 91, 214, .16);
   --accent-ink: #B3A8F7;
   --card-shadow: 0 0 0 .5px rgba(255, 255, 255, .08), 0 8px 24px rgba(0, 0, 0, .45);
+  /* The one-click card's shadow: it fits the 4 px margin of its transparent frame, so the page
+     keeps every pixel of its own controls around the card (the frame takes the pointer). */
+  --ov-shadow: 0 0 0 .5px rgba(255, 255, 255, .1), 0 1px 3px rgba(0, 0, 0, .5);
   /* Text and glyphs on a coloured fill (the accent, the green check), both themes. */
   --on-tint: #FFFFFF;
   /* The inline frames' accent, a touch warmer than the pages' indigo. */
@@ -226,6 +229,7 @@
     --accent-tint: rgba(110, 91, 214, .09);
     --accent-ink: #5B49C4;
     --card-shadow: 0 0 0 .5px rgba(0, 0, 0, .06), 0 8px 24px rgba(20, 20, 40, .14);
+    --ov-shadow: 0 0 0 .5px rgba(0, 0, 0, .1), 0 1px 3px rgba(20, 20, 40, .16);
     --frame-shadow: 0 0 0 .5px rgba(0,0,0,.12), 0 12px 32px rgba(0,0,0,.16);
     --wash-identity: linear-gradient(180deg, color-mix(in srgb, var(--identity, transparent) 14%, transparent), transparent);
   }
@@ -534,7 +538,8 @@ body.frame:has(.menu) { background: var(--grouped); }
 /* The root too: `html` keeps `--pop` otherwise, and around the capsule the
    frame showed a solid near-black block (dark appearance, iOS Safari). */
 html:has(> body.island), body.island { background: transparent; }
-.overlay { max-height: 100vh; overflow-y: auto; padding: var(--space-m) var(--space-m) var(--space-l); }
+.overlay { max-height: 100vh; overflow-y: auto; padding: var(--space-xs); }
+.overlay .ov-pill, .overlay .ov-card, .overlay .ov-close, .overlay .ov-lip { box-shadow: var(--ov-shadow); }
 .ov-shell { display: flex; align-items: flex-start; gap: var(--space-s); }
 .ov-pill, .ov-card {
   position: relative;
