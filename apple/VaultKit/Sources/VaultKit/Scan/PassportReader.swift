@@ -12,6 +12,14 @@ public protocol APDUTransport: Sendable {
     func send(_ apdu: Data) async throws -> Data
 }
 
+/// Thrown by a transport whose tag went away while its NFC session still runs (polling again, the
+/// next `send` waits for the tag to come back): the only failure a read starts over from. A
+/// session that ended (timeout, invalidation) throws a `PassportReadError` instead, and a read
+/// over it is not tried again.
+public struct PassportTagLost: Error, Sendable, Equatable {
+    public init() {}
+}
+
 /// Why a passport read stopped.
 public enum PassportReadError: Error, Sendable, Equatable {
     /// The chip refused the keys derived from the MRZ: the MRZ was misread or is not this
@@ -62,23 +70,29 @@ public struct PassportReader: Sendable {
         self.makeSession = makeSession
     }
 
-    /// Reads the chip of the document whose MRZ lines these are. A lost contact starts the read
-    /// over once, with a new session (spec 6.2). `progress` gets 0 to 1.
+    /// Reads the chip of the document whose MRZ lines these are. A tag lost while the NFC session
+    /// still runs (`PassportTagLost`) starts the read over once, with a new session (spec 6.2); a
+    /// session that ended (timeout, invalidation) is not tried again. `progress` gets 0 to 1.
     public func read(
         mrz: [String], progress: @Sendable (Double) -> Void
     ) async throws(PassportReadError) -> FfiChipRead {
+        var tagLost = false
         do {
-            return try await readOnce(mrz: mrz, progress: progress)
-        } catch .lostContact {
+            return try await readOnce(mrz: mrz, progress: progress, tagLost: &tagLost)
+        } catch {
+            guard error == .lostContact, tagLost else { throw error }
             if Task.isCancelled { throw .cancelled }
             Self.log.info("scan: contact lost, reading again")
             progress(0)
-            return try await readOnce(mrz: mrz, progress: progress)
+            var again = false
+            return try await readOnce(mrz: mrz, progress: progress, tagLost: &again)
         }
     }
 
+    /// One read with a new session. `tagLost`: set when it stopped because the tag went away
+    /// (thrown as `.lostContact`).
     private func readOnce(
-        mrz: [String], progress: @Sendable (Double) -> Void
+        mrz: [String], progress: @Sendable (Double) -> Void, tagLost: inout Bool
     ) async throws(PassportReadError) -> FfiChipRead {
         let session: FfiIcaoSession
         do {
@@ -103,6 +117,7 @@ public struct PassportReader: Sendable {
                 do {
                     answer = try await transport.send(apdu)
                 } catch {
+                    tagLost = error is PassportTagLost
                     let mapped = Self.transportError(error)
                     Self.log.info("scan: transport stopped after \(exchanges) exchanges")
                     throw mapped
@@ -134,6 +149,7 @@ public struct PassportReader: Sendable {
 
     static func transportError(_ error: any Error) -> PassportReadError {
         if let e = error as? PassportReadError { return e }
+        if error is PassportTagLost { return .lostContact }
         if error is CancellationError { return .cancelled }
         return .lostContact
     }

@@ -70,8 +70,8 @@ extension Data {
 }
 
 /// Answers with the recorded responses in order and checks each command byte for byte. `dropAt`:
-/// the exchange (0-based) at which the tag is lost once; the next session starts over from the
-/// first exchange, as a new tag connection would.
+/// the exchange (0-based) at which the tag is lost once (`dropError`, a lost tag by default); the
+/// next session starts over from the first exchange, as a new tag connection would.
 final class ReplayTransport: APDUTransport {
     private struct State {
         var cursor = 0
@@ -82,9 +82,13 @@ final class ReplayTransport: APDUTransport {
 
     private let exchange: [SessionFixture.Exchange]
     private let state: Mutex<State>
+    private let dropError: any Error & Sendable
 
-    init(_ exchange: [SessionFixture.Exchange], dropAt: Int? = nil) {
+    init(
+        _ exchange: [SessionFixture.Exchange], dropAt: Int? = nil, dropError: any Error & Sendable = PassportTagLost()
+    ) {
         self.exchange = exchange
+        self.dropError = dropError
         state = Mutex(State(dropAt: dropAt))
     }
 
@@ -97,7 +101,7 @@ final class ReplayTransport: APDUTransport {
             if s.cursor == s.dropAt {
                 s.dropAt = nil
                 s.cursor = 0
-                throw PassportReadError.lostContact
+                throw dropError
             }
             guard s.cursor < exchange.count else { throw PassportReadError.lostContact }
             let e = exchange[s.cursor]
@@ -123,7 +127,7 @@ struct RefusingChip: APDUTransport {
 
 /// Loses the tag on every command.
 struct LostChip: APDUTransport {
-    func send(_ apdu: Data) async throws -> Data { throw PassportReadError.lostContact }
+    func send(_ apdu: Data) async throws -> Data { throw PassportTagLost() }
 }
 
 /// Answers like the replay, but cancels the reading task during its first exchange: the reader must
@@ -176,6 +180,18 @@ final class ProgressLog: Sendable {
         #expect(read.status == .verified)
         #expect(transport.mismatches == 0)
         #expect(transport.sent == 12 + 1 + fixture.exchange.count)
+    }
+
+    /// The NFC session ended (timed out, invalidated) mid-read: no second read over a dead session.
+    @Test func endedSessionIsNotRetried() async throws {
+        let fixture = try SessionFixture.load()
+        let transport = ReplayTransport(fixture.exchange, dropAt: 12, dropError: PassportReadError.lostContact)
+        let reader = PassportReader(
+            transport: transport, masterList: fixture.masterList, makeSession: fixture.makeSession)
+        await #expect(throws: PassportReadError.lostContact) {
+            try await reader.read(mrz: fixture.mrz) { _ in }
+        }
+        #expect(transport.sent == 13)
     }
 
     @Test func lostContactTwiceSurfaces() async throws {

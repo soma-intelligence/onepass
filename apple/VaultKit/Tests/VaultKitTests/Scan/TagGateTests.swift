@@ -85,5 +85,18 @@ import Testing
         #expect(NFCFailure.sessionTimeout.readError(connected: false) == .noChip)
         #expect(NFCFailure.sessionTimeout.readError(connected: true) == .lostContact)
         #expect(NFCFailure.other.readError(connected: true) == .lostContact)
+        #expect(NFCFailure.tagLost.readError(connected: true) == .lostContact)
+    }
+
+    /// Review finding: only a lost tag starts the read over; a session that timed out or ended
+    /// cannot read again.
+    @Test func onlyALostTagStartsTheReadOver() {
+        #expect(NFCFailure.tagLost.startsReadOver)
+        for failure: NFCFailure in [
+            .userCanceled, .unsupportedFeature, .securityViolation, .sessionTimeout, .invalidParameter,
+            .invalidParameterLength, .other,
+        ] {
+            #expect(!failure.startsReadOver)
+        }
     }
 }

@@ -12,8 +12,14 @@ enum NFCFailure: Sendable, Equatable {
     case invalidParameter
     /// `readerErrorInvalidParameterLength`: same, for a command or answer length Core NFC refuses.
     case invalidParameterLength
-    /// Anything else, a tag that went away above all.
+    /// The tag went away (connection lost, not connected, retries exceeded) while the session
+    /// runs: polling again finds it, so the read starts over.
+    case tagLost
+    /// Anything else (the session invalidated above all): final.
     case other
+
+    /// A read stopped by this starts over once (`PassportTagLost`).
+    var startsReadOver: Bool { self == .tagLost }
 
     /// `connected`: a tag was connected during this session.
     func readError(connected: Bool) -> PassportReadError {
@@ -22,7 +28,7 @@ enum NFCFailure: Sendable, Equatable {
         case .unsupportedFeature, .securityViolation: .nfcUnavailable
         case .sessionTimeout: connected ? .lostContact : .noChip
         case .invalidParameter, .invalidParameterLength: .unsupported
-        case .other: .lostContact
+        case .tagLost, .other: .lostContact
         }
     }
 }
@@ -39,8 +45,8 @@ enum NFCFailure: Sendable, Equatable {
 
     /// Core NFC as an `APDUTransport`: opens the system sheet (`NFCTagReaderSession`, ISO 14443),
     /// keeps the first ISO 7816 tag and sends each APDU with `sendCommand(apdu:)`. A lost tag is
-    /// `PassportReadError.lostContact` and polling starts again, so the next `send` waits for the
-    /// tag to come back. A read cancelled while it waits for the tag closes the sheet. Thin on
+    /// `PassportTagLost` and polling starts again, so the next `send` waits for the tag to come
+    /// back; any other failure (the session timed out or ended) is a final `PassportReadError`. A read cancelled while it waits for the tag closes the sheet. Thin on
     /// purpose: the waiting (`TagGate`) and the error mapping (`NFCFailure`) are tested apart, the
     /// rest needs a device. Logs steps only.
     public final class NFCTransport: NSObject, APDUTransport, @unchecked Sendable {
@@ -101,9 +107,11 @@ enum NFCFailure: Sendable, Equatable {
                     }
                 }
             } catch {
-                let mapped = Self.map(error, connected: true)
-                if mapped == .lostContact { dropTag() }
-                throw mapped
+                if let nfc = error as? NFCReaderError, NFCFailure(nfc.code).startsReadOver {
+                    dropTag()
+                    throw PassportTagLost()
+                }
+                throw Self.map(error, connected: true)
             }
         }
 
@@ -139,6 +147,9 @@ enum NFCFailure: Sendable, Equatable {
             case .readerSessionInvalidationErrorSessionTimeout: self = .sessionTimeout
             case .readerErrorInvalidParameter: self = .invalidParameter
             case .readerErrorInvalidParameterLength: self = .invalidParameterLength
+            case .readerTransceiveErrorTagConnectionLost, .readerTransceiveErrorTagNotConnected,
+                .readerTransceiveErrorRetryExceeded:
+                self = .tagLost
             default: self = .other
             }
         }
