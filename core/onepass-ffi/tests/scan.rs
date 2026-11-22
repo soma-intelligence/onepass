@@ -241,18 +241,97 @@ fn merge_chip_keeps_user_edits_and_reports_conflicts() {
     }
     let saved = s.save_item(item).unwrap();
     let merged = s
-        .merge_chip(saved.clone(), read(FfiChipStatus::Verified))
+        .merge_chip(saved.clone(), read(FfiChipStatus::Verified), vec![])
         .unwrap();
     assert_eq!(merged.item.id, saved.id);
     assert_eq!(field(&merged.item, "number"), "X1234567");
     assert_eq!(merged.conflicts.len(), 1);
     assert_eq!(merged.conflicts[0].field_id, "number");
     assert_eq!(merged.conflicts[0].scanned, "L898902C3");
+    // The kept number is not the chip's: no badge.
+    assert_eq!(chip_status(&merged.item), None);
+
+    // Settled for the chip: its number, and the badge.
+    let taken = s
+        .merge_chip(
+            saved.clone(),
+            read(FfiChipStatus::Verified),
+            vec!["number".into()],
+        )
+        .unwrap();
+    assert_eq!(field(&taken.item, "number"), "L898902C3");
+    assert_eq!(taken.conflicts.len(), 1);
+    assert_eq!(
+        chip_status(&taken.item).as_deref(),
+        Some("Authentifié par la puce")
+    );
+    let stored = s.save_item(taken.item).unwrap();
+    assert_eq!(
+        chip_status(&stored).as_deref(),
+        Some("Authentifié par la puce")
+    );
 
     let login = s
         .new_item(vault, FfiItemType::Login, "Not a passport".into())
         .unwrap();
-    assert!(s.merge_chip(login, read(FfiChipStatus::Verified)).is_err());
+    assert!(
+        s.merge_chip(login, read(FfiChipStatus::Verified), vec![])
+            .is_err()
+    );
+}
+
+fn chip_status(item: &FfiItem) -> Option<String> {
+    item.sections
+        .iter()
+        .flat_map(|s| s.fields.iter())
+        .find(|f| f.id == "chip_status")
+        .and_then(|f| match &f.value {
+            FfiFieldValue::Menu { value } if !value.is_empty() => Some(value.clone()),
+            _ => None,
+        })
+}
+
+fn set_text(item: &mut FfiItem, id: &str, value: &str) {
+    for f in item.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == id {
+            f.value = FfiFieldValue::Text {
+                value: value.into(),
+            };
+        }
+    }
+}
+
+/// Saving an edit of a field the chip vouches for drops the badge; other
+/// edits keep it.
+#[test]
+fn save_item_drops_the_chip_badge_on_identity_edits() {
+    let (_dir, s, vault) = session();
+    let item = s
+        .item_from_chip(vault, read(FfiChipStatus::Verified))
+        .unwrap();
+    let mut saved = s.save_item(item).unwrap();
+    assert_eq!(
+        chip_status(&saved).as_deref(),
+        Some("Authentifié par la puce")
+    );
+    saved.notes = "Renouveler en 2030".into();
+    set_text(&mut saved, "birth_place", "Zenith");
+    let mut saved = s.save_item(saved).unwrap();
+    assert_eq!(
+        chip_status(&saved).as_deref(),
+        Some("Authentifié par la puce")
+    );
+    set_text(&mut saved, "last_name", "Erikson");
+    let saved = s.save_item(saved).unwrap();
+    assert_eq!(chip_status(&saved), None);
+    // The read date stays.
+    assert!(
+        saved
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .any(|f| f.id == "chip_read_on" && matches!(f.value, FfiFieldValue::Date { .. }))
+    );
 }
 
 /// The app's path: the shipped BSI list (its signer is not verifiable by

@@ -57,6 +57,9 @@ final class PassportScanModel {
     /// The chip's value of each conflicting field, as the core formats it (readable case, dates,
     /// concealed number): taken when the user picks the chip's side of a conflict.
     private var scannedValues: [String: FfiFieldValue] = [:]
+    /// The read's chip status. The merge clears it while a conflict keeps the user's value; the
+    /// reveal shows it again once every conflict is settled for the chip, as the save will.
+    private var scannedStatus: FfiFieldValue?
     /// The read shown in the reveal: a later read is merged again into the stored item at save.
     private var chipRead: FfiChipRead?
     /// Saves the reveal, resumable: "Enregistrer" again after a failure goes on from what was
@@ -83,6 +86,7 @@ final class PassportScanModel {
     func rescan() {
         mrz = nil
         scannedValues = [:]
+        scannedStatus = nil
         chipRead = nil
         saver = nil
         conflicts = []
@@ -164,6 +168,7 @@ final class PassportScanModel {
                     scannedValues = Dictionary(
                         fresh.sections.flatMap(\.fields).filter { ids.contains($0.id) }.map { ($0.id, $0.value) },
                         uniquingKeysWith: { first, _ in first })
+                    scannedStatus = fresh.sections.flatMap(\.fields).first { $0.id == "chip_status" }?.value
                 }
                 conflicts = merge.conflicts
                 takeScanned = []
@@ -177,11 +182,14 @@ final class PassportScanModel {
     }
 
     /// The reveal's item with the conflicts the user settled: the stored value stays unless the
-    /// chip's was picked.
+    /// chip's was picked. The chip status shows only once every conflict takes the chip's value.
     func resolvedItem() -> FfiItem? {
         guard case .reveal(var item, _) = phase else { return nil }
         for conflict in conflicts where takeScanned.contains(conflict.fieldId) {
             if let value = scannedValues[conflict.fieldId] { Self.setField(conflict.fieldId, to: value, in: &item) }
+        }
+        if !conflicts.isEmpty, conflicts.allSatisfy({ takeScanned.contains($0.fieldId) }), let scannedStatus {
+            Self.setField("chip_status", to: scannedStatus, in: &item)
         }
         return item
     }
@@ -200,8 +208,7 @@ final class PassportScanModel {
             item.vaultId = vaultID
             stored = try await saver.save(item, portrait: portrait)
         case .merge:
-            let chipValues = scannedValues.filter { takeScanned.contains($0.key) }
-            stored = try await saver.save(item, rescan: chipRead, chipValues: chipValues, portrait: portrait)
+            stored = try await saver.save(item, rescan: chipRead, takeScanned: takeScanned, portrait: portrait)
         }
         Self.log.info("scan: passport saved")
         return stored

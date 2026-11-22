@@ -411,11 +411,14 @@ impl Session {
 
     /// A later read merged into a passport item (spec 6.1): blank identity
     /// fields filled, user edits kept and reported as conflicts, chip fields
-    /// refreshed. Not stored until `save_item`.
+    /// refreshed. `take_scanned`: the conflicts (field ids) settled for the
+    /// chip, which take its value; while any conflict keeps the stored value,
+    /// the chip status is cleared. Not stored until `save_item`.
     pub fn merge_chip(
         &self,
         item: FfiItem,
         mut read: FfiChipRead,
+        take_scanned: Vec<String>,
     ) -> Result<FfiChipMerge, OnePassError> {
         let (vault_id, item_id) = (parse_id(&item.vault_id)?, parse_id(&item.id)?);
         let read = read_to_core(&mut read)?;
@@ -424,7 +427,7 @@ impl Session {
             let vault = find_vault(repo, vault_id)?;
             let stored = repo.items(&vault)?.into_iter().find(|i| i.id == item_id);
             let core = item_to_core(&item, &Kept::new(stored.as_ref(), false), now)?;
-            let (merged, conflicts) = merge_chip_read(&core, &read, now.date())?;
+            let (merged, conflicts) = merge_chip_read(&core, &read, now.date(), &take_scanned)?;
             Ok(FfiChipMerge {
                 item: item_to_ffi(&merged),
                 conflicts: conflicts

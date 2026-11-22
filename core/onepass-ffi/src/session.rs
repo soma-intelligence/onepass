@@ -188,6 +188,7 @@ impl Session {
             let mut item = find_item(repo, &vault, item_id)?;
             let before = item.clone();
             change(&mut item);
+            onepass_core::scan::to_item::guard_chip_status(Some(&before), &mut item);
             let now = OffsetDateTime::now_utc();
             model::events::record_edit(Some(&before), &mut item, now);
             item.updated_at = now;
@@ -396,7 +397,9 @@ impl Session {
             }
             let kept = Kept::new(stored.as_ref(), false);
             let now = OffsetDateTime::now_utc();
-            let core = item_to_core(&item, &kept, now)?;
+            let mut core = item_to_core(&item, &kept, now)?;
+            // An edit of what the chip vouches for drops the chip badge.
+            onepass_core::scan::to_item::guard_chip_status(stored.as_ref(), &mut core);
             let mut core = crate::validate_for_save(core)?;
             model::events::record_edit(stored.as_ref(), &mut core, now);
             repo.save_item(&vault, core.clone())?;

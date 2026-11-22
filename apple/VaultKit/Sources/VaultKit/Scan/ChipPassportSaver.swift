@@ -12,7 +12,7 @@ public protocol ChipItemStore: AnyObject {
     func removeAttachment(itemID: String, vaultID: String, attachmentID: String) async throws -> FfiItem
     /// The item as stored now, with no side effect on recents.
     func storedItem(vaultID: String, itemID: String) async throws -> FfiItem
-    func mergeChip(item: FfiItem, read chip: FfiChipRead) async throws -> FfiChipMerge
+    func mergeChip(item: FfiItem, read chip: FfiChipRead, takeScanned: Set<String>) async throws -> FfiChipMerge
 }
 
 extension VaultSession: ChipItemStore {}
@@ -64,9 +64,11 @@ public final class ChipPassportSaver {
     /// Saves `item` (a new passport from the chip, or the merge shown in the reveal) and its
     /// portrait (JPEG). `rescan`: a later read of a stored passport; the item is then merged again
     /// into the stored one at save time, so edits synced since the merge are kept, and
-    /// `chipValues` (field id to value) are the conflicts the user settled for the chip.
+    /// `takeScanned` (field ids) are the conflicts the user settled for the chip. The core applies
+    /// them where the values still differ, and keeps the chip badge only when no conflict keeps
+    /// the stored value.
     public func save(
-        _ item: FfiItem, rescan: FfiChipRead? = nil, chipValues: [String: FfiFieldValue] = [:], portrait: Data?
+        _ item: FfiItem, rescan: FfiChipRead? = nil, takeScanned: Set<String> = [], portrait: Data?
     ) async throws -> FfiItem {
         var current: FfiItem
         if let stored {
@@ -75,12 +77,7 @@ public final class ChipPassportSaver {
             var toSave = item
             if let rescan {
                 let latest = try await store.storedItem(vaultID: item.vaultId, itemID: item.id)
-                let merge = try await store.mergeChip(item: latest, read: rescan)
-                toSave = merge.item
-                // A chip value picked in the reveal applies only where the values still differ.
-                for conflict in merge.conflicts {
-                    if let value = chipValues[conflict.fieldId] { Self.setField(conflict.fieldId, to: value, in: &toSave) }
-                }
+                toSave = try await store.mergeChip(item: latest, read: rescan, takeScanned: takeScanned).item
             }
             previousPortraitID = Self.portraitID(of: toSave)
             current = try await store.save(toSave)

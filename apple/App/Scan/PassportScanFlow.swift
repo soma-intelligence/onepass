@@ -390,7 +390,8 @@ private struct ScanRevealStep: View {
     }
 
     var body: some View {
-        let data = PassportBooklet.data(of: item, portrait: image)
+        // The conflicts as settled so far: the booklet and the badge show what "Enregistrer" stores.
+        let data = PassportBooklet.data(of: model.resolvedItem() ?? item, portrait: image)
         ScrollView {
             VStack(spacing: Theme.Space.l) {
                 PassportFace(

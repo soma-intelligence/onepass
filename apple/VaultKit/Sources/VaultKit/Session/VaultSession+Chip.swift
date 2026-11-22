@@ -15,8 +15,12 @@ extension VaultSession {
     }
 
     /// A later read merged into a passport: blank fields filled, the user's own values kept and
-    /// reported as conflicts, the chip section refreshed.
-    public func mergeChip(item: FfiItem, read chip: FfiChipRead) async throws -> FfiChipMerge {
-        try await read { try $0.mergeChip(item: item, read: chip) }
+    /// reported as conflicts, the chip section refreshed. `takeScanned`: the conflicts (field ids)
+    /// settled for the chip, which take its value. While a conflict keeps the user's value, the
+    /// chip status is cleared (no badge over data the chip did not give).
+    public func mergeChip(item: FfiItem, read chip: FfiChipRead, takeScanned: Set<String> = []) async throws
+        -> FfiChipMerge
+    {
+        try await read { try $0.mergeChip(item: item, read: chip, takeScanned: takeScanned.sorted()) }
     }
 }

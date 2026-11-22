@@ -50,8 +50,8 @@ final class FlakyChipStore: ChipItemStore {
         try await session.storedItem(vaultID: vaultID, itemID: itemID)
     }
 
-    func mergeChip(item: FfiItem, read chip: FfiChipRead) async throws -> FfiChipMerge {
-        try await session.mergeChip(item: item, read: chip)
+    func mergeChip(item: FfiItem, read chip: FfiChipRead, takeScanned: Set<String>) async throws -> FfiChipMerge {
+        try await session.mergeChip(item: item, read: chip, takeScanned: takeScanned)
     }
 }
 
@@ -185,8 +185,25 @@ final class FlakyChipStore: ChipItemStore {
         let first = try await ChipPassportSaver(store: session).save(item, portrait: nil)
         let reveal = try await session.mergeChip(item: first, read: chip).item
         let saved = try await ChipPassportSaver(store: session).save(
-            reveal, rescan: chip, chipValues: ["first_names": .text(value: "Anna Maria")], portrait: nil)
+            reveal, rescan: chip, takeScanned: ["first_names"], portrait: nil)
         #expect(value("first_names", in: saved) == .text(value: "Anna Maria"))
+        // Every conflict settled for the chip: the badge stays.
+        #expect(value("chip_status", in: saved) == .menu(value: "Authentifié par la puce"))
+    }
+
+    /// A conflict that keeps the user's value drops the chip badge: it would vouch for data the
+    /// chip did not give.
+    @Test func keptConflictDropsTheBadge() async throws {
+        let (h, session) = try await setUp()
+        defer { h.cleanUp() }
+        let chip = try read()
+        var item = try await session.itemFromChip(vaultID: session.allVaults[0].id, read: chip)
+        ChipPassportSaver.setField("first_names", to: .text(value: "Anna"), in: &item)
+        let first = try await ChipPassportSaver(store: session).save(item, portrait: nil)
+        let reveal = try await session.mergeChip(item: first, read: chip).item
+        let saved = try await ChipPassportSaver(store: session).save(reveal, rescan: chip, portrait: nil)
+        #expect(value("first_names", in: saved) == .text(value: "Anna"))
+        #expect(value("chip_status", in: saved) == .empty)
     }
 
     /// The link fails and so does removing the new file: the orphan is removed on the retry, and
@@ -233,8 +250,7 @@ final class FlakyChipStore: ChipItemStore {
         _ = try await session.save(edited)
 
         let saved = try await ChipPassportSaver(store: session).save(
-            reveal.item, rescan: chip, chipValues: ["first_names": .text(value: "Picked in the reveal")],
-            portrait: nil)
+            reveal.item, rescan: chip, takeScanned: ["first_names"], portrait: nil)
         #expect(value("first_names", in: saved) == chipNames)
     }
 
@@ -250,11 +266,10 @@ final class FlakyChipStore: ChipItemStore {
         let store = FlakyChipStore(session)
         store.failSave = 2
         let saver = ChipPassportSaver(store: store)
-        let picked: [String: FfiFieldValue] = ["first_names": .text(value: "Anna Maria")]
         await #expect(throws: FlakyChipStore.Injected.self) {
-            _ = try await saver.save(reveal, rescan: chip, chipValues: picked, portrait: Self.jpegA)
+            _ = try await saver.save(reveal, rescan: chip, takeScanned: ["first_names"], portrait: Self.jpegA)
         }
-        let saved = try await saver.save(reveal, rescan: chip, chipValues: [:], portrait: Self.jpegA)
+        let saved = try await saver.save(reveal, rescan: chip, takeScanned: [], portrait: Self.jpegA)
         #expect(value("first_names", in: saved) == .text(value: "Anna Maria"))
         #expect(portraits(saved).count == 1)
     }
