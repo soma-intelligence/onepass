@@ -207,8 +207,9 @@ final class PassportScanModel {
         return stored
     }
 
-    /// The vault of the saved item once the first step succeeded: the vault picker then stays on it.
-    var savedVaultID: String? { saver?.stored?.vaultId }
+    /// The passport is stored (the first step of `save` succeeded, a later step failed): a retry
+    /// resumes from it, so the reveal's choices (vault, conflicts) are locked as they were saved.
+    var choicesLocked: Bool { saver?.stored != nil }
 
     static func setField(_ id: String, to value: FfiFieldValue, in item: inout FfiItem) {
         for s in item.sections.indices {

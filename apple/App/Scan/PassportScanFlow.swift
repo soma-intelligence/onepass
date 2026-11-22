@@ -412,7 +412,7 @@ private struct ScanRevealStep: View {
                     // Once the passport is stored, it stays in that vault (a retry resumes it).
                     VaultPicker(vaultID: $vaultID)
                         .frame(maxWidth: 440, alignment: .leading)
-                        .disabled(model.savedVaultID != nil)
+                        .disabled(model.choicesLocked)
                 }
                 if let saveError {
                     Text(saveError)
@@ -458,6 +458,8 @@ private struct ScanRevealStep: View {
                         Text(verbatim: label(of: conflict.fieldId))
                     }
                     .pickerStyle(.segmented)
+                    // Once stored, a retry resumes from what was saved: the choice is fixed.
+                    .disabled(model.choicesLocked)
                     .privacySensitive()
                     .accessibilityIdentifier("scan.conflict.\(conflict.fieldId)")
                     Text(model.takeScanned.contains(conflict.fieldId) ? "scan.conflicts.chipKept" : "scan.conflicts.yoursKept")
