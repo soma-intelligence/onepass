@@ -109,6 +109,8 @@ final class FlakyChipStore: ChipItemStore {
         }
         let afterFailure = try await session.storedItem(vaultID: item.vaultId, itemID: item.id)
         #expect(afterFailure.attachments.isEmpty)
+        // Stored: the flow locks the reveal's choices from here on.
+        #expect(saver.stored != nil)
         #expect(store.adds == 1 && store.removes == 1)
 
         let saved = try await saver.save(item, portrait: Self.jpegA)
@@ -185,5 +187,75 @@ final class FlakyChipStore: ChipItemStore {
         let saved = try await ChipPassportSaver(store: session).save(
             reveal, rescan: chip, chipValues: ["first_names": .text(value: "Anna Maria")], portrait: nil)
         #expect(value("first_names", in: saved) == .text(value: "Anna Maria"))
+    }
+
+    /// The link fails and so does removing the new file: the orphan is removed on the retry, and
+    /// the portrait linked is the new file, not the orphan.
+    @Test func failedCleanupOrphanIsRemovedOnRetry() async throws {
+        let (h, session) = try await setUp()
+        defer { h.cleanUp() }
+        let item = try await session.itemFromChip(vaultID: session.allVaults[0].id, read: try read())
+        let store = FlakyChipStore(session)
+        store.failSave = 2
+        store.failRemove = true
+        let saver = ChipPassportSaver(store: store)
+        await #expect(throws: FlakyChipStore.Injected.self) {
+            _ = try await saver.save(item, portrait: Self.jpegA)
+        }
+        let afterFailure = try await session.storedItem(vaultID: item.vaultId, itemID: item.id)
+        let orphan = try #require(portraits(afterFailure).first)
+        #expect(portraits(afterFailure).count == 1)
+
+        let saved = try await saver.save(item, portrait: Self.jpegB)
+        #expect(portraits(saved).count == 1)
+        #expect(!saved.attachments.contains { $0.id == orphan.id })
+        let linked = try #require(ChipPassportSaver.portraitID(of: saved))
+        #expect(linked == portraits(saved).first?.id)
+        let bytes = try await session.attachmentData(itemID: saved.id, vaultID: saved.vaultId, attachmentID: linked)
+        #expect(bytes == Self.jpegB)
+    }
+
+    /// A chip value picked in the reveal for a field a synced edit has since made equal to the
+    /// chip's: no conflict at save time, so the pick is not applied.
+    @Test func chipValueSkippedWhenNoLongerInConflict() async throws {
+        let (h, session) = try await setUp()
+        defer { h.cleanUp() }
+        let chip = try read()
+        var item = try await session.itemFromChip(vaultID: session.allVaults[0].id, read: chip)
+        let chipNames = try #require(value("first_names", in: item))
+        ChipPassportSaver.setField("first_names", to: .text(value: "Anna"), in: &item)
+        let first = try await ChipPassportSaver(store: session).save(item, portrait: nil)
+        let reveal = try await session.mergeChip(item: first, read: chip)
+        #expect(reveal.conflicts.contains { $0.fieldId == "first_names" })
+
+        var edited = try await session.storedItem(vaultID: first.vaultId, itemID: first.id)
+        ChipPassportSaver.setField("first_names", to: chipNames, in: &edited)
+        _ = try await session.save(edited)
+
+        let saved = try await ChipPassportSaver(store: session).save(
+            reveal.item, rescan: chip, chipValues: ["first_names": .text(value: "Picked in the reveal")],
+            portrait: nil)
+        #expect(value("first_names", in: saved) == chipNames)
+    }
+
+    /// Once stored, a retry keeps the conflicts as saved (the flow locks the pickers).
+    @Test func storedChoicesAreKeptOnRetry() async throws {
+        let (h, session) = try await setUp()
+        defer { h.cleanUp() }
+        let chip = try read()
+        var item = try await session.itemFromChip(vaultID: session.allVaults[0].id, read: chip)
+        ChipPassportSaver.setField("first_names", to: .text(value: "Anna"), in: &item)
+        let first = try await ChipPassportSaver(store: session).save(item, portrait: nil)
+        let reveal = try await session.mergeChip(item: first, read: chip).item
+        let store = FlakyChipStore(session)
+        store.failSave = 2
+        let saver = ChipPassportSaver(store: store)
+        let picked: [String: FfiFieldValue] = ["first_names": .text(value: "Anna Maria")]
+        await #expect(throws: FlakyChipStore.Injected.self) {
+            _ = try await saver.save(reveal, rescan: chip, chipValues: picked, portrait: Self.jpegA)
+        }
+        let saved = try await saver.save(reveal, rescan: chip, chipValues: [:], portrait: Self.jpegA)
+        #expect(value("first_names", in: saved) == .text(value: "Anna Maria"))
+        #expect(portraits(saved).count == 1)
     }
 }

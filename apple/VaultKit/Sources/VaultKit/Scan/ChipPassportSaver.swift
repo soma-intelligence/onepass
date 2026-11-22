@@ -21,7 +21,9 @@ extension VaultSession: ChipItemStore {}
 /// then the portrait attached and linked from the `portrait` field, then the previous portrait
 /// removed (a later read). Each step that succeeded is kept: "Enregistrer" again resumes from the
 /// stored item instead of the stale one of the reveal. A portrait attached but not linked is
-/// removed again, so a failure never leaves an orphan file.
+/// removed again (on the next call if that removal fails too), so no orphan file stays. Once the
+/// item is stored (`stored`), the choices of the reveal (vault, conflicts) are fixed: the flow
+/// locks them.
 @MainActor
 public final class ChipPassportSaver {
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "scan")
@@ -33,6 +35,8 @@ public final class ChipPassportSaver {
     /// The item as stored by the first step, then after each later step.
     public private(set) var stored: FfiItem?
     private var linked = false
+    /// A portrait attached by a failed link whose removal failed too: removed on the next call.
+    private var orphanID: String?
     /// The portrait the item pointed to before this read (a later read replaces it).
     private var previousPortraitID: String?
 
@@ -71,12 +75,24 @@ public final class ChipPassportSaver {
             var toSave = item
             if let rescan {
                 let latest = try await store.storedItem(vaultID: item.vaultId, itemID: item.id)
-                toSave = try await store.mergeChip(item: latest, read: rescan).item
-                for (id, value) in chipValues { Self.setField(id, to: value, in: &toSave) }
+                let merge = try await store.mergeChip(item: latest, read: rescan)
+                toSave = merge.item
+                // A chip value picked in the reveal applies only where the values still differ.
+                for conflict in merge.conflicts {
+                    if let value = chipValues[conflict.fieldId] { Self.setField(conflict.fieldId, to: value, in: &toSave) }
+                }
             }
             previousPortraitID = Self.portraitID(of: toSave)
             current = try await store.save(toSave)
             stored = current
+        }
+        if let orphan = orphanID {
+            if current.attachments.contains(where: { $0.id == orphan }) {
+                current = try await store.removeAttachment(
+                    itemID: current.id, vaultID: current.vaultId, attachmentID: orphan)
+                stored = current
+            }
+            orphanID = nil
         }
         if let portrait, !linked {
             current = try await link(portrait, to: current)
@@ -96,9 +112,11 @@ public final class ChipPassportSaver {
     /// Attaches the portrait and points the `portrait` field at it. If the link fails, the new
     /// file is removed again.
     private func link(_ portrait: Data, to item: FfiItem) async throws -> FfiItem {
+        // The files as stored right now: the new one is the file `addAttachment` adds to these.
+        let before = try await store.storedItem(vaultID: item.vaultId, itemID: item.id)
         let withFile = try await store.addAttachment(
             itemID: item.id, vaultID: item.vaultId, name: Self.portraitName, mime: "image/jpeg", data: portrait)
-        let known = Set(item.attachments.map(\.id))
+        let known = Set(before.attachments.map(\.id))
         guard let added = withFile.attachments.first(where: { !known.contains($0.id) }) else {
             return withFile
         }
@@ -112,6 +130,10 @@ public final class ChipPassportSaver {
                 itemID: withFile.id, vaultID: withFile.vaultId, attachmentID: added.id)
             {
                 stored = cleaned
+            } else {
+                Self.log.error("scan: new attachment not removed, retried on the next save")
+                stored = withFile
+                orphanID = added.id
             }
             throw error
         }
