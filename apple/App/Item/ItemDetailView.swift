@@ -1743,6 +1743,7 @@ struct DocumentCard: View {
 /// the fields below share, as they always did.
 struct PassportBooklet: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.itemUseRef) private var itemUseRef
     #if os(iOS) || os(visionOS)
     @Environment(\.isSceneCaptured) private var captured
     #else
@@ -1831,6 +1832,7 @@ struct PassportBooklet: View {
                     if isOpen, hasSecrets, !captured {
                         Button(revealed ? "Masquer" : "Révéler", systemImage: revealed ? "eye.slash" : "eye") {
                             setRevealed(!revealed)
+                            noteReveal(shown: revealed)
                         }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("item.passport.reveal")
@@ -1858,6 +1860,22 @@ struct PassportBooklet: View {
         revealed = on
         revealedAt = on ? Date() : nil
     }
+
+    /// As a secret `ValueRow` does: the touch is activity (it pushes back the auto-lock), and an
+    /// unmasking is a key use of each secret it shows (number, MRZ), never a use of the item.
+    private func noteReveal(shown: Bool) {
+        model.session.noteActivity()
+        guard shown, let itemUseRef else { return }
+        for id in Self.secretFieldIDs {
+            guard let field = item.sections.lazy.flatMap(\.fields).first(where: { $0.id == id }),
+                !Self.text(id, in: item).isEmpty
+            else { continue }
+            model.noteItemKeyUse(itemUseRef, action: .revealed, field: field.displayLabel)
+        }
+    }
+
+    /// The fields the booklet masks until "Révéler".
+    static let secretFieldIDs = ["number", "mrz"]
 
     /// The portrait attachment (JPEG from the chip), read once per attachment. A missing or
     /// unreadable file leaves the silhouette.
