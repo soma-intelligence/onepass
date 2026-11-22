@@ -146,10 +146,12 @@ impl fmt::Debug for FfiChipRead {
     }
 }
 
-fn read_to_ffi(r: &ChipRead) -> FfiChipRead {
+/// The read for the app. The portrait bytes move out of the core read (no
+/// copy left behind in Rust); the app gets them as `Data`.
+fn read_to_ffi(r: &mut ChipRead) -> FfiChipRead {
     FfiChipRead {
         mrz: mrz_to_ffi(&r.mrz),
-        portrait: r.portrait.as_ref().map(|p| p.bytes.clone()),
+        portrait: r.portrait.as_mut().map(|p| std::mem::take(&mut p.bytes)),
         portrait_format: r.portrait.as_ref().map(|p| match p.format {
             ImageFormat::Jpeg => FfiImageFormat::Jpeg,
             ImageFormat::Jpeg2000 => FfiImageFormat::Jpeg2000,
@@ -164,15 +166,16 @@ fn read_to_ffi(r: &ChipRead) -> FfiChipRead {
 
 /// Back to the core read. The MRZ is parsed again from its lines (the other
 /// `FfiMrz` fields are ignored), so a read the app altered cannot carry a
-/// MRZ that fails its check digits.
-fn read_to_core(r: &FfiChipRead) -> Result<ChipRead, OnePassError> {
-    let portrait = match (&r.portrait, r.portrait_format) {
+/// MRZ that fails its check digits. The portrait bytes move into the core
+/// `Portrait` (wiped when dropped), not copied: `r` is left without them.
+fn read_to_core(r: &mut FfiChipRead) -> Result<ChipRead, OnePassError> {
+    let portrait = match (&mut r.portrait, r.portrait_format) {
         (Some(bytes), Some(format)) => Some(Portrait {
             format: match format {
                 FfiImageFormat::Jpeg => ImageFormat::Jpeg,
                 FfiImageFormat::Jpeg2000 => ImageFormat::Jpeg2000,
             },
-            bytes: bytes.clone(),
+            bytes: std::mem::take(bytes),
         }),
         (None, None) => None,
         _ => return Err(invalid("portrait without format")),
@@ -220,8 +223,8 @@ fn failure(e: IcaoError) -> FfiIcaoFailure {
 fn step_to_ffi(step: Step) -> FfiIcaoStep {
     match step {
         Step::Send(apdu) => FfiIcaoStep::Send { apdu },
-        Step::Done(read) => FfiIcaoStep::Done {
-            read: read_to_ffi(&read),
+        Step::Done(mut read) => FfiIcaoStep::Done {
+            read: read_to_ffi(&mut read),
         },
         Step::Failed(e) => FfiIcaoStep::Failed { reason: failure(e) },
     }
@@ -395,10 +398,10 @@ impl Session {
     pub fn item_from_chip(
         &self,
         vault_id: String,
-        read: FfiChipRead,
+        mut read: FfiChipRead,
     ) -> Result<FfiItem, OnePassError> {
         let vault_id = parse_id(&vault_id)?;
-        let read = read_to_core(&read)?;
+        let read = read_to_core(&mut read)?;
         let today = OffsetDateTime::now_utc().date();
         self.with(|repo| {
             find_vault(repo, vault_id)?;
@@ -412,10 +415,10 @@ impl Session {
     pub fn merge_chip(
         &self,
         item: FfiItem,
-        read: FfiChipRead,
+        mut read: FfiChipRead,
     ) -> Result<FfiChipMerge, OnePassError> {
         let (vault_id, item_id) = (parse_id(&item.vault_id)?, parse_id(&item.id)?);
-        let read = read_to_core(&read)?;
+        let read = read_to_core(&mut read)?;
         let now = OffsetDateTime::now_utc();
         self.with(|repo| {
             let vault = find_vault(repo, vault_id)?;
@@ -434,5 +437,37 @@ impl Session {
                     .collect(),
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const L1: &str = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
+    const L2: &str = "L898902C36UTO7408122F1204159ZE184226B<<<<<10";
+
+    /// The portrait moves between the core and the FFI read, never copied:
+    /// the side it left holds no bytes (the core side wipes on drop).
+    #[test]
+    fn portrait_bytes_move_without_a_copy() {
+        let mut core = ChipRead {
+            mrz: parse_td3(&[L1, L2]).unwrap(),
+            portrait: Some(Portrait {
+                format: ImageFormat::Jpeg,
+                bytes: vec![0xFF, 0xD8, 0xFF, 0x01],
+            }),
+            status: ChipStatus::Verified,
+            progress_files: Vec::new(),
+        };
+        let mut ffi = read_to_ffi(&mut core);
+        assert_eq!(ffi.portrait.as_deref(), Some(&[0xFF, 0xD8, 0xFF, 0x01][..]));
+        assert!(core.portrait.as_ref().unwrap().bytes.is_empty());
+        let back = read_to_core(&mut ffi).unwrap();
+        assert_eq!(
+            back.portrait.as_ref().unwrap().bytes,
+            [0xFF, 0xD8, 0xFF, 0x01]
+        );
+        assert_eq!(ffi.portrait.as_deref(), Some(&[][..]));
     }
 }

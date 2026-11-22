@@ -1,9 +1,12 @@
 //! Decoding of EF.COM, DG1 (MRZ) and DG2 (portrait) read from a chip.
 //!
-//! The portrait is identity data: nothing here logs it, and `Portrait`'s
-//! `Debug` prints only the format and the length.
+//! The portrait is identity data: nothing here logs it, `Portrait`'s
+//! `Debug` prints only the format and the length, and its bytes are wiped
+//! when it is dropped.
 
 use std::fmt;
+
+use zeroize::Zeroize;
 
 use super::IcaoError;
 use crate::scan::mrz::{Mrz, parse_td3};
@@ -39,6 +42,12 @@ pub enum ImageFormat {
 pub struct Portrait {
     pub format: ImageFormat,
     pub bytes: Vec<u8>,
+}
+
+impl Drop for Portrait {
+    fn drop(&mut self) {
+        self.bytes.zeroize();
+    }
 }
 
 impl fmt::Debug for Portrait {
