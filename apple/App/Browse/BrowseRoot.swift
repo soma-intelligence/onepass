@@ -32,6 +32,7 @@ struct BrowseRoot: View {
             // (RXFrostedBackdrop), as in the owner's reference.
             .fullScreenCover(isPresented: rxDesign ? settingsSheetShown : .constant(false)) {
                 SettingsView()
+                    .modifier(RXReadableWidth())
                     .presentationBackground(.clear)
             }
             #endif
@@ -418,3 +419,22 @@ private struct RXToastBridge: ViewModifier {
         }
     }
 }
+
+#if os(iOS)
+/// RX Réglages on iPad: full screen, but the pages' rows keep a readable column in the middle
+/// instead of running the width of a 13-inch screen. The frosted backdrop still fills the screen:
+/// only the scroll content gets the margins (they reach every page pushed inside).
+private struct RXReadableWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private static let column: CGFloat = 640
+
+    func body(content: Content) -> some View {
+        GeometryReader { proxy in
+            let side = sizeClass == .regular ? max(0, (proxy.size.width - Self.column) / 2) : 0
+            content
+                .contentMargins(.horizontal, side, for: .scrollContent)
+                .environment(\.rxSettingsSideMargin, side)
+        }
+    }
+}
+#endif
