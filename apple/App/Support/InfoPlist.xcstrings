@@ -18,6 +18,12 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass verwendet die Kamera, um den QR-Code auf deinem Emergency Kit, auf einem neuen Gerät oder für einen Bestätigungscode zu lesen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -41,6 +47,18 @@
             "state" : "translated",
             "value" : "OnePass usa la fotocamera per leggere il codice QR del tuo Emergency Kit, quello di un nuovo dispositivo o quello di un codice di verifica."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass는 카메라로 Emergency Kit, 새 기기 또는 확인 코드의 QR 코드를 읽어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 使用相机扫描你的 Emergency Kit 上的二维码、新设备显示的二维码或验证码二维码。"
+          }
         }
       }
     },
@@ -48,6 +66,12 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass verwendet Face ID, um deinen Tresor zu entsperren, ohne dass du dein Master-Passwort erneut eingeben musst."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -71,6 +95,18 @@
             "state" : "translated",
             "value" : "OnePass usa Face ID per sbloccare la cassaforte senza digitare di nuovo la password principale."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass는 Face ID로 마스터 암호를 다시 입력하지 않고 보관함의 잠금을 해제해요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 使用面容 ID 解锁你的保险库，无需重新输入主密码。"
+          }
         }
       }
     },
@@ -78,6 +114,12 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass verwendet das lokale Netzwerk, um deinem Account ein Gerät hinzuzufügen, ohne einen Server zu nutzen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -101,6 +143,18 @@
             "state" : "translated",
             "value" : "OnePass usa la rete locale per aggiungere un dispositivo al tuo account, senza passare da un server."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass는 서버를 거치지 않고 로컬 네트워크로 계정에 기기를 추가해요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 使用本地网络将设备添加到你的账户，无需通过服务器。"
+          }
         }
       }
     },
@@ -108,6 +162,12 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass verwendet deinen Standort, um einem Objekt einen Ort zuzuweisen, Objekte in der Nähe anzuzeigen und den Namen des WLANs dieses Mac auszulesen (Automatisches WLAN). Dein Standort bleibt auf diesem Gerät."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -131,6 +191,18 @@
             "state" : "translated",
             "value" : "OnePass usa la tua posizione per aggiungere un luogo a un elemento, elencare gli elementi nelle vicinanze e leggere il nome della rete Wi-Fi di questo Mac (Wi-Fi automatico). Resta su questo dispositivo."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass는 위치 정보로 항목에 장소를 추가하고, 근처 항목을 표시하고, 이 Mac의 Wi-Fi 네트워크 이름을 읽어요(자동 Wi-Fi). 위치 정보는 이 기기에만 저장돼요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 使用你的位置信息为项目添加地点、列出附近的项目，以及读取此 Mac 的 Wi-Fi 网络名称（自动 Wi-Fi）。位置信息仅保留在此设备上。"
+          }
         }
       }
     },
@@ -138,6 +210,12 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass verwendet deinen Standort, um einem Objekt einen Ort zuzuweisen und Objekte in der Nähe anzuzeigen. Dein Standort bleibt auf diesem Gerät."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -160,6 +238,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass usa la tua posizione per aggiungere un luogo a un elemento ed elencare gli elementi nelle vicinanze. Resta su questo dispositivo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass는 위치 정보로 항목에 장소를 추가하고 근처 항목을 표시해요. 위치 정보는 이 기기에만 저장돼요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 使用你的位置信息为项目添加地点，以及列出附近的项目。位置信息仅保留在此设备上。"
           }
         }
       }

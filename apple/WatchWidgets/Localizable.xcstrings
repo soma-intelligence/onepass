@@ -4,6 +4,12 @@
     "onePassWatchWidgets.onepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27,12 +33,30 @@
             "state" : "translated",
             "value" : "OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass"
+          }
         }
       }
     },
     "onePassWatchWidgets.opensOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffnet OnePass."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -55,6 +79,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apre OnePass."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass를 열어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass。"
           }
         }
       }

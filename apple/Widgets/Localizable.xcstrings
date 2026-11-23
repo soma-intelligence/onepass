@@ -4,6 +4,12 @@
     "codesWidget.addFavoriteWithCode" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Füge einen Favoriten mit einem Code hinzu"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27,12 +33,30 @@
             "state" : "translated",
             "value" : "Aggiungi un preferito con un codice"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "코드가 있는 항목을 즐겨찾기에 추가하세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加包含一次性验证码的个人收藏项目"
+          }
         }
       }
     },
     "codesWidget.codes" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Codes"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -56,12 +80,30 @@
             "state" : "translated",
             "value" : "Codici"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "코드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "验证码"
+          }
         }
       }
     },
     "codesWidget.oneTimeCodesFrom" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einmalcodes deiner Favoriten."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -85,12 +127,30 @@
             "state" : "translated",
             "value" : "I codici monouso dei tuoi preferiti."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "즐겨찾기의 일회용 코드예요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你个人收藏中的一次性验证码。"
+          }
         }
       }
     },
     "controls.generatePassword" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passwort generieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -114,12 +174,30 @@
             "state" : "translated",
             "value" : "Genera una password"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호 생성"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "生成密码"
+          }
         }
       }
     },
     "controls.opensOnepassPasswordGenerator" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffnet den Passwortgenerator von OnePass."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -143,12 +221,30 @@
             "state" : "translated",
             "value" : "Apre il generatore di password di OnePass."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 암호 생성기를 열어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass 密码生成器。"
+          }
         }
       }
     },
     "controls.opensOnepassSearch" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffnet die Suche in OnePass."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -172,12 +268,30 @@
             "state" : "translated",
             "value" : "Apre la ricerca di OnePass."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 검색을 열어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass 搜索。"
+          }
         }
       }
     },
     "controls.searchOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In OnePass suchen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -201,12 +315,30 @@
             "state" : "translated",
             "value" : "Cerca in OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass에서 검색"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 OnePass 中搜索"
+          }
         }
       }
     },
     "favoritesWidget.addFavoriteInOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Füge einen Favoriten in OnePass hinzu"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -230,12 +362,30 @@
             "state" : "translated",
             "value" : "Aggiungi un preferito in OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass에서 즐겨찾기를 추가하세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 OnePass 中添加个人收藏项目"
+          }
         }
       }
     },
     "favoritesWidget.opensOneOfFavorites" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffnet einen deiner Favoriten in OnePass."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -259,12 +409,30 @@
             "state" : "translated",
             "value" : "Apre uno dei tuoi preferiti in OnePass."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass에서 즐겨찾기 항목을 열어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 OnePass 中打开你的一个个人收藏项目。"
+          }
         }
       }
     },
     "glanceViews.unlockIphone" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Entsperre dein iPhone"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -288,12 +456,30 @@
             "state" : "translated",
             "value" : "Sblocca iPhone"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone의 잠금을 해제하세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "解锁你的 iPhone"
+          }
         }
       }
     },
     "term.favorites" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoriten"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -317,12 +503,30 @@
             "state" : "translated",
             "value" : "Preferiti"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "즐겨찾기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个人收藏"
+          }
         }
       }
     },
     "widgets.lockOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass sperren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -346,12 +550,30 @@
             "state" : "translated",
             "value" : "Blocca OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 잠금"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "锁定 OnePass"
+          }
         }
       }
     },
     "widgets.locksOnepassOnDevice" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sperrt OnePass auf diesem Gerät."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -375,12 +597,30 @@
             "state" : "translated",
             "value" : "Blocca OnePass su questo dispositivo."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 기기에서 OnePass를 잠가요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "锁定此设备上的 OnePass。"
+          }
         }
       }
     },
     "widgets.more %lld" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "+ %lld weitere"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -404,12 +644,30 @@
             "state" : "translated",
             "value" : "+ altri %lld"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "+ %lld개 더"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "+ %lld 个其他项目"
+          }
         }
       }
     },
     "widgets.openOnepassToRefresh" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffne OnePass zum Aktualisieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -432,6 +690,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apri OnePass per aggiornare"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새로 고치려면 OnePass를 여세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass 以刷新"
           }
         }
       }

@@ -3,6 +3,12 @@
   "strings" : {
     "%lld" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20,11 +26,29 @@
             "state" : "translated",
             "value" : "%lld"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld"
+          }
         }
       }
     },
     "Afficher en grand" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Groß anzeigen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42,11 +66,29 @@
             "state" : "translated",
             "value" : "Mostra in grande"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "크게 보기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "放大显示"
+          }
         }
       }
     },
     "Alerte d'intégrité" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Integritätswarnung"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -64,11 +106,29 @@
             "state" : "translated",
             "value" : "Avviso di integrità"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "무결성 경고"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "完整性警报"
+          }
         }
       }
     },
     "App" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "App"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -86,11 +146,29 @@
             "state" : "translated",
             "value" : "App"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "앱"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "App"
+          }
         }
       }
     },
     "Autres éléments" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Andere Objekte"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -108,11 +186,29 @@
             "state" : "translated",
             "value" : "Altri elementi"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다른 항목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "其他项目"
+          }
         }
       }
     },
     "Code à usage unique" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einmalcode"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -130,11 +226,29 @@
             "state" : "translated",
             "value" : "Codice monouso"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "일회용 코드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "一次性验证码"
+          }
         }
       }
     },
     "Copier" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kopieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -152,11 +266,29 @@
             "state" : "translated",
             "value" : "Copia"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "복사"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "拷贝"
+          }
         }
       }
     },
     "Déverrouiller OnePass" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass entsperren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -174,11 +306,29 @@
             "state" : "translated",
             "value" : "Sblocca OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 잠금 해제"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "解锁 OnePass"
+          }
         }
       }
     },
     "Fermer" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Schließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -196,11 +346,29 @@
             "state" : "translated",
             "value" : "Chiudi"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "닫기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "关闭"
+          }
         }
       }
     },
     "Force du mot de passe" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passwortstärke"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -218,11 +386,29 @@
             "state" : "translated",
             "value" : "Sicurezza della password"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호 강도"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "密码强度"
+          }
         }
       }
     },
     "Identifiant" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Login"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -240,11 +426,29 @@
             "state" : "translated",
             "value" : "Login"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "로그인"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "登录信息"
+          }
         }
       }
     },
     "Masquer" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ausblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -262,11 +466,29 @@
             "state" : "translated",
             "value" : "Nascondi"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "가리기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "隐藏"
+          }
         }
       }
     },
     "Mot de passe" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passwort"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -284,11 +506,29 @@
             "state" : "translated",
             "value" : "Password"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "密码"
+          }
         }
       }
     },
     "Pour ce site" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Für diese Website"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -306,11 +546,29 @@
             "state" : "translated",
             "value" : "Per questo sito"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 사이트용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "用于此网站"
+          }
         }
       }
     },
     "Révéler" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -328,11 +586,29 @@
             "state" : "translated",
             "value" : "Rivela"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "보기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "显示"
+          }
         }
       }
     },
     "Site" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Website"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -350,12 +626,30 @@
             "state" : "translated",
             "value" : "Sito web"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "웹 사이트"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "网站"
+          }
         }
       }
     },
     "common.back" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -379,12 +673,30 @@
             "state" : "translated",
             "value" : "Indietro"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "뒤로"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
+          }
         }
       }
     },
     "common.cancel" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbrechen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -408,12 +720,30 @@
             "state" : "translated",
             "value" : "Annulla"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "취소"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
         }
       }
     },
     "common.ok" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -437,12 +767,30 @@
             "state" : "translated",
             "value" : "OK"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "확인"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好"
+          }
         }
       }
     },
     "common.unlock" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entsperren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -466,11 +814,29 @@
             "state" : "translated",
             "value" : "Sblocca"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잠금 해제"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁"
+          }
         }
       }
     },
     "encore %lld secondes" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Noch %lld Sekunden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -488,12 +854,31 @@
             "state" : "translated",
             "value" : "ancora %lld secondi"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld초 남음"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "还剩 %lld 秒"
+          }
         }
       }
     },
     "term.masterPassword" : {
+      "comment" : "The account password that unlocks OnePass.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Master-Passwort"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -517,12 +902,31 @@
             "state" : "translated",
             "value" : "Password principale"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마스터 암호"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主密码"
+          }
         }
       }
     },
     "term.passkey" : {
+      "comment" : "Apple's terms: llave de acceso (es), passkey (it).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkey"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -546,12 +950,31 @@
             "state" : "translated",
             "value" : "Passkey"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "패스키"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通行密钥"
+          }
         }
       }
     },
     "term.vault" : {
+      "comment" : "A container of items, encrypted with its own key.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tresor"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -575,12 +998,30 @@
             "state" : "translated",
             "value" : "Cassaforte"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "보관함"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保险库"
+          }
         }
       }
     },
     "views.accountMenu %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Account: %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -604,12 +1045,30 @@
             "state" : "translated",
             "value" : "Account: %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "계정: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "账户：%@"
+          }
         }
       }
     },
     "views.accountOrganization" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Organisation"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -633,12 +1092,30 @@
             "state" : "translated",
             "value" : "Organizzazione"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "조직"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "组织"
+          }
         }
       }
     },
     "views.accountPersonal" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Privat"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -662,12 +1139,30 @@
             "state" : "translated",
             "value" : "Personale"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "개인"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "个人"
+          }
         }
       }
     },
     "views.accountWork" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Arbeit"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -691,12 +1186,30 @@
             "state" : "translated",
             "value" : "Lavoro"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "업무"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "工作"
+          }
         }
       }
     },
     "views.addTo" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hinzufügen zu"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -720,12 +1233,30 @@
             "state" : "translated",
             "value" : "Aggiungi a"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "추가할 위치"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加到"
+          }
         }
       }
     },
     "views.addTo %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zu %1$@ hinzufügen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -749,12 +1280,30 @@
             "state" : "translated",
             "value" : "Aggiungi a %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@에 추가"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加到 %@"
+          }
         }
       }
     },
     "views.allItems" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alle Objekte"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -778,6 +1327,18 @@
             "state" : "translated",
             "value" : "Tutti gli elementi"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "모든 항목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "所有项目"
+          }
         }
       }
     },
@@ -785,6 +1346,12 @@
       "comment" : "AutoFill list: dialog button that binds the picked login to the asking app, then fills it",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Immer für diese App verwenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -808,6 +1375,18 @@
             "state" : "translated",
             "value" : "Usa sempre per questa app"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 앱에서 항상 사용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "始终用于此 App"
+          }
         }
       }
     },
@@ -815,6 +1394,12 @@
       "comment" : "AutoFill list: dialog message under views.alwaysUse.title; %@ is the App ID the system gave for the asking app",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "App-ID: %@\nOnePass schlägt diesen Login beim nächsten Mal in dieser App zuerst vor."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -838,6 +1423,18 @@
             "state" : "translated",
             "value" : "ID dell'app: %@\nOnePass suggerirà questo login per primo in questa app la prossima volta."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "앱 ID: %@\n다음부터 OnePass가 이 앱에서 이 로그인을 먼저 제안해요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "App ID：%@\nOnePass 下次会在此 App 中优先推荐这条登录信息。"
+          }
         }
       }
     },
@@ -845,6 +1442,12 @@
       "comment" : "AutoFill list: dialog button that fills the picked login without remembering it",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nur dieses Mal"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -868,6 +1471,18 @@
             "state" : "translated",
             "value" : "Solo questa volta"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이번만 사용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "仅限此次"
+          }
         }
       }
     },
@@ -875,6 +1490,12 @@
       "comment" : "AutoFill list: dialog title after picking a login from the other items while an app asks; %@ is the app's name",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diesen Login immer für %1$@ verwenden?"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -898,12 +1519,30 @@
             "state" : "translated",
             "value" : "Usare sempre questo login per %@?"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@에 항상 이 로그인을 사용할까요?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "始终为 %@ 使用这条登录信息？"
+          }
         }
       }
     },
     "views.app" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "App"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -927,12 +1566,30 @@
             "state" : "translated",
             "value" : "App"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "앱"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "App"
+          }
         }
       }
     },
     "views.canTryAgain" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Du kannst es erneut versuchen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -956,12 +1613,30 @@
             "state" : "translated",
             "value" : "Puoi riprovare."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다시 시도할 수 있어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你可以重试。"
+          }
         }
       }
     },
     "views.chooseAccount" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konto auswählen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -985,12 +1660,30 @@
             "state" : "translated",
             "value" : "Scegli un account"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "계정 선택"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "选择账户"
+          }
         }
       }
     },
     "views.chooseField" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Feld auswählen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1014,12 +1707,30 @@
             "state" : "translated",
             "value" : "Scegli un campo"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "필드 선택"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "选择字段"
+          }
         }
       }
     },
     "views.chooseItem" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Objekt auswählen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1043,12 +1754,30 @@
             "state" : "translated",
             "value" : "Scegli un elemento"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "항목 선택"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "选择项目"
+          }
         }
       }
     },
     "views.code" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Code"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1072,12 +1801,30 @@
             "state" : "translated",
             "value" : "Codice"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "코드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "验证码"
+          }
         }
       }
     },
     "views.createOrRestoreAccount" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erstelle dein Konto in der OnePass-App oder stelle es wieder her. Kehre dann hierher zurück."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1101,12 +1848,30 @@
             "state" : "translated",
             "value" : "Crea o ripristina il tuo account nell'app OnePass, poi torna qui."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 앱에서 계정을 만들거나 복원한 다음 여기로 돌아오세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 OnePass App 中创建或恢复你的账户，然后返回此处。"
+          }
         }
       }
     },
     "views.dataRefused" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Daten abgelehnt"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1130,12 +1895,30 @@
             "state" : "translated",
             "value" : "Dati rifiutati"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "데이터 거부됨"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "数据被拒绝"
+          }
         }
       }
     },
     "views.enterSecretKeyIn" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gib deinen Secret Key in der OnePass-App auf diesem Gerät ein. Kehre dann hierher zurück."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1159,12 +1942,30 @@
             "state" : "translated",
             "value" : "Inserisci la tua Secret Key nell'app OnePass su questo dispositivo, poi torna qui."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 기기의 OnePass 앱에서 Secret Key를 입력한 다음 여기로 돌아오세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在此设备的 OnePass App 中输入你的 Secret Key，然后返回此处。"
+          }
         }
       }
     },
     "views.fieldToInsert" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Feld zum Einfügen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1188,12 +1989,30 @@
             "state" : "translated",
             "value" : "Campo da inserire"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "삽입할 필드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "要插入的字段"
+          }
         }
       }
     },
     "views.forSite %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Für %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1217,12 +2036,30 @@
             "state" : "translated",
             "value" : "Per %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "用于 %@"
+          }
         }
       }
     },
     "views.forThisSite" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Für diese Website"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1246,12 +2083,30 @@
             "state" : "translated",
             "value" : "Per questo sito"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 사이트용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "用于此网站"
+          }
         }
       }
     },
     "views.hidden" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ausgeblendet"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1275,12 +2130,30 @@
             "state" : "translated",
             "value" : "nascosto"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "가려짐"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已隐藏"
+          }
         }
       }
     },
     "views.hidePassword" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passwort ausblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1304,12 +2177,30 @@
             "state" : "translated",
             "value" : "Nascondi la password"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호 가리기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "隐藏密码"
+          }
         }
       }
     },
     "views.incorrectPassword" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Falsches Passwort."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1333,12 +2224,30 @@
             "state" : "translated",
             "value" : "Password errata."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호가 올바르지 않아요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "密码错误。"
+          }
         }
       }
     },
     "views.itemHasNoFields" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dieses Objekt enthält keine Felder zum Einfügen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1362,12 +2271,30 @@
             "state" : "translated",
             "value" : "Nessun campo da inserire in questo elemento."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 항목에는 삽입할 필드가 없어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此项目没有可插入的字段。"
+          }
         }
       }
     },
     "views.itemUpdated" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Objekt aktualisiert"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1391,12 +2318,30 @@
             "state" : "translated",
             "value" : "Elemento aggiornato"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "항목 업데이트됨"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "项目已更新"
+          }
         }
       }
     },
     "views.login" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Login"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1420,12 +2365,30 @@
             "state" : "translated",
             "value" : "Login"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "로그인"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "登录信息"
+          }
         }
       }
     },
     "views.newItem" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neues Objekt"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1449,12 +2412,30 @@
             "state" : "translated",
             "value" : "Nuovo elemento"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 항목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新建项目"
+          }
         }
       }
     },
     "views.newItemHeader" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neues Objekt"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1478,12 +2459,30 @@
             "state" : "translated",
             "value" : "Nuovo elemento"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 항목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新建项目"
+          }
         }
       }
     },
     "views.newLogin" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neuer Login"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1507,12 +2506,30 @@
             "state" : "translated",
             "value" : "Nuovo login"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 로그인"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新建登录信息"
+          }
         }
       }
     },
     "views.newLoginFor %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neuer Login für %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1536,12 +2553,30 @@
             "state" : "translated",
             "value" : "Nuovo login per %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@용 새 로그인"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "为 %@ 新建登录信息"
+          }
         }
       }
     },
     "views.newPasskey" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neuer Passkey"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1565,12 +2600,30 @@
             "state" : "translated",
             "value" : "Nuova passkey"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 패스키"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新建通行密钥"
+          }
         }
       }
     },
     "views.newPassword" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neues Passwort"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1594,12 +2647,30 @@
             "state" : "translated",
             "value" : "Nuova password"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 암호"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新密码"
+          }
         }
       }
     },
     "views.newPasswordReplacesOld" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Das neue Passwort ersetzt das alte. Das alte bleibt im Verlauf des Objekts erhalten."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1623,12 +2694,30 @@
             "state" : "translated",
             "value" : "La nuova password sostituisce quella vecchia, che resta nella cronologia dell'elemento."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 암호로 교체되며, 이전 암호는 항목 기록에 남아요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新密码会替换旧密码，旧密码将保留在项目的历史记录中。"
+          }
         }
       }
     },
     "views.noItems" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine Objekte."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1652,12 +2741,30 @@
             "state" : "translated",
             "value" : "Nessun elemento."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "항목이 없어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "没有项目。"
+          }
         }
       }
     },
     "views.noItemsForSite" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine Objekte für diese Website."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1681,12 +2788,30 @@
             "state" : "translated",
             "value" : "Nessun elemento per questo sito."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 사이트의 항목이 없어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "没有适用于此网站的项目。"
+          }
         }
       }
     },
     "views.noResults" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine Ergebnisse."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1710,12 +2835,30 @@
             "state" : "translated",
             "value" : "Nessun risultato."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "결과가 없어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "没有结果。"
+          }
         }
       }
     },
     "views.noResultsForSite" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine Ergebnisse für diese Website."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1739,12 +2882,30 @@
             "state" : "translated",
             "value" : "Nessun risultato per questo sito."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 사이트의 결과가 없어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "没有适用于此网站的结果。"
+          }
         }
       }
     },
     "views.none" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Keine"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1768,12 +2929,30 @@
             "state" : "translated",
             "value" : "Nessuno"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "없음"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无"
+          }
         }
       }
     },
     "views.onepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1797,12 +2976,30 @@
             "state" : "translated",
             "value" : "OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass"
+          }
         }
       }
     },
     "views.onepassAccount" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass-Konto"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1826,12 +3023,30 @@
             "state" : "translated",
             "value" : "Account OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 계정"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 账户"
+          }
         }
       }
     },
     "views.onepassReady" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass ist bereit"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1855,12 +3070,30 @@
             "state" : "translated",
             "value" : "OnePass è pronto"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 준비 완료"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 已就绪"
+          }
         }
       }
     },
     "views.openOnepassToLearn" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffne OnePass, um mehr zu erfahren."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1884,12 +3117,30 @@
             "state" : "translated",
             "value" : "Apri OnePass per saperne di più."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자세히 알아보려면 OnePass를 여세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass 以了解更多。"
+          }
         }
       }
     },
     "views.openOnepassToSet" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffne OnePass, um deinen Tresor einzurichten"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1913,12 +3164,30 @@
             "state" : "translated",
             "value" : "Apri OnePass per configurare la tua cassaforte"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "보관함을 설정하려면 OnePass를 여세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass 以设置你的保险库"
+          }
         }
       }
     },
     "views.openOnepassToSet2" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffne OnePass, um deinen Tresor einzurichten und dich anzumelden."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1942,12 +3211,30 @@
             "state" : "translated",
             "value" : "Apri OnePass per configurare la tua cassaforte e accedere."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "보관함을 설정하고 로그인하려면 OnePass를 여세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass 以设置你的保险库并登录。"
+          }
         }
       }
     },
     "views.otherItems" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Weitere Objekte"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1971,12 +3258,30 @@
             "state" : "translated",
             "value" : "Altri elementi"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "기타 항목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "其他项目"
+          }
         }
       }
     },
     "views.passkeyStaysInOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Passkey bleibt in deinem OnePass-Tresor, verschlüsselt auf deinen Geräten."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2000,12 +3305,30 @@
             "state" : "translated",
             "value" : "La passkey resta nella tua cassaforte OnePass, cifrata sui tuoi dispositivi."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "패스키는 기기에서 암호화되어 OnePass 보관함에 보관돼요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "通行密钥保留在你的 OnePass 保险库中，并在你的设备上加密。"
+          }
         }
       }
     },
     "views.password" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passwort"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2029,12 +3352,30 @@
             "state" : "translated",
             "value" : "Password"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "密码"
+          }
         }
       }
     },
     "views.passwordsPasskeysAndVerification" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deine Passwörter, Passkeys und Bestätigungscodes werden über der Tastatur und über die Taste „Passwörter“ vorgeschlagen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2058,12 +3399,30 @@
             "state" : "translated",
             "value" : "Le tue password, passkey e codici di verifica vengono suggeriti sopra la tastiera e nel tasto Password."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호, 패스키, 확인 코드가 키보드 위와 암호 키에 제안돼요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的密码、通行密钥和验证码会显示在键盘上方及“密码”按键中，供你选用。"
+          }
         }
       }
     },
     "views.recentItems" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zuletzt verwendet"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2087,12 +3446,30 @@
             "state" : "translated",
             "value" : "Recenti"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "최근 항목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "最近"
+          }
         }
       }
     },
     "views.results" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ergebnisse"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2116,12 +3493,30 @@
             "state" : "translated",
             "value" : "Risultati"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "결과"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "结果"
+          }
         }
       }
     },
     "views.save" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sichern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2145,12 +3540,30 @@
             "state" : "translated",
             "value" : "Salva"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "저장"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "存储"
+          }
         }
       }
     },
     "views.saveAndFill" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sichern und ausfüllen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2174,12 +3587,30 @@
             "state" : "translated",
             "value" : "Salva e compila"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "저장 및 채우기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "存储并填充"
+          }
         }
       }
     },
     "views.saveAsNewItem" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Als neues Objekt sichern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2203,12 +3634,30 @@
             "state" : "translated",
             "value" : "Salva come nuovo elemento"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 항목으로 저장"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "存储为新项目"
+          }
         }
       }
     },
     "views.saveInOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In OnePass sichern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2232,12 +3681,30 @@
             "state" : "translated",
             "value" : "Salva in OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass에 저장"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "存储到 OnePass"
+          }
         }
       }
     },
     "views.savePasskey" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passkey sichern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2261,12 +3728,30 @@
             "state" : "translated",
             "value" : "Salva la passkey"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "패스키 저장"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "存储通行密钥"
+          }
         }
       }
     },
     "views.savePasskeyFor %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passkey für %@ sichern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2290,12 +3775,30 @@
             "state" : "translated",
             "value" : "Salva una passkey per %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@의 패스키 저장"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "为 %@ 存储通行密钥"
+          }
         }
       }
     },
     "views.searchOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In OnePass suchen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2319,12 +3822,30 @@
             "state" : "translated",
             "value" : "Cerca in OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass에서 검색"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 OnePass 中搜索"
+          }
         }
       }
     },
     "views.showAccountsAboveKeyboard" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Meine Accounts über der Tastatur einblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2348,12 +3869,30 @@
             "state" : "translated",
             "value" : "Mostra i miei account sopra la tastiera"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "키보드 위에 내 계정 표시"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在键盘上方显示我的账户"
+          }
         }
       }
     },
     "views.showMoreItems %lld" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld weitere Objekte einblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2377,12 +3916,30 @@
             "state" : "translated",
             "value" : "Mostra gli altri %lld elementi"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "항목 %lld개 더 보기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "显示另外 %lld 个项目"
+          }
         }
       }
     },
     "views.showPassword" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passwort einblenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2406,12 +3963,30 @@
             "state" : "translated",
             "value" : "Mostra la password"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호 보기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "显示密码"
+          }
         }
       }
     },
     "views.site" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Website"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2435,12 +4010,30 @@
             "state" : "translated",
             "value" : "Sito"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "사이트"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "网站"
+          }
         }
       }
     },
     "views.suggestionsReady" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deine Accounts werden über der Tastatur angezeigt."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2464,12 +4057,30 @@
             "state" : "translated",
             "value" : "I tuoi account appaiono sopra la tastiera."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "계정이 키보드 위에 표시돼요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的账户会显示在键盘上方。"
+          }
         }
       }
     },
     "views.title" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titel"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2493,12 +4104,30 @@
             "state" : "translated",
             "value" : "Titolo"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "제목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "标题"
+          }
         }
       }
     },
     "views.title2" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Titel"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2522,12 +4151,30 @@
             "state" : "translated",
             "value" : "Titolo"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "제목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "标题"
+          }
         }
       }
     },
     "views.toFill %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "um %@ auszufüllen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2551,12 +4198,30 @@
             "state" : "translated",
             "value" : "per compilare %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@을(를) 채우려면"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "以填充 %@"
+          }
         }
       }
     },
     "views.tooManyAttemptsTry %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zu viele Versuche. Versuche es in %@ erneut."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2580,12 +4245,30 @@
             "state" : "translated",
             "value" : "Troppi tentativi. Riprova tra %@."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "시도 횟수가 너무 많아요. %@ 후에 다시 시도할 수 있어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "尝试次数过多。请在 %@ 后重试。"
+          }
         }
       }
     },
     "views.unlockOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Entsperre OnePass"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2609,12 +4292,30 @@
             "state" : "translated",
             "value" : "Sblocca OnePass"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 잠금 해제"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "解锁 OnePass"
+          }
         }
       }
     },
     "views.unlockWith %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mit %@ entsperren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2638,12 +4339,30 @@
             "state" : "translated",
             "value" : "Sblocca con %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@로 잠금 해제"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用 %@ 解锁"
+          }
         }
       }
     },
     "views.update" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualisieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2667,12 +4386,30 @@
             "state" : "translated",
             "value" : "Aggiorna"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "업데이트"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新"
+          }
         }
       }
     },
     "views.update %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ aktualisieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2696,12 +4433,30 @@
             "state" : "translated",
             "value" : "Aggiorna %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 업데이트"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新 %@"
+          }
         }
       }
     },
     "views.updateExistingItem" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vorhandenes Objekt aktualisieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2725,12 +4480,30 @@
             "state" : "translated",
             "value" : "Aggiorna l'elemento esistente"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "기존 항목 업데이트"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新现有项目"
+          }
         }
       }
     },
     "views.use %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ verwenden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2754,12 +4527,30 @@
             "state" : "translated",
             "value" : "Usa %@"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 사용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用 %@"
+          }
         }
       }
     },
     "views.username" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Benutzername"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2783,12 +4574,30 @@
             "state" : "translated",
             "value" : "Nome utente"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "사용자 이름"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "用户名"
+          }
         }
       }
     },
     "views.verificationCode" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bestätigungscode"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2812,12 +4621,30 @@
             "state" : "translated",
             "value" : "Codice di verifica"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "확인 코드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "验证码"
+          }
         }
       }
     },
     "views.verificationCodes" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bestätigungscodes"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2841,6 +4668,18 @@
             "state" : "translated",
             "value" : "Codici di verifica"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "확인 코드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "验证码"
+          }
         }
       }
     },
@@ -2848,6 +4687,24 @@
       "comment" : "Unlock refused: wrong master password, with the attempts left before the unlock waits (30 s, then longer).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Falsches Passwort. Noch %lld Versuch, bevor du warten musst."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Falsches Passwort. Noch %lld Versuche, bevor du warten musst."
+                }
+              }
+            }
+          }
+        },
         "en" : {
           "variations" : {
             "plural" : {
@@ -2919,11 +4776,53 @@
               }
             }
           }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "암호가 올바르지 않아요. %lld번 더 실패하면 잠시 기다려야 해요."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "암호가 올바르지 않아요. %lld번 더 실패하면 잠시 기다려야 해요."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "密码错误。还可尝试 %lld 次，之后需等待才能重试。"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "密码错误。还可尝试 %lld 次，之后需等待才能重试。"
+                }
+              }
+            }
+          }
         }
       }
     },
     "Éléments existants" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vorhandene Objekte"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2940,6 +4839,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elementi esistenti"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "기존 항목"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "现有项目"
           }
         }
       }

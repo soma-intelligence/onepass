@@ -1715,10 +1715,13 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
+				de,
 				en,
 				es,
 				fr,
 				it,
+				ko,
+				"zh-Hans",
 			);
 			mainGroup = 1F7631CD98A4452524E10D73;
 			minimizedProjectReferenceProxies = 1;

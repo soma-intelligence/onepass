@@ -18,6 +18,12 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass verwendet Face ID, um deine Passwörter auszufüllen, ohne dass du dein Master-Passwort erneut eingeben musst."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -40,6 +46,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OnePass usa Face ID per compilare le tue password senza digitare di nuovo la password principale."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass는 Face ID로 마스터 암호를 다시 입력하지 않고 암호를 자동으로 채워요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass 使用面容 ID 填充你的密码，无需重新输入主密码。"
           }
         }
       }
