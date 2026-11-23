@@ -785,15 +785,18 @@ fn public_grant_strips_history_and_passkeys() {
     let changed = a.session.save_item(changed).unwrap();
     assert_eq!(changed.password_history_count, 1);
     a.session
-        .create_passkey(FfiPasskeyCreation {
-            vault_id: a.vault_id.clone(),
-            item_id: Some(item.id.clone()),
-            rp_id: "exemple.fr".into(),
-            user_name: "camille".into(),
-            user_handle: vec![1, 2, 3, 4],
-            client_data_hash: vec![9; 32],
-            excluded_credential_ids: Vec::new(),
-        })
+        .create_passkey(
+            FfiPasskeyCreation {
+                vault_id: a.vault_id.clone(),
+                item_id: Some(item.id.clone()),
+                rp_id: "exemple.fr".into(),
+                user_name: "camille".into(),
+                user_handle: vec![1, 2, 3, 4],
+                client_data_hash: vec![9; 32],
+                excluded_credential_ids: Vec::new(),
+            },
+            None,
+        )
         .unwrap();
     let has_passkey = |i: &FfiItem| {
         i.sections

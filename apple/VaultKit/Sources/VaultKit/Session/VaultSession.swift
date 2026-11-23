@@ -1632,7 +1632,7 @@ public final class VaultSession {
     /// then reloads the lists and publishes the new identity. `.other` when the relying party already
     /// holds one of `excludedCredentialIds` (`PasskeyExcluded`).
     public func createPasskey(_ request: FfiPasskeyCreation) async throws -> FfiPasskeyRegistration {
-        try await write { try $0.createPasskey(request: request) }
+        try await write { try $0.createPasskey(request: request, prf: nil) }
     }
 
     /// Signs a passkey assertion with the passkey `credentialID` of a live Login (signature by the core).
@@ -1641,7 +1641,8 @@ public final class VaultSession {
     ) async throws -> FfiPasskeyAssertion {
         try await read {
             try $0.passkeyAssertion(
-                vaultId: vaultID, itemId: itemID, credentialId: credentialID, clientDataHash: clientDataHash)
+                vaultId: vaultID, itemId: itemID, credentialId: credentialID, clientDataHash: clientDataHash,
+                prf: nil)
         }
     }
 

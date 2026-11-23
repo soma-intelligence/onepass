@@ -741,6 +741,11 @@ pub struct FfiPasskeyRegistration {
     pub item_id: String,
     pub credential_id: Vec<u8>,
     pub attestation_object: Vec<u8>,
+    /// Always `true`: every OnePass passkey evaluates the WebAuthn PRF
+    /// extension (`onepass_core::webauthn::prf_eval`).
+    pub prf_enabled: bool,
+    /// The PRF outputs when the request carried PRF inputs.
+    pub prf: Option<FfiPrfOutput>,
 }
 
 /// What the system needs to complete a passkey sign-in.
@@ -750,4 +755,40 @@ pub struct FfiPasskeyAssertion {
     pub authenticator_data: Vec<u8>,
     pub signature: Vec<u8>,
     pub credential_id: Vec<u8>,
+    /// The PRF outputs when the request carried PRF inputs.
+    pub prf: Option<FfiPrfOutput>,
+}
+
+/// WebAuthn PRF extension inputs (`eval`): the relying party's salts, as
+/// it sent them (the WebAuthn salt hashing happens in the core).
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPrfInput {
+    pub first: Vec<u8>,
+    pub second: Option<Vec<u8>>,
+}
+
+/// WebAuthn PRF extension outputs (`results`), 32 bytes each: `second`
+/// only when the input had a second salt. Secret: redacted in `Debug`.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPrfOutput {
+    pub first: Vec<u8>,
+    pub second: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for FfiPrfInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FfiPrfInput")
+            .field("first", &"**")
+            .field("second", &self.second.as_ref().map(|_| "**"))
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for FfiPrfOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FfiPrfOutput")
+            .field("first", &"**")
+            .field("second", &self.second.as_ref().map(|_| "**"))
+            .finish()
+    }
 }

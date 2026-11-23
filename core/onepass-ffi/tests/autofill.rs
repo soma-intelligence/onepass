@@ -202,12 +202,15 @@ fn identities_cover_logins_only() {
     );
     let reg = fx
         .session
-        .create_passkey(creation(
-            &fx.vault_id,
-            Some(main.id.clone()),
-            "example.com",
-            "camille",
-        ))
+        .create_passkey(
+            creation(
+                &fx.vault_id,
+                Some(main.id.clone()),
+                "example.com",
+                "camille",
+            ),
+            None,
+        )
         .unwrap();
 
     let trashed = login(&fx, "Corbeille", &["https://trash.example.net"]);
@@ -430,12 +433,15 @@ fn candidates_include_passkeys_by_rp_id() {
     let fx = fixture();
     let bare = login(&fx, "sans URL", &[]);
     fx.session
-        .create_passkey(creation(
-            &fx.vault_id,
-            Some(bare.id.clone()),
-            "example.com",
-            "camille",
-        ))
+        .create_passkey(
+            creation(
+                &fx.vault_id,
+                Some(bare.id.clone()),
+                "example.com",
+                "camille",
+            ),
+            None,
+        )
         .unwrap();
     let mut hidden = login(&fx, "cachée", &[]);
     hidden = fx
@@ -443,12 +449,15 @@ fn candidates_include_passkeys_by_rp_id() {
         .item(
             fx.vault_id.clone(),
             fx.session
-                .create_passkey(creation(
-                    &fx.vault_id,
-                    Some(hidden.id.clone()),
-                    "example.com",
-                    "dominique",
-                ))
+                .create_passkey(
+                    creation(
+                        &fx.vault_id,
+                        Some(hidden.id.clone()),
+                        "example.com",
+                        "dominique",
+                    ),
+                    None,
+                )
                 .unwrap()
                 .item_id,
         )
@@ -458,12 +467,10 @@ fn candidates_include_passkeys_by_rp_id() {
     // A Login whose URL only shares the registrable domain is upgraded by its passkey.
     let near = login(&fx, "domaine", &["https://www.example.com"]);
     fx.session
-        .create_passkey(creation(
-            &fx.vault_id,
-            Some(near.id.clone()),
-            "example.com",
-            "alex",
-        ))
+        .create_passkey(
+            creation(&fx.vault_id, Some(near.id.clone()), "example.com", "alex"),
+            None,
+        )
         .unwrap();
 
     for service in ["example.com", "https://EXAMPLE.com/login", "Example.COM."] {
@@ -671,7 +678,7 @@ fn create_passkey_new_login() {
     let fx = fixture();
     let reg = fx
         .session
-        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"))
+        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"), None)
         .unwrap();
     assert_eq!(reg.vault_id, fx.vault_id);
     assert_eq!(reg.credential_id.len(), 16);
@@ -718,12 +725,15 @@ fn create_passkey_existing_login() {
     let item = login(&fx, "Exemple", &["https://example.com"]);
     for _ in 0..2 {
         fx.session
-            .create_passkey(creation(
-                &fx.vault_id,
-                Some(item.id.clone()),
-                "example.com",
-                "camille",
-            ))
+            .create_passkey(
+                creation(
+                    &fx.vault_id,
+                    Some(item.id.clone()),
+                    "example.com",
+                    "camille",
+                ),
+                None,
+            )
             .unwrap();
     }
     let stored = fx.session.item(fx.vault_id.clone(), item.id).unwrap();
@@ -751,7 +761,10 @@ fn create_passkey_existing_login() {
     let wallet = other_item(&fx, FfiItemType::CryptoWallet, "https://example.com");
     assert!(
         fx.session
-            .create_passkey(creation(&fx.vault_id, Some(wallet.id), "example.com", "c"))
+            .create_passkey(
+                creation(&fx.vault_id, Some(wallet.id), "example.com", "c"),
+                None
+            )
             .is_err()
     );
 }
@@ -770,12 +783,10 @@ fn create_passkey_refuses_archived_or_trashed_login() {
     for id in [archived.id, trashed.id] {
         assert_eq!(
             fx.session
-                .create_passkey(creation(
-                    &fx.vault_id,
-                    Some(id.clone()),
-                    "example.com",
-                    "camille"
-                ))
+                .create_passkey(
+                    creation(&fx.vault_id, Some(id.clone()), "example.com", "camille"),
+                    None
+                )
                 .unwrap_err(),
             OnePassError::NotFound
         );
@@ -789,12 +800,12 @@ fn create_passkey_excluded() {
     let fx = fixture();
     let first = fx
         .session
-        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"))
+        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"), None)
         .unwrap();
     let mut again = creation(&fx.vault_id, None, "example.com", "camille");
     again.excluded_credential_ids = vec![vec![0; 16], first.credential_id.clone()];
     assert_eq!(
-        fx.session.create_passkey(again).unwrap_err(),
+        fx.session.create_passkey(again, None).unwrap_err(),
         OnePassError::PasskeyExcluded
     );
     let mut on_item = creation(
@@ -805,7 +816,7 @@ fn create_passkey_excluded() {
     );
     on_item.excluded_credential_ids = vec![first.credential_id.clone()];
     assert_eq!(
-        fx.session.create_passkey(on_item).unwrap_err(),
+        fx.session.create_passkey(on_item, None).unwrap_err(),
         OnePassError::PasskeyExcluded
     );
     assert_eq!(fx.session.item_summaries().unwrap().len(), 1);
@@ -816,7 +827,7 @@ fn create_passkey_excluded() {
     // The same id for another relying party does not block.
     let mut other_rp = creation(&fx.vault_id, None, "exemple.fr", "camille");
     other_rp.excluded_credential_ids = vec![first.credential_id];
-    assert!(fx.session.create_passkey(other_rp).is_ok());
+    assert!(fx.session.create_passkey(other_rp, None).is_ok());
 }
 
 /// The P-256 public key in the attested credential data of an attestation
@@ -842,7 +853,7 @@ fn assertion_verifies_and_hides_key() {
     let fx = fixture();
     let reg = fx
         .session
-        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"))
+        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"), None)
         .unwrap();
     let hash = vec![0x42; 32];
     let a = fx
@@ -852,6 +863,7 @@ fn assertion_verifies_and_hides_key() {
             reg.item_id.clone(),
             reg.credential_id.clone(),
             hash.clone(),
+            None,
         )
         .unwrap();
     assert_eq!(a.user_handle, vec![1, 2, 3, 4]);
@@ -871,7 +883,8 @@ fn assertion_verifies_and_hides_key() {
                 fx.vault_id.clone(),
                 reg.item_id.clone(),
                 vec![7; 16],
-                hash.clone()
+                hash.clone(),
+                None
             )
             .unwrap_err(),
         OnePassError::NotFound
@@ -881,10 +894,109 @@ fn assertion_verifies_and_hides_key() {
         .unwrap();
     assert_eq!(
         fx.session
-            .passkey_assertion(fx.vault_id.clone(), reg.item_id, reg.credential_id, hash)
+            .passkey_assertion(
+                fx.vault_id.clone(),
+                reg.item_id,
+                reg.credential_id,
+                hash,
+                None
+            )
             .unwrap_err(),
         OnePassError::NotFound
     );
+}
+
+fn prf_input(first: &[u8], second: Option<&[u8]>) -> FfiPrfInput {
+    FfiPrfInput {
+        first: first.to_vec(),
+        second: second.map(<[u8]>::to_vec),
+    }
+}
+
+#[test]
+fn prf_create_reports_enabled_and_evaluates() {
+    let fx = fixture();
+    let plain = fx
+        .session
+        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"), None)
+        .unwrap();
+    assert!(plain.prf_enabled);
+    assert_eq!(plain.prf, None);
+
+    let reg = fx
+        .session
+        .create_passkey(
+            creation(&fx.vault_id, None, "example.com", "dominique"),
+            Some(prf_input(b"salt one", None)),
+        )
+        .unwrap();
+    assert!(reg.prf_enabled);
+    let out = reg.prf.unwrap();
+    assert_eq!(out.first.len(), 32);
+    assert_eq!(out.second, None);
+    // The same salt at sign-in gives the same output as at creation.
+    let a = fx
+        .session
+        .passkey_assertion(
+            fx.vault_id.clone(),
+            reg.item_id,
+            reg.credential_id,
+            vec![0x42; 32],
+            Some(prf_input(b"salt one", None)),
+        )
+        .unwrap();
+    assert_eq!(a.prf.unwrap().first, out.first);
+}
+
+#[test]
+fn prf_assertion_returns_two_outputs() {
+    let fx = fixture();
+    let reg = fx
+        .session
+        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"), None)
+        .unwrap();
+    let assert_with = |input: FfiPrfInput| {
+        fx.session
+            .passkey_assertion(
+                fx.vault_id.clone(),
+                reg.item_id.clone(),
+                reg.credential_id.clone(),
+                vec![0x42; 32],
+                Some(input),
+            )
+            .unwrap()
+            .prf
+            .unwrap()
+    };
+    let two = assert_with(prf_input(b"first salt", Some(b"second salt")));
+    let second = two.second.clone().unwrap();
+    assert_eq!(two.first.len(), 32);
+    assert_eq!(second.len(), 32);
+    assert_ne!(two.first, second);
+    // Each output is the single-salt output of its salt: stable per salt.
+    assert_eq!(assert_with(prf_input(b"first salt", None)).first, two.first);
+    assert_eq!(assert_with(prf_input(b"second salt", None)).first, second);
+}
+
+#[test]
+fn prf_assertion_without_input_returns_none() {
+    let fx = fixture();
+    let reg = fx
+        .session
+        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"), None)
+        .unwrap();
+    let a = fx
+        .session
+        .passkey_assertion(
+            fx.vault_id.clone(),
+            reg.item_id,
+            reg.credential_id,
+            vec![0x42; 32],
+            None,
+        )
+        .unwrap();
+    assert_eq!(a.prf, None);
+    assert!(!a.signature.is_empty());
 }
 
 #[test]
@@ -901,12 +1013,12 @@ fn locked_session_refuses() {
         locked
     );
     assert_eq!(
-        s.create_passkey(creation(&fx.vault_id, None, "example.com", "c"))
+        s.create_passkey(creation(&fx.vault_id, None, "example.com", "c"), None)
             .unwrap_err(),
         locked
     );
     assert_eq!(
-        s.passkey_assertion(fx.vault_id.clone(), item.id, vec![1; 16], vec![0; 32])
+        s.passkey_assertion(fx.vault_id.clone(), item.id, vec![1; 16], vec![0; 32], None)
             .unwrap_err(),
         locked
     );
@@ -1244,15 +1356,18 @@ fn summaries_count_passkeys() {
     let plain = login(&fx, "Sans passkey", &["https://plain.example"]);
     let reg = fx
         .session
-        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"))
+        .create_passkey(creation(&fx.vault_id, None, "example.com", "camille"), None)
         .unwrap();
     fx.session
-        .create_passkey(creation(
-            &fx.vault_id,
-            Some(reg.item_id.clone()),
-            "example.com",
-            "camille",
-        ))
+        .create_passkey(
+            creation(
+                &fx.vault_id,
+                Some(reg.item_id.clone()),
+                "example.com",
+                "camille",
+            ),
+            None,
+        )
         .unwrap();
     let rows = fx.session.item_summaries().unwrap();
     let with = rows.iter().find(|r| r.id == reg.item_id).unwrap();
