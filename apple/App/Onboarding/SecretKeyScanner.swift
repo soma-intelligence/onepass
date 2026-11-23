@@ -42,7 +42,12 @@ struct SecretKeyScanner: UIViewControllerRepresentable {
         return scanner
     }
 
-    func updateUIViewController(_ controller: DataScannerViewController, context: Context) {}
+    /// Started again when the first start came too early (the view not on screen yet, or the camera
+    /// prompt still open): without it the preview shows but nothing is ever recognized.
+    func updateUIViewController(_ controller: DataScannerViewController, context: Context) {
+        guard !context.coordinator.delivered, !controller.isScanning else { return }
+        try? controller.startScanning()
+    }
 
     static func dismantleUIViewController(_ controller: DataScannerViewController, coordinator: Coordinator) {
         controller.stopScanning()
@@ -54,24 +59,42 @@ struct SecretKeyScanner: UIViewControllerRepresentable {
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         private let onKey: (String) -> Void
         private let accept: (String) -> String?
-        private var delivered = false
+        private(set) var delivered = false
 
         init(onKey: @escaping (String) -> Void, accept: @escaping (String) -> String?) {
             self.onKey = onKey
             self.accept = accept
         }
 
+        // A code is often added before it is read (payload nil, or the pairing tile still drawing its
+        // dots), then only updated: the payload arrives in `didUpdate`. A pairing QR renewed every
+        // 30 s at the same place is also an update, never an add. So every callback is checked.
         func dataScanner(
             _ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem],
             allItems: [RecognizedItem]
         ) {
+            deliver(from: addedItems, scanner: dataScanner)
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController, didUpdate updatedItems: [RecognizedItem],
+            allItems: [RecognizedItem]
+        ) {
+            deliver(from: updatedItems, scanner: dataScanner)
+        }
+
+        func dataScanner(_ dataScanner: DataScannerViewController, didTapOn item: RecognizedItem) {
+            deliver(from: [item], scanner: dataScanner)
+        }
+
+        private func deliver(from items: [RecognizedItem], scanner: DataScannerViewController) {
             guard !delivered else { return }
-            for item in addedItems {
+            for item in items {
                 guard case .barcode(let barcode) = item, let payload = barcode.payloadStringValue,
                     let key = accept(payload)
                 else { continue }
                 delivered = true
-                dataScanner.stopScanning()
+                scanner.stopScanning()
                 onKey(key)
                 return
             }

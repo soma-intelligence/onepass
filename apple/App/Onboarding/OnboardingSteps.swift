@@ -464,7 +464,8 @@ private struct DeviceStep: View {
             .padding(16)
             .contentShape(Rectangle())
             .card(selected: selected)
-            .scaleEffect(selected || Platform.isMac ? 1 : 0.98)
+            // Same width selected or not: a shrunk card no longer lines up with the others (it shows
+            // on iPad). The unselected one only fades a little.
             .opacity(selected || Platform.isMac ? 1 : 0.9)
         }
         .onboardingPressable()

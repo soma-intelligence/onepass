@@ -1047,6 +1047,12 @@ struct OnboardingFlow: View {
 private struct PhoneOnboardingLayout: View {
     @Bindable var model: OnboardingModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private var centersSteps: Bool { sizeClass == .regular }
+    #else
+    private var centersSteps: Bool { false }
+    #endif
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1054,18 +1060,25 @@ private struct PhoneOnboardingLayout: View {
                 .padding(.horizontal, 16)
                 .frame(height: 52)
             ZStack {
-                ScrollView {
-                    OnboardingStepContent(model: model)
-                        .frame(maxWidth: 520, alignment: .leading)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 20)
-                        .padding(.bottom, 32)
-                        .frame(maxWidth: .infinity)
-                }
+                // On iPad (regular width) a short step sits in the middle of the screen, not glued to
+                // the top over an empty two thirds; a long one scrolls as before.
+                GeometryReader { proxy in
+                    ScrollView {
+                        OnboardingStepContent(model: model)
+                            .frame(maxWidth: 520, alignment: .leading)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 20)
+                            .padding(.bottom, 32)
+                            .frame(maxWidth: .infinity)
+                            .frame(
+                                minHeight: centersSteps ? proxy.size.height : nil,
+                                alignment: centersSteps ? .center : .top)
+                    }
                 #if os(iOS)
                 .scrollDismissesKeyboard(.interactively)
                 #endif
-                .scrollBounceBehavior(.basedOnSize)
+                    .scrollBounceBehavior(.basedOnSize)
+                }
                 .id(model.step)
                 .transition(stepTransition)
             }

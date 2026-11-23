@@ -182,21 +182,38 @@ struct ApproveDeviceSheet: View {
                 }
             }
             #endif
+            // The two answers as real buttons, the same as on the new device: one prominent, one plain,
+            // full width, out of the list's grouped rows.
             Section {
-                Button {
-                    Task { await approve(flow, mode: mode) }
-                } label: {
-                    HStack {
-                        Text("pairing.codesMatch").font(.headline)
-                        Spacer()
-                        if approving { ProgressView() }
+                VStack(spacing: 10) {
+                    Button {
+                        Task { await approve(flow, mode: mode) }
+                    } label: {
+                        ZStack {
+                            Text("pairing.codesMatch").font(.headline).opacity(approving ? 0 : 1)
+                            if approving { ProgressView().tint(.white) }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Platform.isMac ? 28 : 40)
                     }
-                }
-                .disabled(approving || (flow.approvalError != nil && password.isEmpty) || (Platform.isMac && mode == .public))
-                .accessibilityIdentifier("approve.codesMatch")
-                Button("pairing.theyreDifferent", role: .destructive) { flow.cancel() }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(Platform.isMac ? .large : .regular)
+                    .disabled(approving || (flow.approvalError != nil && password.isEmpty) || (Platform.isMac && mode == .public))
+                    .accessibilityIdentifier("approve.codesMatch")
+                    Button(role: .destructive) {
+                        flow.cancel()
+                    } label: {
+                        Text("pairing.theyreDifferent")
+                            .frame(maxWidth: .infinity)
+                            .frame(height: Platform.isMac ? 28 : 40)
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(Platform.isMac ? .large : .regular)
                     .disabled(approving)
                     .accessibilityIdentifier("approve.codesDiffer")
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
             }
         }
         .formStyle(.grouped)
