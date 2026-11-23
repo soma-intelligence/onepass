@@ -151,11 +151,6 @@ struct Sidebar: View {
     private var list: some View {
         let counts = session.counts()
         return List(selection: selection) {
-            #if !os(macOS)
-            Section {
-                AccountHeader()
-            }
-            #endif
             Section {
                 #if os(macOS)
                 // The RX look's Accueil (Penpot "Mac · Home"), first while the switch is on.
@@ -275,8 +270,17 @@ struct Sidebar: View {
                 } else {
                     SyncStatusChip(status: model.syncStatus)
                 }
-                // Réglages live in the account menu at the top (Mac and iPad): no second button here.
+                #if os(macOS)
+                // Réglages live in the account menu at the top: no second button here.
                 Color.clear.frame(height: 6)
+                #else
+                // iPad: the account stays pinned at the bottom, out of the scrolling rows. Its menu
+                // holds Réglages, so no second button here.
+                AccountHeader()
+                    .padding(.horizontal, 10)
+                    .padding(.top, 6)
+                    .padding(.bottom, 8)
+                #endif
             }
             #if !os(macOS)
             .background { SidebarFooterBackground() }
@@ -537,7 +541,7 @@ struct AccountHeader: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
