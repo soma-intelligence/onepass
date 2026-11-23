@@ -17,6 +17,7 @@ struct RXSettingsHome: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @State private var showsFeatureRequest = false
 
     private typealias RX = Theme.RX
 
@@ -63,6 +64,13 @@ struct RXSettingsHome: View {
             }
             RXFrostedCard {
                 menu(.about)
+                Button {
+                    showsFeatureRequest = true
+                } label: {
+                    RXFrostedRow(Text("featureRequest.title", tableName: FeatureRequestSheet.table),
+                                 systemImage: "lightbulb")
+                }
+                .accessibilityIdentifier("settings.featureRequest")
                 #if DEBUG
                 menu(.iconCheck)
                 #endif
@@ -94,6 +102,7 @@ struct RXSettingsHome: View {
             }
         }
         .accessibilityIdentifier("rx.settings")
+        .sheet(isPresented: $showsFeatureRequest) { FeatureRequestSheet() }
     }
 
     static let planZoomID = "rx.plan"
