@@ -20,6 +20,8 @@ struct Sidebar: View {
     @State private var duplicates = DuplicatesLoader()
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
+    /// iPad: the types fold like the vaults, closed at first, so the column fits without scrolling.
+    @AppStorage("onepass.sidebar.categoriesExpanded", store: AppModel.browseDefaults) private var categoriesExpanded = false
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     #if os(macOS)
     /// Height of the window's title bar and toolbar, which the sidebar column does not report as
@@ -273,12 +275,8 @@ struct Sidebar: View {
                 } else {
                     SyncStatusChip(status: model.syncStatus)
                 }
-                #if os(macOS)
-                // Réglages live in the account menu at the top on the Mac.
+                // Réglages live in the account menu at the top (Mac and iPad): no second button here.
                 Color.clear.frame(height: 6)
-                #else
-                SettingsRow()
-                #endif
             }
             #if !os(macOS)
             .background { SidebarFooterBackground() }
@@ -353,19 +351,21 @@ struct Sidebar: View {
         let present = ItemCategory.all.filter { (counts.byType[$0.type] ?? 0) > 0 }
         if !present.isEmpty {
             Section {
-                ForEach(present) { category in
-                    Label {
-                        Text(category.plural)
-                    } icon: {
-                        CategoryTile(category: category)
+                if categoriesExpanded {
+                    ForEach(present) { category in
+                        Label {
+                            Text(category.plural)
+                        } icon: {
+                            CategoryTile(category: category)
+                        }
+                        .visionHoverEffect()
+                        .badge(counts.byType[category.type] ?? 0)
+                        .tag(Destination.filter(.category(category.type)))
+                        .accessibilityIdentifier("sidebar.categories.\(NewItemMenu.key(category.type))")
                     }
-                    .visionHoverEffect()
-                    .badge(counts.byType[category.type] ?? 0)
-                    .tag(Destination.filter(.category(category.type)))
-                    .accessibilityIdentifier("sidebar.categories.\(NewItemMenu.key(category.type))")
                 }
             } header: {
-                Text("Catégories").textCase(.uppercase)
+                SectionFoldHeader(title: "Catégories", expanded: $categoriesExpanded, id: "sidebar.categories.fold")
             }
         }
     }
