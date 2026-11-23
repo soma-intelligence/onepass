@@ -1053,7 +1053,10 @@ impl Session {
                 now,
             )?;
             let reg = webauthn::registration(&cred, &request.client_data_hash)?;
-            let prf = prf.as_ref().map(|input| prf_output(&cred, input));
+            let prf = prf
+                .as_ref()
+                .map(|input| prf_output(&cred, input))
+                .transpose()?;
             if item_id.is_none() {
                 item.record(now, onepass_core::model::EventKind::Created);
             }
@@ -1109,7 +1112,10 @@ impl Session {
                 authenticator_data: a.authenticator_data,
                 signature: a.signature,
                 credential_id: cred.credential_id.clone(),
-                prf: prf.as_ref().map(|input| prf_output(cred, input)),
+                prf: prf
+                    .as_ref()
+                    .map(|input| prf_output(cred, input))
+                    .transpose()?,
             })
         })
     }
@@ -1117,14 +1123,15 @@ impl Session {
 
 /// The WebAuthn PRF outputs of `cred` for the relying party's salts: one
 /// per salt given (`webauthn::prf_eval`).
-fn prf_output(cred: &PasskeyCredential, input: &FfiPrfInput) -> FfiPrfOutput {
-    FfiPrfOutput {
-        first: webauthn::prf_eval(cred, &input.first).to_vec(),
+fn prf_output(cred: &PasskeyCredential, input: &FfiPrfInput) -> Result<FfiPrfOutput, OnePassError> {
+    Ok(FfiPrfOutput {
+        first: webauthn::prf_eval(cred, &input.first)?.to_vec(),
         second: input
             .second
             .as_ref()
-            .map(|salt| webauthn::prf_eval(cred, salt).to_vec()),
-    }
+            .map(|salt| webauthn::prf_eval(cred, salt).map(|o| o.to_vec()))
+            .transpose()?,
+    })
 }
 
 #[cfg(test)]

@@ -201,7 +201,13 @@ const PRF_SALT_LABEL: &[u8] = b"WebAuthn PRF\0";
 /// migration, and every device holding the passkey gives the same output.
 /// The salt hashing is the WebAuthn client's step, done here because the
 /// system hands the extension the relying party's salts as they are.
-pub fn prf_eval(cred: &PasskeyCredential, salt: &[u8]) -> [u8; 32] {
+///
+/// An empty private key is refused (`InvalidFormat`): its secret would be
+/// a public constant shared by every such passkey.
+pub fn prf_eval(cred: &PasskeyCredential, salt: &[u8]) -> Result<[u8; 32]> {
+    if cred.private_key.is_empty() {
+        return Err(Error::InvalidFormat("passkey key"));
+    }
     // HKDF-SHA256 with 32 output bytes is one extract and one expand
     // block, written with HMAC so it cannot fail: an empty salt is the
     // all-zero HMAC key (RFC 5869 2.2).
@@ -223,7 +229,7 @@ pub fn prf_eval(cred: &PasskeyCredential, salt: &[u8]) -> [u8; 32] {
     let tag = hmac::sign(&hmac::Key::new(HMAC_SHA256, &secret), hashed.as_ref());
     let mut out = [0u8; 32];
     out.copy_from_slice(tag.as_ref());
-    out
+    Ok(out)
 }
 
 /// UP, BE and BS always; UV when the user was verified.
@@ -445,7 +451,7 @@ mod tests {
     fn prf_matches_webauthn_mapping() {
         let mut c = cred();
         c.private_key = Zeroizing::new((0u8..67).collect());
-        let out = prf_eval(&c, b"onepass prf test salt");
+        let out = prf_eval(&c, b"onepass prf test salt").unwrap();
         let want = "eff7d1b2fd457a350ea75d71abb086fdb55bb746bc042eb93f49848e8da249c3";
         let got: String = out.iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(got, want);
@@ -455,9 +461,12 @@ mod tests {
     fn prf_is_per_credential() {
         let (a, b) = (cred(), cred());
         let salt = [3u8; 32];
-        assert_ne!(prf_eval(&a, &salt), prf_eval(&b, &salt));
+        assert_ne!(prf_eval(&a, &salt).unwrap(), prf_eval(&b, &salt).unwrap());
         // And per salt.
-        assert_ne!(prf_eval(&a, &salt), prf_eval(&a, &[4u8; 32]));
+        assert_ne!(
+            prf_eval(&a, &salt).unwrap(),
+            prf_eval(&a, &[4u8; 32]).unwrap()
+        );
     }
 
     #[test]
@@ -465,7 +474,17 @@ mod tests {
         let a = cred();
         let b = a.clone();
         let salt = b"same salt on every device";
-        assert_eq!(prf_eval(&a, salt), prf_eval(&b, salt));
-        assert_eq!(prf_eval(&a, salt), prf_eval(&a, salt));
+        assert_eq!(prf_eval(&a, salt).unwrap(), prf_eval(&b, salt).unwrap());
+        assert_eq!(prf_eval(&a, salt).unwrap(), prf_eval(&a, salt).unwrap());
+    }
+
+    #[test]
+    fn prf_refuses_empty_private_key() {
+        let mut c = cred();
+        c.private_key = Zeroizing::new(Vec::new());
+        assert_eq!(
+            prf_eval(&c, b"any salt").unwrap_err(),
+            Error::InvalidFormat("passkey key")
+        );
     }
 }
