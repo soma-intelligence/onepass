@@ -18,6 +18,8 @@ struct Sidebar: View {
     @State private var editingVaultID: String?
     /// Doublons possibles (spec 2026-11-03-duplicates): the groups behind the row's count.
     @State private var duplicates = DuplicatesLoader()
+    /// The tag a row's context menu asked to delete (confirmation shown while set).
+    @State private var tagToDelete: String?
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
     /// iPad: the types fold like the vaults, closed at first, so the column fits without scrolling.
@@ -390,11 +392,31 @@ struct Sidebar: View {
                     }
                     .badge(counts.byTag[tag] ?? 0)
                     .tag(Destination.filter(.tag(tag)))
+                    .contextMenu {
+                        Button("sidebar.tags.deleteOne", systemImage: "trash", role: .destructive) {
+                            tagToDelete = tag
+                        }
+                    }
                     .accessibilityIdentifier("sidebar.tags.\(tag)")
                 }
                 }
             } header: {
                 SectionFoldHeader(title: "Tags", expanded: $tagsExpanded, id: "sidebar.tags.fold")
+            }
+            .confirmationDialog(
+                Text("sidebar.tags.deleteTitleOne \(tagToDelete ?? "")"),
+                isPresented: Binding(get: { tagToDelete != nil }, set: { if !$0 { tagToDelete = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("sidebar.tags.deleteConfirm", role: .destructive) {
+                    guard let tag = tagToDelete else { return }
+                    tagToDelete = nil
+                    if case .tag(let current) = model.selection, current == tag { model.showItems(.all) }
+                    Task { try? await session.removeTags([tag]) }
+                }
+                Button("Annuler", role: .cancel) { tagToDelete = nil }
+            } message: {
+                Text("sidebar.tags.deleteMessage")
             }
         }
     }
