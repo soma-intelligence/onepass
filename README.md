@@ -33,9 +33,26 @@ Free, AGPL-3.0-or-later, on the App Store, with every line of code public.
 ![Post-quantum](https://img.shields.io/badge/crypto-ML--KEM--1024%20·%20ML--DSA--87%20·%20SLH--DSA-1D1D2B)
 ![No tracking](https://img.shields.io/badge/analytics-none-1D1D2B)
 
-**[At a glance](#at-a-glance)** · **[Tour](#a-quick-tour)** · **[Why OnePass](#why-onepass)** · **[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Install](#install)** · **[FAQ](#faq)** · **[Docs](#documentation)** · **[Build](#build-from-source)** · **[Roadmap](#roadmap)**
+**[Quick start](#quick-start)** · **[At a glance](#at-a-glance)** · **[Tour](#a-quick-tour)** · **[Why OnePass](#why-onepass)** · **[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Install](#install)** · **[FAQ](#faq)** · **[Docs](#documentation)** · **[Build](#build-from-source)** · **[Roadmap](#roadmap)**
 
 </div>
+
+## Quick start
+
+**Use the app** on iPhone, iPad, Mac, Apple Watch or Vision Pro:
+
+1. Install OnePass from the [App Store](https://apps.apple.com/app/id6831411523). It's free.
+2. Open it, choose **Create Vault** and pick a master password. OnePass makes your Secret Key and an Emergency Kit to keep.
+3. On Home, tap **Turn On OnePass**. The next sign-in field you tap in Safari or an app offers your logins.
+
+**Try the code** with Rust installed, no account needed:
+
+```bash
+git clone https://github.com/soma-intelligence/onepass.git && cd onepass
+cargo run -q --manifest-path core/Cargo.toml -p onepass-cli -- generate --words 5
+```
+
+The second line builds the Rust core and prints a fresh five-word passphrase. Next steps: [Install](#install) for the extension and Mac builds, [Build from source](#build-from-source) for the apps.
 
 > [!IMPORTANT]
 > OnePass is on the App Store (version 1.0.2, November 2026) for iPhone, iPad, Apple Watch, Mac and Vision Pro. Its core **has not had an external security audit yet** (planned for milestone 8): the design, the formal models and the tests are public, but no outside firm has reviewed them. Weigh that before OnePass holds your only copy of a secret, and keep an encrypted export. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use OnePass day to day.
