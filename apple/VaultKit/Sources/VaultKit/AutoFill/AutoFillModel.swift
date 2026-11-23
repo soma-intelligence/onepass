@@ -679,7 +679,8 @@ public final class AutoFillModel {
         vaultID: String, itemID: String, ref: FfiPasskeyRef, request: PasskeyRequest
     ) async throws -> AutoFillResult {
         let signed = try await session.passkeyAssertion(
-            vaultID: vaultID, itemID: itemID, credentialID: ref.credentialId, clientDataHash: request.clientDataHash)
+            vaultID: vaultID, itemID: itemID, credentialID: ref.credentialId, clientDataHash: request.clientDataHash,
+            prf: request.prf(for: ref.credentialId))
         return .passkeyAssertion(signed, rpID: request.rpID, clientDataHash: request.clientDataHash)
     }
 
@@ -744,7 +745,7 @@ public final class AutoFillModel {
             let created = try await session.createPasskey(FfiPasskeyCreation(
                 vaultId: vaultID, itemId: itemID, rpId: registration.rpID, userName: registration.userName,
                 userHandle: registration.userHandle, clientDataHash: registration.clientDataHash,
-                excludedCredentialIds: registration.excludedCredentialIDs))
+                excludedCredentialIds: registration.excludedCredentialIDs), prf: registration.prf)
             wrote = true
             await session.publishAutofillIdentitiesNow()
             finish(.passkeyRegistration(created, rpID: registration.rpID, clientDataHash: registration.clientDataHash))

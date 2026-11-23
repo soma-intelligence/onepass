@@ -1,4 +1,5 @@
 import AuthenticationServices
+import CryptoKit
 import OSLog
 import SwiftUI
 import VaultKit
@@ -96,10 +97,12 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         for serviceIdentifiers: [ASCredentialServiceIdentifier],
         requestParameters: ASPasskeyCredentialRequestParameters
     ) {
+        let prf = Self.assertionPrf(requestParameters.extensionInput)
         let passkey = PasskeyRequest(
             rpID: requestParameters.relyingPartyIdentifier,
             clientDataHash: requestParameters.clientDataHash,
-            allowedCredentialIDs: requestParameters.allowedCredentials)
+            allowedCredentialIDs: requestParameters.allowedCredentials,
+            prf: prf.general, perCredentialPrf: prf.perCredential)
         begin(.credentialList(services: Self.services(serviceIdentifiers), passkey: passkey))
     }
 
@@ -426,12 +429,18 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             let credential = ASPasskeyAssertionCredential(
                 userHandle: assertion.userHandle, relyingParty: rpID, signature: assertion.signature,
                 clientDataHash: clientDataHash, authenticatorData: assertion.authenticatorData,
-                credentialID: assertion.credentialId)
+                credentialID: assertion.credentialId,
+                extensionOutput: assertion.prf.map { prf in
+                    ASPasskeyAssertionCredentialExtensionOutput(
+                        prf: ASAuthorizationPublicKeyCredentialPRFAssertionOutput(
+                            first: SymmetricKey(data: prf.first), second: prf.second.map { SymmetricKey(data: $0) }))
+                })
             extensionContext.completeAssertionRequest(using: credential, completionHandler: nil)
         case .passkeyRegistration(let registration, let rpID, let clientDataHash):
             let credential = ASPasskeyRegistrationCredential(
                 relyingParty: rpID, clientDataHash: clientDataHash, credentialID: registration.credentialId,
-                attestationObject: registration.attestationObject)
+                attestationObject: registration.attestationObject,
+                extensionOutput: ASPasskeyRegistrationCredentialExtensionOutput(prf: Self.registrationPrfOutput(registration)))
             extensionContext.completeRegistrationRequest(using: credential, completionHandler: nil)
         case .text(let text):
             #if os(iOS)
@@ -514,9 +523,10 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             guard let passkeyRequest = request as? ASPasskeyCredentialRequest,
                 let identity = passkeyRequest.credentialIdentity as? ASPasskeyCredentialIdentity
             else { return nil }
+            let prf = Self.assertionPrf(passkeyRequest.extensionInput.assertionInput)
             let passkey = PasskeyRequest(
                 rpID: identity.relyingPartyIdentifier, clientDataHash: passkeyRequest.clientDataHash,
-                allowedCredentialIDs: [identity.credentialID])
+                allowedCredentialIDs: [identity.credentialID], prf: prf.general, perCredentialPrf: prf.perCredential)
             return .credential(recordID: identity.recordIdentifier ?? recordID, kind: .passkey, passkey: passkey)
         case .passkeyRegistration:
             return nil
@@ -537,7 +547,40 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             userHandle: identity.userHandle,
             clientDataHash: passkeyRequest.clientDataHash,
             excludedCredentialIDs: passkeyRequest.excludedCredentials?.map(\.credentialID) ?? [],
-            supportsES256: algorithms.isEmpty || algorithms.contains(.ES256)))
+            supportsES256: algorithms.isEmpty || algorithms.contains(.ES256),
+            prf: Self.registrationPrf(passkeyRequest.extensionInput)))
+    }
+
+    // MARK: - WebAuthn PRF extension
+
+    private static func prfInput(_ values: ASAuthorizationPublicKeyCredentialPRFAssertionInput.InputValues) -> PrfInput {
+        PrfInput(first: values.saltInput1, second: values.saltInput2)
+    }
+
+    /// The salts a sign-in asks for: `inputValues` for any credential, `perCredentialInputValues` by
+    /// credential id (the model gives the chosen credential's own entry the precedence).
+    private static func assertionPrf(_ input: ASPasskeyAssertionCredentialExtensionInput?)
+        -> (general: PrfInput?, perCredential: [Data: PrfInput])
+    {
+        guard let prf = input?.prf else { return (nil, [:]) }
+        return (
+            prf.inputValues.map(prfInput),
+            (prf.perCredentialInputValues ?? [:]).mapValues(prfInput))
+    }
+
+    /// The salts a creation evaluates at once (`prf.eval`); nil for a bare support check.
+    private static func registrationPrf(_ input: ASPasskeyCredentialExtensionInput) -> PrfInput? {
+        guard case .registration(let registration) = input else { return nil }
+        return registration.prf?.inputValues.map(prfInput)
+    }
+
+    /// OnePass supports PRF on every passkey it creates; with salts the outputs ride along.
+    private static func registrationPrfOutput(_ registration: FfiPasskeyRegistration)
+        -> ASAuthorizationPublicKeyCredentialPRFRegistrationOutput
+    {
+        guard let prf = registration.prf else { return .supported }
+        return ASAuthorizationPublicKeyCredentialPRFRegistrationOutput(
+            first: SymmetricKey(data: prf.first), second: prf.second.map { SymmetricKey(data: $0) })
     }
 
     #if os(iOS)
@@ -584,5 +627,13 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             }
         }
         return ids
+    }
+}
+
+private extension ASPasskeyCredentialExtensionInput {
+    /// The assertion input of a sign-in request, nil for any other.
+    var assertionInput: ASPasskeyAssertionCredentialExtensionInput? {
+        guard case .assertion(let input) = self else { return nil }
+        return input
     }
 }

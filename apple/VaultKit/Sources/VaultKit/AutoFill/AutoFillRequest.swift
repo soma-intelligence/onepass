@@ -1,5 +1,20 @@
 import Foundation
 
+/// The salts of a WebAuthn PRF evaluation, as the relying party sent them (raw, before the
+/// WebAuthn hashing, which the core does). The second salt is optional.
+public struct PrfInput: Sendable, Equatable {
+    public var first: Data
+    public var second: Data?
+
+    public init(first: Data, second: Data? = nil) {
+        self.first = first
+        self.second = second
+    }
+
+    /// The core's record.
+    public var ffi: FfiPrfInput { FfiPrfInput(first: first, second: second) }
+}
+
 /// A passkey assertion asked by the system (sign-in with a passkey).
 public struct PasskeyRequest: Sendable, Equatable {
     /// Relying party id, checked by the system against the page or the app.
@@ -9,11 +24,25 @@ public struct PasskeyRequest: Sendable, Equatable {
     /// request (`AutoFillRequest.credential`) needs the identity's credential id here: empty ends it
     /// with `credentialNotFound`.
     public var allowedCredentialIDs: [Data]
+    /// The PRF salts for any credential (`inputValues`), nil without the extension.
+    public var prf: PrfInput?
+    /// The PRF salts per credential id (`perCredentialInputValues`).
+    public var perCredentialPrf: [Data: PrfInput]
 
-    public init(rpID: String, clientDataHash: Data, allowedCredentialIDs: [Data]) {
+    public init(
+        rpID: String, clientDataHash: Data, allowedCredentialIDs: [Data],
+        prf: PrfInput? = nil, perCredentialPrf: [Data: PrfInput] = [:]
+    ) {
         self.rpID = rpID
         self.clientDataHash = clientDataHash
         self.allowedCredentialIDs = allowedCredentialIDs
+        self.prf = prf
+        self.perCredentialPrf = perCredentialPrf
+    }
+
+    /// The salts to evaluate for the chosen credential: its own entry wins over the general one.
+    public func prf(for credentialID: Data) -> PrfInput? {
+        perCredentialPrf[credentialID] ?? prf
     }
 }
 
@@ -27,10 +56,12 @@ public struct PasskeyRegistrationRequest: Sendable, Equatable {
     public var excludedCredentialIDs: [Data]
     /// ES256 (P-256) is among the accepted algorithms. OnePass creates ES256 passkeys only.
     public var supportsES256: Bool
+    /// The PRF salts to evaluate at creation (`prf.eval`), nil when none came.
+    public var prf: PrfInput?
 
     public init(
         rpID: String, userName: String, userHandle: Data, clientDataHash: Data,
-        excludedCredentialIDs: [Data], supportsES256: Bool
+        excludedCredentialIDs: [Data], supportsES256: Bool, prf: PrfInput? = nil
     ) {
         self.rpID = rpID
         self.userName = userName
@@ -38,6 +69,7 @@ public struct PasskeyRegistrationRequest: Sendable, Equatable {
         self.clientDataHash = clientDataHash
         self.excludedCredentialIDs = excludedCredentialIDs
         self.supportsES256 = supportsES256
+        self.prf = prf
     }
 }
 
