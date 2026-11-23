@@ -283,7 +283,8 @@ struct Sidebar: View {
                 #endif
             }
             #if !os(macOS)
-            .background { SidebarFooterBackground() }
+            // Down to the screen's edge: no strip of rows showing under the account row.
+            .background { SidebarFooterBackground().ignoresSafeArea(.container, edges: .bottom) }
             #endif
         }
         .sheet(isPresented: $creatingVault) {
