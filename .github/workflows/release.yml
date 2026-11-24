@@ -321,6 +321,7 @@ jobs:
           HAS_TEAM: ${{ secrets.APPLE_TEAM_ID != '' }}
           HAS_PROFILE_APP: ${{ secrets.MACOS_PROFILE_APP_BASE64 != '' }}
           HAS_PROFILE_AUTOFILL: ${{ secrets.MACOS_PROFILE_AUTOFILL_BASE64 != '' }}
+          HAS_PROFILE_FILL: ${{ secrets.MACOS_PROFILE_FILL_BASE64 != '' }}
           HAS_ASC_KEY: ${{ secrets.ASC_API_KEY_P8_BASE64 != '' }}
           HAS_ASC_KEY_ID: ${{ secrets.ASC_API_KEY_ID != '' }}
           HAS_ASC_ISSUER: ${{ secrets.ASC_API_ISSUER_ID != '' }}
@@ -335,6 +336,7 @@ jobs:
           [ "$HAS_TEAM" = true ] || missing+=(APPLE_TEAM_ID)
           [ "$HAS_PROFILE_APP" = true ] || missing+=(MACOS_PROFILE_APP_BASE64)
           [ "$HAS_PROFILE_AUTOFILL" = true ] || missing+=(MACOS_PROFILE_AUTOFILL_BASE64)
+          [ "$HAS_PROFILE_FILL" = true ] || missing+=(MACOS_PROFILE_FILL_BASE64)
           [ "$HAS_ASC_KEY" = true ] || missing+=(ASC_API_KEY_P8_BASE64)
           [ "$HAS_ASC_KEY_ID" = true ] || missing+=(ASC_API_KEY_ID)
           [ "$HAS_ASC_ISSUER" = true ] || missing+=(ASC_API_ISSUER_ID)
@@ -419,6 +421,8 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           PROFILE_APP: ${{ secrets.MACOS_PROFILE_APP_BASE64 }}
           PROFILE_AUTOFILL: ${{ secrets.MACOS_PROFILE_AUTOFILL_BASE64 }}
+          # OnePass Fill, the login item in Contents/Library/LoginItems: App Group and keychain group.
+          PROFILE_FILL: ${{ secrets.MACOS_PROFILE_FILL_BASE64 }}
           ASC_KEY: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
         run: |
           set -euo pipefail
@@ -443,6 +447,7 @@ jobs:
           }
           app_uuid="$(install_profile "$PROFILE_APP" me.somalabs.onepass)"
           autofill_uuid="$(install_profile "$PROFILE_AUTOFILL" me.somalabs.onepass.autofill)"
+          fill_uuid="$(install_profile "$PROFILE_FILL" me.somalabs.onepass.fill)"
           # Overrides for every target of the archive (xcodebuild -xcconfig).
           # The Safari extension carries no restricted entitlement, so no profile.
           cat > "$RUNNER_TEMP/release.xcconfig" <<EOF
@@ -452,6 +457,7 @@ jobs:
           OTHER_CODE_SIGN_FLAGS = --timestamp --keychain $KEYCHAIN
           ONEPASS_PROFILE_OnePass = $app_uuid
           ONEPASS_PROFILE_OnePassAutoFill = $autofill_uuid
+          ONEPASS_PROFILE_OnePassFill = $fill_uuid
           PROVISIONING_PROFILE_SPECIFIER = \$(ONEPASS_PROFILE_\$(TARGET_NAME))
           EOF
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
@@ -467,6 +473,7 @@ jobs:
             <dict>
               <key>me.somalabs.onepass</key><string>$app_uuid</string>
               <key>me.somalabs.onepass.autofill</key><string>$autofill_uuid</string>
+              <key>me.somalabs.onepass.fill</key><string>$fill_uuid</string>
             </dict>
           </dict>
           </plist>
