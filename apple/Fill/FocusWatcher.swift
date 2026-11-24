@@ -10,6 +10,9 @@ struct FieldContext {
     /// The focused element, a text input or not (a remote desktop canvas, a custom view: the
     /// guard and the typed keys follow it). Nil only when the app exposes no focused element.
     let element: AXUIElement?
+    /// The app's focused window when the field was picked: part of the guard, so a fill never
+    /// goes into another window of the same app.
+    let window: AXUIElement?
     let pid: pid_t
     /// Whether `element` is a text input (the pill and the Accessibility set need one).
     let isTextInput: Bool
@@ -18,33 +21,28 @@ struct FieldContext {
 
     var hasPasswordBelow: Bool { passwordBelow != nil }
 
-    /// The focus guard for this field: this process and this element.
-    var focusGuard: FocusGuard { FocusGuard(pid: pid, elementID: ElementID(element, pid: pid)) }
+    /// What the guard compares in this process: the element and its window.
+    var target: ElementID { ElementID.of(element: element, window: window) }
+
+    /// The focus guard for this field: this process, this element, this window.
+    var focusGuard: FocusGuard { FocusGuard(pid: pid, elementID: target) }
 }
 
-/// An element as the focus guard compares it: `CFEqual` on the element (two reads of the same
-/// field give equal elements), or the process alone when no element was exposed.
-struct ElementID: Hashable {
-    private let element: AXUIElement?
-    private let pid: pid_t
+/// An Accessibility element as the guard compares it: `CFEqual` (two reads of the same field or
+/// window give equal elements) and `CFHash`.
+struct AXRef: Hashable {
+    let element: AXUIElement
 
-    init(_ element: AXUIElement?, pid: pid_t) {
-        self.element = element
-        self.pid = pid
-    }
+    static func == (a: AXRef, b: AXRef) -> Bool { CFEqual(a.element, b.element) }
+    func hash(into hasher: inout Hasher) { hasher.combine(CFHash(element)) }
+}
 
-    static func == (a: ElementID, b: ElementID) -> Bool {
-        guard a.pid == b.pid else { return false }
-        switch (a.element, b.element) {
-        case (nil, nil): return true
-        case (let x?, let y?): return CFEqual(x, y)
-        default: return false
-        }
-    }
+/// The focused element and window, compared together (FillKit `FocusTarget`).
+typealias ElementID = FocusTarget<AXRef>
 
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(pid)
-        if let element { hasher.combine(CFHash(element)) }
+extension FocusTarget where Element == AXRef {
+    static func of(element: AXUIElement?, window: AXUIElement?) -> ElementID {
+        ElementID(element: element.map(AXRef.init), window: window.map(AXRef.init))
     }
 }
 
@@ -196,6 +194,13 @@ final class FocusWatcher {
         return AX.element(app, kAXFocusedUIElementAttribute)
     }
 
+    /// The window focused in `pid`.
+    static func focusedWindow(pid: pid_t) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        AX.limitTimeout(app)
+        return AX.element(app, kAXFocusedWindowAttribute)
+    }
+
     /// The focused element of `pid`, classified on its own attributes (cheap: no walk of the
     /// tree; `AX.resolveBelow` adds the field below when needed). A focused element that is not a
     /// text input is kept, for the guard and the typed keys; with none at all, the context names
@@ -209,15 +214,17 @@ final class FocusWatcher {
         guard let element = AX.element(app, kAXFocusedUIElementAttribute) else {
             let snapshot = FieldSnapshot(pid: pid, bundleID: bundleID, windowTitle: windowTitle,
                 url: window.flatMap(AX.documentURL))
-            return FieldContext(snapshot: snapshot, kind: .other, element: nil, pid: pid, isTextInput: false)
+            return FieldContext(
+                snapshot: snapshot, kind: .other, element: nil, window: window, pid: pid, isTextInput: false)
         }
         let snapshot = AX.snapshot(element, pid: pid, bundleID: bundleID, window: window, windowTitle: windowTitle)
         guard AX.isTextInput(element) else {
-            return FieldContext(snapshot: snapshot, kind: .other, element: element, pid: pid, isTextInput: false)
+            return FieldContext(
+                snapshot: snapshot, kind: .other, element: element, window: window, pid: pid, isTextInput: false)
         }
         return FieldContext(
-            snapshot: snapshot, kind: FieldClassifier.kind(snapshot, above: nil), element: element, pid: pid,
-            isTextInput: true)
+            snapshot: snapshot, kind: FieldClassifier.kind(snapshot, above: nil), element: element, window: window,
+            pid: pid, isTextInput: true)
     }
 }
 
@@ -315,11 +322,9 @@ enum AX {
         return CGRect(origin: origin, size: size)
     }
 
-    static let textRoles: Set<String> = [kAXTextFieldRole as String, kAXComboBoxRole as String, "AXSecureTextField"]
-
+    /// FillKit's one list of text input roles (`FillDecision.textInputRoles`).
     static func isTextInput(_ element: AXUIElement) -> Bool {
-        if let role = string(element, kAXRoleAttribute), textRoles.contains(role) { return true }
-        return string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole as String
+        FillDecision.isTextInput(role: string(element, kAXRoleAttribute), subrole: string(element, kAXSubroleAttribute))
     }
 
     /// The attributes `FieldClassifier` and `TargetResolver` read. Never the field's value.

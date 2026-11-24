@@ -160,3 +160,36 @@ import Testing
         #expect(FillDecision.next(after: .failed(.accessibility), typingStarted: true) == .typing)
     }
 }
+
+@Suite struct FocusTargetTests {
+    @Test func windowIsPartOfTheGuard() {
+        let picked = FocusTarget(element: "field", window: "login")
+        #expect(FocusGuard(pid: 5, elementID: picked).holds(pid: 5, elementID: FocusTarget(element: "field", window: "login")))
+        // Same element id, another window of the same app.
+        #expect(!FocusGuard(pid: 5, elementID: picked).holds(pid: 5, elementID: FocusTarget(element: "field", window: "prefs")))
+    }
+
+    @Test func noElementFallsBackToTheWindowNotThePid() {
+        let canvas = FocusTarget<String>(element: nil, window: "vm")
+        #expect(canvas.isGuardable)
+        let g = FocusGuard(pid: 5, elementID: canvas)
+        #expect(g.holds(pid: 5, elementID: FocusTarget<String>(element: nil, window: "vm")))
+        // The user switched windows during Touch ID: the fill stops.
+        #expect(!g.holds(pid: 5, elementID: FocusTarget<String>(element: nil, window: "other")))
+        #expect(!g.holds(pid: 5, elementID: FocusTarget<String>(element: "field", window: "vm")))
+    }
+
+    @Test func neitherElementNorWindowIsNotGuardable() {
+        #expect(!FocusTarget<String>(element: nil, window: nil).isGuardable)
+        #expect(FocusTarget<String>(element: "field", window: nil).isGuardable)
+    }
+
+    @Test func oneListOfTextRoles() {
+        for role in ["AXTextField", "AXSecureTextField", "AXComboBox", "AXTextArea", "AXSearchField"] {
+            #expect(FillDecision.textInputRoles.contains(role))
+            #expect(FillDecision.isTextInput(role: role, subrole: nil))
+        }
+        #expect(FillDecision.isTextInput(role: "AXGroup", subrole: "AXSecureTextField"))
+        #expect(!FillDecision.isTextInput(role: "AXButton", subrole: nil))
+    }
+}

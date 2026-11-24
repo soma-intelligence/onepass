@@ -49,6 +49,16 @@ final class Filler {
     ) async -> FillOutcome {
         lastKind = nil
         lastError = nil
+        // Neither an element nor a window to pin the fill to: nothing is typed, Copy is offered.
+        if let focus = Self.currentFocus(), focusGuard.holds(pid: focus.pid, elementID: focus.id),
+            !focus.id.isGuardable
+        {
+            lastKind = steps.lazy.compactMap { step -> FieldKind? in
+                if case .value(let kind) = step { return kind }
+                return nil
+            }.first
+            return .failed
+        }
         var guardNow = focusGuard
         var last: FillStrategy?
         var previousWasValue = false
@@ -159,13 +169,15 @@ final class Filler {
     struct Focus {
         let pid: pid_t
         let element: AXUIElement?
-        var id: ElementID { ElementID(element, pid: pid) }
+        let window: AXUIElement?
+        var id: ElementID { ElementID.of(element: element, window: window) }
     }
 
     /// The frontmost app (never the helper) and its focused element now.
     static func currentFocus() -> Focus? {
         guard let pid = FocusWatcher.frontmostPID() else { return nil }
-        return Focus(pid: pid, element: FocusWatcher.focusedElement(pid: pid))
+        return Focus(
+            pid: pid, element: FocusWatcher.focusedElement(pid: pid), window: FocusWatcher.focusedWindow(pid: pid))
     }
 
     /// Moves the focus to `element` by Accessibility, in the same process. The guard that follows

@@ -72,13 +72,23 @@ public enum FillDecision {
     /// Accessibility set is tried on text inputs only. A remote desktop canvas or a custom view
     /// gets typed keys, never a value attribute.
     public static func allowsAccessibilitySet(role: String?, subrole: String?) -> Bool {
+        isTextInput(role: role, subrole: subrole)
+    }
+
+    /// The one list of text input roles: the helper's focus watcher, its tree walk and the
+    /// Accessibility set all read it.
+    public static let textInputRoles: Set<String> = [
+        "AXTextField", "AXSecureTextField", "AXComboBox", "AXTextArea", "AXSearchField",
+    ]
+
+    /// A text input: one of `textInputRoles`, or a secure subrole on any role.
+    public static func isTextInput(role: String?, subrole: String?) -> Bool {
         if subrole == secureRole { return true }
         guard let role else { return false }
-        return textRoles.contains(role)
+        return textInputRoles.contains(role)
     }
 
     static let secureRole = "AXSecureTextField"
-    static let textRoles: Set<String> = ["AXTextField", "AXSecureTextField", "AXComboBox", "AXTextArea", "AXSearchField"]
 
     /// The index ranges of `count` keys, `keysPerBatch` at a time.
     public static func batches(of count: Int) -> [Range<Int>] {
