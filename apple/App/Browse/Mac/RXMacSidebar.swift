@@ -5,7 +5,7 @@ import SwiftUI
 import VaultKit
 
 /// The Mac sidebar in the RX look (Penpot "Mac · *"), while the switch is on: flat, on the RX
-/// sidebar colour. The OnePass mark and a search field on top, plain rows with small counts and the
+/// sidebar colour. The OnePass mark on top (the search lives in the title bar), plain rows with small counts and the
 /// selected one on a soft accent pill, the vaults with their coloured initials, the tags, Archive
 /// and Supprimés récemment, then the account row at the bottom, which opens the account panel.
 /// Every row leads where the native sidebar's row leads.
@@ -29,14 +29,10 @@ struct RXMacSidebar: View {
     var body: some View {
         let counts = session.counts()
         VStack(spacing: 0) {
-            // The brand and the search field stay put at the top; only the rows below them scroll.
-            // Just under the title bar (traffic lights), on the rows' left edge: the mark, the
-            // search field's glass and the row glyphs line up; 12 pt brand to search, 12 pt
-            // search to the first row.
-            VStack(alignment: .leading, spacing: RX.Space.m) {
-                brand
-                searchField
-            }
+            // The brand stays put at the top; only the rows below it scroll. Just under the title
+            // bar (traffic lights), on the rows' left edge: the mark and the row glyphs line up.
+            brand
+                .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, RX.Space.l)
             .padding(.top, titlebarHeight + RX.Space.xs)
             // A plain list rather than a ScrollView: one row holding the whole column (the window
@@ -84,7 +80,7 @@ struct RXMacSidebar: View {
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
             .frame(minHeight: 0, maxHeight: .infinity)
-            // Rows scrolling up fade out under the search field instead of being cut sharp.
+            // Rows scrolling up fade out under the brand instead of being cut sharp.
             .mask {
                 VStack(spacing: 0) {
                     LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
@@ -136,30 +132,6 @@ struct RXMacSidebar: View {
         .padding(.horizontal, RX.Space.s)
         .frame(height: RX.Metrics.macRowHeight)
         .accessibilityElement(children: .combine)
-    }
-
-    /// Not a field: it opens all items with the list's search field focused (⌘F does the same).
-    private var searchField: some View {
-        Button {
-            model.showItems(.all)
-            model.searchFocusRequest &+= 1
-        } label: {
-            HStack(spacing: RX.Space.m) {
-                Image(systemName: "magnifyingglass")
-                    .frame(width: RX.Metrics.macRowGlyph)
-                Text("common.search")
-                Spacer(minLength: 0)
-                Text(verbatim: "⌘F").rxFont(.footnote)
-            }
-            .rxFont(.callout)
-            .foregroundStyle(RX.Palette.textSecondary.color)
-            .padding(.horizontal, RX.Space.s)
-            .frame(height: RX.Metrics.macRowHeight)
-            .background(RX.Palette.field.color, in: RoundedRectangle(cornerRadius: RX.Radius.macRow, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("rx.mac.search")
     }
 
     @ViewBuilder private func vaults(_ counts: ItemCounts) -> some View {
