@@ -111,6 +111,47 @@ private func fixture(_ name: String) throws -> FieldSnapshot {
         let f = FieldSnapshot(bundleID: "a", url: URL(string: "file:///tmp/x.html"))
         #expect(TargetResolver.target(for: f) == .app(bundleID: "a", windowTitle: nil))
     }
+
+    @Test func urlFromSafariIsAURLTarget() {
+        let url = URL(string: "https://accounts.google.com/signin")!
+        let f = FieldSnapshot(bundleID: "com.apple.Safari", windowTitle: "Google", url: url)
+        #expect(TargetResolver.target(for: f) == .url(url))
+    }
+
+    /// A native app can put any URL in `AXURL` or `AXDocument`: it never claims a web origin.
+    @Test func urlFromANonBrowserAppIsAnAppTarget() {
+        let f = FieldSnapshot(
+            bundleID: "com.example.notabrowser", windowTitle: "Google",
+            url: URL(string: "https://accounts.google.com/signin"))
+        #expect(TargetResolver.target(for: f) == .app(bundleID: "com.example.notabrowser", windowTitle: "Google"))
+    }
+
+    @Test func nonWebURLFromABrowserIsAnAppTarget() {
+        let f = FieldSnapshot(bundleID: "com.google.Chrome", url: URL(string: "file:///tmp/x.html"))
+        #expect(TargetResolver.target(for: f) == .app(bundleID: "com.google.Chrome", windowTitle: nil))
+    }
+}
+
+@Suite struct KnownBrowsersTests {
+    @Test func coversTheMainBrowsers() {
+        for id in [
+            "com.apple.Safari", "com.apple.SafariTechnologyPreview", "com.google.Chrome",
+            "com.google.Chrome.beta", "com.google.Chrome.canary", "org.chromium.Chromium",
+            "com.microsoft.edgemac", "com.brave.Browser", "com.vivaldi.Vivaldi",
+            "com.operasoftware.Opera", "company.thebrowser.Browser", "com.kagi.kagimacOS",
+            "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly",
+            "org.torproject.torbrowser", "com.duckduckgo.macos.browser", "app.zen-browser.zen",
+        ] {
+            #expect(KnownBrowsers.contains(id), "\(id)")
+        }
+        #expect(!KnownBrowsers.contains("com.tinyspeck.slackmacgap"))
+        #expect(!KnownBrowsers.contains(nil))
+    }
+
+    /// Bundle ids compare without case, as Launch Services does.
+    @Test func comparesWithoutCase() {
+        #expect(KnownBrowsers.contains("COM.apple.safari"))
+    }
 }
 
 @Suite struct FillFlowTests {

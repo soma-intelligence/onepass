@@ -274,6 +274,7 @@
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
 		DEEC238E48E1EF60A9056EEA /* FillDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 546EE620AB471666B20A9F5B /* FillDefaults.swift */; platformFilters = (macos, ); };
 		E04761763662B47771A1A831 /* LockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D40167C0D7679C74A6D594D /* LockView.swift */; };
+		E09B776E62ADCC64401C251E /* KnownBrowsers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 037576E4AD4A7540DDE67DFA /* KnownBrowsers.swift */; platformFilters = (macos, ); };
 		E0F05CC1047E16590D806097 /* TagEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0629736662C4143CF229997B /* TagEditor.swift */; };
 		E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A896751814517F3556294B /* RXMacWatchtower.swift */; };
 		E1DE2AFB91E7CB2AE9BC0003 /* PairingPasswordStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7F408977317BA9B16FDD68 /* PairingPasswordStep.swift */; };
@@ -466,6 +467,7 @@
 		013A476F2676DCA4286E22C9 /* VaultKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VaultKit; path = VaultKit; sourceTree = SOURCE_ROOT; };
 		0151B9E949BF8C50E53F3176 /* BarcodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeEditor.swift; sourceTree = "<group>"; };
 		01A896751814517F3556294B /* RXMacWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXMacWatchtower.swift; sourceTree = "<group>"; };
+		037576E4AD4A7540DDE67DFA /* KnownBrowsers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownBrowsers.swift; sourceTree = "<group>"; };
 		047E43789BA4E8B2FE6C15B1 /* TravelDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelDetection.swift; sourceTree = "<group>"; };
 		0535F8E6C7385339E4582FDA /* RXSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXSplash.swift; sourceTree = "<group>"; };
 		0629736662C4143CF229997B /* TagEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditor.swift; sourceTree = "<group>"; };
@@ -968,6 +970,7 @@
 				10FE93B2BCB525F38987ACE9 /* AutoFill */,
 				E360FE5D44681DC22538DB7C /* AutoFillHost */,
 				2408E84FF100A3BE572B2965 /* Fill */,
+				CB15C513048EB3C5E05AC12B /* FillKit */,
 				BDA56C84D9E61637DEDBD8F5 /* FillLab */,
 				51B3CC1327885B63344CE9EE /* IconPack */,
 				1BED4344A4AEAF8C1EBD5F94 /* NotificationService */,
@@ -1027,6 +1030,14 @@
 				00BC03949B08CD6FDA2A46D1 /* WifiAutoController.swift */,
 			);
 			path = Wifi;
+			sourceTree = "<group>";
+		};
+		354037FC49F253A3E9CFB6E7 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				90815B79E33082F12807A201 /* FillKit */,
+			);
+			path = Sources;
 			sourceTree = "<group>";
 		};
 		4169FBB3A63671BA9FD330C7 /* Intents */ = {
@@ -1267,6 +1278,14 @@
 			path = Support;
 			sourceTree = "<group>";
 		};
+		90815B79E33082F12807A201 /* FillKit */ = {
+			isa = PBXGroup;
+			children = (
+				037576E4AD4A7540DDE67DFA /* KnownBrowsers.swift */,
+			);
+			path = FillKit;
+			sourceTree = "<group>";
+		};
 		9922CA7C7082B68871E26F84 /* Family */ = {
 			isa = PBXGroup;
 			children = (
@@ -1409,6 +1428,14 @@
 				0D2CBC8A40BF965B7FA9A227 /* WatchtowerTab.swift */,
 			);
 			path = Phone;
+			sourceTree = "<group>";
+		};
+		CB15C513048EB3C5E05AC12B /* FillKit */ = {
+			isa = PBXGroup;
+			children = (
+				354037FC49F253A3E9CFB6E7 /* Sources */,
+			);
+			path = FillKit;
 			sourceTree = "<group>";
 		};
 		D195864323F743061A117D4D /* Editor */ = {
@@ -2431,6 +2458,7 @@
 				F25C2F7EC86073A1235EB9C3 /* KeyUseSection.swift in Sources */,
 				BED4FFF5015AA471247306D8 /* KitPrinter.swift in Sources */,
 				2E2A86CDE42259837AD6756F /* KitShareController.swift in Sources */,
+				E09B776E62ADCC64401C251E /* KnownBrowsers.swift in Sources */,
 				1920E0C0A4999B60233A7594 /* LocationEditor.swift in Sources */,
 				C2254D84DAD275D97FCC7692 /* LockVaultIntent.swift in Sources */,
 				E04761763662B47771A1A831 /* LockView.swift in Sources */,

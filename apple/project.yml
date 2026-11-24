@@ -112,6 +112,9 @@ targets:
       # same file from its `Fill` sources): the "Remplir partout" page writes what the helper reads.
       - path: Fill/FillDefaults.swift
         destinationFilters: [macOS]
+      # The Mac browsers, one list for the helper (FillKit) and this page's default excluded list.
+      - path: FillKit/Sources/FillKit/KnownBrowsers.swift
+        destinationFilters: [macOS]
     dependencies:
       - package: VaultKit
         product: VaultKit
