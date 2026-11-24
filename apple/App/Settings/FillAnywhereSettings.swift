@@ -56,7 +56,10 @@ enum FillAnywhereHelper {
             return false
         }
         if NSClassFromString("XCTestCase") != nil { return false }
-        return !TestIsolation.isActive && !UserDefaults.standard.bool(forKey: "OnePassDemoData")
+        #if DEBUG
+        if TestIsolation.isActive { return false }
+        #endif
+        return !UserDefaults.standard.bool(forKey: "OnePassDemoData")
     }
 }
 
@@ -82,8 +85,12 @@ final class FillAnywhereSettingsModel {
 
     init() {
         // A test run never touches the user's settings.
+        #if DEBUG
         defaults = TestIsolation.isActive
             ? TestIsolation.defaults : (UserDefaults(suiteName: AppGroup.identifier) ?? .standard)
+        #else
+        defaults = UserDefaults(suiteName: AppGroup.identifier) ?? .standard
+        #endif
         reload()
     }
 
