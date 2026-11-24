@@ -701,8 +701,10 @@ impl DesktopFillClient {
         }
         let mut s = (self.dial)().map_err(|e| io_fail(&e))?;
         let record = pair(&mut s)?;
-        let bytes = encode(&record).ok_or(Fail::Protocol)?;
-        self.store.save(bytes.to_vec());
+        // The record's one buffer moves to the store: no second plain copy
+        // is made here (the `Zeroizing` wrapper is left empty).
+        let mut bytes = encode(&record).ok_or(Fail::Protocol)?;
+        self.store.save(std::mem::take(&mut *bytes));
         open_session(s, &record)
     }
 

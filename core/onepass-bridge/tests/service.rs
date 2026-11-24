@@ -5166,6 +5166,43 @@ mod desktop {
     }
 
     #[test]
+    fn list_for_app_matches_whole_title_words_only() {
+        let mut h = fill_helper();
+        apps(&mut h);
+        for title in ["Signal", "Login Portal", "Slackers", "Café Crème"] {
+            h.svc.vault_mut().add_login(
+                title,
+                "alex@atlas.dev",
+                "https://example.org",
+                MatchRule::Domain,
+            );
+        }
+        let chat = "com.example.chat";
+        // A sign-in window names no service: nothing by title.
+        for window in [
+            "Sign in",
+            "Log in to your account",
+            "Connexion",
+            "Se connecter",
+        ] {
+            assert!(
+                titles(&h.call(list_app(chat, Some(window)))).is_empty(),
+                "{window}"
+            );
+        }
+        // The service's word, whole, not inside a longer word.
+        assert_eq!(
+            titles(&h.call(list_app(chat, Some("Slack | Sign in")))),
+            ["Slack"]
+        );
+        // Without case or accents.
+        assert_eq!(
+            titles(&h.call(list_app(chat, Some("CAFE - Mot de passe")))),
+            ["Café Crème"]
+        );
+    }
+
+    #[test]
     fn list_for_app_refuses_a_bad_bundle_id_or_a_lock() {
         let mut h = fill_helper();
         apps(&mut h);
@@ -5227,6 +5264,23 @@ mod desktop {
         let v = h.call(list_app(SLACK, None));
         assert_eq!(titles(&v), ["GitHub", "Slack"]);
         assert!(h.audit.events().iter().any(|e| e.op == "fill_for_app"));
+    }
+
+    #[test]
+    fn fill_for_app_never_remembers_a_browser() {
+        let mut h = fill_helper();
+        let a = apps(&mut h);
+        let before = h.vault().item(a.github).urls.clone();
+        // A browser whose page gave no URL: the fill goes on, but a
+        // `macapp://` entry would match every page of that browser.
+        for browser in ["com.apple.Safari", "COM.google.chrome"] {
+            let v = h.call(fill_app(a.github, browser, true));
+            assert!(ok(&v).get("password").is_some(), "{v}");
+        }
+        assert_eq!(h.vault().item(a.github).urls, before);
+        assert_eq!(app_entries(&h, a.github), 0);
+        assert!(!h.audit.events().iter().any(|e| e.op == "add_app_entry"));
+        assert_eq!(h.vault().key_uses.len(), 2);
     }
 
     #[test]

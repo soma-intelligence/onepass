@@ -5,6 +5,44 @@ use crate::model::{Item, ItemUrl, MatchRule};
 
 pub const APP_SCHEME: &str = "macapp";
 
+/// The Mac browsers, by bundle id. A browser is never remembered as an
+/// app: a `macapp://` entry for one would match every page it shows. Must
+/// match FillKit's list (`apple/FillKit/Sources/FillKit/KnownBrowsers.swift`).
+pub const KNOWN_BROWSERS: [&str; 25] = [
+    "com.apple.Safari",
+    "com.apple.SafariTechnologyPreview",
+    "com.google.Chrome",
+    "com.google.Chrome.beta",
+    "com.google.Chrome.dev",
+    "com.google.Chrome.canary",
+    "org.chromium.Chromium",
+    "com.microsoft.edgemac",
+    "com.microsoft.edgemac.Beta",
+    "com.microsoft.edgemac.Dev",
+    "com.microsoft.edgemac.Canary",
+    "com.brave.Browser",
+    "com.brave.Browser.beta",
+    "com.brave.Browser.nightly",
+    "com.vivaldi.Vivaldi",
+    "com.operasoftware.Opera",
+    "com.operasoftware.OperaGX",
+    "company.thebrowser.Browser",
+    "com.kagi.kagimacOS",
+    "org.mozilla.firefox",
+    "org.mozilla.firefoxdeveloperedition",
+    "org.mozilla.nightly",
+    "org.torproject.torbrowser",
+    "com.duckduckgo.macos.browser",
+    "app.zen-browser.zen",
+];
+
+/// True for a bundle id of [`KNOWN_BROWSERS`], compared case-insensitively.
+pub fn is_known_browser(bundle_id: &str) -> bool {
+    KNOWN_BROWSERS
+        .iter()
+        .any(|b| b.eq_ignore_ascii_case(bundle_id))
+}
+
 /// 2 to 255 ASCII chars, at least two dot separated segments of
 /// `[A-Za-z0-9-]`, no empty segment.
 pub fn valid_bundle_id(id: &str) -> bool {
@@ -123,6 +161,14 @@ mod tests {
         ));
         assert!(matches_app(&item, "com.TinySpeck.slackmacgap"));
         assert!(!matches_app(&item, "com.tinyspeck"));
+    }
+
+    #[test]
+    fn browsers_are_known_without_case() {
+        assert!(is_known_browser("com.apple.Safari"));
+        assert!(is_known_browser("COM.GOOGLE.CHROME"));
+        assert!(!is_known_browser("com.tinyspeck.slackmacgap"));
+        assert!(KNOWN_BROWSERS.iter().all(|b| valid_bundle_id(b)));
     }
 
     #[test]

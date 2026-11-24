@@ -13,7 +13,9 @@ use onepass_core::Id;
 use onepass_core::autofill_history::{
     AutofillAction, AutofillEvent, BrowserKind, ClientContext, EventSource, MAX_SHOWN,
 };
-use onepass_core::fill_plan::app_entry::{APP_SCHEME, add_app_entry, valid_bundle_id};
+use onepass_core::fill_plan::app_entry::{
+    APP_SCHEME, add_app_entry, is_known_browser, valid_bundle_id,
+};
 use onepass_core::fill_plan::compose::PRIORITY;
 use onepass_core::fill_plan::context::{FieldRole, FrameKind, MAX_FIELDS, PageContext};
 use onepass_core::fill_plan::intent::{Intent, intent_of};
@@ -1435,7 +1437,8 @@ impl<V: VaultAccess> Service<V> {
     /// whatever its URLs (the pick is the user's; only the fill helper
     /// speaks the desktop context). Reprompt as `fill_login`. `remember`
     /// adds an app entry for `bundle_id` first, written as other bridge
-    /// writes; the fill goes to the key usage log as a desktop fill.
+    /// writes, unless `bundle_id` is a known browser; the fill goes to the
+    /// key usage log as a desktop fill.
     #[allow(clippy::too_many_arguments)]
     fn fill_for_app(
         &mut self,
@@ -1463,6 +1466,9 @@ impl<V: VaultAccess> Service<V> {
         self.reprompt(&item, None)?;
         let entry = format!("{APP_SCHEME}://{bundle_id}");
         let (id, vault_id) = (item.id, item.vault_id);
+        // A browser whose page gave no URL still fills, but is never
+        // remembered: its entry would match every page it shows.
+        let remember = remember && !is_known_browser(bundle_id);
         if remember && add_app_entry(&mut item, bundle_id, &name) {
             item.updated_at = unix(now);
             validate(&item).map_err(|_| AppErrorCode::Invalid)?;
