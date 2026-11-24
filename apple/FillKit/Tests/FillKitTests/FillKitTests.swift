@@ -18,7 +18,7 @@ private func fixture(_ name: String) throws -> FieldSnapshot {
     }
 
     @Test func fakeLabelOnPlainFieldIsNotPassword() throws {
-        #expect(FieldClassifier.kind(try fixture("fakeLabel"), above: nil) != .password)
+        #expect(FieldClassifier.kind(try fixture("fakeLabel"), above: nil) == .other)
     }
 
     @Test func fieldAbovePasswordIsUsername() throws {
@@ -43,6 +43,51 @@ private func fixture(_ name: String) throws -> FieldSnapshot {
         #expect(FieldClassifier.kind(f, above: nil) == .other)
         f = FieldSnapshot(role: "AXTextField", domClasses: ["form-pwd-input"], bundleID: "x")
         #expect(FieldClassifier.kind(f, above: nil) == .password)
+    }
+
+    private func kind(id: String? = nil, classes: [String] = [], placeholder: String? = nil, role: String = "AXTextField") -> FieldKind {
+        FieldClassifier.kind(
+            FieldSnapshot(role: role, placeholder: placeholder, domIdentifier: id, domClasses: classes, bundleID: "x"),
+            above: nil)
+    }
+
+    @Test func oneTimeMarkersMatchWholeTokensOnly() {
+        #expect(kind(id: "footprint") == .other)
+        #expect(kind(classes: ["hotpink"]) == .other)
+        #expect(kind(classes: ["otp-input"]) == .oneTimeCode)
+        #expect(kind(id: "otpCode") == .oneTimeCode)
+        #expect(kind(id: "login_2fa") == .oneTimeCode)
+        #expect(kind(id: "one_time_code") == .oneTimeCode)
+    }
+
+    @Test func passwordTokenizer() {
+        #expect(kind(id: "passport") == .other)
+        #expect(kind(id: "password-confirm") == .password)
+        #expect(kind(id: "userPassword") == .password)
+        #expect(kind(id: "password1") == .password)
+        #expect(kind(id: "mot-de-passe") == .password)
+        #expect(kind(id: "mot-de-passeport") == .other)
+        #expect(kind(classes: ["pwd"]) == .password)
+    }
+
+    @Test func nonASCIIKeywords() {
+        #expect(kind(placeholder: "密码") == .password)
+        #expect(kind(placeholder: "请输入密码") == .password)
+        #expect(kind(placeholder: "비밀번호") == .password)
+        #expect(kind(placeholder: "Contraseña") == .password)
+        #expect(kind(placeholder: "Contrasen\u{0303}a") == .password)
+        #expect(kind(id: "contrasen\u{0303}a") == .password)
+        #expect(kind(placeholder: "Your password hint") == .other)
+    }
+
+    @Test func secureRoleAloneIsPassword() {
+        #expect(kind(role: "AXSecureTextField") == .password)
+    }
+
+    @Test func plainFieldWithNonPasswordBelowIsOther() {
+        let f = FieldSnapshot(role: "AXTextField", bundleID: "x")
+        let below = FieldSnapshot(role: "AXTextField", domIdentifier: "email", bundleID: "x")
+        #expect(FieldClassifier.kind(f, above: nil, below: below) == .other)
     }
 
     @Test func passwordWinsOverOneTimeCode() {
@@ -101,5 +146,23 @@ private func fixture(_ name: String) throws -> FieldSnapshot {
 
     @Test func guardFailsOnOtherElement() {
         #expect(!FocusGuard(pid: 10, elementID: "a").holds(pid: 10, elementID: "b"))
+    }
+}
+
+@Suite struct FieldSnapshotCodingTests {
+    @Test func roundTrip() throws {
+        let f = FieldSnapshot(
+            role: "AXTextField", subrole: "AXSecureTextField", title: "t", placeholder: "p",
+            label: "l", domIdentifier: "id", domClasses: ["a", "b"],
+            frame: CGRect(x: 1, y: 2, width: 3, height: 4), pid: 42, bundleID: "com.x",
+            windowTitle: "w", url: URL(string: "https://example.com/"))
+        let data = try JSONEncoder().encode(f)
+        #expect(try JSONDecoder().decode(FieldSnapshot.self, from: data) == f)
+    }
+
+    @Test func missingBundleIDThrows() {
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(FieldSnapshot.self, from: Data(#"{"role":"AXTextField"}"#.utf8))
+        }
     }
 }
