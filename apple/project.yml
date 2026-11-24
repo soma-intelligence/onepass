@@ -80,6 +80,9 @@ packages:
     path: SafariExtension/SafariRelay
   UpdateKit:
     path: UpdateKit
+  # Fill anywhere on the Mac: pure field logic of the OnePass Fill helper.
+  FillKit:
+    path: FillKit
   # Shared DesignBridge primitives and UI test base, vendored in Vendor/DesignBridge (see its README).
   DesignBridgeKit:
     path: Vendor/DesignBridge/DesignBridgeKit
@@ -140,6 +143,15 @@ targets:
       - package: UpdateKit
         product: UpdateKit
         destinationFilters: [macOS]
+      # OnePass Fill (spec 2026-11-23-mac-fill-anywhere), the login item that fills outside the
+      # browsers, in Contents/Library/LoginItems, every configuration. Not sandboxed, so never in
+      # the App Store project (scripts/make-app-store-project.sh drops this dependency).
+      - target: OnePassFill
+        destinationFilters: [macOS]
+        embed: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Library/LoginItems
     # Entitlements and code share ONEPASS_KEYCHAIN_GROUP and ONEPASS_APP_GROUP: a hardcoded group
     # fails the build.
     preBuildScripts:
@@ -488,6 +500,66 @@ targets:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
+
+  # OnePass Fill (spec 2026-11-23-mac-fill-anywhere-design): an agent app (LSUIElement), embedded
+  # in OnePass.app/Contents/Library/LoginItems, a client of the app's bridge.sock through the Rust
+  # DesktopFillClient (OnePassCore). The app admits it on its code signature: same team, identifier
+  # exactly <app bundle id>.fill, so the bundle id follows ONEPASS_BUNDLE_ID_PREFIX like the
+  # extensions. Not sandboxed (Accessibility and the listener's signature check need it), hardened
+  # runtime. Entitlements: Debug and Release none (an ad hoc build cannot carry the restricted ones,
+  # and an ad hoc helper reaches no bridge); Release-CloudKit and Release-Signed: App Group and the
+  # shared keychain group (its pairing record).
+  OnePassFill:
+    type: application
+    platform: macOS
+    sources:
+      - path: Fill
+        excludes:
+          - "Support/Info.plist"
+          - "Support/*.entitlements"
+    dependencies:
+      - package: FillKit
+        product: FillKit
+      - package: VaultKit
+        product: OnePassCore
+      # The core's Touch ID code (onepass-guard) needs it; nothing autolinks it here.
+      - sdk: LocalAuthentication.framework
+    info:
+      path: Fill/Support/Info.plist
+      properties:
+        CFBundleDisplayName: OnePass Fill
+        CFBundleDevelopmentRegion: en
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        NSPrincipalClass: NSApplication
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
+        OnePassAppGroup: $(ONEPASS_APP_GROUP)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).fill
+        PRODUCT_NAME: OnePass Fill
+        PRODUCT_MODULE_NAME: OnePassFill
+        "ARCHS[sdk=macosx*]": arm64
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: Fill/Support/OnePassFill.entitlements
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: Fill/Support/OnePassFill.entitlements
 
   # Test host for the AutoFill UI test (ruling A16): a sign-in form with username, password and
   # one-time code fields. iOS only, never embedded in OnePass, never shipped.
