@@ -10,7 +10,7 @@
 //! bundle) or for a known browser, signed by its publisher, that launched
 //! the relay for an extension id the app serves.
 
-use crate::rendezvous::{Client, SAFARI_EXTENSION_ID};
+use crate::rendezvous::{Client, FILL_EXTENSION_ID, SAFARI_EXTENSION_ID};
 
 /// The two kinds of browser extension ids.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,6 +131,8 @@ pub const BROWSERS: [Browser; 14] = [
 
 /// Name shown for a Safari pairing.
 pub const SAFARI_NAME: &str = "Safari";
+/// The name recorded for the fill helper's pairing.
+pub const FILL_NAME: &str = "OnePass Fill";
 /// Longest `launcher` accepted in the opening frame.
 pub const MAX_LAUNCHER: usize = 256;
 
@@ -156,7 +158,8 @@ pub fn extension_family(id: &str) -> Family {
 /// Whether the app pairs this connection without a code, and the browser
 /// name it then records (verified, never the extension's own claim).
 ///
-/// Safari: always, unless blocked. Relay: the launcher is a known browser,
+/// Safari and the fill helper: always, unless blocked (the socket admitted
+/// them by code signature as exactly that client). Relay: the launcher is a known browser,
 /// the extension id is one the app serves, its shape fits the browser's
 /// family, and the user did not revoke it. Anything else gives `None`: the
 /// pairing needs the code and Touch ID, as before.
@@ -172,6 +175,8 @@ pub fn vouch(
     }
     match client {
         Client::Safari => (extension_id == SAFARI_EXTENSION_ID).then_some(SAFARI_NAME),
+        // Its code signature is the whole proof; it reports no launcher.
+        Client::Fill => (extension_id == FILL_EXTENSION_ID).then_some(FILL_NAME),
         Client::Relay => {
             let browser = known_browser(launcher?)?;
             let served = allowed.iter().any(|a| a == extension_id);
@@ -245,6 +250,49 @@ mod tests {
                 None,
                 &[],
                 &["safari".into()]
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn fill_helper_is_vouched_by_its_signature_only() {
+        assert_eq!(
+            vouch(Client::Fill, FILL_EXTENSION_ID, None, &[], &[]),
+            Some(FILL_NAME)
+        );
+        // Revoked by the user.
+        assert_eq!(
+            vouch(Client::Fill, FILL_EXTENSION_ID, None, &[], &["fill".into()]),
+            None
+        );
+        // Nothing the helper could say makes it another client.
+        assert_eq!(
+            vouch(Client::Fill, SAFARI_EXTENSION_ID, None, &[], &[]),
+            None
+        );
+        assert_eq!(
+            vouch(
+                Client::Fill,
+                CHROME_EXT,
+                Some("team:EQHXZ8M8AV:com.google.Chrome"),
+                &allowed(),
+                &[]
+            ),
+            None
+        );
+        // And no other client is vouched as the helper.
+        assert_eq!(
+            vouch(Client::Safari, FILL_EXTENSION_ID, None, &[], &[]),
+            None
+        );
+        assert_eq!(
+            vouch(
+                Client::Relay,
+                FILL_EXTENSION_ID,
+                Some("team:EQHXZ8M8AV:com.google.Chrome"),
+                &["fill".into()],
+                &[]
             ),
             None
         );

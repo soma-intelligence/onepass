@@ -445,10 +445,26 @@ fn generator_recipe(r: &Recipe) -> OpResult<generator::Recipe> {
     })
 }
 
+/// Who is at the other end of a session, as the host established it when
+/// it admitted the connection (on the Mac, by code signature), never as
+/// the client says. It binds the contexts the session may speak.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClientKind {
+    /// A browser extension (Safari, the relay for Chrome and Firefox, the
+    /// development native host): every context but `desktop`.
+    #[default]
+    Browser,
+    /// The Mac fill helper (spec 2026-11-23-mac-fill-anywhere): the
+    /// `desktop` context only, plus `status` and `unlock`, which take none.
+    FillHelper,
+}
+
 /// The request service of one session.
 pub struct Service<V: VaultAccess> {
     vault: V,
     audit: Box<dyn AuditSink>,
+    /// Set by the host from the connection, before the first request.
+    kind: ClientKind,
     seen: HashSet<u64>,
     secret_times: VecDeque<u64>,
     /// Drawn at the first `fill_salt` or `plan_fill`, gone with the
@@ -521,6 +537,7 @@ impl<V: VaultAccess> Service<V> {
         Self {
             vault,
             audit,
+            kind: ClientKind::Browser,
             seen: HashSet::new(),
             secret_times: VecDeque::new(),
             salt: None,
@@ -537,6 +554,14 @@ impl<V: VaultAccess> Service<V> {
     /// and the `agent` context.
     pub fn with_agent_hub(mut self, hub: Arc<AgentHub>) -> Self {
         self.agent = Some(hub.listener());
+        self
+    }
+
+    /// Serves a client the host admitted as `kind` (a browser unless
+    /// told). The host decides it from the connection, never from a
+    /// request.
+    pub fn with_client_kind(mut self, kind: ClientKind) -> Self {
+        self.kind = kind;
         self
     }
 
@@ -764,6 +789,21 @@ impl<V: VaultAccess> Service<V> {
     }
 
     fn dispatch(&mut self, req: &Request, now: u64) -> OpResult<Response> {
+        // The client binds the context, before any other rule: the fill
+        // helper speaks `desktop` only (its status and unlock take none),
+        // and no other client ever speaks it.
+        match self.kind {
+            ClientKind::FillHelper
+                if req.ctx() != Some(Ctx::Desktop)
+                    && !matches!(req, Request::Status { .. } | Request::Unlock { .. }) =>
+            {
+                return Err(AppErrorCode::NotAllowed);
+            }
+            ClientKind::Browser if req.ctx() == Some(Ctx::Desktop) => {
+                return Err(AppErrorCode::NotAllowed);
+            }
+            _ => {}
+        }
         // The agent context opens fills and plans only, each for a named
         // agent request; `agent_request` means nothing elsewhere.
         match (req.ctx(), req.agent_request()) {
@@ -790,12 +830,15 @@ impl<V: VaultAccess> Service<V> {
         {
             return Err(AppErrorCode::NotAllowed);
         }
-        // The desktop context opens the two app requests and the list of a
-        // page (a browser without the extension gives its URL); the app
-        // requests take no other context.
+        // The desktop context opens the two app requests, the list of a
+        // page (a browser without the extension gives its URL) and the
+        // picker's search; the app requests take no other context.
         let app_op = matches!(req, Request::ListForApp { .. } | Request::FillForApp { .. });
         match req.ctx() {
-            Some(Ctx::Desktop) if !app_op && !matches!(req, Request::ListForOrigin { .. }) => {
+            Some(Ctx::Desktop)
+                if !app_op
+                    && !matches!(req, Request::ListForOrigin { .. } | Request::Search { .. }) =>
+            {
                 return Err(AppErrorCode::NotAllowed);
             }
             Some(c) if app_op && c != Ctx::Desktop => return Err(AppErrorCode::NotAllowed),
@@ -1391,8 +1434,10 @@ impl<V: VaultAccess> Service<V> {
         if !valid_bundle_id(bundle_id) {
             return Err(AppErrorCode::Invalid);
         }
+        // The name the helper read from the app: cut to the label cap, not
+        // refused, since a long one is no fault of the user's.
         let name = match app_name {
-            Some(n) => field_label(n, bundle_id)?,
+            Some(n) => field_label(&capped(n.trim(), MAX_FIELD_LABEL), bundle_id)?,
             None => bundle_id.to_owned(),
         };
         let (_, mut item) = self.eligible_item(item_id)?;
@@ -1421,13 +1466,20 @@ impl<V: VaultAccess> Service<V> {
         Ok(out)
     }
 
+    /// The popup's free search; in the desktop context (the fill helper's
+    /// picker), the same rows restricted to logins, the only items it
+    /// fills.
     fn search(&mut self, ctx: Ctx, query: &str) -> OpResult<Response> {
-        if ctx != Ctx::Popup {
+        if !matches!(ctx, Ctx::Popup | Ctx::Desktop) {
             return Err(AppErrorCode::NotAllowed);
         }
+        let logins_only = ctx == Ctx::Desktop;
         let q = query.trim().to_lowercase();
         let all = self.items()?;
         let items = Self::summaries(&all, |i| {
+            if logins_only && i.item_type != ItemType::Login {
+                return None;
+            }
             let hit = q.is_empty()
                 || i.title.to_lowercase().contains(&q)
                 || (i.item_type == ItemType::Login
@@ -3226,6 +3278,11 @@ fn setup_ctx(ctx: Ctx) -> OpResult<()> {
         return Err(AppErrorCode::NotAllowed);
     }
     Ok(())
+}
+
+/// The first `max` characters of `s` (never cuts inside one).
+fn capped(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
 }
 
 /// A label the extension sends for a field it writes: `default` when

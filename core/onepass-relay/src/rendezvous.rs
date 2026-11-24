@@ -12,17 +12,25 @@ use onepass_peer::{CodeIdentity, PeerError, identify_peer, identify_pid, peer_cr
 pub const GROUP_SUFFIX: &str = "me.somalabs.onepass";
 /// The socket file at the root of the group container.
 pub const SOCKET_NAME: &str = "bridge.sock";
-/// Code-signing identifiers of the three ends in the reference build. A
+/// Code-signing identifiers of the four ends in the reference build. A
 /// build signed under another bundle id prefix keeps the same shape: the
-/// app is `<app>`, its clients `<app>.safari` and `<app>.relay`.
+/// app is `<app>`, its clients `<app>.safari`, `<app>.relay` and
+/// `<app>.fill`.
 pub const APP_ID: &str = "me.somalabs.onepass";
 pub const SAFARI_ID: &str = "me.somalabs.onepass.safari";
 pub const RELAY_ID: &str = "me.somalabs.onepass.relay";
+/// The Mac fill helper (`OnePass Fill.app`, spec 2026-11-23-mac-fill-anywhere).
+pub const FILL_ID: &str = "me.somalabs.onepass.fill";
 /// Suffix of the relay's identifier after the app's.
 pub const RELAY_SUFFIX: &str = ".relay";
+/// Suffix of the fill helper's identifier after the app's.
+pub const FILL_SUFFIX: &str = ".fill";
 /// The extension id recorded for a Safari pairing (Safari routes only this
 /// app's own extension to its handler).
 pub const SAFARI_EXTENSION_ID: &str = "safari";
+/// The extension id recorded for the fill helper's pairing. Fixed by the
+/// admission, never sent by the helper.
+pub const FILL_EXTENSION_ID: &str = "fill";
 /// `sizeof(sockaddr_un.sun_path)` on Apple platforms, terminating NUL
 /// included.
 const SUN_PATH: usize = 104;
@@ -53,11 +61,15 @@ pub fn socket_path(home: &Path, team: &str) -> Option<PathBuf> {
 pub enum Client {
     Safari,
     Relay,
+    /// The Mac fill helper: the desktop context only, and never a browser
+    /// request (`onepass_bridge::service::ClientKind::FillHelper`).
+    Fill,
 }
 
-/// The kind of client `id` is, when signed by `team` as `<app>.safari` or
-/// `<app>.relay` (`app` being the app's own identifier); `None` otherwise
-/// (ad hoc, another team, platform code, another identifier).
+/// The kind of client `id` is, when signed by `team` as `<app>.safari`,
+/// `<app>.relay` or `<app>.fill` (`app` being the app's own identifier);
+/// `None` otherwise (ad hoc, another team, platform code, another
+/// identifier).
 pub fn classify_client(id: &CodeIdentity, team: &str, app: &str) -> Option<Client> {
     match id {
         CodeIdentity::Team {
@@ -66,6 +78,7 @@ pub fn classify_client(id: &CodeIdentity, team: &str, app: &str) -> Option<Clien
         } if team_id == team => match identifier.strip_prefix(app)? {
             ".safari" => Some(Client::Safari),
             RELAY_SUFFIX => Some(Client::Relay),
+            FILL_SUFFIX => Some(Client::Fill),
             _ => None,
         },
         _ => None,
@@ -192,6 +205,56 @@ mod tests {
             identifier: SAFARI_ID.into(),
         };
         assert_eq!(classify_client(&platform, t, a), None);
+    }
+
+    #[test]
+    fn fill_helper_of_the_same_team_only() {
+        let t = "ABCDE12345";
+        let a = APP_ID;
+        assert_eq!(FILL_ID, format!("{APP_ID}{FILL_SUFFIX}"));
+        assert_eq!(
+            classify_client(&team(t, "me.somalabs.onepass.fill"), t, a),
+            Some(Client::Fill)
+        );
+        assert_eq!(
+            classify_client(&team("AAAAAAAAAA", "me.somalabs.onepass.fill"), t, a),
+            None
+        );
+        assert_eq!(
+            classify_client(&team(t, "me.somalabs.onepass.fillx"), t, a),
+            None
+        );
+        assert_eq!(
+            classify_client(&team(t, "me.somalabs.onepass.fill.x"), t, a),
+            None
+        );
+        assert_eq!(
+            classify_client(&team(t, "me.somalabs.onepassx.fill"), t, a),
+            None
+        );
+        let platform = CodeIdentity::Platform {
+            identifier: FILL_ID.into(),
+        };
+        assert_eq!(classify_client(&platform, t, a), None);
+        let adhoc = CodeIdentity::AdHoc {
+            path: "/x".into(),
+            cdhash: "00".into(),
+            hardened: true,
+        };
+        assert_eq!(classify_client(&adhoc, t, a), None);
+        // Another build's helper follows its app.
+        assert_eq!(
+            classify_client(
+                &team(t, "me.quentincaron.onepass.fill"),
+                t,
+                "me.quentincaron.onepass"
+            ),
+            Some(Client::Fill)
+        );
+        assert_eq!(
+            classify_client(&team(t, FILL_ID), t, "me.quentincaron.onepass"),
+            None
+        );
     }
 
     #[test]

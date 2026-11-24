@@ -2,8 +2,9 @@
 //! `docs/superpowers/specs/2026-10-27-release-bridge-design.md`).
 //!
 //! `BridgeServer` listens on `bridge.sock` in the App Group container and
-//! serves each admitted client (the Safari extension or `onepass-relay`,
-//! same team, checked by code signature in `onepass-relay`) with the host
+//! serves each admitted client (the Safari extension, `onepass-relay` or
+//! the Mac fill helper, same team, checked by code signature in
+//! `onepass-relay`) with the host
 //! loop of `onepass-bridge`: the same pairing, session, envelope and
 //! disclosure rules as everywhere else, over the session the user unlocked
 //! in the app. Locking the app locks the bridge: it is the same `Session`.
@@ -40,7 +41,7 @@ use onepass_bridge::audit::{AuditEvent, AuditSink};
 use onepass_bridge::host::{Approval, Approver, Conn, Journal, Limits, PairingStore, spawn_reader};
 use onepass_bridge::pairing::PairingRecord;
 use onepass_bridge::pending::{PENDING_TTL, PendingStore};
-use onepass_bridge::service::{AccountTag, VaultAccess, VaultInfo, VaultStatus};
+use onepass_bridge::service::{AccountTag, ClientKind, VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::Id;
 use onepass_core::autofill_history::{AutofillEvent, ClientContext};
@@ -956,14 +957,17 @@ pub fn clear_pending_sign_in(dir: String) {
 }
 
 /// Serve one admitted connection until it ends. `allowed`: the caller's
-/// extension id passed the app's list (Safari always does). `vouched`: the
-/// browser the app vouches for, which may then pair without a code.
+/// extension id passed the app's list (Safari and the fill helper always
+/// do). `vouched`: the client the app vouches for, which may then pair
+/// without a code. `kind`: what the socket admitted it as, by code
+/// signature, which binds the contexts its session may speak.
 fn serve_stream(
     shared: &Shared,
     stream: UnixStream,
     extension_id: String,
     allowed: bool,
     vouched: Option<String>,
+    kind: ClientKind,
 ) {
     let Ok(reader) = stream.try_clone() else {
         return;
@@ -978,6 +982,7 @@ fn serve_stream(
     let mut conn = Conn {
         allowed,
         vouched,
+        kind,
         extension_id,
         journal: shared,
         clock: &clock,
@@ -1222,7 +1227,14 @@ impl BridgeServer {
             // SLH-DSA signing needs a deep stack (spec P-14).
             .stack_size(16 << 20)
             .spawn(move || {
-                serve_stream(&shared, ours, SAFARI_EXTENSION_ID.to_owned(), true, vouched);
+                serve_stream(
+                    &shared,
+                    ours,
+                    SAFARI_EXTENSION_ID.to_owned(),
+                    true,
+                    vouched,
+                    ClientKind::Browser,
+                );
             })
             .map_err(|_| invalid("bridge thread"))?;
         Ok(theirs.into_raw_fd())
@@ -1252,8 +1264,12 @@ impl BridgeServer {
 }
 
 /// What the app decides for a client the socket admitted (code signature
-/// checked): whether it may use the bridge at all, and whether it may pair
-/// without a code (spec 2026-11-02-browser-auto-pairing 3).
+/// checked): whether it may use the bridge at all, whether it may pair
+/// without a code (spec 2026-11-02-browser-auto-pairing 3), and which
+/// contexts its session speaks. `client` comes from the signature alone:
+/// only a `Client::Fill` connection is the fill helper (the desktop context,
+/// nothing else, and a pairing without a code unless revoked); every other
+/// one is a browser, which never speaks the desktop context.
 #[cfg(target_os = "macos")]
 fn serve_admitted(
     shared: &Shared,
@@ -1265,8 +1281,12 @@ fn serve_admitted(
     use onepass_relay::Client;
     use onepass_relay::launcher::vouch;
 
-    let allowed =
-        matches!(client, Client::Safari) || shared.allowed_extensions.contains(&extension_id);
+    let allowed = matches!(client, Client::Safari | Client::Fill)
+        || shared.allowed_extensions.contains(&extension_id);
+    let kind = match client {
+        Client::Fill => ClientKind::FillHelper,
+        Client::Safari | Client::Relay => ClientKind::Browser,
+    };
     let vouched = if allowed {
         let blocked = lock(&shared.blocked_auto).clone();
         vouch(
@@ -1293,6 +1313,7 @@ fn serve_admitted(
         extension_id,
         allowed,
         vouched.map(str::to_owned),
+        kind,
     );
 }
 
@@ -1311,6 +1332,7 @@ pub fn serve_for_tests(
         extension_id.to_owned(),
         allowed,
         None,
+        ClientKind::Browser,
     );
 }
 
@@ -1342,6 +1364,19 @@ pub fn serve_safari_for_tests(server: &BridgeServer, stream: UnixStream) {
         stream,
         onepass_relay::Client::Safari,
         onepass_relay::SAFARI_EXTENSION_ID.to_owned(),
+        None,
+    );
+}
+
+/// Test entry: a connection the socket admitted as the fill helper.
+#[cfg(target_os = "macos")]
+#[doc(hidden)]
+pub fn serve_fill_for_tests(server: &BridgeServer, stream: UnixStream) {
+    serve_admitted(
+        &server.shared,
+        stream,
+        onepass_relay::Client::Fill,
+        onepass_relay::FILL_EXTENSION_ID.to_owned(),
         None,
     );
 }
