@@ -4371,6 +4371,53 @@
         }
       }
     },
+    "fill.error.appClosed" : {
+      "comment" : "Mac fill helper: the OnePass app is not running or its bridge is off.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffne OnePass, um dieses Feld auszufüllen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open OnePass to fill this field."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para rellenar este campo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre OnePass pour remplir ce champ."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per compilare questo campo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 필드를 채우려면 OnePass를 여세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass 以填写此字段。"
+          }
+        }
+      }
+    },
     "keyUse.action.copied" : {
       "comment" : "Key-use log row: the secret was copied.",
       "extractionState" : "manual",

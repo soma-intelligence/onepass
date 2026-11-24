@@ -7,13 +7,17 @@
 
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use onepass_bridge::framing::read_frame;
+use std::net::Shutdown;
+use std::os::unix::net::UnixStream;
+
+use onepass_bridge::framing::{read_frame, write_frame};
+use onepass_bridge::wire::{self, Envelope};
 use onepass_ffi::*;
 use tempfile::TempDir;
 
@@ -397,11 +401,9 @@ fn app_closed_reports_app_closed() {
     assert_eq!(c.status().unwrap(), FfiFillStatus::AppClosed);
     assert_eq!(
         c.list_for_app(SLACK.into(), None).unwrap_err(),
-        OnePassError::Validation {
-            field: "bridge".into(),
-            reason: "app_closed".into()
-        }
+        OnePassError::AppClosed
     );
+    assert_eq!(c.unlock().unwrap(), FfiFillStatus::AppClosed);
     assert_eq!(store.saves.load(Ordering::SeqCst), 0);
 }
 
@@ -440,4 +442,120 @@ fn blocked_helper_gets_not_allowed() {
         }
     );
     assert_eq!(store.saves.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn unlock_asks_the_app_and_answers_the_state() {
+    let (rig, _) = rig();
+    let store = Arc::new(MemStore::default());
+    let c = client(&rig, &store);
+    assert_eq!(c.unlock().unwrap(), FfiFillStatus::Unlocked);
+    rig.session.lock();
+    // The app only comes forward: still locked until the user unlocks.
+    assert_eq!(c.unlock().unwrap(), FfiFillStatus::Locked);
+    assert_eq!(c.status().unwrap(), FfiFillStatus::Locked);
+}
+
+/// A listener that serves the fill helper through a relay of frames:
+/// with `drop_reply` armed, the next reply of the app is swallowed and the
+/// helper's connection cut, after the app served the request.
+fn listen_dropping(server: &Arc<BridgeServer>, path: &std::path::Path) -> Arc<AtomicBool> {
+    let armed = Arc::new(AtomicBool::new(false));
+    let listener = UnixListener::bind(path).unwrap();
+    let (server, flag) = (server.clone(), armed.clone());
+    thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(mut helper) = conn else { continue };
+            let (server, flag) = (server.clone(), flag.clone());
+            thread::spawn(move || {
+                // The opening frame is the socket's, not the host loop's.
+                let Ok(Some(_)) = read_frame(&mut helper) else {
+                    return;
+                };
+                let (mut to_app, app) = UnixStream::pair().unwrap();
+                thread::Builder::new()
+                    .stack_size(16 << 20)
+                    .spawn(move || serve_fill_for_tests(&server, app))
+                    .unwrap();
+                let (mut up_from, mut up_to) =
+                    (helper.try_clone().unwrap(), to_app.try_clone().unwrap());
+                thread::spawn(move || {
+                    while let Ok(Some(f)) = read_frame(&mut up_from) {
+                        if write_frame(&mut up_to, &f).is_err() {
+                            break;
+                        }
+                    }
+                    let _ = up_to.shutdown(Shutdown::Both);
+                });
+                while let Ok(Some(f)) = read_frame(&mut to_app) {
+                    let reply = matches!(wire::parse(&f), Ok(Envelope::Msg(_)));
+                    if reply && flag.swap(false, Ordering::SeqCst) {
+                        let _ = helper.shutdown(Shutdown::Both);
+                        let _ = to_app.shutdown(Shutdown::Both);
+                        return;
+                    }
+                    if write_frame(&mut helper, &f).is_err() {
+                        break;
+                    }
+                }
+                let _ = helper.shutdown(Shutdown::Both);
+            });
+        }
+    });
+    armed
+}
+
+/// `fill_for_app` lines of the bridge journal: one per fill served (the
+/// key usage log coalesces repeated uses).
+fn fills_of(rig: &Rig) -> usize {
+    let audit = rig._dir.path().join("bridge-audit.jsonl");
+    std::fs::read_to_string(audit)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| l.contains("\"fill_for_app\""))
+        .count()
+}
+
+#[test]
+fn lost_fill_is_never_sent_twice() {
+    let (rig, _) = rig();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("relay.sock");
+    let drop_reply = listen_dropping(&rig.server, &path);
+    let store = Arc::new(MemStore::default());
+    let c =
+        DesktopFillClient::connect_for_tests(path.to_string_lossy().into_owned(), store).unwrap();
+    let row = c.list_for_app(SLACK.into(), None).unwrap().remove(0);
+
+    drop_reply.store(true, Ordering::SeqCst);
+    assert_eq!(
+        c.fill(slack(), row.item_id.clone(), FfiFillField::Password, false)
+            .unwrap_err(),
+        OnePassError::AppClosed
+    );
+    // The app served it once, and only once.
+    assert_eq!(fills_of(&rig), 1);
+    assert!(!drop_reply.load(Ordering::SeqCst));
+
+    // The next fill opens a new connection: one more, not two.
+    let v = c
+        .fill(slack(), row.item_id.clone(), FfiFillField::Password, false)
+        .unwrap();
+    assert_eq!(v.value(), PASSWORD);
+    assert_eq!(fills_of(&rig), 2);
+}
+
+#[test]
+fn lost_read_is_sent_again_once() {
+    let (rig, _) = rig();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("relay.sock");
+    let drop_reply = listen_dropping(&rig.server, &path);
+    let store = Arc::new(MemStore::default());
+    let c =
+        DesktopFillClient::connect_for_tests(path.to_string_lossy().into_owned(), store).unwrap();
+    drop_reply.store(true, Ordering::SeqCst);
+    let rows = c.list_for_app(SLACK.into(), None).unwrap();
+    assert_eq!(rows[0].title, "Slack");
+    assert!(!drop_reply.load(Ordering::SeqCst));
 }

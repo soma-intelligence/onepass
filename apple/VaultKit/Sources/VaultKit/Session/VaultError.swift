@@ -69,6 +69,9 @@ public enum VaultError: Error, Equatable, Sendable {
             case .OrgPinMismatch:
                 // Same value the generic integrity arm gave before the variant existed.
                 self = .integrity(kind: "org_pin_mismatch")
+            // The Mac fill helper (spec 2026-11-23-mac-fill-anywhere): the app is not reachable.
+            case .AppClosed:
+                self = .other(String(localized: "fill.error.appClosed", bundle: VaultKitStrings.bundle))
             }
         case let error as BiometricError:
             switch error {

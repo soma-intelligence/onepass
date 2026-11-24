@@ -15,17 +15,19 @@
 //! picked login, and the value comes back in a `FfiSecretValue`, wiped on
 //! drop on the Rust side.
 //!
-//! One connection is kept open and reused; a connection the app closed (an
-//! idle session, an app restart) is opened again once, transparently. A
+//! One connection is kept open and reused. A read (`status`, `unlock`, the
+//! lists) that finds the connection closed (an idle session, an app
+//! restart) opens it again and is sent once more; a `fill` never is: the
+//! app may have served it already, so a lost fill is `AppClosed`. A
 //! stored pairing the app no longer knows (forgotten in Settings) makes the
 //! next connection pair again and save the new record.
 //!
 //! Errors (`OnePassError`):
 //! - `Locked`: the vault is locked (`status` says `Locked`).
 //! - `NotFound`: no such login, or the login has no value for the field.
+//! - `AppClosed`: no socket, refused, or the connection was lost.
 //! - `Validation { field: "bridge", reason }`: anything else of the bridge.
-//!   `reason` is `app_closed` (no socket, refused, or the connection was
-//!   lost), `untrusted_app` (the socket is not held by the OnePass app of
+//!   `reason` is `untrusted_app` (the socket is not held by the OnePass app of
 //!   this team), `protocol` (an answer the protocol does not allow), or
 //!   the app's own error code (`not_allowed`, `invalid`, `reprompt_required`
 //!   and so on, see `onepass_bridge::AppErrorCode`).
@@ -187,7 +189,7 @@ fn bridge(reason: &str) -> OnePassError {
 impl From<Fail> for OnePassError {
     fn from(f: Fail) -> Self {
         match f {
-            Fail::Closed => bridge("app_closed"),
+            Fail::Closed => OnePassError::AppClosed,
             Fail::Untrusted => bridge("untrusted_app"),
             Fail::Protocol => bridge("protocol"),
             Fail::App(code) => match code.as_str() {
@@ -213,6 +215,14 @@ fn now() -> u64 {
         .unwrap_or(0)
 }
 
+/// Whether a request lost with its connection may be sent again: reads
+/// only, never a fill (the app may have served it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Retry {
+    Once,
+    Never,
+}
+
 /// Opens a stream to the app, checked, with the opening frame sent.
 type Dial = Box<dyn Fn() -> io::Result<UnixStream> + Send + Sync>;
 
@@ -224,6 +234,24 @@ struct Live {
 }
 
 impl Live {
+    /// Whether the app closed this connection (EOF or an error waiting):
+    /// checked before a request is sent, so a fill never goes out on a
+    /// connection already gone.
+    fn gone(&self) -> bool {
+        if self.stream.set_nonblocking(true).is_err() {
+            return true;
+        }
+        let mut b = [0u8; 1];
+        // Reading consumes: fine, since any byte here condemns the
+        // connection anyway.
+        let gone = match io::Read::read(&mut &self.stream, &mut b) {
+            // EOF, or a frame nobody asked for (the protocol has none).
+            Ok(_) => true,
+            Err(e) => e.kind() != ErrorKind::WouldBlock,
+        };
+        self.stream.set_nonblocking(false).is_err() || gone
+    }
+
     /// Send one request, read its reply's clear text.
     fn call(&mut self, req: &Request) -> Result<Zeroizing<Vec<u8>>, Fail> {
         let body = serde_json::to_vec(req).map_err(|_| Fail::Protocol)?;
@@ -475,7 +503,19 @@ impl DesktopFillClient {
 
     /// Whether the app runs and its vault is unlocked.
     pub fn status(&self) -> Result<FfiFillStatus, OnePassError> {
-        match self.call::<StatusOk>(|id| Request::Status { id }) {
+        match self.call::<StatusOk>(Retry::Once, |id| Request::Status { id }) {
+            Ok(s) if s.locked => Ok(FfiFillStatus::Locked),
+            Ok(_) => Ok(FfiFillStatus::Unlocked),
+            Err(Fail::Closed) => Ok(FfiFillStatus::AppClosed),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Ask the app to come forward and unlock (Touch ID or the password,
+    /// in the app). Answers at once with the state that follows: `Locked`
+    /// until the user unlocked.
+    pub fn unlock(&self) -> Result<FfiFillStatus, OnePassError> {
+        match self.call::<StatusOk>(Retry::Once, |id| Request::Unlock { id, origin: None }) {
             Ok(s) if s.locked => Ok(FfiFillStatus::Locked),
             Ok(_) => Ok(FfiFillStatus::Unlocked),
             Err(Fail::Closed) => Ok(FfiFillStatus::AppClosed),
@@ -490,7 +530,7 @@ impl DesktopFillClient {
         bundle_id: String,
         window_title: Option<String>,
     ) -> Result<Vec<FfiFillCandidate>, OnePassError> {
-        let ok = self.call::<ItemsOk>(|id| Request::ListForApp {
+        let ok = self.call::<ItemsOk>(Retry::Once, |id| Request::ListForApp {
             id,
             ctx: Ctx::Desktop,
             bundle_id: bundle_id.clone(),
@@ -501,7 +541,7 @@ impl DesktopFillClient {
 
     /// The logins for a page shown in a browser without the extension.
     pub fn list_for_url(&self, url: String) -> Result<Vec<FfiFillCandidate>, OnePassError> {
-        let ok = self.call::<ItemsOk>(|id| Request::ListForOrigin {
+        let ok = self.call::<ItemsOk>(Retry::Once, |id| Request::ListForOrigin {
             id,
             ctx: Ctx::Desktop,
             origin: url.clone(),
@@ -536,7 +576,7 @@ impl DesktopFillClient {
             FfiFillField::Password => FillField::Password,
             FfiFillField::Totp => FillField::Totp,
         };
-        let mut ok = self.call::<LoginOk>(|id| Request::FillForApp {
+        let mut ok = self.call::<LoginOk>(Retry::Never, |id| Request::FillForApp {
             id,
             ctx: Ctx::Desktop,
             item_id: item_id.clone(),
@@ -608,13 +648,17 @@ impl DesktopFillClient {
         open_session(s, &record)
     }
 
-    /// One request and its `ok` payload. A lost connection is opened again
-    /// once and the request sent again.
-    fn call<T: DeserializeOwned>(&self, req: impl Fn(u64) -> Request) -> Result<T, Fail> {
+    /// One request and its `ok` payload. With `Retry::Once`, a connection
+    /// found closed is opened again and the request sent once more.
+    fn call<T: DeserializeOwned>(
+        &self,
+        retry: Retry,
+        req: impl Fn(u64) -> Request,
+    ) -> Result<T, Fail> {
         let mut live = lock(&self.live);
-        let mut retried = false;
+        let mut retried = retry == Retry::Never;
         loop {
-            if live.is_none() {
+            if live.as_ref().is_none_or(Live::gone) {
                 *live = Some(self.open()?);
             }
             let Some(l) = live.as_mut() else {
@@ -704,7 +748,7 @@ mod tests {
             OnePassError::from(Fail::App("not_allowed".into())),
             bridge("not_allowed")
         );
-        assert_eq!(OnePassError::from(Fail::Closed), bridge("app_closed"));
+        assert_eq!(OnePassError::from(Fail::Closed), OnePassError::AppClosed);
         assert_eq!(OnePassError::from(Fail::Untrusted), bridge("untrusted_app"));
     }
 }
