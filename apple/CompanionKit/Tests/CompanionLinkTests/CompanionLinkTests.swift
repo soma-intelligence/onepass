@@ -15,16 +15,24 @@ private final class PhoneCore {
     let vaultID: String
 
     /// Account creation runs Argon2id (debug core, several seconds): off the main actor, so the
-    /// tests of the suite create their accounts in parallel.
+    /// tests of the suite create their accounts in parallel. It also signs with SLH-DSA, whose
+    /// debug build overflows the 512 KiB stack of a Swift concurrency thread (SIGBUS): it runs on
+    /// a thread with the core's 16 MiB stack, like `CoreThread` in VaultKit.
     static func make() async throws -> PhoneCore {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let dbPath = dir.appendingPathComponent("vault.db").path
-        let session = try await Task.detached {
-            try createAccountWithKdf(
-                dbPath: dbPath, password: "correct horse battery staple", kdf: FfiKdfParams(mKib: 8192, t: 1, p: 1)
-            ).session
-        }.value
+        let session = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Session, Error>) in
+            let thread = Thread {
+                continuation.resume(with: Result {
+                    try createAccountWithKdf(
+                        dbPath: dbPath, password: "correct horse battery staple", kdf: FfiKdfParams(mKib: 8192, t: 1, p: 1)
+                    ).session
+                })
+            }
+            thread.stackSize = 16 << 20
+            thread.start()
+        }
         return try PhoneCore(dir: dir, session: session)
     }
 
