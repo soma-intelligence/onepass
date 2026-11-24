@@ -111,7 +111,9 @@ final class FillAnywhereSettingsModel {
             keyCode = FillDefaults.hotkeyKeyCode
             modifiers = FillDefaults.hotkeyModifiers
         }
-        excluded = defaults.array(forKey: Key.excluded) as? [String] ?? FillDefaults.excluded(appBundleID: appBundleID)
+        excluded =
+            defaults.array(forKey: Key.excluded) as? [String]
+            ?? FillDefaults.excluded(appBundleID: appBundleID, browsers: KnownBrowsers.bundleIDs)
         if let ms = defaults.object(forKey: Key.typingDelayMs) as? Int {
             typingDelayMs = min(max(ms, FillDefaults.typingDelayRange.lowerBound), FillDefaults.typingDelayRange.upperBound)
         } else {
@@ -194,6 +196,12 @@ final class FillAnywhereSettingsModel {
         let clamped = min(max(ms, FillDefaults.typingDelayRange.lowerBound), FillDefaults.typingDelayRange.upperBound)
         write(clamped, Key.typingDelayMs)
         reload()
+    }
+
+    /// The excluded apps the page lists: a browser of the default list shows only once it is
+    /// installed (the list holds them all, so a browser installed later has no pill either).
+    var shownExcluded: [String] {
+        excluded.filter { !KnownBrowsers.contains($0) || NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil }
     }
 
     /// The OnePass app itself is always excluded by the helper: shown, never removable.
@@ -364,7 +372,7 @@ private struct FillAnywhereForm: View {
 
     private var excludedSection: some View {
         Section {
-            ForEach(state.excluded, id: \.self) { bundleID in
+            ForEach(state.shownExcluded, id: \.self) { bundleID in
                 LabeledContent {
                     if state.isAlwaysExcluded(bundleID) {
                         Text("fillAnywhere.excluded.always").foregroundStyle(.secondary)

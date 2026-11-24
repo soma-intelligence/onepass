@@ -43,9 +43,12 @@ enum FillDefaults {
     /// Terminals, where a password field is rare and a pill would be in the way.
     static let excludedApps = ["com.apple.Terminal", "com.googlecode.iterm2"]
 
-    /// The default excluded list: the terminals and the OnePass app itself.
-    static func excluded(appBundleID: String?) -> [String] {
-        excludedApps + [appBundleID].compactMap { $0 }
+    /// The default excluded list: the terminals, the browsers and the OnePass app itself. The
+    /// browsers are FillKit's `KnownBrowsers.bundleIDs`, passed in since this file is Foundation
+    /// only: their extension already shows its own button, so a pill there would be a second one
+    /// (the shortcut still works in them). A list the user saved is kept as it is.
+    static func excluded(appBundleID: String?, browsers: Set<String>) -> [String] {
+        excludedApps + browsers.sorted() + [appBundleID].compactMap { $0 }
     }
 
     /// A shortcut needs ⌘, ⌥ or ⌃ (Shift alone would take a plain character from every app).

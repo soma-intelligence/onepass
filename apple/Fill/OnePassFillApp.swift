@@ -44,11 +44,6 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     static let settingsLink = URL(string: "onepass://settings/fill-anywhere")!
     /// Brings the app forward on its lock screen (`BrowserBridge.isUnlockLink` in the app).
     static let unlockLink = URL(string: "onepass://unlock")!
-    /// Browsers that may run without the extension: matched by URL when the page gives one.
-    static let browsers: Set<String> = [
-        "company.thebrowser.Browser", "com.kagi.kagimacOS", "org.torproject.torbrowser",
-        "com.duckduckgo.macos.browser",
-    ]
 
     private struct Session {
         /// Identity of this picker and fill: late answers for an older session are dropped.
@@ -247,8 +242,7 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         nextSessionID &+= 1
         session = Session(id: nextSessionID, context: context, target: target, kind: kind)
         pill.hide()
-        let isApp = if case .app = target { true } else { false }
-        picker.open(near: anchor(of: context), rememberShown: isApp, query: nil)
+        picker.open(near: anchor(of: context), rememberShown: Self.mayRemember(target), query: nil)
         let id = nextSessionID
         Task { await load(id) }
     }
@@ -297,9 +291,17 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A browser without the extension whose page gave no URL: say why the list is a search.
+    /// "Remember for this app": only for an app target that is no browser. A browser whose page
+    /// gave no URL has an app target, and its entry would match every page it shows (the bridge
+    /// refuses to write one too).
+    static func mayRemember(_ target: FillTarget) -> Bool {
+        guard case .app(let bundleID, _) = target else { return false }
+        return !KnownBrowsers.contains(bundleID)
+    }
+
+    /// A browser whose page gave no URL: say why the list is a search.
     private func urlNote(_ session: Session) -> String? {
-        guard case .app(let bundleID, _) = session.target, Self.browsers.contains(bundleID) else { return nil }
+        guard case .app(let bundleID, _) = session.target, KnownBrowsers.contains(bundleID) else { return nil }
         return String(localized: "fill.picker.urlUnreadable")
     }
 
@@ -353,8 +355,9 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
                 hasTotp: elements[.oneTimeCode] != nil, passwordKnown: elements[.password] != nil)
         let appName = BridgeLink.appName(pid: context.pid)
         let filler = Filler(clipboard: clipboard, typingDelayMs: settings.typingDelayMs)
-        var rememberNext = remember
         let link = self.link
+        // Never remembered in a browser, whatever the picker sent.
+        var rememberNext = remember && Self.mayRemember(session.target)
         let outcome = await filler.fill(
             steps: steps,
             values: { kind in
@@ -485,6 +488,9 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
             case "timeout": return .message(String(localized: "fill.picker.timeout"), action: nil)
             case "origin_mismatch": return .message(String(localized: "fill.picker.originMismatch"), action: nil)
             case "not_allowed": return .message(String(localized: "fill.picker.notAllowed"), action: nil)
+            // Touch ID refused or cancelled for an item that asks for it again.
+            case "reprompt_required": return .message(String(localized: "fill.picker.repromptCancelled"), action: nil)
+            case "rate_limited": return .message(String(localized: "fill.picker.rateLimited"), action: nil)
             default: return .message(String(localized: "fill.picker.error"), action: nil)
             }
         default:

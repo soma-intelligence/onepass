@@ -69,11 +69,12 @@ final class Picker: NSObject, NSSearchFieldDelegate, NSTableViewDataSource, NSTa
     var isOpen: Bool { panel.isVisible }
 
     /// Opens near the field (`AXFrame`, top-left coordinates), or centred on the screen with the
-    /// mouse. `rememberShown`: an app target (a page has no remember). `query` starts a search.
+    /// mouse. `rememberShown`: an app target that is no browser (a page or a browser has no
+    /// remember, and a hidden one is off). `query` starts a search.
     func open(near axFrame: CGRect?, rememberShown: Bool, query: String?) {
         closing = false
         remember.isHidden = !rememberShown
-        remember.state = .on
+        remember.state = rememberShown ? .on : .off
         search.stringValue = query ?? ""
         show(.loading)
         panel.setFrame(CGRect(origin: origin(near: axFrame), size: Self.size), display: true)

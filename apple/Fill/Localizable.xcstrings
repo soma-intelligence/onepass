@@ -670,6 +670,54 @@
         }
       }
     },
+    "fill.picker.rateLimited" : {
+      "comment" : "Fill picker when the Mac app refused a fill because of too many requests in a short time",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trop de demandes, réessaie dans un instant"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many requests, try again in a moment"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Demasiadas solicitudes, inténtalo de nuevo en un momento"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Troppe richieste, riprova tra un momento"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zu viele Anfragen, versuche es gleich noch einmal"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "요청이 너무 많습니다. 잠시 후 다시 시도하세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请求过多，请稍后再试"
+          }
+        }
+      }
+    },
     "fill.picker.remember" : {
       "comment" : "Checkbox in the fill picker: save the picked login for this Mac app",
       "extractionState" : "manual",
@@ -714,6 +762,54 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "为此应用记住"
+          }
+        }
+      }
+    },
+    "fill.picker.repromptCancelled" : {
+      "comment" : "Fill picker when Touch ID was cancelled or refused for an item that asks for it again",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID annulé"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID cancelled"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Touch ID cancelado"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Touch ID annullato"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Touch ID abgebrochen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Touch ID 취소됨"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已取消触控 ID"
           }
         }
       }

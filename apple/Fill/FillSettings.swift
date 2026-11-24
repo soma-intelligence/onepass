@@ -1,3 +1,4 @@
+import FillKit
 import Foundation
 
 /// The helper's settings, read from the App Group defaults the Mac app's "Remplir partout" page
@@ -7,7 +8,8 @@ import Foundation
 struct FillSettings: Equatable {
     typealias Key = FillDefaults.Key
 
-    static let defaultExcluded = FillDefaults.excludedApps
+    /// The terminals and the browsers (`FillDefaults.excluded`); the app itself is added below.
+    static let defaultExcluded = FillDefaults.excluded(appBundleID: nil, browsers: KnownBrowsers.bundleIDs)
     static let defaultTypingDelayMs = FillDefaults.typingDelayMs
     /// At most this many excluded apps are read: the list is checked on every focus change.
     static let maxExcluded = 500
