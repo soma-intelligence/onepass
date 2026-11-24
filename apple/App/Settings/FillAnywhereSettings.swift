@@ -136,15 +136,25 @@ final class FillAnywhereSettingsModel {
         }
         errorMessage = nil
         if on {
-            // Turning it on is the user's choice to let it in again (Task 5 ruling).
-            bridge?.allowAgain("fill")
             write(true, Key.enabled)
             do {
                 try service.register()
             } catch {
-                write(false, Key.enabled)
-                FillAnywhereHelper.log.error("register failed: \(error.localizedDescription, privacy: .public)")
-                errorMessage = String(localized: "fillAnywhere.error.register \(error.localizedDescription)")
+                // The system may still have taken it: waiting for the user's approval in System
+                // Settings (or already on). Then the helper must find `fill.enabled` true when it
+                // starts, and the approval row says what to do; no error.
+                let status = service.status
+                FillAnywhereHelper.log.error(
+                    "register failed (status \(status.rawValue, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+                if status != .requiresApproval && status != .enabled {
+                    write(false, Key.enabled)
+                    errorMessage = String(localized: "fillAnywhere.error.register \(error.localizedDescription)")
+                }
+            }
+            // Turning it on is the user's choice to let it in again (Task 5 ruling), once the
+            // system has it.
+            if service.status == .enabled || service.status == .requiresApproval {
+                bridge?.allowAgain("fill")
             }
         } else {
             write(false, Key.enabled)
@@ -215,8 +225,35 @@ final class FillAnywhereSettingsModel {
 /// Accessibility grant it needs, and holds its settings (pill, shortcut and its keys, excluded
 /// apps, typing delay). Only in builds that carry the helper (`FillAnywhereHelper.isPresent`).
 struct FillAnywhereSettings: View {
+    /// Made once the page shows: `AutoFillSettings` builds this view on every evaluation of its
+    /// row, and the model reads the login item and the defaults when made.
+    @State private var state: FillAnywhereSettingsModel?
+
+    var body: some View {
+        Group {
+            if let state {
+                FillAnywhereForm(state: state)
+            } else {
+                ProgressView()
+            }
+        }
+        .task {
+            let state = state ?? FillAnywhereSettingsModel()
+            self.state = state
+            // The helper writes the grant, System Settings approves the login item: read again
+            // while the page shows.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                state.reload()
+            }
+        }
+    }
+}
+
+/// The page's form, on a model made by `FillAnywhereSettings`.
+private struct FillAnywhereForm: View {
     @Environment(AppModel.self) private var model
-    @State private var state = FillAnywhereSettingsModel()
+    let state: FillAnywhereSettingsModel
 
     var body: some View {
         Form {
@@ -248,14 +285,6 @@ struct FillAnywhereSettings: View {
         .rxSettingsSkin()
         .settingsPage("fillAnywhere.title")
         .accessibilityIdentifier("fillAnywhere.page")
-        .task {
-            // The helper writes the grant, System Settings approves the login item: read again
-            // while the page shows.
-            while !Task.isCancelled {
-                state.reload()
-                try? await Task.sleep(for: .seconds(2))
-            }
-        }
     }
 
     private var mainSection: some View {

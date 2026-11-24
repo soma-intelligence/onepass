@@ -120,7 +120,9 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         settings = FillSettings.current()
         if settings.enabled == false {
             // Turned off in the app: the login item is unregistered, which normally ends this
-            // process already. Nothing keeps running behind the user's back.
+            // process already. Nothing keeps running behind the user's back. A fill under way
+            // ends first (`picked` calls `refresh` when it does).
+            guard !filling else { return }
             log.notice("turned off in the app: quitting")
             NSApp.terminate(nil)
             return
@@ -161,6 +163,8 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     /// launches never prompt: the page's "Ouvrir les réglages" is the way back.
     private func promptForAccessibilityOnFirstRun() {
         guard !AXIsProcessTrusted() else { return }
+        // Turned off in the app: no prompt, `refresh` quits right after.
+        guard FillSettings.current().enabled != false else { return }
         let defaults = FillSettings.sharedDefaults(bundle: .main)
         guard defaults?.object(forKey: FillDefaults.Key.trusted) == nil else { return }
         // The value of `kAXTrustedCheckOptionPrompt` (a C global Swift 6 will not read here).
@@ -306,6 +310,8 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         Task {
             await fill(session, candidate: candidate, remember: remember)
             filling = false
+            // A change held back during the fill (turned off in the app) applies now.
+            refresh()
         }
     }
 

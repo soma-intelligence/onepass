@@ -9,6 +9,8 @@ struct FillSettings: Equatable {
 
     static let defaultExcluded = FillDefaults.excludedApps
     static let defaultTypingDelayMs = FillDefaults.typingDelayMs
+    /// At most this many excluded apps are read: the list is checked on every focus change.
+    static let maxExcluded = 500
 
     /// `fill.enabled` as written by the app, nil when it never wrote it.
     var enabled: Bool?
@@ -24,7 +26,8 @@ struct FillSettings: Equatable {
 
     init(defaults: UserDefaults?, appBundleID: String?) {
         self.appBundleID = appBundleID
-        let excluded = (defaults?.array(forKey: Key.excluded) as? [String]) ?? Self.defaultExcluded
+        let excluded = ((defaults?.array(forKey: Key.excluded) as? [String]) ?? Self.defaultExcluded)
+            .prefix(Self.maxExcluded)
         excludedBundleIDs = Set(excluded + [appBundleID].compactMap { $0 })
         guard let defaults else { return }
         enabled = defaults.object(forKey: Key.enabled) as? Bool
