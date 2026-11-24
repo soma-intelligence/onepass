@@ -397,6 +397,12 @@ struct ItemListColumn: View {
         .padding(.horizontal, Theme.RX.Space.l)
         .padding(.top, Theme.RX.Space.s)
         .padding(.bottom, Theme.RX.Space.m)
+        // Opaque: the rows scroll under the inset and must not show through the count.
+        #if os(macOS)
+        .background(Color(nsColor: .windowBackgroundColor))
+        #else
+        .background(.background)
+        #endif
     }
 
     #if os(macOS)
