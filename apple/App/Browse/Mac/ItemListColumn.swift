@@ -525,15 +525,50 @@ struct ItemListColumn: View {
                 .accessibilityLabel(Text("browse.clearSearch"))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        // A blur under the fill: the detail's wash, cut at the list's edge, passes behind the
-        // field as a soft glow, not a seam.
-        .background(.fill.quaternary, in: Capsule())
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay {
-            Capsule()
-                .strokeBorder(searchFocused ? AnyShapeStyle(Theme.accent.opacity(0.8)) : AnyShapeStyle(.white.opacity(0.06)))
+        .modifier(SearchFieldChrome(rx: rxDesign, focused: searchFocused, empty: query.isEmpty))
+    }
+
+    /// The search field's look. RX: the one search of the window (the sidebar has none), filled
+    /// like the RX fields, no hairline, the ⌘F hint while it is empty and idle. Classic: the glass
+    /// capsule.
+    private struct SearchFieldChrome: ViewModifier {
+        let rx: Bool
+        let focused: Bool
+        let empty: Bool
+        private typealias RX = Theme.RX
+
+        func body(content: Content) -> some View {
+            if rx {
+                let shape = RoundedRectangle(cornerRadius: RX.Radius.macRow, style: .continuous)
+                HStack(spacing: RX.Space.s) {
+                    content
+                    if empty, !focused {
+                        Text(verbatim: "⌘F")
+                            .rxFont(.footnote)
+                            .foregroundStyle(RX.Palette.textTertiary.color)
+                    }
+                }
+                .rxFont(.callout)
+                .padding(.horizontal, RX.Space.m)
+                .frame(height: 32)
+                // The glass fill (system search fill): `field` matches the window in dark and vanishes.
+                .background(RX.Palette.glass.color, in: shape)
+                .overlay {
+                    if focused { shape.strokeBorder(Theme.accent.opacity(0.8), lineWidth: 1.5) }
+                }
+            } else {
+                content
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    // A blur under the fill: the detail's wash, cut at the list's edge, passes
+                    // behind the field as a soft glow, not a seam.
+                    .background(.fill.quaternary, in: Capsule())
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(focused ? AnyShapeStyle(Theme.accent.opacity(0.8)) : AnyShapeStyle(.white.opacity(0.06)))
+                    }
+            }
         }
     }
     #endif
