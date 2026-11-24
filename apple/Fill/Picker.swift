@@ -156,6 +156,7 @@ final class Picker: NSObject, NSSearchFieldDelegate, NSTableViewDataSource, NSTa
 
         search.placeholderString = String(localized: "common.search")
         search.delegate = self
+        search.setAccessibilityIdentifier("fill.picker.search")
         search.sendsSearchStringImmediately = true
 
         let column = NSTableColumn(identifier: .init("login"))
@@ -165,6 +166,7 @@ final class Picker: NSObject, NSSearchFieldDelegate, NSTableViewDataSource, NSTa
         table.style = .inset
         table.backgroundColor = .clear
         table.dataSource = self
+        table.setAccessibilityIdentifier("fill.picker.list")
         table.delegate = self
         table.target = self
         // One click on a row is the explicit pick.

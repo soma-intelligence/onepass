@@ -3,6 +3,7 @@
 # Store. The store refuses any executable that is not sandboxed, so this project
 #   - does not link UpdateKit (Sparkle): the store updates the app,
 #   - does not embed or define OnePass Fill (Contents/Library/LoginItems), which cannot be sandboxed,
+#   - does not define FillLab, the Debug-only test app of OnePass Fill, nor its scheme,
 #   - sets ONEPASS_APP_STORE (a Swift condition and a build setting): the code drops the updater,
 #     the build phases leave out onepass-relay and onepass-mcp (Chrome, Firefox and MCP clients
 #     then reach no app; Safari goes through its own extension).
@@ -45,6 +46,20 @@ target = re.compile(r"(?:^  #.*\n)*^  OnePassFill:\n(?:^(?:    .*)?\n)*", re.M)
 assert len(target.findall(spec)) == 1, "OnePassFill target not found once in project.yml"
 spec = target.sub("", spec, count=1)
 assert "OnePassFill" not in spec, "OnePassFill still named in the App Store spec"
+
+# FillLab, the Debug-only test app of OnePass Fill: the Mac UI tests' dependency on it, its target
+# and its scheme (both blocks are `  FillLab:` with their comment), so the store project has none.
+lab_dep = (
+    "      # The hostile fields of FillAnywhereUITests, built next to the runner, not embedded.\n"
+    "      - target: FillLab\n"
+    "        embed: false\n"
+)
+assert lab_dep in spec, "FillLab dependency not found in project.yml"
+spec = spec.replace(lab_dep, "", 1)
+lab = re.compile(r"(?:^  #.*\n)*^  FillLab:\n(?:^(?:    .*)?\n)*", re.M)
+assert len(lab.findall(spec)) == 2, "FillLab target and scheme not found once each in project.yml"
+spec = lab.sub("", spec)
+assert "FillLab" not in spec, "FillLab still named in the App Store spec"
 
 # The app target's settings: the first `settings:` / `base:` after `  OnePass:` / `type: application`.
 start = spec.index("  OnePass:\n    type: application\n")

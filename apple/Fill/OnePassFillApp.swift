@@ -35,6 +35,10 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     /// A fill is under way: the shortcut and the pill wait for it to end.
     private var filling = false
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.somalabs.onepass.fill", category: "app")
+#if DEBUG
+    /// The grant last written to the Debug test log (`FillTestLog`).
+    private var testLoggedTrusted: Bool?
+#endif
 
     /// Opens the main app's "Remplir partout" settings page (the app's `FillAnywhereLink`).
     static let settingsLink = URL(string: "onepass://settings/fill-anywhere")!
@@ -103,6 +107,9 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         Task {
             let status = await link.status()
             log.notice("bridge status: \(String(describing: status), privacy: .public)")
+#if DEBUG
+            FillTestLog.append("bridge=\(String(describing: status))")
+#endif
         }
     }
 
@@ -129,6 +136,12 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         }
         let nowTrusted = AXIsProcessTrusted()
         publishTrusted(nowTrusted)
+#if DEBUG
+        if testLoggedTrusted != nowTrusted {
+            testLoggedTrusted = nowTrusted
+            FillTestLog.append("trusted=\(nowTrusted)")
+        }
+#endif
         if nowTrusted != trusted {
             trusted = nowTrusted
             log.notice("accessibility granted: \(nowTrusted, privacy: .public)")
@@ -163,6 +176,10 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     /// launches never prompt: the page's "Ouvrir les réglages" is the way back.
     private func promptForAccessibilityOnFirstRun() {
         guard !AXIsProcessTrusted() else { return }
+#if DEBUG
+        // A UI test run never raises a system prompt: it skips without the grant.
+        guard !FillTestLog.isActive else { return }
+#endif
         // Turned off in the app: no prompt, `refresh` quits right after.
         guard FillSettings.current().enabled != false else { return }
         let defaults = FillSettings.sharedDefaults(bundle: .main)
@@ -191,6 +208,9 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         pillContext = context
         followed = element
         pill.show(at: context.snapshot.frame)
+#if DEBUG
+        FillTestLog.append("pill=\(String(describing: context.kind))")
+#endif
         // Moves and scrolls give no focus notification: the frame is read again while shown.
         follow = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {

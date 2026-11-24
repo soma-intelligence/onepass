@@ -26,6 +26,7 @@ final class Pill {
         button.contentTintColor = .labelColor
         button.toolTip = String(localized: "fill.pill.help")
         button.setAccessibilityLabel(String(localized: "fill.pill.help"))
+        button.setAccessibilityIdentifier("fill.pill")
         label.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
         label.lineBreakMode = .byTruncatingTail
         label.isHidden = true

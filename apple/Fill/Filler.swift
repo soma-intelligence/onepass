@@ -155,7 +155,12 @@ final class Filler {
             Self.log.notice("fill \(String(describing: kind), privacy: .public): \(strategy.rawValue, privacy: .public) \(worked ? "worked" : "failed", privacy: .public)")
             result = worked ? .worked(strategy) : .failed(strategy)
         }
-        if case .worked(let strategy) = result { return .done(strategy) }
+        if case .worked(let strategy) = result {
+#if DEBUG
+            FillTestLog.append("strategy=\(strategy.rawValue)")
+#endif
+            return .done(strategy)
+        }
         return .failed
     }
 

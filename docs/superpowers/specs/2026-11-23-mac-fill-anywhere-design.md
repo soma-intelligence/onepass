@@ -1,6 +1,6 @@
 # Fill anywhere on the Mac
 
-Date: 2026-11-23. Status: design approved by the owner, not built.
+Date: 2026-11-23. Status: built on branch feat/fill-anywhere, hand checks pending.
 
 ## Goal
 
@@ -78,8 +78,13 @@ Each unit has one job and can be tested alone.
 
 An app entry is an `ItemUrl` with `url = "macapp://<bundle-id>"` and `rule = ExactHost`. This uses
 the existing model, so older apps sync it without a schema change; they show it as a URL they
-cannot open. `origin.rs` learns the `macapp` scheme. The first account picked for an app is saved
-this way when "Remember for this app" is on; the entry is visible and editable in the item.
+cannot open. App entries are matched in `core/onepass-core/src/fill_plan/app_entry.rs`, not by
+teaching `origin.rs` a new scheme. The first account picked for an app is saved this way when
+"Remember for this app" is on; the entry is visible and editable in the item.
+
+A URL target is filled through the bridge's `fill_login` in the desktop context, with the same
+origin check and Touch ID as the browser. Free search uses the bridge `search`, which returns
+logins only.
 
 Known apps that are browsers without the extension (Arc, Orion, Tor Browser, DuckDuckGo) are
 matched by URL first. When the URL cannot be read, the picker says so and searches by window title.
@@ -144,7 +149,7 @@ Typing never starts while a secure input session belongs to another process
 ## Testing
 
 - Unit tests: `FieldClassifier` on recorded attribute snapshots, `TargetResolver`, matching of
-  `macapp` entries in `origin.rs` and `policy`, the flow builder, the focus guard against a fake
+  `macapp` entries in `fill_plan/app_entry.rs` and `policy`, the flow builder, the focus guard against a fake
   clock and fake focus.
 - A local test app (`apple/FillLab`) with hostile fields: a custom-drawn field that refuses
   `kAXValueAttribute`, a fake password field (plain text field labelled "Password"), a field that
@@ -160,3 +165,47 @@ Typing never starts while a secure input session belongs to another process
   once the user clicks in the field.
 - A remote desktop window exposes no inner field: the pill shows on the window only when the user
   presses the shortcut, and matching falls back to search.
+
+## Evidence
+
+FillLab (`apple/FillLab`, Debug only) has six sections, each with a stable accessibility
+identifier:
+
+| Section | Field | Expected |
+|---|---|---|
+| 1 | Standard `NSSecureTextField` | `accessibility` |
+| 2 | Custom `NSView` that refuses a `kAXValueAttribute` set but takes typed keys | `typing` |
+| 3 | Plain `NSTextField` titled "Password hint", no label | not a password: no pill, nothing offered |
+| 4 | Plain `NSTextField` whose accessibility label is exactly "Password" | a password, `accessibility` |
+| 5 | `WKWebView` login page from the bundled `login.html` | `accessibility` |
+| 6 | Secure field that clears itself on set | falls back to `typing` |
+
+The UI test `FillAnywhereUITests.testFillsEveryLabField` (target `OnePassMacUITests`) drives the
+helper against these fields and reads the strategy from the helper's Debug test log
+(`-OnePassFillTestLog <path>`). It skips when the helper has no Accessibility grant or when the
+bridge refuses it (`appClosed`). Both are the case for an ad hoc Debug build, so the test needs a
+signed build with the grant.
+
+Every check below needs Accessibility and a signed build. None has run yet.
+
+| Check | Status |
+|---|---|
+| `FillAnywhereUITests` passes on a signed build with the grant | not run |
+| Slack | not run |
+| Discord | not run |
+| A Java app | not run |
+| A macOS VM in UTM | not run |
+| Microsoft Remote Desktop | not run |
+| Arc without the extension | not run |
+| In a remote desktop client and a UTM VM, a password with capitals and symbols such as `@`, `#` and `{` types correctly (Shift and Option key events) | not run |
+| A character the layout cannot type (an emoji, or `é` on a US layout) arrives correctly in a native app and in a remote desktop client (Unicode events on virtual key 0) | not run |
+| Username with a known password field: the focus moves to the password by Accessibility, with no Tab | not run |
+| Username with no known password field, where Tab lands on a control that is not a password: the fill stops and the picker offers Copy | not run |
+| ⌥⌘\ on a remote desktop or VM canvas: the picker opens at the screen centre, typing reaches the canvas, no Accessibility set is tried | not run |
+| A fill on a `reprompt` item, with a switch to another window of the same app while Touch ID shows: the fill stops with "Fill stopped: window changed" | not run |
+| The Mac UI test `SettingsUITests.testFillAnywherePageShowsAccessibilityStep` runs green | not run |
+| Turning the helper on registers the login item | not run |
+| Turning it off unregisters the login item and ends the helper | not run |
+| `.requiresApproval` shows the approval row and keeps the helper on | not run |
+| `fill.trusted` and the settings are shared between the app and the helper | not run |
+| The first signed build registers the App ID `<prefix>.fill` with the App Group | not run |
