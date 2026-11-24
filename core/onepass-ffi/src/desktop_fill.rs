@@ -38,6 +38,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use onepass_bridge::BridgeError;
 use onepass_bridge::api::{Ctx, FillField, Request, SecretString, Summary};
 use onepass_bridge::channel::Channel;
 use onepass_bridge::framing::{read_frame, write_frame};
@@ -124,12 +125,14 @@ pub enum FfiFillTarget {
         app_name: Option<String>,
     },
     /// A page in a browser without the extension (`url` read from the
-    /// accessibility tree, the list came from `list_for_url`). The app has
-    /// no desktop fill by page: the fill goes to the browser app
-    /// `bundle_id`, and never remembers it (the browser is not the site).
+    /// accessibility tree at the moment of the fill; the list came from
+    /// `list_for_url`). The app checks the login against this page as for
+    /// the extension (`origin_mismatch` when the page changed) and asks
+    /// Touch ID for the page's host. `app_name`: the browser's name, for
+    /// the key usage log (the page's host when `None`). Nothing is
+    /// remembered: a page needs no app entry.
     Url {
         url: String,
-        bundle_id: String,
         app_name: Option<String>,
     },
 }
@@ -177,6 +180,10 @@ enum Fail {
     App(String),
     /// An answer the protocol does not allow.
     Protocol,
+    /// No answer within the read timeout (or a write that would not go
+    /// out): the connection may still be up, the app may still serve the
+    /// request. Never retried.
+    TimedOut,
 }
 
 fn bridge(reason: &str) -> OnePassError {
@@ -192,6 +199,7 @@ impl From<Fail> for OnePassError {
             Fail::Closed => OnePassError::AppClosed,
             Fail::Untrusted => bridge("untrusted_app"),
             Fail::Protocol => bridge("protocol"),
+            Fail::TimedOut => bridge("timeout"),
             Fail::App(code) => match code.as_str() {
                 "locked" => OnePassError::Locked,
                 "not_found" => OnePassError::NotFound,
@@ -265,14 +273,24 @@ impl Live {
     }
 }
 
+/// A transport failure: a timeout, or a lost connection (EOF, reset,
+/// broken pipe and the rest).
+fn transport(e: &BridgeError) -> Fail {
+    match e {
+        BridgeError::Io(ErrorKind::TimedOut | ErrorKind::WouldBlock) => Fail::TimedOut,
+        _ => Fail::Closed,
+    }
+}
+
 fn send(s: &mut UnixStream, env: &Envelope) -> Result<(), Fail> {
-    write_frame(s, &wire::to_bytes(env)).map_err(|_| Fail::Closed)
+    write_frame(s, &wire::to_bytes(env)).map_err(|e| transport(&e))
 }
 
 fn recv(s: &mut UnixStream) -> Result<Envelope, Fail> {
     match read_frame(s) {
         Ok(Some(f)) => wire::parse(&f).map_err(|_| Fail::Protocol),
-        Ok(None) | Err(_) => Err(Fail::Closed),
+        Ok(None) => Err(Fail::Closed),
+        Err(e) => Err(transport(&e)),
     }
 }
 
@@ -332,19 +350,20 @@ fn open_session(mut s: UnixStream, record: &PairingRecord) -> Result<Live, Fail>
 }
 
 /// The stored form: version, pairing id, key, creation time, then the two
-/// names, each with a 2-byte length (big endian).
-fn encode(r: &PairingRecord) -> Zeroizing<Vec<u8>> {
+/// names, each with a 2-byte length (big endian). `None` when a name does
+/// not fit its length (never cut).
+fn encode(r: &PairingRecord) -> Option<Zeroizing<Vec<u8>>> {
     let mut out = Zeroizing::new(Vec::with_capacity(64 + r.ext_name.len() + r.browser.len()));
     out.push(RECORD_V1);
     out.extend_from_slice(&r.pairing_id);
     out.extend_from_slice(&*r.key);
     out.extend_from_slice(&r.created_at.to_be_bytes());
     for name in [&r.ext_name, &r.browser] {
-        let len = u16::try_from(name.len()).unwrap_or(u16::MAX);
+        let len = u16::try_from(name.len()).ok()?;
         out.extend_from_slice(&len.to_be_bytes());
-        out.extend_from_slice(&name.as_bytes()[..usize::from(len)]);
+        out.extend_from_slice(name.as_bytes());
     }
-    out
+    Some(out)
 }
 
 /// The record of `encode`, or `None` for anything else (then the helper
@@ -455,10 +474,14 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// Connect to `path` and send the opening frame; `check` vets the peer.
-fn dial(path: &PathBuf, check: &dyn Fn(&UnixStream) -> io::Result<()>) -> io::Result<UnixStream> {
+fn dial(
+    path: &PathBuf,
+    check: &dyn Fn(&UnixStream) -> io::Result<()>,
+    read_timeout: Duration,
+) -> io::Result<UnixStream> {
     let mut s = UnixStream::connect(path)?;
     check(&s)?;
-    s.set_read_timeout(Some(READ_TIMEOUT))?;
+    s.set_read_timeout(Some(read_timeout))?;
     s.set_write_timeout(Some(WRITE_TIMEOUT))?;
     write_frame(&mut s, OPENING).map_err(|_| io::Error::from(ErrorKind::BrokenPipe))?;
     Ok(s)
@@ -492,7 +515,7 @@ impl DesktopFillClient {
                 Ok(id) if is_app(&id, &team, &app) => Ok(()),
                 _ => Err(io::Error::from(ErrorKind::PermissionDenied)),
             };
-            Self::start(Box::new(move || dial(&path, &check)), store)
+            Self::start(Box::new(move || dial(&path, &check, READ_TIMEOUT)), store)
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -551,8 +574,11 @@ impl DesktopFillClient {
 
     /// The value of `field` of the login `item_id` the user picked, and
     /// nothing else. `remember`: add an app entry for the app to the login
-    /// first (ignored for a `Url` target). The app may confirm with Touch
-    /// ID (`reprompt` items). `NotFound` when the login has no such value.
+    /// first (an `App` target only: a page is matched by its URL, as in the
+    /// browser). The app may confirm with Touch ID (`reprompt` items).
+    /// `NotFound` when the login has no such value. Never sent twice: a
+    /// fill whose connection is lost is `AppClosed`, one with no answer in
+    /// time is `Validation(bridge, timeout)`.
     pub fn fill(
         &self,
         target: FfiFillTarget,
@@ -560,31 +586,37 @@ impl DesktopFillClient {
         field: FfiFillField,
         remember: bool,
     ) -> Result<Arc<FfiSecretValue>, OnePassError> {
-        let (bundle_id, app_name, remember) = match target {
-            FfiFillTarget::App {
-                bundle_id,
-                app_name,
-            } => (bundle_id, app_name, remember),
-            FfiFillTarget::Url {
-                url: _,
-                bundle_id,
-                app_name,
-            } => (bundle_id, app_name, false),
-        };
         let wire_field = match field {
             FfiFillField::Username => FillField::Username,
             FfiFillField::Password => FillField::Password,
             FfiFillField::Totp => FillField::Totp,
         };
-        let mut ok = self.call::<LoginOk>(Retry::Never, |id| Request::FillForApp {
-            id,
-            ctx: Ctx::Desktop,
-            item_id: item_id.clone(),
-            bundle_id: bundle_id.clone(),
-            fields: vec![wire_field],
-            remember,
-            app_name: app_name.clone(),
-        })?;
+        let mut ok = match target {
+            FfiFillTarget::App {
+                bundle_id,
+                app_name,
+            } => self.call::<LoginOk>(Retry::Never, |id| Request::FillForApp {
+                id,
+                ctx: Ctx::Desktop,
+                item_id: item_id.clone(),
+                bundle_id: bundle_id.clone(),
+                fields: vec![wire_field],
+                remember,
+                app_name: app_name.clone(),
+            })?,
+            // The page's own fill, checked by the app like the extension's.
+            FfiFillTarget::Url { url, app_name } => {
+                self.call::<LoginOk>(Retry::Never, |id| Request::FillLogin {
+                    id,
+                    ctx: Ctx::Desktop,
+                    agent_request: None,
+                    item_id: item_id.clone(),
+                    origin: url.clone(),
+                    fields: vec![wire_field],
+                    app_name: app_name.clone(),
+                })?
+            }
+        };
         let value = match field {
             FfiFillField::Username => ok.username.take(),
             FfiFillField::Password => ok.password.take(),
@@ -605,8 +637,21 @@ impl DesktopFillClient {
         socket_path: String,
         store: Arc<dyn FillPairingStore>,
     ) -> Result<Arc<Self>, OnePassError> {
+        Self::connect_for_tests_with_timeout(socket_path, store, READ_TIMEOUT)
+    }
+
+    /// `connect_for_tests` with another read timeout.
+    #[doc(hidden)]
+    pub fn connect_for_tests_with_timeout(
+        socket_path: String,
+        store: Arc<dyn FillPairingStore>,
+        read_timeout: Duration,
+    ) -> Result<Arc<Self>, OnePassError> {
         let path = PathBuf::from(socket_path);
-        Self::start(Box::new(move || dial(&path, &|_| Ok(()))), store)
+        Self::start(
+            Box::new(move || dial(&path, &|_| Ok(()), read_timeout)),
+            store,
+        )
     }
 
     fn start(dial: Dial, store: Arc<dyn FillPairingStore>) -> Result<Arc<Self>, OnePassError> {
@@ -643,7 +688,7 @@ impl DesktopFillClient {
         }
         let mut s = (self.dial)().map_err(|e| io_fail(&e))?;
         let record = pair(&mut s)?;
-        let bytes = encode(&record);
+        let bytes = encode(&record).ok_or(Fail::Protocol)?;
         self.store.save(bytes.to_vec());
         open_session(s, &record)
     }
@@ -706,7 +751,7 @@ mod tests {
             browser: "macOS".into(),
             created_at: 1_700_000_000,
         };
-        let b = encode(&r);
+        let b = encode(&r).unwrap();
         let back = decode(&b).unwrap();
         assert_eq!(back.pairing_id, r.pairing_id);
         assert_eq!(*back.key, *r.key);
@@ -750,5 +795,34 @@ mod tests {
         );
         assert_eq!(OnePassError::from(Fail::Closed), OnePassError::AppClosed);
         assert_eq!(OnePassError::from(Fail::Untrusted), bridge("untrusted_app"));
+        assert_eq!(OnePassError::from(Fail::TimedOut), bridge("timeout"));
+        assert!(matches!(
+            transport(&BridgeError::Io(ErrorKind::WouldBlock)),
+            Fail::TimedOut
+        ));
+        assert!(matches!(
+            transport(&BridgeError::Io(ErrorKind::ConnectionReset)),
+            Fail::Closed
+        ));
+    }
+
+    #[test]
+    fn a_name_too_long_for_its_length_is_refused_not_cut() {
+        let r = PairingRecord {
+            pairing_id: [3; 16],
+            key: Zeroizing::new([5; 32]),
+            ext_name: "x".repeat(usize::from(u16::MAX) + 1),
+            browser: "macOS".into(),
+            created_at: 1,
+        };
+        assert!(encode(&r).is_none());
+        let fits = PairingRecord {
+            ext_name: "x".repeat(usize::from(u16::MAX)),
+            ..r
+        };
+        assert_eq!(
+            decode(&encode(&fits).unwrap()).unwrap().ext_name.len(),
+            65535
+        );
     }
 }

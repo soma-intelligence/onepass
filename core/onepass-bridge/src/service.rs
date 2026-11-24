@@ -671,7 +671,8 @@ impl<V: VaultAccess> Service<V> {
     /// served in this session: `not_allowed` otherwise, whatever the
     /// extension knows of the tier.
     fn login_match(&self, item: &Item, page: &Origin, ctx: Ctx) -> OpResult<MatchQuality> {
-        if matches!(ctx, Ctx::Menu | Ctx::Popup | Ctx::Agent) {
+        // The helper's picker is the user's pick, as the popup.
+        if matches!(ctx, Ctx::Menu | Ctx::Popup | Ctx::Agent | Ctx::Desktop) {
             return item_match(item, page).ok_or(AppErrorCode::OriginMismatch);
         }
         self.followed_match(item, page)
@@ -830,14 +831,20 @@ impl<V: VaultAccess> Service<V> {
         {
             return Err(AppErrorCode::NotAllowed);
         }
-        // The desktop context opens the two app requests, the list of a
-        // page (a browser without the extension gives its URL) and the
-        // picker's search; the app requests take no other context.
+        // The desktop context opens the two app requests, the list and the
+        // login fill of a page (a browser without the extension gives its
+        // URL, checked like the extension's) and the picker's search; the
+        // app requests take no other context.
         let app_op = matches!(req, Request::ListForApp { .. } | Request::FillForApp { .. });
         match req.ctx() {
             Some(Ctx::Desktop)
                 if !app_op
-                    && !matches!(req, Request::ListForOrigin { .. } | Request::Search { .. }) =>
+                    && !matches!(
+                        req,
+                        Request::ListForOrigin { .. }
+                            | Request::Search { .. }
+                            | Request::FillLogin { .. }
+                    ) =>
             {
                 return Err(AppErrorCode::NotAllowed);
             }
@@ -974,8 +981,17 @@ impl<V: VaultAccess> Service<V> {
                 item_id,
                 origin: o,
                 fields,
+                app_name,
                 ..
-            } => self.fill_login(*ctx, *agent_request, item_id, o, fields, now),
+            } => self.fill_login(
+                *ctx,
+                *agent_request,
+                item_id,
+                o,
+                fields,
+                app_name.as_deref(),
+                now,
+            ),
             Request::FillCard {
                 ctx,
                 agent_request,
@@ -1557,6 +1573,12 @@ impl<V: VaultAccess> Service<V> {
         })
     }
 
+    /// The page's login. In the desktop context (the fill helper, on the
+    /// page of a browser without the extension) the same checks as the
+    /// extension's pick (match, reprompt for the page), and the fill goes
+    /// to the key usage log as a desktop fill under `app_name` (the page's
+    /// host when left out).
+    #[allow(clippy::too_many_arguments)]
     fn fill_login(
         &mut self,
         ctx: Ctx,
@@ -1564,13 +1586,25 @@ impl<V: VaultAccess> Service<V> {
         item_id: &str,
         o: &str,
         fields: &[FillField],
+        app_name: Option<&str>,
         now: u64,
     ) -> OpResult<Response> {
         // The setup card fills the code it just saved, nothing more.
         if ctx == Ctx::Setup && fields != [FillField::Totp] {
             return Err(AppErrorCode::NotAllowed);
         }
+        if app_name.is_some() && ctx != Ctx::Desktop {
+            return Err(AppErrorCode::Invalid);
+        }
         let page = origin(o)?;
+        let desktop_name = match (ctx, app_name) {
+            (Ctx::Desktop, Some(n)) => Some(field_label(
+                &capped(n.trim(), MAX_FIELD_LABEL),
+                page.host(),
+            )?),
+            (Ctx::Desktop, None) => Some(page.host().to_owned()),
+            _ => None,
+        };
         let (_, item) = self.eligible_item(item_id)?;
         if item.item_type != ItemType::Login {
             return Err(AppErrorCode::NotFound);
@@ -1588,6 +1622,18 @@ impl<V: VaultAccess> Service<V> {
         let out = login_secrets(&item, &fields, now);
         self.note_pick(&item, &page, q, ctx);
         self.record("fill_login", item.id, Some(o), ctx, now);
+        // The extension reports its fills with `note_fill`; the helper has
+        // no such report, so its fill is logged here.
+        if let Some(name) = desktop_name {
+            let _ = self.vault.record_key_use(
+                item.vault_id,
+                item.id,
+                KeyUseChannel::DesktopFill,
+                KeyUseAction::Filled,
+                &name,
+                "",
+            );
+        }
         Ok(out)
     }
 

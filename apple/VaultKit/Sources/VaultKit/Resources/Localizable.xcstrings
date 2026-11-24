@@ -4710,16 +4710,46 @@
       "comment" : "Key-use log row: the channel of a login filled by the OnePass helper in another Mac app.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac-Ausfüllen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mac fill"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relleno en Mac"
+          }
+        },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remplissage Mac"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Compilazione Mac"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac 채우기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac 填充"
           }
         }
       }

@@ -349,25 +349,58 @@ fn fill_with_remember_adds_the_app_entry() {
 }
 
 #[test]
-fn url_target_fills_for_the_browser_and_never_remembers() {
+fn url_target_fills_on_a_matching_page_only() {
     let (rig, _) = rig();
     let store = Arc::new(MemStore::default());
     let c = client(&rig, &store);
     let row = c.list_for_url(ATLAS.into()).unwrap().remove(0);
-    let arc = FfiFillTarget::Url {
-        url: ATLAS.into(),
-        bundle_id: "company.thebrowser.Browser".into(),
+    let page = |url: &str| FfiFillTarget::Url {
+        url: url.into(),
         app_name: Some("Arc".into()),
     };
     let v = c
-        .fill(arc, row.item_id.clone(), FfiFillField::Password, true)
+        .fill(
+            page(ATLAS),
+            row.item_id.clone(),
+            FfiFillField::Password,
+            true,
+        )
         .unwrap();
     assert_eq!(v.value(), PASSWORD);
-    // The browser was not added to the login.
-    let rows = c
-        .list_for_app("company.thebrowser.Browser".into(), None)
+    // Filled as the page's fill, logged under the browser's name; nothing
+    // remembered.
+    let vault = rig.session.vaults().unwrap()[0].id.clone();
+    let log = rig
+        .session
+        .item_key_uses(vault.clone(), row.item_id.replace('-', ""))
         .unwrap();
-    assert!(rows.is_empty(), "{rows:?}");
+    assert_eq!(
+        (log[0].channel, log[0].client.as_str()),
+        (FfiKeyUseChannel::DesktopFill, "Arc")
+    );
+    let urls = rig
+        .session
+        .item(vault, row.item_id.replace('-', ""))
+        .unwrap()
+        .urls;
+    assert_eq!(urls.len(), 2, "{urls:?}");
+
+    // The page changed between the list and the fill: no value.
+    assert_eq!(
+        c.fill(
+            page("https://evil.test"),
+            row.item_id.clone(),
+            FfiFillField::Password,
+            false
+        )
+        .unwrap_err(),
+        OnePassError::Validation {
+            field: "bridge".into(),
+            reason: "origin_mismatch".into()
+        }
+    );
+    let audit = std::fs::read_to_string(rig._dir.path().join("bridge-audit.jsonl")).unwrap();
+    assert!(!audit.contains("evil.test"), "{audit}");
 }
 
 #[test]
@@ -456,17 +489,32 @@ fn unlock_asks_the_app_and_answers_the_state() {
     assert_eq!(c.status().unwrap(), FfiFillStatus::Locked);
 }
 
-/// A listener that serves the fill helper through a relay of frames:
-/// with `drop_reply` armed, the next reply of the app is swallowed and the
-/// helper's connection cut, after the app served the request.
+/// The switches of `listen_relay`, each for the app's next reply.
+struct Relay {
+    /// Swallow it and cut the helper's connection.
+    drop: Arc<AtomicBool>,
+    /// Swallow it and keep the connection up (the helper waits in vain).
+    stall: Arc<AtomicBool>,
+}
+
+/// `listen_relay`'s drop switch only.
 fn listen_dropping(server: &Arc<BridgeServer>, path: &std::path::Path) -> Arc<AtomicBool> {
-    let armed = Arc::new(AtomicBool::new(false));
+    listen_relay(server, path).drop
+}
+
+/// A listener that serves the fill helper through a relay of frames, so a
+/// test can lose or stall a reply after the app served the request.
+fn listen_relay(server: &Arc<BridgeServer>, path: &std::path::Path) -> Relay {
+    let relay = Relay {
+        drop: Arc::new(AtomicBool::new(false)),
+        stall: Arc::new(AtomicBool::new(false)),
+    };
     let listener = UnixListener::bind(path).unwrap();
-    let (server, flag) = (server.clone(), armed.clone());
+    let (server, flag, stall) = (server.clone(), relay.drop.clone(), relay.stall.clone());
     thread::spawn(move || {
         for conn in listener.incoming() {
             let Ok(mut helper) = conn else { continue };
-            let (server, flag) = (server.clone(), flag.clone());
+            let (server, flag, stall) = (server.clone(), flag.clone(), stall.clone());
             thread::spawn(move || {
                 // The opening frame is the socket's, not the host loop's.
                 let Ok(Some(_)) = read_frame(&mut helper) else {
@@ -494,6 +542,9 @@ fn listen_dropping(server: &Arc<BridgeServer>, path: &std::path::Path) -> Arc<At
                         let _ = to_app.shutdown(Shutdown::Both);
                         return;
                     }
+                    if reply && stall.swap(false, Ordering::SeqCst) {
+                        continue;
+                    }
                     if write_frame(&mut helper, &f).is_err() {
                         break;
                     }
@@ -502,7 +553,7 @@ fn listen_dropping(server: &Arc<BridgeServer>, path: &std::path::Path) -> Arc<At
             });
         }
     });
-    armed
+    relay
 }
 
 /// `fill_for_app` lines of the bridge journal: one per fill served (the
@@ -558,4 +609,41 @@ fn lost_read_is_sent_again_once() {
     let rows = c.list_for_app(SLACK.into(), None).unwrap();
     assert_eq!(rows[0].title, "Slack");
     assert!(!drop_reply.load(Ordering::SeqCst));
+}
+
+#[test]
+fn stalled_reply_times_out_and_is_never_sent_again() {
+    let (rig, _) = rig();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("relay.sock");
+    let relay = listen_relay(&rig.server, &path);
+    let store = Arc::new(MemStore::default());
+    let c = DesktopFillClient::connect_for_tests_with_timeout(
+        path.to_string_lossy().into_owned(),
+        store,
+        Duration::from_millis(800),
+    )
+    .unwrap();
+    let row = c.list_for_app(SLACK.into(), None).unwrap().remove(0);
+    let timeout = OnePassError::Validation {
+        field: "bridge".into(),
+        reason: "timeout".into(),
+    };
+
+    relay.stall.store(true, Ordering::SeqCst);
+    assert_eq!(
+        c.fill(slack(), row.item_id.clone(), FfiFillField::Password, false)
+            .unwrap_err(),
+        timeout
+    );
+    assert_eq!(fills_of(&rig), 1);
+
+    // A read that times out is not retried either.
+    relay.stall.store(true, Ordering::SeqCst);
+    assert_eq!(c.list_for_app(SLACK.into(), None).unwrap_err(), timeout);
+    assert!(!relay.stall.load(Ordering::SeqCst));
+
+    // The next call opens a new connection.
+    assert_eq!(c.status().unwrap(), FfiFillStatus::Unlocked);
+    assert_eq!(fills_of(&rig), 1);
 }

@@ -74,8 +74,9 @@ pub enum Ctx {
     Setup,
     /// The Mac fill helper, filling a login in any Mac app (spec
     /// 2026-11-23-mac-fill-anywhere). Accepted by `list_for_app`,
-    /// `fill_for_app` and `list_for_origin` (a browser without the
-    /// extension gives its page) only; the app requests take no other.
+    /// `fill_for_app`, `search`, and `list_for_origin` and `fill_login`
+    /// (a browser without the extension gives its page) only; the app
+    /// requests take no other.
     Desktop,
 }
 
@@ -261,7 +262,10 @@ pub enum Request {
         kind: FillKind,
     },
     /// `agent_request`: with `ctx` `agent` only, the agent request whose
-    /// ticket this fill spends.
+    /// ticket this fill spends. `app_name`: with `ctx` `desktop` only, the
+    /// browser app the fill helper fills the page in (a browser without
+    /// the extension), for the key usage log (the page's host when left
+    /// out).
     FillLogin {
         id: u64,
         ctx: Ctx,
@@ -270,6 +274,8 @@ pub enum Request {
         item_id: String,
         origin: String,
         fields: Vec<FillField>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_name: Option<String>,
     },
     FillCard {
         id: u64,

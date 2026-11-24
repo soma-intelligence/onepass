@@ -5235,8 +5235,6 @@ mod desktop {
         let a = apps(&mut h);
         let atlas = h.ids.atlas;
         for req in [
-            json!({"op":"fill_login","ctx":"desktop","item_id":id(atlas),"origin":ATLAS,
-                   "fields":["password"]}),
             json!({"op":"totp","ctx":"desktop","item_id":id(atlas),"origin":ATLAS}),
             json!({"op":"fill_card","ctx":"desktop","item_id":id(h.ids.card),"origin":ATLAS}),
             json!({"op":"list_fillable","ctx":"desktop","origin":ATLAS,"kind":"card"}),
@@ -5460,5 +5458,80 @@ mod desktop {
         // Its own requests work.
         assert_eq!(titles(&h.call(list_app(SLACK, None))), ["Slack"]);
         ok(&h.call(fill_app(a.slack, SLACK, false)));
+    }
+
+    fn fill_page(item: Id, page: &str) -> Value {
+        json!({"op":"fill_login","ctx":"desktop","item_id":id(item),"origin":page,
+               "fields":["password"],"app_name":"Arc"})
+    }
+
+    #[test]
+    fn desktop_fill_login_for_another_page_is_origin_mismatch() {
+        let mut h = fill_helper();
+        let atlas = h.ids.atlas;
+        assert_eq!(
+            err(&h.call(fill_page(atlas, "https://evil.test"))),
+            "origin_mismatch"
+        );
+        // Nothing served, nothing logged, nothing journaled as a fill.
+        assert!(h.vault().served.is_empty());
+        assert!(h.vault().key_uses.is_empty());
+        assert!(h.audit.events().iter().all(|e| e.op != "fill_login"));
+    }
+
+    #[test]
+    fn desktop_fill_login_checks_the_page_like_the_extension() {
+        let mut h = fill_helper();
+        let atlas = h.ids.atlas;
+        let v = h.call(fill_page(atlas, ATLAS));
+        assert_eq!(ok(&v)["password"], ATLAS_PASSWORD);
+        assert!(ok(&v).get("username").is_none(), "{v}");
+        assert_eq!(
+            h.vault().key_uses,
+            [(
+                atlas,
+                KeyUseChannel::DesktopFill,
+                KeyUseAction::Filled,
+                "Arc".to_owned(),
+                String::new()
+            )]
+        );
+        let e = h.audit.events();
+        let last = e.last().unwrap();
+        assert_eq!(last.op, "fill_login");
+        assert_eq!(last.ctx.as_str(), "desktop");
+        assert_eq!(last.origin.as_deref(), Some(ATLAS));
+
+        // No app name: the page's host stands for it.
+        let mut f = fill_page(atlas, ATLAS);
+        f.as_object_mut().unwrap().remove("app_name");
+        ok(&h.call(f));
+        assert_eq!(h.vault().key_uses[1].3, "atlas-cloud.test");
+
+        // A reprompt item asks with the page's host, as for the extension.
+        let r = h.ids.reprompt;
+        assert_eq!(
+            err(&h.call(fill_page(r, "https://vault.atlas-cloud.test"))),
+            "reprompt_required"
+        );
+        assert_eq!(
+            h.vault().reprompts.last().unwrap(),
+            &(r, Some("vault.atlas-cloud.test".to_owned()))
+        );
+        assert_eq!(h.vault().key_uses.len(), 2);
+    }
+
+    #[test]
+    fn app_name_is_for_the_desktop_fill_login_only() {
+        let mut h = H::new();
+        let atlas = h.ids.atlas;
+        let v = h.call(json!({"op":"fill_login","ctx":"menu","item_id":id(atlas),
+                              "origin":ATLAS,"fields":["password"],"app_name":"Arc"}));
+        assert_eq!(err(&v), "invalid");
+        // And a browser never speaks the desktop context.
+        let mut f = fill_page(atlas, ATLAS);
+        f.as_object_mut().unwrap().remove("app_name");
+        assert_eq!(err(&h.call(f)), "not_allowed");
+        assert!(h.vault().served.is_empty());
     }
 }
