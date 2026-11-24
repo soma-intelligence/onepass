@@ -72,6 +72,11 @@ pub enum Ctx {
     /// `save_recovery_codes`, `list_for_origin`, and `fill_login` with
     /// `fields` exactly `[totp]`.
     Setup,
+    /// The Mac fill helper, filling a login in any Mac app (spec
+    /// 2026-11-23-mac-fill-anywhere). Accepted by `list_for_app`,
+    /// `fill_for_app` and `list_for_origin` (a browser without the
+    /// extension gives its page) only; the app requests take no other.
+    Desktop,
 }
 
 impl Ctx {
@@ -85,6 +90,7 @@ impl Ctx {
             Self::Passkey => "passkey",
             Self::Agent => "agent",
             Self::Setup => "setup",
+            Self::Desktop => "desktop",
         }
     }
 }
@@ -644,6 +650,31 @@ pub enum Request {
         origin: String,
         top_origin: String,
     },
+    /// The logins for the Mac app `bundle_id` (`ctx` `desktop` only): those
+    /// with an app entry for it first; when none has one, the logins whose
+    /// title holds a word of `window_title`. Answers `items`.
+    ListForApp {
+        id: u64,
+        ctx: Ctx,
+        bundle_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window_title: Option<String>,
+    },
+    /// The `fields` of a login the user picked for the Mac app `bundle_id`
+    /// (`ctx` `desktop` only), as `fill_login` answers. `remember`: add an
+    /// app entry for `bundle_id` to the login first. `app_name`: the app's
+    /// name, for the entry's label and the key usage log (the bundle id
+    /// when left out).
+    FillForApp {
+        id: u64,
+        ctx: Ctx,
+        item_id: String,
+        bundle_id: String,
+        fields: Vec<FillField>,
+        remember: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app_name: Option<String>,
+    },
 }
 
 impl Request {
@@ -690,7 +721,9 @@ impl Request {
             | Self::AgentWait { id }
             | Self::AgentProbeResult { id, .. }
             | Self::AgentFillResult { id, .. }
-            | Self::TakeSignIn { id, .. } => *id,
+            | Self::TakeSignIn { id, .. }
+            | Self::ListForApp { id, .. }
+            | Self::FillForApp { id, .. } => *id,
         }
     }
 
@@ -738,6 +771,8 @@ impl Request {
             Self::AgentProbeResult { .. } => "agent_probe_result",
             Self::AgentFillResult { .. } => "agent_fill_result",
             Self::TakeSignIn { .. } => "take_sign_in",
+            Self::ListForApp { .. } => "list_for_app",
+            Self::FillForApp { .. } => "fill_for_app",
         }
     }
 
@@ -776,7 +811,9 @@ impl Request {
             | Self::NoteAutofill { ctx, .. }
             | Self::PasskeyList { ctx, .. }
             | Self::PasskeyGet { ctx, .. }
-            | Self::PasskeyCreate { ctx, .. } => Some(*ctx),
+            | Self::PasskeyCreate { ctx, .. }
+            | Self::ListForApp { ctx, .. }
+            | Self::FillForApp { ctx, .. } => Some(*ctx),
             Self::Status { .. }
             | Self::Unlock { .. }
             | Self::Vaults { .. }

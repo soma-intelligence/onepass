@@ -44,8 +44,8 @@ use onepass_bridge::service::{AccountTag, VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::Id;
 use onepass_core::autofill_history::{AutofillEvent, ClientContext};
-use onepass_core::model::Item;
 use onepass_core::model::usage::SiteUsage;
+use onepass_core::model::{Item, KeyUseAction, KeyUseChannel};
 use onepass_core::profiles::{AccountDirectory, Slot};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
@@ -817,6 +817,30 @@ impl VaultAccess for AppVault<'_> {
             self.changed(&owner, Some(vault_id));
         }
         Ok(written)
+    }
+
+    fn record_key_use(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        channel: KeyUseChannel,
+        action: KeyUseAction,
+        client: &str,
+        field: &str,
+    ) -> onepass_bridge::Result<()> {
+        let (owner, _) = self.owner(vault_id)?;
+        let written = owner
+            .session
+            .with(|repo| {
+                let vault = find_vault(repo, vault_id)?;
+                let u = repo.this_device_key_use(channel, action, client, field);
+                Ok(repo.record_key_use(&vault, item_id, u, OffsetDateTime::now_utc())?)
+            })
+            .map_err(bridge_error)?;
+        if written {
+            self.changed(&owner, Some(vault_id));
+        }
+        Ok(())
     }
 
     fn forget_site_usage(&mut self, site: &str) -> onepass_bridge::Result<usize> {

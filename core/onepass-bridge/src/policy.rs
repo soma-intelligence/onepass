@@ -5,6 +5,7 @@
 //! autofill, and the current TOTP code, never the TOTP secret.
 
 use onepass_core::Id;
+use onepass_core::fill_plan::app_entry::{matches_app, valid_bundle_id};
 use onepass_core::fill_plan::score::{Candidate, CandidateKind, MatchQuality as PlanQuality};
 use onepass_core::model::usage::last_used_on;
 use onepass_core::model::{
@@ -87,6 +88,45 @@ pub fn to_candidate(item: &Item, q: PlanQuality) -> Candidate {
         // The caller says when it knows the vault (`plan_fill`).
         private_vault: false,
     }
+}
+
+/// The logins for the Mac app `bundle_id`, as candidates: the eligible
+/// logins with an app entry for it (`Exact`); when none has one, the
+/// eligible logins whose title holds a word of `title` longer than two
+/// characters, compared without case (`Other`). Never another item type.
+/// Nothing for an invalid bundle id.
+pub fn app_candidates(items: &[Item], bundle_id: &str, title: Option<&str>) -> Vec<Candidate> {
+    if !valid_bundle_id(bundle_id) {
+        return Vec::new();
+    }
+    let logins = || {
+        items
+            .iter()
+            .filter(|i| i.item_type == ItemType::Login && eligible(i))
+    };
+    let entries: Vec<Candidate> = logins()
+        .filter(|i| matches_app(i, bundle_id))
+        .map(|i| to_candidate(i, PlanQuality::Exact))
+        .collect();
+    if !entries.is_empty() {
+        return entries;
+    }
+    let words: Vec<String> = title
+        .unwrap_or_default()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.chars().count() > 2)
+        .map(str::to_lowercase)
+        .collect();
+    if words.is_empty() {
+        return Vec::new();
+    }
+    logins()
+        .filter(|i| {
+            let t = i.title.to_lowercase();
+            words.iter().any(|w| t.contains(w.as_str()))
+        })
+        .map(|i| to_candidate(i, PlanQuality::Other))
+        .collect()
 }
 
 /// `SHA-256(salt || lowercase(trim(username)))`: what `plan_fill`

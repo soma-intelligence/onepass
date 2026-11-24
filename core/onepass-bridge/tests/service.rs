@@ -5058,3 +5058,250 @@ fn take_sign_in_without_store_is_nothing() {
     let r = h.call(take(ATLAS, ATLAS));
     assert_eq!(ok(&r)["item_id"], Value::Null);
 }
+
+/// Fill anywhere on the Mac (spec 2026-11-23-mac-fill-anywhere): the
+/// desktop context, `list_for_app` and `fill_for_app`.
+mod desktop {
+    use super::*;
+    use onepass_core::model::{ItemType, ItemUrl, KeyUseAction, KeyUseChannel, new_item};
+
+    const SLACK: &str = "com.tinyspeck.slackmacgap";
+
+    struct Apps {
+        slack: Id,
+        note: Id,
+        github: Id,
+    }
+
+    /// A Slack login with an app entry, a note titled "Slack", a GitHub
+    /// login with web URLs only.
+    fn apps(h: &mut H) -> Apps {
+        let slack = h.svc.vault_mut().add_login(
+            "Slack",
+            "alex@atlas.dev",
+            "https://slack.com",
+            MatchRule::Domain,
+        );
+        let v = h.svc.vault_mut();
+        let item = v.items.iter_mut().find(|i| i.id == slack).unwrap();
+        item.urls.push(ItemUrl {
+            label: "Slack".into(),
+            url: format!("macapp://{SLACK}"),
+            rule: MatchRule::ExactHost,
+            primary: false,
+        });
+        let vault = v.vaults[0].id;
+        let note = new_item(ItemType::SecureNote, vault, "Slack");
+        let note_id = note.id;
+        v.items.push(note);
+        let github = v.add_login(
+            "GitHub",
+            "alex@atlas.dev",
+            "https://github.com",
+            MatchRule::Domain,
+        );
+        Apps {
+            slack,
+            note: note_id,
+            github,
+        }
+    }
+
+    fn list_app(bundle: &str, title: Option<&str>) -> Value {
+        json!({"op":"list_for_app","ctx":"desktop","bundle_id":bundle,"window_title":title})
+    }
+
+    fn fill_app(item: Id, bundle: &str, remember: bool) -> Value {
+        json!({"op":"fill_for_app","ctx":"desktop","item_id":id(item),"bundle_id":bundle,
+               "fields":["username","password"],"remember":remember,"app_name":"Slack"})
+    }
+
+    fn app_entries(h: &H, item: Id) -> usize {
+        h.vault()
+            .item(item)
+            .urls
+            .iter()
+            .filter(|u| u.url.starts_with("macapp://"))
+            .count()
+    }
+
+    #[test]
+    fn list_for_app_puts_app_entries_first_then_title_matches() {
+        let mut h = H::new();
+        let a = apps(&mut h);
+        let v = h.call(list_app(SLACK, Some("Slack | Sign in")));
+        assert_eq!(titles(&v), ["Slack"]);
+        assert_eq!(ok(&v)["items"][0]["item_id"], id(a.slack));
+        assert_eq!(ok(&v)["items"][0]["match"], "exact_host");
+
+        // No app entry: logins whose title holds a word of the window
+        // title, never a note, never a word of two letters or less.
+        let v = h.call(list_app("com.example.chat", Some("Slack | in")));
+        assert_eq!(titles(&v), ["Slack"]);
+        assert_eq!(ok(&v)["items"][0]["item_id"], id(a.slack));
+        assert_eq!(ok(&v)["items"][0]["match"], Value::Null);
+        assert!(!v.to_string().contains(&id(a.note)));
+        let v = h.call(list_app("com.github.GitHubClient", Some("github desktop")));
+        assert_eq!(titles(&v), ["GitHub"]);
+        assert_eq!(ok(&v)["items"][0]["item_id"], id(a.github));
+
+        // No app entry and no title: nothing.
+        assert!(titles(&h.call(list_app("com.example.chat", None))).is_empty());
+        let v = h.call(list_app("com.example.chat", Some("in | of")));
+        assert!(titles(&v).is_empty());
+    }
+
+    #[test]
+    fn list_for_app_refuses_a_bad_bundle_id_or_a_lock() {
+        let mut h = H::new();
+        apps(&mut h);
+        for bad in ["", "slack", "https://slack.com", "com.evil/../x"] {
+            assert_eq!(
+                err(&h.call(list_app(bad, Some("Slack")))),
+                "invalid",
+                "{bad}"
+            );
+        }
+        h.svc.vault_mut().locked = true;
+        assert_eq!(err(&h.call(list_app(SLACK, None))), "locked");
+    }
+
+    #[test]
+    fn fill_for_app_gives_the_listed_fields_only() {
+        let mut h = H::new();
+        let a = apps(&mut h);
+        let v = h.call(
+            json!({"op":"fill_for_app","ctx":"desktop","item_id":id(a.slack),
+            "bundle_id":SLACK,"fields":["password"],"remember":false}),
+        );
+        assert_eq!(ok(&v)["password"], "Twin-Pass-0011");
+        assert!(ok(&v).get("username").is_none(), "{v}");
+        let v = h.call(fill_app(a.slack, SLACK, false));
+        assert_eq!(ok(&v)["username"], "alex@atlas.dev");
+        assert_eq!(ok(&v)["password"], "Twin-Pass-0011");
+
+        // An item that is no login, or a bad bundle id, gives nothing.
+        assert_eq!(err(&h.call(fill_app(a.note, SLACK, false))), "not_found");
+        assert_eq!(
+            err(&h.call(fill_app(h.ids.card, SLACK, false))),
+            "not_found"
+        );
+        assert_eq!(err(&h.call(fill_app(a.slack, "bad/id", false))), "invalid");
+        assert!(h.vault().key_uses.len() == 2);
+    }
+
+    #[test]
+    fn fill_for_app_remembers_only_when_asked() {
+        let mut h = H::new();
+        let a = apps(&mut h);
+        let before = h.vault().item(a.github).urls.clone();
+        ok(&h.call(fill_app(a.github, SLACK, false)));
+        assert_eq!(h.vault().item(a.github).urls, before);
+
+        ok(&h.call(fill_app(a.github, SLACK, true)));
+        let urls = &h.vault().item(a.github).urls;
+        assert_eq!(urls.len(), before.len() + 1);
+        let entry = urls.last().unwrap();
+        assert_eq!(entry.url, format!("macapp://{SLACK}"));
+        assert_eq!(entry.rule, MatchRule::ExactHost);
+        assert_eq!(entry.label, "Slack");
+
+        // Asked again: still one entry.
+        ok(&h.call(fill_app(a.github, SLACK, true)));
+        assert_eq!(app_entries(&h, a.github), 1);
+        // And the app now lists it first.
+        let v = h.call(list_app(SLACK, None));
+        assert_eq!(titles(&v), ["GitHub", "Slack"]);
+        assert!(h.audit.events().iter().any(|e| e.op == "fill_for_app"));
+    }
+
+    #[test]
+    fn desktop_ctx_refused_on_browser_requests() {
+        let mut h = H::new();
+        let a = apps(&mut h);
+        let atlas = h.ids.atlas;
+        for req in [
+            json!({"op":"fill_login","ctx":"desktop","item_id":id(atlas),"origin":ATLAS,
+                   "fields":["password"]}),
+            json!({"op":"search","ctx":"desktop","query":"atlas"}),
+            json!({"op":"totp","ctx":"desktop","item_id":id(atlas),"origin":ATLAS}),
+            json!({"op":"fill_card","ctx":"desktop","item_id":id(h.ids.card),"origin":ATLAS}),
+            json!({"op":"list_fillable","ctx":"desktop","origin":ATLAS,"kind":"card"}),
+        ] {
+            assert_eq!(err(&h.call(req.clone())), "not_allowed", "{req}");
+        }
+        // A browser without the extension sends its page.
+        assert_eq!(
+            titles(&h.call(json!({"op":"list_for_origin","ctx":"desktop","origin":ATLAS}))),
+            ["Atlas Cloud"]
+        );
+        // And the app requests take the desktop context only.
+        for ctx in ["popup", "menu", "overlay", "chain", "setup", "agent"] {
+            let mut l = list_app(SLACK, None);
+            l["ctx"] = json!(ctx);
+            assert_eq!(err(&h.call(l)), "not_allowed", "{ctx}");
+            let mut f = fill_app(a.slack, SLACK, false);
+            f["ctx"] = json!(ctx);
+            assert_eq!(err(&h.call(f)), "not_allowed", "{ctx}");
+        }
+        assert!(h.vault().key_uses.is_empty());
+    }
+
+    #[test]
+    fn reprompt_item_asks_approval() {
+        let mut h = H::new();
+        let r = h.ids.reprompt;
+        assert_eq!(err(&h.call(fill_app(r, SLACK, true))), "reprompt_required");
+        assert_eq!(h.vault().reprompts, [(r, None)]);
+        // Refused: nothing remembered, nothing logged.
+        assert_eq!(app_entries(&h, r), 0);
+        assert!(h.vault().key_uses.is_empty());
+        h.svc.vault_mut().approve_reprompt = true;
+        let v = h.call(fill_app(r, SLACK, false));
+        assert_eq!(ok(&v)["password"], REPROMPT_PASSWORD);
+        assert_eq!(h.vault().reprompts.len(), 2);
+    }
+
+    #[test]
+    fn fill_for_app_logs_desktop_fill() {
+        let mut h = H::new();
+        let a = apps(&mut h);
+        ok(&h.call(fill_app(a.slack, SLACK, false)));
+        assert_eq!(
+            h.vault().key_uses,
+            [(
+                a.slack,
+                KeyUseChannel::DesktopFill,
+                KeyUseAction::Filled,
+                "Slack".to_owned(),
+                String::new()
+            )]
+        );
+        let e = h.audit.events();
+        let last = e.last().unwrap();
+        assert_eq!(last.op, "fill_for_app");
+        assert_eq!(last.ctx.as_str(), "desktop");
+        assert_eq!(
+            last.origin.as_deref(),
+            Some("macapp://com.tinyspeck.slackmacgap")
+        );
+        assert_eq!(h.vault().served.last().unwrap().0, "fill_for_app");
+
+        // No app name: the bundle id stands for it.
+        ok(&h.call(
+            json!({"op":"fill_for_app","ctx":"desktop","item_id":id(a.slack),
+            "bundle_id":SLACK,"fields":["password"],"remember":false}),
+        ));
+        assert_eq!(h.vault().key_uses[1].3, SLACK);
+    }
+
+    #[test]
+    fn fill_for_app_needs_an_unlocked_vault() {
+        let mut h = H::new();
+        let a = apps(&mut h);
+        h.svc.vault_mut().locked = true;
+        assert_eq!(err(&h.call(fill_app(a.slack, SLACK, true))), "locked");
+        h.svc.vault_mut().locked = false;
+        assert_eq!(app_entries(&h, a.slack), 1);
+    }
+}

@@ -13,6 +13,7 @@ use onepass_core::Id;
 use onepass_core::autofill_history::{
     AutofillAction, AutofillEvent, BrowserKind, ClientContext, EventSource, MAX_SHOWN,
 };
+use onepass_core::fill_plan::app_entry::{APP_SCHEME, add_app_entry, valid_bundle_id};
 use onepass_core::fill_plan::compose::PRIORITY;
 use onepass_core::fill_plan::context::{FieldRole, FrameKind, MAX_FIELDS, PageContext};
 use onepass_core::fill_plan::intent::{Intent, intent_of};
@@ -25,6 +26,7 @@ use onepass_core::model::{
     Address, EventKind, Field, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod,
     MatchRule, PENDING_TAG, PasswordHistoryEntry, Section, WEAK_BY_SITE_TAG, new_item, validate,
 };
+use onepass_core::model::{KeyUseAction, KeyUseChannel};
 use onepass_core::site_password::{GenerationReport, PasswordContext, Profile, generate_for};
 use onepass_core::totp::{OtpAttach, attach_otp, parse_otpauth};
 use onepass_core::webauthn;
@@ -41,11 +43,11 @@ use crate::api::{
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
-    add_passkey, associated_document, card_values, direct_match, eligible, identity_values,
-    is_provider_account, item_match, license_values, login_identifier, login_secrets,
-    loyalty_values, otp_field, passkeys, passport_values, plan_candidates, plan_quality,
-    provider_url_matches, reveal_value, site_loyalty, stored_password, summarize, summary_kind,
-    to_candidate, totp_now,
+    add_passkey, app_candidates, associated_document, card_values, direct_match, eligible,
+    identity_values, is_provider_account, item_match, license_values, login_identifier,
+    login_secrets, loyalty_values, otp_field, passkeys, passport_values, plan_candidates,
+    plan_quality, provider_url_matches, reveal_value, site_loyalty, stored_password, summarize,
+    summary_kind, to_candidate, totp_now,
 };
 use crate::provider::{ProviderId, from_host};
 use crate::quirks::quirk_rules;
@@ -83,7 +85,7 @@ const MAX_STEPS: usize = 16;
 /// Longest site `forget_site` takes (a DNS name).
 const MAX_SITE_LEN: usize = 253;
 /// The journal operations that record a secret served to the client.
-const SERVED: [&str; 9] = [
+const SERVED: [&str; 10] = [
     "fill_login",
     "fill_card",
     "fill_identity",
@@ -93,7 +95,10 @@ const SERVED: [&str; 9] = [
     "totp",
     "reveal",
     "passkey_get",
+    "fill_for_app",
 ];
+/// Longest window title `list_for_app` takes, in characters.
+const MAX_WINDOW_TITLE: usize = 1024;
 /// Initial capacity of a reply buffer. Replies with a secret are far
 /// smaller, so the buffer never reallocates (which would leave an
 /// unwiped copy behind).
@@ -175,7 +180,7 @@ pub trait VaultAccess {
     /// A secret was served to the client, after every check: `kind` is the
     /// journal's operation (`fill_login`, `fill_card`, `fill_identity`,
     /// `fill_document`, `fill_loyalty`, `fill_provider`, `totp`, `reveal`,
-    /// `passkey_get`), `account` the item's account key when the host
+    /// `passkey_get`, `fill_for_app`), `account` the item's account key when the host
     /// serves several. Never for a plan, a note, a save, a refusal or an
     /// agent fill.
     fn secret_served(&mut self, kind: &'static str, item_id: Id, account: Option<&str>) {
@@ -215,6 +220,23 @@ pub trait VaultAccess {
     /// Forget `site` in every item (`Repository::forget_site_usage`): how
     /// many items were rewritten.
     fn forget_site_usage(&mut self, site: &str) -> Result<usize>;
+    /// Note one use of an item's secret in its key usage log
+    /// (`Repository::record_key_use`), best effort: the caller ignores the
+    /// error. `client` is a short app name and `field` a field label (empty
+    /// when the use covers the item); the core sanitizes both. A host
+    /// without a log records nothing.
+    fn record_key_use(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        channel: KeyUseChannel,
+        action: KeyUseAction,
+        client: &str,
+        field: &str,
+    ) -> Result<()> {
+        let _ = (vault_id, item_id, channel, action, client, field);
+        Ok(())
+    }
     /// Keep one event in the device's autofill history
     /// (`Repository::record_autofill_event`): `false` when the history is
     /// off or not kept. A host without a history keeps nothing.
@@ -768,6 +790,17 @@ impl<V: VaultAccess> Service<V> {
         {
             return Err(AppErrorCode::NotAllowed);
         }
+        // The desktop context opens the two app requests and the list of a
+        // page (a browser without the extension gives its URL); the app
+        // requests take no other context.
+        let app_op = matches!(req, Request::ListForApp { .. } | Request::FillForApp { .. });
+        match req.ctx() {
+            Some(Ctx::Desktop) if !app_op && !matches!(req, Request::ListForOrigin { .. }) => {
+                return Err(AppErrorCode::NotAllowed);
+            }
+            Some(c) if app_op && c != Ctx::Desktop => return Err(AppErrorCode::NotAllowed),
+            _ => {}
+        }
         match req {
             Request::Status { .. } => {
                 let s = self.vault.status();
@@ -852,6 +885,7 @@ impl<V: VaultAccess> Service<V> {
                 | Request::LinkProvider { .. }
                 | Request::PasskeyGet { .. }
                 | Request::PasskeyCreate { .. }
+                | Request::FillForApp { .. }
         ) {
             self.take_secret_slot(now)?;
         }
@@ -865,6 +899,28 @@ impl<V: VaultAccess> Service<V> {
             | Request::TakeSignIn { .. } => Err(AppErrorCode::Internal),
             Request::Vaults { origin: o, .. } => self.vaults(o.as_deref()),
             Request::ListForOrigin { origin: o, .. } => self.list_for_origin(o),
+            Request::ListForApp {
+                bundle_id,
+                window_title,
+                ..
+            } => self.list_for_app(bundle_id, window_title.as_deref()),
+            Request::FillForApp {
+                ctx,
+                item_id,
+                bundle_id,
+                fields,
+                remember,
+                app_name,
+                ..
+            } => self.fill_for_app(
+                *ctx,
+                item_id,
+                bundle_id,
+                fields,
+                *remember,
+                app_name.as_deref(),
+                now,
+            ),
             Request::Search { ctx, query, .. } => self.search(*ctx, query),
             Request::ListFillable {
                 origin: o, kind, ..
@@ -1290,6 +1346,79 @@ impl<V: VaultAccess> Service<V> {
             item_match(i, &page).map(Some)
         });
         Ok(Response::Items { items })
+    }
+
+    /// `list_for_app`: the logins `app_candidates` picks, app entries
+    /// (`exact_host`) before title matches (no match). The bundle id is
+    /// checked before any read.
+    fn list_for_app(&mut self, bundle_id: &str, title: Option<&str>) -> OpResult<Response> {
+        if !valid_bundle_id(bundle_id)
+            || title.is_some_and(|t| t.chars().count() > MAX_WINDOW_TITLE)
+        {
+            return Err(AppErrorCode::Invalid);
+        }
+        let all = self.items()?;
+        let items: Vec<Item> = all.iter().map(|(_, i)| i.clone()).collect();
+        let picked: HashMap<Id, PlanQuality> = app_candidates(&items, bundle_id, title)
+            .into_iter()
+            .map(|c| (c.item_id, c.quality))
+            .collect();
+        drop(items);
+        let items = Self::summaries(&all, |i| {
+            picked
+                .get(&i.id)
+                .map(|q| (*q == PlanQuality::Exact).then_some(MatchQuality::ExactHost))
+        });
+        Ok(Response::Items { items })
+    }
+
+    /// `fill_for_app`: the `fields` of a login the user picked for the app,
+    /// whatever its URLs (the pick is the user's; only the fill helper
+    /// speaks the desktop context). Reprompt as `fill_login`. `remember`
+    /// adds an app entry for `bundle_id` first, written as other bridge
+    /// writes; the fill goes to the key usage log as a desktop fill.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_for_app(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        bundle_id: &str,
+        fields: &[FillField],
+        remember: bool,
+        app_name: Option<&str>,
+        now: u64,
+    ) -> OpResult<Response> {
+        if !valid_bundle_id(bundle_id) {
+            return Err(AppErrorCode::Invalid);
+        }
+        let name = match app_name {
+            Some(n) => field_label(n, bundle_id)?,
+            None => bundle_id.to_owned(),
+        };
+        let (_, mut item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Login {
+            return Err(AppErrorCode::NotFound);
+        }
+        self.reprompt(&item, None)?;
+        let entry = format!("{APP_SCHEME}://{bundle_id}");
+        let (id, vault_id) = (item.id, item.vault_id);
+        if remember && add_app_entry(&mut item, bundle_id, &name) {
+            item.updated_at = unix(now);
+            validate(&item).map_err(|_| AppErrorCode::Invalid)?;
+            self.save(vault_id, item.clone())?;
+            self.record("add_app_entry", id, Some(&entry), ctx, now);
+        }
+        let out = login_secrets(&item, fields, now);
+        self.record("fill_for_app", id, Some(&entry), ctx, now);
+        let _ = self.vault.record_key_use(
+            vault_id,
+            id,
+            KeyUseChannel::DesktopFill,
+            KeyUseAction::Filled,
+            &name,
+            "",
+        );
+        Ok(out)
     }
 
     fn search(&mut self, ctx: Ctx, query: &str) -> OpResult<Response> {
