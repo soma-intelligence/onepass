@@ -310,7 +310,10 @@ struct ItemListColumn: View {
                 // A toolbar item keeps the width it asks for: the search field asks for the row
                 // less what the bar's other items take (`ToolbarRowProbe`).
                 searchField
-                    .frame(width: titleBarRoom.map { max(180, $0 - rowReserved) } ?? 210)
+                    .frame(width: titleBarRoom.map { max(180, $0 - rowReserved - Self.searchLeadingGap) } ?? 210)
+                    // Air between the field and the sidebar button, which sits right against it
+                    // once the sidebar is closed.
+                    .padding(.leading, Self.searchLeadingGap)
                     // When the bar's other items change (a deleted item has fewer), the field eases
                     // to its new width instead of jumping.
                     .animation(.easeInOut(duration: 0.2), value: rowReserved)
@@ -499,6 +502,9 @@ struct ItemListColumn: View {
         .help("browse.sort")
         .accessibilityIdentifier("items.sort")
     }
+
+    /// Space before the title bar's search field (the sidebar button or the list's edge).
+    private static let searchLeadingGap: CGFloat = 10
 
     /// "Rechercher", or "Rechercher dans Logins" once a type is chosen.
     private var searchPrompt: String {
