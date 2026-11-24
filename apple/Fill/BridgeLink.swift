@@ -8,8 +8,11 @@ import os
 /// The helper's link to the Mac app's bridge (spec 2026-11-23-mac-fill-anywhere-design, BridgeClient):
 /// `DesktopFillClient` over `bridge.sock` in the App Group container. The Rust client checks both
 /// code signatures, sends the opening frame `{"onepass_relay":1}`, pairs once without a code and
-/// keeps one connection. Every FFI call blocks (a fill may wait for Touch ID in the app), so they
-/// run one at a time on a serial queue, never on the main actor, and the answer comes back here.
+/// keeps one connection. Every FFI call blocks, so none runs on the main actor; the answer comes
+/// back here. Two lanes, each a serial queue with its own client and connection: `fill` on one (it
+/// may wait up to 130 s for Touch ID in the app), the reads (`status`, `unlock`, the lists) on the
+/// other, so the picker's status never queues behind a fill. The Rust client holds its connection
+/// under a lock for the whole request, hence a second client rather than a second queue alone.
 @MainActor
 final class BridgeLink {
     enum LinkError: Error, Equatable {
@@ -17,29 +20,37 @@ final class BridgeLink {
         case unsupportedField
     }
 
-    private let worker: Worker
+    /// `status`, `unlock`, `listForApp`, `listForUrl`.
+    private let reads: Worker
+    /// `fill`, the only call that may wait for the user.
+    private let fills: Worker
     /// The last error of a call, for the log and the next tasks' UI. Never holds a value.
     private(set) var lastError: (any Error)?
 
     init(bundle: Bundle = .main) {
-        worker = Worker(socketPath: Self.socketPath(bundle: bundle), store: KeychainFillPairingStore(bundle: bundle))
+        let path = Self.socketPath(bundle: bundle)
+        // One store: the read lane connects first (status at launch) and pairs if needed; the fill
+        // lane connects at the first fill and finds the saved record.
+        let store = KeychainFillPairingStore(bundle: bundle)
+        reads = Worker(label: "me.somalabs.onepass.fill.bridge.reads", socketPath: path, store: store)
+        fills = Worker(label: "me.somalabs.onepass.fill.bridge.fills", socketPath: path, store: store)
     }
 
     /// Whether the app runs and its vault is unlocked. A failure to reach the app (unsigned build,
     /// helper blocked by the user, protocol error) reads as `appClosed` and is kept in `lastError`.
     func status() async -> FfiFillStatus {
-        await answer { try $0.status() }
+        await answer(on: reads) { try $0.status() }
     }
 
     /// Brings the app forward to unlock; answers the state that follows (`locked` until the user
     /// unlocked there).
     func unlock() async -> FfiFillStatus {
-        await answer { try $0.unlock() }
+        await answer(on: reads) { try $0.unlock() }
     }
 
     /// The logins for `target`: the page's, or the app's (its remembered entries first).
     func candidates(for target: FillTarget) async throws -> [FfiFillCandidate] {
-        try await call { client in
+        try await call(on: reads) { client in
             switch target {
             case .url(let url):
                 return try client.listForUrl(url: url.absoluteString)
@@ -60,7 +71,7 @@ final class BridgeLink {
             lastError = LinkError.unsupportedField
             throw LinkError.unsupportedField
         }
-        return try await call { client in
+        return try await call(on: fills) { client in
             // The FFI object holds the value in `Zeroizing`; it dies at the end of this closure,
             // right after the copy into the buffer.
             let secret = try client.fill(target: ffiTarget, itemId: itemID, field: ffiField, remember: remember)
@@ -100,17 +111,19 @@ final class BridgeLink {
         return dir.appendingPathComponent("bridge.sock").path
     }
 
-    private func answer(_ body: @escaping @Sendable (DesktopFillClient) throws -> FfiFillStatus) async
-        -> FfiFillStatus
-    {
+    private func answer(
+        on worker: Worker, _ body: @escaping @Sendable (DesktopFillClient) throws -> FfiFillStatus
+    ) async -> FfiFillStatus {
         do {
-            return try await call(body)
+            return try await call(on: worker, body)
         } catch {
             return .appClosed
         }
     }
 
-    private func call<T: Sendable>(_ body: @escaping @Sendable (DesktopFillClient) throws -> T) async throws -> T {
+    private func call<T: Sendable>(
+        on worker: Worker, _ body: @escaping @Sendable (DesktopFillClient) throws -> T
+    ) async throws -> T {
         do {
             let result = try await worker.run(body)
             lastError = nil
@@ -125,15 +138,16 @@ final class BridgeLink {
     private static let log = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "me.somalabs.onepass.fill", category: "bridge")
 
-    /// Owns the client and the serial queue every FFI call runs on. The client is touched on that
-    /// queue only, which is what makes the unchecked conformance hold.
+    /// One lane: a client and the serial queue its FFI calls run on. The client is touched on
+    /// that queue only, which is what makes the unchecked conformance hold.
     private final class Worker: @unchecked Sendable {
-        private let queue = DispatchQueue(label: "me.somalabs.onepass.fill.bridge", qos: .userInitiated)
+        private let queue: DispatchQueue
         private let socketPath: String?
         private let store: any FillPairingStore
         private var client: DesktopFillClient?
 
-        init(socketPath: String?, store: any FillPairingStore) {
+        init(label: String, socketPath: String?, store: any FillPairingStore) {
+            queue = DispatchQueue(label: label, qos: .userInitiated)
             self.socketPath = socketPath
             self.store = store
         }
@@ -227,9 +241,7 @@ final class KeychainFillPairingStore: FillPairingStore, @unchecked Sendable {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else {
-            if status != errSecItemNotFound {
-                Self.log.error("pairing record not read, status \(status, privacy: .public)")
-            }
+            if status != errSecItemNotFound { report(status, "pairing record not read") }
             return nil
         }
         return result as? Data
@@ -246,8 +258,18 @@ final class KeychainFillPairingStore: FillPairingStore, @unchecked Sendable {
             add.merge(update) { $1 }
             status = SecItemAdd(add as CFDictionary, nil)
         }
-        if status != errSecSuccess {
-            Self.log.error("pairing record not saved, status \(status, privacy: .public)")
+        if status != errSecSuccess { report(status, "pairing record not saved") }
+    }
+
+    private func report(_ status: OSStatus, _ what: String) {
+        // An ad hoc build (Debug, Release) carries no keychain-access-groups entitlement and no
+        // access group: the data protection keychain then answers errSecMissingEntitlement
+        // (-34018). Expected there (such a helper reaches no bridge either), so it is debug noise,
+        // not an error.
+        if status == errSecMissingEntitlement, accessGroup == nil {
+            Self.log.debug("\(what, privacy: .public), status \(status, privacy: .public) (ad hoc build, no access group)")
+        } else {
+            Self.log.error("\(what, privacy: .public), status \(status, privacy: .public)")
         }
     }
 
