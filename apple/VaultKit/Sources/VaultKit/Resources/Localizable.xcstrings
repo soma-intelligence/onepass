@@ -4659,6 +4659,24 @@
         }
       }
     },
+    "keyUse.channel.desktopFill" : {
+      "comment" : "Key-use log row: the channel of a login filled by the OnePass helper in another Mac app.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac fill"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplissage Mac"
+          }
+        }
+      }
+    },
     "keyUse.countSince %@ %@" : {
       "comment" : "Item key-use summary, second part: every use since the month of the first one. %1$@ is 'keyUse.times' ('365 fois'), %2$@ a month, with its year when not this year ('mars', 'mars 2026').",
       "extractionState" : "manual",
