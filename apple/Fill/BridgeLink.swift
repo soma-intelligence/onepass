@@ -10,8 +10,8 @@ import os
 /// code signatures, sends the opening frame `{"onepass_relay":1}`, pairs once without a code and
 /// keeps one connection. Every FFI call blocks, so none runs on the main actor; the answer comes
 /// back here. Two lanes, each a serial queue with its own client and connection: `fill` on one (it
-/// may wait up to 130 s for Touch ID in the app), the reads (`status`, `unlock`, the lists) on the
-/// other, so the picker's status never queues behind a fill. The Rust client holds its connection
+/// may wait up to 130 s for Touch ID in the app), the reads (`status`, `unlock`, the lists and
+/// the search) on the other, so the picker's status never queues behind a fill. The Rust client holds its connection
 /// under a lock for the whole request, hence a second client rather than a second queue alone.
 @MainActor
 final class BridgeLink {
@@ -20,7 +20,7 @@ final class BridgeLink {
         case unsupportedField
     }
 
-    /// `status`, `unlock`, `listForApp`, `listForUrl`.
+    /// `status`, `unlock`, `listForApp`, `listForUrl`, `search`.
     private let reads: Worker
     /// `fill`, the only call that may wait for the user.
     private let fills: Worker
@@ -58,6 +58,11 @@ final class BridgeLink {
                 return try client.listForApp(bundleId: bundleID, windowTitle: windowTitle)
             }
         }
+    }
+
+    /// Free search over the logins (title, username, URLs), on the read lane.
+    func search(_ query: String) async throws -> [FfiFillCandidate] {
+        try await call(on: reads) { try $0.search(query: query) }
     }
 
     /// The one value of `field` for the picked login. `appName` names the app in the remembered

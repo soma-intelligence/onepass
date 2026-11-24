@@ -6,12 +6,15 @@ import os
 /// A focused field the helper may fill: its attributes, its kind, and the elements the flow needs.
 struct FieldContext {
     let snapshot: FieldSnapshot
-    let kind: FieldKind
-    /// The focused element (nil when the app exposes none: the shortcut still opens the picker).
+    var kind: FieldKind
+    /// The focused element, a text input or not (a remote desktop canvas, a custom view: the
+    /// guard and the typed keys follow it). Nil only when the app exposes no focused element.
     let element: AXUIElement?
     let pid: pid_t
-    /// The password field right below a username field, when found.
-    let passwordBelow: AXUIElement?
+    /// Whether `element` is a text input (the pill and the Accessibility set need one).
+    let isTextInput: Bool
+    /// The password field right below a username field, once `AX.resolveBelow` found it.
+    var passwordBelow: AXUIElement?
 
     var hasPasswordBelow: Bool { passwordBelow != nil }
 
@@ -57,6 +60,8 @@ final class FocusWatcher {
     private var observer: AXObserver?
     private var observedApp: AXUIElement?
     private var observedPID: pid_t?
+    /// Bumped on every focus change: a field-below walk that finishes late is dropped.
+    private var generation = 0
     private var tokens: [NSObjectProtocol] = []
     private let ownPID = ProcessInfo.processInfo.processIdentifier
     private static let log = Logger(
@@ -149,12 +154,28 @@ final class FocusWatcher {
         onChange?(evaluate(pid: pid))
     }
 
-    /// The fillable field focused in `pid` now, if any.
+    /// The fillable field focused in `pid` now, if any. A password field answers at once. A plain
+    /// text field may be the username above one: the walk that finds the field below runs off
+    /// the main thread, and its answer is reported only if the focus has not moved meanwhile.
     private func evaluate(pid: pid_t) -> FieldContext? {
-        guard let context = Self.context(pid: pid), context.element != nil else { return nil }
+        generation &+= 1
+        guard let context = Self.context(pid: pid), context.isTextInput, context.element != nil else { return nil }
         switch context.kind {
-        case .password, .username: return context
-        case .oneTimeCode, .other: return nil
+        case .password:
+            return context
+        case .other where context.snapshot.role == kAXTextFieldRole as String:
+            let asked = generation
+            Task { [weak self] in
+                let resolved = await AX.resolveBelow(context)
+                guard let self, asked == self.generation, self.observedPID == pid, resolved.kind == .username,
+                    let now = FocusWatcher.focusedElement(pid: pid), let element = resolved.element,
+                    CFEqual(now, element)
+                else { return }
+                self.onChange?(resolved)
+            }
+            return nil
+        default:
+            return nil
         }
     }
 
@@ -175,38 +196,84 @@ final class FocusWatcher {
         return AX.element(app, kAXFocusedUIElementAttribute)
     }
 
-    /// The focused field of `pid`, classified; with no focused element, a context for the app alone
-    /// (kind `.other`, window title only), so the shortcut can still offer a search.
+    /// The focused element of `pid`, classified on its own attributes (cheap: no walk of the
+    /// tree; `AX.resolveBelow` adds the field below when needed). A focused element that is not a
+    /// text input is kept, for the guard and the typed keys; with none at all, the context names
+    /// the app alone (window title only), so the shortcut can still offer a search.
     static func context(pid: pid_t) -> FieldContext? {
         guard let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return nil }
         let app = AXUIElementCreateApplication(pid)
         AX.limitTimeout(app)
         let window = AX.element(app, kAXFocusedWindowAttribute)
         let windowTitle = window.flatMap { AX.string($0, kAXTitleAttribute) }
-        guard let element = AX.element(app, kAXFocusedUIElementAttribute), AX.isTextInput(element) else {
+        guard let element = AX.element(app, kAXFocusedUIElementAttribute) else {
             let snapshot = FieldSnapshot(pid: pid, bundleID: bundleID, windowTitle: windowTitle,
                 url: window.flatMap(AX.documentURL))
-            return FieldContext(snapshot: snapshot, kind: .other, element: nil, pid: pid, passwordBelow: nil)
+            return FieldContext(snapshot: snapshot, kind: .other, element: nil, pid: pid, isTextInput: false)
         }
         let snapshot = AX.snapshot(element, pid: pid, bundleID: bundleID, window: window, windowTitle: windowTitle)
-        var kind = FieldClassifier.kind(snapshot, above: nil)
-        var passwordBelow: AXUIElement?
-        if kind == .other, snapshot.role == kAXTextFieldRole as String,
-            let below = AX.fieldBelow(element, frame: snapshot.frame, within: AX.scanRoot(element, window: window))
-        {
-            let belowSnapshot = AX.snapshot(below, pid: pid, bundleID: bundleID, window: window, windowTitle: windowTitle)
-            kind = FieldClassifier.kind(snapshot, above: nil, below: belowSnapshot)
-            if kind == .username { passwordBelow = below }
+        guard AX.isTextInput(element) else {
+            return FieldContext(snapshot: snapshot, kind: .other, element: element, pid: pid, isTextInput: false)
         }
-        return FieldContext(snapshot: snapshot, kind: kind, element: element, pid: pid, passwordBelow: passwordBelow)
+        return FieldContext(
+            snapshot: snapshot, kind: FieldClassifier.kind(snapshot, above: nil), element: element, pid: pid,
+            isTextInput: true)
     }
 }
 
-/// Small Accessibility readers. Every call is bounded by the messaging timeout of the app element.
+/// A value that crosses to the background queue and back. Accessibility reads are thread safe;
+/// the elements inside are only read there, never mutated.
+struct Unchecked<T>: @unchecked Sendable {
+    let value: T
+}
+
+/// Small Accessibility readers. Every call is bounded by the messaging timeout: the system-wide
+/// one set at launch (`limitSystemWideTimeout`), and the app element's own.
 enum AX {
+    static let timeout: Float = 0.5
+
     /// A hung app answers no faster than this, instead of the default 6 s.
     static func limitTimeout(_ element: AXUIElement) {
-        AXUIElementSetMessagingTimeout(element, 0.5)
+        AXUIElementSetMessagingTimeout(element, timeout)
+    }
+
+    /// The default for every element the helper reads, set once at launch.
+    static func limitSystemWideTimeout() {
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), timeout)
+    }
+
+    private static let walkQueue = DispatchQueue(label: "me.somalabs.onepass.fill.ax", qos: .userInitiated)
+
+    /// Runs `work` (Accessibility reads only) on a background queue.
+    static func offMain<T>(_ work: @escaping @Sendable () -> T) async -> Unchecked<T> {
+        await withCheckedContinuation { continuation in
+            walkQueue.async { continuation.resume(returning: Unchecked(value: work())) }
+        }
+    }
+
+    /// `context` with its username role settled: a plain text field with a password right below
+    /// it becomes `.username` and keeps that password element. The tree walk runs off main.
+    @MainActor static func resolveBelow(_ context: FieldContext) async -> FieldContext {
+        guard context.isTextInput, context.kind == .other, context.passwordBelow == nil,
+            context.snapshot.role == kAXTextFieldRole as String, let element = context.element
+        else { return context }
+        let input = Unchecked(value: (element, context.snapshot))
+        let found = await offMain { () -> (AXUIElement, FieldSnapshot)? in
+            let (element, snapshot) = input.value
+            let window = AX.element(element, kAXWindowAttribute)
+            guard let below = fieldBelow(element, frame: snapshot.frame, within: scanRoot(element, window: window))
+            else { return nil }
+            return (
+                below,
+                AX.snapshot(below, pid: snapshot.pid, bundleID: snapshot.bundleID, window: window,
+                    windowTitle: snapshot.windowTitle)
+            )
+        }.value
+        guard let found else { return context }
+        var resolved = context
+        resolved.kind = FieldClassifier.kind(context.snapshot, above: nil, below: found.1)
+        if resolved.kind == .username { resolved.passwordBelow = found.0 }
+        return resolved
     }
 
     static func value(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {

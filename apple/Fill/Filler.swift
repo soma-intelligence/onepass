@@ -14,7 +14,9 @@ enum FillOutcome: Equatable {
     /// Accessibility could not set the value and a secure input session of another process
     /// blocks typing: the picker offers the clipboard.
     case secureInputElsewhere
-    /// No strategy worked, or the value could not be had (`Filler.lastError`).
+    /// No strategy worked, typing broke off midway, the field after Tab is not the one the value
+    /// is for, or the value could not be had (`Filler.lastError`). The picker offers Copy for
+    /// `Filler.lastKind` unless `lastError` says why.
     case failed
 }
 
@@ -38,9 +40,9 @@ final class Filler {
         typingDelay = .milliseconds(typingDelayMs)
     }
 
-    /// Runs `steps` against the field `guard` names. `values` gives one value per call, only for
-    /// the step being filled. `elements` holds fields the flow knows by kind (the one-time code
-    /// field below the password): a value that follows another value moves the focus there.
+    /// Runs `steps` against the element `guard` names. `values` gives one value per call, only
+    /// for the step being filled. `elements` holds fields the flow knows by kind: `.password` for
+    /// `.focusPassword`, `.oneTimeCode` for the code that follows the password.
     func fill(
         steps: [FillStep], values: (FieldKind) async throws -> SecretBuffer, guard focusGuard: FocusGuard,
         elements: [FieldKind: AXUIElement] = [:]
@@ -50,14 +52,28 @@ final class Filler {
         var guardNow = focusGuard
         var last: FillStrategy?
         var previousWasValue = false
-        for step in steps {
+        for (index, step) in steps.enumerated() {
             guard let focus = Self.currentFocus(), guardNow.holds(pid: focus.pid, elementID: focus.id) else {
                 return .stoppedFocusChanged
             }
+            let nextKind = steps[(index + 1)...].lazy.compactMap { step -> FieldKind? in
+                if case .value(let kind) = step { return kind }
+                return nil
+            }.first
             switch step {
-            case .tab, .focusPassword:
-                guard let moved = await moveFocus(from: focus, to: nil) else { return .stoppedFocusChanged }
+            case .focusPassword:
+                lastKind = .password
+                guard let password = elements[.password], let moved = await moveFocus(from: focus, to: password)
+                else { return .failed }
                 guardNow = moved
+                previousWasValue = false
+            case .tab:
+                lastKind = nextKind
+                switch await tab(from: focus, for: nextKind) {
+                case .moved(let moved): guardNow = moved
+                case .wrongField: return .failed
+                case .lost: return .stoppedFocusChanged
+                }
                 previousWasValue = false
             case .value(let kind):
                 lastKind = kind
@@ -100,17 +116,25 @@ final class Filler {
         }
         // Touch ID may have run meanwhile: the focus is checked again before anything is written.
         let typingBlocked = FillDecision.secureInputBlocksTyping(Self.secureInput(), targetPID: focus.pid)
+        let canSet = focus.element.map {
+            FillDecision.allowsAccessibilitySet(
+                role: AX.string($0, kAXRoleAttribute), subrole: AX.string($0, kAXSubroleAttribute))
+        } ?? false
         var result = StrategyResult.start
-        while let strategy = FillDecision.next(after: result, typingBlocked: typingBlocked) {
+        var typingStarted = false
+        while let strategy = FillDecision.next(after: result, typingBlocked: typingBlocked, typingStarted: typingStarted) {
             guard holds(focusGuard) else { return .stoppedFocusChanged }
             let worked: Bool
             switch strategy {
             case .accessibility:
-                worked = focus.element.map { Self.setByAccessibility(secret, on: $0) } ?? false
+                // Not on a canvas or a custom view: those get typed keys only.
+                worked = canSet && focus.element.map { Self.setByAccessibility(secret, on: $0) } == true
             case .typing:
-                switch await type(secret, pid: focus.pid, element: focus.element, guard: focusGuard) {
+                switch await type(secret, pid: focus.pid, element: canSet ? focus.element : nil, guard: focusGuard) {
                 case .typed: worked = true
-                case .failed: worked = false
+                case .failed(let started):
+                    worked = false
+                    typingStarted = started
                 case .focusChanged: return .stoppedFocusChanged
                 }
             case .clipboard:
@@ -144,27 +168,44 @@ final class Filler {
         return Focus(pid: pid, element: FocusWatcher.focusedElement(pid: pid))
     }
 
-    /// Moves the focus to `element` (Accessibility), or to the next field with Tab when nil, in
-    /// the same process. The guard that follows names the new field.
-    private func moveFocus(from focus: Focus, to element: AXUIElement?) async -> FocusGuard? {
-        if let element {
-            guard AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
-            else { return nil }
-        } else {
-            guard Self.postKey(CGKeyCode(kVK_Tab), flags: [], pid: focus.pid) else { return nil }
-        }
-        try? await Task.sleep(for: .milliseconds(80))
-        guard let now = Self.currentFocus(), now.pid == focus.pid, now.element != nil,
-            !(now.id == focus.id)
+    /// Moves the focus to `element` by Accessibility, in the same process. The guard that follows
+    /// names that element; nil when the focus did not land on it.
+    private func moveFocus(from focus: Focus, to element: AXUIElement) async -> FocusGuard? {
+        guard AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
         else { return nil }
-        if let element, let reached = now.element, !CFEqual(reached, element) { return nil }
+        try? await Task.sleep(for: .milliseconds(80))
+        guard let now = Self.currentFocus(), now.pid == focus.pid, let reached = now.element, CFEqual(reached, element)
+        else { return nil }
         return FocusGuard(pid: now.pid, elementID: now.id)
+    }
+
+    private enum TabResult {
+        case moved(FocusGuard)
+        /// The focus moved to a field that is not for `kind`: nothing is written there.
+        case wrongField
+        /// The focus left the process or vanished.
+        case lost
+    }
+
+    /// Tab, then the field that took the focus must be one `kind` may go into
+    /// (`FillDecision.acceptsAfterTab`: a password only into a password field).
+    private func tab(from focus: Focus, for kind: FieldKind?) async -> TabResult {
+        guard Self.postKey(CGKeyCode(kVK_Tab), flags: [], pid: focus.pid) else { return .wrongField }
+        try? await Task.sleep(for: .milliseconds(80))
+        guard let now = Self.currentFocus(), now.pid == focus.pid, let element = now.element, !(now.id == focus.id)
+        else { return .lost }
+        guard let kind, let bundleID = NSRunningApplication(processIdentifier: now.pid)?.bundleIdentifier else {
+            return .wrongField
+        }
+        let snapshot = AX.snapshot(element, pid: now.pid, bundleID: bundleID, window: nil, windowTitle: nil)
+        guard FillDecision.acceptsAfterTab(snapshot, for: kind) else { return .wrongField }
+        return .moved(FocusGuard(pid: now.pid, elementID: now.id))
     }
 
     // MARK: Accessibility set
 
-    /// `kAXValueAttribute`, confirmed by the length read back (a secure field gives its length,
-    /// never its value).
+    /// `kAXValueAttribute`, confirmed by the length read back: `kAXNumberOfCharacters`, else the
+    /// end of the selected range. The value itself is never read back.
     static func setByAccessibility(_ secret: SecretBuffer, on element: AXUIElement) -> Bool {
         var settable: DarwinBoolean = false
         guard AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success,
@@ -175,32 +216,46 @@ final class Filler {
              value.utf16.count, value.count)
         }
         guard status == .success else { return false }
-        let length: Int? =
-            (AX.value(element, kAXNumberOfCharactersAttribute) as? Int)
-            ?? (AX.value(element, kAXValueAttribute) as? String).map { $0.utf16.count }
-        guard let length else { return false }
+        guard let length = (AX.value(element, kAXNumberOfCharactersAttribute) as? Int) ?? selectionEnd(element)
+        else { return false }
         return length == units || length == characters
+    }
+
+    /// Where the selection ends (the caret sits after the value once it is set).
+    private static func selectionEnd(_ element: AXUIElement) -> Int? {
+        guard let raw = AX.value(element, kAXSelectedTextRangeAttribute), CFGetTypeID(raw) == AXValueGetTypeID()
+        else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(raw as! AXValue, .cfRange, &range) else { return nil }
+        return range.location + range.length
     }
 
     // MARK: Typing
 
-    private enum TypingResult { case typed, failed, focusChanged }
+    private enum TypingResult {
+        case typed
+        /// `started`: some keys went out before the failure.
+        case failed(started: Bool)
+        case focusChanged
+    }
 
     /// Key events posted to `pid`, `keysPerBatch` at a time with the guard checked before each
     /// batch, `typingDelay` apart. Characters the keyboard layout types become their key; the
-    /// others go as Unicode string events. The field's text is selected first so the value
-    /// replaces it.
+    /// others go as Unicode string events. A text field's content is selected first by
+    /// Accessibility so the value replaces it (`element` is nil for a canvas).
     private func type(_ secret: SecretBuffer, pid: pid_t, element: AXUIElement?, guard focusGuard: FocusGuard) async
         -> TypingResult
     {
         let keys = TypedKeys(secret)
-        guard !keys.isEmpty else { return .failed }
+        guard !keys.isEmpty else { return .failed(started: false) }
         if let element { Self.selectAll(element) }
         let map = KeyMap.current()
+        var sent = false
         for batch in FillDecision.batches(of: keys.count) {
             guard holds(focusGuard) else { return .focusChanged }
             for index in batch {
-                guard keys.post(index, map: map, pid: pid) else { return .failed }
+                guard keys.post(index, map: map, pid: pid) else { return .failed(started: sent) }
+                sent = true
                 try? await Task.sleep(for: typingDelay)
             }
         }
@@ -214,8 +269,19 @@ final class Filler {
         _ = AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value)
     }
 
+    /// One key with `flags`, to `pid`. Shift and Option, when asked, are pressed around it with
+    /// their own `flagsChanged` events, so a client that tracks modifier state (remote desktop,
+    /// a VM) sees them down while the key goes and up after.
     nonisolated static func postKey(_ code: CGKeyCode, flags: CGEventFlags, pid: pid_t) -> Bool {
         let source = CGEventSource(stateID: .privateState)
+        let modifiers: [(CGKeyCode, CGEventFlags)] = [
+            (CGKeyCode(kVK_Shift), .maskShift), (CGKeyCode(kVK_Option), .maskAlternate),
+        ].filter { flags.contains($0.1) }
+        var held: CGEventFlags = []
+        for (key, flag) in modifiers {
+            held.insert(flag)
+            guard modifierEvent(key, flags: held, source: source, pid: pid) else { return false }
+        }
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true),
             let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
         else { return false }
@@ -223,6 +289,23 @@ final class Filler {
         up.flags = flags
         down.postToPid(pid)
         up.postToPid(pid)
+        for (key, flag) in modifiers.reversed() {
+            held.remove(flag)
+            guard modifierEvent(key, flags: held, source: source, pid: pid) else { return false }
+        }
+        return true
+    }
+
+    /// A `flagsChanged` event for a modifier key, with the flags held after it.
+    nonisolated private static func modifierEvent(
+        _ key: CGKeyCode, flags: CGEventFlags, source: CGEventSource?, pid: pid_t
+    ) -> Bool {
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: !flags.isEmpty) else {
+            return false
+        }
+        event.type = .flagsChanged
+        event.flags = flags
+        event.postToPid(pid)
         return true
     }
 
@@ -283,6 +366,9 @@ private final class TypedKeys {
             return Filler.postKey(key.code, flags: key.flags, pid: pid)
         }
         let source = CGEventSource(stateID: .privateState)
+        // Virtual key 0 (kVK_ANSI_A on ANSI keyboards): macOS has no key code that maps to no
+        // character on every layout, so this keeps the common choice. Apps read the Unicode
+        // string; a client that reads only the key code would type "a" (Task 10 hand check).
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
             let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false),
             let base = units.baseAddress

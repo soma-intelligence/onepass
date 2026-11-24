@@ -29,6 +29,9 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     private var pillContext: FieldContext?
     /// The picker's field, target and pick, from opening to the end of the fill.
     private var session: Session?
+    private var nextSessionID: UInt64 = 0
+    /// A fill is under way: the shortcut and the pill wait for it to end.
+    private var filling = false
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.somalabs.onepass.fill", category: "app")
 
     /// Opens the main app's "Fill anywhere" settings page. The app has no such route yet (Task 9
@@ -43,6 +46,8 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     ]
 
     private struct Session {
+        /// Identity of this picker and fill: late answers for an older session are dropped.
+        let id: UInt64
         let context: FieldContext
         let target: FillTarget
         let kind: FieldKind
@@ -69,6 +74,8 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         picker.onSearch = { [weak self] query in self?.search(query) }
         picker.onAction = { [weak self] action in self?.perform(action) }
         picker.onClose = { [weak self] in self?.session = nil }
+        // Every element read is bounded, not only the app elements (a hung app answers in 0.5 s).
+        AX.limitSystemWideTimeout()
         refresh()
         // Accessibility and the settings can change at any time in the app or System Settings.
         housekeeping = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -146,25 +153,44 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
             openApp(Self.settingsLink)
             return
         }
+        // A fill under way keeps the keyboard: a second press is ignored.
+        guard !filling else { return }
         guard let pid = FocusWatcher.frontmostPID(), let context = FocusWatcher.context(pid: pid) else { return }
         openPicker(for: context)
     }
 
     private func openPicker(for context: FieldContext) {
+        guard !filling else { return }
         let target = TargetResolver.target(for: context.snapshot)
-        // The shortcut on a field nothing names (a remote desktop, a custom field): the password.
+        // The shortcut on a field nothing names (a remote desktop canvas, a custom view): the
+        // password, typed into the focused element.
         let kind: FieldKind = context.kind == .other ? .password : context.kind
-        session = Session(context: context, target: target, kind: kind)
+        nextSessionID &+= 1
+        session = Session(id: nextSessionID, context: context, target: target, kind: kind)
         pill.hide()
         let isApp = if case .app = target { true } else { false }
-        picker.open(near: context.element == nil ? nil : context.snapshot.frame, rememberShown: isApp, query: nil)
-        Task { await load() }
+        picker.open(near: anchor(of: context), rememberShown: isApp, query: nil)
+        let id = nextSessionID
+        Task { await load(id) }
+    }
+
+    /// The frame to open the picker or a message at: the text field's, else none (screen centre).
+    private func anchor(of context: FieldContext) -> CGRect? {
+        context.isTextInput && context.element != nil ? context.snapshot.frame : nil
+    }
+
+    /// Whether `id` is still the open session. An old fill, unlock or search never touches a
+    /// newer one.
+    private func isCurrent(_ id: UInt64) -> Bool {
+        session?.id == id
     }
 
     /// The bridge's state, then the candidates; no match opens on a search with the window title.
-    private func load() async {
-        guard let session else { return }
-        switch await link.status() {
+    private func load(_ id: UInt64) async {
+        guard let session, session.id == id else { return }
+        let status = await link.status()
+        guard isCurrent(id) else { return }
+        switch status {
         case .appClosed:
             picker.show(.message(String(localized: "fill.picker.appClosed"), action: .openApp))
             return
@@ -176,17 +202,18 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         }
         do {
             let found = try await link.candidates(for: session.target)
-            guard self.session != nil else { return }
+            guard isCurrent(id) else { return }
             if !found.isEmpty {
                 picker.show(.list(found, note: urlNote(session)))
                 return
             }
-            let title = session.context.snapshot.windowTitle ?? ""
-            let results = title.isEmpty ? [] : try await searchResults(title)
-            guard self.session != nil else { return }
+            let title = session.context.snapshot.windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let results = title.isEmpty ? [] : try await link.search(String(title.prefix(200)))
+            guard isCurrent(id) else { return }
             picker.show(.list(results, note: urlNote(session) ?? String(localized: "fill.picker.noMatch")))
             if !title.isEmpty { picker.setQuery(title) }
         } catch {
+            guard isCurrent(id) else { return }
             picker.show(Self.state(for: error))
         }
     }
@@ -198,49 +225,51 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     }
 
     private func search(_ query: String) {
-        guard session != nil else { return }
+        guard let id = session?.id else { return }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             if text.isEmpty {
-                await load()
+                await load(id)
                 return
             }
             do {
-                let results = try await searchResults(text)
-                guard session != nil else { return }
+                let results = try await link.search(String(text.prefix(200)))
+                guard isCurrent(id) else { return }
                 picker.show(.list(results, note: nil))
             } catch {
+                guard isCurrent(id) else { return }
                 picker.show(Self.state(for: error))
             }
         }
     }
 
-    /// Free search over login titles. The client has no search request: `list_for_app` with an
-    /// app id no login carries (the helper's own, never remembered) matches the words of the
-    /// title it is given against every login's title.
-    private func searchResults(_ text: String) async throws -> [FfiFillCandidate] {
-        let own = Bundle.main.bundleIdentifier ?? "me.somalabs.onepass.fill"
-        return try await link.candidates(for: .app(bundleID: own, windowTitle: String(text.prefix(200))))
-    }
-
     private func picked(_ candidate: FfiFillCandidate, remember: Bool) {
-        guard var session else { return }
+        guard var session, !filling else { return }
         session.picked = candidate
         self.session = session
-        Task { await fill(session, candidate: candidate, remember: remember) }
+        filling = true
+        Task {
+            await fill(session, candidate: candidate, remember: remember)
+            filling = false
+        }
     }
 
     /// The flow for the picked login: the values are asked for one at a time, by the filler.
     private func fill(_ session: Session, candidate: FfiFillCandidate, remember: Bool) async {
-        let context = session.context
+        // The tree walks (password below, code below) run now, off the main thread.
+        let context = await AX.resolveBelow(session.context)
+        // A plain field the walk found a password below is the username after all.
+        let kind: FieldKind = context.kind == .username ? .username : session.kind
         var elements: [FieldKind: AXUIElement] = [:]
-        if candidate.hasTotp, let code = codeField(after: context) { elements[.oneTimeCode] = code }
+        if let password = context.passwordBelow { elements[.password] = password }
+        if candidate.hasTotp, let code = await codeField(after: context) { elements[.oneTimeCode] = code }
+        guard isCurrent(session.id) else { return }
         let steps: [FillStep] =
-            session.kind == .oneTimeCode
+            kind == .oneTimeCode
             ? [.value(.oneTimeCode)]
             : FillFlow.steps(
-                focused: session.kind, hasPasswordBelow: context.hasPasswordBelow,
-                hasTotp: elements[.oneTimeCode] != nil)
+                focused: kind, hasPasswordBelow: context.hasPasswordBelow,
+                hasTotp: elements[.oneTimeCode] != nil, passwordKnown: elements[.password] != nil)
         let appName = BridgeLink.appName(pid: context.pid)
         let filler = Filler(clipboard: clipboard, typingDelayMs: settings.typingDelayMs)
         var rememberNext = remember
@@ -256,7 +285,9 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
             },
             guard: context.focusGuard, elements: elements)
         log.notice("fill ended: \(String(describing: outcome), privacy: .public)")
-        let frame = context.element == nil ? nil : context.snapshot.frame
+        // A newer session (the picker opened again meanwhile) owns the screen now.
+        guard isCurrent(session.id) else { return }
+        let frame = anchor(of: context)
         switch outcome {
         case .done(.clipboard):
             self.session = nil
@@ -278,29 +309,33 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     }
 
     /// The one-time code field right below the password (the focused one, or the one below the
-    /// username), when it asks for a code.
-    private func codeField(after context: FieldContext) -> AXUIElement? {
-        guard let password = context.kind == .username ? context.passwordBelow : context.element,
-            let frame = AX.frame(password)
-        else { return nil }
-        let window = AX.element(password, kAXWindowAttribute)
-        guard let below = AX.fieldBelow(password, frame: frame, within: AX.scanRoot(password, window: window))
-        else { return nil }
-        let snapshot = AX.snapshot(
-            below, pid: context.pid, bundleID: context.snapshot.bundleID, window: window,
-            windowTitle: context.snapshot.windowTitle)
-        return FieldClassifier.kind(snapshot, above: nil) == .oneTimeCode ? below : nil
+    /// username), when it asks for a code. The walk runs off the main thread.
+    private func codeField(after context: FieldContext) async -> AXUIElement? {
+        guard let password = context.kind == .username ? context.passwordBelow : context.element else { return nil }
+        let input = Unchecked(value: (password, context.snapshot))
+        return await AX.offMain { () -> AXUIElement? in
+            let (password, snapshot) = input.value
+            guard let frame = AX.frame(password) else { return nil }
+            let window = AX.element(password, kAXWindowAttribute)
+            guard let below = AX.fieldBelow(password, frame: frame, within: AX.scanRoot(password, window: window))
+            else { return nil }
+            let belowSnapshot = AX.snapshot(
+                below, pid: snapshot.pid, bundleID: snapshot.bundleID, window: window,
+                windowTitle: snapshot.windowTitle)
+            return FieldClassifier.kind(belowSnapshot, above: nil) == .oneTimeCode ? below : nil
+        }.value
     }
 
     private func reopen(_ session: Session, copy kind: FieldKind?, _ state: PickerState) {
         var next = session
         next.copyKind = kind
         self.session = next
-        picker.open(near: session.context.element == nil ? nil : session.context.snapshot.frame, rememberShown: false, query: nil)
+        picker.open(near: anchor(of: session.context), rememberShown: false, query: nil)
         picker.show(state)
     }
 
     private func perform(_ action: PickerAction) {
+        guard let id = session?.id else { return }
         switch action {
         case .openApp:
             picker.close()
@@ -308,35 +343,37 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
             openApp(Self.unlockLink)
         case .unlock:
             picker.show(.loading)
-            Task { await unlockAndWait() }
+            Task { await unlockAndWait(id) }
         case .copy:
-            Task { await copyValue() }
+            Task { await copyValue(id) }
         }
     }
 
     /// Asks the app to come forward and unlock, then loads the list once it is unlocked (for two
-    /// minutes at most, while the picker is open).
-    private func unlockAndWait() async {
+    /// minutes at most, while this session's picker is open).
+    private func unlockAndWait(_ id: UInt64) async {
         var status = await link.unlock()
+        guard isCurrent(id) else { return }
         if status == .appClosed {
             openApp(Self.unlockLink)
         }
         for _ in 0..<120 where status != .unlocked {
             try? await Task.sleep(for: .seconds(1))
-            guard session != nil else { return }
+            guard isCurrent(id) else { return }
             status = await link.status()
         }
-        if status == .unlocked { await load() }
+        if status == .unlocked, isCurrent(id) { await load(id) }
     }
 
     /// "Copier": the value of the field that could not be filled, on the clipboard.
-    private func copyValue() async {
-        guard let session, let candidate = session.picked else { return }
+    private func copyValue(_ id: UInt64) async {
+        guard let session, session.id == id, let candidate = session.picked else { return }
         let kind = session.copyKind ?? session.kind
         do {
             let secret = try await link.value(
                 target: session.target, itemID: candidate.itemId, field: kind, remember: false,
                 appName: BridgeLink.appName(pid: session.context.pid))
+            guard isCurrent(id) else { return }
             guard clipboard.copy(secret) else {
                 picker.show(.message(String(localized: "fill.picker.failed"), action: nil))
                 return
@@ -345,6 +382,7 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
             self.session = nil
             pill.flash(String(localized: "fill.pill.copied"), near: nil)
         } catch {
+            guard isCurrent(id) else { return }
             picker.show(Self.state(for: error))
         }
     }
