@@ -95,3 +95,68 @@ import Testing
         #expect(origin.x >= visible.minX && origin.y >= visible.minY)
     }
 }
+
+@Suite struct FillFixRoundOneTests {
+    @Test func knownPasswordElementIsFocusedNotTabbed() {
+        #expect(
+            FillFlow.steps(focused: .username, hasPasswordBelow: true, hasTotp: false, passwordKnown: true)
+                == [.value(.username), .focusPassword, .value(.password)])
+        #expect(
+            FillFlow.steps(focused: .username, hasPasswordBelow: true, hasTotp: true, passwordKnown: true)
+                == [.value(.username), .focusPassword, .value(.password), .value(.oneTimeCode)])
+        // Unknown password element: Tab, as before.
+        #expect(
+            FillFlow.steps(focused: .username, hasPasswordBelow: true, hasTotp: false, passwordKnown: false)
+                == [.value(.username), .tab, .value(.password)])
+        // A known element changes nothing when the focus is already on the password.
+        #expect(
+            FillFlow.steps(focused: .password, hasPasswordBelow: false, hasTotp: false, passwordKnown: true)
+                == [.value(.password)])
+    }
+
+    @Test func afterTabOnlyAPasswordFieldTakesThePassword() {
+        let secure = FieldSnapshot(role: "AXSecureTextField", bundleID: "x")
+        let secureSubrole = FieldSnapshot(role: "AXTextField", subrole: "AXSecureTextField", bundleID: "x")
+        let labelled = FieldSnapshot(role: "AXTextField", placeholder: "Password", bundleID: "x")
+        let search = FieldSnapshot(role: "AXTextField", placeholder: "Search", bundleID: "x")
+        let button = FieldSnapshot(role: "AXButton", title: "Sign in", bundleID: "x")
+        #expect(FillDecision.acceptsAfterTab(secure, for: .password))
+        #expect(FillDecision.acceptsAfterTab(secureSubrole, for: .password))
+        #expect(FillDecision.acceptsAfterTab(labelled, for: .password))
+        #expect(!FillDecision.acceptsAfterTab(search, for: .password))
+        #expect(!FillDecision.acceptsAfterTab(button, for: .password))
+    }
+
+    @Test func afterTabOtherKindsMustClassifyAsThatKind() {
+        let code = FieldSnapshot(role: "AXTextField", domIdentifier: "otp", bundleID: "x")
+        #expect(FillDecision.acceptsAfterTab(code, for: .oneTimeCode))
+        #expect(!FillDecision.acceptsAfterTab(code, for: .password))
+        #expect(!FillDecision.acceptsAfterTab(code, for: .other))
+    }
+
+    @Test func accessibilitySetOnlyOnTextRoles() {
+        #expect(FillDecision.allowsAccessibilitySet(role: "AXTextField", subrole: nil))
+        #expect(FillDecision.allowsAccessibilitySet(role: "AXSecureTextField", subrole: nil))
+        #expect(FillDecision.allowsAccessibilitySet(role: "AXComboBox", subrole: nil))
+        #expect(FillDecision.allowsAccessibilitySet(role: "AXTextArea", subrole: nil))
+        #expect(FillDecision.allowsAccessibilitySet(role: "AXGroup", subrole: "AXSecureTextField"))
+        // A remote desktop canvas or a custom view: typing only.
+        #expect(!FillDecision.allowsAccessibilitySet(role: "AXGroup", subrole: nil))
+        #expect(!FillDecision.allowsAccessibilitySet(role: "AXScrollArea", subrole: nil))
+        #expect(!FillDecision.allowsAccessibilitySet(role: nil, subrole: nil))
+    }
+
+    @Test func guardOnANonTextElementHoldsWhileItKeepsFocus() {
+        // The shortcut on a canvas: the guard names the canvas, not "no element".
+        let canvas = FocusGuard(pid: 30, elementID: "canvas")
+        #expect(canvas.holds(pid: 30, elementID: "canvas"))
+        #expect(!canvas.holds(pid: 30, elementID: "sidebar"))
+        #expect(!canvas.holds(pid: 31, elementID: "canvas"))
+    }
+
+    @Test func typingFailureMidwayOffersCopyNotTheClipboard() {
+        #expect(FillDecision.next(after: .failed(.typing)) == .clipboard)
+        #expect(FillDecision.next(after: .failed(.typing), typingStarted: true) == nil)
+        #expect(FillDecision.next(after: .failed(.accessibility), typingStarted: true) == .typing)
+    }
+}

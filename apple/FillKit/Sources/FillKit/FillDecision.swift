@@ -30,12 +30,16 @@ public enum FillDecision {
     /// The strategy after `result`: accessibility, then typing, then the clipboard, then none.
     /// A strategy that worked ends the chain. `typingBlocked` skips typing (secure input owned by
     /// another process: keystrokes would go nowhere).
-    public static func next(after result: StrategyResult, typingBlocked: Bool = false) -> FillStrategy? {
+    /// `typingStarted`: typing failed after some keys went out; the clipboard would paste on top
+    /// of a partial value, so the chain ends and the user is offered Copy instead.
+    public static func next(
+        after result: StrategyResult, typingBlocked: Bool = false, typingStarted: Bool = false
+    ) -> FillStrategy? {
         switch result {
         case .start: return .accessibility
         case .worked: return nil
         case .failed(.accessibility): return typingBlocked ? .clipboard : .typing
-        case .failed(.typing): return .clipboard
+        case .failed(.typing): return typingStarted ? nil : .clipboard
         case .failed(.clipboard): return nil
         }
     }
@@ -49,6 +53,32 @@ public enum FillDecision {
         case .ownerUnknown: true
         }
     }
+
+    /// Whether the field that took the focus after Tab may receive a value of `kind`. A password
+    /// goes only into a secure field (role or subrole) or one the classifier reads as a password;
+    /// anything else (a search box, a button, a link) stops the fill.
+    public static func acceptsAfterTab(_ field: FieldSnapshot, for kind: FieldKind) -> Bool {
+        switch kind {
+        case .password:
+            if field.role == secureRole || field.subrole == secureRole { return true }
+            return FieldClassifier.kind(field, above: nil) == .password
+        case .username, .oneTimeCode:
+            return FieldClassifier.kind(field, above: nil) == kind
+        case .other:
+            return false
+        }
+    }
+
+    /// Accessibility set is tried on text inputs only. A remote desktop canvas or a custom view
+    /// gets typed keys, never a value attribute.
+    public static func allowsAccessibilitySet(role: String?, subrole: String?) -> Bool {
+        if subrole == secureRole { return true }
+        guard let role else { return false }
+        return textRoles.contains(role)
+    }
+
+    static let secureRole = "AXSecureTextField"
+    static let textRoles: Set<String> = ["AXTextField", "AXSecureTextField", "AXComboBox", "AXTextArea", "AXSearchField"]
 
     /// The index ranges of `count` keys, `keysPerBatch` at a time.
     public static func batches(of count: Int) -> [Range<Int>] {
