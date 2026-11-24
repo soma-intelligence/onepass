@@ -286,12 +286,17 @@ struct CheckForUpdatesButton: View {
 struct MenuBarLabel: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Image(systemName: model.session.state == .unlocked ? "key.horizontal.fill" : "key.horizontal")
             .accessibilityLabel(Text("OnePass"))
             .onChange(of: model.mainWindowRequest) {
                 openWindow(id: "main")
+                NSApp.activate()
+            }
+            .onChange(of: model.settingsWindowRequest) {
+                openSettings()
                 NSApp.activate()
             }
     }

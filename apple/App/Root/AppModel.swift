@@ -1390,6 +1390,9 @@ final class AppModel {
     /// Bumped to show the main window (reopened if it was closed): the menu bar label observes it,
     /// being the one view that lives while no window is open.
     var mainWindowRequest = 0
+    /// Bumped to open the classic `Settings` window on `settingsPageRequest` (a route from outside
+    /// while the RX look is off): the menu bar label observes it, as `mainWindowRequest`.
+    var settingsWindowRequest = 0
 
     /// "Déverrouiller dans OnePass" (`onepass://unlock` or the bridge's request): the main window
     /// comes forward on the lock screen, which then asks for biometrics once. The activation alone
@@ -1575,7 +1578,7 @@ final class AppModel {
             case .orgJoin:
                 showToast(String(localized: "org.join.linkExpired"), kind: .error)
                 return
-            case .link:
+            case .link, .settings:
                 break
             }
         }
@@ -1607,7 +1610,26 @@ final class AppModel {
             Task { await presentOtpLink(link, source: .link) }
         case .orgJoin(let link):
             Task { await openOrgJoinLink(link) }
+        case .settings(let page, let focus):
+            openSettingsPage(page, focus: focus)
         }
+    }
+
+    /// Réglages on `page`, scrolled or pushed to `focus` by the page. Mac: the RX popup in the main
+    /// window, else the `Settings` window (opened by the menu bar label, `settingsWindowRequest`).
+    /// iPhone and iPad: the settings sheet.
+    private func openSettingsPage(_ page: SettingsPage, focus: String?) {
+        settingsFocusRequest = focus
+        #if os(macOS)
+        if !openSettingsInWindow(page, bringWindow: true) {
+            settingsPageRequest = page
+            settingsWindowRequest &+= 1
+        }
+        NSApplication.shared.activate()
+        #else
+        settingsPageRequest = page
+        showSettings = true
+        #endif
     }
 
     /// The "Ajouter un code" sheet for a verification code link, or a message when the link is not

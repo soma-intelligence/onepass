@@ -107,6 +107,7 @@
 		5280793E24377FB837D7C938 /* WatchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 330D495CC522DCE23D31E82D /* WatchRootView.swift */; };
 		53AB744F8ECC8196673DB950 /* OnePassWatchWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A344652AA716F92A12D10F /* OnePassWatchWidgets.swift */; };
 		5488DA9BE99F72271C2E8276 /* AutoFillRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F71DF9FCDFF66C5C246AEE /* AutoFillRootView.swift */; };
+		559B413B9707467C1A1011F5 /* FillAnywhereSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 502E94BCC9BDC989173E6A5B /* FillAnywhereSettings.swift */; };
 		56B6F0937E9CFE60521A0DAE /* OnboardingSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214B39B3C661A8FF88275223 /* OnboardingSteps.swift */; };
 		57D1B84C4C839CE948AFE66B /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73120BC5DC3D0064139ACB0A /* ItemDetailView.swift */; };
 		582745A6BDE935DA6DC285D3 /* LockControlIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */; };
@@ -114,6 +115,7 @@
 		5A3B3C0264919DA7784F2977 /* AccountsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCFA55095EE1CC9CC844A31 /* AccountsSettings.swift */; };
 		5A77FCBD991A42F08BB234A7 /* OnePassFillApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20EF72EAB0026727380665A9 /* OnePassFillApp.swift */; };
 		5AD704952C61BCF3A67100E6 /* TravelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAF97588217514C64DBA911D /* TravelSettings.swift */; };
+		5DE41A7C5FE01F654EF03FC1 /* FillDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 546EE620AB471666B20A9F5B /* FillDefaults.swift */; };
 		5E518F39B88F872FDCDEA3E2 /* ItemHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D289240B5C3A4D53B9BEFA50 /* ItemHeader.swift */; };
 		5ED861184AA47805C66DBFDF /* RemoveMemberSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7456079C54A0A0E3B8DAA5B /* RemoveMemberSheet.swift */; };
 		5F4B28891DDA2D01DE8EEEAF /* OpenAndSignInUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0A6F20B1C5A245D948C3C8 /* OpenAndSignInUITests.swift */; };
@@ -223,6 +225,7 @@
 		B7F3697E193B5FBC9512F6E7 /* RXMacHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEA79CED5F78AD09D00E380 /* RXMacHome.swift */; };
 		B847A67A6921D12461A050AB /* SafariSetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F8660811BB0E8E7EE7B9DD2 /* SafariSetupViews.swift */; };
 		BB3901D1319A800CA20F27D9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 29816FC64123CECF0063156E /* PrivacyInfo.xcprivacy */; };
+		BBC3E1A185D560E13A3A4E45 /* MacSettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8FD690F6204EA4A4831C18 /* MacSettingsUITests.swift */; };
 		BBD33D1A14745D3CC8C23455 /* CryptoCoinView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98AB73D4EBAF2F2ABEB4135 /* CryptoCoinView.swift */; };
 		BCD13594AE922C49B13CE6FE /* FillSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC05A20330BF45D2A58F81FD /* FillSettings.swift */; };
 		BDC6718A358BAB7355968523 /* OnePassSafariMobile.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -266,6 +269,7 @@
 		DC9F51AA8F5C84974A3A6590 /* VaultDialRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3167F0DA8CE073FFD98680F /* VaultDialRefresh.swift */; };
 		DDD0D59CFD3CA351228B580B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C1B99E34B1CA7214163402DD /* Localizable.xcstrings */; };
 		DE6D3F92CC51AA33603525A4 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4184F03FCF4EBB67CF1EFCEA /* VaultKit */; };
+		DEEC238E48E1EF60A9056EEA /* FillDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 546EE620AB471666B20A9F5B /* FillDefaults.swift */; platformFilters = (macos, ); };
 		E04761763662B47771A1A831 /* LockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D40167C0D7679C74A6D594D /* LockView.swift */; };
 		E0F05CC1047E16590D806097 /* TagEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0629736662C4143CF229997B /* TagEditor.swift */; };
 		E1C9086BB18C9D9EBA970BB2 /* RXMacWatchtower.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A896751814517F3556294B /* RXMacWatchtower.swift */; };
@@ -363,6 +367,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 4AAE71FF7F6BD951F3D88B34;
 			remoteInfo = OnePassFill;
+		};
+		AAE9ACE5B9F4D2DE506A612B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EE2C0F282791D003988755A4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8393ECD4BFF4D241F435C84D;
+			remoteInfo = OnePass;
 		};
 		B809F9AFD99060FD44AD25E3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -537,17 +548,20 @@
 		4FAA14239035AEBB97155D9B /* DevicesSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesSettings.swift; sourceTree = "<group>"; };
 		4FCD629BA442A42F3E969B0D /* OnePassWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OnePassWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		50075C70047E88FB1380617E /* RecoveryAlertView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryAlertView.swift; sourceTree = "<group>"; };
+		502E94BCC9BDC989173E6A5B /* FillAnywhereSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillAnywhereSettings.swift; sourceTree = "<group>"; };
 		51525BAC614CDE49D8859732 /* LocalAuthentication.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = LocalAuthentication.framework; path = System/Library/Frameworks/LocalAuthentication.framework; sourceTree = SDKROOT; };
 		52A4C3E0C0617CEAB04F1977 /* SaveSheetWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveSheetWatch.swift; sourceTree = "<group>"; };
 		52A88DEF8B8258DC7244DA0F /* CopyTotpIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyTotpIntent.swift; sourceTree = "<group>"; };
 		52E7EC11E99A0DDF02DA5AD7 /* AutoFillHost.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AutoFillHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		530DC4BC2A94EFF67DD9F0EF /* VaultEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEditorView.swift; sourceTree = "<group>"; };
+		546EE620AB471666B20A9F5B /* FillDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillDefaults.swift; sourceTree = "<group>"; };
 		556B5099E4A3256C41665C0F /* AccountMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountMenu.swift; sourceTree = "<group>"; };
 		568C27B38A48EE4F4ABCA00E /* WatchSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSettings.swift; sourceTree = "<group>"; };
 		57436CC6E87230730DA7FD2C /* onepass-sites.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "onepass-sites.json"; sourceTree = "<group>"; };
 		5979D283AD9B5116090CBA97 /* AddOtpSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddOtpSheet.swift; sourceTree = "<group>"; };
 		598C991D4D92485187F7DEBE /* ProfileUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileUITests.swift; sourceTree = "<group>"; };
 		5AAC5B8D38B4E80005624A80 /* CryptoSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoSettingsView.swift; sourceTree = "<group>"; };
+		5C8FD690F6204EA4A4831C18 /* MacSettingsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsUITests.swift; sourceTree = "<group>"; };
 		5D40167C0D7679C74A6D594D /* LockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockView.swift; sourceTree = "<group>"; };
 		5F1DA7C34CAC80C98F527B6B /* RunThroughUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunThroughUITests.swift; sourceTree = "<group>"; };
 		5FCFA55095EE1CC9CC844A31 /* AccountsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSettings.swift; sourceTree = "<group>"; };
@@ -561,6 +575,7 @@
 		681C202A7F456BC917F549CE /* CryptoPortfolioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoPortfolioView.swift; sourceTree = "<group>"; };
 		68FAA9A80B992B1D8AA9DA62 /* FavoritesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesWidget.swift; sourceTree = "<group>"; };
 		6A74558F186EAA8AD33C3723 /* RecoveryEnrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryEnrollView.swift; sourceTree = "<group>"; };
+		6B7103375F9F19ADF8D3EF15 /* OnePassMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OnePassMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6B74CE90BFF29298F6BB9A3C /* GlanceMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceMapping.swift; sourceTree = "<group>"; };
 		6C79712E88469993C8B12D6D /* AgentRequestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRequestView.swift; sourceTree = "<group>"; };
 		6EB124448D2A483FEE5EC583 /* RecoverWithHelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoverWithHelpView.swift; sourceTree = "<group>"; };
@@ -944,6 +959,7 @@
 			isa = PBXGroup;
 			children = (
 				77DE6568258CC7B70B348D12 /* BridgeLink.swift */,
+				546EE620AB471666B20A9F5B /* FillDefaults.swift */,
 				FF792B77F277D3C0B97B16A9 /* Filler.swift */,
 				DC05A20330BF45D2A58F81FD /* FillSettings.swift */,
 				871B23053F073962E674E900 /* FocusWatcher.swift */,
@@ -1085,6 +1101,7 @@
 				42BE6F635EE865D00B34DB84 /* FoldLayoutUITests.swift */,
 				422181E1C469D47ED766E877 /* IconLibraryUITests.swift */,
 				8F681C8DC392DDAAA87C6219 /* ItemEditorCardsUITests.swift */,
+				5C8FD690F6204EA4A4831C18 /* MacSettingsUITests.swift */,
 				DBF81D20C93E4B1F689F36D2 /* NoSaveSheetUITests.swift */,
 				A375FC8CB067AC2E4C863B5E /* OnboardingAndItemUITests.swift */,
 				EE0A6F20B1C5A245D948C3C8 /* OpenAndSignInUITests.swift */,
@@ -1250,6 +1267,7 @@
 				8EB6BA4A2EAD63E4BE27D5CE /* OnePassAutoFill.appex */,
 				B19AE94E6DFF90D6CABA8FD0 /* OnePassAutoFillUITests.xctest */,
 				9AD4BF71B9CF1F56E408240C /* OnePassFill.app */,
+				6B7103375F9F19ADF8D3EF15 /* OnePassMacUITests.xctest */,
 				BC80221CE7ABDFFC4E080905 /* OnePassNotifications.appex */,
 				B7437BA2319C70755833CE44 /* OnePassSafari.appex */,
 				4EED72A93E22EBC330F58509 /* OnePassSafariMobile.appex */,
@@ -1385,6 +1403,7 @@
 				E6608A2696A8CFEDC8DD3AD5 /* ChangePasswordSheet.swift */,
 				4FAA14239035AEBB97155D9B /* DevicesSettings.swift */,
 				43F977517907A77E028039E9 /* FeatureRequestSheet.swift */,
+				502E94BCC9BDC989173E6A5B /* FillAnywhereSettings.swift */,
 				257C8A4056D753F50F27FF62 /* GeneralSettings.swift */,
 				18CB70C246AF39BB3009C194 /* GeneratorProfileRow.swift */,
 				6578DD1A294793BBA2E5AB8A /* IconCheckSettings.swift */,
@@ -1696,6 +1715,24 @@
 			productReference = B7437BA2319C70755833CE44 /* OnePassSafari.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		D54F394425B52A916C865E19 /* OnePassMacUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 475B4DA8A9F042774F67D75D /* Build configuration list for PBXNativeTarget "OnePassMacUITests" */;
+			buildPhases = (
+				1DDC78723A28AB15090F848A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3809D628CE0B48E50885D1F7 /* PBXTargetDependency */,
+			);
+			name = OnePassMacUITests;
+			packageProductDependencies = (
+			);
+			productName = OnePassMacUITests;
+			productReference = 6B7103375F9F19ADF8D3EF15 /* OnePassMacUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		DF2FADE069F80D923D61CAE9 /* OnePassAutoFillUITests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 4FE6AC0493203B3E3B5459B6 /* Build configuration list for PBXNativeTarget "OnePassAutoFillUITests" */;
@@ -1794,6 +1831,11 @@
 					C02B2BEE69A8FA35B4285E4E = {
 						DevelopmentTeam = "";
 					};
+					D54F394425B52A916C865E19 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+						TestTargetID = 8393ECD4BFF4D241F435C84D;
+					};
 					DF2FADE069F80D923D61CAE9 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Manual;
@@ -1846,6 +1888,7 @@
 				4AAE71FF7F6BD951F3D88B34 /* OnePassFill */,
 				431DF0836D408CF1857678B4 /* AutoFillHost */,
 				E7921CD4F6414DD4FA0B5EFF /* OnePassUITests */,
+				D54F394425B52A916C865E19 /* OnePassMacUITests */,
 				A939BCC0FC42F4841AE98589 /* OnePassWatch */,
 				E03D05702AF6113E6F23D2DA /* OnePassWatchWidgets */,
 				9612434974A2C09A66EEA302 /* OnePassWidgets */,
@@ -2102,6 +2145,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1DDC78723A28AB15090F848A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BBC3E1A185D560E13A3A4E45 /* MacSettingsUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2C5FD8304247B99B14A143B4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -2129,6 +2180,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D18C0E463A40804B41C67332 /* BridgeLink.swift in Sources */,
+				5DE41A7C5FE01F654EF03FC1 /* FillDefaults.swift in Sources */,
 				BCD13594AE922C49B13CE6FE /* FillSettings.swift in Sources */,
 				105CA920482F1F48B964BE6A /* Filler.swift in Sources */,
 				66498148EAB4EE8A735CD674 /* FocusWatcher.swift in Sources */,
@@ -2244,6 +2296,8 @@
 				C3CFC7C4BCC28F81C382FFF0 /* FamilyView.swift in Sources */,
 				7D83669CF7FD59C3C5B74611 /* FeatureRequestSheet.swift in Sources */,
 				7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */,
+				559B413B9707467C1A1011F5 /* FillAnywhereSettings.swift in Sources */,
+				DEEC238E48E1EF60A9056EEA /* FillDefaults.swift in Sources */,
 				A47CF462E52EB1ED8E010791 /* FreeSectionCard.swift in Sources */,
 				A4AF77CCB8C26E750F66D3DF /* GeneralSettings.swift in Sources */,
 				AF4F4FF3F65C0D9A3CDEF5E6 /* GeneratePasswordIntent.swift in Sources */,
@@ -2450,6 +2504,11 @@
 			target = 50A6ADA693D0CEE73E56B534 /* OnePassAutoFill */;
 			targetProxy = 008746023CC32B8A8A359C3F /* PBXContainerItemProxy */;
 		};
+		3809D628CE0B48E50885D1F7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8393ECD4BFF4D241F435C84D /* OnePass */;
+			targetProxy = AAE9ACE5B9F4D2DE506A612B /* PBXContainerItemProxy */;
+		};
 		397FBABF89BC63B5D51F157D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			platformFilters = (
@@ -2505,6 +2564,26 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		01E965B0637558C3675E672B /* Release-CloudKit */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.macuitests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = OnePass;
+			};
+			name = "Release-CloudKit";
+		};
 		0C14F2A31FAA6AC2D7976724 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2683,6 +2762,26 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		2A98897F6B62FED2F15910BB /* Release-Signed */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.macuitests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = OnePass;
+			};
+			name = "Release-Signed";
 		};
 		2C3C5A585B7F4F5B0B165BB5 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -3567,6 +3666,26 @@
 			};
 			name = Release;
 		};
+		CEDF52C8B87E29546F47DD0F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.macuitests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = OnePass;
+			};
+			name = Debug;
+		};
 		CFB902886DB50BAAF0A4412F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -3774,6 +3893,26 @@
 				SDKROOT = macosx;
 			};
 			name = Debug;
+		};
+		EBA2166923BBB9B247504719 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = me.somalabs.onepass.macuitests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = OnePass;
+			};
+			name = Release;
 		};
 		F088C95420069849335874D2 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -4141,6 +4280,17 @@
 				D6ED18B6C147B27E072DA259 /* Release */,
 				A5580B9C69F4DB9392D9F995 /* Release-CloudKit */,
 				4C1A24DE873B5F08A136FFD5 /* Release-Signed */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		475B4DA8A9F042774F67D75D /* Build configuration list for PBXNativeTarget "OnePassMacUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CEDF52C8B87E29546F47DD0F /* Debug */,
+				EBA2166923BBB9B247504719 /* Release */,
+				01E965B0637558C3675E672B /* Release-CloudKit */,
+				2A98897F6B62FED2F15910BB /* Release-Signed */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

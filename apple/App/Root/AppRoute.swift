@@ -15,12 +15,15 @@ enum AppRoute: Equatable {
     /// and member token: waits like `otpLink` (2 minutes, dropped on lock or when the app leaves
     /// the screen).
     case orgJoin(String)
+    /// A settings page, and the part of it to open (`AppModel.settingsFocusRequest`): the Mac's
+    /// `onepass://settings/fill-anywhere` from OnePass Fill (`FillAnywhereLink`).
+    case settings(SettingsPage, focus: String?)
 
     /// The route holds a secret: it never waits long, nor past a lock.
     var holdsSecret: Bool {
         switch self {
         case .otpLink, .orgJoin: true
-        case .link, .copyTotp: false
+        case .link, .copyTotp, .settings: false
         }
     }
 }

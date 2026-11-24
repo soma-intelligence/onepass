@@ -108,6 +108,10 @@ targets:
         buildPhase: resources
       - path: SitePack/site-pack-manifest.json
         buildPhase: resources
+      # The OnePass Fill settings names and defaults, shared with the helper (which compiles the
+      # same file from its `Fill` sources): the "Remplir partout" page writes what the helper reads.
+      - path: Fill/FillDefaults.swift
+        destinationFilters: [macOS]
     dependencies:
       - package: VaultKit
         product: VaultKit
@@ -593,6 +597,7 @@ targets:
           - "AutoFillUITests.swift"
           - "SafariAutofillUITests.swift"
           - "OpenAndSignInUITests.swift"
+          - "MacSettingsUITests.swift"
     dependencies:
       - target: OnePass
       - package: DesignBridgeTesting
@@ -602,6 +607,24 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.uitests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: OnePass
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+
+  # XCUITest of the Mac app (scheme `OnePassMacUITests`): Réglages pages that exist only on the Mac,
+  # such as Remplir partout (spec 2026-11-23-mac-fill-anywhere). Demo data only.
+  OnePassMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: AppUITests/MacSettingsUITests.swift
+    dependencies:
+      - target: OnePass
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.macuitests
+        GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: OnePass
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
@@ -850,6 +873,23 @@ schemes:
         - OnePassUITests
     archive:
       config: Release
+  # The Mac UI tests: `xcodebuild test -scheme OnePassMacUITests -destination 'platform=macOS,arch=arm64'`.
+  OnePassMacUITests:
+    build:
+      targets:
+        OnePass: all
+        OnePassMacUITests: [test]
+      preActions:
+        - name: Build Rust core
+          settingsTarget: OnePass
+          script: |
+            if [ ! -d "${PROJECT_DIR}/build/OnePassFFI.xcframework" ]; then
+              make -C "${PROJECT_DIR}" core
+            fi
+    test:
+      config: Debug
+      targets:
+        - OnePassMacUITests
   OnePassWatch:
     build:
       targets:

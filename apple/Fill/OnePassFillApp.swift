@@ -19,6 +19,8 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     private let picker = Picker()
     private let clipboard = Clipboard()
     private var hotKey: HotKey?
+    /// The key code and Carbon modifiers `hotKey` was registered with.
+    private var hotKeyCombo: (keyCode: Int, modifiers: Int)?
     private var settings = FillSettings.current()
     private var trusted = false
     private var housekeeping: Timer?
@@ -34,8 +36,7 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
     private var filling = false
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.somalabs.onepass.fill", category: "app")
 
-    /// Opens the main app's "Fill anywhere" settings page. The app has no such route yet (Task 9
-    /// adds it): today the link only brings the app forward.
+    /// Opens the main app's "Remplir partout" settings page (the app's `FillAnywhereLink`).
     static let settingsLink = URL(string: "onepass://settings/fill-anywhere")!
     /// Brings the app forward on its lock screen (`BrowserBridge.isUnlockLink` in the app).
     static let unlockLink = URL(string: "onepass://unlock")!
@@ -76,7 +77,25 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         picker.onClose = { [weak self] in self?.session = nil }
         // Every element read is bounded, not only the app elements (a hung app answers in 0.5 s).
         AX.limitSystemWideTimeout()
+        promptForAccessibilityOnFirstRun()
         refresh()
+        // The app posts this after it writes a setting: no wait for the next tick.
+        if let app = settings.appBundleID {
+            DistributedNotificationCenter.default().addObserver(
+                forName: FillDefaults.changedNotification(appBundleID: app), object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refresh() }
+            }
+        }
+        // Posted when any app's Accessibility grant changes. The new value is not readable at
+        // once, so the check runs a moment later (the 3 s tick catches it anyway).
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
+        ) { [weak self] _ in
+            Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                MainActor.assumeIsolated { self?.refresh() }
+            }
+        }
         // Accessibility and the settings can change at any time in the app or System Settings.
         housekeeping = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
@@ -95,22 +114,58 @@ final class OnePassFillApp: NSObject, NSApplicationDelegate {
         false
     }
 
-    /// Applies the Accessibility grant and the settings: watcher, pill and shortcut.
+    /// Applies the Accessibility grant and the settings: watcher, pill and shortcut. Also tells
+    /// the app's settings page whether Accessibility is granted (`fill.trusted`).
     private func refresh() {
         settings = FillSettings.current()
+        if settings.enabled == false {
+            // Turned off in the app: the login item is unregistered, which normally ends this
+            // process already. Nothing keeps running behind the user's back.
+            log.notice("turned off in the app: quitting")
+            NSApp.terminate(nil)
+            return
+        }
         let nowTrusted = AXIsProcessTrusted()
+        publishTrusted(nowTrusted)
         if nowTrusted != trusted {
             trusted = nowTrusted
             log.notice("accessibility granted: \(nowTrusted, privacy: .public)")
             if nowTrusted { watcher.start() } else { watcher.stop(); focusChanged(nil) }
         }
-        if settings.shortcutEnabled, hotKey == nil {
-            hotKey = HotKey { [weak self] in self?.shortcutPressed() }
-        } else if !settings.shortcutEnabled, let hotKey {
+        let combo = (keyCode: settings.hotkeyKeyCode, modifiers: settings.hotkeyModifiers)
+        if let hotKey, !settings.shortcutEnabled || hotKeyCombo.map({ $0 != combo }) ?? true {
+            // Off, or new keys: the old registration goes first.
             hotKey.invalidate()
             self.hotKey = nil
+            hotKeyCombo = nil
+        }
+        if settings.shortcutEnabled, hotKey == nil {
+            hotKey = HotKey(keyCode: UInt32(combo.keyCode), modifiers: UInt32(combo.modifiers)) { [weak self] in
+                self?.shortcutPressed()
+            }
+            hotKeyCombo = combo
         }
         if let pillContext, !pillAllowed(for: pillContext) { focusChanged(nil) }
+    }
+
+    /// Writes `fill.trusted` when it differs from the grant (cheap: once per change).
+    private func publishTrusted(_ granted: Bool) {
+        guard let defaults = FillSettings.sharedDefaults(bundle: .main) else { return }
+        if defaults.object(forKey: FillDefaults.Key.trusted) as? Bool != granted {
+            defaults.set(granted, forKey: FillDefaults.Key.trusted)
+        }
+    }
+
+    /// The first launch with no grant asks the system once, which also lists "OnePass Fill" in
+    /// Privacy & Security > Accessibility, where the app's settings page sends the user. Later
+    /// launches never prompt: the page's "Ouvrir les réglages" is the way back.
+    private func promptForAccessibilityOnFirstRun() {
+        guard !AXIsProcessTrusted() else { return }
+        let defaults = FillSettings.sharedDefaults(bundle: .main)
+        guard defaults?.object(forKey: FillDefaults.Key.trusted) == nil else { return }
+        // The value of `kAXTrustedCheckOptionPrompt` (a C global Swift 6 will not read here).
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
     }
 
     // MARK: Pill

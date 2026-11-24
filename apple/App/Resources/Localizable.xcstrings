@@ -24603,6 +24603,1463 @@
         }
       }
     },
+    "fillAnywhere.accessibility" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): row label, the macOS Accessibility permission (use the system's name for it)",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bedienungshilfen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessibility"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Accesibilidad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessibilité"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Accessibilità"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "손쉬운 사용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "辅助功能"
+          }
+        }
+      }
+    },
+    "fillAnywhere.accessibility.footer" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): footer: why the helper needs the Accessibility permission, one sentence",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill benötigt Zugriff auf die Bedienungshilfen, um das Feld zu erkennen, in dem du schreibst, und dort deinen Login auszufüllen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass Fill needs Accessibility to see the field you're typing in and fill your login there."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill necesita acceso a Accesibilidad para detectar el campo en el que escribes y rellenar tus datos de inicio de sesión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass Fill a besoin de l'Accessibilité pour voir le champ où tu écris et y remplir ton identifiant."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill ha bisogno dell'accesso ad Accessibilità per rilevare il campo in cui scrivi e inserire le tue credenziali."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill이 입력 중인 필드를 확인하고 로그인 정보를 채우려면 손쉬운 사용 권한이 필요해요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill 需要辅助功能权限，才能识别你正在输入的栏位并填充登录信息。"
+          }
+        }
+      }
+    },
+    "fillAnywhere.accessibility.granted" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): Accessibility permission granted",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erlaubt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allowed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Autorizada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorisée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Autorizzata"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "허용됨"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已允许"
+          }
+        }
+      }
+    },
+    "fillAnywhere.accessibility.missing" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): Accessibility permission not granted",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nicht erlaubt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not allowed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No autorizada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non autorisée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Non autorizzata"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "허용되지 않음"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未允许"
+          }
+        }
+      }
+    },
+    "fillAnywhere.accessibility.open" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): button that opens Privacy & Security > Accessibility in System Settings",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einstellungen öffnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Abrir Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir les réglages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apri Impostazioni"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "설정 열기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开设置"
+          }
+        }
+      }
+    },
+    "fillAnywhere.approve" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): button that opens System Settings > Login Items",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In den Systemeinstellungen erlauben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow in System Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Permitir en Ajustes del Sistema"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoriser dans Réglages Système"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Autorizza in Impostazioni di Sistema"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "시스템 설정에서 허용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在系统设置中允许"
+          }
+        }
+      }
+    },
+    "fillAnywhere.delay %lld" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): stepper label, %lld is milliseconds",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verzögerung zwischen Tastenanschlägen: %lld ms"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delay between keys: %lld ms"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Intervalo entre pulsaciones: %lld ms"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Délai entre les touches : %lld ms"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Intervallo tra i tasti: %lld ms"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "키 입력 간격: %lld ms"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "按键间隔：%lld ms"
+          }
+        }
+      }
+    },
+    "fillAnywhere.delay.footer" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): footer under the typing delay",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erhöhe die Verzögerung, wenn eine App Zeichen auslässt, während OnePass Fill tippt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raise it if an app drops characters while OnePass Fill types."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auméntalo si una app omite caracteres cuando OnePass Fill escribe."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Augmente-le si une app perd des caractères quand OnePass Fill tape."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aumentalo se un'app perde caratteri mentre OnePass Fill scrive."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill이 입력할 때 앱에서 글자가 누락되면 간격을 늘려 보세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "如果 OnePass Fill 输入时 App 丢失字符，请增加间隔。"
+          }
+        }
+      }
+    },
+    "fillAnywhere.error.register %@" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): inline error, %@ is the system's reason",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill konnte nicht aktiviert werden: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't turn on OnePass Fill: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se ha podido activar OnePass Fill: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d'activer OnePass Fill : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile attivare OnePass Fill: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill을 켤 수 없어요: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法启用 OnePass Fill：%@"
+          }
+        }
+      }
+    },
+    "fillAnywhere.error.unregister %@" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): inline error, %@ is the system's reason",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill konnte nicht deaktiviert werden: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't turn off OnePass Fill: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se ha podido desactivar OnePass Fill: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de désactiver OnePass Fill : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile disattivare OnePass Fill: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill을 끌 수 없어요: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法停用 OnePass Fill：%@"
+          }
+        }
+      }
+    },
+    "fillAnywhere.excluded.add" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): button that opens a file picker in Applications",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "App hinzufügen…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add an App…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Añadir una app…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter une app…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiungi un'app…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "앱 추가…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加 App…"
+          }
+        }
+      }
+    },
+    "fillAnywhere.excluded.always" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): the OnePass app itself, which can't be removed from the list",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Immer ausgeschlossen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always excluded"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Siempre excluida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours exclue"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sempre esclusa"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "항상 제외됨"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "始终排除"
+          }
+        }
+      }
+    },
+    "fillAnywhere.excluded.footer" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): footer under the excluded apps",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Taste wird in diesen Apps nie angezeigt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The button never shows in these apps."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El botón nunca aparece en estas apps."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La pastille ne s'affiche jamais dans ces apps."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il pulsante non viene mai mostrato in queste app."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 앱에서는 버튼이 표시되지 않아요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "按钮不会在这些 App 中显示。"
+          }
+        }
+      }
+    },
+    "fillAnywhere.excluded.header" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): section header: apps where the pill never shows",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ausgeschlossene Apps"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Excluded apps"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Apps excluidas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apps exclues"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "App escluse"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "제외된 앱"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已排除的 App"
+          }
+        }
+      }
+    },
+    "fillAnywhere.excluded.panel.prompt" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): confirm button of the app picker",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ausschließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exclude"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Excluir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exclure"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Escludi"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "제외"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "排除"
+          }
+        }
+      }
+    },
+    "fillAnywhere.excluded.remove" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): button that removes an app from the excluded list",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Entfernen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quitar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rimuovi"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "제거"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "移除"
+          }
+        }
+      }
+    },
+    "fillAnywhere.excluded.remove.label %@" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): VoiceOver label of the remove button, %@ is the app's name",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ entfernen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quitar %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rimuovi %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 제거"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "移除 %@"
+          }
+        }
+      }
+    },
+    "fillAnywhere.footer" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): footer under the on/off toggle",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill läuft im Hintergrund und bietet dir deine Logins in anderen Apps an. Nichts wird ausgefüllt, bevor du einen Login auswählst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass Fill runs in the background and offers your logins in other apps. Nothing is filled until you pick a login."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill se ejecuta en segundo plano y te ofrece tus inicios de sesión en otras apps. No se rellena nada hasta que elijas uno."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass Fill tourne en arrière-plan et te propose tes identifiants dans les autres apps. Rien n'est rempli sans ton choix."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill funziona in background e ti propone le tue credenziali nelle altre app. Nessun campo viene compilato finché non scegli le credenziali."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill은 백그라운드에서 실행되며 다른 앱에서 로그인 정보를 제안해요. 로그인 정보를 선택하기 전에는 아무것도 채우지 않아요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass Fill 在后台运行，在其他 App 中提供你的登录信息。只有你选择登录信息后才会填充。"
+          }
+        }
+      }
+    },
+    "fillAnywhere.hotkey" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): toggle: the global shortcut that opens the login picker",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tastaturkurzbefehl"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyboard shortcut"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Función rápida de teclado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccourci clavier"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Abbreviazione da tastiera"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "키보드 단축키"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "键盘快捷键"
+          }
+        }
+      }
+    },
+    "fillAnywhere.hotkey.footer" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): footer under the shortcut rows",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Kurzbefehl zeigt deine Logins am aktiven Feld an, auch in ausgeschlossenen Apps. Klicke auf die Tasten, um eine andere Kombination zu wählen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The shortcut opens your logins on the active field, even in excluded apps. Click the keys to pick others."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La función rápida muestra tus inicios de sesión en el campo activo, incluso en las apps excluidas. Haz clic en las teclas para elegir otras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le raccourci ouvre tes identifiants sur le champ actif, même dans les apps exclues. Clique sur les touches pour en choisir d'autres."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L'abbreviazione mostra le tue credenziali nel campo attivo, anche nelle app escluse. Fai clic sui tasti per sceglierne altri."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "단축키를 누르면 활성 필드에 사용할 로그인 정보가 표시돼요. 제외된 앱에서도 사용할 수 있어요. 키 조합을 클릭해 변경하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "快捷键可在当前栏位打开你的登录信息，即使在已排除的 App 中也可使用。点按按键组合可更改快捷键。"
+          }
+        }
+      }
+    },
+    "fillAnywhere.hotkey.invalid" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): the recorded shortcut has no Command, Option or Control key",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Füge deinem Kurzbefehl ⌘, ⌥ oder ⌃ hinzu."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add ⌘, ⌥ or ⌃ to your shortcut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Añade ⌘, ⌥ o ⌃ a tu función rápida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoute ⌘, ⌥ ou ⌃ à ton raccourci."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiungi ⌘, ⌥ o ⌃ alla tua abbreviazione."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "단축키에 ⌘, ⌥ 또는 ⌃를 추가하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请在快捷键中加入 ⌘、⌥ 或 ⌃。"
+          }
+        }
+      }
+    },
+    "fillAnywhere.hotkey.keys" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): row label: the shortcut's key combination",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tasten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keys"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Teclas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touches"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tasti"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "키 조합"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "按键"
+          }
+        }
+      }
+    },
+    "fillAnywhere.hotkey.recording" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): shown while recording a new shortcut",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Drücke deinen Kurzbefehl…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type your shortcut…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pulsa tu función rápida…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tape ton raccourci…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Premi i tasti dell'abbreviazione…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "단축키를 입력하세요…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "按下你的快捷键…"
+          }
+        }
+      }
+    },
+    "fillAnywhere.hotkey.reset" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): button: back to the default shortcut ⌥⌘\\",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Restablecer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rétablir"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ripristina"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "재설정"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "还原"
+          }
+        }
+      }
+    },
+    "fillAnywhere.link.footer" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): footer under the row that opens the page",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fülle deine Logins in Mac-Apps außerhalb von Browsern aus."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill your logins in Mac apps outside the browsers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rellena tus datos de inicio de sesión en las apps del Mac, fuera de los navegadores."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplis tes identifiants dans les apps du Mac, en dehors des navigateurs."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Compila con le tue credenziali nelle app del Mac, al di fuori dei browser."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "브라우저 외의 Mac 앱에서도 로그인 정보를 채울 수 있어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在浏览器以外的 Mac App 中填充你的登录信息。"
+          }
+        }
+      }
+    },
+    "fillAnywhere.pill" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): toggle: the small OnePass button shown inside password fields",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Taste in Passwortfeldern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Button in password fields"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Botón en los campos de contraseña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pastille dans les champs de mot de passe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pulsante nei campi password"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호 필드에 버튼 표시"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "密码栏位中的按钮"
+          }
+        }
+      }
+    },
+    "fillAnywhere.pill.footer" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): footer under the pill toggle",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Klicke auf die Taste, um deine Logins für diese App anzuzeigen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the button to see your logins for that app."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Haz clic en el botón para ver tus inicios de sesión para esa app."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un clic sur la pastille ouvre tes identifiants pour cette app."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fai clic sul pulsante per vedere le tue credenziali per quell'app."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "버튼을 클릭하면 해당 앱의 로그인 정보가 표시돼요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "点按按钮，查看你用于该 App 的登录信息。"
+          }
+        }
+      }
+    },
+    "fillAnywhere.status" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): label of the login item status row",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Status"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Estado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stato"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "상태"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "状态"
+          }
+        }
+      }
+    },
+    "fillAnywhere.status.approval" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): login item status: macOS asks the user to allow it in System Settings",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wartet auf deine Zustimmung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for your approval"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esperando tu autorización"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de ton accord"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In attesa della tua autorizzazione"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "승인 대기 중"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "等待你的批准"
+          }
+        }
+      }
+    },
+    "fillAnywhere.title" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): page title and the row that opens it",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Überall ausfüllen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill anywhere"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rellenar en cualquier lugar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplir partout"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Compila ovunque"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "어디서나 채우기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "随处填充"
+          }
+        }
+      }
+    },
+    "fillAnywhere.toggle" : {
+      "comment" : "Réglages > Remplissage automatique > Remplir partout (Mac, OnePass Fill): toggle that turns the OnePass Fill helper on or off",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Überall ausfüllen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill anywhere"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rellenar en cualquier lugar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplir partout"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Compila ovunque"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "어디서나 채우기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "随处填充"
+          }
+        }
+      }
+    },
     "home.frequentlyUsed" : {
       "extractionState" : "manual",
       "localizations" : {

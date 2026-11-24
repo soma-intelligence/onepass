@@ -416,7 +416,10 @@ private struct BrowserExtensionsSection: View {
                     Button("Autoriser de nouveau") { bridge.allowAgain(extensionId) }
                         .accessibilityIdentifier("settings.devices.browsers.allowAgain")
                 } label: {
-                    Text(extensionId == "safari" ? "Safari" : extensionId).lineLimit(1)
+                    // "fill" is OnePass Fill, the Mac login item (forgotten here, or turned on
+                    // again in Remplir partout, which lets it pair again).
+                    Text(extensionId == "safari" ? "Safari" : extensionId == "fill" ? "OnePass Fill" : extensionId)
+                        .lineLimit(1)
                     Text("Oubliée : ne se reconnecte plus seule. Associe-la avec le code, ou autorise-la de nouveau.")
                 }
                 .accessibilityIdentifier("settings.devices.browsers.blocked")

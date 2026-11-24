@@ -1,27 +1,21 @@
 import Foundation
 
-/// The helper's settings, read from the App Group defaults the Mac app's "Fill anywhere" page
-/// writes (Task 9). Every key is optional: a missing or malformed one gives the default. Read on
-/// each use, so a change in the app applies at the next field or shortcut.
+/// The helper's settings, read from the App Group defaults the Mac app's "Remplir partout" page
+/// writes. The key names and defaults are `FillDefaults` (shared with the app). Every key is
+/// optional: a missing or malformed one gives the default. Read on each refresh, so a change in
+/// the app applies at the next field or shortcut.
 struct FillSettings: Equatable {
-    /// Keys in the App Group defaults (suite `OnePassAppGroup`).
-    enum Key {
-        /// Bool, default true: the pill shows next to password fields.
-        static let pillEnabled = "fill.pillEnabled"
-        /// Bool, default true: ⌥⌘\ opens the picker.
-        static let shortcutEnabled = "fill.shortcutEnabled"
-        /// [String] of bundle ids where the pill never shows, default `defaultExcluded`. The
-        /// helper's own app is always added. The shortcut still works there.
-        static let excludedBundleIDs = "fill.excludedBundleIDs"
-        /// Int, milliseconds between two typed keys, default 8, kept within 0...200.
-        static let typingDelayMs = "fill.typingDelayMs"
-    }
+    typealias Key = FillDefaults.Key
 
-    static let defaultExcluded = ["com.apple.Terminal", "com.googlecode.iterm2"]
-    static let defaultTypingDelayMs = 8
+    static let defaultExcluded = FillDefaults.excludedApps
+    static let defaultTypingDelayMs = FillDefaults.typingDelayMs
 
-    var pillEnabled = true
-    var shortcutEnabled = true
+    /// `fill.enabled` as written by the app, nil when it never wrote it.
+    var enabled: Bool?
+    var pillEnabled = FillDefaults.pill
+    var shortcutEnabled = FillDefaults.hotkey
+    var hotkeyKeyCode = FillDefaults.hotkeyKeyCode
+    var hotkeyModifiers = FillDefaults.hotkeyModifiers
     var excludedBundleIDs: Set<String>
     var typingDelayMs = Self.defaultTypingDelayMs
 
@@ -30,12 +24,23 @@ struct FillSettings: Equatable {
 
     init(defaults: UserDefaults?, appBundleID: String?) {
         self.appBundleID = appBundleID
-        let excluded = (defaults?.array(forKey: Key.excludedBundleIDs) as? [String]) ?? Self.defaultExcluded
+        let excluded = (defaults?.array(forKey: Key.excluded) as? [String]) ?? Self.defaultExcluded
         excludedBundleIDs = Set(excluded + [appBundleID].compactMap { $0 })
         guard let defaults else { return }
-        if let on = defaults.object(forKey: Key.pillEnabled) as? Bool { pillEnabled = on }
-        if let on = defaults.object(forKey: Key.shortcutEnabled) as? Bool { shortcutEnabled = on }
-        if let ms = defaults.object(forKey: Key.typingDelayMs) as? Int { typingDelayMs = min(max(ms, 0), 200) }
+        enabled = defaults.object(forKey: Key.enabled) as? Bool
+        if let on = defaults.object(forKey: Key.pill) as? Bool { pillEnabled = on }
+        if let on = defaults.object(forKey: Key.hotkey) as? Bool { shortcutEnabled = on }
+        if let ms = defaults.object(forKey: Key.typingDelayMs) as? Int {
+            typingDelayMs = min(max(ms, FillDefaults.typingDelayRange.lowerBound), FillDefaults.typingDelayRange.upperBound)
+        }
+        // The key and its modifiers go together: a bad pair gives the default pair.
+        if let code = defaults.object(forKey: Key.hotkeyKeyCode) as? Int,
+            let modifiers = defaults.object(forKey: Key.hotkeyModifiers) as? Int,
+            (0...127).contains(code), FillDefaults.isValidHotkey(modifiers: modifiers)
+        {
+            hotkeyKeyCode = code
+            hotkeyModifiers = FillDefaults.cleanModifiers(modifiers)
+        }
     }
 
     /// The settings as they are now.
