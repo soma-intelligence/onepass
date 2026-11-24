@@ -296,6 +296,35 @@ fn lists_slack_for_bundle_id() {
 }
 
 #[test]
+fn search_finds_logins_by_title_user_and_url() {
+    let (rig, item) = rig();
+    let vault = rig.session.vaults().unwrap()[0].id.clone();
+    // A note titled like the login: the desktop search returns logins only.
+    let mut note = rig
+        .session
+        .new_item(vault, FfiItemType::SecureNote, "Slack notes".into())
+        .unwrap();
+    for f in note.sections.iter_mut().flat_map(|s| s.fields.iter_mut()) {
+        if f.id == "content" {
+            f.value = FfiFieldValue::Text {
+                value: "Slack workspace notes".into(),
+            };
+        }
+    }
+    rig.session.save_item(note).unwrap();
+    let store = Arc::new(MemStore::default());
+    let c = client(&rig, &store);
+    for query in ["slack", "ALEX@atlas", "atlas-cloud"] {
+        let rows = c.search(query.into()).unwrap();
+        assert_eq!(rows.len(), 1, "{query}: {rows:?}");
+        assert_eq!(rows[0].title, "Slack");
+        assert_eq!(rows[0].item_id.replace('-', ""), item);
+        assert_eq!(rows[0].match_quality, None);
+    }
+    assert!(c.search("nothing-like-it".into()).unwrap().is_empty());
+}
+
+#[test]
 fn fills_password_value() {
     let (rig, _) = rig();
     let store = Arc::new(MemStore::default());

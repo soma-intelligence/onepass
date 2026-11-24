@@ -572,6 +572,19 @@ impl DesktopFillClient {
         Ok(ok.items.into_iter().map(candidate).collect())
     }
 
+    /// Free search over the logins (title, username, URLs), for the
+    /// picker's search field and its first query (the window title). The
+    /// bridge `search` in the desktop context: logins only, no match
+    /// quality. A read: sent once more on a lost connection.
+    pub fn search(&self, query: String) -> Result<Vec<FfiFillCandidate>, OnePassError> {
+        let ok = self.call::<ItemsOk>(Retry::Once, |id| Request::Search {
+            id,
+            ctx: Ctx::Desktop,
+            query: query.clone(),
+        })?;
+        Ok(ok.items.into_iter().map(candidate).collect())
+    }
+
     /// The value of `field` of the login `item_id` the user picked, and
     /// nothing else. `remember`: add an app entry for the app to the login
     /// first (an `App` target only: a page is matched by its URL, as in the
