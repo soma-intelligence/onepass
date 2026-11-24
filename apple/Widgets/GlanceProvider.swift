@@ -17,7 +17,7 @@ struct GlanceEntry: TimelineEntry {
 }
 
 /// Shared by both widgets. One entry every 30 s for one hour (aligned on the TOTP 30 s steps),
-/// then WidgetKit asks again. An entry past the snapshot's end shows "Ouvre OnePass pour
+/// then WidgetKit asks again. An entry past the snapshot's end shows "Ouvre Kelid pour
 /// actualiser".
 struct GlanceProvider: TimelineProvider {
     static let step: TimeInterval = 30

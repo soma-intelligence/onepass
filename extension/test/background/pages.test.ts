@@ -1088,7 +1088,7 @@ describe("save prompt", () => {
     expect(client.requests.at(-1)).toMatchObject({ op: "save_login", password: "Gen-Pass-123" });
   });
 
-  it("tags only OnePass sets are dropped from the prompt's edits", async () => {
+  it("tags only Kelid sets are dropped from the prompt's edits", async () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open(pending);
     const ui = uiSender(`save.html#${token}`, 7);
@@ -1454,7 +1454,7 @@ describe("save prompt", () => {
     expect(held).not.toContain("alex");
   });
 
-  it("IOSSAF-10: a login saved meanwhile (iOS's own sheet through OnePass) is not saved twice", async () => {
+  it("IOSSAF-10: a login saved meanwhile (iOS's own sheet through Kelid) is not saved twice", async () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open(pending);
     checkAnswer = { status: "same", item_id: "it_01" };
@@ -1533,7 +1533,7 @@ describe("save prompt", () => {
       expect(client.requests.at(-1)).toEqual({ op: "save_identity", ctx: "save_prompt", origin: SITE, vault_id: "v2", title: "", ...identity });
     });
 
-    it("a card OnePass already holds but did not fill here: shown, Save writes nothing and says so", async () => {
+    it("a card Kelid already holds but did not fill here: shown, Save writes nothing and says so", async () => {
       const { ext, bg, client } = await setup();
       const token = await bg.saves.open({ ...cardPending, known: true });
       const n = client.requests.length;

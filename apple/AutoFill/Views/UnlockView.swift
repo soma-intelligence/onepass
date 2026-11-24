@@ -3,7 +3,7 @@ import LocalAuthentication
 import SwiftUI
 import VaultKit
 
-/// "Déverrouille OnePass", in the design of the app's lock screen: glyph, title, the site asking,
+/// "Déverrouille Kelid", in the design of the app's lock screen: glyph, title, the site asking,
 /// the account, ONE master password field (show or hide button, accent focus ring) and below it the
 /// main action: "Déverrouiller avec Face ID" (Touch ID, Optic ID) while the field is empty and
 /// biometric unlock is on, otherwise "Déverrouiller". Return unlocks. The Secret Key is never asked:

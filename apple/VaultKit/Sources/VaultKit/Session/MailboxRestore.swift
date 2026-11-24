@@ -11,7 +11,7 @@ public enum RestoreSource: Equatable, Sendable {
 }
 
 /// Restores an account kept on a mailbox, from the Secret Key alone (spec D.4). The kit's server
-/// (self-host) is asked first, then the OnePass server by the account's locator, then iCloud. The
+/// (self-host) is asked first, then the Kelid server by the account's locator, then iCloud. The
 /// recovery credential, derived from the Secret Key and never stored, fetches the whole mailbox
 /// into the store; this device gets its own credential only after the master password unlocked the
 /// account, so a wrong password leaves nothing granted and nothing in the keychain.

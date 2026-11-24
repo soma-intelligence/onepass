@@ -920,7 +920,7 @@ export function detectForms(
       (isForm ? trailingNext(group.container, buttons, groups.map((g) => g.group)) : undefined);
     resolveSignupPassword(group.fields, submit);
     // A disabled "Continue" (enabled once the identifier is typed) still marks the step, but is
-    // never the submit OnePass presses.
+    // never the submit Kelid presses.
     const step = submit ?? findSubmit(group, idleButtons, isForm);
     const kind = formKind(
       group.fields.map((f) => f.role),

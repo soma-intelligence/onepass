@@ -130,7 +130,7 @@ Versions lues dans `core/Cargo.lock` et `extension/package-lock.json` le jour de
 
 | Implémentation | État au 2026-10-26 | Constat |
 | --- | --- | --- |
-| `slh-dsa` 0.1.0 (RustCrypto) | Dernière version stable (2024-08-18). | Utilisée. FIPS 205 final (contexte, `slh_sign_internal`). Passe les vecteurs ACVP de vérification. Impose le prérelease `signature = "=2.3.0-pre.4"` et `rand_core` 0.6. Types de clé sans `Zeroize`. `SigningKey::try_from` ne vérifie pas que `pk_root` correspond aux graines : OnePass le fait lui-même (`IdentityKey::from_bytes`). Pas d'audit publié. |
+| `slh-dsa` 0.1.0 (RustCrypto) | Dernière version stable (2024-08-18). | Utilisée. FIPS 205 final (contexte, `slh_sign_internal`). Passe les vecteurs ACVP de vérification. Impose le prérelease `signature = "=2.3.0-pre.4"` et `rand_core` 0.6. Types de clé sans `Zeroize`. `SigningKey::try_from` ne vérifie pas que `pk_root` correspond aux graines : Kelid le fait lui-même (`IdentityKey::from_bytes`). Pas d'audit publié. |
 | `slh-dsa` 0.2.0-rc.5 (RustCrypto) | Candidate (2026-04-28), série rc depuis 2025-09. | Passe sur `signature` 3, `rand_core` 0.10, `sha2` 0.11, `hybrid-array` 0.4. Ajoute `ZeroizeOnDrop` (feature `zeroize`), les messages en plusieurs morceaux et PKCS#8. Même lignée de code que la 0.1.0. Se compile à côté de la 0.1.0 (section 12.3). |
 | `slh-dsa` 0.0.3 | Publiée en 2025-04, après la 0.1.0. | Branche antérieure, sans intérêt. |
 | `aws-lc-rs` 1.18.2 | | Pas de SLH-DSA : ni API Rust, ni module dans `aws-lc-sys` 0.46.0 (`crypto/fipsmodule` n'a que `ml_dsa`, `ml_kem` et `pqdsa`). |
@@ -151,7 +151,7 @@ Faisable : `slh-dsa-next = { package = "slh-dsa", version = "=0.2.0-rc.5" }` en 
 `core/onepass-core/tests/slh_dsa_differential.rs` vérifie :
 
 - **Clés.** Pour trois triplets de graines, `slh_keygen_internal` donne la même clé publique et le même encodage de clé secrète dans les deux versions, et chaque encodage se relit dans l'autre version.
-- **Signatures.** Avec le même aléa (signature randomisée, comme OnePass) et sans aléa (déterministe), les deux versions produisent des signatures identiques octet pour octet ; chaque signature se vérifie avec l'autre version (pure, contexte vide) et est refusée sur un autre message.
+- **Signatures.** Avec le même aléa (signature randomisée, comme Kelid) et sans aléa (déterministe), les deux versions produisent des signatures identiques octet pour octet ; chaque signature se vérifie avec l'autre version (pure, contexte vide) et est refusée sur un autre message.
 - **API interne.** Une clé produite par la 0.2 s'importe comme `IdentityKey` (recalcul de `pk_root` par la 0.1) ; une signature `IdentityKey::sign` se vérifie par la 0.2 sur le message encadré, et une signature de la 0.2 sur ce message est acceptée par `IdentityVerifyingKey::verify`, sous le bon domaine seulement.
 
 Exécution : `cd core && cargo test -p onepass-core --test slh_dsa_differential --release` (environ 4 s ; environ une minute en debug, dans `make test`).

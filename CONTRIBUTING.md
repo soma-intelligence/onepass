@@ -1,4 +1,4 @@
-# Contributing to OnePass
+# Contributing to Kelid
 
 Thank you for helping. Reviews of the cryptography, the threat model and the autofill heuristics are the most valuable contributions right now.
 
@@ -79,7 +79,7 @@ Caches and the queue:
 
 ## Strings and translations
 
-OnePass ships in French, English, Spanish and Italian. Every user-facing string gets a semantic key and all four languages in the same change, product terms come from the glossary, and sentences are never assembled from fragments. Read [docs/i18n.md](docs/i18n.md); `python3 -I scripts/i18n/i18n.py check` must pass.
+Kelid ships in French, English, Spanish and Italian. Every user-facing string gets a semantic key and all four languages in the same change, product terms come from the glossary, and sentences are never assembled from fragments. Read [docs/i18n.md](docs/i18n.md); `python3 -I scripts/i18n/i18n.py check` must pass.
 
 Requirements are listed in the [README](README.md#requirements). CI runs the core and extension checks on every pull request.
 
@@ -93,7 +93,7 @@ Requirements are listed in the [README](README.md#requirements). CI runs the cor
 
 ## Contributor license agreement
 
-Before we can merge your first pull request, you sign the [CLA](CLA.md) once by replying to the bot's comment on it. You keep the copyright in your work. The CLA lets Soma Labs ship OnePass through the App Store, whose terms aren't compatible with the AGPL on their own, and offer commercial licenses.
+Before we can merge your first pull request, you sign the [CLA](CLA.md) once by replying to the bot's comment on it. You keep the copyright in your work. The CLA lets Soma Labs ship Kelid through the App Store, whose terms aren't compatible with the AGPL on their own, and offer commercial licenses.
 
 ## License
 

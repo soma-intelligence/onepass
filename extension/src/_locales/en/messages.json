@@ -1,14 +1,14 @@
 {
   "extDescription": {
-    "message": "Fill your logins, cards and identities from the OnePass app.",
+    "message": "Fill your logins, cards and identities from the Kelid app.",
     "description": "Description of the extension in the store and the extensions page."
   },
   "fillSmartCommand": {
-    "message": "Fill the page in one click with OnePass",
+    "message": "Fill the page in one click with Kelid",
     "description": "Description of the keyboard shortcut that runs smart fill in the active tab."
   },
   "actionTitle": {
-    "message": "OnePass",
+    "message": "Kelid",
     "description": "Tooltip of the toolbar button."
   }
 }

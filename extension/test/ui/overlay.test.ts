@@ -433,7 +433,7 @@ describe("overlay", () => {
       unknown: "Étape inconnue, termine à la main",
       timeout: "Délai de 60 s dépassé",
       user: "Arrêté",
-      locked: "OnePass est verrouillé",
+      locked: "Kelid est verrouillé",
       repeat: "Mot de passe refusé par le site",
       account: "alex.perso@example.com n'est pas proposé par Google",
     };
@@ -512,7 +512,7 @@ describe("overlay", () => {
       await handle.ready;
       button(r, "Se connecter").click();
       await flush();
-      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).toContain("Déverrouille Kelid pour continuer");
       // The account that was clicked stays named, and the wait can be cancelled.
       expect(text(r)).toContain("Atlas Cloud");
       expect(button(r, "Annuler")).toBeTruthy();
@@ -526,7 +526,7 @@ describe("overlay", () => {
       state = { chain: { ...running, itemId: "it_01", provider: undefined, title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] } as ChainView };
       await handle.poll();
       expect(text(r)).toContain("Connexion…");
-      expect(text(r)).not.toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).not.toContain("Déverrouille Kelid pour continuer");
       expect(worker.types().filter((t) => t === "overlay_start")).toHaveLength(1);
       void clock;
     });
@@ -543,7 +543,7 @@ describe("overlay", () => {
       await flush();
       state = { chain: null };
       await handle.poll();
-      expect(text(r)).not.toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).not.toContain("Déverrouille Kelid pour continuer");
       expect(button(r, "Se connecter")).toBeTruthy();
       expect(timers.intervals.size).toBe(0);
     });
@@ -558,10 +558,10 @@ describe("overlay", () => {
       await handle.ready;
       button(r, "Se connecter").click();
       await flush();
-      expect(text(r)).toContain("Ouverture de OnePass…");
+      expect(text(r)).toContain("Ouverture de Kelid…");
       state = { chain: null, waiting: "locked" };
       await handle.poll();
-      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     });
 
     it("Annuler while waiting stops the wait and closes the card", async () => {
@@ -585,7 +585,7 @@ describe("overlay", () => {
       await handle.ready;
       await handle.poll();
       // No dead end "unlock then retry": the unlock was asked, the card waits.
-      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).toContain("Déverrouille Kelid pour continuer");
       expect(text(r)).not.toContain("puis réessaie");
       expect(text(r)).toContain("Atlas Perso");
       expect(timers.intervals.size).toBe(1);
@@ -596,7 +596,7 @@ describe("overlay", () => {
       // Locked again later, the wait over: the stop, with its retry.
       state = { chain: lockedStop };
       await handle.poll();
-      expect(text(r)).toContain("OnePass est verrouillé");
+      expect(text(r)).toContain("Kelid est verrouillé");
       expect(button(r, "Réessayer")).toBeTruthy();
       expect(timers.intervals.size).toBe(0);
     });
@@ -609,7 +609,7 @@ describe("overlay", () => {
         (m) => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts: [], chain: lockedStop, waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null),
       );
       await handle.ready;
-      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).toContain("Déverrouille Kelid pour continuer");
       expect(text(r)).toContain("Atlas Perso");
       expect(timers.intervals.size).toBe(1);
       await handle.poll();
@@ -620,18 +620,18 @@ describe("overlay", () => {
       const { r, handle } = setup(() => null, null, (m) => (m.type === "overlay_state" ? { ok: { chain: null, waiting: "<b>x</b>" } } : null));
       await handle.ready;
       await handle.poll();
-      expect(text(r)).toContain("Erreur interne de OnePass.");
+      expect(text(r)).toContain("Erreur interne de Kelid.");
     });
   });
 
   describe("generic card: a sign-in page reached with the vault locked", () => {
     const genericInit = (m: UiToBg): Reply | null => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts: [], chain: null, generic: true } } : null);
 
-    it("names no account: the site's host, that OnePass is locked, one Sign in button and x", async () => {
+    it("names no account: the site's host, that Kelid is locked, one Sign in button and x", async () => {
       const { r, handle } = setup(() => null, null, genericInit);
       await handle.ready;
-      expect(text(r)).toContain("Se connecter avec OnePass");
-      expect(text(r)).toContain("OnePass est verrouillé");
+      expect(text(r)).toContain("Se connecter avec Kelid");
+      expect(text(r)).toContain("Kelid est verrouillé");
       expect(text(r)).not.toContain("Atlas Cloud");
       expect(text(r)).not.toContain("alex");
       expect(r.querySelector(".ov-others")).toBeNull();
@@ -649,7 +649,7 @@ describe("overlay", () => {
       button(r, "Se connecter").click();
       await flush();
       expect(worker.types()).toContain("overlay_unlock");
-      expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+      expect(text(r)).toContain("Déverrouille Kelid pour continuer");
       expect(timers.intervals.size).toBe(1);
       // Still waiting on the locked vault: still no request to the site.
       expect(r.querySelector("img")).toBeNull();
@@ -697,7 +697,7 @@ describe("overlay", () => {
       await handle.ready;
       button(r, "Se connecter").click();
       await flush();
-      expect(text(r)).toContain("OnePass est verrouillé");
+      expect(text(r)).toContain("Kelid est verrouillé");
     });
 
     it("a generic card that lists an account is refused (nothing of the vault may ride on it)", async () => {
@@ -710,17 +710,17 @@ describe("overlay", () => {
   it("locked and unpaired states", async () => {
     let s = setup(() => null, null, (m) => (m.type === "overlay_init" ? { err: "locked" } : null));
     await s.handle.ready;
-    expect(text(s.r)).toContain("OnePass est verrouillé");
+    expect(text(s.r)).toContain("Kelid est verrouillé");
     s = setup(() => null, null, (m) => (m.type === "overlay_init" ? { err: "unpaired" } : null));
     await s.handle.ready;
-    expect(text(s.r)).toContain("Appairer OnePass depuis la barre d'outils");
+    expect(text(s.r)).toContain("Appairer Kelid depuis la barre d'outils");
   });
 
   it("rejects a malformed chain view", async () => {
     const { r, handle } = setup(() => ({ itemId: "it_01", status: "pwned", steps: [] }) as unknown as ChainView, running);
     await handle.ready;
     await handle.poll();
-    expect(text(r)).toContain("Erreur interne de OnePass.");
+    expect(text(r)).toContain("Erreur interne de Kelid.");
   });
 });
 
@@ -788,7 +788,7 @@ describe("the card that appeared by itself (auto sign-in pill)", () => {
   it("case 2: the generic card of a locked vault folds too, and its click (the unlock) stops the fold", async () => {
     const { r, handle, worker, timers } = setup(() => null, null, autoInit({ accounts: [], generic: true }, (m) => (m.type === "overlay_unlock" ? { ok: { waiting: "locked" } } : null)));
     await handle.ready;
-    expect(text(r)).toContain("Se connecter avec OnePass");
+    expect(text(r)).toContain("Se connecter avec Kelid");
     expect(text(r)).toContain("Jamais sur ce site");
     button(r, "Se connecter").click();
     await flush();
@@ -798,10 +798,10 @@ describe("the card that appeared by itself (auto sign-in pill)", () => {
     expect(closes(worker)).toEqual([]);
   });
 
-  it("case 3: \"Create with OnePass\" on a signup page; its click asks the fill, nothing else", async () => {
+  it("case 3: \"Create with Kelid\" on a signup page; its click asks the fill, nothing else", async () => {
     const { r, handle, worker, timers } = setup(() => null, null, autoInit({ accounts: [], auto: "signup" }));
     await handle.ready;
-    expect(text(r)).toContain("Créer avec OnePass");
+    expect(text(r)).toContain("Créer avec Kelid");
     expect(text(r)).toContain("Un mot de passe fort pour ce site");
     expect(text(r)).toContain("Jamais sur ce site");
     expect(r.querySelector(".ov-others:not(.ov-never)")).toBeNull();

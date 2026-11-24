@@ -162,7 +162,7 @@ struct ProfileSettings: View {
 }
 
 #if os(iOS)
-/// Apparence: follow the system, or keep OnePass light or dark. Three small screens to pick from,
+/// Apparence: follow the system, or keep Kelid light or dark. Three small screens to pick from,
 /// as in the system's Display settings. Stored on this device only.
 private struct AppearanceSection: View {
     @AppStorage(Appearance.storageKey, store: AppModel.browseDefaults) private var stored = Appearance.system.rawValue

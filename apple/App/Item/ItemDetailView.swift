@@ -1738,7 +1738,7 @@ struct ItemWindowRoot: View {
             if model.session.state == .unlocked, let ref = ItemWindow.ref(key) {
                 NavigationStack { ItemDetailView(ref: ref, standalone: true) }
             } else {
-                EmptyState(title: String(localized: "OnePass est verrouillé"), systemImage: "lock",
+                EmptyState(title: String(localized: "Kelid est verrouillé"), systemImage: "lock",
                            message: String(localized: "item.unlockOnepassInMain"))
             }
         }

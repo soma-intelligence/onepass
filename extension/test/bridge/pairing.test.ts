@@ -70,10 +70,10 @@ describe("pairing vectors (spec 6.4)", () => {
   });
 
   it("random start gives fresh commitments", async () => {
-    const a = await ExtPairing.start("OnePass", "Chromium");
-    const c = await ExtPairing.start("OnePass", "Chromium");
+    const a = await ExtPairing.start("Kelid", "Chromium");
+    const c = await ExtPairing.start("Kelid", "Chromium");
     expect(a.hello.commit).not.toBe(c.hello.commit);
-    expect(a.hello).toMatchObject({ v: 1, t: "pair_hello", ext_name: "OnePass", browser: "Chromium" });
+    expect(a.hello).toMatchObject({ v: 1, t: "pair_hello", ext_name: "Kelid", browser: "Chromium" });
   });
 });
 
@@ -108,7 +108,7 @@ describe("pairing failures", () => {
       ["x".repeat(129), "Chromium"],
       ["é".repeat(65), "Chromium"],
       ["One\nPass", "Chromium"],
-      ["OnePass", "Chro\u0085mium"],
+      ["Kelid", "Chro\u0085mium"],
     ] as const) {
       expect(await errCode(ExtPairing.start(name, browser)), JSON.stringify(name)).toBe("bad_frame");
     }

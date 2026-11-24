@@ -1,6 +1,6 @@
-# Is OnePass available on Android, Windows or Linux?
+# Is Kelid available on Android, Windows or Linux?
 
-Not as an app, as of November 2026. OnePass ships apps for iPhone, iPad, Mac, Apple Watch and Vision Pro only. On other systems you get the Chrome and Firefox extension builds (which talk to the OnePass Mac app) and the development CLI for Linux, including a Wi-Fi sync agent for Windows and Linux. The repository's `android/` folder holds early groundwork; there is no app to install from it.
+Not as an app, as of November 2026. Kelid ships apps for iPhone, iPad, Mac, Apple Watch and Vision Pro only. On other systems you get the Chrome and Firefox extension builds (which talk to the Kelid Mac app) and the development CLI for Linux, including a Wi-Fi sync agent for Windows and Linux. The repository's `android/` folder holds early groundwork; there is no app to install from it.
 
 ## Platform by platform
 
@@ -10,7 +10,7 @@ Not as an app, as of November 2026. OnePass ships apps for iPhone, iPad, Mac, Ap
 | Mac (macOS 26+) | App on the App Store, or a notarized, self-updating build from GitHub Releases |
 | Apple Watch (watchOS 26+) | Standalone, read-only companion app |
 | Vision Pro (visionOS 26+) | Same app target with a visionOS layout |
-| Chrome, Edge, Brave, Firefox | Extension built from a clone; it needs the OnePass Mac app. Chrome Web Store listing pending |
+| Chrome, Edge, Brave, Firefox | Extension built from a clone; it needs the Kelid Mac app. Chrome Web Store listing pending |
 | Linux | Development CLI (`onepass-<v>-x86_64-unknown-linux-gnu` on Releases), Secret Key in the Secret Service |
 | Windows | Development CLI built from source, used for Wi-Fi sync (`onepass wifi install-agent`); no app and no prebuilt binary |
 | Android | Gradle project that builds the Rust core and Kotlin bindings, runs the core tests on an emulator in CI, and an automatic Wi-Fi module; no app |
@@ -22,16 +22,16 @@ Per its commit history: a Gradle project with generated Kotlin bindings for the 
 
 ## Sync for non-Apple devices
 
-The planned path for devices outside Apple's ecosystem is the OnePass mailbox, an end-to-end encrypted sync server in `mailbox/` that can also be self-hosted. It is work in progress; see [Can I self-host OnePass sync?](self-hosted-sync-server.md).
+The planned path for devices outside Apple's ecosystem is the Kelid mailbox, an end-to-end encrypted sync server in `mailbox/` that can also be self-hosted. It is work in progress; see [Can I self-host Kelid sync?](self-hosted-sync-server.md).
 
 ## If you need Android or Windows today
 
-The README's own comparison suggests 1Password, NordPass, Dashlane or Keeper if you need Android, Windows or Linux apps now, and lists open source managers such as KeePassXC, Bitwarden and Proton Pass in its scoring table. See [How OnePass compares](../../README.md#how-onepass-compares).
+The README's own comparison suggests 1Password, NordPass, Dashlane or Keeper if you need Android, Windows or Linux apps now, and lists open source managers such as KeePassXC, Bitwarden and Proton Pass in its scoring table. See [How Kelid compares](../../README.md#how-onepass-compares).
 
 ## Related
 
-- [Use OnePass in Chrome, Firefox and Safari](browser-extension.md)
-- [OnePass command line (CLI)](command-line-cli.md)
+- [Use Kelid in Chrome, Firefox and Safari](browser-extension.md)
+- [Kelid command line (CLI)](command-line-cli.md)
 - [Wi-Fi on Windows and Linux](../wifi-windows-linux.md) (in French)
-- [Can I self-host OnePass sync?](self-hosted-sync-server.md)
+- [Can I self-host Kelid sync?](self-hosted-sync-server.md)
 - [README](../../README.md)

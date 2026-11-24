@@ -1,6 +1,6 @@
-# What post-quantum cryptography does OnePass use?
+# What post-quantum cryptography does Kelid use?
 
-OnePass wraps every vault key with a hybrid of **ML-KEM-1024** (FIPS 203) and **X25519**, signs vault manifests, backups and the MCP policy with a hybrid of **ML-DSA-87** and **Ed25519** (both halves must verify), and anchors each account with an **SLH-DSA-SHA2-256s** (FIPS 205) identity key. Each hybrid combines a post-quantum and a classical algorithm, so breaking only one of them does not open the vault. The construction is in `core/onepass-core/src/crypto/` and documented in [`docs/security/README.md`](../security/README.md) (in French).
+Kelid wraps every vault key with a hybrid of **ML-KEM-1024** (FIPS 203) and **X25519**, signs vault manifests, backups and the MCP policy with a hybrid of **ML-DSA-87** and **Ed25519** (both halves must verify), and anchors each account with an **SLH-DSA-SHA2-256s** (FIPS 205) identity key. Each hybrid combines a post-quantum and a classical algorithm, so breaking only one of them does not open the vault. The construction is in `core/onepass-core/src/crypto/` and documented in [`docs/security/README.md`](../security/README.md) (in French).
 
 ## The algorithms, by purpose
 
@@ -44,7 +44,7 @@ A manifest signature is 4,627 bytes of ML-DSA-87 plus 64 bytes of Ed25519. Both 
 - 48 `cargo-fuzz` targets in `core/fuzz`; 20 of them run for 30 seconds each in the `core` CI workflow on every push or pull request that touches `core/`.
 - ProVerif models for account creation and unlock, manifests, the Emergency Kit, the extension bridge and key rotation (`make formal`).
 
-No outside firm has audited this code yet. See [Has OnePass been audited?](security-audit-status.md).
+No outside firm has audited this code yet. See [Has Kelid been audited?](security-audit-status.md).
 
 ## What post-quantum does not cover
 
@@ -52,7 +52,7 @@ Passkeys stay ECDSA P-256 because websites verify them with that algorithm. iClo
 
 ## Related
 
-- [OnePass threat model](threat-model.md)
+- [Kelid threat model](threat-model.md)
 - [Master password, Secret Key and Emergency Kit](master-password-secret-key-emergency-kit.md)
 - [How sync through iCloud works](icloud-sync.md)
 - [README: Security model](../../README.md#security-model)

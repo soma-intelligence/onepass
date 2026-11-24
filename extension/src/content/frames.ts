@@ -965,7 +965,7 @@ export function createFrames(opts: FramesOptions): Frames {
       iframe.setAttribute("referrerpolicy", "no-referrer");
       iframe.setAttribute("scrolling", "no");
       // Named for assistive technologies only: a `title` shows as a tooltip over the frame.
-      iframe.setAttribute("aria-label", "OnePass");
+      iframe.setAttribute("aria-label", "Kelid");
       iframe.setAttribute("src", url);
       const height = maxHeight(kind);
       place(kind, iframe, anchor, height);

@@ -39,7 +39,7 @@ public enum EmergencyKit {
     static let serverSeparator: Character = ";"
 
     /// The text encoded in the QR code: `onepass-kit:1:<Secret Key without dashes>`, then
-    /// `;<server URL>` for an account on a server other than the OnePass one (spec D.4).
+    /// `;<server URL>` for an account on a server other than the Kelid one (spec D.4).
     public static func qrPayload(secretKey: String, server: URL? = nil) -> String {
         let bare = secretKey.filter { $0 != "-" && !$0.isWhitespace }.uppercased()
         return withServer(payloadPrefix + bare, server)
@@ -58,13 +58,13 @@ public enum EmergencyKit {
     }
 
     /// The Secret Key (display format) carried by a scanned payload, or nil when the text is
-    /// not a OnePass kit payload or the key is malformed.
+    /// not a Kelid kit payload or the key is malformed.
     public static func parsePayload(_ s: String) -> String? {
         parseKit(s)?.secretKey
     }
 
     /// The Secret Key, the account id of a version 2 kit and the server of a self-hosted account
-    /// of a scanned payload. Nil when the text is not a OnePass kit payload, the key is malformed
+    /// of a scanned payload. Nil when the text is not a Kelid kit payload, the key is malformed
     /// or the account id is not 32 hex characters. A server URL that is not a valid one for this
     /// build is dropped (the key still counts).
     public static func parseKit(_ s: String) -> Scan? {
@@ -122,8 +122,8 @@ public enum EmergencyKit {
     private static let margin: CGFloat = 50
 
     /// The one page PDF. Throws `invalidSecretKey` when the key does not parse. `server`: the
-    /// sync server of an account that is not on the OnePass server (a line and the QR carry it);
-    /// nil for the OnePass server and iCloud.
+    /// sync server of an account that is not on the Kelid server (a line and the QR carry it);
+    /// nil for the Kelid server and iCloud.
     public static func pdf(
         secretKey: String, accountID: String, displayName: String, createdAt: Date, server: URL? = nil
     ) throws -> Data {
@@ -134,8 +134,8 @@ public enum EmergencyKit {
         guard let consumer = CGDataConsumer(data: data) else { throw EmergencyKitError.renderFailed }
         var mediaBox = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
         let info: [CFString: Any] = [
-            kCGPDFContextTitle: "Emergency Kit OnePass",
-            kCGPDFContextCreator: "OnePass",
+            kCGPDFContextTitle: "Emergency Kit Kelid",
+            kCGPDFContextCreator: "Kelid",
         ]
         guard let context = CGContext(consumer: consumer, mediaBox: &mediaBox, info as CFDictionary) else {
             throw EmergencyKitError.renderFailed
@@ -182,7 +182,7 @@ public enum EmergencyKit {
         let strong = CTFontCreateWithName("Helvetica-Bold" as CFString, 11, nil)
         let mono = CTFontCreateWithName("Courier-Bold" as CFString, 11, nil)
 
-        y = text(String(localized: "Emergency Kit OnePass", bundle: VaultKitStrings.bundle), font: title, top: y) - 10
+        y = text(String(localized: "Emergency Kit Kelid", bundle: VaultKitStrings.bundle), font: title, top: y) - 10
         y = text(
             String(
                 localized: "emergencyKit.kitPlusMasterPassword",

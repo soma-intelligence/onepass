@@ -5,7 +5,7 @@ import OnePassCore
 /// login's website records a single-use pending sign-in (the item id and the site, 60 s, never a
 /// secret, 0600) in the App Group container's database folder, then the app opens the page in the
 /// browser. The bridge host there (the Mac app's `BrowserBridge`, the iOS Safari extension's
-/// `SafariExtensionVault`, both `setPendingDir` on that folder) gives the item to the OnePass
+/// `SafariExtensionVault`, both `setPendingDir` on that folder) gives the item to the Kelid
 /// extension once, on an https page of that site; the extension signs in with its sign-in chain,
 /// fetching each value through the usual `fill_login`.
 public enum OpenAndSignIn {
@@ -62,7 +62,7 @@ public enum OpenAndSignIn {
     /// The bridge's id of the Safari extension (`SAFARI_EXTENSION_ID` in Rust).
     static let safariExtensionID = "safari"
 
-    /// iPhone and iPad: true once the OnePass Safari extension has paired with this device (it
+    /// iPhone and iPad: true once the Kelid Safari extension has paired with this device (it
     /// pairs by itself the first time it runs in Safari, ruling I2). iOS has no API that tells
     /// whether an extension is turned on, so a missing pairing is the sign to show the hint.
     public static func safariExtensionPaired(keychain: (any KeychainStore)? = nil) -> Bool {

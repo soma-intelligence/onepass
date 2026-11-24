@@ -424,7 +424,7 @@ private struct BrowserExtensionsSection: View {
         } header: {
             Text("settings.browserExtensions")
         } footer: {
-            Text("Elles se connectent seules à OnePass quand le Mac vérifie la signature du navigateur, remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui.")
+            Text("Elles se connectent seules à Kelid quand le Mac vérifie la signature du navigateur, remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui.")
         }
         .confirmationDialog(
             Text("settings.forget2 \(forgetting?.browser ?? "")"),

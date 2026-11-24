@@ -42,18 +42,18 @@ public enum SyncStatus: Equatable, Sendable {
 
 /// What the zone of a newly signed-in iCloud account holds (`SyncCoordinator.checkAccountChange`).
 public enum AccountChangeCheck: Equatable, Sendable {
-    /// The same OnePass account as this store (same account id).
+    /// The same Kelid account as this store (same account id).
     case sameVault
-    /// No OnePass account: accepting uploads the encrypted vault there.
+    /// No Kelid account: accepting uploads the encrypted vault there.
     case emptyZone
-    /// Another OnePass account: refused.
+    /// Another Kelid account: refused.
     case otherVault
 }
 
 /// Result of `SyncCoordinator.acceptAccountChange(expected:)`.
 public enum AccountChangeOutcome: Equatable, Sendable {
     case accepted
-    /// The zone holds another OnePass account: nothing changed, sync stays stopped.
+    /// The zone holds another Kelid account: nothing changed, sync stays stopped.
     case refusedOtherVault
     /// The zone no longer holds what the user confirmed, or the signed-in account changed during the
     /// check: nothing changed, the user checks again.

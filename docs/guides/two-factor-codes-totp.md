@@ -1,15 +1,15 @@
-# How to store 2FA codes (TOTP) in OnePass and set up two-factor authentication from a QR code
+# How to store 2FA codes (TOTP) in Kelid and set up two-factor authentication from a QR code
 
-OnePass stores TOTP secrets on Login items and shows the current one-time code next to the password. Codes fill themselves in Safari and apps through iPhone, iPad and Mac AutoFill, and in the browser extension. To add 2FA to a site, the extension can find the site's setup QR code on the page, decode it locally, save the secret on the matching login and fill the first code. You can also import `otpauth://` links from Google Authenticator and similar apps.
+Kelid stores TOTP secrets on Login items and shows the current one-time code next to the password. Codes fill themselves in Safari and apps through iPhone, iPad and Mac AutoFill, and in the browser extension. To add 2FA to a site, the extension can find the site's setup QR code on the page, decode it locally, save the secret on the matching login and fill the first code. You can also import `otpauth://` links from Google Authenticator and similar apps.
 
 ## Set up 2FA on a site with the browser extension
 
 1. Open the site's two-factor setup page, where it shows a QR code.
-2. Click the OnePass button in the browser toolbar, then "Scan 2FA QR code".
+2. Click the Kelid button in the browser toolbar, then "Scan 2FA QR code".
 3. The extension looks for the QR in the page (images, canvas, SVG, CSS backgrounds and `otpauth://` links in the document and same-origin frames). If nothing decodes, it captures the visible tab. If that fails too, paste the setup key.
-4. Check the issuer and account read from the QR, pick the target login, and confirm. Once the app confirms the write, the code is filled in the site's field. You press the site's button yourself; OnePass never submits.
+4. Check the issuer and account read from the QR, pick the target login, and confirm. Once the app confirms the write, the code is filled in the site's field. You press the site's button yourself; Kelid never submits.
 
-Recovery codes detected on the page are offered, and saved only after a click. If the login already has a code, OnePass asks "Replace?" with Cancel as the default, and keeps the old code on the login as "Old code".
+Recovery codes detected on the page are offered, and saved only after a click. If the login already has a code, Kelid asks "Replace?" with Cancel as the default, and keeps the old code on the login as "Old code".
 
 Decoding is local (jsQR, loaded on demand) and sends no request. The feature uses only the `activeTab` and `scripting` permissions, so a page can never start a scan. Only `otpauth://totp/` is accepted; `otpauth-migration://` and HOTP are refused. Tested on Chromium (unit and end-to-end); Firefox and Safari are not yet exercised on real sites, per `extension/README.md`.
 
@@ -37,7 +37,7 @@ Watchtower shows a card for logins whose site supports 2FA or passkeys where you
 
 ## Related
 
-- [Does OnePass support passkeys?](passkeys.md)
-- [Use OnePass in Chrome, Firefox and Safari](browser-extension.md)
-- [OnePass on Apple Watch](apple-watch-vision-pro-widgets.md)
+- [Does Kelid support passkeys?](passkeys.md)
+- [Use Kelid in Chrome, Firefox and Safari](browser-extension.md)
+- [Kelid on Apple Watch](apple-watch-vision-pro-widgets.md)
 - [README](../../README.md)

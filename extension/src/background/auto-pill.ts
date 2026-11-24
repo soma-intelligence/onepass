@@ -6,7 +6,7 @@
 // Faces, top frame only:
 // - "signin": a login form, the vault open, at least one login for the site (the card's pill);
 // - "generic": a login form, the vault locked (the card that unlocks, then resumes the page);
-// - "signup": a signup form, the vault open ("Create with OnePass").
+// - "signup": a signup form, the vault open ("Create with Kelid").
 // Nothing on a login page with nothing saved, nor with no app.
 //
 // Never when: the setting is off, the site is in the never-list, the page is not https, the

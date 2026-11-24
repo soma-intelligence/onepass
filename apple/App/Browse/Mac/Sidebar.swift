@@ -298,7 +298,7 @@ struct Sidebar: View {
             }
         }
         #if os(iOS) || os(visionOS)
-        .navigationTitle("OnePass")
+        .navigationTitle("Kelid")
         #endif
     }
 

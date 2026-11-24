@@ -1,7 +1,7 @@
 // Sign-up username fields (MS-06): does a candidate identifier fit the field
 // as the page declares it (type, `maxlength`, `minlength`, `pattern`)? Read
 // here, in the page's tab, from the field's own attributes; the candidate (an
-// e-mail or a handle OnePass made) is neither kept nor logged.
+// e-mail or a handle Kelid made) is neither kept nor logged.
 import { patternMatches } from "./password-context";
 
 export interface UsernameFit {

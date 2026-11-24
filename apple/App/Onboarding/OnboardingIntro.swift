@@ -1,7 +1,7 @@
 import DesignKit
 import SwiftUI
 
-/// Three short cards before the welcome screen, shown once on a first launch: what OnePass does,
+/// Three short cards before the welcome screen, shown once on a first launch: what Kelid does,
 /// who holds the key, where it works. Plain words only; the cryptography stays in Settings.
 struct OnboardingIntro: View {
     /// Called on "Passer" and on the last card's button.

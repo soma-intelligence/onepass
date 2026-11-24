@@ -34,7 +34,7 @@ struct ItemEntity: AppEntity {
 }
 
 /// Unlocked: the session's items. Locked: the widget favorites on iPhone and iPad, else nothing
-/// with "Déverrouille OnePass pour choisir un élément".
+/// with "Déverrouille Kelid pour choisir un élément".
 struct ItemEntityQuery: EntityStringQuery {
     func entities(for identifiers: [ItemEntity.ID]) async throws -> [ItemEntity] {
         let (known, unlocked) = await MainActor.run { (IntentBridge.entities(), IntentBridge.unlocked) }
