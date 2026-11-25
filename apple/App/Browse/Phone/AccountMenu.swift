@@ -229,34 +229,6 @@ struct AccountPanelHost: ViewModifier {
     }
 }
 
-/// RX Accueil: the account menu pinned at the top of the page, over the header fade, as a
-/// navigation bar item. Inside the hero it scrolled away under the fade, which washed it out long
-/// before it reached the status bar, so it seemed to hang low and then vanish upward. The value is
-/// the hero's appearance (light or dark art), for the chevron.
-struct PinnedAccountMenuKey: PreferenceKey {
-    static let defaultValue: ColorScheme? = nil
-
-    static func reduce(value: inout ColorScheme?, nextValue: () -> ColorScheme?) {
-        value = nextValue() ?? value
-    }
-}
-
-extension View {
-    /// Shows the account menu pinned at the top leading corner when the page asks for it
-    /// (`PinnedAccountMenuKey`), above everything the page draws, its header fade included.
-    func pinnedAccountMenu() -> some View {
-        overlayPreferenceValue(PinnedAccountMenuKey.self, alignment: .topLeading) { scheme in
-            if let scheme {
-                AccountMenu()
-                    .environment(\.colorScheme, scheme)
-                    // Where the hero placed it (`RXHeroPage` padding).
-                    .padding(.top, Theme.RX.Space.xs)
-                    .padding(.leading, Theme.RX.Space.l)
-            }
-        }
-    }
-}
-
 #endif
 
 /// What a row of the account panel does.

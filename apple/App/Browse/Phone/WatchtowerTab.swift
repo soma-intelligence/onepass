@@ -15,6 +15,8 @@ struct WatchtowerTab: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A tap on the selected Watchtower tab at its root scrolls the page back to its top.
     @Environment(\.phoneTabScrollToTop) private var scrollToTop
+    /// Pushed from Accueil (zoom out of the score): a back button in place of the root's bar items.
+    @Environment(\.watchtowerPushed) private var pushed
     @State private var position = ScrollPosition(edge: .top)
 
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
@@ -58,11 +60,12 @@ struct WatchtowerTab: View {
         .navigationTitle(rxDesign ? "" : "Watchtower")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            PhoneRootToolbar()
+            if !pushed { PhoneRootToolbar() }
         }
-        // RX: no navigation bar. Its toolbar search field doubled the tab bar's search, and a new
-        // item is Accueil's quick action; the account menu sits in the page header.
-        .toolbar(rxDesign ? .hidden : .automatic, for: .navigationBar)
+        // RX at the tab's root: no navigation bar. A new item is Accueil's quick action and the
+        // account menu sits in the page header. Pushed from Accueil the bar shows, empty but for
+        // the back button over the art, so the zoomed page has a way back besides the swipe.
+        .toolbar(rxDesign && !pushed ? .hidden : .automatic, for: .navigationBar)
         .vaultRefresh { await watchtower.refreshAndWait(model.session) }
         .task(id: model.session.summariesRevision) {
             watchtower.refreshIfNeeded(model.session)

@@ -5,13 +5,13 @@ import VaultKit
 
 #if os(iOS)
 
-/// Accueil in the RX look (Penpot "iPhone · Home"): a fixed photo hero under the status bar
-/// (account menu, the security score, four quick actions) that fades as the page sheet scrolls
-/// over it. The sheet holds the mock's cards in its order (Récents, Favoris,
-/// Coffres) followed by the classic cards (`extras`). The navigation bar is hidden.
+/// Accueil in the RX look (Penpot "iPhone · Home"): a photo hero (the security score, three quick
+/// actions) that the page sheet scrolls over. The sheet holds the mock's cards in its order
+/// (Récents, Favoris, Coffres) followed by the classic cards (`extras`). The navigation bar shows,
+/// transparent over the art: the account menu, the large title "Accueil" and the search field are
+/// set by `HomeTab`, the art runs up behind them.
 struct RXHomePage<Extras: View>: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.openPhoneTab) private var openTab
     /// A tap on the selected Accueil tab at its root scrolls the page back to its top.
     @Environment(\.phoneTabScrollToTop) private var scrollToTop
     let itemCount: Int
@@ -33,9 +33,9 @@ struct RXHomePage<Extras: View>: View {
             flowPhoto: wallpaper.flows,
             initialOffset: Self.demoScroll, scrollToTop: scrollToTop) {
             VStack(spacing: RX.Space.xl) {
-                topBar
+                // The bar above already holds the title and the search: the score follows at once.
                 RXHomeScore(itemCount: itemCount)
-                    .padding(.top, RX.Space.xxl)
+                    .padding(.top, RX.Space.s)
                 quickActions
                     .padding(.top, RX.Space.xl)
             }
@@ -48,9 +48,6 @@ struct RXHomePage<Extras: View>: View {
                 extras
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
-        // The account menu itself is pinned over the page by the tab stack (`pinnedAccountMenu`).
-        .preference(key: PinnedAccountMenuKey.self, value: lightHero ? .light : .dark)
     }
 
     @Environment(\.colorScheme) private var colorScheme
@@ -71,17 +68,6 @@ struct RXHomePage<Extras: View>: View {
         #else
         return nil
         #endif
-    }
-
-    /// The account menu's room: search is the tab bar's search tab, a new item is the first quick
-    /// action (one entry point each, D-HOME-ACTIONS). The menu is not drawn here but pinned over the
-    /// page, as a navigation bar item: in the hero it scrolled under the header fade, which washed
-    /// it out while it was still low, so it seemed to stick and then jump away.
-    private var topBar: some View {
-        Color.clear
-            .frame(height: AccountMenu.height)
-            .frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
     }
 
     /// New item, Generate, Share (the security score). No "More" menu: everything it held is a
@@ -302,10 +288,10 @@ enum RXScoreStatus: Equatable {
 
 #if os(iOS)
 /// The security score over the photo: the label with the item count, the figure over 100, the
-/// status pill. Tapping it opens Watchtower.
+/// status pill. Tapping it opens Watchtower, zooming out of the block.
 struct RXHomeScore: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.openPhoneTab) private var openTab
+    @Environment(\.pushPhoneRoute) private var push
     @Environment(\.colorScheme) private var colorScheme
     let itemCount: Int
 
@@ -343,7 +329,9 @@ struct RXHomeScore: View {
         let status = RXScoreStatus.of(model.watchtower)
         VStack(spacing: RX.Space.m) {
             // One button: the whole score block opens Watchtower (no tap gesture, UX-PRESS-02).
-            Button { openTab(.watchtower) } label: {
+            // Pushed on Accueil's stack rather than a tab switch, so the page zooms out of this
+            // block and back into it, as items zoom out of their rows (owner request 2026-11-25).
+            Button { push(.watchtowerPage) } label: {
                 VStack(spacing: RX.Space.s) {
                     greeting
                         .rxFont(.calloutMedium)
@@ -367,6 +355,7 @@ struct RXHomeScore: View {
                 .contentShape(Rectangle())
             }
             .rxPress(haptic: .selection)
+            .routeZoomSource(.watchtowerPage)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("rx.home.score")
             // The last run failed: the headline says so, and this runs it again.

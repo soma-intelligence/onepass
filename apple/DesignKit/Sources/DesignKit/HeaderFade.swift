@@ -5,7 +5,8 @@ import UIKit
 /// The one fade under every header of the iPhone and iPad app: content scrolling up under the
 /// status bar and the navigation bar (or a screen's own header, as the "+" sheet's title and search
 /// field) fades out softly. The system's soft scroll edge effect blurs it, and a wash of the
-/// screen's background, nearly opaque at the top edge, eases to nothing a little below the header.
+/// screen's background, about two thirds opaque at the top edge, eases to nothing just below the
+/// header.
 /// One continuous fade, no band, no seam, the same on every screen.
 ///
 /// The wash shows only once the content has moved under the header: a screen at rest is not dimmed
@@ -32,16 +33,21 @@ struct HeaderFade: ViewModifier {
     }
 
     /// The compact navigation bar (about 52 pt) and the room the wash takes to fade out below it.
-    static let barAndFade: CGFloat = 100
+    /// 72, down from 100 (owner feedback 2026-11-25: the fade read too heavy): it now ends about
+    /// 20 pt under the bar instead of reaching halfway down the first card.
+    static let barAndFade: CGFloat = 72
     /// Below a screen's own header, the points over which the wash fades out.
     static let headerFadeLength: CGFloat = 44
-    /// Points of scrolling over which the wash comes in.
-    static let ramp: CGFloat = 18
+    /// Points of scrolling over which the wash comes in: a little longer than the bar's own
+    /// edge effect takes, so the two never land as one sudden dim.
+    static let ramp: CGFloat = 24
 
-    /// Opacity along the wash, eased (smoothstep-like) so neither end shows a line.
+    /// Opacity along the wash, eased (smoothstep-like) so neither end shows a line. It peaks at
+    /// 0.66 (was 0.90): the system's soft edge blur already keeps the status bar and the bar's
+    /// title legible, the wash only has to calm the content's colours behind them.
     static let curve: [(location: Double, opacity: Double)] = [
-        (0.00, 0.90), (0.20, 0.86), (0.38, 0.74), (0.52, 0.56),
-        (0.66, 0.36), (0.78, 0.19), (0.89, 0.07), (1.00, 0.00),
+        (0.00, 0.66), (0.20, 0.62), (0.38, 0.52), (0.52, 0.39),
+        (0.66, 0.25), (0.78, 0.13), (0.89, 0.05), (1.00, 0.00),
     ]
 
     /// How much of the wash shows after `offset` points of scrolling: none at rest, all of it once

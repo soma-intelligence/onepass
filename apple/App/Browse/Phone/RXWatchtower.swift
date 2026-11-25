@@ -22,6 +22,8 @@ private extension VerticalAlignment {
 struct RXWatchtowerContent<Scan: View, Status: View>: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Pushed from Accueil: the bar's back button takes the avatar's place, so the header drops it.
+    @Environment(\.watchtowerPushed) private var pushed
     let score: Int?
     let scanCard: Scan
     let statusLine: Status
@@ -104,7 +106,7 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: RX.Space.s) {
                 HStack {
-                    AccountMenu()
+                    if !pushed { AccountMenu() }
                     Spacer(minLength: RX.Space.s)
                     shareButton
                 }
@@ -112,8 +114,10 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
             }
         } else {
             HStack(alignment: .rxTitleCentre, spacing: RX.Space.m) {
-                AccountMenu()
-                    .alignmentGuide(.rxTitleCentre) { $0[VerticalAlignment.center] }
+                if !pushed {
+                    AccountMenu()
+                        .alignmentGuide(.rxTitleCentre) { $0[VerticalAlignment.center] }
+                }
                 titleBlock
                 Spacer(minLength: RX.Space.s)
                 shareButton

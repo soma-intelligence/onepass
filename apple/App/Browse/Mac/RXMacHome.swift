@@ -68,10 +68,11 @@ struct RXMacHome: View {
     /// Results shown at most; the count says how many match in all.
     private static let resultLimit = 8
 
-    /// The Home search field, on the card fill and radius, with the ⌘F hint while empty and idle.
-    /// Return opens the best answer, Escape clears the search.
+    /// The Home search field, on the card fill, with the ⌘F hint while empty and idle. Return opens
+    /// the best answer, Escape clears the search. A capsule, as the iPhone's field under Accueil's
+    /// large title and the macOS 26 search fields: the same search reads the same on both.
     private var searchField: some View {
-        let shape = RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous)
+        let shape = Capsule(style: .continuous)
         return HStack(spacing: RX.Space.s) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(RX.Palette.textSecondary.color)
