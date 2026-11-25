@@ -342,6 +342,18 @@ private struct WelcomeStep: View {
                     ) { model.choose(.restore) }
                 }
                 .card()
+            case .unknown where model.lookingInICloudFirst, .checking where model.lookingInICloudFirst:
+                // A few seconds at most: a found account replaces this screen (spec 2026-11-25).
+                Label {
+                    Text("onboarding.welcome.lookingInICloud")
+                } icon: {
+                    ProgressView().controlSize(.small)
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 24)
+                .accessibilityIdentifier("onboarding.lookingInICloud")
             default:
                 mainButton(
                     "onboarding.welcome.create", "onboarding.welcome.createDetail", symbol: "plus",
@@ -357,7 +369,7 @@ private struct WelcomeStep: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("onboarding.lookingInICloud")
+                    .accessibilityIdentifier("onboarding.lookingInICloudSlow")
                 } else {
                     Button("onboarding.welcome.sharedDevice") { model.chooseSharedDevice() }
                         .buttonStyle(.borderless)
@@ -369,7 +381,7 @@ private struct WelcomeStep: View {
         }
         .padding(.top, 10)
         .animation(.smooth(duration: 0.3), value: model.iCloudVault)
-        .task { await model.detectICloudVault() }
+        .animation(.smooth(duration: 0.3), value: model.iCloudLookupSlow)
     }
 
     /// Restore with the Emergency Kit and pair with another device, in one card.
@@ -729,9 +741,11 @@ private struct SecretKeyStep: View {
         }
         StepTitle(
             title: "Range ta Secret Key",
-            subtitle: Platform.text(
-                mac: "onboarding.itWasCreatedOn",
-                phone: "Créée sur cet \(Platform.deviceName), elle ne le quitte jamais. Il te la faudra pour un nouvel appareil si aucun autre n'est à côté."))
+            subtitle: model.kitBackedUpInICloud
+                ? "onboarding.secretKey.alsoInICloud"
+                : Platform.text(
+                    mac: "onboarding.itWasCreatedOn",
+                    phone: "Créée sur cet \(Platform.deviceName), elle ne le quitte jamais. Il te la faudra pour un nouvel appareil si aucun autre n'est à côté."))
         VStack(alignment: .leading, spacing: 8) {
             Text("onboarding.secretKey")
                 .font(.system(size: 12, weight: .bold))
@@ -1048,15 +1062,44 @@ private struct ICloudJoinStep: View {
     @Bindable var model: OnboardingModel
 
     var body: some View {
-        Image(systemName: "icloud.and.arrow.down")
-            .font(.system(size: Platform.isMac ? 40 : 48, weight: .light))
-            .foregroundStyle(Theme.accent)
-            .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
-            .padding(.top, Platform.isMac ? 0 : 20)
+        StepTitle(title: "onboarding.iCloudJoin.welcomeBack", subtitle: "onboarding.iCloudJoin.found")
+        // The account found in iCloud, its owner named when the copy carries the name.
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().fill(Theme.accent.opacity(0.16))
+                if let initial = model.iCloudOwner?.first {
+                    Text(String(initial).uppercased())
+                        .font(.system(size: Platform.isMac ? 20 : 22, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                } else {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: Platform.isMac ? 18 : 20))
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .frame(width: Platform.isMac ? 44 : 48, height: Platform.isMac ? 44 : 48)
             .accessibilityHidden(true)
-        StepTitle(title: "onboarding.iCloudJoin.title", subtitle: "onboarding.iCloudJoin.detail")
+            VStack(alignment: .leading, spacing: 2) {
+                Group {
+                    if let owner = model.iCloudOwner {
+                        Text(owner)
+                    } else {
+                        Text("onboarding.iCloudJoin.yourVault")
+                    }
+                }
+                .font(Platform.isMac ? .system(size: 15, weight: .semibold) : .headline)
+                Label("onboarding.iCloudJoin.accountDetail", systemImage: "icloud.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .card()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("onboarding.iCloudAccount")
         #if os(macOS)
-        if !model.restoreOnly {
+        if !model.restoreOnly, model.iCloudOwner == nil {
             OnboardingField(
                 label: "Ton prénom (affiché seulement sur tes appareils)", prompt: "Camille",
                 text: $model.displayName, identifier: "onboarding.name")
@@ -1066,10 +1109,19 @@ private struct ICloudJoinStep: View {
             label: "Mot de passe maître", prompt: "Mot de passe maître", text: $model.restorePassword,
             secure: true, identifier: "onboarding.iCloudPassword",
             onSubmit: { Task { await model.primary() } })
-        Button("onboarding.iCloudJoin.useKit") { model.switchToRestore() }
-            .buttonStyle(.borderless)
-            .font(.footnote)
-            .accessibilityIdentifier("onboarding.iCloudJoin.useKit")
+        Menu {
+            Button("onboarding.iCloudJoin.useQRCode", systemImage: "qrcode") { model.pairInstead() }
+            Button("onboarding.iCloudJoin.useKit", systemImage: "doc.text") { model.switchToRestore() }
+        } label: {
+            Text("onboarding.iCloudJoin.otherMethod")
+        }
+        #if os(macOS)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        #endif
+        .font(.footnote)
+        .accessibilityIdentifier("onboarding.otherMethod")
     }
 }
 

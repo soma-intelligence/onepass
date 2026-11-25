@@ -54323,50 +54323,146 @@
         }
       }
     },
-    "onboarding.iCloudJoin.detail" : {
-      "comment" : "iCloud join step subtitle.",
+    "onboarding.iCloudJoin.accountDetail" : {
+      "comment" : "Found account card: under the owner's name.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dein Secret Key kam über den iCloud-Schlüsselbund. Gib dein Master-Passwort ein, um deinen Tresor hier zu öffnen."
+            "value" : "In iCloud, Secret Key in deinem Schlüsselbund"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your Secret Key came through iCloud Keychain. Enter your master password to open your vault here."
+            "value" : "In iCloud, Secret Key in your Keychain"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tu Secret Key llegó por el llavero de iCloud. Escribe tu contraseña maestra para abrir tu bóveda aquí."
+            "value" : "En iCloud, Secret Key en tu llavero"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ta Secret Key est arrivée par le trousseau iCloud. Saisis ton mot de passe maître pour ouvrir ton coffre ici."
+            "value" : "Dans iCloud, Secret Key dans ton trousseau"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La tua Secret Key è arrivata dal portachiavi iCloud. Inserisci la password principale per aprire qui la cassaforte."
+            "value" : "In iCloud, Secret Key nel tuo portachiavi"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Secret Key가 iCloud 키체인으로 전달되었습니다. 마스터 암호를 입력해 이 기기에서 보관함을 여세요."
+            "value" : "iCloud에 있음, Secret Key는 키체인에 있음"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "你的 Secret Key 已通过 iCloud 钥匙串送达。输入主密码即可在此打开保险库。"
+            "value" : "在 iCloud 中，Secret Key 在你的钥匙串中"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.found" : {
+      "comment" : "First screen when an account is found in iCloud: subtitle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein Tresor ist in iCloud. Gib dein Master-Passwort ein, um ihn auf diesem Gerät zu öffnen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your vault is in iCloud. Enter your master password to open it on this device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu bóveda está en iCloud. Introduce tu contraseña maestra para abrirla en este dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton coffre est dans iCloud. Entre ton mot de passe maître pour l'ouvrir sur cet appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua cassaforte è in iCloud. Inserisci la password principale per aprirla su questo dispositivo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "보관함이 iCloud에 있습니다. 이 기기에서 열려면 마스터 암호를 입력하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的保险库在 iCloud 中。输入主密码即可在此设备上打开。"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.otherMethod" : {
+      "comment" : "Link under the found account: other ways to add this device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Andere Methode"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other Method"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro método"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autre méthode"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altro metodo"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다른 방법"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "其他方式"
           }
         }
       }
@@ -54419,54 +54515,6 @@
         }
       }
     },
-    "onboarding.iCloudJoin.title" : {
-      "comment" : "iCloud join step title.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Dein iCloud-Tresor"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your iCloud Vault"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tu bóveda de iCloud"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ton coffre iCloud"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La tua cassaforte iCloud"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "내 iCloud 보관함"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "你的 iCloud 保险库"
-          }
-        }
-      }
-    },
     "onboarding.iCloudJoin.useKit" : {
       "comment" : "iCloud join step: link to the Emergency Kit restore.",
       "extractionState" : "manual",
@@ -54511,6 +54559,150 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "使用我的 Emergency Kit"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.useQRCode" : {
+      "comment" : "Other method menu on the found account: add this device with another device (QR code).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mit einem anderen Gerät (QR-Code)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With Another Device (QR Code)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con otro dispositivo (código QR)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avec un autre appareil (QR code)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con un altro dispositivo (codice QR)"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다른 기기로 (QR 코드)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "通过另一台设备（二维码）"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.welcomeBack" : {
+      "comment" : "First screen when an account and its Secret Key are found in iCloud: title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Willkommen zurück"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome Back"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué bueno verte de nuevo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Content de te revoir"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bentornato in OnePass"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다시 오신 것을 환영합니다"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "欢迎回来"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.yourVault" : {
+      "comment" : "Found account card: name shown when the owner's name is unknown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein OnePass-Tresor"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your OnePass Vault"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu bóveda de OnePass"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton coffre OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua cassaforte OnePass"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "내 OnePass 보관함"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的 OnePass 保险库"
           }
         }
       }
@@ -56485,6 +56677,54 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "SECRET KEY"
+          }
+        }
+      }
+    },
+    "onboarding.secretKey.alsoInICloud" : {
+      "comment" : "Secret Key step subtitle when the key also went to iCloud Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Er ist auch in deinem iCloud-Schlüsselbund, deine anderen Geräte haben ihn also. Bewahre das Kit offline auf, falls du einmal alle Geräte verlierst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It's also in your iCloud Keychain, so your other devices will have it. Keep the kit offline for the day you lose all your devices."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "También está en tu llavero de iCloud, así que tus otros dispositivos la tendrán. Guarda el kit sin conexión para el día en que pierdas todos tus dispositivos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle est aussi dans ton trousseau iCloud : tes autres appareils l'auront. Garde le kit hors ligne pour le jour où tu perdrais tous tes appareils."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "È anche nel tuo portachiavi iCloud, quindi gli altri dispositivi la avranno. Conserva il kit offline per il giorno in cui perdessi tutti i dispositivi."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud 키체인에도 저장되어 다른 기기에서도 사용할 수 있습니다. 모든 기기를 잃어버릴 때를 대비해 키트를 오프라인에 보관하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "它也存在你的 iCloud 钥匙串中，你的其他设备都会有。请离线保存此套件，以防你丢失所有设备。"
           }
         }
       }

@@ -12,7 +12,10 @@ import Synchronization
 /// iCloud Keychain) needs only the master password.
 public protocol SyncedSecretKeyStore: Sendable {
     func read(accountID: String) throws -> Data?
-    func write(accountID: String, _ data: Data) throws
+    /// The account owner's first name, stored beside the key (not secret): the new device's first
+    /// screen names the account it found before any unlock.
+    func owner(accountID: String) throws -> String?
+    func write(accountID: String, _ data: Data, owner: String?) throws
     func delete(accountID: String) throws
 }
 
@@ -54,12 +57,31 @@ public struct ICloudKeychainSecretKeys: SyncedSecretKeyStore {
         }
     }
 
-    public func write(accountID: String, _ data: Data) throws {
+    public func owner(accountID: String) throws -> String? {
+        var query = query(accountID)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let attributes = result as? [String: Any],
+                let generic = attributes[kSecAttrGeneric as String] as? Data
+            else { return nil }
+            let name = String(decoding: generic, as: UTF8.self)
+            return name.isEmpty ? nil : name
+        case errSecItemNotFound: return nil
+        default: throw KeychainError.unexpectedStatus(status)
+        }
+    }
+
+    public func write(accountID: String, _ data: Data, owner: String?) throws {
         let query = query(accountID)
         let update: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
             kSecAttrLabel as String: "OnePass Secret Key",
+            kSecAttrGeneric as String: Data((owner ?? "").utf8),
         ]
         var status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
         if status == errSecItemNotFound {
@@ -83,12 +105,15 @@ public struct ICloudKeychainSecretKeys: SyncedSecretKeyStore {
 
 /// Test double: an iCloud Keychain shared by the `VaultEnvironment`s of two simulated devices.
 public final class InMemorySyncedSecretKeys: SyncedSecretKeyStore {
-    private let storage = Mutex<[String: Data]>([:])
+    private let storage = Mutex<[String: (key: Data, owner: String?)]>([:])
 
     public init() {}
 
-    public func read(accountID: String) throws -> Data? { storage.withLock { $0[accountID] } }
-    public func write(accountID: String, _ data: Data) throws { storage.withLock { $0[accountID] = data } }
+    public func read(accountID: String) throws -> Data? { storage.withLock { $0[accountID]?.key } }
+    public func owner(accountID: String) throws -> String? { storage.withLock { $0[accountID]?.owner } }
+    public func write(accountID: String, _ data: Data, owner: String?) throws {
+        storage.withLock { $0[accountID] = (data, owner) }
+    }
     public func delete(accountID: String) throws { storage.withLock { _ = $0.removeValue(forKey: accountID) } }
 
     /// Tests: the account ids held.

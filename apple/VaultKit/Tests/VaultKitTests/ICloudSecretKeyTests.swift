@@ -75,7 +75,7 @@ struct ICloudSecretKeyTests {
         let first = try SessionHarness(syncedSecretKeys: synced)
         defer { first.cleanUp() }
         let session = first.makeSession()
-        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        _ = try await session.createAccount(password: testPassword, displayName: "Camille", mode: .personal)
         try await addItem(session, title: "Projet Atlas")
         session.lock()
         await session.waitForReleasedSessions()
@@ -85,6 +85,8 @@ struct ICloudSecretKeyTests {
         let joining = second.makeSession()
         #expect(joining.needsSecretKey)
         #expect(await joining.iCloudKeychainHasSecretKey())
+        // The first screen names the account before any unlock.
+        #expect(await joining.iCloudKeychainOwner() == "Camille")
 
         let wrong = SecretBytes(utf8: "faux")
         await #expect(throws: VaultError.wrongPassword) {

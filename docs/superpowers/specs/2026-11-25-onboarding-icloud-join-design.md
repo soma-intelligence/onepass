@@ -67,6 +67,22 @@ password and its Argon2id cost are unchanged.
 - Face ID (Touch ID) and AutoFill become one step, "Réglages rapides", with one button per row
   and "Continuer".
 
+## 4. Revision 2: the found account is the first screen
+
+Owner request, same day: when the vault and its Secret Key are both in iCloud, no welcome and no
+choice screen. The first screen proposes the account.
+
+- Detection starts at launch (during the intro too). While it runs, the welcome shows only
+  "Recherche de ton coffre dans iCloud…", at most 4 seconds; after that the usual choices show
+  and the search goes on.
+- Found: the path becomes Mot de passe maître, Terminé. The first screen, "Content de te revoir",
+  shows the account (owner's first name, or "Ton coffre OnePass"), the master password field and
+  Continuer. "Autre méthode" opens a menu: another device (QR code) or the Emergency Kit. Back
+  from either returns to the found account, never to the choices.
+- The owner's first name travels with the iCloud Keychain item (`kSecAttrGeneric`, not secret),
+  written with the key and refreshed at each unlock when it changed.
+- Nothing found, or found without its key: unchanged (create first, or pairing first).
+
 ## Tests
 
 - VaultKit: route of scanned texts; synced key published on create and on unlock, never on a

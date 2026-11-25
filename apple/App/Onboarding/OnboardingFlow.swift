@@ -135,6 +135,16 @@ final class OnboardingModel {
     var joinCode = ""
     /// The welcome's search for an account already in iCloud.
     private(set) var iCloudVault: ICloudVaultState = .unknown
+    /// The first name stored with the Secret Key in iCloud Keychain: the account the first screen
+    /// proposes. Nil: unknown (an older copy), the screen says "Ton coffre OnePass".
+    private(set) var iCloudOwner: String?
+    /// The iCloud search takes long (slow network): the welcome shows its choices meanwhile.
+    private(set) var iCloudLookupSlow = false
+    /// The welcome waits for the iCloud search before offering its choices (a few seconds at most).
+    var lookingInICloudFirst: Bool {
+        cloudKitEnabled && !restoreOnly && !iCloudLookupSlow && model.managedOnboarding == nil
+            && model.addingAccount == nil && (iCloudVault == .unknown || iCloudVault == .checking)
+    }
     /// "Appareil partagé ?" on the welcome: the device question comes back for this run. Personal
     /// is assumed otherwise.
     private(set) var asksDeviceKind = false
@@ -255,9 +265,8 @@ final class OnboardingModel {
             steps.append(.done)
             return steps
         }
-        if path == .iCloud {
-            return restoreOnly ? [.iCloudJoin, .done] : [.welcome, .iCloudJoin, .done]
-        }
+        // The found account is the first screen: nothing before it (spec 2026-11-25, rev. 2).
+        if path == .iCloud { return [.iCloudJoin, .done] }
         var steps: [OnboardingStep] = restoreOnly ? [] : [.welcome]
         if !restoreOnly, asksDeviceKind { steps.append(.device) }
         steps.append(contentsOf: path == .create ? [.password, .secretKey] : [.restore])
@@ -273,7 +282,7 @@ final class OnboardingModel {
         guard !busy else { return false }
         switch step {
         case .device, .password, .pairMode: return true
-        case .restore, .iCloudJoin: return !restoreOnly
+        case .restore: return !restoreOnly
         case .pairing:
             // Until the account arrives: going back stops the pairing.
             switch pairing?.state {
@@ -291,6 +300,12 @@ final class OnboardingModel {
         guard canGoBack, index > 0 else { return }
         if step == .pairing { stopPairing() }
         movingForward = false
+        // "Autre méthode" left the found account: back returns to it, never to the choices.
+        if iCloudVault == .joinable, step == .pairMode || step == .restore {
+            path = .iCloud
+            step = .iCloudJoin
+            return
+        }
         if restoreOnly, step == .pairMode {
             path = .restore
             step = .restore
@@ -333,9 +348,14 @@ final class OnboardingModel {
     func detectICloudVault() async {
         guard iCloudVault == .unknown else { return }
         #if DEBUG
-        // Screenshots: `-OnePassOnboardingICloud joinable|needsKey` shows that welcome.
+        // Screenshots: `-OnePassOnboardingICloud joinable|needsKey` (and
+        // `-OnePassOnboardingICloudName Camille`) shows that first screen.
         switch UserDefaults.standard.string(forKey: "OnePassOnboardingICloud") {
-        case "joinable": iCloudVault = .joinable; return
+        case "joinable":
+            iCloudOwner = UserDefaults.standard.string(forKey: "OnePassOnboardingICloudName")
+            iCloudVault = .joinable
+            openFoundAccount()
+            return
         case "needsKey": iCloudVault = .needsKey; return
         default: break
         }
@@ -347,10 +367,8 @@ final class OnboardingModel {
         if restoreOnly {
             // The store already holds the account: only its key is looked for.
             iCloudVault = await session.iCloudKeychainHasSecretKey() ? .joinable : .needsKey
-            if iCloudVault == .joinable, step == .restore {
-                path = .iCloud
-                step = .iCloudJoin
-            }
+            if iCloudVault == .joinable { iCloudOwner = await session.iCloudKeychainOwner() }
+            openFoundAccount()
             return
         }
         guard cloudKitEnabled else {
@@ -358,11 +376,42 @@ final class OnboardingModel {
             return
         }
         iCloudVault = .checking
+        // A slow network: the choices show after a few seconds, the search goes on.
+        let slow = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled { self?.iCloudLookupSlow = true }
+        }
+        defer { slow.cancel() }
         guard await model.iCloudAccountAvailable(), (try? await model.remoteHasAccount()) == true else {
             iCloudVault = .none
             return
         }
-        iCloudVault = await session.iCloudKeychainHasSecretKey() ? .joinable : .needsKey
+        guard await session.iCloudKeychainHasSecretKey() else {
+            iCloudVault = .needsKey
+            return
+        }
+        iCloudOwner = await session.iCloudKeychainOwner()
+        iCloudVault = .joinable
+        openFoundAccount()
+    }
+
+    /// The account and its key are in iCloud: the first screen proposes it, password only. Only
+    /// while nothing else was chosen (the welcome, or the Emergency Kit screen of a restore).
+    private func openFoundAccount() {
+        guard iCloudVault == .joinable, step == .welcome || step == .restore, !busy else { return }
+        if let iCloudOwner, displayName.isEmpty { displayName = iCloudOwner }
+        errorMessage = nil
+        movingForward = false
+        path = .iCloud
+        step = .iCloudJoin
+    }
+
+    /// "Autre méthode" on the found account: the QR code of another device.
+    func pairInstead() {
+        errorMessage = nil
+        path = .pair
+        movingForward = true
+        step = .pairMode
     }
 
     /// The Secret Key of the new account went to iCloud Keychain: the Emergency Kit can wait.
@@ -476,7 +525,8 @@ final class OnboardingModel {
             case nil where effectivePairMethod == .type: String(localized: "onboarding.join")
             default: nil
             }
-        case .restore, .iCloudJoin: String(localized: "common.unlock")
+        case .restore: String(localized: "common.unlock")
+        case .iCloudJoin: String(localized: "common.continue")
         case .done: String(localized: "app.openOnepass")
         default: String(localized: "common.continue")
         }
@@ -1102,8 +1152,9 @@ struct OnboardingFlow: View {
                 showIntro = OnboardingIntro.shouldShow(for: app, restoreOnly: restoreOnly)
                 let created = OnboardingModel(model: app, restoreOnly: restoreOnly)
                 model = created
-                // The account came with the sync: its key may be in iCloud Keychain already.
-                if restoreOnly { Task { await created.detectICloudVault() } }
+                // An account in iCloud with its key in iCloud Keychain: proposed at once, from launch
+                // (spec 2026-11-25, rev. 2), during the intro too.
+                Task { await created.detectICloudVault() }
             }
         }
         .onChange(of: app.session.needsSecretKey) { _, needed in

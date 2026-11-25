@@ -782,6 +782,15 @@ public final class VaultSession {
         return true
     }
 
+    /// The first name stored beside the iCloud Keychain copy of the Secret Key of the account the
+    /// store holds, read before any unlock: the new device's first screen names the account.
+    public func iCloudKeychainOwner() async -> String? {
+        guard let synced = environment.syncedSecretKeys else { return nil }
+        let path = dbPath
+        guard let accountID = try? await CoreThread.run({ try storeAccountId(dbPath: path) }) else { return nil }
+        return try? synced.owner(accountID: accountID)
+    }
+
     /// A new device joining the account the store holds: the Secret Key comes from iCloud Keychain,
     /// the user types the master password. Same outcome as `restore(secretKey:password:)` (the key is
     /// stored device-only). Throws `.passwordRequired`-free errors: a missing synced key is
@@ -827,13 +836,15 @@ public final class VaultSession {
         guard settings.secretKeyInICloud, settings.deviceMode == .personal,
             let synced = environment.syncedSecretKeys
         else { return }
+        let name = settings.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let owner = name.isEmpty ? nil : name
         do {
             try secretKey.withData { data in
                 if var current = try synced.read(accountID: accountID) {
                     defer { current.withUnsafeMutableBytes { SecretBytes.zero($0) } }
-                    if current == data { return }
+                    if current == data, try synced.owner(accountID: accountID) == owner { return }
                 }
-                try synced.write(accountID: accountID, data)
+                try synced.write(accountID: accountID, data, owner: owner)
             }
         } catch {
             Self.log.error("Secret Key copy not written to iCloud Keychain")
