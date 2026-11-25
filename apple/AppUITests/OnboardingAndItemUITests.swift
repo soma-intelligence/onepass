@@ -104,7 +104,7 @@ final class OnboardingAndItemUITests: XCTestCase {
         if let sheet = SaveSheetWatch.firstSighting(in: app) {
             XCTFail("system \"Save Password?\" sheet after the Login was saved: \(sheet)")
         }
-        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        let search = app.searchFields.firstMatch // Home's header search, the only one since the search tab left
         tap(search)
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "row missing after save")
 
@@ -177,7 +177,7 @@ final class OnboardingAndItemUITests: XCTestCase {
         app.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES", "-OnePassDebugItem", "none"]
         app.launch()
 
-        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        let search = app.searchFields.firstMatch // Home's header search, the only one since the search tab left
         XCTAssertTrue(search.waitForExistence(timeout: Self.kdfTimeout), "debug account not unlocked")
         let seeded = app.descendants(matching: .any)["list.row.Forge Atlas"].firstMatch
         tap(search)
@@ -350,7 +350,7 @@ final class OnboardingAndItemUITests: XCTestCase {
 
     /// Rechercher, then "atlas" typed unless the row already shows (a query kept from before).
     private func searchAtlas(_ app: XCUIApplication) {
-        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        let search = app.searchFields.firstMatch // Home's header search, the only one since the search tab left
         tap(search)
         if row(app).waitForExistence(timeout: 2) { return }
         let field = app.searchFields.firstMatch
