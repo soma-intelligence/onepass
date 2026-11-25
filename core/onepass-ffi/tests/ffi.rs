@@ -159,6 +159,11 @@ fn fill(item: &mut FfiItem) {
                 field.value = text("123456");
                 continue;
             }
+            // The chip badge only holds over the chip's own MRZ: save_item drops it over
+            // dummy values (scan.rs, save_item_drops_the_chip_badge_on_identity_edits).
+            if item_type == FfiItemType::Passport && field.id == "chip_status" {
+                continue;
+            }
             field.value = dummy(item_type, field);
         }
     }
