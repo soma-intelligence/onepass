@@ -288,12 +288,18 @@ export class Overlays {
     // No document id (Firefox, Safari): shown only by a top frame still at this origin.
     if (cs.documentId === undefined) msg.origin = cs.origin;
     const opts = cs.documentId !== undefined ? { documentId: cs.documentId } : { frameId: 0 };
+    let reply: unknown;
     try {
-      await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
+      reply = await this.deps.ext.tabs.sendMessage(cs.tabId, msg, opts);
     } catch (e) {
       // Not shown: no live token may claim the tab has its overlay.
       await this.tokens.drop(token);
       throw e;
+    }
+    // The page answered but did not show it (its origin moved, no such frame kind): the same.
+    if (typeof reply === "object" && reply !== null && (reply as { ok?: unknown }).ok === false) {
+      await this.tokens.drop(token);
+      throw new BgError("no_form");
     }
     return token;
   }
@@ -692,7 +698,15 @@ export class Overlays {
   }
 
   async close(token: string, ui: UiContext): Promise<object> {
-    const rec = await this.record(token, ui);
+    const rec = await this.tokens.resolve(token, ui);
+    if (!rec) {
+      // A token this worker no longer knows (expired, dropped): the card's x still removes the
+      // card of the sender's own tab. The overlay is always a frame of the top document.
+      if (ui.tabId === undefined) throw new BgError("invalid");
+      this.checked.delete(token);
+      await removeFrame(this.deps.ext.tabs, { tabId: ui.tabId, frameId: 0 }, "overlay");
+      return {};
+    }
     this.checked.delete(token);
     await this.tokens.drop(token);
     await removeFrame(this.deps.ext.tabs, rec, "overlay");

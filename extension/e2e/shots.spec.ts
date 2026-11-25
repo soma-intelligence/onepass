@@ -42,7 +42,8 @@ async function overlayText(ext: Ext, page: Page, text: string | RegExp): Promise
     .poll(
       async () => {
         const f = ext.findExtFrame(page, "overlay");
-        return f ? await f.locator(".ov-status").textContent({ timeout: 500 }).catch(() => null) : null;
+        // The live line: the phase while it runs (read to screen readers), the outcome after.
+        return f ? await f.locator('[role="status"]').first().textContent({ timeout: 500 }).catch(() => null) : null;
       },
       { timeout: 20_000 },
     )
@@ -65,9 +66,9 @@ for (const scheme of ["dark", "light"] as const) {
     await ext.settle();
     await page.screenshot({ path: join(out, `onepass-ext-inline-menu-${scheme}.png`) });
 
-    // Fill from the menu, then the field icons on a filled form.
+    // Remplir on a sign-in form signs in (as menu_fill_login): filled, then sent by OnePass.
     await ext.pickRow(menu, "Atlas Cloud");
-    await expect(page.locator("#password")).not.toHaveValue("");
+    await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
     await page.screenshot({ path: join(out, `onepass-ext-filled-${scheme}.png`) });
 
     // The popup page on the same tab context.

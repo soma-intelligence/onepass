@@ -303,7 +303,7 @@ paired("chain_single_page", async ({ ext }) => {
   await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
   await expect.poll(async () => (await ext.chainState())?.status, { timeout: 20_000 }).toBe("done");
   const overlay = await ext.extFrame(page, "overlay");
-  await expect(overlay.locator(".ov-status")).toHaveText("Connecté");
+  await expect(overlay.locator(".ov-done .t1")).toHaveText("Connecté");
 });
 
 paired("chain_multistep_totp", async ({ ext }) => {
@@ -333,7 +333,8 @@ paired("chain_stops_on_captcha", async ({ ext }) => {
   await page.goto(`${ATLAS}/captcha`);
   const overlay = await ext.overlayStart(page, "Atlas Cloud");
   await expect.poll(async () => await ext.chainState(), { timeout: 20_000 }).toMatchObject({ status: "handoff", reason: "captcha" });
-  await expect(overlay.locator(".ov-status")).toHaveText("CAPTCHA détecté, à toi de jouer");
+  await expect(overlay.locator(".ov-stop")).toHaveAttribute("data-tone", "handoff");
+  await expect(overlay.locator(".ov-stop .t1")).toHaveText("CAPTCHA détecté, à toi de jouer");
   await expect(page.locator("#email")).toHaveValue("");
   await expect(page.locator("#password")).toHaveValue("");
 });

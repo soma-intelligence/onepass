@@ -163,7 +163,7 @@ describe("popup background", () => {
     expect(await send({ type: "popup_fill", itemId: "it_01", tabId: 99, origin: "https://evil.test" })).toEqual({
       ok: { domain: "atlas-cloud.test" },
     });
-    expect(client.requests.at(-1)).toEqual({
+    expect(client.requests.filter((r) => (r as { op?: string }).op === "fill_login").at(-1)).toEqual({
       op: "fill_login",
       ctx: "popup",
       item_id: "it_01",

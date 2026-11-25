@@ -66,6 +66,16 @@ const FORGOT_TEXT =
 const MAX_FORGOT_LINKS = 300;
 /** Headings read for sign-in wording. */
 const MAX_HEADINGS = 5;
+/**
+ * The whole label of a control that signs out: the page is one of a signed-in session. A sign-in
+ * page has none (a second account added from a signed-in page is not offered by itself).
+ */
+const SIGN_OUT_TEXT =
+  /^(sign ?out|log ?out|logout|signout|log off|se deconnecter|deconnexion|deconnecter|abmelden|ausloggen|cerrar sesion|salir|esci|disconnetti|terminar sessao|sair|uitloggen|afmelden)$/;
+/** A sign-out address: its path, never its query (a login page may carry `?next=/logout`). */
+const SIGN_OUT_PATH = /\/(sign[-_]?out|log[-_]?out|logoff|deconnexion|disconnect)(\/|\.|$)/i;
+/** Controls read for sign-out wording. */
+const MAX_SIGN_OUT_CONTROLS = 400;
 
 /**
  * Controls that may submit a group. Links that navigate are excluded in the
@@ -765,6 +775,29 @@ function signInPage(doc: Document, roots: readonly ShadowRoot[], url: string): b
 }
 
 /**
+ * The page carries a sign-out control (shown or folded in a menu): a session is open on this
+ * site. A label read whole, or a link or form whose path signs out.
+ */
+export function signedInPage(doc: Document, roots: readonly ShadowRoot[]): boolean {
+  const controls = queryAll(doc, roots, "a, button, [role='button'], [role='menuitem'], input[type='submit'], form[action]", MAX_SIGN_OUT_CONTROLS);
+  for (const el of controls) {
+    if (el instanceof HTMLFormElement) {
+      if (signOutPath(el.getAttribute("action"))) return true;
+      continue;
+    }
+    if (SIGN_OUT_TEXT.test(normalizeText(buttonLabel(el)))) return true;
+    if (el instanceof HTMLAnchorElement && signOutPath(el.getAttribute("href"))) return true;
+  }
+  return false;
+}
+
+function signOutPath(raw: string | null): boolean {
+  if (!raw) return false;
+  const path = raw.split(/[?#]/, 1)[0] ?? "";
+  return SIGN_OUT_PATH.test(path);
+}
+
+/**
  * A lone identifier with a "Next" style button is a sign-in step only in a
  * sign-in context: a field read as a user name, a sign-in button label, or a
  * sign-in page (computed lazily, once per document).
@@ -958,12 +991,14 @@ export function analyzeDocument(doc: Document, refs: RefRegistry, opts: AnalyzeO
   const host = hostOf(url);
   const onProvider = host !== null && providerForHost(host) !== null;
   const captcha = detectCaptcha(doc, geometry);
+  const roots = opts.shadowRoots ?? collectShadowRoots(doc);
   return {
     url,
-    forms: detectForms(doc, refs, geometry, url, opts.shadowRoots ?? collectShadowRoots(doc), opts.model),
+    forms: detectForms(doc, refs, geometry, url, roots, opts.model),
     captcha: captcha === "challenge",
     ...(captcha === "widget" ? { captchaWidget: true } : {}),
     ...(findPasskeySignIn(doc, geometry) ? { passkeySignIn: true } : {}),
+    ...(signedInPage(doc, roots) ? { signedIn: true } : {}),
     push: detectPush(doc),
     providerButtons: detectProviderButtons(doc, refs, geometry),
     accountChooser: onProvider ? detectAccountChooser(doc, refs, geometry) : [],

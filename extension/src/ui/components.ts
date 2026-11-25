@@ -89,6 +89,7 @@ const ICONS = {
     "M5.5 5.5v1.2", "M10.5 5.5v1.2", "M8 5.5v3.2H7.2", "M5.6 10.8c1.3 1.1 3.5 1.1 4.8 0",
   ],
   // Touch ID: three arcs.
+  phone: ["R5 1.5 6 13", "M7.3 12h1.4"],
   touchid: ["M3.5 9a4.5 4.5 0 019 0v1", "M5.5 9a2.5 2.5 0 015 0v3", "M8 9v4.5", "M2.5 6a6.5 6.5 0 0111 0"],
   // Provider marks, drawn here as plain monochrome strokes in the UI's own
   // line style (never the providers' artwork or colours).

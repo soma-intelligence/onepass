@@ -5058,3 +5058,16 @@ fn take_sign_in_without_store_is_nothing() {
     let r = h.call(take(ATLAS, ATLAS));
     assert_eq!(ok(&r)["item_id"], Value::Null);
 }
+
+#[test]
+fn status_names_a_failed_read_never_locked() {
+    let mut h = H::new();
+    assert_eq!(ok(&h.call(json!({"op":"status"})))["locked"], json!(false));
+    // An open vault whose read failed: its error, not "locked" (the extension would show a
+    // locked card on an unlocked app).
+    h.svc.vault_mut().fail_status = Some(onepass_bridge::AppErrorCode::Internal);
+    assert_eq!(err(&h.call(json!({"op":"status"}))), "internal");
+    h.svc.vault_mut().fail_status = None;
+    h.svc.vault_mut().locked = true;
+    assert_eq!(ok(&h.call(json!({"op":"status"})))["locked"], json!(true));
+}

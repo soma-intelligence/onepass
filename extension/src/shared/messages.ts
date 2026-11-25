@@ -234,6 +234,8 @@ export interface PageAnalysis {
   captchaWidget?: boolean;
   /** The page shows one button that reads as a passkey sign-in: a sign-in page even with no field and no provider button. */
   passkeySignIn?: boolean;
+  /** The page carries a sign-out control: a session is open on the site, the card does not offer itself. */
+  signedIn?: boolean;
   push: boolean;
   providerButtons: { provider: ProviderId; ref: string }[];
   accountChooser: { email: string; ref: string }[];

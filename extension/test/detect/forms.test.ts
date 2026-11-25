@@ -547,3 +547,20 @@ describe("analyzeDocument: lab fixes run (task 9)", () => {
     expect(roles(alone.a.forms[0]!, alone.refs)).toMatchObject({ g: "full_name" });
   });
 });
+
+describe("analyzeDocument: signed-in page", () => {
+  it("a sign-out control, shown or folded in a menu, marks the page signed in", () => {
+    expect(analyzeHtml('<nav><a href="/settings">Settings</a><button type="button">Sign out</button></nav>').a.signedIn).toBe(true);
+    expect(analyzeHtml('<nav><div hidden><a href="/account">Se déconnecter</a></div></nav>').a.signedIn).toBe(true);
+    expect(analyzeHtml('<nav><a href="/users/logout" aria-label="Account menu item"><svg></svg></a></nav>').a.signedIn).toBe(true);
+    expect(analyzeHtml('<form action="/session/sign_out" method="post"><button>Leave</button></form>').a.signedIn).toBe(true);
+  });
+
+  it("a sign-in page has none: no mark", () => {
+    const login = '<form><input name="email" type="email"><input type="password"><button>Log in</button></form>';
+    expect(analyzeHtml(login).a.signedIn).toBeUndefined();
+    // A return address after a sign-out, or wording that only mentions it, is not a sign-out control.
+    expect(analyzeHtml('<a href="/login?next=/logout">Log in</a><p>You signed out.</p>').a.signedIn).toBeUndefined();
+    expect(analyzeHtml('<a href="/help/how-to-log-out-everywhere">How to log out everywhere</a>').a.signedIn).toBeUndefined();
+  });
+});

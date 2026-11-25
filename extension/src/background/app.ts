@@ -136,6 +136,13 @@ interface PlanForMenu {
 export const RESUME_WINDOW_MS = UNLOCK_WAIT_MS;
 /** A menu opened this soon after a gesture that found the vault locked (or no app) is that gesture's menu. */
 export const GESTURE_MENU_MS = 10_000;
+/**
+ * A click into a field waits this long for the vault to say whether the menu has anything to show;
+ * past it the menu opens and waits for the app itself (a worker just woken, a slow app).
+ */
+export const AUTO_MENU_WAIT_MS = 1_500;
+/** Why a menu cannot list logins yet, said in the menu with its button (never a silent click). */
+const MENU_SAYS_WHY: ReadonlySet<string> = new Set(["locked", "host_missing", "timeout", "unpaired"]);
 /** The plan a resume replays reaches the worker within this long: it is no gesture of its own. */
 const REPLAY_MS = 10_000;
 /** One launch of the app per gesture: its requests come within this long of each other. */
@@ -386,6 +393,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
   // The chain plans unknown pages; the planner starts chains.
   const plannerRef: { current: Planner | null } = { current: null };
   const notesRef: { current: FillNotes | null } = { current: null };
+  const autoPillRef: { current: AutoPill | null } = { current: null };
   const runner: ChainRunner | null = opts.chain
     ? null
     : new ChainRunner({
@@ -402,12 +410,20 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
           awaitUnlock: (t) => overlays.awaitUnlock(t),
         },
         neverOffer: (site) => neverSave.has(site),
+        autoGate: {
+          mayOffer: async (cs, signedIn) => (autoPillRef.current ? autoPillRef.current.mayOffer(cs.tabId, cs.origin, signedIn) : true),
+          offered: async (cs) => autoPillRef.current?.offered(cs.tabId, cs.origin),
+        },
         cross: (cs, itemId) => crossForChain(cs, itemId),
         menuOpen: (t) => menus.hasTab(t),
         replan: (cs, itemId) => replanForChain(cs, itemId),
         formRoles: (cs, formRef) => pageFormRoles(cs, formRef),
         // One note per fill: a chain notes its own at done.
-        onChain: (tabId) => notesRef.current?.forget(tabId),
+        onChain: (tabId, event, site) => {
+          notesRef.current?.forget(tabId);
+          // Signed in on that site: the card no longer offers itself there (auto-pill.ts).
+          if (event === "done" && site !== undefined) void autoPillRef.current?.signedIn(site).catch(() => undefined);
+        },
         ...(opts.now ? { now: opts.now } : {}),
       });
   const chain: ChainDriver = opts.chain ?? (runner as ChainRunner);
@@ -771,6 +787,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     topFrame: (tabId) => frames.details(tabId, 0),
     // A private window: the pill stays away (the extension already treats it apart, spec 4.3).
     incognito: async (tabId) => (await ext.tabs.get?.(tabId))?.incognito === true,
+    loaded: async (tabId) => (await ext.tabs.get?.(tabId))?.status === "complete",
     busy: async (tabId) =>
       (await chainRunning(tabId)) ||
       (await chain.state(tabId).catch(() => null))?.status === "running" ||
@@ -781,14 +798,25 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
       const a = await analyses.top(tabId);
       if (!a) return null;
       const refs = (kind: string) => a.analysis.forms.filter((f) => f.kind === kind).map((f) => f.ref);
-      return { origin: a.origin, ...(a.documentId !== undefined ? { documentId: a.documentId } : {}), login: refs("login"), signup: refs("signup") };
+      const password = a.analysis.forms.some((f) => f.kind === "login" && f.fields.some((x) => x.role === "current_password"));
+      return {
+        origin: a.origin,
+        ...(a.documentId !== undefined ? { documentId: a.documentId } : {}),
+        login: refs("login"),
+        signup: refs("signup"),
+        ...(a.analysis.signedIn === true ? { signedIn: true } : {}),
+        ...(password ? { password: true } : {}),
+      };
     },
     prefilled: async (cs, refs) => {
       const body = await requestContext(cs);
       // A page that does not answer: no pill rather than one over a form we could not read.
       if (!body) return true;
+      // Only the recognised forms: a value in a search box or a newsletter field elsewhere on the
+      // page says nothing of the sign-in. A form the page re-rendered under another ref: no value.
       const mine = body.forms.filter((f) => refs.includes(f.form_ref));
-      return (mine.length > 0 ? mine : body.forms).some((f) => f.fields.some((x) => x.prefilled !== "empty"));
+      // A "remember me" box checked by the page is not something typed.
+      return mine.some((f) => f.fields.some((x) => x.prefilled !== "empty" && x.role !== "remember_me"));
     },
     vault: async () => {
       try {
@@ -800,6 +828,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     logins: (cs) => overlays.offers(cs),
     open: (cs, face) => overlays.openAuto(cs, face),
   });
+  autoPillRef.current = autoPill;
   const popup = new PopupBackend({
     ext,
     area: store.session,
@@ -847,17 +876,31 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
     return r.items.filter((x) => x.kind === "identity" && x.email).map((x) => ({ ...x, subtitle: x.email ?? x.subtitle }));
   };
 
-  /** The menu would list something for this form on `origin` (locked, unpaired: no). */
+  /**
+   * The menu would show something for this form on `origin`: a login to offer, or the state that
+   * keeps it from offering one (the vault locked, the app missing or slow, the browser not paired),
+   * which the menu says with its button. Silence there read as "OnePass does nothing". Only a vault
+   * that answers with nothing for the site keeps the click quiet. Past AUTO_MENU_WAIT_MS the menu
+   * opens and waits for the app itself.
+   */
   const offersAnything = async (origin: string, formKind: string, signupStep = false): Promise<boolean> => {
-    try {
+    const ask = async (): Promise<boolean> => {
       if (signupStep && (await signupEmails(origin)).length > 0) return true;
       if (formKind === "card" || formKind === "identity" || formKind === "address") {
         const kind = formKind === "card" ? "card" : "identity";
         return (await session.request({ op: "list_fillable", ctx: "menu", origin, kind })).items.length > 0;
       }
       return (await session.request({ op: "list_for_origin", ctx: "menu", origin })).items.length > 0;
-    } catch {
-      return false;
+    };
+    const answered = ask().catch((e: unknown) => MENU_SAYS_WHY.has(toBgError(e).code));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<boolean>((r) => {
+      timer = setTimeout(() => r(true), AUTO_MENU_WAIT_MS);
+    });
+    try {
+      return await Promise.race([answered, slow]);
+    } finally {
+      clearTimeout(timer);
     }
   };
 
