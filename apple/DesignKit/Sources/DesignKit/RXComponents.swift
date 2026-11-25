@@ -895,6 +895,8 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
     /// The colours of a drawn wallpaper flow too; a photo only gets the slow camera move.
     let flowPhoto: Bool
     /// Each change scrolls the page back to its top (a tap on the tab that is already selected).
+    /// A page under a large title leaves it at 0 and uses `expandsLargeTitle(scrollToTop:)`, which
+    /// also unfolds the title.
     let scrollToTop: Int
 
     public init(

@@ -356,7 +356,7 @@ struct VaultEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            VaultEditorForm {
                 Section {
                     VStack(spacing: Theme.Space.m) {
                         VaultIconTile(icon: stored, colorName: color, size: 76)
@@ -372,8 +372,8 @@ struct VaultEditorView: View {
                             .focused($nameFocused)
                             .onSubmit(save)
                             .submitLabel(.done)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 12)
+                            .padding(.vertical, Theme.Space.s)
+                            .padding(.horizontal, Theme.Space.m)
                             .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
                             .accessibilityIdentifier("vault.editor.name")
                     }
@@ -390,8 +390,11 @@ struct VaultEditorView: View {
                     .padding(.vertical, Theme.Space.s)
                 }
                 Section("vaults.color") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: Theme.Space.s)],
-                        spacing: Theme.Space.m) {
+                    // Two even rows: an adaptive grid left an orphan row of two swatches once
+                    // the card took its inset margins.
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Space.xs),
+                                             count: (VaultStyle.colors.count + 1) / 2),
+                        spacing: Theme.Space.xs) {
                         ForEach(VaultStyle.colors, id: \.self) { name in
                             colorButton(name)
                         }
@@ -425,7 +428,6 @@ struct VaultEditorView: View {
                     }
                 }
             }
-            .formStyle(.grouped)
             .navigationTitle(vault == nil ? Text("Nouveau coffre") : Text("term.vault"))
             #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -598,7 +600,9 @@ struct VaultEditorView: View {
                     .fill(fill.gradient)
                     .frame(width: 24, height: 24)
             }
-            .contentShape(Circle())
+            // The whole cell answers the finger (44 pt tall), not only the 32 pt ring.
+            .frame(maxWidth: .infinity, minHeight: Theme.RX.Metrics.minTapTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(VaultStyle.colorLabel(colorName))
@@ -629,5 +633,22 @@ struct VaultEditorView: View {
                 errorMessage = VaultError(error).localizedMessage
             }
         }
+    }
+}
+
+/// The editor's form: grouped on the Mac, inset grouped cards on iPhone and iPad. A grouped `Form`
+/// in this sheet drew edge to edge rows under grey header bands on iPhone, unlike every other
+/// sheet of the app.
+private struct VaultEditorForm<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        #if os(iOS)
+        List { content }
+            .listStyle(.insetGrouped)
+        #else
+        Form { content }
+            .formStyle(.grouped)
+        #endif
     }
 }

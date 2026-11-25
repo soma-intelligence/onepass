@@ -394,6 +394,9 @@ struct RXMacSidebar: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: RX.Space.m) { content() }
+                // One line per row, as in Finder and Mail: a long French name ("Supprimés
+                // récemment") ends in an ellipsis instead of doubling its row.
+                .lineLimit(1)
                 .rxFont(selected ? .calloutMedium : .callout)
                 .foregroundStyle(selected ? RX.Palette.accentText.color : RX.Palette.textPrimary.color)
                 .padding(.horizontal, RX.Space.s)

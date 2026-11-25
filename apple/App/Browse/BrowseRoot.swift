@@ -432,7 +432,9 @@ private struct RXReadableWidth: ViewModifier {
         GeometryReader { proxy in
             let side = sizeClass == .regular ? max(0, (proxy.size.width - Self.column) / 2) : 0
             content
-                .contentMargins(.horizontal, side, for: .scrollContent)
+                // Nil on a compact width: the system margins stay. A 0 here reached the sheets
+                // opened from Réglages too (the vault editor drew its rows edge to edge).
+                .contentMargins(.horizontal, side > 0 ? side : nil, for: .scrollContent)
                 .environment(\.rxSettingsSideMargin, side)
         }
     }

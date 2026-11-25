@@ -254,7 +254,7 @@ struct AccountPanel: View {
     /// iPhone: the cards keep clear of the glass popover's edge, their corners following its curve
     /// (8 pt read as cards pressed against the panel's side).
     static let inset: CGFloat = Theme.Space.m
-    static let cardRadius: CGFloat = 24
+    static let cardRadius: CGFloat = Theme.RX.Radius.card
     /// The glass panel's corner: the cards' radius plus their inset, so both curves are concentric.
     static let panelRadius: CGFloat = cardRadius + inset
     static let width: CGFloat = 296

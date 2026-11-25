@@ -115,6 +115,14 @@ struct RXSettingsHome: View {
         }
         .accessibilityIdentifier("rx.settings")
         .sheet(isPresented: $showsFeatureRequest) { FeatureRequestSheet() }
+        #if DEBUG
+        // Captures: `-OnePassDemoFeatureRequest YES` opens Suggérer une fonctionnalité.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "OnePassDemoFeatureRequest") else { return }
+            try? await Task.sleep(for: .milliseconds(600))
+            showsFeatureRequest = true
+        }
+        #endif
     }
 
     static let planZoomID = "rx.plan"

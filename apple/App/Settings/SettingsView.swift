@@ -178,7 +178,8 @@ struct SettingsView: View {
     @State private var showsFeatureRequest = false
 
     /// Screenshots (Debug): `-OnePassDemoSettingsPage <page>` opens that page; in the RX look,
-    /// `-OnePassDemoRXSettings plan|profileQR` opens the plan page or the profile QR code.
+    /// `-OnePassDemoRXSettings plan|profileQR|agents` opens the plan page, the profile QR code or
+    /// Agents (the iPhone's developer page).
     private static var initialPath: [SettingsRoute] {
         var path: [SettingsRoute] = []
         #if DEBUG
@@ -191,6 +192,7 @@ struct SettingsView: View {
         switch rx ? defaults.string(forKey: "OnePassDemoRXSettings") : nil {
         case "plan": path.append(.plan)
         case "profileQR": path.append(.profileQR)
+        case "agents": path.append(.agents)
         default: break
         }
         #endif
@@ -327,16 +329,27 @@ struct SettingsView: View {
             RXPlanPage()
             #endif
         #if os(iOS)
+        // Every list page of Réglages closes from its trailing corner, as the `.page` ones do.
         case .profile:
-            ProfileSettings().zoomDestination("settings.account")
+            ProfileSettings()
+                .toolbar { doneItem }
+                .zoomDestination("settings.account")
         case .homeCards:
-            RXHomeCardsSettings().zoomDestination("rx.settings.homeCards")
+            RXHomeCardsSettings()
+                .toolbar { doneItem }
+                .zoomDestination("rx.settings.homeCards")
         case .watch:
-            WatchSettings().zoomDestination("settings.watch")
+            WatchSettings()
+                .toolbar { doneItem }
+                .zoomDestination("settings.watch")
         case .agents:
-            AgentsSettings().zoomDestination("settings.agents")
+            AgentsSettings()
+                .toolbar { doneItem }
+                .zoomDestination("settings.agents")
         case .profileQR:
-            RXProfileQRPage().zoomDestination(RXSettingsHome.profileQRZoomID)
+            RXProfileQRPage()
+                .toolbar { doneItem }
+                .zoomDestination(RXSettingsHome.profileQRZoomID)
         case .perk(let id):
             if let perk = RXPerkCarousel.perks.first(where: { $0.id == id }) {
                 perk.page.content

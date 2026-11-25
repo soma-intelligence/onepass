@@ -91606,13 +91606,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld clé d'accès absente du fichier : importe-la depuis 1Password avec l'échange d'identifiants"
+                  "value" : "%lld passkey absente du fichier : importe-la depuis 1Password avec l'échange d'identifiants"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld clés d'accès absentes du fichier : importe-les depuis 1Password avec l'échange d'identifiants"
+                  "value" : "%lld passkeys absentes du fichier : importe-les depuis 1Password avec l'échange d'identifiants"
                 }
               }
             }

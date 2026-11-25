@@ -95,13 +95,13 @@ struct DeveloperSettingsPage: View {
                         }
                     }
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Text("developer.inSshConfig").font(.callout)
                     CodeBox(code: "Host *\n  \(hosts.paths.identityAgentLine)", onCopy: copy)
                     Text("developer.orInTerminal").font(.callout)
                     CodeBox(code: hosts.paths.exportLine, onCopy: copy)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Theme.Space.xs)
             }
         } footer: {
             Text("developer.appServesSshKeys")
@@ -116,9 +116,9 @@ struct DeveloperSettingsPage: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(keys, id: \.itemId) { key in
-                HStack(spacing: 12) {
+                HStack(spacing: Theme.Space.m) {
                     CategoryTile(category: .of(.sshKey), size: 28)
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(key.title)
                         Text("\(key.vaultName) · \(key.fingerprint)")
                             .font(.caption.monospaced())
@@ -164,12 +164,12 @@ struct DeveloperSettingsPage: View {
             }
             .accessibilityIdentifier("settings.developer.mcp")
             if hosts.settings.mcpEnabled {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Text("developer.toAddOnepassTo")
                         .font(.callout)
                     CodeBox(code: hosts.paths.mcpClientConfig, onCopy: copy)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Theme.Space.xs)
             }
         } footer: {
             Text("developer.pairedAiAgentSees")
@@ -215,7 +215,7 @@ struct DeveloperSettingsPage: View {
             } header: {
                 Text("developer.agentWebFill")
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     Text("developer.agentWebFillFooter")
                     Text("developer.agentWebFillTip")
                 }
@@ -245,7 +245,7 @@ struct DeveloperSettingsPage: View {
                     }
                     Button("developer.unpair", role: .destructive) { Task { await unpair(client) } }
                 } label: {
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(client.label)
                         Text(client.signed ? "Signé · \(client.id)" : "Non signé · \(client.id)")
                             .font(.caption.monospaced())
@@ -274,7 +274,7 @@ struct DeveloperSettingsPage: View {
             }
             ForEach(grants, id: \.id) { grant in
                 HStack {
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text(grant.action)
                         Text("developer.until \(label(of: grant.clientId)) \(Date(timeIntervalSince1970: TimeInterval(grant.expiresAt)).formatted(date: .omitted, time: .shortened))")
                             .font(.caption)
@@ -309,7 +309,7 @@ struct DeveloperSettingsPage: View {
             } else {
                 ForEach(phones.phones) { phone in
                     Label {
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                             Text(phone.name)
                             Group {
                                 if phone.id == phones.unlockPhone {
@@ -341,7 +341,7 @@ struct DeveloperSettingsPage: View {
                     get: { phones.unlockPhone != nil },
                     set: { on in Task { await phones.setUnlockFromPhone(on, phone: unlockTarget) } })
                 ) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                         Text("developer.unlockFromMyIphone")
                         Text("developer.touchIdConfirmsOpened")
                             .font(.caption)
@@ -390,12 +390,12 @@ struct DeveloperSettingsPage: View {
                 ForEach(AgentClient.allCases) { Text($0.title).tag($0) }
             }
             .accessibilityIdentifier("settings.developer.installClient")
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
                 Text("developer.inTerminal").font(.callout)
                 CodeBox(code: installer.terminalCommand, onCopy: copy)
                     .accessibilityIdentifier("settings.developer.installCommand")
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, Theme.Space.xs)
             // Secondary: the app's sandbox usually keeps the helper out of the client's file.
             HStack {
                 Button("developer.showChanges") { Task { await installer.previewInstall() } }
@@ -674,10 +674,10 @@ private struct ToolHeading<Tile: View, Status: View>: View {
 
     var body: some View {
         // A title alone centres on its tile; with a line under it, both start at the tile's top.
-        HStack(alignment: message == nil ? .center : .top, spacing: rx ? RX.Space.m : 12) {
+        HStack(alignment: message == nil ? .center : .top, spacing: rx ? RX.Space.m : Theme.Space.m) {
             tile
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: rx ? RX.Space.xxs : 2) {
+            VStack(alignment: .leading, spacing: rx ? RX.Space.xxs : Theme.Space.xxs) {
                 if rx {
                     title
                         .rxFont(.headline)
@@ -701,7 +701,7 @@ private struct ToolHeading<Tile: View, Status: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Theme.Space.xxs)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }

@@ -461,7 +461,7 @@ private struct MacFavoritesCard: View {
             // (Amazon) read as one grid.
             RXSummaryIcon(summary: summary, size: 40)
                 .frame(width: 64, height: 64)
-                .background(RX.Palette.field.color, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(RX.Palette.field.color, in: RoundedRectangle(cornerRadius: RX.Radius.tile, style: .continuous))
                 .scaleEffect(hovered == summary.id ? 1.06 : 1)
                 .animation(.snappy(duration: 0.18), value: hovered)
             // Two lines, centred, so a long title wraps instead of being cut.

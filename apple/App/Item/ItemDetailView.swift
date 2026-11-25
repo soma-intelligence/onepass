@@ -1199,7 +1199,8 @@ private struct WifiQRCard: View {
                         .font(.body.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
-                        .contentShape(.rect)
+                        // 28 pt drawn (the square keeps its room on a 375 pt screen), 44 pt to touch.
+                        .contentShape(Rectangle().inset(by: -8))
                 }
                 .menuStyle(.button)
                 .buttonStyle(.borderless)
@@ -1251,8 +1252,9 @@ private struct WifiQRCard: View {
                 Image(systemName: "eye.slash").font(.title).foregroundStyle(Color(red: 0.07, green: 0.12, blue: 0.27))
             }
         }
-        // QRSquare's plate radius (side * 0.085 at 260 pt): geometry, not the radius scale.
-        .clipShape(.rect(cornerRadius: 22))
+        // QRSquare's own plate: the same radius and the same continuous curve, so the blur
+        // never shows a corner of another shape.
+        .clipShape(.rect(cornerRadius: QRSquare.radius(side: 260), style: .continuous))
         .contentShape(.rect)
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { shown.toggle() } }
         .accessibilityAddTraits(.isButton)
@@ -1302,9 +1304,12 @@ private struct QRSquare: View {
     let payload: String
     let side: CGFloat
 
+    /// The plate's corner, in proportion to its side.
+    static func radius(side: CGFloat) -> CGFloat { side * 0.085 }
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: side * 0.085, style: .continuous).fill(.white)
+            RoundedRectangle(cornerRadius: Self.radius(side: side), style: .continuous).fill(.white)
             if let image = WifiQR.image(for: payload) {
                 Image(decorative: image, scale: 1)
                     .interpolation(.none)

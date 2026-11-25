@@ -47,8 +47,8 @@ struct ItemsTab: View {
                     .foregroundStyle(.secondary)
                     .textCase(nil)
                     .lineLimit(1)
-                    // Pulls the name onto the rows' leading edge (the header inset is wider).
-                    .padding(.leading, -4)
+                    // No negative inset: the name starts on the same edge as Coffres and
+                    // Catégories below it (it sat 4 pt to their left).
                     .accessibilityAddTraits(.isHeader)
             }
             SyncRefusalSection()
@@ -184,10 +184,11 @@ struct ItemsTab: View {
                 icon()
                 label()
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: Theme.Space.s)
+                // Secondary, the system's value color: tertiary fell near 2:1 on the light card.
                 count()
                     .font(.subheadline)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
         }

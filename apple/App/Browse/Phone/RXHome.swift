@@ -12,8 +12,6 @@ import VaultKit
 /// set by `HomeTab`, the art runs up behind them.
 struct RXHomePage<Extras: View>: View {
     @Environment(AppModel.self) private var model
-    /// A tap on the selected Accueil tab at its root scrolls the page back to its top.
-    @Environment(\.phoneTabScrollToTop) private var scrollToTop
     let itemCount: Int
     let recents: [FfiItemSummary]
     let favorites: [FfiItemSummary]
@@ -31,7 +29,7 @@ struct RXHomePage<Extras: View>: View {
     var body: some View {
         RXHeroPage(photo: wallpaper.image, lightPhoto: lightHero, livePhoto: liveWallpaper,
             flowPhoto: wallpaper.flows,
-            initialOffset: Self.demoScroll, scrollToTop: scrollToTop) {
+            initialOffset: Self.demoScroll) {
             VStack(spacing: RX.Space.xl) {
                 // The bar above already holds the title and the search: the score follows at once.
                 RXHomeScore(itemCount: itemCount)
@@ -225,7 +223,8 @@ struct RXSummaryRow: View {
             value: summary.lastUsedAt.map(Self.usedLabel),
             valueColor: Theme.RX.Palette.textSecondary.color
         ) {
-            RXSummaryIcon(summary: summary, size: 40)
+            // The row's lead (44 pt), as the vault tiles of the card below: one text edge.
+            RXSummaryIcon(summary: summary, size: Theme.RX.Metrics.itemLogo)
         }
     }
 

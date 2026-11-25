@@ -169,7 +169,8 @@ struct WatchtowerTab: View {
             if let report = watchtower.report {
                 Text(WatchtowerModel.summary(report))
                     .font(.footnote)
-                    .foregroundStyle(.tertiary)
+                    // Secondary, not tertiary: tertiary read at about 2:1 on the light page.
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
         case .analyzing, .checkingBreaches:

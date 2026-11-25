@@ -271,9 +271,9 @@ struct WallpaperSection: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: Self.thumbHeight * RXWallpaper.screenRatio, height: Self.thumbHeight)
-                        .clipShape(.rect(cornerRadius: RX.Space.s, style: .continuous))
+                        .clipShape(.rect(cornerRadius: Theme.Radius.chip, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: RX.Space.s, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous)
                                 .strokeBorder(RX.Palette.separator.color, lineWidth: 0.5)
                         }
                         .accessibilityHidden(true)
@@ -575,7 +575,7 @@ struct RXWallpaperPicker: View {
         ForEach(Array(RXWallpaper.soma.names.enumerated()), id: \.offset) { index, name in
             let id = index == 0 ? RXWallpaper.automatic : name
             tile(id: id, isSelected: selected == id, image: Image(RXWallpaper.thumbnail(name)),
-                 label: Text(LocalizedStringKey("rx.wallpaper.soma.\(index + 1)")), showsCaption: true)
+                 label: Text(LocalizedStringKey("rx.wallpaper.soma." + String(index + 1))), showsCaption: true)
         }
     }
 

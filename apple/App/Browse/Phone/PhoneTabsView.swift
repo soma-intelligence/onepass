@@ -348,6 +348,7 @@ struct PhoneTabsView: View {
             case "favorites": .favorites
             case "passkeys": .passkeys
             case "all": .all
+            case "nearby": .nearby
             case "category": model.session.summaries.first.map { .category($0.itemType) }
             case "cards": .category(.creditCard)
             case "tag": model.session.counts().byTag.keys.sorted().first.map { .tag($0) }

@@ -32,7 +32,7 @@ struct IconMenu<Label: View>: View {
             Picker("editor.icon.color", selection: $item.color) {
                 Text("editor.icon.noColor").tag(String?.none)
                 ForEach(ItemTint.names, id: \.self) { name in
-                    Text(LocalizedStringKey("accounts.color.\(name)")).tag(String?.some(name))
+                    Text(LocalizedStringKey("accounts.color." + name)).tag(String?.some(name))
                 }
             }
             .pickerStyle(.menu)

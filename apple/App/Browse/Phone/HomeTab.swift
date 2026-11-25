@@ -18,6 +18,8 @@ import VaultKit
 struct HomeTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.phoneSearchActive) private var searchActive
+    /// A tap on the selected Accueil tab at its root: back to the top, the large title unfolded.
+    @Environment(\.phoneTabScrollToTop) private var scrollToTop
     /// The search text and whether its field is active: owned by the tabs, so a deep link or a
     /// capture argument can open the search.
     @Binding var query: String
@@ -113,6 +115,9 @@ struct HomeTab: View {
                 .task(id: session.summariesRevision) { await duplicates.load(session) }
             }
         }
+        // The large title shows unfolded at launch and after a tap on the selected tab (UIKit
+        // starts a tab root with an always shown search field folded, see `expandsLargeTitle`).
+        .expandsLargeTitle(scrollToTop: scrollToTop, enabled: !isSearching)
         // RX: "Accueil", large, over the hero's art; classic: "Bonjour Camille" above the tiles.
         .navigationTitle(rxDesign ? String(localized: "Accueil") : greeting)
         .navigationBarTitleDisplayMode(.large)

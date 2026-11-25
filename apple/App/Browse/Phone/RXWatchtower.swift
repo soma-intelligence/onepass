@@ -343,7 +343,9 @@ struct RXAlertCard: View {
                     .dbText()
             }
             .multilineTextAlignment(.leading)
-            Spacer(minLength: Theme.RX.Space.xs)
+            // The words take the whole width left (a Spacer beside them shared it, and the title
+            // broke after two words with room to spare).
+            .frame(maxWidth: .infinity, alignment: .leading)
             if chevron {
                 Image(systemName: "chevron.right")
                     .font(Theme.RX.Glyph.font(Theme.RX.Glyph.chevron, weight: .bold))
