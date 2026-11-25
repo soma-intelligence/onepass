@@ -113,6 +113,8 @@ struct WatchtowerTab: View {
                 if !seen.isEmpty {
                     PhoneWatchtowerCard(card: .seenByFormerMember, count: seen.count, ids: seen)
                 }
+                // Passkeys a 1PUX import left behind, until each one is recreated (hidden at zero).
+                PasskeyMigrationEntry(boxed: true)
                 CryptoPhraseAlertCard()
                 let clear = WatchtowerCard.all.filter { !Self.isFlagged($0, in: report) }
                 if !clear.isEmpty {

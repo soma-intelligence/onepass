@@ -52,6 +52,8 @@ struct RXWatchtowerContent<Scan: View, Status: View>: View {
                     alerts(report)
                     statTiles(report)
                     improve(report)
+                    // Passkeys a 1PUX import left behind, until each one is recreated (hidden at zero).
+                    PasskeyMigrationEntry(boxed: true)
                     CryptoPhraseAlertCard()
                     StrengthCard(levels: report.strength.map(Int.init))
                     let clear = WatchtowerCard.all.filter { !$0.isFlagged(in: report) }
