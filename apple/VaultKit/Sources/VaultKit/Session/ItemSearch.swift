@@ -53,6 +53,22 @@ public enum ItemSearch {
             .sorted { $0.rank != $1.rank ? $0.rank < $1.rank : $0.offset < $1.offset }
             .map(\.item)
     }
+
+    /// What a quick search shows (the Mac Home's search field): the best `limit` answers to
+    /// `query` among the active items (archive and trash left out), and how many match in all.
+    /// A blank query shows nothing: the screen keeps its usual content.
+    public struct TopMatches: Equatable, Sendable {
+        public let items: [FfiItemSummary]
+        public let total: Int
+
+        public static let none = TopMatches(items: [], total: 0)
+    }
+
+    public static func top(_ items: [FfiItemSummary], query: String, limit: Int) -> TopMatches {
+        guard !words(query).isEmpty, limit > 0 else { return .none }
+        let found = ranked(items.filter(ItemFilter.all.matches), query: query)
+        return TopMatches(items: Array(found.prefix(limit)), total: found.count)
+    }
 }
 
 /// The searches typed on this device during the session, newest first: memory only, emptied on

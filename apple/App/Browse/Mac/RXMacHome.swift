@@ -7,9 +7,13 @@ import VaultKit
 /// Accueil on the Mac in the RX look (Penpot "Mac · Home"), the first sidebar row while the switch
 /// is on: the photo card with the security score and three actions, Récents and Coffres side by
 /// side, then Favoris as a row of icons. Every row opens what the sidebar would: the item in the
-/// list, the vault's items, the full list.
+/// list, the vault's items, the full list. A search field under the title (⌘F) filters the items
+/// live by title, username, site and tag: while it holds a search, the results take the cards' place.
 struct RXMacHome: View {
     @Environment(AppModel.self) private var model
+    /// The Home search: memory only, emptied when the page goes away.
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
     @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = Theme.RX.Typography.displaySmall.spec.size
     /// The hero's picture, picked in Réglages > Général (Lava 3 when nothing is stored).
     @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var wallpaperID = RXWallpaper.platformDefault
@@ -29,18 +33,23 @@ struct RXMacHome: View {
                     .rxFont(.title)
                     .foregroundStyle(RX.Palette.textPrimary.color)
                     .accessibilityAddTraits(.isHeader)
-                hero(itemCount: counts.all)
-                // Equal heights: each card fills the row's height (the taller card's), its rows
-                // from the top.
-                HStack(alignment: .top, spacing: RX.Space.l) {
-                    recentCard(recents)
-                        .frame(maxHeight: .infinity, alignment: .top)
-                    vaultsCard
-                        .frame(maxHeight: .infinity, alignment: .top)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                if !favorites.isEmpty {
-                    favoritesCard(favorites)
+                searchField
+                if !ItemSearch.words(query).isEmpty {
+                    resultsCard(session.items(filter: .all, query: "", sort: .title))
+                } else {
+                    hero(itemCount: counts.all)
+                    // Equal heights: each card fills the row's height (the taller card's), its rows
+                    // from the top.
+                    HStack(alignment: .top, spacing: RX.Space.l) {
+                        recentCard(recents)
+                            .frame(maxHeight: .infinity, alignment: .top)
+                        vaultsCard
+                            .frame(maxHeight: .infinity, alignment: .top)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    if !favorites.isEmpty {
+                        favoritesCard(favorites)
+                    }
                 }
             }
             .frame(maxWidth: 832)
@@ -51,7 +60,93 @@ struct RXMacHome: View {
         .background(RX.Palette.pageBackground.color)
         .environment(\.rxCards, true)
         .task(id: session.summariesRevision) { model.watchtower.refreshIfNeeded(session) }
+        // ⌘F (Édition > Rechercher) on Home focuses this field instead of opening the list.
+        .onChange(of: model.searchFocusRequest) { searchFocused = true }
         .accessibilityIdentifier("rx.mac.home")
+    }
+
+    /// Results shown at most; the count says how many match in all.
+    private static let resultLimit = 8
+
+    /// The Home search field, on the card fill and radius, with the ⌘F hint while empty and idle.
+    /// Return opens the best answer, Escape clears the search.
+    private var searchField: some View {
+        let shape = RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous)
+        return HStack(spacing: RX.Space.s) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(RX.Palette.textSecondary.color)
+                .accessibilityHidden(true)
+            TextField("common.search", text: $query, prompt: Text("browse.searchItems"))
+                .textFieldStyle(.plain)
+                .foregroundStyle(RX.Palette.textPrimary.color)
+                .focused($searchFocused)
+                .onSubmit(openBestMatch)
+                .onExitCommand { query = ""; searchFocused = false }
+                .accessibilityIdentifier("rx.mac.home.search")
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(RX.Palette.textTertiary.color)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("browse.clearSearch"))
+                .accessibilityIdentifier("rx.mac.home.search.clear")
+            } else if !searchFocused {
+                Text(verbatim: "⌘F")
+                    .rxFont(.footnote)
+                    .foregroundStyle(RX.Palette.textTertiary.color)
+                    .accessibilityHidden(true)
+            }
+        }
+        .rxFont(.callout)
+        .padding(.horizontal, RX.Space.l)
+        .frame(height: 44)
+        .background(RX.Palette.cardBackground.color, in: shape)
+        .overlay {
+            if searchFocused { shape.strokeBorder(Theme.accent.opacity(0.8), lineWidth: 1.5) }
+        }
+        .contentShape(shape)
+        .onTapGesture { searchFocused = true }
+    }
+
+    /// The search's answers in a Home card, best first, each opening its item in the list.
+    private func resultsCard(_ items: [FfiItemSummary]) -> some View {
+        let matches = ItemSearch.top(items, query: query, limit: Self.resultLimit)
+        return homeCard {
+            cardHeader(Text("item.results")) {
+                Group {
+                    if matches.total == 1 { Text("browse.n1Result") } else { Text("browse.results \(matches.total)") }
+                }
+                .rxFont(.footnote)
+                .monospacedDigit()
+                .foregroundStyle(RX.Palette.textSecondary.color)
+                .accessibilityIdentifier("rx.mac.home.results.count")
+            }
+            if matches.items.isEmpty {
+                RXCardMessage(Text("browse.noResultsFor \(query.trimmingCharacters(in: .whitespaces))"))
+            } else {
+                ForEach(matches.items, id: \.id) { summary in
+                    Button { open(summary) } label: {
+                        MacHomeRow(
+                            title: Text(summary.title),
+                            subtitle: Text(summary.listSubtitle.isEmpty
+                                           ? ItemCategory.of(summary.itemType).singular : summary.listSubtitle)
+                        ) {
+                            RXSummaryIcon(summary: summary, size: macHomeLead)
+                        }
+                    }
+                    .rxPress()
+                }
+            }
+        }
+        .accessibilityIdentifier("rx.mac.home.results")
+    }
+
+    /// Return in the field: the first result, as a click on it would.
+    private func openBestMatch() {
+        let items = model.session.items(filter: .all, query: "", sort: .title)
+        guard let best = ItemSearch.top(items, query: query, limit: 1).items.first else { return }
+        open(best)
     }
 
     /// The photo card, words first as on the iPhone: the greeting, the state in words, the score as

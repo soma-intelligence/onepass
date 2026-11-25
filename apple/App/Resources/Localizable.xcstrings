@@ -53709,6 +53709,150 @@
         }
       }
     },
+    "onboarding.done.kitInICloudKeychain" : {
+      "comment" : "Last onboarding step: the Secret Key is in iCloud Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud-Schlüsselbund"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Keychain"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llavero de iCloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trousseau iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portachiavi iCloud"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud 키체인"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud 钥匙串"
+          }
+        }
+      }
+    },
+    "onboarding.done.kitLater" : {
+      "comment" : "Last onboarding step: the Emergency Kit was left for later.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Später"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más tarde"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plus tard"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Più tardi"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "나중에"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "稍后"
+          }
+        }
+      }
+    },
+    "onboarding.done.turnOn" : {
+      "comment" : "Last onboarding step: button that turns Face ID or AutoFill on.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktivieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "켜기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "开启"
+          }
+        }
+      }
+    },
     "onboarding.emergencyKitCouldntPrepared" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54175,6 +54319,198 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "正在从 iCloud 获取你的保险库…"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.detail" : {
+      "comment" : "iCloud join step subtitle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein Secret Key kam über den iCloud-Schlüsselbund. Gib dein Master-Passwort ein, um deinen Tresor hier zu öffnen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Secret Key came through iCloud Keychain. Enter your master password to open your vault here."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Secret Key llegó por el llavero de iCloud. Escribe tu contraseña maestra para abrir tu bóveda aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ta Secret Key est arrivée par le trousseau iCloud. Saisis ton mot de passe maître pour ouvrir ton coffre ici."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua Secret Key è arrivata dal portachiavi iCloud. Inserisci la password principale per aprire qui la cassaforte."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Secret Key가 iCloud 키체인으로 전달되었습니다. 마스터 암호를 입력해 이 기기에서 보관함을 여세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的 Secret Key 已通过 iCloud 钥匙串送达。输入主密码即可在此打开保险库。"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.rail" : {
+      "comment" : "Mac onboarding step rail: the iCloud join step.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud-Tresor"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Vault"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bóveda de iCloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffre iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cassaforte iCloud"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud 보관함"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud 保险库"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.title" : {
+      "comment" : "iCloud join step title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein iCloud-Tresor"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your iCloud Vault"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu bóveda de iCloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton coffre iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua cassaforte iCloud"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "내 iCloud 보관함"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的 iCloud 保险库"
+          }
+        }
+      }
+    },
+    "onboarding.iCloudJoin.useKit" : {
+      "comment" : "iCloud join step: link to the Emergency Kit restore.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mein Emergency Kit verwenden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use My Emergency Kit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar mi Emergency Kit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utiliser mon Emergency Kit"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa il mio Emergency Kit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit 사용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用我的 Emergency Kit"
           }
         }
       }
@@ -58256,6 +58592,486 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "个人资料"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.iCloudJoin" : {
+      "comment" : "Welcome: main button when the vault and its Secret Key are in iCloud.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Meinen iCloud-Tresor öffnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open My iCloud Vault"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir mi bóveda de iCloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir mon coffre iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri la mia cassaforte iCloud"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "내 iCloud 보관함 열기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开我的 iCloud 保险库"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.iCloudJoinDetail" : {
+      "comment" : "Welcome: under Open My iCloud Vault.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein Secret Key ist in deinem iCloud-Schlüsselbund: nur dein Master-Passwort wird abgefragt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Secret Key is in your iCloud Keychain: only your master password is needed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Secret Key está en tu llavero de iCloud: solo se pide tu contraseña maestra"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ta Secret Key est dans ton trousseau iCloud : seul ton mot de passe maître est demandé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua Secret Key è nel tuo portachiavi iCloud: serve solo la password principale"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Secret Key가 iCloud 키체인에 있어 마스터 암호만 입력하면 됩니다"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的 Secret Key 在 iCloud 钥匙串中：只需输入主密码"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.lookingInICloud" : {
+      "comment" : "Welcome: while looking for a vault in iCloud.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Suche nach einem Tresor in iCloud …"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Looking for a vault in iCloud…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscando una bóveda en iCloud…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherche d'un coffre dans iCloud…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ricerca di una cassaforte in iCloud…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud에서 보관함을 찾는 중…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在 iCloud 中查找保险库…"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.sharedDevice" : {
+      "comment" : "Welcome: link that brings back the device kind question.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gerät mit anderen Personen geteilt?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Device Shared with Other People?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Dispositivo compartido con otras personas?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appareil partagé avec d'autres personnes ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo condiviso con altre persone?"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다른 사람과 함께 쓰는 기기인가요?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "与他人共用此设备？"
+          }
+        }
+      }
+    },
+    "onboarding.welcome.vaultInICloudNeedsKey" : {
+      "comment" : "Welcome: a vault is in iCloud but its Secret Key is not in iCloud Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In deiner iCloud ist bereits ein OnePass-Tresor. Öffne ihn mit deinem anderen Gerät oder deinem Emergency Kit."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A OnePass vault is already in your iCloud. Open it with your other device or your Emergency Kit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya hay una bóveda de OnePass en tu iCloud. Ábrela con tu otro dispositivo o tu Emergency Kit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un coffre OnePass est déjà dans ton iCloud. Ouvre-le avec ton autre appareil ou ton Emergency Kit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "C'è già una cassaforte OnePass nel tuo iCloud. Aprila con l'altro dispositivo o con il tuo Emergency Kit."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud에 이미 OnePass 보관함이 있습니다. 다른 기기나 Emergency Kit로 여세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的 iCloud 中已有 OnePass 保险库。请用你的另一台设备或 Emergency Kit 打开。"
+          }
+        }
+      }
+    },
+    "pairing.method.scan.detail" : {
+      "comment" : "Pairing method choice: scan a QR code, where it is shown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auf deinem Mac: Einstellungen > Geräte > Gerät hinzufügen. Dieses Gerät scannt den angezeigten QR-Code."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your Mac: Settings > Devices > Add a Device. This device scans the QR code that appears."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En tu Mac: Ajustes > Dispositivos > Añadir un dispositivo. Este dispositivo escanea el código QR que aparece."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur ton Mac : Réglages > Appareils > Ajouter un appareil. Cet appareil scanne le QR code qui s'affiche."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sul tuo Mac: Impostazioni > Dispositivi > Aggiungi un dispositivo. Questo dispositivo scansiona il codice QR mostrato."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac에서: 설정 > 기기 > 기기 추가. 이 기기로 표시된 QR 코드를 스캔합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在你的 Mac 上：设置 > 设备 > 添加设备。用此设备扫描显示的二维码。"
+          }
+        }
+      }
+    },
+    "pairing.method.type.detail" : {
+      "comment" : "Pairing method choice: type the 8-character code a Mac shows.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auf dem bereits eingerichteten Mac: Ablage > Gerät einrichten … Gib den angezeigten 8-stelligen Code ein."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the Mac that's already set up: File > Set Up a Device… Type the 8-character code that appears."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En el Mac ya configurado: Archivo > Configurar un dispositivo… Escribe el código de 8 caracteres que aparece."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur le Mac déjà configuré : Fichier > Configurer un appareil… Tape le code à 8 caractères qui s'affiche."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sul Mac già configurato: File > Configura un dispositivo… Digita il codice di 8 caratteri mostrato."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이미 설정된 Mac에서: 파일 > 기기 설정… 표시된 8자리 코드를 입력하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在已设置的 Mac 上：文件 > 设置设备… 输入显示的 8 位代码。"
+          }
+        }
+      }
+    },
+    "pairing.scan.notOnePassCode" : {
+      "comment" : "Onboarding pairing scanner: the QR code read is not a OnePass pairing code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dieser QR-Code ist kein OnePass-Kopplungscode. Scanne den Code, den dein Mac anzeigt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This QR code isn't a OnePass pairing code. Scan the one your Mac shows."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este código QR no es un código de vinculación de OnePass. Escanea el que muestra tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce QR code n'est pas un code d'appairage OnePass. Scanne celui qu'affiche ton Mac."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo codice QR non è un codice di abbinamento OnePass. Scansiona quello mostrato dal tuo Mac."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 QR 코드는 OnePass 페어링 코드가 아닙니다. Mac에 표시된 코드를 스캔하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此二维码不是 OnePass 配对码。请扫描你的 Mac 上显示的二维码。"
+          }
+        }
+      }
+    },
+    "pairing.scan.whereToFindCode" : {
+      "comment" : "Onboarding pairing scanner subtitle: where the Mac shows the code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auf deinem Mac: Einstellungen > Geräte > Gerät hinzufügen oder Ablage > Gerät einrichten … Halte den QR-Code in den Rahmen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On your Mac: Settings > Devices > Add a Device, or File > Set Up a Device… Place the QR code in the frame."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En tu Mac: Ajustes > Dispositivos > Añadir un dispositivo, o Archivo > Configurar un dispositivo… Coloca el código QR en el recuadro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur ton Mac : Réglages > Appareils > Ajouter un appareil, ou Fichier > Configurer un appareil… Place le QR code dans le cadre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sul tuo Mac: Impostazioni > Dispositivi > Aggiungi un dispositivo, oppure File > Configura un dispositivo… Inquadra il codice QR."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac에서: 설정 > 기기 > 기기 추가, 또는 파일 > 기기 설정… QR 코드를 프레임 안에 맞추세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在你的 Mac 上：设置 > 设备 > 添加设备，或 文件 > 设置设备… 将二维码放入框内。"
+          }
+        }
+      }
+    },
+    "pairing.type.whereToFindCode" : {
+      "comment" : "Onboarding pairing code entry subtitle: where the 8-character code is shown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auf dem bereits eingerichteten Mac: Ablage > Gerät einrichten … Der 8-stellige Code steht unter dem QR-Code."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the Mac that's already set up: File > Set Up a Device… The 8-character code appears under the QR code."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En el Mac ya configurado: Archivo > Configurar un dispositivo… El código de 8 caracteres aparece bajo el código QR."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur le Mac déjà configuré : Fichier > Configurer un appareil… Le code à 8 caractères s'affiche sous le QR code."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sul Mac già configurato: File > Configura un dispositivo… Il codice di 8 caratteri appare sotto il codice QR."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이미 설정된 Mac에서: 파일 > 기기 설정… QR 코드 아래에 8자리 코드가 표시됩니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在已设置的 Mac 上：文件 > 设置设备… 8 位代码显示在二维码下方。"
           }
         }
       }
@@ -87671,6 +88487,102 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "每 14 天"
+          }
+        }
+      }
+    },
+    "settings.security.secretKeyInICloud" : {
+      "comment" : "Security settings toggle: keep a copy of the Secret Key in iCloud Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Secret Key im iCloud-Schlüsselbund"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Secret Key in iCloud Keychain"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Secret Key en el llavero de iCloud"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Secret Key dans le trousseau iCloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Secret Key nel portachiavi iCloud"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iCloud 키체인에 Secret Key 보관"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 iCloud 钥匙串中保存 Secret Key"
+          }
+        }
+      }
+    },
+    "settings.security.secretKeyInICloud.footer" : {
+      "comment" : "Security settings: footer of the Secret Key in iCloud Keychain toggle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deine anderen Geräte öffnen deinen Tresor nur mit deinem Master-Passwort. Wer deinen Apple Account und den Code eines deiner Geräte hat, bräuchte nur noch dieses Passwort."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your other devices open your vault with just your master password. Someone with your Apple Account and the passcode of one of your devices would only need that password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus otros dispositivos abren tu bóveda solo con tu contraseña maestra. Alguien con tu cuenta de Apple y el código de uno de tus dispositivos solo necesitaría esa contraseña."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tes autres appareils ouvrent ton coffre avec ton seul mot de passe maître. Quelqu'un qui aurait ton identifiant Apple et le code d'un de tes appareils n'aurait plus que ce mot de passe à trouver."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gli altri dispositivi aprono la cassaforte solo con la password principale. Chi avesse il tuo Account Apple e il codice di uno dei tuoi dispositivi dovrebbe trovare solo quella password."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다른 기기에서는 마스터 암호만으로 보관함을 엽니다. Apple 계정과 기기 암호를 가진 사람은 이 암호만 알아내면 됩니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的其他设备只需主密码即可打开保险库。拥有你的 Apple 账户和某台设备密码的人只需再知道这个密码。"
           }
         }
       }

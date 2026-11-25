@@ -11048,6 +11048,54 @@
         }
       }
     },
+    "session.secretKeyNotInICloud" : {
+      "comment" : "Join from iCloud: the Secret Key is not in iCloud Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein Secret Key ist nicht im iCloud-Schlüsselbund. Verwende dein Emergency Kit oder dein anderes Gerät."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Secret Key isn't in iCloud Keychain. Use your Emergency Kit or your other device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Secret Key no está en el llavero de iCloud. Usa tu Emergency Kit o tu otro dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ta Secret Key n'est pas dans le trousseau iCloud. Utilise ton Emergency Kit ou ton autre appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua Secret Key non è nel portachiavi iCloud. Usa il tuo Emergency Kit o l'altro dispositivo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Secret Key가 iCloud 키체인에 없습니다. Emergency Kit나 다른 기기를 사용하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的 Secret Key 不在 iCloud 钥匙串中。请使用 Emergency Kit 或你的另一台设备。"
+          }
+        }
+      }
+    },
     "session.signInAccountsExposed %lld" : {
       "extractionState" : "manual",
       "localizations" : {

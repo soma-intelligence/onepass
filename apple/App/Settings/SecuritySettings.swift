@@ -45,6 +45,7 @@ struct SecuritySettings: View {
                 Group {
                     unlockSection
                     autofillReuseSection
+                    secretKeyInICloudSection
                     deviceModeSection
                     Section {
                         Button("settings.deleteAccount", systemImage: "trash", role: .destructive) { confirmingDelete = true }
@@ -169,6 +170,27 @@ struct SecuritySettings: View {
                 SettingsHeader(
                     "Remplissage automatique", info: Text("settings.security.autofillReuse.footer \(biometry)"),
                     id: "settings.autofillReuse.info")
+            }
+        }
+    }
+
+    /// The copy of the Secret Key in iCloud Keychain (spec 2026-11-25), personal devices only. Off
+    /// deletes it from every device of the Apple ID.
+    @ViewBuilder private var secretKeyInICloudSection: some View {
+        if settings.deviceMode == .personal, session.environment.syncedSecretKeys != nil {
+            Section {
+                Toggle(isOn: Binding(
+                    get: { settings.secretKeyInICloud },
+                    set: { on in
+                        session.setSecretKeyInICloud(on)
+                        model.settingsChanged()
+                    }
+                )) {
+                    Label("settings.security.secretKeyInICloud", systemImage: "key.icloud")
+                }
+                .accessibilityIdentifier("settings.secretKeyInICloud")
+            } footer: {
+                SettingsFootnote("settings.security.secretKeyInICloud.footer")
             }
         }
     }

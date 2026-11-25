@@ -714,6 +714,7 @@ public final class VaultSession {
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
         if !mode.biometricsAllowed { disableBiometrics() }
+        publishSecretKeyToICloud(created.secretKey, accountID: created.accountID)
         needsSecretKey = secretKeyPresence() == .missing
 
         guard gen == generation else {
@@ -765,6 +766,82 @@ public final class VaultSession {
         }
         defer { normalized.wipe() }
         try await passwordUnlock(password: password, secretKey: normalized, storeSecretKey: true)
+    }
+
+    // MARK: - Secret Key in iCloud Keychain
+
+    /// The account the store holds (fetched from iCloud) has its Secret Key in iCloud Keychain: this
+    /// device can join it with the master password only (`restoreFromICloudKeychain(password:)`).
+    /// False on any doubt (no store account, no synced store, keychain refusal).
+    public func iCloudKeychainHasSecretKey() async -> Bool {
+        guard let synced = environment.syncedSecretKeys else { return false }
+        let path = dbPath
+        guard let accountID = try? await CoreThread.run({ try storeAccountId(dbPath: path) }) else { return false }
+        guard var data = try? synced.read(accountID: accountID) else { return false }
+        data.withUnsafeMutableBytes { SecretBytes.zero($0) }
+        return true
+    }
+
+    /// A new device joining the account the store holds: the Secret Key comes from iCloud Keychain,
+    /// the user types the master password. Same outcome as `restore(secretKey:password:)` (the key is
+    /// stored device-only). Throws `.passwordRequired`-free errors: a missing synced key is
+    /// `secretKeyNotInICloud`.
+    public func restoreFromICloudKeychain(password: SecretBytes) async throws {
+        if state == .unlocked { return }
+        try checkStoreUsable()
+        try checkLockout()
+        let path = dbPath
+        guard let synced = environment.syncedSecretKeys,
+            let accountID = try? await CoreThread.run({ try storeAccountId(dbPath: path) }),
+            var data = try synced.read(accountID: accountID)
+        else {
+            throw fail(.other(Self.secretKeyNotInICloud))
+        }
+        let key = SecretBytes(taking: &data)
+        defer { key.wipe() }
+        try await passwordUnlock(password: password, secretKey: key, storeSecretKey: true)
+    }
+
+    /// Réglages > Sécurité: turning it off deletes the iCloud Keychain copy (every device of the Apple
+    /// ID loses it); turning it on publishes the key of the unlocked account again.
+    public func setSecretKeyInICloud(_ on: Bool) {
+        settings.secretKeyInICloud = on
+        guard let accountID = settings.accountID else { return }
+        if on {
+            guard let key = try? secretKeys.loadBytes(accountID: accountID) else { return }
+            defer { key.wipe() }
+            publishSecretKeyToICloud(key, accountID: accountID)
+        } else {
+            do {
+                try environment.syncedSecretKeys?.delete(accountID: accountID)
+            } catch {
+                Self.log.error("Secret Key copy not deleted from iCloud Keychain")
+            }
+        }
+    }
+
+    /// Best effort, after an unlock, a creation, a restore or a pairing: writes the iCloud Keychain
+    /// copy when it is missing or different, on a personal device with the setting on. A failure is
+    /// logged and never blocks what called it.
+    func publishSecretKeyToICloud(_ secretKey: SecretBytes, accountID: String) {
+        guard settings.secretKeyInICloud, settings.deviceMode == .personal,
+            let synced = environment.syncedSecretKeys
+        else { return }
+        do {
+            try secretKey.withData { data in
+                if var current = try synced.read(accountID: accountID) {
+                    defer { current.withUnsafeMutableBytes { SecretBytes.zero($0) } }
+                    if current == data { return }
+                }
+                try synced.write(accountID: accountID, data)
+            }
+        } catch {
+            Self.log.error("Secret Key copy not written to iCloud Keychain")
+        }
+    }
+
+    nonisolated static var secretKeyNotInICloud: String {
+        String(localized: "session.secretKeyNotInICloud", bundle: VaultKitStrings.bundle)
     }
 
     /// The canonical form of a typed Secret Key, or a `secretKey` validation error naming what is
@@ -834,6 +911,7 @@ public final class VaultSession {
         }
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
+        publishSecretKeyToICloud(secretKey, accountID: opened.accountID)
         afterPasswordUnlock(accountID: opened.accountID, auk: opened.auk)
         needsSecretKey = secretKeyPresence() == .missing
 
@@ -1006,6 +1084,10 @@ public final class VaultSession {
     /// Shared mode drops the biometric enrollment and caps auto-lock at 5 minutes.
     public func setDeviceMode(_ mode: DeviceMode) {
         settings.deviceMode = mode
+        // A shared device never keeps the iCloud Keychain copy.
+        if mode != .personal, let accountID = settings.accountID {
+            try? environment.syncedSecretKeys?.delete(accountID: accountID)
+        }
         if !mode.biometricsAllowed {
             // Not wanted any more either: back in personal mode, a password unlock must not enroll again.
             settings.biometricsWanted = false
@@ -2015,6 +2097,7 @@ public final class VaultSession {
         if !mode.biometricsAllowed { disableBiometrics() }
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
+        publishSecretKeyToICloud(opened.secretKey, accountID: accountID)
         afterPasswordUnlock(accountID: accountID, auk: opened.opened.auk)
         needsSecretKey = secretKeyPresence() == .missing
         guard gen == generation else {

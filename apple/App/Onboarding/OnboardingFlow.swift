@@ -5,16 +5,27 @@ import SwiftUI
 import VaultKit
 
 enum OnboardingStep: Hashable, Sendable {
-    case welcome, device, password, secretKey, biometrics, visibleVaults, restore, done
+    case welcome, device, password, secretKey, visibleVaults, restore, done
     /// "J'ai déjà OnePass sur un autre appareil": the mode, then the QR, code and password.
     case pairMode, pairing
-    /// "Remplis tes mots de passe avec OnePass": once the account exists, asks the system to turn
-    /// the AutoFill provider on. Skippable; never among the steps when the provider is already on.
-    case autoFill
+    /// "Ouvrir mon coffre iCloud": the account is in iCloud and its Secret Key in iCloud Keychain,
+    /// only the master password is asked (spec 2026-11-25).
+    case iCloudJoin
 }
 
 enum OnboardingPath: Sendable {
-    case create, restore, pair
+    case create, restore, pair, iCloud
+}
+
+/// What the welcome found in iCloud (spec 2026-11-25).
+enum ICloudVaultState: Equatable, Sendable {
+    case unknown, checking
+    /// No account in iCloud (or no iCloud, or a local build): create is offered first.
+    case none
+    /// An account and its Secret Key in iCloud Keychain: "Ouvrir mon coffre iCloud".
+    case joinable
+    /// An account without its key in iCloud Keychain: the QR pairing first, then the Emergency Kit.
+    case needsKey
 }
 
 /// The next step offered under an inline error: never only a message.
@@ -122,6 +133,15 @@ final class OnboardingModel {
     var pairMethod: PairMethod = PairMethod.preferred
     /// The code typed on the "Saisir le code" step (`XXXX-XXXX`, forgiving).
     var joinCode = ""
+    /// The welcome's search for an account already in iCloud.
+    private(set) var iCloudVault: ICloudVaultState = .unknown
+    /// "Appareil partagé ?" on the welcome: the device question comes back for this run. Personal
+    /// is assumed otherwise.
+    private(set) var asksDeviceKind = false
+    /// "Plus tard" on the Emergency Kit step (the key is in iCloud Keychain).
+    private(set) var kitSkipped = false
+    /// The scanner read a QR code that is not a OnePass pairing code: said under the camera.
+    var scanRejected = false
     /// The running pairing (new device side), from the QR step on.
     private(set) var pairing: PairingNewcomerFlow?
 
@@ -134,7 +154,9 @@ final class OnboardingModel {
         /// Show a QR code for the other device to scan (the first direction).
         case showCode
 
-        @MainActor static var preferred: PairMethod { scanAvailable ? .scan : .type }
+        /// A camera: scan the Mac's code. No camera (Mac, Vision Pro, Simulator): show a code, since
+        /// an iPhone or an iPad that approves only scans (typing needs another Mac).
+        @MainActor static var preferred: PairMethod { scanAvailable ? .scan : .showCode }
 
         /// A camera that reads QR codes (not on the Simulator, not on the Mac).
         @MainActor static var scanAvailable: Bool {
@@ -221,23 +243,24 @@ final class OnboardingModel {
     /// Secure Enclave present and the device is personal.
     var biometricsOffered: Bool { mode.biometricsAllowed && session.environment.biometrics.isAvailable }
 
+    /// The steps of the current path. Face ID (Touch ID) and AutoFill are rows of the last step,
+    /// "C'est prêt", each with its own button (spec 2026-11-25: fewer screens).
     var steps: [OnboardingStep] {
         if path == .pair {
             // From the Emergency Kit screen of an account the sync brought: back leads there.
             var steps: [OnboardingStep] = [restoreOnly ? .restore : .welcome, .pairMode, .pairing]
             // A guest session opens its own screen: nothing follows.
             guard pairDeviceMode != .public else { return steps }
-            if biometricsOffered { steps.append(.biometrics) }
-            if autoFillOffered { steps.append(.autoFill) }
             if mode == .shared { steps.append(.visibleVaults) }
             steps.append(.done)
             return steps
         }
-        var steps: [OnboardingStep] = restoreOnly ? [] : [.welcome, .device]
+        if path == .iCloud {
+            return restoreOnly ? [.iCloudJoin, .done] : [.welcome, .iCloudJoin, .done]
+        }
+        var steps: [OnboardingStep] = restoreOnly ? [] : [.welcome]
+        if !restoreOnly, asksDeviceKind { steps.append(.device) }
         steps.append(contentsOf: path == .create ? [.password, .secretKey] : [.restore])
-        if biometricsOffered { steps.append(.biometrics) }
-        // Right after the account exists and its unlock is set: the provider, asked once.
-        if autoFillOffered { steps.append(.autoFill) }
         if mode == .shared { steps.append(.visibleVaults) }
         steps.append(.done)
         return steps
@@ -250,7 +273,7 @@ final class OnboardingModel {
         guard !busy else { return false }
         switch step {
         case .device, .password, .pairMode: return true
-        case .restore: return !restoreOnly
+        case .restore, .iCloudJoin: return !restoreOnly
         case .pairing:
             // Until the account arrives: going back stops the pairing.
             switch pairing?.state {
@@ -280,9 +303,7 @@ final class OnboardingModel {
         errorMessage = nil
         let all = steps
         guard let index = all.firstIndex(of: step) else { return }
-        var next = index + 1
-        // Turned on meanwhile (in the system settings): nothing to ask.
-        if next < all.count, all[next] == .autoFill, autoFillEnabled { next += 1 }
+        let next = index + 1
         if next < all.count {
             movingForward = true
             step = all[next]
@@ -294,7 +315,59 @@ final class OnboardingModel {
         errorMessage = nil
         offerRestore = false
         movingForward = true
-        step = path == .pair ? .pairMode : .device
+        // The step after the welcome (or after the Emergency Kit screen, restore only).
+        let all = steps
+        step = all.count > 1 ? all[1] : all[0]
+    }
+
+    /// "Appareil partagé ?" under the welcome choices: create, with the device question first.
+    func chooseSharedDevice() {
+        asksDeviceKind = true
+        mode = .shared
+        choose(.create)
+    }
+
+    /// The welcome (or the Emergency Kit screen of an account the sync brought) looks for an
+    /// account in iCloud and for its Secret Key in iCloud Keychain. Once per onboarding; never for
+    /// an organisation account or a second account being added.
+    func detectICloudVault() async {
+        guard iCloudVault == .unknown else { return }
+        #if DEBUG
+        // Screenshots: `-OnePassOnboardingICloud joinable|needsKey` shows that welcome.
+        switch UserDefaults.standard.string(forKey: "OnePassOnboardingICloud") {
+        case "joinable": iCloudVault = .joinable; return
+        case "needsKey": iCloudVault = .needsKey; return
+        default: break
+        }
+        #endif
+        guard model.managedOnboarding == nil, model.addingAccount == nil else {
+            iCloudVault = .none
+            return
+        }
+        if restoreOnly {
+            // The store already holds the account: only its key is looked for.
+            iCloudVault = await session.iCloudKeychainHasSecretKey() ? .joinable : .needsKey
+            if iCloudVault == .joinable, step == .restore {
+                path = .iCloud
+                step = .iCloudJoin
+            }
+            return
+        }
+        guard cloudKitEnabled else {
+            iCloudVault = .none
+            return
+        }
+        iCloudVault = .checking
+        guard await model.iCloudAccountAvailable(), (try? await model.remoteHasAccount()) == true else {
+            iCloudVault = .none
+            return
+        }
+        iCloudVault = await session.iCloudKeychainHasSecretKey() ? .joinable : .needsKey
+    }
+
+    /// The Secret Key of the new account went to iCloud Keychain: the Emergency Kit can wait.
+    var kitBackedUpInICloud: Bool {
+        mode == .personal && model.settings.secretKeyInICloud && session.environment.syncedSecretKeys != nil
     }
 
     // MARK: - Primary action
@@ -349,6 +422,8 @@ final class OnboardingModel {
             return String(localized: "onboarding.bothEntriesMustMatch")
         case .secretKey:
             return String(localized: "onboarding.checkBoxOnceSecret")
+        case .iCloudJoin:
+            return String(localized: "onboarding.enterMasterPassword")
         case .restore:
             if restoreKey.trimmingCharacters(in: .whitespaces).isEmpty {
                 return String(localized: "onboarding.enterSecretKeyFrom")
@@ -401,9 +476,7 @@ final class OnboardingModel {
             case nil where effectivePairMethod == .type: String(localized: "onboarding.join")
             default: nil
             }
-        case .biometrics: String(localized: "Activer \(biometryName)")
-        case .autoFill: autoFillEnabled ? String(localized: "common.continue") : String(localized: "app.turnOnOnepass")
-        case .restore: String(localized: "common.unlock")
+        case .restore, .iCloudJoin: String(localized: "common.unlock")
         case .done: String(localized: "app.openOnepass")
         default: String(localized: "common.continue")
         }
@@ -414,9 +487,7 @@ final class OnboardingModel {
         switch step {
         case .password: return passwordAccepted
         case .secretKey: return kitStoredOffline
-        // Enabled: the success shows for a moment before the next step.
-        case .biometrics: return !biometricsEnabled
-        case .autoFill: return !autoFillRequesting
+        case .iCloudJoin: return !restorePassword.isEmpty
         case .restore: return !restoreKey.trimmingCharacters(in: .whitespaces).isEmpty && !restorePassword.isEmpty
         case .pairing:
             if pairing?.state == .receivedFull { return !restorePassword.isEmpty }
@@ -432,9 +503,8 @@ final class OnboardingModel {
     var canSkip: Bool {
         guard !busy else { return false }
         switch step {
-        case .biometrics: return !biometricsEnabled
-        // "Plus tard": the tip card of Accueil offers it again.
-        case .autoFill: return !autoFillRequesting && !autoFillEnabled
+        // "Plus tard": the key is in iCloud Keychain; Réglages > Sécurité offers the kit again.
+        case .secretKey: return kitBackedUpInICloud && !kitStoredOffline
         default: return false
         }
     }
@@ -446,10 +516,9 @@ final class OnboardingModel {
         case .device: advance()
         case .password: await createAccount()
         case .secretKey: advance()
-        case .biometrics: await enrollBiometrics()
-        case .autoFill: await turnOnAutoFill()
         case .visibleVaults: advance()
         case .restore: await restore()
+        case .iCloudJoin: await joinFromICloud()
         case .done: finish()
         case .pairMode:
             if effectivePairMethod == .showCode { startPairing() }
@@ -469,9 +538,9 @@ final class OnboardingModel {
         }
     }
 
-    /// "Plus tard" on the biometric step: the first-unlock offer is not made again either.
+    /// "Plus tard" on the Emergency Kit step.
     func skip() {
-        if step == .biometrics { model.markBiometricOfferAnswered() }
+        if step == .secretKey { kitSkipped = true }
         advance()
     }
 
@@ -584,7 +653,9 @@ final class OnboardingModel {
         return true
     }
 
-    private func enrollBiometrics() async {
+    /// "Activer" on the Face ID (Touch ID) row of the last step.
+    func enrollBiometrics() async {
+        guard !biometricsEnabled, !busy else { return }
         busyMessage = String(localized: "onboarding.turningOn \(biometryName)")
         defer { busyMessage = nil }
         model.settings.allowWatchUnlock = allowWatch
@@ -598,25 +669,16 @@ final class OnboardingModel {
             model.markBiometricOfferAnswered()
             biometricsEnabled = true
             successPulse &+= 1
-            busyMessage = nil
-            // The success shows on this step for a moment, then the next one comes in.
-            try? await Task.sleep(for: .milliseconds(1100))
-            guard step == .biometrics else { return }
-            advance()
         } catch {
             fail(VaultError(error).localizedMessage, next: .retry)
         }
     }
 
-    /// "Activer OnePass": the system prompt (the system settings when it does not show,
-    /// `AppModel.requestAutoFillActivation`), then on to the next step once the provider is on.
-    /// Still off: the step stays, with "Plus tard".
-    private func turnOnAutoFill() async {
-        if autoFillEnabled {
-            advance()
-            return
-        }
-        guard !autoFillRequesting else { return }
+    /// "Activer" on the AutoFill row of the last step: the system prompt (the system settings when
+    /// it does not show, `AppModel.requestAutoFillActivation`). Still off: the row says where to
+    /// turn it on.
+    func turnOnAutoFill() async {
+        guard !autoFillEnabled, !autoFillRequesting else { return }
         autoFillRequesting = true
         await model.requestAutoFillActivation()
         autoFillRequesting = false
@@ -624,11 +686,30 @@ final class OnboardingModel {
             autoFillAsked = true
             return
         }
-        guard step == .autoFill else { return }
         successPulse &+= 1
-        // The success shows on this step for a moment, then the next one comes in.
-        try? await Task.sleep(for: .milliseconds(1100))
-        guard step == .autoFill else { return }
+    }
+
+    /// "Déverrouiller" on "Ton coffre iCloud": the Secret Key from iCloud Keychain and the typed
+    /// master password. The password field is emptied on submission, whatever the outcome.
+    private func joinFromICloud() async {
+        busyMessage = String(localized: "onboarding.unlocking")
+        defer { busyMessage = nil }
+        errorMessage = nil
+        let typedPassword = credentials.submitRestore()
+        defer { typedPassword.wipe() }
+        do {
+            try await session.restoreFromICloudKeychain(password: typedPassword)
+        } catch {
+            errorMessage = VaultError(error).restoreMessage
+            return
+        }
+        credentials.restored(password: typedPassword, keepPasswordForBiometrics: biometricsOffered)
+        if !restoreOnly { session.setDeviceMode(mode) }
+        #if os(macOS)
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { session.setProfile(name: name, photo: model.settings.profilePhoto) }
+        #endif
+        successPulse &+= 1
         advance()
     }
 
@@ -757,6 +838,17 @@ final class OnboardingModel {
         flow.join(code: code, connector: LocalNetworkPairingConnector())
     }
 
+    /// A scanned pairing code: the Mac's invite (Réglages > Appareils) or its rendezvous code
+    /// (Fichier > Configurer un appareil…).
+    func joinScanned(_ text: String) {
+        scanRejected = false
+        switch PairingScanText.route(text) {
+        case .rendezvous(let code): joinPairing(code: code)
+        case .invite(let invite): joinInvite(invite)
+        case nil: scanRejected = true
+        }
+    }
+
     private func stopPairing() {
         pairing?.cancel()
         pairing = nil
@@ -828,6 +920,8 @@ final class OnboardingModel {
     }
 
     private func finish() {
+        // Face ID left off on the last step: the first-unlock offer is not made again.
+        if biometricsOffered, !biometricsEnabled { model.markBiometricOfferAnswered() }
         pairing = nil
         credentials.clear()
         clearGeneratedPassword()
@@ -944,8 +1038,7 @@ final class OnboardingModel {
         case .device: String(localized: "onboarding.deviceType")
         case .password: String(localized: "Mot de passe maître")
         case .secretKey: "Secret Key"
-        case .biometrics: biometryName
-        case .autoFill: String(localized: "term.autofill")
+        case .iCloudJoin: String(localized: "onboarding.iCloudJoin.rail")
         case .visibleVaults: String(localized: "Coffres visibles")
         case .restore: "Emergency Kit"
         case .done: String(localized: "common.done")
@@ -1007,7 +1100,10 @@ struct OnboardingFlow: View {
             if model == nil {
                 // Before the model: its init consumes `onboardingStart`.
                 showIntro = OnboardingIntro.shouldShow(for: app, restoreOnly: restoreOnly)
-                model = OnboardingModel(model: app, restoreOnly: restoreOnly)
+                let created = OnboardingModel(model: app, restoreOnly: restoreOnly)
+                model = created
+                // The account came with the sync: its key may be in iCloud Keychain already.
+                if restoreOnly { Task { await created.detectICloudVault() } }
             }
         }
         .onChange(of: app.session.needsSecretKey) { _, needed in

@@ -60,9 +60,15 @@ struct ItemEditorView: View {
                     }
                     optionsCard
                 }
+                #if os(macOS)
+                // The detail's readable column, so editing keeps every card in place.
+                .frame(maxWidth: ItemDetailView.macReadableWidth)
                 .padding(.horizontal, Theme.Space.xl)
-                .padding(.vertical, Theme.Space.xl)
+                #else
+                .padding(.horizontal, Theme.Space.xl)
                 .frame(maxWidth: 760)
+                #endif
+                .padding(.vertical, Theme.Space.xl)
                 .frame(maxWidth: .infinity)
                 #if os(macOS)
                 .textFieldStyle(.plain)

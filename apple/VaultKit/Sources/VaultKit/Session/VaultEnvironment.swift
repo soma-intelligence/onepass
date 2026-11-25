@@ -87,6 +87,9 @@ public struct VaultEnvironment: Sendable {
     public var storeChanges = StoreChangeNotifier()
     /// Local notifications of the sharing model (a vault key renewed). None by default.
     public var notifier: any LocalNotifying = NoLocalNotifier()
+    /// The iCloud Keychain copy of the Secret Key (`SyncedSecretKeyStore`). Nil: never written, never
+    /// read (tests, UI tests, unsigned builds).
+    public var syncedSecretKeys: (any SyncedSecretKeyStore)?
 
     public init(
         databaseURL: URL, keychain: any KeychainStore, biometrics: BiometricUnlock,
@@ -141,7 +144,7 @@ public struct VaultEnvironment: Sendable {
         #else
         let keyring = SecureEnclaveKeyring(accessGroup: group, allowWatch: settings.allowWatchUnlock)
         #endif
-        return VaultEnvironment(
+        var environment = VaultEnvironment(
             databaseURL: databaseURL ?? container.databaseURL,
             keychain: keychain,
             biometrics: BiometricUnlock(keyring: keyring, keychain: keychain, clock: clock),
@@ -150,6 +153,12 @@ public struct VaultEnvironment: Sendable {
             clock: clock,
             pasteboard: SystemPasteboard(),
             identityStore: SystemIdentityStore())
+        // The user's iCloud Keychain: only for the app's own keychain service (UI tests and
+        // screenshots pass another one) and a signed build (the access group is known).
+        if keychainService == SystemKeychain.defaultService, group != nil {
+            environment.syncedSecretKeys = ICloudKeychainSecretKeys(accessGroup: group)
+        }
+        return environment
     }
 
     /// The store path of `SharedContainer.resolve()`. The folder is created on first use; on iOS it is

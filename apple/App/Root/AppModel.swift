@@ -187,8 +187,9 @@ final class AppModel {
     var editOnOpen: ItemRef?
     var saveRequest = 0
     var searchFocusRequest = 0 {
-        // ⌘F searches the items: a full page gives way to the list.
-        didSet { page = .items }
+        // ⌘F searches the items: a full page gives way to the list, except Home (Mac), which has
+        // its own search field.
+        didSet { if page != .home { page = .items } }
     }
     /// Bumped after each remote change set is applied: an open item detail reloads (or warns its
     /// editor) on it.

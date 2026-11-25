@@ -192,6 +192,10 @@ struct ItemDetailView: View {
     /// Gap between the header, the cards and the footer: the scale's section gap everywhere.
     private static let sectionSpacing: CGFloat = Theme.Space.betweenSections
 
+    /// Mac: the widest the detail's column gets (header and cards), whatever the pane's width.
+    /// The editor uses it too, so switching to edit keeps every card in place.
+    static let macReadableWidth: CGFloat = 600
+
     private func detail(_ item: FfiItem) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Self.sectionSpacing) {
@@ -257,12 +261,14 @@ struct ItemDetailView: View {
                 footer(item)
             }
             #if os(macOS)
+            // One readable column, centred in the pane: the header and every card share it.
+            .frame(maxWidth: Self.macReadableWidth)
             .padding(.horizontal, 28)
             #else
             .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
+            .frame(maxWidth: 760, alignment: .leading)
             #endif
             .padding(.vertical, Theme.Space.xl)
-            .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.top)

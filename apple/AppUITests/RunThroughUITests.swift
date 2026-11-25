@@ -226,7 +226,6 @@ final class RunThroughUITests: XCTestCase {
     /// Same steps as `OnboardingAndItemUITests`.
     private func createAccount() {
         tap(onePass.buttons["onboarding.create"], in: onePass)
-        tap(onePass.buttons["onboarding.primary"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.password"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.confirm"], in: onePass)
         tap(onePass.buttons["onboarding.primary"], in: onePass)

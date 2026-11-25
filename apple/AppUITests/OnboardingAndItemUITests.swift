@@ -40,9 +40,8 @@ final class OnboardingAndItemUITests: XCTestCase {
         app.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES"]
         app.launch()
 
-        // Bienvenue, then "Cet appareil est-il à toi ?" (personal, the default).
+        // Bienvenue (personal is assumed: no device question).
         tap(app.buttons["onboarding.create"])
-        tap(app.buttons["onboarding.primary"])
 
         // Mot de passe maître: the button stays off, and says why, until every rule is met.
         let primary = app.buttons["onboarding.primary"]

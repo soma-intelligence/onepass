@@ -31,12 +31,12 @@ struct PairingModeStep: View {
                 if OnboardingModel.PairMethod.scanAvailable {
                     method(
                         .scan, "Scanner un QR code",
-                        "Sur ton Mac : Fichier > Configurer un appareil… Cet appareil scanne le QR code qui s'affiche.",
+                        "pairing.method.scan.detail",
                         symbol: "qrcode.viewfinder")
                 }
                 method(
                     .type, "Saisir un code",
-                    "Sur ton Mac : Fichier > Configurer un appareil… Tape le code à 8 caractères qui s'affiche.",
+                    "pairing.method.type.detail",
                     symbol: "keyboard")
                 method(
                     .showCode, "Afficher un QR code",

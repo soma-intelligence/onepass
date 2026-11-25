@@ -54,7 +54,6 @@ final class SafariAutofillUITests: XCTestCase {
 
     private func createAccount() {
         tap(onePass.buttons["onboarding.create"], in: onePass)
-        tap(onePass.buttons["onboarding.primary"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.password"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.confirm"], in: onePass)
         tap(onePass.buttons["onboarding.primary"], in: onePass)
@@ -68,16 +67,14 @@ final class SafariAutofillUITests: XCTestCase {
             taps += 1
         } while !waitEnabled(next, 3) && taps < 4
         tap(next, in: onePass)
-        // Face ID offered during onboarding: turned on (the simulator is enrolled by the runner).
-        // The biometrics step: "Activer Face ID" is the primary button (the runner posts the match).
-        let offerCard = onePass.descendants(matching: .any)["onboarding.biometricsOffer"].firstMatch
-        if offerCard.waitForExistence(timeout: 5) {
-            tap(onePass.buttons["onboarding.primary"], in: onePass)
-            let on = onePass.descendants(matching: .any)["onboarding.biometricsOn"].firstMatch
+        // Face ID offered on the last step: turned on (the simulator is enrolled by the runner,
+        // which posts the match).
+        let turnOn = onePass.buttons["onboarding.enableBiometrics"]
+        if turnOn.waitForExistence(timeout: 5) {
+            tap(turnOn, in: onePass)
+            let on = onePass.descendants(matching: .any)["onboarding.enableBiometrics.on"].firstMatch
             print("Face ID turned on in onboarding: \(on.waitForExistence(timeout: 20))")
         }
-        let later = onePass.buttons["onboarding.skip"]
-        if later.waitForExistence(timeout: 3) { tap(later, in: onePass) }
         let open = onePass.buttons["onboarding.primary"]
         if open.waitForExistence(timeout: Self.uiTimeout) { tap(open, in: onePass) }
     }
