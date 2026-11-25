@@ -49,6 +49,8 @@ struct RXHomePage<Extras: View>: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        // The account menu itself is pinned over the page by the tab stack (`pinnedAccountMenu`).
+        .preference(key: PinnedAccountMenuKey.self, value: lightHero ? .light : .dark)
     }
 
     @Environment(\.colorScheme) private var colorScheme
@@ -71,13 +73,15 @@ struct RXHomePage<Extras: View>: View {
         #endif
     }
 
-    /// The account menu alone: search is the tab bar's search tab, a new item is the first quick
-    /// action (one entry point each, D-HOME-ACTIONS).
+    /// The account menu's room: search is the tab bar's search tab, a new item is the first quick
+    /// action (one entry point each, D-HOME-ACTIONS). The menu is not drawn here but pinned over the
+    /// page, as a navigation bar item: in the hero it scrolled under the header fade, which washed
+    /// it out while it was still low, so it seemed to stick and then jump away.
     private var topBar: some View {
-        HStack {
-            AccountMenu()
-            Spacer(minLength: 0)
-        }
+        Color.clear
+            .frame(height: AccountMenu.height)
+            .frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
     }
 
     /// New item, Generate, Share (the security score). No "More" menu: everything it held is a

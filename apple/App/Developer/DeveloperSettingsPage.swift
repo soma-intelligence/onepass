@@ -9,6 +9,14 @@ import VaultKit
 /// with approval at every use, Touch ID, the paired clients, the live grants and the audit log
 /// (spec 2026-10-27-m7-app, sections 3 and 4); the iPhone that approves and unlocks for the agents,
 /// and the one-click install into an MCP client (agent-ready spec 7 and 8).
+///
+/// One card per tool, each opened by the same heading (`ToolHeading`: its tile, its name, one line
+/// on what it does), with its own controls under it: Agent SSH, Serveur MCP (and its install into
+/// a client), iPhone, CLI, Secrets sur le disque, Journal d'audit. The tiles and lines are the
+/// ones of the Développeur page of the sidebar, so the two pages read as one. A tool's lists
+/// (offered keys, exposed vaults, clients, grants) follow its card under a plain header. The page
+/// is a settings page (`settingsPage`), so inside the Réglages popup it draws as the RX cards of
+/// every other page.
 struct DeveloperSettingsPage: View {
     @Environment(AppModel.self) private var model
     @State private var keys: [FfiAgentKey] = []
@@ -17,6 +25,7 @@ struct DeveloperSettingsPage: View {
     @State private var grants: [FfiGrant] = []
     @State private var errorMessage: String?
     @State private var newKey = false
+    @State private var guide: DeveloperGuide?
     /// The phone "Déverrouiller depuis mon iPhone" enrolls when several are listed.
     @State private var unlockTarget: String?
 
@@ -27,6 +36,12 @@ struct DeveloperSettingsPage: View {
 
     var body: some View {
         Form {
+            if let errorMessage {
+                // On top: the error of the last action, wherever its control is on the page.
+                Section {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+            }
             sshSection
             sshKeysSection
             mcpSection
@@ -36,40 +51,32 @@ struct DeveloperSettingsPage: View {
                 clientsSection
                 grantsSection
             }
-            phoneSection
             installSection
-            Section {
-                NavigationLink {
-                    AuditLogView()
-                } label: {
-                    Label("developer.auditLog", systemImage: "list.bullet.rectangle")
-                }
-                .accessibilityIdentifier("settings.developer.audit")
-            } footer: {
-                Text("developer.everySshSignatureAnd")
-            }
-            if let errorMessage {
-                Section {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                }
-            }
+            phoneSection
+            cliSection
+            secretsSection
+            auditSection
         }
-        .formStyle(.grouped)
-        .navigationTitle("Développeur")
+        // Not `.formStyle(.grouped)` on its own: in the Réglages popup that drew the system's
+        // grey grouped form under the popup's black title band, a page apart from the others.
+        .settingsPage("Développeur")
         .task(id: hosts.revision) { await reload() }
         .task { await phones.refreshAndWire() }
         .sheet(isPresented: $newKey, onDismiss: { Task { await reload() } }) {
             SSHKeySheet()
         }
+        .sheet(item: $guide) { DeveloperGuideSheet(guide: $0) }
     }
 
     // MARK: - SSH
 
     @ViewBuilder private var sshSection: some View {
         Section {
+            // The card's heading is its switch: the tool, one line, its state, on or off.
             Toggle(isOn: setting(\.sshEnabled)) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("app.sshAgent")
+                ToolHeading(Text("app.sshAgent"), message: Text("browse.keepSshKeysIn")) {
+                    CategoryTile(category: .of(.sshKey), size: toolTileSize)
+                } status: {
                     statusLine(running: hosts.sshRunning, error: hosts.sshError, enabled: hosts.settings.sshEnabled)
                 }
             }
@@ -96,11 +103,10 @@ struct DeveloperSettingsPage: View {
                 }
                 .padding(.vertical, 4)
             }
-        } header: {
-            Text("app.sshAgent")
         } footer: {
             Text("developer.appServesSshKeys")
         }
+        .accessibilityIdentifier("settings.developer.sshCard")
     }
 
     @ViewBuilder private var sshKeysSection: some View {
@@ -150,8 +156,9 @@ struct DeveloperSettingsPage: View {
     @ViewBuilder private var mcpSection: some View {
         Section {
             Toggle(isOn: setting(\.mcpEnabled)) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("app.mcpServer")
+                ToolHeading(Text("app.mcpServer"), message: Text("browse.letAiAgentUse")) {
+                    PageTile(symbol: "point.3.connected.trianglepath.dotted", color: .purple, size: toolTileSize)
+                } status: {
                     statusLine(running: hosts.mcpRunning, error: hosts.mcpError, enabled: hosts.settings.mcpEnabled)
                 }
             }
@@ -164,11 +171,10 @@ struct DeveloperSettingsPage: View {
                 }
                 .padding(.vertical, 4)
             }
-        } header: {
-            Text("app.mcpServer")
         } footer: {
             Text("developer.pairedAiAgentSees")
         }
+        .accessibilityIdentifier("settings.developer.mcpCard")
     }
 
     @ViewBuilder private var exposedSection: some View {
@@ -290,9 +296,9 @@ struct DeveloperSettingsPage: View {
 
     @ViewBuilder private var phoneSection: some View {
         Section {
-            CardHeading(
-                symbol: "iphone", color: .blue, title: String(localized: "iPhone"),
-                message: String(localized: "developer.approveAgentsRequestsOn"))
+            ToolHeading(Text("iPhone"), message: Text("developer.approveAgentsRequestsOn")) {
+                PageTile(symbol: "iphone", color: .blue, size: toolTileSize)
+            }
             if !phones.available {
                 Text("developer.buildOfOnepassDoesnt")
                     .foregroundStyle(.secondary)
@@ -377,10 +383,9 @@ struct DeveloperSettingsPage: View {
     @ViewBuilder private var installSection: some View {
         @Bindable var installer = installer
         Section {
-            CardHeading(
-                symbol: "square.and.arrow.down.on.square", color: .purple,
-                title: String(localized: "developer.installInAgent"),
-                message: String(localized: "developer.commandAddsOnlyOnepass"))
+            ToolHeading(Text("developer.installInAgent"), message: Text("developer.commandAddsOnlyOnepass")) {
+                PageTile(symbol: "square.and.arrow.down.on.square", color: .purple, size: toolTileSize)
+            }
             Picker("Client", selection: $installer.client) {
                 ForEach(AgentClient.allCases) { Text($0.title).tag($0) }
             }
@@ -426,6 +431,51 @@ struct DeveloperSettingsPage: View {
             Text("developer.quitClientBeforeInstall")
         }
         .accessibilityIdentifier("settings.developer.installCard")
+    }
+
+    // MARK: - CLI, secrets, audit
+
+    /// The `onepass` command line: it runs on its own data folder, so nothing to switch here; the
+    /// guide says how to install it and its first commands.
+    private var cliSection: some View {
+        Section {
+            ToolHeading(Text("browse.cli"), message: Text("browse.manageVaultsFromTerminal")) {
+                PageTile(symbol: "terminal.fill", color: SettingsPage.developer.tint, size: toolTileSize)
+            }
+            Button {
+                guide = .cli
+            } label: {
+                Label("browse.viewCli", systemImage: "arrow.right")
+            }
+            .accessibilityIdentifier("settings.developer.cli")
+        }
+        .accessibilityIdentifier("settings.developer.cliCard")
+    }
+
+    /// Secrets on disk: Watchtower finds them, so the card opens it in the main window (and closes
+    /// the Réglages popup that covers it).
+    private var secretsSection: some View {
+        Section {
+            ToolHeading(Text("browse.secretsOnDisk"), message: Text("browse.findsWeakReusedOr")) {
+                PageTile(symbol: "shield.lefthalf.filled", color: Theme.accent, size: toolTileSize)
+            }
+            Button {
+                model.showSettings = false
+                model.page = .watchtower
+            } label: {
+                Label("browse.viewWatchtower", systemImage: "arrow.right")
+            }
+            .accessibilityIdentifier("settings.developer.secrets")
+        }
+        .accessibilityIdentifier("settings.developer.secretsCard")
+    }
+
+    private var auditSection: some View {
+        Section {
+            AuditLogLink()
+        } footer: {
+            Text("developer.everySshSignatureAnd")
+        }
     }
 
     // MARK: - Pieces
@@ -594,25 +644,111 @@ struct DeveloperSettingsPage: View {
     }
 }
 
-/// The first row of a card of this page: the tile of the redesign, a title and one line.
-private struct CardHeading: View {
-    let symbol: String
-    let color: Color
-    let title: String
-    let message: String
+/// The side of a card heading's tile.
+private let toolTileSize: CGFloat = 32
+
+extension ToolHeading where Status == EmptyView {
+    init(_ title: Text, message: Text? = nil, @ViewBuilder tile: () -> Tile) {
+        self.init(title, message: message, tile: tile) { EmptyView() }
+    }
+}
+
+/// The first row of every card of this page: the tool's tile, its name and one line on what it
+/// does, then its state when it has one (running, stopped). RX type and colours inside the
+/// Réglages popup, the system's elsewhere (the Settings window).
+private struct ToolHeading<Tile: View, Status: View>: View {
+    let title: Text
+    var message: Text?
+    let tile: Tile
+    let status: Status
+    @Environment(\.rxSettings) private var rx
+
+    private typealias RX = Theme.RX
+
+    init(_ title: Text, message: Text? = nil, @ViewBuilder tile: () -> Tile, @ViewBuilder status: () -> Status) {
+        self.title = title
+        self.message = message
+        self.tile = tile()
+        self.status = status()
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            PageTile(symbol: symbol, color: color, size: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
-                Text(message)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        // A title alone centres on its tile; with a line under it, both start at the tile's top.
+        HStack(alignment: message == nil ? .center : .top, spacing: rx ? RX.Space.m : 12) {
+            tile
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: rx ? RX.Space.xxs : 2) {
+                if rx {
+                    title
+                        .rxFont(.headline)
+                        .foregroundStyle(RX.Palette.textPrimary.color)
+                    if let message {
+                        message
+                            .rxFont(.footnote)
+                            .foregroundStyle(RX.Palette.textSecondary.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    title.font(.headline)
+                    if let message {
+                        message
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                status
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The Journal d'audit card: its heading opens the log. Inside the Réglages popup the form's
+/// buttons are field-coloured pills, which put the heading in a pill of its own: there it is a
+/// plain row with the push chevron, as the other cards' headings sit.
+private struct AuditLogLink: View {
+    @Environment(\.rxSettings) private var rx
+
+    private typealias RX = Theme.RX
+
+    var body: some View {
+        NavigationLink {
+            AuditLogView()
+        } label: {
+            HStack(spacing: RX.Space.m) {
+                ToolHeading(Text("developer.auditLog")) {
+                    PageTile(symbol: "list.bullet.rectangle", color: .gray, size: toolTileSize)
+                }
+                if rx {
+                    Image(systemName: "chevron.right")
+                        .font(RX.Glyph.font(RX.Glyph.macSmall, weight: .semibold))
+                        .foregroundStyle(RX.Palette.textTertiary.color)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(rx ? AnyButtonStyle.plain : AnyButtonStyle.automatic)
+        .accessibilityIdentifier("settings.developer.audit")
+    }
+}
+
+/// `.plain` or `.automatic` picked at run time (`buttonStyle` takes one concrete type).
+private struct AnyButtonStyle: PrimitiveButtonStyle {
+    static let plain = AnyButtonStyle(isPlain: true)
+    static let automatic = AnyButtonStyle(isPlain: false)
+    let isPlain: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        if isPlain {
+            Button(configuration).buttonStyle(.plain)
+        } else {
+            Button(configuration).buttonStyle(.automatic)
+        }
     }
 }
 

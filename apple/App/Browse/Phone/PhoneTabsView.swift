@@ -155,17 +155,9 @@ struct PhoneTabsView: View {
             model.phoneBrowsedVault = vault
         }
         .onDisappear { model.phoneBrowsedVault = nil }
-        // The account panel's glass over the busy Home read as one mess: the whole screen, tab bar
-        // included, dims evenly behind it (the panel itself is its own presentation, above this).
-        .overlay {
-            if model.accountPanelsOpen > 0 {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: model.accountPanelsOpen > 0)
+        // The account panel, over the whole screen (tab bar included): a light dim behind its
+        // glass, closing on a tap in 0.15 s.
+        .modifier(AccountPanelHost())
         // A deep link (widget, Control): the item in Éléments, or the search tab. Also on appear,
         // when the link was waiting for the unlock.
         .onChange(of: model.browseReveal, initial: true) { _, reveal in
@@ -196,6 +188,8 @@ struct PhoneTabsView: View {
             // same way (one shared modifier, never a copy per screen).
             root()
                 .headerFade()
+                // After the fade: a page's pinned account menu stays sharp over it.
+                .pinnedAccountMenu()
                 .toolbar(systemBar(which), for: .tabBar)
                 .navigationDestination(for: PhoneRoute.self) { route in
                     Group {
