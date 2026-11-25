@@ -1147,6 +1147,15 @@ final class AppModel {
         return !cloudKitEnabled && session.state == .unlocked
     }
 
+    /// The sync server a new Emergency Kit names: a self-hosted mailbox, as the onboarding kit does.
+    /// Nil for iCloud and the OnePass server.
+    func emergencyKitServer() -> URL? {
+        guard let syncStore, case .mailbox(let home) = try? SyncBackendState.readNow(store: syncStore) else {
+            return nil
+        }
+        return home.baseURL == MailboxEndpoints.hosted() ? nil : home.baseURL
+    }
+
     // MARK: - Account missing
 
     /// "Restaurer avec mon Emergency Kit" on "Le compte a disparu du stockage", confirmed: the

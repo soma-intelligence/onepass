@@ -64,6 +64,7 @@ use crate::chain::ChainState;
 use crate::crypto::{KdfParams, SecretKey};
 use crate::device_keys::{DeviceKeys, sign_pop};
 use crate::devices::{DeviceEntry, DeviceKind, DeviceMode, check_mode, check_name, now};
+use crate::guarded_kit::GuardAccess;
 use crate::lineage::resolve::{Completeness, Decision, resolve};
 use crate::lineage::{
     IntroBody, LINEAGE_FORMAT, LegacyAnchor, LineageRecord, MAX_ROSTER, RosterEntry, SignedIntro,
@@ -363,7 +364,12 @@ fn open_with_kit<S: RecordStore>(
     records: &[LineageRecord],
     password: &str,
     secret_key: &SecretKey,
+    guard: GuardAccess<'_>,
 ) -> Result<(Account, Record)> {
+    // A guarded identity answered at the realms (wrong password, attempts
+    // left, too few realms): reported when no identity opens, instead of a
+    // plain `WrongPassword`.
+    let mut guard_error: Option<Error> = None;
     let by_hash: BTreeMap<[u8; 32], &LineageRecord> =
         records.iter().map(|r| (r.hash(), r)).collect();
     let mut named: Vec<(bool, u64, &crate::crypto::IdentityVerifyingKey)> = by_hash
@@ -406,18 +412,21 @@ fn open_with_kit<S: RecordStore>(
                 salt: [0; 32],
             },
         };
-        if let Ok((account, _)) = Account::unlock_exporting_auk_at(
+        match Account::unlock_guarded_at(
             password,
             secret_key,
             &params.data,
             &keyset.data,
             Some(&expected),
             0,
+            guard,
         ) {
-            return Ok((account, params));
+            Ok((account, _, _)) => return Ok((account, params)),
+            Err(e @ Error::Guard(_)) => guard_error = Some(e),
+            Err(_) => {}
         }
     }
-    Err(Error::WrongPassword)
+    Err(guard_error.unwrap_or(Error::WrongPassword))
 }
 
 /// The checks every restore runs before opening anything (spec 7.5, 8.2):
@@ -501,17 +510,44 @@ impl<S: RecordStore> Repository<S> {
     /// as before: a plain `unlock` (trust on first use), then the app runs
     /// `migrate_to_v2`.
     pub fn restore_from_kit(store: S, req: KitRestore<'_>) -> Result<Repository<S>> {
+        Self::restore_from_kit_guarded(store, req, GuardAccess::None)
+    }
+
+    /// `restore_from_kit` on an account that may be guarded (Guarded Kit,
+    /// spec 7.2): a guarded identity gets `G` through `guard`, usually
+    /// `GuardAccess::Realms`. A wrong password at the realms is
+    /// `Error::Guard(WrongPassword { remaining })`; a guarded account with
+    /// `GuardAccess::None`, `Error::Guard(Required)`. The restored session
+    /// finds `G` in its params (`Repository::guard_secret`).
+    pub fn restore_from_kit_guarded(
+        store: S,
+        req: KitRestore<'_>,
+        guard: GuardAccess<'_>,
+    ) -> Result<Repository<S>> {
         let (existing, account_id, records) = restore_prelude(&store, &req, false)?;
         if records.is_empty() {
             if existing.is_some() {
                 return Err(Error::NotFound);
             }
-            return Self::unlock(store, req.password, req.secret_key, req.device);
+            return Ok(Self::unlock_guarded(
+                store,
+                req.password,
+                req.secret_key,
+                req.device,
+                guard,
+            )?
+            .0);
         }
 
         // Spec 7.5 step 2: the identity the kit opens (2SKD).
-        let (account, params) =
-            open_with_kit(&store, account_id, &records, req.password, req.secret_key)?;
+        let (account, params) = open_with_kit(
+            &store,
+            account_id,
+            &records,
+            req.password,
+            req.secret_key,
+            guard,
+        )?;
         Self::restore_opened(store, existing, records, account, params, &req)
     }
 

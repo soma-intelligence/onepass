@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use onepass_core::guarded_kit::GuardError;
 use onepass_core::{Error, IntegrityError};
 use onepass_mailbox::OrgStoreError;
 
@@ -85,6 +86,25 @@ pub enum OnePassError {
     /// Organization: the organization does not match the fingerprint this
     /// device pinned.
     OrgPinMismatch,
+    /// Guarded Kit: the account is guarded and this call got no guard. On a
+    /// device that kept none, unlock through the realms
+    /// (`GuardRestore`).
+    GuardRequired,
+    /// Guarded Kit: wrong password at the realms. `remaining` attempts are
+    /// left at the realm with the fewest (the restore screen shows it from
+    /// the first failure, spec 9).
+    GuardWrongPassword {
+        remaining: u8,
+    },
+    /// Guarded Kit: only `reached` of the `needed` realms answered. Retry
+    /// later; nothing was spent at the realms that did not answer.
+    GuardUnavailable {
+        reached: u8,
+        needed: u8,
+    },
+    /// Guarded Kit: a realm refused or misbehaved (unsigned or unexpected
+    /// answer, a share or the locator that does not open).
+    GuardRealm,
 }
 
 impl fmt::Display for OnePassError {
@@ -121,6 +141,14 @@ impl fmt::Display for OnePassError {
             Self::OrgPinMismatch => {
                 f.write_str("the organisation does not match its pinned fingerprint")
             }
+            Self::GuardRequired => f.write_str("the account needs its guard"),
+            Self::GuardWrongPassword { remaining } => {
+                write!(f, "wrong password, {remaining} attempts left")
+            }
+            Self::GuardUnavailable { reached, needed } => {
+                write!(f, "only {reached} of {needed} realms answered")
+            }
+            Self::GuardRealm => f.write_str("a realm refused the guard"),
         }
     }
 }
@@ -186,6 +214,26 @@ impl From<Error> for OnePassError {
             // a lock makes it read-only (`Session::with`).
             Error::ReadOnly => Self::ReadOnly,
             Error::OutdatedKit { rotator, at } => Self::OutdatedKit { rotator, at },
+            Error::Guard(g) => match g {
+                GuardError::Required => Self::GuardRequired,
+                GuardError::WrongPassword { remaining } => Self::GuardWrongPassword { remaining },
+                GuardError::Unavailable { reached, needed } => {
+                    Self::GuardUnavailable { reached, needed }
+                }
+                GuardError::Crypto => Self::Crypto,
+                GuardError::Config(what) => Self::InvalidInput {
+                    what: what.to_owned(),
+                },
+                GuardError::Malformed(_)
+                | GuardError::RealmSignature
+                | GuardError::Unexpected
+                | GuardError::ShareRefused
+                | GuardError::LocatorRefused => Self::GuardRealm,
+                GuardError::Transport(_) => Self::GuardUnavailable {
+                    reached: 0,
+                    needed: onepass_core::guarded_kit::DEFAULT_THRESHOLD,
+                },
+            },
             // The core's refusal of a quarantined device (spec 8.4).
             Error::Validation(v) if v.field == "device" && v.reason == "quarantined" => {
                 Self::Quarantined

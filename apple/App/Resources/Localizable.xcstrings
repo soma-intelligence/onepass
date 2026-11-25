@@ -75852,6 +75852,606 @@
         }
       }
     },
+    "settings.guard.disable" : {
+      "comment" : "Turn the Emergency Kit protection off: sheet title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Off Protection"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivar la protección"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver la protection"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattiva la protezione"
+          }
+        }
+      }
+    },
+    "settings.guard.disable.footer" : {
+      "comment" : "Turn the Emergency Kit protection off: footer under the master password field.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your master password is needed. After that, your kit and your password are enough again to restore your account, with no limit on attempts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita tu contraseña maestra. Después, tu kit y tu contraseña vuelven a bastar para restaurar tu cuenta, sin límite de intentos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le mot de passe maître est demandé. Ensuite, ton kit et ton mot de passe suffiront de nouveau pour restaurer ton compte, sans limite d'essais."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serve la tua password principale. Dopo, il tuo kit e la tua password tornano a bastare per ripristinare il tuo account, senza limite di tentativi."
+          }
+        }
+      }
+    },
+    "settings.guard.done" : {
+      "comment" : "Turn the Emergency Kit protection on, done: close button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fine"
+          }
+        }
+      }
+    },
+    "settings.guard.enable" : {
+      "comment" : "Turn the Emergency Kit protection on: sheet title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect the Emergency Kit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proteger el Emergency Kit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protéger le kit d'urgence"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proteggi l'Emergency Kit"
+          }
+        }
+      }
+    },
+    "settings.guard.enable.confirm" : {
+      "comment" : "Turn the Emergency Kit protection on: confirm button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva"
+          }
+        }
+      }
+    },
+    "settings.guard.enable.footer" : {
+      "comment" : "Turn the Emergency Kit protection on: footer under the master password field.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your master password and this device's Secret Key turn the protection on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu contraseña maestra y la Secret Key de este dispositivo activan la protección."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ton mot de passe maître et la Secret Key de cet appareil activent la protection."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua password principale e la Secret Key di questo dispositivo attivano la protezione."
+          }
+        }
+      }
+    },
+    "settings.guard.enabled" : {
+      "comment" : "Turn the Emergency Kit protection on: done.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emergency Kit protection is on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protección del Emergency Kit está activada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protection du kit d'urgence est active."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protezione dell'Emergency Kit è attiva."
+          }
+        }
+      }
+    },
+    "settings.guard.explain" : {
+      "comment" : "Turn the Emergency Kit protection on: what changes (spec 2026-11-20, sections 5, 6 and 9).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To restore your account with your Emergency Kit, OnePass will also need two of the three servers that Soma runs. They count the attempts. 15 attempts at most, then the kit is useless without one of your devices. Your devices unlock as before."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para restaurar tu cuenta con tu Emergency Kit, OnePass también necesitará dos de los tres servidores que opera Soma. Cuentan los intentos. 15 intentos como máximo; después, el kit no sirve de nada sin uno de tus dispositivos. Tus dispositivos se desbloquean como antes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour restaurer ton compte avec ton kit d'urgence, OnePass demandera aussi l'accord de deux des trois serveurs que Soma opère. Ils comptent les essais. 15 essais au plus, puis le kit ne sert plus à rien sans un de tes appareils. Tes appareils se déverrouillent comme avant."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per ripristinare il tuo account con il tuo Emergency Kit, OnePass avrà bisogno anche di due dei tre server gestiti da Soma. Contano i tentativi. 15 tentativi al massimo, poi il kit non serve più a nulla senza uno dei tuoi dispositivi. I tuoi dispositivi si sbloccano come prima."
+          }
+        }
+      }
+    },
+    "settings.guard.failures" : {
+      "comment" : "Réglages > Sécurité: alert when the realms logged failed restore attempts with the Emergency Kit; the dates follow.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Someone tried to restore your account with your Emergency Kit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alguien ha intentado restaurar tu cuenta con tu Emergency Kit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quelqu'un a essayé de restaurer ton compte avec ton kit d'urgence."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qualcuno ha provato a ripristinare il tuo account con il tuo Emergency Kit."
+          }
+        }
+      }
+    },
+    "settings.guard.loss" : {
+      "comment" : "Turn the Emergency Kit protection on: the loss case of spec 8.4, stated before turning it on.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If you lose all your devices and two of these three servers are lost, your account can't be recovered, even with your kit and your password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si pierdes todos tus dispositivos y se pierden dos de estos tres servidores, tu cuenta será irrecuperable, incluso con tu kit y tu contraseña."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si tu perds tous tes appareils et que deux de ces trois serveurs sont perdus, ton compte est irrécupérable, même avec ton kit et ton mot de passe."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se perdi tutti i tuoi dispositivi e due di questi tre server vanno persi, il tuo account è irrecuperabile, anche con il tuo kit e la tua password."
+          }
+        }
+      }
+    },
+    "settings.guard.loss.header" : {
+      "comment" : "Turn the Emergency Kit protection on: header of the loss case (spec 8.4).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The One Way to Lose Your Account"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El único caso de pérdida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le seul cas de perte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'unico caso di perdita"
+          }
+        }
+      }
+    },
+    "settings.guard.newKit.footer" : {
+      "comment" : "Turn the Emergency Kit protection on, done: offer of a new kit (spec 8.1).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Print a new Emergency Kit. It says that restoring happens online, with limited attempts. Your old kit still works with your password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imprime un nuevo Emergency Kit. Indica que la restauración se hace en línea, con intentos limitados. Tu kit anterior sigue funcionando con tu contraseña."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imprime un nouveau kit d'urgence. Il indique que la restauration se fait en ligne, avec des essais limités. Ton ancien kit reste valable avec ton mot de passe."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stampa un nuovo Emergency Kit. Indica che il ripristino avviene online, con tentativi limitati. Il tuo vecchio kit funziona ancora con la tua password."
+          }
+        }
+      }
+    },
+    "settings.guard.off" : {
+      "comment" : "Réglages > Sécurité: footer while the Emergency Kit protection is off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With your kit and your password, someone can try passwords without limit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con tu kit y tu contraseña, alguien puede probar contraseñas sin límite."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avec ton kit et ton mot de passe, quelqu'un peut essayer des mots de passe sans limite."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con il tuo kit e la tua password, qualcuno può provare password senza limiti."
+          }
+        }
+      }
+    },
+    "settings.guard.on" : {
+      "comment" : "Réglages > Sécurité: footer while the Emergency Kit protection is on.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 attempts at most, then the kit is useless without one of your devices."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 intentos como máximo; después, el kit no sirve de nada sin uno de tus dispositivos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 essais au plus, puis le kit ne sert plus à rien sans un de tes appareils."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 tentativi al massimo, poi il kit non serve più a nulla senza uno dei tuoi dispositivi."
+          }
+        }
+      }
+    },
+    "settings.guard.printKit" : {
+      "comment" : "Turn the Emergency Kit protection on, done: print the new kit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Print the New Kit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imprimir el nuevo kit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imprimer le nouveau kit"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stampa il nuovo kit"
+          }
+        }
+      }
+    },
+    "settings.guard.renew" : {
+      "comment" : "Réglages > Sécurité: button and sheet title to register the Emergency Kit protection again (same secret, no new kit).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renew Protection"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renovar la protección"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renouveler la protection"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rinnova la protezione"
+          }
+        }
+      }
+    },
+    "settings.guard.renew.due" : {
+      "comment" : "Réglages > Sécurité: footer when the Emergency Kit protection needs renewing (realm list changed, or a realm lost it).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One of the servers that protect your kit needs updating. Your next unlock with your password takes care of it, or renew now."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uno de los servidores que protegen tu kit necesita actualizarse. Tu próximo desbloqueo con la contraseña se encarga de ello, o renuévala ahora."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un des serveurs qui protègent ton kit doit être mis à jour. Ton prochain déverrouillage avec le mot de passe s'en charge, ou renouvelle maintenant."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uno dei server che proteggono il tuo kit va aggiornato. Il prossimo sblocco con la password se ne occupa, oppure rinnova ora."
+          }
+        }
+      }
+    },
+    "settings.guard.renew.footer" : {
+      "comment" : "Renew Emergency Kit protection sheet: footer under the master password field.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your master password is needed to renew the protection. Your kit stays valid."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita tu contraseña maestra para renovar la protección. Tu kit sigue siendo válido."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le mot de passe maître est demandé pour renouveler la protection. Ton kit reste valable."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serve la tua password principale per rinnovare la protezione. Il tuo kit resta valido."
+          }
+        }
+      }
+    },
+    "settings.guard.soon" : {
+      "comment" : "Réglages > Sécurité: footer when this build cannot turn the Emergency Kit protection on yet (no realm pinned).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coming soon. For now, with your kit and your password, someone can try passwords without limit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Próximamente. Por ahora, con tu kit y tu contraseña, alguien puede probar contraseñas sin límite."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bientôt disponible. Pour l'instant, avec ton kit et ton mot de passe, quelqu'un peut essayer des mots de passe sans limite."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Presto disponibile. Per ora, con il tuo kit e la tua password, qualcuno può provare password senza limiti."
+          }
+        }
+      }
+    },
+    "settings.guard.title" : {
+      "comment" : "Réglages > Sécurité: Guarded Kit toggle (spec 2026-11-20, section 9).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emergency Kit Protection"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protección del Emergency Kit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protection du kit d'urgence"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protezione dell'Emergency Kit"
+          }
+        }
+      }
+    },
     "settings.importDryRun %lld %lld %lld %lld %lld" : {
       "extractionState" : "manual",
       "localizations" : {
