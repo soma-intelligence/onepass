@@ -357,19 +357,19 @@ describe("inline menu", () => {
     await flush();
     // Never a bare header: the wait says what it is.
     timers.runTimeouts();
-    expect(text(r)).toContain("Connexion à OnePass…");
+    expect(text(r)).toContain("Connexion à Kelid…");
     answer({ err: "host_missing" });
     await handle.ready;
     await flush();
-    expect(text(r)).toContain("App OnePass introuvable");
-    expect(text(r)).not.toContain("Connexion à OnePass…");
+    expect(text(r)).toContain("App Kelid introuvable");
+    expect(text(r)).not.toContain("Connexion à Kelid…");
   });
 
   it("a quick answer never shows the wait", async () => {
     const { r, handle, timers } = setup(def);
     await handle.ready;
     expect(timers.timeouts.size).toBe(0);
-    expect(text(r)).not.toContain("Connexion à OnePass…");
+    expect(text(r)).not.toContain("Connexion à Kelid…");
   });
 
   it("one gesture: the menu of a click that already asked the unlock opens waiting, no button, and resumes by itself", async () => {
