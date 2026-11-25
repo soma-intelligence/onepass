@@ -1,4 +1,4 @@
-/* OnePass extension pages, in the design language of the Mac app: dark first
+/* Kelid extension pages, in the design language of the Mac app: dark first
    with a light mode, translucent glass surfaces with 1 px hairlines and
    12 to 14 px corners, the indigo accent #5856D6 (lightened for labels),
    cards of rows with small accent-tinted lowercase labels above the values,
@@ -297,7 +297,7 @@ button:disabled { opacity: .5; }
   backdrop-filter: blur(32px) saturate(160%);
 }
 
-/* The OnePass mark: an indigo tile with the white Lattice. */
+/* The Kelid mark: an indigo tile with the white Lattice. */
 .mark {
   flex-shrink: 0;
   display: inline-flex;

@@ -206,7 +206,7 @@ export interface FieldInfo {
   parts?: string[];
   /**
    * The person of the field (forms coverage, ruling R3): absent or 0 is the owner (the identity
-   * filled), 1 and more are passengers 2 and later, never filled by OnePass.
+   * filled), 1 and more are passengers 2 and later, never filled by Kelid.
    */
   person?: number;
   /** A phone of the work kind (`autocomplete="work tel"`, "Téléphone professionnel"), ruling R7. */
@@ -251,7 +251,7 @@ export const PAGE_CONTEXT_MAX_BUTTONS = 32;
 
 /** Rust `FrameKind` (named apart from the extension frames above). */
 export type PageFrameKind = "top" | "same_origin_child";
-/** What the field held when the page was read: nothing, what the user typed, or what OnePass wrote. */
+/** What the field held when the page was read: nothing, what the user typed, or what Kelid wrote. */
 export type Prefilled = "empty" | "typed" | "ours";
 /** `passkey`: makes a passkey (one-click signup offers it), never a sign-in with one. */
 export type ButtonClass = "submit" | "next" | "pay" | "create" | "other" | "passkey";
@@ -608,7 +608,7 @@ export type UiToBg =
   /** "Enregistrer un nouveau login": the save prompt in its edit view. */
   | { type: "menu_new_login"; token: string }
   | { type: "menu_unlock"; token: string }
-  /** "Appairer avec OnePass" in a menu of an unpaired extension: opens the popup, where pairing happens. */
+  /** "Appairer avec Kelid" in a menu of an unpaired extension: opens the popup, where pairing happens. */
   | { type: "menu_pair"; token: string }
   /**
    * iOS (spec 2026-11-03-ios-safari-autofill 4): the unlock sheet in the menu. `menu_vault` reads
@@ -693,7 +693,7 @@ export type UiToBg =
   | { type: "popup_history" }
   /** "Remplir" in the generator: into the new password fields of the active tab. */
   | { type: "popup_fill_generated"; password: string }
-  /** "Associer à OnePass": pair without a code if the app vouches for this browser. */
+  /** "Associer à Kelid": pair without a code if the app vouches for this browser. */
   | { type: "popup_pair_auto" }
   | { type: "popup_pair_start" }
   | { type: "popup_pair_approve" }
@@ -707,7 +707,7 @@ export type UiToBg =
   | { type: "passkey_init"; token: string }
   /** Sign in with this passkey (one `passkey_init` offered). */
   | { type: "passkey_pick"; token: string; itemId: string; credentialId: string }
-  /** Create the passkey in OnePass; `vaultId`: one `passkey_init` offered, else the host's default. */
+  /** Create the passkey in Kelid; `vaultId`: one `passkey_init` offered, else the host's default. */
   | { type: "passkey_save"; token: string; vaultId?: string }
   /** "Autre appareil": the browser's own passkey dialog takes over. */
   | { type: "passkey_other"; token: string }
@@ -958,7 +958,7 @@ export interface PasskeyCreateRequest {
   userName: string;
   /** `excludeCredentials` ids. */
   exclude: string[];
-  /** `pubKeyCredParams` algorithms (COSE); OnePass signs ES256 (-7) only. */
+  /** `pubKeyCredParams` algorithms (COSE); Kelid signs ES256 (-7) only. */
   algs: number[];
   timeout?: number;
 }

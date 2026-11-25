@@ -160,13 +160,13 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   };
   document.addEventListener("keydown", keydown);
 
-  /** The OnePass mark and the site on the left, how many logins it has on the right. */
+  /** The Kelid mark and the site on the left, how many logins it has on the right. */
   const header = (origin: string | null, logins?: number) =>
     h(
       "h1",
       { class: "menu-head" },
       mark("s"),
-      h("span", { class: "menu-host" }, origin ? hostOf(origin) : "OnePass"),
+      h("span", { class: "menu-host" }, origin ? hostOf(origin) : "Kelid"),
       logins ? h("span", { class: "menu-count" }, tn("menu.loginCount", logins, { n: logins })) : null,
     );
   const glyphTile = (name: IconName, size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));

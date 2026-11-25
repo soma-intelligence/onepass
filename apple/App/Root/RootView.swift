@@ -97,7 +97,7 @@ struct RootView: View {
             .onChange(of: model.primarySession.state) { _, state in
                 model.primaryStateChanged(state)
             }
-            // Passwords > Export Data to Another App > OnePass: the import sheet opens on what the
+            // Passwords > Export Data to Another App > Kelid: the import sheet opens on what the
             // other app sends (passkeys included) once the vault is unlocked.
             .onContinueUserActivity(ASCredentialExchangeActivity) { activity in
                 if let token = CredentialExchangeImport.token(of: activity) {

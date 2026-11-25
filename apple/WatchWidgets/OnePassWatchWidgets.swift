@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-/// Complication and Smart Stack card: the OnePass glyph and name, no vault data. Tapping it
+/// Complication and Smart Stack card: the Kelid glyph and name, no vault data. Tapping it
 /// opens the app.
 @main
 struct OnePassWatchWidgets: WidgetBundle {

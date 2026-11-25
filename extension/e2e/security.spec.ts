@@ -128,7 +128,7 @@ async function inContentScript(ext: Ext, page: Page, expression: string): Promis
   let world: (typeof contexts)[number] | undefined;
   await expect
     .poll(() => {
-      world = contexts.find((c) => c.auxData?.type === "isolated" && c.auxData.frameId === frameTree.frame.id && c.name === "OnePass");
+      world = contexts.find((c) => c.auxData?.type === "isolated" && c.auxData.frameId === frameTree.frame.id && c.name === "Kelid");
       return world !== undefined;
     })
     .toBe(true);
@@ -140,7 +140,7 @@ async function inContentScript(ext: Ext, page: Page, expression: string): Promis
 
 // ---- passkeys (spec 3.3) ----
 
-/** The OnePass passkey choice window opened next (a popup window of the extension). */
+/** The Kelid passkey choice window opened next (a popup window of the extension). */
 function nextPasskeyWindow(ext: Ext): Promise<Page> {
   return ext.context.waitForEvent("page", { predicate: (p) => /\/passkey\.html#[A-Za-z0-9_-]{22}$/.test(p.url()), timeout: 15_000 });
 }
@@ -336,7 +336,7 @@ paired("S6_no_fill_in_cross_site_iframe", async ({ ext }) => {
 
 // Forms coverage, Task 13 (spec section 9): a passport number follows the card rule. The user's
 // pick fills passenger 1's visible passport field; the off-screen and transparent traps, passenger 2
-// and the partner's cross-site frame stay empty, and the form is never sent by OnePass.
+// and the partner's cross-site frame stay empty, and the form is never sent by Kelid.
 paired("S22_passport_number_follows_the_card_rule", async ({ ext }) => {
   const { page } = ext;
   await page.goto(`${ATLAS}/travel`);
@@ -360,7 +360,7 @@ paired("S22_passport_number_follows_the_card_rule", async ({ ext }) => {
   await expect(inFrame.locator(".error-line")).toHaveText("Cadre d'un autre site : remplissage refusé.");
   await ext.settle(1000);
   await emptyFields(frame, "#given-name", "#passport");
-  // Never sent by OnePass; nothing reached a trap host.
+  // Never sent by Kelid; nothing reached a trap host.
   expect(ext.server.captured).toEqual([]);
 });
 
@@ -434,7 +434,7 @@ paired("S11_fake_provider_domain_is_not_google", async ({ ext }) => {
   // No account was picked in the fake chooser.
   await ext.settle(2000);
   await expect(page).toHaveURL(/\/o\/oauth2\/auth/);
-  // On its identifier page, OnePass offers no Google account at all.
+  // On its identifier page, Kelid offers no Google account at all.
   await page.goto("https://accounts.google.com.evil.test/signin/identifier");
   const menu = await ext.openMenu(page, "#identifier-email");
   await expect(menu.getByText("Aucun login pour accounts.google.com.evil.test")).toBeVisible();
@@ -515,7 +515,7 @@ paired("S18_passkey_needs_user_click", async ({ ext }) => {
   const { page } = ext;
   const windows = countPasskeyWindows(ext);
   // The browser's own authenticator (Chromium's virtual one, with a key of its
-  // own for this site): what answers a call OnePass leaves to the browser.
+  // own for this site): what answers a call Kelid leaves to the browser.
   const cdp = await ext.context.newCDPSession(page);
   await cdp.send("WebAuthn.enable", { enableUI: false });
   const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
@@ -532,7 +532,7 @@ paired("S18_passkey_needs_user_click", async ({ ext }) => {
   let nativeAsserted = 0;
   cdp.on("WebAuthn.credentialAsserted", () => nativeAsserted++);
   // The page asks on load, without any gesture: no user activation, so no
-  // OnePass window and nothing signed by OnePass; the browser's own API answers.
+  // Kelid window and nothing signed by Kelid; the browser's own API answers.
   await page.goto(`${ATLAS}/passkey?auto=1`);
   await expect.poll(() => nativeAsserted, { timeout: 15_000, message: "the browser's own authenticator never answered" }).toBe(1);
   // Its assertion is the browser's (a key the site does not know): refused by the site, never signed in.
@@ -584,7 +584,7 @@ paired("S20_passkey_in_cross_site_frame_falls_back", async ({ ext }) => {
   const windows = countPasskeyWindows(ext);
   await page.goto("https://evil.test/passkey-frame");
   const frame = page.frameLocator("#victim");
-  // The atlas-cloud.test frame inside evil.test asks on load: nothing of OnePass, the browser refuses.
+  // The atlas-cloud.test frame inside evil.test asks on load: nothing of Kelid, the browser refuses.
   await expect(frame.locator("#result")).toHaveAttribute("data-status", /^error:/, { timeout: 15_000 });
   await ext.settle(1000);
   expect(windows.count()).toBe(0);

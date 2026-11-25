@@ -1,6 +1,6 @@
-# Can I self-host OnePass sync?
+# Can I self-host Kelid sync?
 
-Not in a released app yet. Today the App Store apps sync through CloudKit in your own private iCloud, and the [README roadmap](../../README.md#roadmap) lists a self-hosted server as planned. The repository already contains the server for that work, the **OnePass mailbox** (`mailbox/`): a Supabase project (Postgres 17, edge functions) that stores opaque, end-to-end encrypted records, with self-hosting steps in [`mailbox/README.md`](../../mailbox/README.md). Treat it as work in progress.
+Not in a released app yet. Today the App Store apps sync through CloudKit in your own private iCloud, and the [README roadmap](../../README.md#roadmap) lists a self-hosted server as planned. The repository already contains the server for that work, the **Kelid mailbox** (`mailbox/`): a Supabase project (Postgres 17, edge functions) that stores opaque, end-to-end encrypted records, with self-hosting steps in [`mailbox/README.md`](../../mailbox/README.md). Treat it as work in progress.
 
 ## What the mailbox is for
 
@@ -18,7 +18,7 @@ Per the security doc (section 18, in French), the mailbox syncs devices outside 
 
 ## What a mailbox server can see
 
-Record counts per kind, versions, padded body sizes, manifest sequence numbers, write timing, device names from the signed list, client IP addresses (in Supabase and function logs; OnePass itself stores only a daily HMAC key for rate limiting), mailbox ids and public keys, and push tokens. It sees no Apple ID, and never item contents, vault keys, the Secret Key or the password.
+Record counts per kind, versions, padded body sizes, manifest sequence numbers, write timing, device names from the signed list, client IP addresses (in Supabase and function logs; Kelid itself stores only a daily HMAC key for rate limiting), mailbox ids and public keys, and push tokens. It sees no Apple ID, and never item contents, vault keys, the Secret Key or the password.
 
 ## Running your own
 
@@ -41,6 +41,6 @@ A self-host usually opens signup (`MAILBOX_OPEN_SIGNUP=true`), and new mailboxes
 ## Related
 
 - [How sync through iCloud works](icloud-sync.md)
-- [Is OnePass on Android, Windows or Linux?](android-windows-linux.md)
-- [OnePass threat model](threat-model.md)
+- [Is Kelid on Android, Windows or Linux?](android-windows-linux.md)
+- [Kelid threat model](threat-model.md)
 - [README](../../README.md)

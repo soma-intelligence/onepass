@@ -96,7 +96,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let orgInviteDomain = "onepass.org.inviteDomain"
     }
 
-    // MARK: - Managed account (OnePass Business)
+    // MARK: - Managed account (Kelid Business)
 
     /// The org mailbox (32 hex) of this managed account's organisation, known once the org is created
     /// or the join link is read.

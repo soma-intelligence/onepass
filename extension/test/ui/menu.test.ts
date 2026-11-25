@@ -338,9 +338,9 @@ describe("inline menu", () => {
     });
     await handle.ready;
     await flush();
-    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(text(r)).toContain("Kelid est verrouillé");
     clock.advance(300);
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Kelid").click();
     await flush();
     await flush();
     expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_resume", "menu_unlock", "menu_resume", "menu_init"]);
@@ -359,11 +359,11 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     expect(r.querySelector("button")).toBeNull();
     timers.runTimeouts();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     locked = false;
     timers.runTimeouts();
     await flush();
@@ -390,12 +390,12 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     clock.advance(300);
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Kelid").click();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     timers.runTimeouts();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     locked = false;
     timers.runTimeouts();
     await flush();
@@ -419,18 +419,18 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     clock.advance(300);
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Kelid").click();
     await flush();
     expect(UNLOCK_WAIT_TRIES * UNLOCK_POLL_MS).toBe(UNLOCK_WAIT_MS);
     for (let i = 0; i < UNLOCK_WAIT_TRIES - 1; i++) {
       timers.runTimeouts();
       await flush();
     }
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     timers.runTimeouts();
     await flush();
-    expect(text(r)).toContain("OnePass est verrouillé");
-    expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
+    expect(text(r)).toContain("Kelid est verrouillé");
+    expect(button(r, "Déverrouiller dans Kelid")).toBeTruthy();
     // The wait is over: nothing polls any more.
     expect(timers.timeouts.size).toBe(0);
     expect(worker.types().filter((t) => t === "menu_resume")).toHaveLength(UNLOCK_WAIT_TRIES + 1);
@@ -445,12 +445,12 @@ describe("inline menu", () => {
     });
     await handle.ready;
     await flush();
-    expect(text(r)).toContain("Ouverture de OnePass…");
+    expect(text(r)).toContain("Ouverture de Kelid…");
     expect(r.querySelector("button")).toBeNull();
     state = "locked";
     timers.runTimeouts();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     state = "open";
     timers.runTimeouts();
     await flush();
@@ -458,7 +458,7 @@ describe("inline menu", () => {
     expect(timers.timeouts.size).toBe(0);
   });
 
-  it("the app is not running and no gesture launched it: Open OnePass launches it, then waits; the button comes back after 90 s", async () => {
+  it("the app is not running and no gesture launched it: Open Kelid launches it, then waits; the button comes back after 90 s", async () => {
     let asked = false;
     const { r, handle, worker, clock, timers } = setup((m) => {
       if (m.type === "menu_init") return { err: "host_missing" };
@@ -471,18 +471,18 @@ describe("inline menu", () => {
     });
     await handle.ready;
     await flush();
-    expect(text(r)).toContain("App OnePass introuvable");
+    expect(text(r)).toContain("App Kelid introuvable");
     clock.advance(300);
-    button(r, "Ouvrir OnePass").click();
+    button(r, "Ouvrir Kelid").click();
     await flush();
     expect(worker.types()).toEqual(["menu_init", "menu_resume", "menu_unlock"]);
-    expect(text(r)).toContain("Ouverture de OnePass…");
+    expect(text(r)).toContain("Ouverture de Kelid…");
     for (let i = 0; i < UNLOCK_WAIT_TRIES; i++) {
       timers.runTimeouts();
       await flush();
     }
-    expect(text(r)).toContain("App OnePass introuvable");
-    expect(button(r, "Ouvrir OnePass")).toBeTruthy();
+    expect(text(r)).toContain("App Kelid introuvable");
+    expect(button(r, "Ouvrir Kelid")).toBeTruthy();
     expect(timers.timeouts.size).toBe(0);
   });
 
@@ -494,11 +494,11 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     clock.advance(300);
-    button(r, "Ouvrir OnePass").click();
+    button(r, "Ouvrir Kelid").click();
     await flush();
-    expect(text(r)).toContain("App OnePass introuvable");
-    expect(text(r)).toContain("Ouvre l'app OnePass sur cet ordinateur, puis réessaie.");
-    expect(button(r, "Ouvrir OnePass")).toBeTruthy();
+    expect(text(r)).toContain("App Kelid introuvable");
+    expect(text(r)).toContain("Ouvre l'app Kelid sur cet ordinateur, puis réessaie.");
+    expect(button(r, "Ouvrir Kelid")).toBeTruthy();
   });
 
   it("iOS: the unlock sheet runs Face ID once by itself, then loads the menu", async () => {
@@ -575,7 +575,7 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     clock.advance(300);
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Kelid").click();
     await flush();
     locked = false;
     timers.runTimeouts();
@@ -642,18 +642,18 @@ describe("inline menu", () => {
   it("unpaired, host missing and malformed replies", async () => {
     let s = setup(() => ({ err: "unpaired" }));
     await s.handle.ready;
-    expect(text(s.r)).toContain("OnePass n'est pas appairé");
+    expect(text(s.r)).toContain("Kelid n'est pas appairé");
     s = setup((m) => (m.type === "menu_resume" ? { err: "invalid" } : { err: "host_missing" }));
     await s.handle.ready;
     await flush();
-    expect(text(s.r)).toContain("App OnePass introuvable");
+    expect(text(s.r)).toContain("App Kelid introuvable");
     s = setup(() => ok({ origin: SITE, formKind: "login", items: [{ item_id: 3 }] }));
     await s.handle.ready;
-    expect(text(s.r)).toContain("Erreur interne de OnePass.");
+    expect(text(s.r)).toContain("Erreur interne de Kelid.");
     // A raw host message is never shown.
     s = setup(() => ({ err: "<b>raw host text</b>" }));
     await s.handle.ready;
-    expect(text(s.r)).toContain("Erreur interne de OnePass.");
+    expect(text(s.r)).toContain("Erreur interne de Kelid.");
     expect(s.r.querySelector("b")).toBeNull();
   });
 
@@ -691,11 +691,11 @@ describe("inline menu", () => {
     }
   });
 
-  it("unpaired: Appairer avec OnePass asks the worker to open the popup", async () => {
+  it("unpaired: Appairer avec Kelid asks the worker to open the popup", async () => {
     const { r, handle, worker, clock } = setup((m) => (m.type === "menu_init" ? { err: "unpaired" } : ok()));
     await handle.ready;
     clock.advance(300);
-    button(r, "Appairer avec OnePass").click();
+    button(r, "Appairer avec Kelid").click();
     await Promise.resolve();
     expect(worker.sent.at(-1)).toEqual({ type: "menu_pair", token: TOKEN });
   });

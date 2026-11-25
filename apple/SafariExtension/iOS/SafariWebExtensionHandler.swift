@@ -6,7 +6,7 @@ import SafariServices
 import VaultKit
 
 /// iPhone and iPad (spec 2026-11-03-ios-safari-autofill): receives each
-/// `browser.runtime.sendNativeMessage` of the OnePass Safari extension, the same messages as on the
+/// `browser.runtime.sendNativeMessage` of the Kelid Safari extension, the same messages as on the
 /// Mac (`extension/src/background/safari.ts`). iOS has no app listening on a socket, so this process
 /// opens the vault itself on the shared store (App Group, shared keychain group) and serves the
 /// bridge in process (`BridgeServer.connectInProcess`, ruling I1): the same frames, pairing and

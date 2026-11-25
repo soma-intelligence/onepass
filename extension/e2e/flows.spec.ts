@@ -23,14 +23,14 @@ test("pairing_shows_same_code", async ({ ext }) => {
   // The popup now shows the paired state (suggestions or search), not the pairing one.
   const popup = await ext.context.newPage();
   await popup.goto(`chrome-extension://${ext.id}/popup.html`);
-  await expect(popup.getByPlaceholder("Rechercher dans OnePass")).toBeVisible();
+  await expect(popup.getByPlaceholder("Rechercher dans Kelid")).toBeVisible();
   // "Oublier cet appairage" (spec 6.4): confirmed, the popup is unpaired, and stays so.
   await popup.getByRole("button", { name: "Oublier cet appairage" }).click();
   await expect(popup.getByRole("heading", { name: "Oublier cet appairage ?" })).toBeVisible();
   await popup.getByRole("button", { name: "Oublier", exact: true }).click();
-  await expect(popup.getByRole("button", { name: "Appairer avec OnePass" })).toBeVisible();
+  await expect(popup.getByRole("button", { name: "Appairer avec Kelid" })).toBeVisible();
   await popup.reload();
-  await expect(popup.getByRole("button", { name: "Appairer avec OnePass" })).toBeVisible();
+  await expect(popup.getByRole("button", { name: "Appairer avec Kelid" })).toBeVisible();
   await popup.close();
 });
 
@@ -46,7 +46,7 @@ paired("menu_fill_login", async ({ ext }) => {
   const records = Object.entries(await ext.sessionStorage()).filter(([k]) => k.startsWith("menu:"));
   expect(records).toHaveLength(1);
   expect((records[0]?.[1] as { documentId?: unknown }).documentId).toEqual(expect.any(String));
-  // Remplir on a sign-in form signs in: filled, then sent by OnePass.
+  // Remplir on a sign-in form signs in: filled, then sent by Kelid.
   await ext.pickRow(menu, "Atlas Cloud");
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
   await expect(page.locator("#detail")).toHaveText(FX.atlas.email);
@@ -118,7 +118,7 @@ paired("save_new_login_then_fill", async ({ ext }) => {
   await expect(page.locator("#detail")).toHaveText("alex.new@atlas.dev");
 });
 
-// ---- founder bug 2026-11-03: no prompt after signing in with credentials OnePass did not know ----
+// ---- founder bug 2026-11-03: no prompt after signing in with credentials Kelid did not know ----
 
 paired("save_after_identifier_then_password", async ({ ext }) => {
   const { page } = ext;
@@ -272,7 +272,7 @@ paired("save_card_after_checkout", async ({ ext }) => {
   await expect(again.getByText("Enregistrer cette carte ?")).toBeVisible();
   await ext.settle();
   await again.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(again.getByText("Déjà dans OnePass")).toBeVisible();
+  await expect(again.getByText("Déjà dans Kelid")).toBeVisible();
   expect(saves()).toBe(1);
 });
 
@@ -481,7 +481,7 @@ paired("passkey_sign_in", async ({ ext }) => {
   await page.goto(`${ATLAS}/passkey`);
   await expect(page.locator("onepass-root")).toHaveCount(1);
 
-  // The site's passkey button: OnePass's window lists the account holding a passkey of atlas-cloud.test.
+  // The site's passkey button: Kelid's window lists the account holding a passkey of atlas-cloud.test.
   let opened = passkeyWindow();
   await page.locator("#signin").click();
   let win = await opened;
@@ -508,7 +508,7 @@ paired("passkey_sign_in", async ({ ext }) => {
   await win.getByRole("button", { name: "Annuler" }).click();
   await expect(page.locator("#result")).toHaveAttribute("data-status", "error:NotAllowedError");
 
-  // Creation: a new passkey saved in OnePass, then offered at the next sign-in.
+  // Creation: a new passkey saved in Kelid, then offered at the next sign-in.
   await page.goto(`${ATLAS}/passkey`);
   opened = passkeyWindow();
   await page.locator("#register").click();
@@ -538,7 +538,7 @@ paired("passkey_sign_in", async ({ ext }) => {
 paired("passkey_other_device_hands_off_to_the_browser", async ({ ext }) => {
   const { page } = ext;
   // The browser's own authenticator (Chromium's virtual one, with a key of its
-  // own for this site): what answers once OnePass hands the call back.
+  // own for this site): what answers once Kelid hands the call back.
   const cdp = await ext.context.newCDPSession(page);
   await cdp.send("WebAuthn.enable", { enableUI: false });
   const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
@@ -560,7 +560,7 @@ paired("passkey_other_device_hands_off_to_the_browser", async ({ ext }) => {
   await page.locator("#signin").click();
   const win = await opened;
   await ext.settle();
-  // "Autre appareil": OnePass's window closes, the site's tab is focused again
+  // "Autre appareil": Kelid's window closes, the site's tab is focused again
   // first, so the browser's own call is not refused for an unfocused document.
   await win.getByRole("button", { name: "Autre appareil" }).click();
   await expect.poll(() => win.isClosed()).toBe(true);
@@ -568,7 +568,7 @@ paired("passkey_other_device_hands_off_to_the_browser", async ({ ext }) => {
   await expect.poll(() => nativeAsserted, { timeout: 15_000, message: "the browser's own authenticator never answered" }).toBe(1);
   await expect(page.locator("#result")).toHaveAttribute("data-status", /.+/, { timeout: 15_000 });
   await expect(page.locator("#result")).not.toHaveAttribute("data-status", "error:NotAllowedError");
-  // OnePass signed nothing.
+  // Kelid signed nothing.
   expect(ext.audit()).not.toContain("passkey_get");
   await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
 });

@@ -208,7 +208,7 @@ interface Ops {
    * loopback host), for the app to show on its unlock. Absent when no page is concerned.
    */
   unlock: { req: { origin?: string }; res: { locked: boolean } };
-  /** `account`: the OnePass account of the vault, when the host names one (several accounts). */
+  /** `account`: the Kelid account of the vault, when the host names one (several accounts). */
   /**
    * `origin`: the page a new item is for. The vaults of the account that page routes to come
    * first (the first is the default of a save there); a `save_*` with `vault_id: ""` goes to it.

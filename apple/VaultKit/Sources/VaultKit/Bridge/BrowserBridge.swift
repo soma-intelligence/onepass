@@ -58,7 +58,7 @@ public final class BrowserBridge {
     public enum Attention: Sendable, Equatable {
         /// A pairing code to compare: the window comes forward and stays.
         case pairing
-        /// "Déverrouiller dans OnePass": the lock screen comes forward, then the browser again.
+        /// "Déverrouiller dans Kelid": the lock screen comes forward, then the browser again.
         case unlock
     }
 
@@ -200,7 +200,7 @@ public final class BrowserBridge {
         requests = []
     }
 
-    /// False when "Approuver" would be refused: the vault is locked or Touch ID is off in OnePass.
+    /// False when "Approuver" would be refused: the vault is locked or Touch ID is off in Kelid.
     /// The pairing sheet says so before the user tries.
     public var canApprove: Bool {
         session.state == .unlocked && session.canUseBiometrics
@@ -279,10 +279,10 @@ public final class BrowserBridge {
     /// The accounts the browsers may reach, primary first: the primary one, and each added account
     /// that is signed in (bound to its store) and that the user made available in browsers (off by
     /// default: a paired browser reads every account listed here). One account: its name stays
-    /// "OnePass", as before.
+    /// "Kelid", as before.
     private func roster() -> [Served] {
         guard let accounts, accounts.hasSeveralAccounts else {
-            return [Served(slot: Self.primarySlot, name: "OnePass", vault: session)]
+            return [Served(slot: Self.primarySlot, name: "Kelid", vault: session)]
         }
         return accounts.profiles.compactMap { profile in
             if profile.isPrimary {
@@ -298,7 +298,7 @@ public final class BrowserBridge {
     private static func name(_ profile: AccountProfile, _ vault: VaultSession?) -> String {
         if !profile.label.isEmpty { return profile.label }
         let shown = vault?.environment.settings.displayName ?? ""
-        return shown.isEmpty ? "OnePass" : shown
+        return shown.isEmpty ? "Kelid" : shown
     }
 
     /// The session of the account in `slot`, if it was made.
@@ -536,7 +536,7 @@ enum BridgeLog {
 }
 
 extension BrowserBridge {
-    /// "Déverrouiller dans OnePass": opened by the Safari extension's handler and by the relay of
+    /// "Déverrouiller dans Kelid": opened by the Safari extension's handler and by the relay of
     /// Chrome and Firefox through LaunchServices, from the process that served the user's click.
     /// Since macOS 14 the app cannot bring itself forward while the browser is in front; a link
     /// opened for it can, and launches it when it is not running. It carries nothing.

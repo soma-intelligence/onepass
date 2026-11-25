@@ -1,4 +1,4 @@
-// Security review M3: OnePass never submits a form the browser would send to another site.
+// Security review M3: Kelid never submits a form the browser would send to another site.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { submitTargetAllowed } from "../../src/content/submit";
 import { type FormInfo, type PageAnalysis, UNCERTAIN_MS } from "../../src/shared/messages";

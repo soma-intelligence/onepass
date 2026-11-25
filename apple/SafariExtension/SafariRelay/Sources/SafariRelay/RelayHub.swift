@@ -166,7 +166,7 @@ final class Connection: @unchecked Sendable {
                 }
             }
         }
-        thread.name = "OnePass bridge relay reader"
+        thread.name = "Kelid bridge relay reader"
         thread.start()
     }
 
@@ -204,7 +204,7 @@ public final class RelayHub: @unchecked Sendable {
     private let launcher: (any HostLauncher)?
     private let pollTimeout: TimeInterval
     private let maxConnections: Int
-    /// Brings the OnePass app forward on its lock screen (launching it if needed). Run from the
+    /// Brings the Kelid app forward on its lock screen (launching it if needed). Run from the
     /// extension process that served the user's click, so macOS lets the app come forward.
     private let openApp: (@Sendable () -> Bool)?
     /// iOS: the vault of this process, for the unlock sheet. Nil on the Mac (the app unlocks).

@@ -867,7 +867,7 @@ describe("one gesture when the app is not running: it is launched, then the fill
       expect(t.opened.n).toBe(0);
     });
 
-    it("the Open OnePass button on a cold app: `unlock` once when it answers, already unlocked or not", async () => {
+    it("the Open Kelid button on a cold app: `unlock` once when it answers, already unlocked or not", async () => {
       const t = await noApp();
       const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
       const token = open.ok.url.split("#")[1] as string;
@@ -882,7 +882,7 @@ describe("one gesture when the app is not running: it is launched, then the fill
     });
   });
 
-  it("the menu's Open OnePass button launches it and waits the same way", async () => {
+  it("the menu's Open Kelid button launches it and waits the same way", async () => {
     const t = await noApp();
     const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
     const token = open.ok.url.split("#")[1] as string;
@@ -1430,7 +1430,7 @@ describe("manifest", () => {
     });
     for (const lang of ["en", "fr"]) {
       const msgs = JSON.parse(readFileSync(join(process.cwd(), `src/_locales/${lang}/messages.json`), "utf8")) as Record<string, { message: string }>;
-      expect(msgs.fillSmartCommand?.message).toMatch(/OnePass/);
+      expect(msgs.fillSmartCommand?.message).toMatch(/Kelid/);
       expect(msgs.fillSmartCommand?.message).not.toContain(String.fromCharCode(0x2014));
     }
   });

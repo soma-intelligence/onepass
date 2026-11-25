@@ -26,7 +26,7 @@
 // generated password sent in a change-password form of a site with several
 // logins gets the update card with a choice of those logins (`choices`).
 //
-// The toast (`view: "toast"`, spec 4.1, 4.4): a login OnePass saved by
+// The toast (`view: "toast"`, spec 4.1, 4.4): a login Kelid saved by
 // itself. "Login for <site> saved", the username, Undo and Edit (only when
 // `undo`: a generated password confirmed at the submission gets neither). Left alone TOAST_MS (same hover and focus rule) it closes. Undo
 // asks the worker to delete it (`save_undo`) and says "Removed", or that it
@@ -837,7 +837,7 @@ export function mountSave(root: HTMLElement, deps: FrameDeps): SaveHandle {
     );
   }
 
-  /** A login OnePass saved by itself: what it is, Undo (when offered) and Edit. */
+  /** A login Kelid saved by itself: what it is, Undo (when offered) and Edit. */
   function renderToast(i: SaveInit, d: Draft): void {
     setFit(true);
     const err = errLine();

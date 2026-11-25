@@ -72,7 +72,7 @@ export interface IconsOptions {
   avoid?: (zone: Rect) => Rect[];
   /**
    * The layout right now (frames.ts). Touch (iPhone, iPad, with or without a trackpad): a larger
-   * icon for a finger, and a "OnePass" label beside the icon of the focused field (spec
+   * icon for a finger, and a "Kelid" label beside the icon of the focused field (spec
    * 2026-11-03-ios-safari-autofill 5). Read at every placement; `readLayout` by default.
    */
   layout?: () => Layout;
@@ -97,7 +97,7 @@ export interface Icons {
 }
 
 function glyph(doc: Document): SVGElement {
-  // The OnePass mark: the Lattice (2 x 3 dots and a bar), in the glyph's colour.
+  // The Kelid mark: the Lattice (2 x 3 dots and a bar), in the glyph's colour.
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 100 100");
   svg.setAttribute("fill", "currentColor");

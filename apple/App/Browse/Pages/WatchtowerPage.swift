@@ -581,7 +581,7 @@ struct BreachSettingCard: View {
                     .help("browse.whatSent")
                     .popover(isPresented: $showingDetails, arrowEdge: .bottom) {
                         Text("""
-                            Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers \
+                            Pour chaque mot de passe, Kelid envoie à Have I Been Pwned les 5 premiers \
                             caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et \
                             compare le reste ici. La liste des sites piratés est téléchargée en entier \
                             et gardée une semaine. Désactivé, aucune requête réseau.

@@ -1382,7 +1382,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         await planner.runSignup(t, plan, m.mode);
         if (m.mode === "passkey") {
           // The site's own button starts the ceremony (it owns the challenge); the
-          // creation it asks for opens OnePass's window, which still asks (spec 2.3).
+          // creation it asks for opens Kelid's window, which still asks (spec 2.3).
           const cs: CsContext = { tabId: rec.tabId, frameId: 0, origin: rec.origin };
           if (rec.documentId !== undefined) cs.documentId = rec.documentId;
           passkeys.armCreate(cs);
@@ -1426,7 +1426,7 @@ export function createBackground(ext: BgExt, opts: BackgroundOptions = {}) {
         return {};
       },
       menu_unlock: async (m, from) => {
-        // The menu's button ("Déverrouiller dans OnePass", "Ouvrir OnePass"): a click of its own.
+        // The menu's button ("Déverrouiller dans Kelid", "Ouvrir Kelid"): a click of its own.
         const rec = await menuRecord(m.token, from);
         const at = now();
         // Not the tab in front, or too many asks this minute: the app stays where it is.

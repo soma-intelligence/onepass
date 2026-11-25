@@ -2,8 +2,8 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// "Remplis tes mots de passe avec OnePass" (spec 6 and 7): on Accueil (iPhone) and at the bottom of
-/// the sidebar (iPad and Mac) while OnePass is not the AutoFill provider. "Activer" shows the system
+/// "Remplis tes mots de passe avec Kelid" (spec 6 and 7): on Accueil (iPhone) and at the bottom of
+/// the sidebar (iPad and Mac) while Kelid is not the AutoFill provider. "Activer" shows the system
 /// prompt; the close button hides the card for good (`autofillTipDismissed`). The caller shows it
 /// only when `AppModel.showsAutoFillTip` is true.
 struct AutoFillTipCard: View {

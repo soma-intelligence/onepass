@@ -1,6 +1,6 @@
 import Foundation
 
-/// Turning the OnePass Safari extension on (MS-02, IOSSAF-13): what the apps know about it and when
+/// Turning the Kelid Safari extension on (MS-02, IOSSAF-13): what the apps know about it and when
 /// the one-time setup card shows. Safari itself asks for the website access; the apps only point there.
 ///
 /// - macOS reads the state from `SFSafariExtensionManager` (the app does, with this identifier).

@@ -43,7 +43,7 @@ public actor MailboxSyncCoordinator: SyncTrigger {
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "mailbox-sync")
 
-    /// `serverName`: what the status names (the host, or "Serveur OnePass"). `sleep` and `now` are
+    /// `serverName`: what the status names (the host, or "Serveur Kelid"). `sleep` and `now` are
     /// injected by tests.
     public init(
         sync: any MailboxSyncing, serverName: String, debounce: Duration = .seconds(2),

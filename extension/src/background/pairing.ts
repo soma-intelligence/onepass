@@ -9,7 +9,7 @@ import type { PairingRecord } from "../bridge/pairing";
 import { BgError, type BridgeLike, type Session, toBgError } from "./session";
 import type { Store } from "./store";
 
-export const EXT_NAME = "OnePass";
+export const EXT_NAME = "Kelid";
 
 /** Browser family shown by the app next to the pairing. */
 export function browserName(ua: string): string {

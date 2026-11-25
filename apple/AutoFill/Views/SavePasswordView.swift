@@ -2,7 +2,7 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// "Enregistrer dans OnePass" (new Login: title and vault), or "Mettre à jour <titre>" when a Login
+/// "Enregistrer dans Kelid" (new Login: title and vault), or "Mettre à jour <titre>" when a Login
 /// of the same site and username holds another password (the old one goes to its history). The
 /// password itself is never displayed.
 struct SavePasswordView: View {

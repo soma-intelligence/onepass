@@ -691,7 +691,7 @@ struct DemoHelperRunner: HelperRunner {
                 """)
         }
         return HelperResult(status: 0, output: """
-            OnePass installed in \(file)
+            Kelid installed in \(file)
             Quit Claude Code first if it is running, then start it again: it can rewrite its configuration file and undo this change.
             """)
     }
