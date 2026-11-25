@@ -1104,7 +1104,7 @@ struct OnboardingFlow: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var model: OnboardingModel?
-    /// The three cards before the welcome screen, on a first launch only.
+    /// The feature tour before the welcome screen, on a first launch only.
     @State private var showIntro = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1156,6 +1156,13 @@ struct OnboardingFlow: View {
                 // (spec 2026-11-25, rev. 2), during the intro too.
                 Task { await created.detectICloudVault() }
             }
+        }
+        // A vault found in iCloud is the first screen (spec 2026-11-25, rev. 2): the tour gives way
+        // at once, wherever it was. Not marked as toured, so "Quoi de neuf" shows after the unlock.
+        .onChange(of: model?.iCloudVault) { _, state in
+            guard state == .joinable, showIntro else { return }
+            OnboardingIntro.markSeen(toured: false)
+            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .smooth(duration: 0.35)) { showIntro = false }
         }
         .onChange(of: app.session.needsSecretKey) { _, needed in
             // "Créer un nouveau coffre": the restore-only flow gives way to the full onboarding.

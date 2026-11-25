@@ -65,6 +65,7 @@ struct RootView: View {
             }
             #endif
             .onAppear { model.start() }
+            .whatsNewAfterUpdate()
             .onChange(of: model.session.state) { old, state in
                 model.sessionStateChanged(state, from: old)
             }
