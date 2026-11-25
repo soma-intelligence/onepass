@@ -4438,25 +4438,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Emergency Kit protection changed on another device. Lock OnePass, unlock it with your master password, then try again."
+            "value" : "Emergency Kit protection changed on another device. Lock Kelid, unlock it with your master password, then try again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La protección del Emergency Kit ha cambiado en otro dispositivo. Bloquea OnePass, desbloquéalo con tu contraseña maestra y vuelve a intentarlo."
+            "value" : "La protección del Emergency Kit ha cambiado en otro dispositivo. Bloquea Kelid, desbloquéalo con tu contraseña maestra y vuelve a intentarlo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La protection du kit d'urgence a changé sur un autre appareil. Verrouille OnePass, déverrouille-le avec ton mot de passe maître, puis réessaie."
+            "value" : "La protection du kit d'urgence a changé sur un autre appareil. Verrouille Kelid, déverrouille-le avec ton mot de passe maître, puis réessaie."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La protezione dell'Emergency Kit è cambiata su un altro dispositivo. Blocca OnePass, sbloccalo con la tua password principale, poi riprova."
+            "value" : "La protezione dell'Emergency Kit è cambiata su un altro dispositivo. Blocca Kelid, sbloccalo con la tua password principale, poi riprova."
           }
         }
       }

@@ -28,6 +28,9 @@ struct SecuritySettings: View {
     @State private var changingPassword = false
     @State private var confirmingDelete = false
     @State private var deletingAccount = false
+    /// The Emergency Kit protection shows only once this build pins its realms (or it is already
+    /// on): no "coming soon" control in a release (App Review 2.1).
+    @State private var guardVisible = false
 
     private var session: VaultSession { model.session }
     private var settings: VaultSettings { model.settings }
@@ -46,7 +49,9 @@ struct SecuritySettings: View {
                 Group {
                     unlockSection
                     autofillReuseSection
-                    KitProtectionSection()
+                    if guardVisible {
+                        KitProtectionSection()
+                    }
                     deviceModeSection
                     Section {
                         Button("settings.deleteAccount", systemImage: "trash", role: .destructive) { confirmingDelete = true }
@@ -65,6 +70,9 @@ struct SecuritySettings: View {
                 .rxSettingsRows()
             }
             .rxSettingsSkin()
+            .task {
+                if let state = try? await session.guardState() { guardVisible = state.available || state.on }
+            }
             .onAppear { focus(proxy) }
             .onChange(of: model.settingsFocusRequest) { focus(proxy) }
         }

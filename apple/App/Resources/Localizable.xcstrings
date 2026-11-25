@@ -76069,25 +76069,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To restore your account with your Emergency Kit, OnePass will also need two of the three servers that Soma runs. They count the attempts. 15 attempts at most, then the kit is useless without one of your devices. Your devices unlock as before."
+            "value" : "To restore your account with your Emergency Kit, Kelid will also need two of the three servers that Soma runs. They count the attempts. 15 attempts at most, then the kit is useless without one of your devices. Your devices unlock as before."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Para restaurar tu cuenta con tu Emergency Kit, OnePass también necesitará dos de los tres servidores que opera Soma. Cuentan los intentos. 15 intentos como máximo; después, el kit no sirve de nada sin uno de tus dispositivos. Tus dispositivos se desbloquean como antes."
+            "value" : "Para restaurar tu cuenta con tu Emergency Kit, Kelid también necesitará dos de los tres servidores que opera Soma. Cuentan los intentos. 15 intentos como máximo; después, el kit no sirve de nada sin uno de tus dispositivos. Tus dispositivos se desbloquean como antes."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pour restaurer ton compte avec ton kit d'urgence, OnePass demandera aussi l'accord de deux des trois serveurs que Soma opère. Ils comptent les essais. 15 essais au plus, puis le kit ne sert plus à rien sans un de tes appareils. Tes appareils se déverrouillent comme avant."
+            "value" : "Pour restaurer ton compte avec ton kit d'urgence, Kelid demandera aussi l'accord de deux des trois serveurs que Soma opère. Ils comptent les essais. 15 essais au plus, puis le kit ne sert plus à rien sans un de tes appareils. Tes appareils se déverrouillent comme avant."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Per ripristinare il tuo account con il tuo Emergency Kit, OnePass avrà bisogno anche di due dei tre server gestiti da Soma. Contano i tentativi. 15 tentativi al massimo, poi il kit non serve più a nulla senza uno dei tuoi dispositivi. I tuoi dispositivi si sbloccano come prima."
+            "value" : "Per ripristinare il tuo account con il tuo Emergency Kit, Kelid avrà bisogno anche di due dei tre server gestiti da Soma. Contano i tentativi. 15 tentativi al massimo, poi il kit non serve più a nulla senza uno dei tuoi dispositivi. I tuoi dispositivi si sbloccano come prima."
           }
         }
       }
