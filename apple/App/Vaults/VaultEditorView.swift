@@ -14,7 +14,7 @@ enum VaultStyle {
         ("briefcase.fill", String(localized: "Travail")),
         ("person.fill", String(localized: "vaults.person")),
         ("person.2.fill", String(localized: "vaults.twoPeople")),
-        ("figure.2.and.child.holdinghands", String(localized: "Famille")),
+        ("figure.and.child.holdinghands", String(localized: "Famille")),
         ("heart.fill", String(localized: "vaults.heart")),
         ("star.fill", String(localized: "vaults.star")),
         ("crown.fill", String(localized: "vaults.crown")),
@@ -29,7 +29,7 @@ enum VaultStyle {
         ("envelope.fill", String(localized: "vaults.mail")),
         ("phone.fill", String(localized: "app.phone")),
         ("bubble.left.and.bubble.right.fill", String(localized: "vaults.messages")),
-        ("globe.americas.fill", String(localized: "vaults.world")),
+        ("globe.europe.africa.fill", String(localized: "vaults.world")),
         ("airplane", String(localized: "Voyage")),
         ("car.fill", String(localized: "vaults.car")),
         ("sailboat.fill", String(localized: "vaults.boat")),
@@ -48,8 +48,8 @@ enum VaultStyle {
         ("snowflake", String(localized: "vaults.winter")),
         ("graduationcap.fill", String(localized: "vaults.school")),
         ("book.fill", String(localized: "vaults.book")),
-        ("pencil.and.outline", String(localized: "vaults.writing")),
-        ("paintbrush.fill", String(localized: "vaults.art")),
+        ("note.text", String(localized: "vaults.writing")),
+        ("paintpalette.fill", String(localized: "vaults.art")),
         ("music.note", String(localized: "vaults.music")),
         ("film.fill", String(localized: "vaults.movies")),
         ("camera.fill", String(localized: "vaults.photo")),
@@ -58,7 +58,7 @@ enum VaultStyle {
         ("puzzlepiece.fill", String(localized: "vaults.puzzle")),
         ("tennisball.fill", String(localized: "vaults.sports")),
         ("dumbbell.fill", String(localized: "vaults.fitness")),
-        ("figure.run", String(localized: "vaults.running")),
+        ("shoe.fill", String(localized: "vaults.running")),
         ("cross.case.fill", String(localized: "vaults.health")),
         ("pills.fill", String(localized: "vaults.medication")),
         ("pawprint.fill", String(localized: "vaults.pets")),
@@ -67,12 +67,12 @@ enum VaultStyle {
         ("wrench.and.screwdriver.fill", String(localized: "vaults.tools")),
         ("hammer.fill", String(localized: "vaults.diy")),
         ("terminal.fill", String(localized: "vaults.terminal")),
-        ("chevron.left.forwardslash.chevron.right", String(localized: "vaults.code")),
+        ("curlybraces", String(localized: "vaults.code")),
         ("server.rack", String(localized: "vaults.servers")),
         ("cpu.fill", String(localized: "vaults.hardware")),
         ("wifi", String(localized: "vaults.wiFi")),
         ("atom", String(localized: "vaults.science")),
-        ("testtube.2", String(localized: "vaults.lab")),
+        ("flask.fill", String(localized: "vaults.lab")),
         ("key.fill", String(localized: "app.key")),
         ("lock.fill", String(localized: "vaults.lock")),
         ("shield.fill", String(localized: "vaults.shield")),
@@ -87,6 +87,63 @@ enum VaultStyle {
         "folder", "briefcase", "house", "person", "person.2", "heart",
         "star", "cart", "creditcard", "airplane", "graduationcap", "gamecontroller",
     ]
+
+    /// Symbols the 2026-11-25 audit swapped for a stronger sibling: thin or very wide glyphs that
+    /// read as a smudge at 16 pt (menus, item header) or as a different weight from their
+    /// neighbours. A vault saved with the old name draws the new one, and is stored with it the
+    /// next time it is saved; nothing is migrated in the core.
+    static let renamed: [String: String] = [
+        "figure.2.and.child.holdinghands": "figure.and.child.holdinghands",
+        "globe.americas.fill": "globe.europe.africa.fill",
+        "pencil.and.outline": "note.text",
+        "paintbrush.fill": "paintpalette.fill",
+        "figure.run": "shoe.fill",
+        "chevron.left.forwardslash.chevron.right": "curlybraces",
+        "testtube.2": "flask.fill",
+    ]
+
+    /// Optical size of each glyph against a typical one (about 100 x 100 at 100 pt). SF Symbols
+    /// share a cap height, not an ink area: a mountain range is twice as wide as a lock, so in the
+    /// same disc one shouts and the other whispers. Measured once on the semibold glyphs
+    /// (scale = 102 / sqrt(ink width x ink height), kept within 0.8...1.15 and to 138 pt on the
+    /// long side), rounded to 0.02; glyphs within 5% of 1 are left out. Diagonal tools (hammer,
+    /// wrench) are nudged up by hand: their bounding box overstates their ink.
+    static let opticalScale: [String: CGFloat] = [
+        "archivebox.fill": 1.06, "house.fill": 0.90, "building.2.fill": 0.92,
+        "building.columns.fill": 0.90, "briefcase.fill": 0.94, "person.fill": 1.14,
+        "person.2.fill": 0.94, "heart.fill": 1.06, "star.fill": 0.94, "crown.fill": 0.88,
+        "bag.fill": 1.06, "chart.bar.fill": 0.92, "doc.text.fill": 1.06, "phone.fill": 1.08,
+        "bubble.left.and.bubble.right.fill": 0.80, "sailboat.fill": 0.82, "tram.fill": 0.94,
+        "mountain.2.fill": 0.80, "tent.fill": 0.82, "tree.fill": 0.80, "flame.fill": 1.08,
+        "drop.fill": 1.14, "bolt.fill": 1.12, "sun.max.fill": 0.92, "snowflake": 1.08,
+        "graduationcap.fill": 0.80, "note.text": 1.06, "paintpalette.fill": 0.92,
+        "music.note": 1.14, "camera.fill": 0.94, "gamecontroller.fill": 0.88,
+        "puzzlepiece.fill": 0.86, "shoe.fill": 0.90, "cross.case.fill": 0.94, "pills.fill": 0.92,
+        "cup.and.saucer.fill": 0.90, "fork.knife": 1.12, "wrench.and.screwdriver.fill": 0.94,
+        "hammer.fill": 0.94, "wifi": 1.08, "atom": 0.90, "key.fill": 1.12, "lock.fill": 1.14,
+        "shield.fill": 1.14, "flag.fill": 1.10,
+    ]
+
+    /// Glyph height against its disc, the same for every mark and every size, so a vault looks
+    /// the same in the sidebar (24 pt), a menu (16 pt) and the editor's preview (76 pt).
+    static let glyphRatio: CGFloat = 0.46
+
+    /// The point size of `symbol` drawn in a disc of `size`.
+    static func glyphSize(_ symbol: String, in size: CGFloat) -> CGFloat {
+        size * glyphRatio * (opticalScale[symbol] ?? 1)
+    }
+
+    /// The one colour rule for a glyph drawn in the vault's colour on a pale disc (the "Teinté"
+    /// mark and the editor's idle symbols): deepened a touch on light pages for contrast, lifted
+    /// on dark ones so it does not sink into the disc.
+    static func glyphColor(_ tint: Color, dark: Bool) -> Color {
+        dark ? tint.mix(with: .white, by: 0.25) : tint.mix(with: .black, by: 0.1)
+    }
+
+    /// The pale disc behind such a glyph, by the same rule.
+    static func paleFill(_ tint: Color, dark: Bool) -> Color {
+        tint.opacity(dark ? 0.22 : 0.14)
+    }
 
     /// How a vault's mark is drawn. Stored after the symbol in the vault's icon string
     /// ("person.fill#glass"), so it syncs with the vault without a new field in the core: an older
@@ -122,7 +179,8 @@ enum VaultStyle {
 
     /// The symbol to draw: a stored legacy outline name becomes its filled sibling.
     static func symbol(_ stored: String) -> String {
-        let icon = split(stored).symbol
+        let stored = split(stored).symbol
+        let icon = renamed[stored] ?? stored
         if icons.contains(icon) { return icon }
         if legacy.contains(icon) { return icons.contains(icon + ".fill") ? icon + ".fill" : icon }
         return "folder.fill"
@@ -159,9 +217,10 @@ enum VaultStyle {
     }
 }
 
-/// A vault's mark: a disc in a soft gradient of its color with the symbol in white, a light from
-/// the top left and a hairline rim. Round, so a vault never reads as one of the library's square
-/// rows (Tous les éléments, Favoris...).
+/// A vault's mark: a disc in the vault's color with its symbol. Round on purpose, so a vault never
+/// reads as one of the library's square rows (Tous les éléments, Favoris...). The three marks share
+/// one glyph (same size, weight and optical correction, `VaultGlyph`) and differ only in the disc,
+/// so switching the mark never makes the symbol jump.
 struct VaultIconTile: View {
     let icon: String
     let colorName: String
@@ -169,77 +228,92 @@ struct VaultIconTile: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        switch VaultStyle.split(icon).mark {
-        case .classic: classic
-        case .tinted: tinted
-        case .glass: glass
+        Group {
+            switch VaultStyle.split(icon).mark {
+            case .classic: classic
+            case .tinted: tinted
+            case .glass: glass
+            }
         }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 
     private var dark: Bool { colorScheme == .dark }
+    private var color: Color { VaultBadge.color(named: colorName) }
+    private var symbol: String { VaultStyle.symbol(icon) }
+
+    /// Light, rim and shadow are drawn from 24 pt up: under that (menus, the item header's vault
+    /// chip) they only blur the edge of a 16 pt disc.
+    private var detailed: Bool { size >= 24 }
 
     /// "Teinté": a pale disc of the color, the symbol in the color.
     private var tinted: some View {
-        let color = VaultBadge.color(named: colorName)
-        return Circle()
-            .fill(color.opacity(dark ? 0.22 : 0.14))
-            .frame(width: size, height: size)
+        Circle()
+            .fill(VaultStyle.paleFill(color, dark: dark))
             .overlay {
-                Image(systemName: VaultStyle.symbol(icon))
-                    .font(.system(size: size * 0.44, weight: .semibold))
-                    .foregroundStyle(dark ? color.mix(with: .white, by: 0.25) : color.mix(with: .black, by: 0.1))
+                VaultGlyph(symbol: symbol, size: size)
+                    .foregroundStyle(VaultStyle.glyphColor(color, dark: dark))
             }
-            .accessibilityHidden(true)
     }
 
     /// "Verre": a translucent disc of the color, light on its upper half, a hairline rim brighter at
     /// the top, the symbol in white.
     private var glass: some View {
-        let color = VaultBadge.color(named: colorName)
-        return Circle()
+        Circle()
             .fill(color.opacity(dark ? 0.55 : 0.7))
             .overlay {
-                Circle()
-                    .fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top, endPoint: .center))
-                    .padding(size * 0.03)
+                if detailed {
+                    Circle()
+                        .fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top,
+                            endPoint: .center))
+                        .padding(size * 0.03)
+                    Circle().strokeBorder(
+                        LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.08)], startPoint: .top,
+                            endPoint: .bottom),
+                        lineWidth: max(0.5, size * 0.025))
+                }
             }
             .overlay {
-                Circle().strokeBorder(
-                    LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.08)], startPoint: .top,
-                        endPoint: .bottom),
-                    lineWidth: max(0.5, size * 0.025))
+                VaultGlyph(symbol: symbol, size: size).foregroundStyle(.white)
             }
-            .frame(width: size, height: size)
-            .overlay {
-                Image(systemName: VaultStyle.symbol(icon))
-                    .font(.system(size: size * 0.42, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            .accessibilityHidden(true)
     }
 
     /// The first mark: a gradient disc with a sheen and the symbol in white.
     private var classic: some View {
-        let color = VaultBadge.color(named: colorName)
-        return Circle()
+        Circle()
             .fill(LinearGradient(colors: [color.mix(with: .white, by: 0.22), color, color.mix(with: .black, by: 0.18)],
                 startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay {
-                // Soft sheen on the upper left.
-                Circle()
-                    .fill(RadialGradient(colors: [.white.opacity(0.28), .clear],
-                        center: UnitPoint(x: 0.3, y: 0.22), startRadius: 0, endRadius: size * 0.55))
+                if detailed {
+                    // Soft sheen on the upper left.
+                    Circle()
+                        .fill(RadialGradient(colors: [.white.opacity(0.28), .clear],
+                            center: UnitPoint(x: 0.3, y: 0.22), startRadius: 0, endRadius: size * 0.55))
+                    Circle().strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                }
             }
-            .overlay { Circle().strokeBorder(.white.opacity(0.2), lineWidth: 0.5) }
-            .frame(width: size, height: size)
             .overlay {
-                Image(systemName: VaultStyle.symbol(icon))
-                    .font(.system(size: size * 0.46, weight: .semibold))
+                VaultGlyph(symbol: symbol, size: size)
                     .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.18), radius: 0.6, y: 0.6)
+                    .shadow(color: .black.opacity(detailed ? 0.18 : 0), radius: 0.6, y: 0.6)
             }
-            .shadow(color: color.opacity(0.25), radius: size * 0.08, y: size * 0.04)
-            .accessibilityHidden(true)
+            .shadow(color: color.opacity(detailed ? 0.25 : 0), radius: size * 0.08, y: size * 0.04)
+    }
+}
+
+/// A vault symbol at its optical size for a disc of `size`: semibold everywhere, centred in a
+/// square box so a tall glyph (key) and a wide one (mountains) share one centre. The editor's grid
+/// uses it too, so the idle symbols match the chosen one exactly.
+struct VaultGlyph: View {
+    let symbol: String
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: VaultStyle.glyphSize(symbol, in: size), weight: .semibold))
+            .symbolRenderingMode(.monochrome)
+            .frame(width: size, height: size)
     }
 }
 
@@ -284,7 +358,7 @@ struct VaultEditorView: View {
         NavigationStack {
             Form {
                 Section {
-                    VStack(spacing: 14) {
+                    VStack(spacing: Theme.Space.m) {
                         VaultIconTile(icon: stored, colorName: color, size: 76)
                             .shadow(color: VaultBadge.color(named: color).opacity(0.35), radius: 14, y: 6)
                             .animation(.spring(duration: 0.35, bounce: 0.3), value: color)
@@ -300,36 +374,38 @@ struct VaultEditorView: View {
                             .submitLabel(.done)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 12)
-                            .background(.fill.quaternary, in: .rect(cornerRadius: 10, style: .continuous))
+                            .background(.fill.quaternary, in: .rect(cornerRadius: Theme.Radius.control, style: .continuous))
                             .accessibilityIdentifier("vault.editor.name")
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, Theme.Space.m)
                 }
                 Section("vaults.style") {
-                    HStack(spacing: 18) {
+                    HStack(spacing: Theme.Space.xl) {
                         ForEach(VaultStyle.Mark.allCases, id: \.self) { option in
                             markButton(option)
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, Theme.Space.s)
                 }
                 Section("vaults.color") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: 8)], spacing: 10) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 34), spacing: Theme.Space.s)],
+                        spacing: Theme.Space.m) {
                         ForEach(VaultStyle.colors, id: \.self) { name in
                             colorButton(name)
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.vertical, Theme.Space.s)
                 }
                 Section("vaults.icon") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 46), spacing: 8)], spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 46, maximum: 52), spacing: Theme.Space.s)],
+                        spacing: Theme.Space.s) {
                         ForEach(VaultStyle.icons, id: \.self) { symbol in
                             iconButton(symbol)
                         }
                     }
-                    .padding(.vertical, 6)
+                    .padding(.vertical, Theme.Space.s)
                 }
                 Section {
                     Toggle("app.safeForTravel", isOn: $travelSafe)
@@ -447,34 +523,34 @@ struct VaultEditorView: View {
         }
     }
 
-    /// A symbol of the grid, already in the vault's color: tinted when idle, the full tile once
-    /// chosen, with a ring.
+    /// Every picker cell (mark, colour, symbol) is a disc with the same selection ring: 2 pt,
+    /// 3 pt away from the disc, so the ring stays concentric whatever the disc's size.
+    private static let ringGap: CGFloat = 3
+    private static let ringWidth: CGFloat = 2
+    /// The disc of a mark and of a symbol cell: one size, so the chosen symbol in the grid is the
+    /// very tile shown in the mark row.
+    private static let cellSize: CGFloat = 40
+
+    private func selectionRing<Content: View>(_ selected: Bool, tint: Color, @ViewBuilder _ content: () -> Content)
+        -> some View
+    {
+        content()
+            .padding(Self.ringGap)
+            .overlay { Circle().strokeBorder(selected ? tint : .clear, lineWidth: Self.ringWidth) }
+    }
+
+    /// A symbol of the grid, already in the vault's color: the "Teinté" disc when idle (one colour
+    /// rule with the mark, `VaultStyle.glyphColor`), the full tile in the chosen mark once picked.
     private func iconButton(_ symbol: String) -> some View {
         let selected = icon == symbol
         let tint = VaultBadge.color(named: color)
+        let shown = VaultStyle.compose(symbol: symbol, mark: selected ? mark : .tinted)
         return Button {
             withAnimation(.spring(duration: 0.3, bounce: 0.3)) { icon = symbol }
         } label: {
-            ZStack {
-                if selected {
-                    VaultIconTile(icon: VaultStyle.compose(symbol: symbol, mark: mark), colorName: color, size: 40)
-                } else {
-                    Circle()
-                        .fill(tint.opacity(0.16))
-                        .frame(width: 40, height: 40)
-                        .overlay {
-                            Image(systemName: symbol)
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(tint.mix(with: .white, by: 0.25))
-                        }
-                }
+            selectionRing(selected, tint: tint) {
+                VaultIconTile(icon: shown, colorName: color, size: Self.cellSize)
             }
-            .padding(2)
-            .overlay {
-                Circle()
-                    .strokeBorder(selected ? tint : .clear, lineWidth: 2)
-            }
-            .scaleEffect(selected ? 1.04 : 1)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -492,10 +568,11 @@ struct VaultEditorView: View {
         return Button {
             withAnimation(.spring(duration: 0.3, bounce: 0.3)) { mark = option }
         } label: {
-            VStack(spacing: 6) {
-                VaultIconTile(icon: VaultStyle.compose(symbol: icon, mark: option), colorName: color, size: 40)
-                    .padding(3)
-                    .overlay { Circle().strokeBorder(selected ? tint : .clear, lineWidth: 2) }
+            VStack(spacing: Theme.Space.s) {
+                selectionRing(selected, tint: tint) {
+                    VaultIconTile(icon: VaultStyle.compose(symbol: icon, mark: option), colorName: color,
+                        size: Self.cellSize)
+                }
                 Text(option.label)
                     .font(.caption)
                     .foregroundStyle(selected ? .primary : .secondary)
@@ -509,19 +586,19 @@ struct VaultEditorView: View {
         .accessibilityIdentifier("vault.editor.mark.\(option == .classic ? "classic" : option.rawValue)")
     }
 
-    /// A color dot; the chosen one gets a ring a little away from it.
+    /// A color dot; the chosen one gets the same ring as the symbols.
     private func colorButton(_ colorName: String) -> some View {
         let selected = color == colorName
         let fill = VaultBadge.color(named: colorName)
         return Button {
             withAnimation(.spring(duration: 0.3, bounce: 0.3)) { color = colorName }
         } label: {
-            Circle()
-                .fill(fill.gradient)
-                .frame(width: 24, height: 24)
-                .padding(3)
-                .overlay { Circle().strokeBorder(selected ? fill : .clear, lineWidth: 2) }
-                .contentShape(Circle())
+            selectionRing(selected, tint: fill) {
+                Circle()
+                    .fill(fill.gradient)
+                    .frame(width: 24, height: 24)
+            }
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .help(VaultStyle.colorLabel(colorName))

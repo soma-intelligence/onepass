@@ -428,6 +428,9 @@ struct ItemDetailView: View {
         if item.itemType == .router, let payload = WifiQR.payload(for: item) {
             WifiQRCard(item: item, ssid: WifiQR.ssid(of: item), payload: payload)
                 .frame(maxWidth: .infinity)
+                // Slow waves leave the 260 pt code plate (radius 22, see `qrSquare`) in the item's colour.
+                .signalAmbience(tint: ItemCategory.of(item.itemType).color, source: CGSize(width: 260, height: 260),
+                    sourceRadius: 22)
             if WifiAutoController.canJoinByHand, !standalone {
                 WifiJoinButton(itemID: item.id).frame(maxWidth: .infinity)
             }
