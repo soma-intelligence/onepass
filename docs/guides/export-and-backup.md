@@ -1,6 +1,6 @@
-# How to export or back up a OnePass vault
+# How to export or back up a Kelid vault
 
-OnePass exports to a signed, encrypted `.onepass` archive, either protected by a passphrase (portable: it restores into any OnePass account) or encrypted to your account (a backup only that account opens, signed by it). In the apps, use Settings > General > Backup: "Encrypted Backup…" or "Unencrypted CSV Export…", and "Restore a Backup…" to bring one back. A plaintext CSV export exists for moving elsewhere, but it is not a full backup.
+Kelid exports to a signed, encrypted `.onepass` archive, either protected by a passphrase (portable: it restores into any Kelid account) or encrypted to your account (a backup only that account opens, signed by it). In the apps, use Settings > General > Backup: "Encrypted Backup…" or "Unencrypted CSV Export…", and "Restore a Backup…" to bring one back. A plaintext CSV export exists for moving elsewhere, but it is not a full backup.
 
 ## The two kinds of encrypted archive
 
@@ -39,11 +39,11 @@ onepass backup inspect backup.onepass       # reads the clear header only, no ke
 
 ## Why keep one
 
-The README asks you to keep an encrypted export while OnePass has not had an external audit, so OnePass is never the only copy of a secret.
+The README asks you to keep an encrypted export while Kelid has not had an external audit, so Kelid is never the only copy of a secret.
 
 ## Related
 
 - [Import from another password manager](import-from-other-password-managers.md)
 - [Master password, Secret Key and Emergency Kit](master-password-secret-key-emergency-kit.md)
-- [Has OnePass been audited?](security-audit-status.md)
+- [Has Kelid been audited?](security-audit-status.md)
 - [README](../../README.md)

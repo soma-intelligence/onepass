@@ -76,7 +76,7 @@ const ICONS = {
   edit: ["M9.5 2.2l2.3 2.3-7 7H2.5V9.2z"],
   lock: ["M4 5.5V4a2 2 0 014 0v1.5", "R2.5 5.5 7 5"],
   copy: ["R5 5 8.5 8.5", "M3 10.5H2.5a1 1 0 01-1-1v-7a1 1 0 011-1h7a1 1 0 011 1V3"],
-  // The OnePass mark: two columns of dots and one bar (render.mjs geometry).
+  // The Kelid mark: two columns of dots and one bar (render.mjs geometry).
   lattice: [
     "C23.5 24 9", "C23.5 50 9", "C23.5 76 9", "C49.5 24 9", "C49.5 50 9", "C49.5 76 9",
     "M67.5 24a9 9 0 0118 0v52a9 9 0 01-18 0z",
@@ -89,6 +89,7 @@ const ICONS = {
     "M5.5 5.5v1.2", "M10.5 5.5v1.2", "M8 5.5v3.2H7.2", "M5.6 10.8c1.3 1.1 3.5 1.1 4.8 0",
   ],
   // Touch ID: three arcs.
+  phone: ["R5 1.5 6 13", "M7.3 12h1.4"],
   touchid: ["M3.5 9a4.5 4.5 0 019 0v1", "M5.5 9a2.5 2.5 0 015 0v3", "M8 9v4.5", "M2.5 6a6.5 6.5 0 0111 0"],
   // Provider marks, drawn here as plain monochrome strokes in the UI's own
   // line style (never the providers' artwork or colours).
@@ -412,7 +413,7 @@ export function vaultChip(v: { id: string; name: string }): HTMLSpanElement {
   return chip;
 }
 
-/** The OnePass mark: indigo tile with the white Lattice. */
+/** The Kelid mark: indigo tile with the white Lattice. */
 export function mark(size: "s" | "m" | "l" = "m"): HTMLSpanElement {
   const px = size === "s" ? 12 : size === "m" ? 17 : 34;
   return h("span", { class: `mark mark-${size}`, attrs: { "aria-hidden": "true" } }, icon("lattice", px));

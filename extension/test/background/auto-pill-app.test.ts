@@ -67,6 +67,10 @@ interface Opts {
   locked?: boolean;
   logins?: number;
   prefilled?: boolean;
+  /** What the content script answers to `plan_request` in place of the analysed form. */
+  context?: FormContext[];
+  /** The content script's answers to `show_frame`, in order (then `{ok: true}`). */
+  showReplies?: unknown[];
 }
 
 async function setup(o: Opts = {}) {
@@ -104,7 +108,8 @@ async function setup(o: Opts = {}) {
   let forms: FormContext[] = [];
   ext.tabReply = (_tab, m) => {
     const type = (m as { type: string }).type;
-    if (type === "plan_request") return { ok: true, context: { forms, typed_username_hash: null } };
+    if (type === "plan_request") return { ok: true, context: { forms: o.context ?? forms, typed_username_hash: null } };
+    if (type === "show_frame" && o.showReplies?.length) return o.showReplies.shift();
     if (type === "show_frame" || type === "remove_frame") return { ok: true };
     if (type === "fill") return { ok: true, written: 1 };
     return undefined;
@@ -339,6 +344,29 @@ describe("auto sign-in pill: never shown when", () => {
     const t = await setup({ prefilled: true });
     await t.ready("login");
     expect(t.cards()).toEqual([]);
+  });
+
+  it("a checked \"remember me\" box does not count as a value: the pill shows", async () => {
+    const f = form("f1", ["username", "current_password", "remember_me"]);
+    f.fields[2] = { ...f.fields[2]!, prefilled: "typed" };
+    const t = await setup({ context: [f] });
+    await t.ready("login");
+    expect(t.cards()).toHaveLength(1);
+  });
+
+  it("a value in another form of the page (a search box) does not keep the pill away", async () => {
+    const t = await setup({ context: [form("f9", ["unknown"], "typed")] });
+    await t.ready("login");
+    expect(t.cards()).toHaveLength(1);
+  });
+
+  it("a card the page refused to show is not counted as shown: the next analysis shows it", async () => {
+    const t = await setup({ showReplies: [{ ok: false }] });
+    await t.ready("login");
+    expect(t.cards()).toHaveLength(1);
+    await t.ext.send({ type: "page_analysis", analysis: analysis("login") }, t.top);
+    await settle();
+    expect(t.cards()).toHaveLength(2);
   });
 
   it("the form is in a child frame only", async () => {

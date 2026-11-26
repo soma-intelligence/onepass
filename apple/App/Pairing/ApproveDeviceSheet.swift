@@ -2,7 +2,7 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// "Ajouter un appareil" (spec 2b 5.1, approver side). On iPhone and iPad: the warning, OnePass's own
+/// "Ajouter un appareil" (spec 2b 5.1, approver side). On iPhone and iPad: the warning, Kelid's own
 /// scanner (only an `OPPAIR1:` QR is accepted). On the Mac, which never scans (ruling A2): the invite
 /// code the new device scans, renewed before it expires. Then the new device's kind, name and
 /// requested mode, the 6-digit code, "Les codes sont identiques", a fresh presence check (Face ID or
@@ -279,7 +279,7 @@ struct ApproveDeviceSheet: View {
     }
 }
 
-/// The invite code on the Mac: the new device scans it from "J'ai déjà OnePass sur un autre
+/// The invite code on the Mac: the new device scans it from "J'ai déjà Kelid sur un autre
 /// appareil". It carries a one-time secret: kept out of screen recordings and the logs.
 private struct InviteStep: View {
     let text: String

@@ -4,7 +4,7 @@
 // `generator_profile`), and each candidate goes back to the content script
 // of that tab, which tests it against the field's HTML `pattern` with the
 // browser's own RegExp. The worker never compiles nor runs a page pattern: a
-// backtracking one would freeze OnePass in every tab (spec 6.3, 8). On a
+// backtracking one would freeze Kelid in every tab (spec 6.3, 8). On a
 // miss the host is asked again narrower (`narrow` 1: no symbols, 2:
 // lowercase and digits); after three misses nothing is returned and nothing
 // is filled. A tab that does not answer the check in time counts as a match

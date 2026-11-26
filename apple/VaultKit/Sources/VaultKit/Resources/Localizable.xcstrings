@@ -148,43 +148,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Der erste Account auf diesem Gerät kann nicht entfernt werden. Setze OnePass zurück, um ihn zu löschen."
+            "value" : "Der erste Account auf diesem Gerät kann nicht entfernt werden. Setze Kelid zurück, um ihn zu löschen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The device's first account can't be removed. To erase it, reset OnePass."
+            "value" : "The device's first account can't be removed. To erase it, reset Kelid."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La primera cuenta del dispositivo no se puede quitar. Para borrarla, restablece OnePass."
+            "value" : "La primera cuenta del dispositivo no se puede quitar. Para borrarla, restablece Kelid."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le premier compte de l'appareil ne se retire pas. Pour l'effacer, réinitialise OnePass."
+            "value" : "Le premier compte de l'appareil ne se retire pas. Pour l'effacer, réinitialise Kelid."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il primo account del dispositivo non si può rimuovere. Per cancellarlo, reimposta OnePass."
+            "value" : "Il primo account del dispositivo non si può rimuovere. Per cancellarlo, reimposta Kelid."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "기기의 첫 번째 계정은 제거할 수 없어요. 지우려면 OnePass를 재설정해 주세요."
+            "value" : "기기의 첫 번째 계정은 제거할 수 없어요. 지우려면 Kelid를 재설정해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "无法移除这台设备上的第一个账户。要抹掉此账户，请重置 OnePass。"
+            "value" : "无法移除这台设备上的第一个账户。要抹掉此账户，请重置 Kelid。"
           }
         }
       }
@@ -424,48 +424,48 @@
         }
       }
     },
-    "Emergency Kit OnePass" : {
+    "Emergency Kit Kelid" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass Emergency Kit"
+            "value" : "Kelid Emergency Kit"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass Emergency Kit"
+            "value" : "Kelid Emergency Kit"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Emergency Kit de OnePass"
+            "value" : "Emergency Kit de Kelid"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Emergency Kit OnePass"
+            "value" : "Emergency Kit Kelid"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Emergency Kit di OnePass"
+            "value" : "Emergency Kit di Kelid"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass Emergency Kit"
+            "value" : "Kelid Emergency Kit"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass Emergency Kit"
+            "value" : "Kelid Emergency Kit"
           }
         }
       }
@@ -1134,43 +1134,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ mit OnePass koppeln"
+            "value" : "%@ mit Kelid koppeln"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair %@ with OnePass"
+            "value" : "Pair %@ with Kelid"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Asociar %@ a OnePass"
+            "value" : "Asociar %@ a Kelid"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Associer %@ à OnePass"
+            "value" : "Associer %@ à Kelid"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Associa %@ a OnePass"
+            "value" : "Associa %@ a Kelid"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@를 OnePass와 페어링"
+            "value" : "%@를 Kelid와 페어링"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "将 %@ 与 OnePass 配对"
+            "value" : "将 %@ 与 Kelid 配对"
           }
         }
       }
@@ -1463,43 +1463,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ mit OnePass koppeln"
+            "value" : "%@ mit Kelid koppeln"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair %@ with OnePass"
+            "value" : "Pair %@ with Kelid"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enlazar %@ con OnePass"
+            "value" : "Enlazar %@ con Kelid"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Appairer %@ avec OnePass"
+            "value" : "Appairer %@ avec Kelid"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abbina %@ a OnePass"
+            "value" : "Abbina %@ a Kelid"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@와 OnePass 페어링"
+            "value" : "%@와 Kelid 페어링"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "将 %@ 与 OnePass 配对"
+            "value" : "将 %@ 与 Kelid 配对"
           }
         }
       }
@@ -2068,6 +2068,54 @@
         }
       }
     },
+    "emergencyKit.guarded" : {
+      "comment" : "Emergency Kit PDF, one line when the Guarded Kit is on (spec 2026-11-20, section 9).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Online-Wiederherstellung, begrenzte Versuche."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Online restore, limited attempts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restauración en línea, intentos limitados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restauration en ligne, essais limités."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristino online, tentativi limitati."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "온라인 복원, 시도 횟수 제한."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在线恢复，尝试次数有限。"
+          }
+        }
+      }
+    },
     "emergencyKit.ifLoseThem" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2403,43 +2451,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Scanne diesen QR-Code mit OnePass auf deinem iPhone oder iPad, um ein Gerät hinzuzufügen. Gib auf einem Mac den Secret Key von Hand ein."
+            "value" : "Scanne diesen QR-Code mit Kelid auf deinem iPhone oder iPad, um ein Gerät hinzuzufügen. Gib auf einem Mac den Secret Key von Hand ein."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scan this QR code with OnePass on your iPhone or iPad to add a device. On a Mac, type the Secret Key by hand."
+            "value" : "Scan this QR code with Kelid on your iPhone or iPad to add a device. On a Mac, type the Secret Key by hand."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Escanea este código QR con OnePass en tu iPhone o iPad para añadir un dispositivo. En un Mac, escribe la Secret Key a mano."
+            "value" : "Escanea este código QR con Kelid en tu iPhone o iPad para añadir un dispositivo. En un Mac, escribe la Secret Key a mano."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scanne ce QR code avec OnePass sur ton iPhone ou ton iPad pour ajouter un appareil. Sur un Mac, tape la Secret Key à la main."
+            "value" : "Scanne ce QR code avec Kelid sur ton iPhone ou ton iPad pour ajouter un appareil. Sur un Mac, tape la Secret Key à la main."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scansiona questo codice QR con OnePass su iPhone o iPad per aggiungere un dispositivo. Su un Mac, digita la Secret Key a mano."
+            "value" : "Scansiona questo codice QR con Kelid su iPhone o iPad per aggiungere un dispositivo. Su un Mac, digita la Secret Key a mano."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "기기를 추가하려면 iPhone 또는 iPad의 OnePass로 이 QR 코드를 스캔하세요. Mac에서는 Secret Key를 직접 입력하세요."
+            "value" : "기기를 추가하려면 iPhone 또는 iPad의 Kelid로 이 QR 코드를 스캔하세요. Mac에서는 Secret Key를 직접 입력하세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在你的 iPhone 或 iPad 上使用 OnePass 扫描此二维码以添加设备。在 Mac 上，请手动输入 Secret Key。"
+            "value" : "在你的 iPhone 或 iPad 上使用 Kelid 扫描此二维码以添加设备。在 Mac 上，请手动输入 Secret Key。"
           }
         }
       }
@@ -2497,43 +2545,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Um ein neues Gerät hinzuzufügen, öffne OnePass und wähle „Ich habe mein Emergency Kit“. Gib dann den Secret Key ein oder scanne ihn und gib dein Master-Passwort ein."
+            "value" : "Um ein neues Gerät hinzuzufügen, öffne Kelid und wähle „Ich habe mein Emergency Kit“. Gib dann den Secret Key ein oder scanne ihn und gib dein Master-Passwort ein."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To add a new device, open OnePass, choose “I have my Emergency Kit”, then type or scan the Secret Key and enter your master password."
+            "value" : "To add a new device, open Kelid, choose “I have my Emergency Kit”, then type or scan the Secret Key and enter your master password."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Para añadir un dispositivo nuevo, abre OnePass, elige «Tengo mi Emergency Kit», escribe o escanea la Secret Key e introduce tu contraseña maestra."
+            "value" : "Para añadir un dispositivo nuevo, abre Kelid, elige «Tengo mi Emergency Kit», escribe o escanea la Secret Key e introduce tu contraseña maestra."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pour ajouter un nouvel appareil, ouvre OnePass, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître."
+            "value" : "Pour ajouter un nouvel appareil, ouvre Kelid, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Per aggiungere un nuovo dispositivo, apri OnePass, scegli «Ho il mio Emergency Kit», poi digita o scansiona la Secret Key e inserisci la password principale."
+            "value" : "Per aggiungere un nuovo dispositivo, apri Kelid, scegli «Ho il mio Emergency Kit», poi digita o scansiona la Secret Key e inserisci la password principale."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "새 기기를 추가하려면 OnePass를 열고 ‘Emergency Kit가 있어요’를 선택하세요. 그런 다음 Secret Key를 입력하거나 스캔하고 마스터 암호를 입력하세요."
+            "value" : "새 기기를 추가하려면 Kelid를 열고 ‘Emergency Kit가 있어요’를 선택하세요. 그런 다음 Secret Key를 입력하거나 스캔하고 마스터 암호를 입력하세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "要添加新设备，请打开 OnePass，选择“我有 Emergency Kit”，然后输入或扫描 Secret Key，再输入你的主密码。"
+            "value" : "要添加新设备，请打开 Kelid，选择“我有 Emergency Kit”，然后输入或扫描 Secret Key，再输入你的主密码。"
           }
         }
       }
@@ -2591,43 +2639,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass-Backup %1$@.%2$@"
+            "value" : "Kelid-Backup %1$@.%2$@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass backup %1$@.%2$@"
+            "value" : "Kelid backup %1$@.%2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass copia de seguridad %1$@.%2$@"
+            "value" : "Kelid copia de seguridad %1$@.%2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass sauvegarde %1$@.%2$@"
+            "value" : "Kelid sauvegarde %1$@.%2$@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass backup %1$@.%2$@"
+            "value" : "Kelid backup %1$@.%2$@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 백업 %1$@.%2$@"
+            "value" : "Kelid 백업 %1$@.%2$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 备份 %1$@.%2$@"
+            "value" : "Kelid 备份 %1$@.%2$@"
           }
         }
       }
@@ -2873,43 +2921,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Diese Version von OnePass kann nicht auf den Schlüsselbund des Geräts zugreifen. Installiere OnePass erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
+            "value" : "Diese Version von Kelid kann nicht auf den Schlüsselbund des Geräts zugreifen. Installiere Kelid erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This copy of OnePass can't use the device keychain. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
+            "value" : "This copy of Kelid can't use the device keychain. Reinstall Kelid from the same source (App Store, TestFlight or Xcode)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta copia de OnePass no puede usar el llavero del dispositivo. Reinstala OnePass desde la misma fuente (App Store, TestFlight o Xcode)."
+            "value" : "Esta copia de Kelid no puede usar el llavero del dispositivo. Reinstala Kelid desde la misma fuente (App Store, TestFlight o Xcode)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette version de OnePass n'a pas accès au trousseau de l'appareil. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+            "value" : "Cette version de Kelid n'a pas accès au trousseau de l'appareil. Réinstalle Kelid depuis la même source (App Store, TestFlight ou Xcode)."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questa copia di OnePass non può usare il portachiavi del dispositivo. Reinstalla OnePass dalla stessa fonte (App Store, TestFlight o Xcode)."
+            "value" : "Questa copia di Kelid non può usare il portachiavi del dispositivo. Reinstalla Kelid dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 버전의 OnePass는 기기 키체인에 접근할 수 없어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 OnePass를 다시 설치해 주세요."
+            "value" : "이 버전의 Kelid는 기기 키체인에 접근할 수 없어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Kelid를 다시 설치해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此版本的 OnePass 无法访问设备钥匙串。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 OnePass。"
+            "value" : "此版本的 Kelid 无法访问设备钥匙串。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Kelid。"
           }
         }
       }
@@ -2920,43 +2968,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Diese Version von OnePass ist nicht für iCloud eingerichtet. Installiere OnePass erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
+            "value" : "Diese Version von Kelid ist nicht für iCloud eingerichtet. Installiere Kelid erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This copy of OnePass isn't set up for iCloud. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
+            "value" : "This copy of Kelid isn't set up for iCloud. Reinstall Kelid from the same source (App Store, TestFlight or Xcode)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta copia de OnePass no está configurada para iCloud. Reinstala OnePass desde la misma fuente (App Store, TestFlight o Xcode)."
+            "value" : "Esta copia de Kelid no está configurada para iCloud. Reinstala Kelid desde la misma fuente (App Store, TestFlight o Xcode)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette version de OnePass n'est pas configurée pour iCloud. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+            "value" : "Cette version de Kelid n'est pas configurée pour iCloud. Réinstalle Kelid depuis la même source (App Store, TestFlight ou Xcode)."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questa copia di OnePass non è configurata per iCloud. Reinstalla OnePass dalla stessa fonte (App Store, TestFlight o Xcode)."
+            "value" : "Questa copia di Kelid non è configurata per iCloud. Reinstalla Kelid dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 버전의 OnePass는 iCloud를 사용하도록 설정되지 않았어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 OnePass를 다시 설치해 주세요."
+            "value" : "이 버전의 Kelid는 iCloud를 사용하도록 설정되지 않았어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Kelid를 다시 설치해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此版本的 OnePass 未配置 iCloud。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 OnePass。"
+            "value" : "此版本的 Kelid 未配置 iCloud。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Kelid。"
           }
         }
       }
@@ -3531,43 +3579,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud verweigert OnePass den Zugriff. Prüfe in den Einstellungen, ob iCloud für OnePass aktiviert ist, und versuche es erneut."
+            "value" : "iCloud verweigert Kelid den Zugriff. Prüfe in den Einstellungen, ob iCloud für Kelid aktiviert ist, und versuche es erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud denies OnePass access. Check in Settings that iCloud is on for OnePass, then try again."
+            "value" : "iCloud denies Kelid access. Check in Settings that iCloud is on for Kelid, then try again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud deniega el acceso a OnePass. Comprueba en Ajustes que iCloud está activado para OnePass e inténtalo de nuevo."
+            "value" : "iCloud deniega el acceso a Kelid. Comprueba en Ajustes que iCloud está activado para Kelid e inténtalo de nuevo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud refuse l'accès à OnePass. Vérifie dans Réglages qu'iCloud est activé pour OnePass, puis réessaie."
+            "value" : "iCloud refuse l'accès à Kelid. Vérifie dans Réglages qu'iCloud est activé pour Kelid, puis réessaie."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud nega l'accesso a OnePass. Controlla in Impostazioni che iCloud sia attivo per OnePass, poi riprova."
+            "value" : "iCloud nega l'accesso a Kelid. Controlla in Impostazioni che iCloud sia attivo per Kelid, poi riprova."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud가 OnePass의 접근을 거부했어요. 설정에서 OnePass의 iCloud 사용이 켜져 있는지 확인한 후 다시 시도해 주세요."
+            "value" : "iCloud가 Kelid의 접근을 거부했어요. 설정에서 Kelid의 iCloud 사용이 켜져 있는지 확인한 후 다시 시도해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud 拒绝 OnePass 访问。请在“设置”中确认已为 OnePass 启用 iCloud，然后重试。"
+            "value" : "iCloud 拒绝 Kelid 访问。请在“设置”中确认已为 Kelid 启用 iCloud，然后重试。"
           }
         }
       }
@@ -3578,43 +3626,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud antwortet gerade nicht. OnePass versucht es automatisch erneut."
+            "value" : "iCloud antwortet gerade nicht. Kelid versucht es automatisch erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud isn't responding right now. OnePass will try again on its own."
+            "value" : "iCloud isn't responding right now. Kelid will try again on its own."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud no responde en este momento. OnePass lo volverá a intentar solo."
+            "value" : "iCloud no responde en este momento. Kelid lo volverá a intentar solo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud ne répond pas pour le moment. OnePass réessaiera tout seul."
+            "value" : "iCloud ne répond pas pour le moment. Kelid réessaiera tout seul."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud non risponde al momento. OnePass riproverà da solo."
+            "value" : "iCloud non risponde al momento. Kelid riproverà da solo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "현재 iCloud가 응답하지 않아요. OnePass가 자동으로 다시 시도해요."
+            "value" : "현재 iCloud가 응답하지 않아요. Kelid가 자동으로 다시 시도해요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud 暂时无响应。OnePass 将自动重试。"
+            "value" : "iCloud 暂时无响应。Kelid 将自动重试。"
           }
         }
       }
@@ -4048,43 +4096,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ein OnePass-Eintrag fehlt im Schlüsselbund des Geräts. Gib dein Master-Passwort ein. Wenn du OnePass neu installiert hast, stelle deinen Account mit deinem Emergency Kit wieder her."
+            "value" : "Ein Kelid-Eintrag fehlt im Schlüsselbund des Geräts. Gib dein Master-Passwort ein. Wenn du Kelid neu installiert hast, stelle deinen Account mit deinem Emergency Kit wieder her."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A OnePass entry is missing from the device keychain. Enter your master password. If you reinstalled OnePass, restore your account with your Emergency Kit."
+            "value" : "A Kelid entry is missing from the device keychain. Enter your master password. If you reinstalled Kelid, restore your account with your Emergency Kit."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Falta un dato de OnePass en el llavero del dispositivo. Introduce tu contraseña maestra. Si has reinstalado OnePass, restaura tu cuenta con tu Emergency Kit."
+            "value" : "Falta un dato de Kelid en el llavero del dispositivo. Introduce tu contraseña maestra. Si has reinstalado Kelid, restaura tu cuenta con tu Emergency Kit."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Une donnée de OnePass manque dans le trousseau de l'appareil. Saisis ton mot de passe maître. Si tu as réinstallé OnePass, restaure ton compte avec ton Emergency Kit."
+            "value" : "Une donnée de Kelid manque dans le trousseau de l'appareil. Saisis ton mot de passe maître. Si tu as réinstallé Kelid, restaure ton compte avec ton Emergency Kit."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manca un dato di OnePass nel portachiavi del dispositivo. Inserisci la password principale. Se hai reinstallato OnePass, ripristina il tuo account con il tuo Emergency Kit."
+            "value" : "Manca un dato di Kelid nel portachiavi del dispositivo. Inserisci la password principale. Se hai reinstallato Kelid, ripristina il tuo account con il tuo Emergency Kit."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "기기 키체인에 OnePass 데이터가 없어요. 마스터 암호를 입력해 주세요. OnePass를 다시 설치했다면 Emergency Kit으로 계정을 복원해 주세요."
+            "value" : "기기 키체인에 Kelid 데이터가 없어요. 마스터 암호를 입력해 주세요. Kelid를 다시 설치했다면 Emergency Kit으로 계정을 복원해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "设备钥匙串中缺少 OnePass 的某个条目。请输入你的主密码。如果你重新安装过 OnePass，请使用你的 Emergency Kit 恢复账户。"
+            "value" : "设备钥匙串中缺少 Kelid 的某个条目。请输入你的主密码。如果你重新安装过 Kelid，请使用你的 Emergency Kit 恢复账户。"
           }
         }
       }
@@ -4095,43 +4143,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass darf nicht auf diesen Speicherort zugreifen. Wähle einen anderen oder erlaube OnePass den Zugriff in den Einstellungen."
+            "value" : "Kelid darf nicht auf diesen Speicherort zugreifen. Wähle einen anderen oder erlaube Kelid den Zugriff in den Einstellungen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass isn't allowed to access this location. Pick another one, or give OnePass access in Settings."
+            "value" : "Kelid isn't allowed to access this location. Pick another one, or give Kelid access in Settings."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass no tiene permiso para acceder a esta ubicación. Elige otra o da acceso a OnePass en Ajustes."
+            "value" : "Kelid no tiene permiso para acceder a esta ubicación. Elige otra o da acceso a Kelid en Ajustes."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass n'a pas le droit d'accéder à cet emplacement. Choisis-en un autre, ou donne l'accès à OnePass dans Réglages."
+            "value" : "Kelid n'a pas le droit d'accéder à cet emplacement. Choisis-en un autre, ou donne l'accès à Kelid dans Réglages."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass non ha il permesso di accedere a questa posizione. Scegline un'altra, o dai l'accesso a OnePass in Impostazioni."
+            "value" : "Kelid non ha il permesso di accedere a questa posizione. Scegline un'altra, o dai l'accesso a Kelid in Impostazioni."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass에 이 위치에 접근할 권한이 없어요. 다른 위치를 선택하거나 설정에서 OnePass에 접근 권한을 허용해 주세요."
+            "value" : "Kelid에 이 위치에 접근할 권한이 없어요. 다른 위치를 선택하거나 설정에서 Kelid에 접근 권한을 허용해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 无权访问此位置。请选择其他位置，或在“设置”中授予 OnePass 访问权限。"
+            "value" : "Kelid 无权访问此位置。请选择其他位置，或在“设置”中授予 Kelid 访问权限。"
           }
         }
       }
@@ -4142,43 +4190,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass darf diesen Schlüsselbundeintrag nicht lesen. Installiere OnePass erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
+            "value" : "Kelid darf diesen Schlüsselbundeintrag nicht lesen. Installiere Kelid erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass isn't allowed to read this keychain entry. Reinstall OnePass from the same source (App Store, TestFlight or Xcode)."
+            "value" : "Kelid isn't allowed to read this keychain entry. Reinstall Kelid from the same source (App Store, TestFlight or Xcode)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass no tiene permiso para leer este dato del llavero. Reinstala OnePass desde la misma fuente (App Store, TestFlight o Xcode)."
+            "value" : "Kelid no tiene permiso para leer este dato del llavero. Reinstala Kelid desde la misma fuente (App Store, TestFlight o Xcode)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass n'a pas le droit de lire cette donnée du trousseau. Réinstalle OnePass depuis la même source (App Store, TestFlight ou Xcode)."
+            "value" : "Kelid n'a pas le droit de lire cette donnée du trousseau. Réinstalle Kelid depuis la même source (App Store, TestFlight ou Xcode)."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass non ha il permesso di leggere questo dato del portachiavi. Reinstalla OnePass dalla stessa fonte (App Store, TestFlight o Xcode)."
+            "value" : "Kelid non ha il permesso di leggere questo dato del portachiavi. Reinstalla Kelid dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass에 이 키체인 데이터를 읽을 권한이 없어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 OnePass를 다시 설치해 주세요."
+            "value" : "Kelid에 이 키체인 데이터를 읽을 권한이 없어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Kelid를 다시 설치해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 无权读取此钥匙串条目。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 OnePass。"
+            "value" : "Kelid 无权读取此钥匙串条目。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Kelid。"
           }
         }
       }
@@ -4189,43 +4237,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Das System hat eine Anfrage von OnePass abgelehnt. Aktualisiere OnePass. Wenn der Fehler wieder auftritt, wende dich an den Support."
+            "value" : "Das System hat eine Anfrage von Kelid abgelehnt. Aktualisiere Kelid. Wenn der Fehler wieder auftritt, wende dich an den Support."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass made a request the system refused. Update OnePass. If it happens again, contact support."
+            "value" : "Kelid made a request the system refused. Update Kelid. If it happens again, contact support."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass ha hecho una solicitud que el sistema rechaza. Actualiza OnePass. Si vuelve a ocurrir, contacta con el soporte."
+            "value" : "Kelid ha hecho una solicitud que el sistema rechaza. Actualiza Kelid. Si vuelve a ocurrir, contacta con el soporte."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass a fait une demande que le système refuse. Mets à jour OnePass. Si l'erreur revient, contacte le support."
+            "value" : "Kelid a fait une demande que le système refuse. Mets à jour Kelid. Si l'erreur revient, contacte le support."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass ha fatto una richiesta che il sistema rifiuta. Aggiorna OnePass. Se succede di nuovo, contatta l'assistenza."
+            "value" : "Kelid ha fatto una richiesta che il sistema rifiuta. Aggiorna Kelid. Se succede di nuovo, contatta l'assistenza."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "시스템이 OnePass의 요청을 거부했어요. OnePass를 업데이트해 주세요. 오류가 반복되면 고객 지원에 문의해 주세요."
+            "value" : "시스템이 Kelid의 요청을 거부했어요. Kelid를 업데이트해 주세요. 오류가 반복되면 고객 지원에 문의해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "系统拒绝了 OnePass 的请求。请更新 OnePass。如果错误再次出现，请联系支持。"
+            "value" : "系统拒绝了 Kelid 的请求。请更新 Kelid。如果错误再次出现，请联系支持。"
           }
         }
       }
@@ -4330,43 +4378,319 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Diese Version von OnePass ist zu alt für iCloud. Aktualisiere OnePass."
+            "value" : "Diese Version von Kelid ist zu alt für iCloud. Aktualisiere Kelid."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This version of OnePass is too old for iCloud. Update OnePass."
+            "value" : "This version of Kelid is too old for iCloud. Update Kelid."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta versión de OnePass es demasiado antigua para iCloud. Actualiza OnePass."
+            "value" : "Esta versión de Kelid es demasiado antigua para iCloud. Actualiza Kelid."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette version de OnePass est trop ancienne pour iCloud. Mets à jour OnePass."
+            "value" : "Cette version de Kelid est trop ancienne pour iCloud. Mets à jour Kelid."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questa versione di OnePass è troppo vecchia per iCloud. Aggiorna OnePass."
+            "value" : "Questa versione di Kelid è troppo vecchia per iCloud. Aggiorna Kelid."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 OnePass 버전은 너무 오래되어 iCloud를 사용할 수 없어요. OnePass를 업데이트해 주세요."
+            "value" : "이 Kelid 버전은 너무 오래되어 iCloud를 사용할 수 없어요. Kelid를 업데이트해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此版本的 OnePass 太旧，无法使用 iCloud。请更新 OnePass。"
+            "value" : "此版本的 Kelid 太旧，无法使用 iCloud。请更新 Kelid。"
+          }
+        }
+      }
+    },
+    "guard.error.realm" : {
+      "comment" : "Guarded Kit: one of the servers that protect the Emergency Kit refused or answered wrongly.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ein Server, der dein Emergency Kit schützt, hat die Anfrage abgelehnt. Versuche es später erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A server that protects your Emergency Kit refused the request. Try again later."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un servidor que protege tu Emergency Kit ha rechazado la solicitud. Vuelve a intentarlo más tarde."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un serveur qui protège ton kit d'urgence a refusé la demande. Réessaie plus tard."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un server che protegge il tuo Emergency Kit ha rifiutato la richiesta. Riprova più tardi."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit를 보호하는 서버가 요청을 거부했습니다. 나중에 다시 시도하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保护你的 Emergency Kit 的某台服务器拒绝了请求。请稍后再试。"
+          }
+        }
+      }
+    },
+    "guard.error.required" : {
+      "comment" : "Guarded Kit: a master password check on this device without the current guard secret (the protection changed on another device). Lock, then unlock with the password, which fetches it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Schutz des Emergency Kit wurde auf einem anderen Gerät geändert. Sperre Kelid, entsperre es mit deinem Master-Passwort und versuche es dann erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emergency Kit protection changed on another device. Lock Kelid, unlock it with your master password, then try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protección del Emergency Kit ha cambiado en otro dispositivo. Bloquea Kelid, desbloquéalo con tu contraseña maestra y vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protection du kit d'urgence a changé sur un autre appareil. Verrouille Kelid, déverrouille-le avec ton mot de passe maître, puis réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La protezione dell'Emergency Kit è cambiata su un altro dispositivo. Blocca Kelid, sbloccalo con la tua password principale, poi riprova."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다른 기기에서 Emergency Kit 보호가 변경되었습니다. Kelid를 잠근 다음 마스터 암호로 잠금 해제하고 다시 시도하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit 保护已在另一台设备上更改。请锁定 Kelid，使用主密码解锁，然后重试。"
+          }
+        }
+      }
+    },
+    "guard.error.unavailable" : {
+      "comment" : "Guarded Kit: too few of the servers that protect the Emergency Kit answered. Nothing was spent.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Server, die dein Emergency Kit schützen, antworten nicht. Prüfe deine Verbindung und versuche es gleich noch einmal. Es wurde kein Versuch gezählt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The servers that protect your Emergency Kit aren't answering. Check your connection and try again in a moment. No attempt was counted."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los servidores que protegen tu Emergency Kit no responden. Comprueba tu conexión y vuelve a intentarlo en un momento. No se ha contado ningún intento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les serveurs qui protègent ton kit d'urgence ne répondent pas. Vérifie ta connexion et réessaie dans un moment. Aucun essai n'a été compté."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I server che proteggono il tuo Emergency Kit non rispondono. Controlla la connessione e riprova tra poco. Nessun tentativo è stato conteggiato."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit를 보호하는 서버가 응답하지 않습니다. 연결을 확인하고 잠시 후 다시 시도하세요. 시도 횟수는 차감되지 않았습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保护你的 Emergency Kit 的服务器没有响应。请检查网络连接，稍后再试。本次不计入尝试次数。"
+          }
+        }
+      }
+    },
+    "guard.error.wrongPassword %lld" : {
+      "comment" : "Guarded Kit: wrong master password at the realms (unlock or Emergency Kit restore), with the attempts left before the kit stops working.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Falsches Passwort. Du hast noch %lld Versuch."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Falsches Passwort. Du hast noch %lld Versuche."
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Wrong password. You have %lld attempt left."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Wrong password. You have %lld attempts left."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Contraseña incorrecta. Te queda %lld intento."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Contraseña incorrecta. Te quedan %lld intentos."
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mot de passe incorrect. Il te reste %lld essai."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mot de passe incorrect. Il te reste %lld essais."
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Password errata. Ti resta %lld tentativo."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Password errata. Ti restano %lld tentativi."
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "암호가 틀렸습니다. 남은 시도 횟수: %lld회."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "암호가 틀렸습니다. 남은 시도 횟수: %lld회."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "密码错误。你还剩 %lld 次尝试。"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "密码错误。你还剩 %lld 次尝试。"
+                }
+              }
+            }
           }
         }
       }
@@ -5781,48 +6105,48 @@
       }
     },
     "org.refusal.mdmInvalid" : {
-      "comment" : "Join refused: the MDM profile's OnePass keys are not usable.",
+      "comment" : "Join refused: the MDM profile's Kelid keys are not usable.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Das Verwaltungsprofil deines Geräts enthält eine ungültige OnePass-Einstellung. Wende dich an deinen Administrator."
+            "value" : "Das Verwaltungsprofil deines Geräts enthält eine ungültige Kelid-Einstellung. Wende dich an deinen Administrator."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your device's management profile has an invalid OnePass setting. Contact your administrator."
+            "value" : "Your device's management profile has an invalid Kelid setting. Contact your administrator."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El perfil de gestión de tu dispositivo tiene un ajuste de OnePass no válido. Contacta con tu administrador."
+            "value" : "El perfil de gestión de tu dispositivo tiene un ajuste de Kelid no válido. Contacta con tu administrador."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le profil de gestion de ton appareil contient un réglage OnePass non valide. Contacte ton administrateur."
+            "value" : "Le profil de gestion de ton appareil contient un réglage Kelid non valide. Contacte ton administrateur."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il profilo di gestione del tuo dispositivo ha un'impostazione OnePass non valida. Contatta il tuo amministratore."
+            "value" : "Il profilo di gestione del tuo dispositivo ha un'impostazione Kelid non valida. Contatta il tuo amministratore."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "기기의 관리 프로파일에 유효하지 않은 OnePass 설정이 있어요. 관리자에게 문의해 주세요."
+            "value" : "기기의 관리 프로파일에 유효하지 않은 Kelid 설정이 있어요. 관리자에게 문의해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "你设备的管理描述文件包含无效的 OnePass 设置。请联系你的管理员。"
+            "value" : "你设备的管理描述文件包含无效的 Kelid 设置。请联系你的管理员。"
           }
         }
       }
@@ -7857,43 +8181,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieses Konto hat bereits einen OnePass-Passkey für diese Website."
+            "value" : "Dieses Konto hat bereits einen Kelid-Passkey für diese Website."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This account already has a OnePass passkey for this site."
+            "value" : "This account already has a Kelid passkey for this site."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta cuenta ya tiene una llave de acceso de OnePass para este sitio."
+            "value" : "Esta cuenta ya tiene una llave de acceso de Kelid para este sitio."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce compte a déjà une passkey OnePass pour ce site."
+            "value" : "Ce compte a déjà une passkey Kelid pour ce site."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo account ha già una passkey OnePass per questo sito."
+            "value" : "Questo account ha già una passkey Kelid per questo sito."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 계정에는 이 사이트의 OnePass 패스키가 이미 있어요."
+            "value" : "이 계정에는 이 사이트의 Kelid 패스키가 이미 있어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此账户已有用于此网站的 OnePass 通行密钥。"
+            "value" : "此账户已有用于此网站的 Kelid 通行密钥。"
           }
         }
       }
@@ -8233,43 +8557,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieses Backup stammt aus einer neueren Version von OnePass. Aktualisiere die App und versuche es erneut."
+            "value" : "Dieses Backup stammt aus einer neueren Version von Kelid. Aktualisiere die App und versuche es erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This backup comes from a newer version of OnePass. Update the app, then try again."
+            "value" : "This backup comes from a newer version of Kelid. Update the app, then try again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta copia de seguridad viene de una versión más reciente de OnePass. Actualiza la app e inténtalo de nuevo."
+            "value" : "Esta copia de seguridad viene de una versión más reciente de Kelid. Actualiza la app e inténtalo de nuevo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie."
+            "value" : "Cette sauvegarde vient d'une version plus récente de Kelid. Mets l'app à jour, puis réessaie."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo backup proviene da una versione più recente di OnePass. Aggiorna l'app, poi riprova."
+            "value" : "Questo backup proviene da una versione più recente di Kelid. Aggiorna l'app, poi riprova."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 백업은 더 최신 버전의 OnePass에서 생성되었어요. 앱을 업데이트한 후 다시 시도하세요."
+            "value" : "이 백업은 더 최신 버전의 Kelid에서 생성되었어요. 앱을 업데이트한 후 다시 시도하세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此备份来自较新版本的 OnePass。请更新 App 后重试。"
+            "value" : "此备份来自较新版本的 Kelid。请更新 App 后重试。"
           }
         }
       }
@@ -8516,43 +8840,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dein OnePass-Konto löschen"
+            "value" : "Dein Kelid-Konto löschen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete your OnePass account"
+            "value" : "Delete your Kelid account"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar tu cuenta de OnePass"
+            "value" : "Eliminar tu cuenta de Kelid"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Supprimer ton compte OnePass"
+            "value" : "Supprimer ton compte Kelid"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elimina il tuo account OnePass"
+            "value" : "Elimina il tuo account Kelid"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 계정 삭제"
+            "value" : "Kelid 계정 삭제"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "删除你的 OnePass 账户"
+            "value" : "删除你的 Kelid 账户"
           }
         }
       }
@@ -8610,43 +8934,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieses Gerät wurde aus deinem OnePass-Konto entfernt."
+            "value" : "Dieses Gerät wurde aus deinem Kelid-Konto entfernt."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This device was removed from your OnePass account."
+            "value" : "This device was removed from your Kelid account."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este dispositivo se ha quitado de tu cuenta de OnePass."
+            "value" : "Este dispositivo se ha quitado de tu cuenta de Kelid."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cet appareil a été retiré de ton compte OnePass."
+            "value" : "Cet appareil a été retiré de ton compte Kelid."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo dispositivo è stato rimosso dal tuo account OnePass."
+            "value" : "Questo dispositivo è stato rimosso dal tuo account Kelid."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 기기가 OnePass 계정에서 제거되었어요."
+            "value" : "이 기기가 Kelid 계정에서 제거되었어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此设备已从你的 OnePass 账户中移除。"
+            "value" : "此设备已从你的 Kelid 账户中移除。"
           }
         }
       }
@@ -8751,43 +9075,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dies ist ein verschlüsseltes OnePass-Archiv. Es kann hier nicht importiert werden."
+            "value" : "Dies ist ein verschlüsseltes Kelid-Archiv. Es kann hier nicht importiert werden."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is an encrypted OnePass archive. It can't be imported here."
+            "value" : "This is an encrypted Kelid archive. It can't be imported here."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Es un archivo cifrado de OnePass: no se puede importar aquí."
+            "value" : "Es un archivo cifrado de Kelid: no se puede importar aquí."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "C'est une archive OnePass chiffrée : elle ne s'importe pas ici."
+            "value" : "C'est une archive Kelid chiffrée : elle ne s'importe pas ici."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "È un archivio OnePass cifrato: non si può importare qui."
+            "value" : "È un archivio Kelid cifrato: non si può importare qui."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "암호화된 OnePass 아카이브예요. 여기서는 가져올 수 없어요."
+            "value" : "암호화된 Kelid 아카이브예요. 여기서는 가져올 수 없어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "这是加密的 OnePass 归档文件，无法在此处导入。"
+            "value" : "这是加密的 Kelid 归档文件，无法在此处导入。"
           }
         }
       }
@@ -8892,43 +9216,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Diese Datei ist kein OnePass-Backup."
+            "value" : "Diese Datei ist kein Kelid-Backup."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This file is not a OnePass backup."
+            "value" : "This file is not a Kelid backup."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este archivo no es una copia de seguridad de OnePass."
+            "value" : "Este archivo no es una copia de seguridad de Kelid."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce fichier n'est pas une sauvegarde OnePass."
+            "value" : "Ce fichier n'est pas une sauvegarde Kelid."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo file non è un backup OnePass."
+            "value" : "Questo file non è un backup Kelid."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 파일은 OnePass 백업이 아니에요."
+            "value" : "이 파일은 Kelid 백업이 아니에요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此文件不是 OnePass 备份。"
+            "value" : "此文件不是 Kelid 备份。"
           }
         }
       }
@@ -10443,43 +10767,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass konnte diese Daten nicht verschlüsseln oder entschlüsseln. Versuche es erneut. Wenn der Fehler erneut auftritt, beende OnePass und öffne die App wieder."
+            "value" : "Kelid konnte diese Daten nicht verschlüsseln oder entschlüsseln. Versuche es erneut. Wenn der Fehler erneut auftritt, beende Kelid und öffne die App wieder."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass couldn't encrypt or decrypt this data. Try again. If it happens again, quit and reopen OnePass."
+            "value" : "Kelid couldn't encrypt or decrypt this data. Try again. If it happens again, quit and reopen Kelid."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass no ha podido cifrar ni descifrar este dato. Vuelve a intentarlo. Si vuelve a ocurrir, sal de OnePass y vuelve a abrirlo."
+            "value" : "Kelid no ha podido cifrar ni descifrar este dato. Vuelve a intentarlo. Si vuelve a ocurrir, sal de Kelid y vuelve a abrirlo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre OnePass."
+            "value" : "Kelid n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre Kelid."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass non è riuscito a cifrare o decifrare questo dato. Riprova. Se succede di nuovo, esci da OnePass e riaprilo."
+            "value" : "Kelid non è riuscito a cifrare o decifrare questo dato. Riprova. Se succede di nuovo, esci da Kelid e riaprilo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass에서 이 데이터를 암호화하거나 복호화할 수 없어요. 다시 시도해 주세요. 오류가 반복되면 OnePass를 종료한 다음 다시 열어 주세요."
+            "value" : "Kelid에서 이 데이터를 암호화하거나 복호화할 수 없어요. 다시 시도해 주세요. 오류가 반복되면 Kelid를 종료한 다음 다시 열어 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 无法加密或解密此数据。请重试。如果错误再次出现，请退出并重新打开 OnePass。"
+            "value" : "Kelid 无法加密或解密此数据。请重试。如果错误再次出现，请退出并重新打开 Kelid。"
           }
         }
       }
@@ -10490,43 +10814,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass export non chiffré %@.csv"
+            "value" : "Kelid export non chiffré %@.csv"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass unencrypted export %@.csv"
+            "value" : "Kelid unencrypted export %@.csv"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass exportación sin cifrar %@.csv"
+            "value" : "Kelid exportación sin cifrar %@.csv"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass export non chiffré %@.csv"
+            "value" : "Kelid export non chiffré %@.csv"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass esportazione non cifrata %@.csv"
+            "value" : "Kelid esportazione non cifrata %@.csv"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 암호화되지 않은 내보내기 %@.csv"
+            "value" : "Kelid 암호화되지 않은 내보내기 %@.csv"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass export non chiffré %@.csv"
+            "value" : "Kelid export non chiffré %@.csv"
           }
         }
       }
@@ -10537,43 +10861,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Der lokale Speicher von OnePass kann nicht gelesen werden. Beende OnePass und öffne die App wieder. Wenn der Fehler erneut auftritt, stelle dein Konto mit deinem Emergency Kit wieder her."
+            "value" : "Der lokale Speicher von Kelid kann nicht gelesen werden. Beende Kelid und öffne die App wieder. Wenn der Fehler erneut auftritt, stelle dein Konto mit deinem Emergency Kit wieder her."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass's local storage can't be read. Quit and reopen OnePass. If it happens again, restore your account with your Emergency Kit."
+            "value" : "Kelid's local storage can't be read. Quit and reopen Kelid. If it happens again, restore your account with your Emergency Kit."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se puede leer el almacenamiento local de OnePass. Sal de OnePass y vuelve a abrirlo. Si vuelve a ocurrir, restaura tu cuenta con tu Emergency Kit."
+            "value" : "No se puede leer el almacenamiento local de Kelid. Sal de Kelid y vuelve a abrirlo. Si vuelve a ocurrir, restaura tu cuenta con tu Emergency Kit."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le stockage local de OnePass est illisible. Quitte et rouvre OnePass. Si l'erreur revient, restaure ton compte avec ton Emergency Kit."
+            "value" : "Le stockage local de Kelid est illisible. Quitte et rouvre Kelid. Si l'erreur revient, restaure ton compte avec ton Emergency Kit."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "L'archivio locale di OnePass è illeggibile. Esci da OnePass e riaprilo. Se succede di nuovo, ripristina il tuo account con il tuo Emergency Kit."
+            "value" : "L'archivio locale di Kelid è illeggibile. Esci da Kelid e riaprilo. Se succede di nuovo, ripristina il tuo account con il tuo Emergency Kit."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass의 로컬 저장 공간을 읽을 수 없어요. OnePass를 종료한 다음 다시 열어 주세요. 오류가 반복되면 Emergency Kit으로 계정을 복원해 주세요."
+            "value" : "Kelid의 로컬 저장 공간을 읽을 수 없어요. Kelid를 종료한 다음 다시 열어 주세요. 오류가 반복되면 Emergency Kit으로 계정을 복원해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "无法读取 OnePass 的本地存储。请退出并重新打开 OnePass。如果错误再次出现，请使用你的 Emergency Kit 恢复账户。"
+            "value" : "无法读取 Kelid 的本地存储。请退出并重新打开 Kelid。如果错误再次出现，请使用你的 Emergency Kit 恢复账户。"
           }
         }
       }
@@ -11431,43 +11755,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ein unerwarteter Fehler ist aufgetreten. Versuche es erneut. Wenn der Fehler erneut auftritt, beende OnePass und öffne die App wieder."
+            "value" : "Ein unerwarteter Fehler ist aufgetreten. Versuche es erneut. Wenn der Fehler erneut auftritt, beende Kelid und öffne die App wieder."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Something unexpected went wrong. Try again. If it happens again, quit and reopen OnePass."
+            "value" : "Something unexpected went wrong. Try again. If it happens again, quit and reopen Kelid."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se ha producido un error inesperado. Vuelve a intentarlo. Si vuelve a ocurrir, sal de OnePass y vuelve a abrirlo."
+            "value" : "Se ha producido un error inesperado. Vuelve a intentarlo. Si vuelve a ocurrir, sal de Kelid y vuelve a abrirlo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre OnePass."
+            "value" : "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre Kelid."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si è verificato un errore imprevisto. Riprova. Se succede di nuovo, esci da OnePass e riaprilo."
+            "value" : "Si è verificato un errore imprevisto. Riprova. Se succede di nuovo, esci da Kelid e riaprilo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "예기치 않은 오류가 발생했어요. 다시 시도해 주세요. 오류가 반복되면 OnePass를 종료한 다음 다시 열어 주세요."
+            "value" : "예기치 않은 오류가 발생했어요. 다시 시도해 주세요. 오류가 반복되면 Kelid를 종료한 다음 다시 열어 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "发生了意外错误。请重试。如果错误再次出现，请退出并重新打开 OnePass。"
+            "value" : "发生了意外错误。请重试。如果错误再次出现，请退出并重新打开 Kelid。"
           }
         }
       }
@@ -11948,43 +12272,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass entsperren"
+            "value" : "Kelid entsperren"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock OnePass"
+            "value" : "Unlock Kelid"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desbloquear OnePass"
+            "value" : "Desbloquear Kelid"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Déverrouiller OnePass"
+            "value" : "Déverrouiller Kelid"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sblocca OnePass"
+            "value" : "Sblocca Kelid"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 잠금 해제"
+            "value" : "Kelid 잠금 해제"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "解锁 OnePass"
+            "value" : "解锁 Kelid"
           }
         }
       }
@@ -11995,43 +12319,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass entsperren, um dich bei %@ anzumelden"
+            "value" : "Kelid entsperren, um dich bei %@ anzumelden"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock OnePass to sign in to %@"
+            "value" : "Unlock Kelid to sign in to %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desbloquear OnePass para iniciar sesión en %@"
+            "value" : "Desbloquear Kelid para iniciar sesión en %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Déverrouiller OnePass pour te connecter à %@"
+            "value" : "Déverrouiller Kelid pour te connecter à %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sblocca OnePass per accedere a %@"
+            "value" : "Sblocca Kelid per accedere a %@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@에 로그인하려면 OnePass의 잠금을 해제해 주세요."
+            "value" : "%@에 로그인하려면 Kelid의 잠금을 해제해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "解锁 OnePass 以登录 %@"
+            "value" : "解锁 Kelid 以登录 %@"
           }
         }
       }
@@ -13174,43 +13498,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieser iCloud-Account enthält bereits einen anderen OnePass-Tresor. Wechsle zum ursprünglichen iCloud-Account zurück, um zu synchronisieren."
+            "value" : "Dieser iCloud-Account enthält bereits einen anderen Kelid-Tresor. Wechsle zum ursprünglichen iCloud-Account zurück, um zu synchronisieren."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This iCloud account already holds another OnePass vault. Switch back to the original iCloud account to sync."
+            "value" : "This iCloud account already holds another Kelid vault. Switch back to the original iCloud account to sync."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta cuenta de iCloud ya contiene otra bóveda de OnePass. Vuelve a la cuenta de iCloud original para sincronizar."
+            "value" : "Esta cuenta de iCloud ya contiene otra bóveda de Kelid. Vuelve a la cuenta de iCloud original para sincronizar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce compte iCloud contient déjà un autre coffre OnePass. Reviens au compte iCloud d'origine pour synchroniser."
+            "value" : "Ce compte iCloud contient déjà un autre coffre Kelid. Reviens au compte iCloud d'origine pour synchroniser."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo account iCloud contiene già un'altra cassaforte OnePass. Torna all'account iCloud originale per sincronizzare."
+            "value" : "Questo account iCloud contiene già un'altra cassaforte Kelid. Torna all'account iCloud originale per sincronizzare."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 iCloud 계정에 이미 다른 OnePass 보관함이 있어요. 동기화하려면 원래 iCloud 계정으로 전환해 주세요."
+            "value" : "이 iCloud 계정에 이미 다른 Kelid 보관함이 있어요. 동기화하려면 원래 iCloud 계정으로 전환해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此 iCloud 账户中已有另一个 OnePass 保险库。请切换回原来的 iCloud 账户以进行同步。"
+            "value" : "此 iCloud 账户中已有另一个 Kelid 保险库。请切换回原来的 iCloud 账户以进行同步。"
           }
         }
       }
@@ -13268,43 +13592,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ein iCloud-Datensatz kann weiterhin nicht gelesen werden. Die Synchronisierung ist blockiert. OnePass versucht es erneut."
+            "value" : "Ein iCloud-Datensatz kann weiterhin nicht gelesen werden. Die Synchronisierung ist blockiert. Kelid versucht es erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "An iCloud record still can't be read, so sync is blocked. OnePass will try again."
+            "value" : "An iCloud record still can't be read, so sync is blocked. Kelid will try again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un registro de iCloud sigue sin poder leerse, así que la sincronización está bloqueada. OnePass lo volverá a intentar."
+            "value" : "Un registro de iCloud sigue sin poder leerse, así que la sincronización está bloqueada. Kelid lo volverá a intentar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. OnePass réessaiera."
+            "value" : "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. Kelid réessaiera."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un record iCloud resta illeggibile, quindi la sincronizzazione è bloccata. OnePass riproverà."
+            "value" : "Un record iCloud resta illeggibile, quindi la sincronizzazione è bloccata. Kelid riproverà."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud 기록을 아직 읽을 수 없어 동기화가 중단되었어요. OnePass가 다시 시도할 거예요."
+            "value" : "iCloud 기록을 아직 읽을 수 없어 동기화가 중단되었어요. Kelid가 다시 시도할 거예요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "仍无法读取一条 iCloud 记录，同步已受阻。OnePass 将重试。"
+            "value" : "仍无法读取一条 iCloud 记录，同步已受阻。Kelid 将重试。"
           }
         }
       }
@@ -13357,7 +13681,7 @@
       }
     },
     "sync.mailbox.forbidden" : {
-      "comment" : "Error: the OnePass server refuses this action to this device's credential.",
+      "comment" : "Error: the Kelid server refuses this action to this device's credential.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -13404,7 +13728,7 @@
       }
     },
     "sync.mailbox.retrying" : {
-      "comment" : "Sync status: the OnePass server could not be reached, a new round comes soon.",
+      "comment" : "Sync status: the Kelid server could not be reached, a new round comes soon.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -13639,48 +13963,48 @@
       }
     },
     "sync.server.hosted" : {
-      "comment" : "Name of the OnePass server hosted by Soma, in the sync settings and status.",
+      "comment" : "Name of the Kelid server hosted by Soma, in the sync settings and status.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass-Server"
+            "value" : "Kelid-Server"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass Server"
+            "value" : "Kelid Server"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Servidor de OnePass"
+            "value" : "Servidor de Kelid"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Serveur OnePass"
+            "value" : "Serveur Kelid"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Server OnePass"
+            "value" : "Server Kelid"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 서버"
+            "value" : "Kelid 서버"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass 服务器"
+            "value" : "Kelid 服务器"
           }
         }
       }
@@ -13780,48 +14104,48 @@
       }
     },
     "sync.setup.noHostedServer" : {
-      "comment" : "Error: this build has no OnePass server URL, the account stays on the device.",
+      "comment" : "Error: this build has no Kelid server URL, the account stays on the device.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Für diese Version von OnePass ist kein Server festgelegt. Dein Tresor bleibt auf diesem Gerät."
+            "value" : "Für diese Version von Kelid ist kein Server festgelegt. Dein Tresor bleibt auf diesem Gerät."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This version of OnePass has no server set. Your vault stays on this device."
+            "value" : "This version of Kelid has no server set. Your vault stays on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta versión de OnePass no tiene servidor. Tu bóveda se queda en este dispositivo."
+            "value" : "Esta versión de Kelid no tiene servidor. Tu bóveda se queda en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette version de OnePass ne connaît pas de serveur. Ton coffre reste sur cet appareil."
+            "value" : "Cette version de Kelid ne connaît pas de serveur. Ton coffre reste sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questa versione di OnePass non ha un server. La tua cassaforte resta su questo dispositivo."
+            "value" : "Questa versione di Kelid non ha un server. La tua cassaforte resta su questo dispositivo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 버전의 OnePass에는 서버가 설정되어 있지 않아요. 보관함은 이 기기에 유지돼요."
+            "value" : "이 버전의 Kelid에는 서버가 설정되어 있지 않아요. 보관함은 이 기기에 유지돼요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此版本的 OnePass 未设置服务器。你的保险库将保留在此设备上。"
+            "value" : "此版本的 Kelid 未设置服务器。你的保险库将保留在此设备上。"
           }
         }
       }
@@ -13874,7 +14198,7 @@
       }
     },
     "sync.status.waitingForMailbox" : {
-      "comment" : "Sync status: a mailbox account waits for the OnePass server to catch up.",
+      "comment" : "Sync status: a mailbox account waits for the Kelid server to catch up.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -14438,43 +14762,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Auf diesem Gerät gibt es bereits ein OnePass-Konto."
+            "value" : "Auf diesem Gerät gibt es bereits ein Kelid-Konto."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A OnePass account already exists on this device."
+            "value" : "A Kelid account already exists on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ya existe una cuenta de OnePass en este dispositivo."
+            "value" : "Ya existe una cuenta de Kelid en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un compte OnePass existe déjà sur cet appareil."
+            "value" : "Un compte Kelid existe déjà sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esiste già un account OnePass su questo dispositivo."
+            "value" : "Esiste già un account Kelid su questo dispositivo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 기기에 OnePass 계정이 이미 있어요."
+            "value" : "이 기기에 Kelid 계정이 이미 있어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此设备上已有 OnePass 账户。"
+            "value" : "此设备上已有 Kelid 账户。"
           }
         }
       }

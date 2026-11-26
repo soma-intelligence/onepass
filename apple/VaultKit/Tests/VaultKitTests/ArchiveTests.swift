@@ -136,7 +136,7 @@ struct PlaintextExportFileTests {
     @Test func fileNameSaysUnencrypted() {
         let date = Date(timeIntervalSince1970: 1_793_000_000)  // 2026-10-26 in UTC
         let utc = TimeZone(identifier: "UTC")!
-        #expect(PlaintextExportFile.fileName(for: date, timeZone: utc) == "OnePass export non chiffré 2026-10-26.csv")
+        #expect(PlaintextExportFile.fileName(for: date, timeZone: utc) == "Kelid export non chiffré 2026-10-26.csv")
     }
 
     @Test func writesOwnerOnlyAndNeverOverwrites() throws {

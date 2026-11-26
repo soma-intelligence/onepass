@@ -42,7 +42,7 @@ export interface PopupDeps {
   session: Pick<Session, "request" | "onLocked"> & Partial<Pick<Session, "withWake">>;
   /** `unlock` with its origin, whatever the app's age (shared by the worker). */
   host?: HostCompat;
-  /** Brings the app forward for "Déverrouiller dans OnePass" (native.ts `openApp`). */
+  /** Brings the app forward for "Déverrouiller dans Kelid" (native.ts `openApp`). */
   openApp?: () => Promise<boolean>;
   /**
    * The native vault of the iOS Safari handler (IOSSAF-01): the popup's unlock sheet. Rejects

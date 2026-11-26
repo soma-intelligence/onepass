@@ -81,6 +81,8 @@ pub struct FakeVault {
     pub client: Option<[u8; 16]>,
     /// `delete` of this item fails (a host write error), nothing deleted.
     pub fail_delete: Option<Id>,
+    /// `status` fails with this error (a store read that failed), not locked.
+    pub fail_status: Option<AppErrorCode>,
     /// Open and sign in: pending sign-ins, when a test sets a directory.
     pub pending: Option<PendingStore>,
     /// Key usage log writes: item, channel, action, client, field.
@@ -333,6 +335,7 @@ impl FakeVault {
             served: Vec::new(),
             client: None,
             fail_delete: None,
+            fail_status: None,
             vaults: vec![perso, pro],
             items: vec![
                 atlas,
@@ -452,6 +455,13 @@ impl FakeVault {
 impl VaultAccess for FakeVault {
     fn take_pending_sign_in(&mut self, origin: &str, top_origin: &str, now: u64) -> Option<Id> {
         self.pending.as_ref()?.take(origin, top_origin, now)
+    }
+
+    fn checked_status(&self) -> Result<VaultStatus> {
+        match self.fail_status {
+            Some(code) => Err(BridgeError::App(code)),
+            None => Ok(self.status()),
+        }
     }
 
     fn status(&self) -> VaultStatus {

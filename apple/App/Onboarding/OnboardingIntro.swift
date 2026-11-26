@@ -102,7 +102,7 @@ extension FeatureTourPage {
             satellites: ["icloud.fill", "macbook.and.iphone"])
     }
 
-    /// First launch: what OnePass is, what it does now, and who holds the key. Five pages, the
+    /// First launch: what Kelid is, what it does now, and who holds the key. Five pages, the
     /// three in the middle being the ones "Quoi de neuf" shows too.
     static func intro(iCloud: Bool) -> [FeatureTourPage] {
         [onePlace, passkeys, watchtower, extras, yourKey(iCloud: iCloud)]
@@ -440,7 +440,7 @@ private extension View {
 
 // MARK: - First launch intro
 
-/// The tour before the welcome screen, shown once on a first launch: what OnePass is, what it does
+/// The tour before the welcome screen, shown once on a first launch: what Kelid is, what it does
 /// now (passkeys, Watchtower, the smaller features) and who holds the key. Plain words only; the
 /// cryptography stays in Settings. A vault found in iCloud closes it at once (`OnboardingFlow`).
 struct OnboardingIntro: View {

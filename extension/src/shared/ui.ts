@@ -148,7 +148,7 @@ export interface OverlayInit {
   /**
    * The card appeared by itself on a recognised page (no gesture): it folds away after
    * AUTO_PILL_MS untouched and offers "Never on this site". `signin`: the pill (or, with
-   * `generic`, the locked card); `signup`: "Create with OnePass", no account listed.
+   * `generic`, the locked card); `signup`: "Create with Kelid", no account listed.
    */
   auto?: "signin" | "signup";
 }
@@ -169,18 +169,18 @@ export interface SaveInit {
   update?: { itemId: string; title: string };
   /** Spec 5.2: the site's logins, the update card asks which one gets the new password. */
   choices?: { itemId: string; title: string; username: string }[];
-  /** `account`: the OnePass account the vault belongs to, when the host names one. */
+  /** `account`: the Kelid account the vault belongs to, when the host names one. */
   vaults: { id: string; name: string; account?: string }[];
   /** The vault picked first: the last one used for this site, else the last one used, else the first. */
   defaultVault?: string;
-  /** OnePass was locked when the sign-in was sent: Save unlocks first. */
+  /** Kelid was locked when the sign-in was sent: Save unlocks first. */
   locked?: boolean;
   /** Provider link: the provider account (its own item) the site signs in with. */
   provider?: { id: ProviderId; email: string; title?: string };
   /**
    * `edit`: the edit view, nothing typed yet (menu "Enregistrer un nouveau login"). `saved`: a
-   * login OnePass already saved (a generated signup password, confirmed at the submission),
-   * shown as done, nothing to answer. `toast`: a login OnePass just saved by itself (spec 4.1), or
+   * login Kelid already saved (a generated signup password, confirmed at the submission),
+   * shown as done, nothing to answer. `toast`: a login Kelid just saved by itself (spec 4.1), or
    * a generated one confirmed at the submission (spec 4.4): it says so for TOAST_MS.
    */
   view?: "edit" | "saved" | "toast";

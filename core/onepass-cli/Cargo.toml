@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 onepass-core = { path = "../onepass-core" }
 onepass-guard = { path = "../onepass-guard" }
+# `onepass guard`: HTTPS to the Guarded Kit realms (TLS 1.3 agent).
+onepass-mailbox = { path = "../onepass-mailbox" }
 onepass-mcp = { path = "../onepass-mcp" }
 onepass-ssh-agent = { path = "../onepass-ssh-agent" }
 onepass-peer = { path = "../onepass-peer" }

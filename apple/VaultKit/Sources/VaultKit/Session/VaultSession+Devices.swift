@@ -164,32 +164,37 @@ extension VaultSession {
         defer { secretKey.wipe() }
         try beginPasswordCheck()
         defer { passwordCheckInFlight = false }
-        let auk: SecretBytes
+        let transport = environment.realmTransport
+        let changed: (auk: SecretBytes, guardSecret: SecretBytes?, guardVersion: UInt32)
         do {
-            auk = try await read { session in
+            changed = try await read { session in
                 guard let current = current.string(), let new = new.string(), let key = secretKey.string() else {
                     throw VaultError.wrongPassword
                 }
-                var bytes = try session.changePassword(current: current, secretKey: key, new: new)
-                return SecretBytes(taking: &bytes)
+                // Guarded Kit (spec 8.2): a guarded account registers `G` again for the new password.
+                guard try session.guardState().on else {
+                    var bytes = try session.changePassword(current: current, secretKey: key, new: new)
+                    return (SecretBytes(taking: &bytes), nil, 0)
+                }
+                var bytes = try session.changePasswordGuarded(
+                    current: current, secretKey: key, new: new, transport: transport)
+                let auk = SecretBytes(taking: &bytes)
+                guard var secret = try session.guardSecret() else { return (auk, nil, 0) }
+                return (auk, SecretBytes(taking: &secret), try session.guardState().version)
             }
         } catch {
             let failure = VaultError(error)
-            if failure == .wrongPassword { recordFailedUnlock() }
+            if failure.isWrongPassword { recordFailedUnlock() }
             throw fail(failure)
         }
-        defer { auk.wipe() }
+        defer {
+            changed.auk.wipe()
+            changed.guardSecret?.wipe()
+        }
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
-        if biometrics.isEnrolled(accountID: accountID) {
-            let allowWatch = settings.allowWatchUnlock
-            do {
-                try auk.withData { try biometrics.enroll(auk: $0, accountID: accountID, allowWatch: allowWatch) }
-            } catch {
-                biometrics.disable(accountID: accountID)
-            }
-        }
-        biometricsRevision += 1
+        if let secret = changed.guardSecret { keepGuard(secret, version: changed.guardVersion, accountID: accountID) }
+        reenrollBiometrics(accountID: accountID, auk: changed.auk)
         // Every remote unlock envelope sealed the old AUK: erased, enroll again (spec 6.1).
         passwordChangedHere?()
         notifySync { await $0.localChangesWritten() }

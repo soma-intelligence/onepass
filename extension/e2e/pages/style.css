@@ -1,5 +1,5 @@
 /* Neutral styling of the fictional test pages. Forms stay on the left so the
-   OnePass overlay (top right) never covers them. */
+   Kelid overlay (top right) never covers them. */
 body { font: 15px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; margin: 24px; color: #222; background: #fafafa; }
 main { width: 340px; }
 h1 { font-size: 20px; margin: 0 0 16px; }

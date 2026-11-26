@@ -50,6 +50,7 @@ use crate::device_keys::DeviceKeys;
 use crate::devices::{
     DeviceEntry, DeviceKind, DeviceMode, Registration, check_mode, check_name, now, self_entry,
 };
+use crate::guarded_kit::{GuardAccess, GuardSecret};
 use crate::lists::{ListBody, list_record};
 use crate::vaultlist::VaultListEntry;
 use zeroize::Zeroizing;
@@ -83,6 +84,7 @@ pub mod custom_icon;
 pub mod duplicates;
 pub mod family;
 pub mod follow;
+pub mod guard;
 mod key_use;
 pub mod kit;
 mod local;
@@ -766,22 +768,39 @@ impl<S: RecordStore> Repository<S> {
         store: S,
         password: &str,
         secret_key: &SecretKey,
-        mut device: DeviceState,
+        device: DeviceState,
     ) -> Result<(Repository<S>, Auk)> {
+        let (repo, auk, _) =
+            Self::unlock_guarded(store, password, secret_key, device, GuardAccess::None)?;
+        Ok((repo, auk))
+    }
+
+    /// `unlock_exporting_auk` on an account that may be guarded (Guarded
+    /// Kit): `G` from `guard` (kept by the device, or from the realms), and
+    /// handed back for the device to keep. See `Account::unlock_guarded_at`.
+    pub fn unlock_guarded(
+        store: S,
+        password: &str,
+        secret_key: &SecretKey,
+        mut device: DeviceState,
+        guard: GuardAccess<'_>,
+    ) -> Result<(Repository<S>, Auk, Option<GuardSecret>)> {
         let (params, keyset) = account_records(&store)?;
         let chain = store.chain_state()?;
         let moved = reconcile_pin(&store, &mut device)?;
-        let (account, auk) = Account::unlock_exporting_auk_at(
+        let (account, auk, g) = Account::unlock_guarded_at(
             password,
             secret_key,
             &params.data,
             &keyset.data,
             device.pinned.as_ref(),
             chain.params_epoch,
+            guard,
         )?;
         Ok((
             Self::finish_unlock(store, account, &params, device, chain, moved)?,
             auk,
+            g,
         ))
     }
 
@@ -896,12 +915,26 @@ impl<S: RecordStore> Repository<S> {
             self.device.pinned.as_ref(),
             self.chain.params_epoch,
         )?;
+        let rekeyed = stored.rekey(secret_key, new)?;
+        self.commit_rekeyed(&params, &keyset, rekeyed)
+    }
+
+    /// Write the params and keyset of `rekeyed` over `params` and `keyset`
+    /// (the records just read and opened) in one conditional write, then go
+    /// on with the new account and pin its epoch. Returns the new Account
+    /// Unlock Key.
+    pub(crate) fn commit_rekeyed(
+        &mut self,
+        params: &Record,
+        keyset: &Record,
+        rekeyed: Rekeyed,
+    ) -> Result<Auk> {
         let Rekeyed {
             account,
             auk,
             params_record,
             keyset_record,
-        } = stored.rekey(secret_key, new)?;
+        } = rekeyed;
         let id = params.id;
         let next = |r: &Record| r.version.checked_add(1).ok_or(Error::Conflict);
         // Both records in one atomic write: a conflict, a store failure or
@@ -911,7 +944,7 @@ impl<S: RecordStore> Repository<S> {
                 Record {
                     id,
                     kind: RecordKind::Keyset,
-                    version: next(&keyset)?,
+                    version: next(keyset)?,
                     data: keyset_record,
                 },
                 Some(keyset.version),
@@ -920,7 +953,7 @@ impl<S: RecordStore> Repository<S> {
                 Record {
                     id,
                     kind: RecordKind::AccountParams,
-                    version: next(&params)?,
+                    version: next(params)?,
                     data: params_record,
                 },
                 Some(params.version),

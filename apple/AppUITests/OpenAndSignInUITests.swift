@@ -3,7 +3,7 @@ import XCTest
 /// Open and sign in on iPhone, end to end (spec 2026-11-04-open-and-sign-in), on the agent's own
 /// simulator after `SafariAutofillUITests/test1Prepare` (account, the "Atlas Cloud" Login of the local
 /// test page with its one-time code, Face ID on, the Safari extension on for every website). In the
-/// app, the Login's website is tapped; Safari opens the page and OnePass signs in by itself:
+/// app, the Login's website is tapped; Safari opens the page and Kelid signs in by itself:
 /// identifier, password, then the code, with no tap in Safari. The extension's vault is locked: Face ID
 /// runs once (the runner posts the match), else the test fails. Fictional data only.
 @MainActor

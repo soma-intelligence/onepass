@@ -60,7 +60,7 @@ struct ReportTests {
     }
 
     @Test func parityConfigReadsDesignBridgeJSON() throws {
-        let json = #"{"penpot": {"file": "OnePass RX"}, "parity": {"ssim": 0.97, "maxOffsetPt": 1}}"#
+        let json = #"{"penpot": {"file": "Kelid RX"}, "parity": {"ssim": 0.97, "maxOffsetPt": 1}}"#
         let config = try ParityConfig.decode(Data(json.utf8))
         #expect(config.ssim == 0.97)
         #expect(config.maxOffsetPt == 1)

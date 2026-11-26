@@ -1,6 +1,6 @@
 // Other password managers' in-page UI (founder, 2026-11-03): their save
 // prompt or notification in the top right corner, their in-field buttons.
-// OnePass never sits under them nor covers them: the save card stacks below
+// Kelid never sits under them nor covers them: the save card stacks below
 // theirs (or to its left when there is no room below), our field icon moves
 // left of theirs.
 //

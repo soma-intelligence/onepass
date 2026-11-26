@@ -146,7 +146,7 @@ struct ImportSheet: View {
     @State private var vaultID = ""
     @State private var busy = false
     @State private var errorMessage: String?
-    /// A OnePass archive was chosen: it goes to the restore sheet.
+    /// A Kelid archive was chosen: it goes to the restore sheet.
     @State private var restoreRequest: RestoreRequest?
     /// What the import wrote, shown before the sheet closes.
     @State private var done: FfiImportSummary?
@@ -157,7 +157,7 @@ struct ImportSheet: View {
     /// How many of the import's keyless passkeys were paired with their item (`PasskeyMigration`).
     @State private var passkeysIdentified = 0
     /// Credentials another app handed over through the system's Credential Exchange (Passwords >
-    /// Export to OnePass): read with this one-time token when the sheet opens, then previewed and
+    /// Export to Kelid): read with this one-time token when the sheet opens, then previewed and
     /// imported like a CXF file (passkeys included).
     private let credentialExchange: UUID?
 
@@ -842,7 +842,7 @@ struct ImportSheet: View {
             if done || duplicateChoices.isEmpty {
                 Text(done
                     ? "Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément."
-                    : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.")
+                    : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans Kelid n'est remplacé. Le dossier d'origine devient un tag.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -995,7 +995,7 @@ struct ImportSheet: View {
         let name = url.lastPathComponent
         let detected = await VaultSession.detectImportFormat(fileName: name, data: buffer.data)
         if detected == "onepass" {
-            // An encrypted OnePass backup or export: restored, not imported. The restore sheet owns
+            // An encrypted Kelid backup or export: restored, not imported. The restore sheet owns
             // the bytes from here (and wipes them); the buffer's copy is wiped now.
             restoreRequest = RestoreRequest(data: buffer.data, fileName: name)
             buffer.wipe()

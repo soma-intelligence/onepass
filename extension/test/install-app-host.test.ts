@@ -8,7 +8,7 @@ describe("install-app-host manifests", () => {
   it("points Chrome at the app relay for one extension id", () => {
     expect(manifestFor("chrome", RELAY, "abcdefghijklmnopabcdefghijklmnop")).toEqual({
       name: "me.somalabs.onepass",
-      description: "OnePass",
+      description: "Kelid",
       path: RELAY,
       type: "stdio",
       allowed_origins: ["chrome-extension://abcdefghijklmnopabcdefghijklmnop/"],
