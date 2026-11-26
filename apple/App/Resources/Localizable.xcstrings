@@ -75856,6 +75856,12 @@
       "comment" : "Turn the Emergency Kit protection off: sheet title.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Schutz deaktivieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -75879,6 +75885,18 @@
             "state" : "translated",
             "value" : "Disattiva la protezione"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "보호 끄기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "关闭保护"
+          }
         }
       }
     },
@@ -75886,6 +75904,12 @@
       "comment" : "Turn the Emergency Kit protection off: footer under the master password field.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein Master-Passwort wird benötigt. Danach reichen dein Kit und dein Passwort wieder aus, um deinen Account wiederherzustellen, ohne Begrenzung der Versuche."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -75909,6 +75933,18 @@
             "state" : "translated",
             "value" : "Serve la tua password principale. Dopo, il tuo kit e la tua password tornano a bastare per ripristinare il tuo account, senza limite di tentativi."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "마스터 암호가 필요합니다. 그 후에는 Kit와 암호만으로 다시 계정을 복원할 수 있으며 시도 횟수 제한이 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "需要你的主密码。之后，你的 Kit 和密码就足以再次恢复你的账户，尝试次数不受限制。"
+          }
         }
       }
     },
@@ -75916,6 +75952,12 @@
       "comment" : "Turn the Emergency Kit protection on, done: close button.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fertig"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -75939,6 +75981,18 @@
             "state" : "translated",
             "value" : "Fine"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "완료"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "完成"
+          }
         }
       }
     },
@@ -75946,6 +76000,12 @@
       "comment" : "Turn the Emergency Kit protection on: sheet title.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit schützen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -75969,6 +76029,18 @@
             "state" : "translated",
             "value" : "Proteggi l'Emergency Kit"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit 보호"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保护 Emergency Kit"
+          }
         }
       }
     },
@@ -75976,6 +76048,12 @@
       "comment" : "Turn the Emergency Kit protection on: confirm button.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktivieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -75999,6 +76077,18 @@
             "state" : "translated",
             "value" : "Attiva"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "켜기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开"
+          }
         }
       }
     },
@@ -76006,6 +76096,12 @@
       "comment" : "Turn the Emergency Kit protection on: footer under the master password field.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein Master-Passwort und der Secret Key dieses Geräts aktivieren den Schutz."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76029,6 +76125,18 @@
             "state" : "translated",
             "value" : "La tua password principale e la Secret Key di questo dispositivo attivano la protezione."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "마스터 암호와 이 기기의 Secret Key로 보호를 켭니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的主密码和此设备的 Secret Key 会打开保护。"
+          }
         }
       }
     },
@@ -76036,6 +76144,12 @@
       "comment" : "Turn the Emergency Kit protection on: done.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Schutz des Emergency Kit ist aktiviert."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76059,6 +76173,18 @@
             "state" : "translated",
             "value" : "La protezione dell'Emergency Kit è attiva."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit 보호가 켜져 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit 保护已打开。"
+          }
         }
       }
     },
@@ -76066,6 +76192,12 @@
       "comment" : "Turn the Emergency Kit protection on: what changes (spec 2026-11-20, sections 5, 6 and 9).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Um deinen Account mit deinem Emergency Kit wiederherzustellen, braucht Kelid außerdem zwei der drei Server, die Soma betreibt. Sie zählen die Versuche. Höchstens 15 Versuche, danach ist das Kit ohne eines deiner Geräte nutzlos. Deine Geräte entsperren wie bisher."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76089,6 +76221,18 @@
             "state" : "translated",
             "value" : "Per ripristinare il tuo account con il tuo Emergency Kit, Kelid avrà bisogno anche di due dei tre server gestiti da Soma. Contano i tentativi. 15 tentativi al massimo, poi il kit non serve più a nulla senza uno dei tuoi dispositivi. I tuoi dispositivi si sbloccano come prima."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit로 계정을 복원하려면 Kelid는 Soma가 운영하는 서버 세 대 중 두 대도 필요합니다. 서버는 시도 횟수를 셉니다. 최대 15회까지 시도할 수 있으며, 그 후에는 기기 없이 Kit를 사용할 수 없습니다. 기기는 이전처럼 잠금 해제됩니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "要使用 Emergency Kit 恢复你的账户，Kelid 还需要 Soma 运营的三台服务器中的两台。它们会统计尝试次数。最多 15 次尝试，之后没有你的设备，这个 Kit 就无法使用。你的设备照常解锁。"
+          }
         }
       }
     },
@@ -76096,6 +76240,12 @@
       "comment" : "Réglages > Sécurité: alert when the realms logged failed restore attempts with the Emergency Kit; the dates follow.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jemand hat versucht, deinen Account mit deinem Emergency Kit wiederherzustellen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76119,6 +76269,18 @@
             "state" : "translated",
             "value" : "Qualcuno ha provato a ripristinare il tuo account con il tuo Emergency Kit."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "누군가 Emergency Kit로 계정을 복원하려고 시도했습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "有人尝试使用你的 Emergency Kit 恢复你的账户。"
+          }
         }
       }
     },
@@ -76126,6 +76288,12 @@
       "comment" : "Turn the Emergency Kit protection on: the loss case of spec 8.4, stated before turning it on.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wenn du alle deine Geräte verlierst und zwei dieser drei Server verloren gehen, kann dein Account nicht wiederhergestellt werden, auch nicht mit deinem Kit und deinem Passwort."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76149,6 +76317,18 @@
             "state" : "translated",
             "value" : "Se perdi tutti i tuoi dispositivi e due di questi tre server vanno persi, il tuo account è irrecuperabile, anche con il tuo kit e la tua password."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "모든 기기를 잃어버리고 이 서버 세 대 중 두 대가 사라지면 Kit와 암호가 있어도 계정을 복구할 수 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "如果你丢失了所有设备，且这三台服务器中有两台丢失，即使有 Kit 和密码，也无法恢复你的账户。"
+          }
         }
       }
     },
@@ -76156,6 +76336,12 @@
       "comment" : "Turn the Emergency Kit protection on: header of the loss case (spec 8.4).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der einzige Weg, deinen Account zu verlieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76179,6 +76365,18 @@
             "state" : "translated",
             "value" : "L'unico caso di perdita"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "계정을 잃는 유일한 경우"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "唯一会丢失账户的情况"
+          }
         }
       }
     },
@@ -76186,6 +76384,12 @@
       "comment" : "Turn the Emergency Kit protection on, done: offer of a new kit (spec 8.1).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Drucke ein neues Emergency Kit. Darauf steht, dass die Wiederherstellung online mit begrenzten Versuchen erfolgt. Dein altes Kit funktioniert weiterhin mit deinem Passwort."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76209,6 +76413,18 @@
             "state" : "translated",
             "value" : "Stampa un nuovo Emergency Kit. Indica che il ripristino avviene online, con tentativi limitati. Il tuo vecchio kit funziona ancora con la tua password."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 Emergency Kit를 인쇄하세요. 복원이 시도 횟수가 제한된 온라인 방식으로 진행된다고 적혀 있습니다. 이전 Kit도 암호와 함께 계속 사용할 수 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打印新的 Emergency Kit。上面会注明恢复需在线进行，且尝试次数有限。你的旧 Kit 配合密码仍然可用。"
+          }
         }
       }
     },
@@ -76216,6 +76432,12 @@
       "comment" : "Réglages > Sécurité: footer while the Emergency Kit protection is off.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mit deinem Kit und deinem Passwort kann jemand unbegrenzt Passwörter ausprobieren."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76239,6 +76461,18 @@
             "state" : "translated",
             "value" : "Con il tuo kit e la tua password, qualcuno può provare password senza limiti."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kit와 암호가 있으면 누군가 횟수 제한 없이 암호를 시도할 수 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "有了你的 Kit 和密码，他人可以无限次尝试密码。"
+          }
         }
       }
     },
@@ -76246,6 +76480,12 @@
       "comment" : "Réglages > Sécurité: footer while the Emergency Kit protection is on.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Höchstens 15 Versuche, danach ist das Kit ohne eines deiner Geräte nutzlos."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76269,6 +76509,18 @@
             "state" : "translated",
             "value" : "15 tentativi al massimo, poi il kit non serve più a nulla senza uno dei tuoi dispositivi."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "최대 15회까지 시도할 수 있으며, 그 후에는 기기 없이 Kit를 사용할 수 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "最多 15 次尝试，之后没有你的设备，这个 Kit 就无法使用。"
+          }
         }
       }
     },
@@ -76276,6 +76528,12 @@
       "comment" : "Turn the Emergency Kit protection on, done: print the new kit.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Neues Kit drucken"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76299,6 +76557,18 @@
             "state" : "translated",
             "value" : "Stampa il nuovo kit"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새 Kit 인쇄"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打印新 Kit"
+          }
         }
       }
     },
@@ -76306,6 +76576,12 @@
       "comment" : "Réglages > Sécurité: button and sheet title to register the Emergency Kit protection again (same secret, no new kit).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Schutz erneuern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76329,6 +76605,18 @@
             "state" : "translated",
             "value" : "Rinnova la protezione"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "보호 갱신"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新保护"
+          }
         }
       }
     },
@@ -76336,6 +76624,12 @@
       "comment" : "Réglages > Sécurité: footer when the Emergency Kit protection needs renewing (realm list changed, or a realm lost it).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einer der Server, die dein Kit schützen, muss aktualisiert werden. Dein nächstes Entsperren mit dem Passwort erledigt das, oder erneuere jetzt."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76359,6 +76653,18 @@
             "state" : "translated",
             "value" : "Uno dei server che proteggono il tuo kit va aggiornato. Il prossimo sblocco con la password se ne occupa, oppure rinnova ora."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kit를 보호하는 서버 중 하나를 업데이트해야 합니다. 다음에 암호로 잠금 해제하면 처리되며, 지금 갱신할 수도 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保护你的 Kit 的某台服务器需要更新。下次使用密码解锁时会自动处理，你也可以现在更新。"
+          }
         }
       }
     },
@@ -76366,6 +76672,12 @@
       "comment" : "Renew Emergency Kit protection sheet: footer under the master password field.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein Master-Passwort wird benötigt, um den Schutz zu erneuern. Dein Kit bleibt gültig."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76389,6 +76701,18 @@
             "state" : "translated",
             "value" : "Serve la tua password principale per rinnovare la protezione. Il tuo kit resta valido."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "보호를 갱신하려면 마스터 암호가 필요합니다. Kit는 계속 유효합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新保护需要你的主密码。你的 Kit 仍然有效。"
+          }
         }
       }
     },
@@ -76396,6 +76720,12 @@
       "comment" : "Réglages > Sécurité: footer when this build cannot turn the Emergency Kit protection on yet (no realm pinned).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bald verfügbar. Bis dahin kann jemand mit deinem Kit und deinem Passwort unbegrenzt Passwörter ausprobieren."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76419,6 +76749,18 @@
             "state" : "translated",
             "value" : "Presto disponibile. Per ora, con il tuo kit e la tua password, qualcuno può provare password senza limiti."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "곧 제공됩니다. 그때까지는 Kit와 암호가 있으면 누군가 횟수 제한 없이 암호를 시도할 수 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "即将推出。在此之前，有了你的 Kit 和密码，他人可以无限次尝试密码。"
+          }
         }
       }
     },
@@ -76426,6 +76768,12 @@
       "comment" : "Réglages > Sécurité: Guarded Kit toggle (spec 2026-11-20, section 9).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Schutz des Emergency Kit"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -76448,6 +76796,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Protezione dell'Emergency Kit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit 보호"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit 保护"
           }
         }
       }

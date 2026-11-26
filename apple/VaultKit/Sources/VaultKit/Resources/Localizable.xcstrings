@@ -2072,6 +2072,12 @@
       "comment" : "Emergency Kit PDF, one line when the Guarded Kit is on (spec 2026-11-20, section 9).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Online-Wiederherstellung, begrenzte Versuche."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2094,6 +2100,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ripristino online, tentativi limitati."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "온라인 복원, 시도 횟수 제한."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在线恢复，尝试次数有限。"
           }
         }
       }
@@ -4405,6 +4423,12 @@
       "comment" : "Guarded Kit: one of the servers that protect the Emergency Kit refused or answered wrongly.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ein Server, der dein Emergency Kit schützt, hat die Anfrage abgelehnt. Versuche es später erneut."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4428,6 +4452,18 @@
             "state" : "translated",
             "value" : "Un server che protegge il tuo Emergency Kit ha rifiutato la richiesta. Riprova più tardi."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit를 보호하는 서버가 요청을 거부했습니다. 나중에 다시 시도하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保护你的 Emergency Kit 的某台服务器拒绝了请求。请稍后再试。"
+          }
         }
       }
     },
@@ -4435,6 +4471,12 @@
       "comment" : "Guarded Kit: a master password check on this device without the current guard secret (the protection changed on another device). Lock, then unlock with the password, which fetches it.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Schutz des Emergency Kit wurde auf einem anderen Gerät geändert. Sperre Kelid, entsperre es mit deinem Master-Passwort und versuche es dann erneut."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4458,6 +4500,18 @@
             "state" : "translated",
             "value" : "La protezione dell'Emergency Kit è cambiata su un altro dispositivo. Blocca Kelid, sbloccalo con la tua password principale, poi riprova."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다른 기기에서 Emergency Kit 보호가 변경되었습니다. Kelid를 잠근 다음 마스터 암호로 잠금 해제하고 다시 시도하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit 保护已在另一台设备上更改。请锁定 Kelid，使用主密码解锁，然后重试。"
+          }
         }
       }
     },
@@ -4465,6 +4519,12 @@
       "comment" : "Guarded Kit: too few of the servers that protect the Emergency Kit answered. Nothing was spent.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Server, die dein Emergency Kit schützen, antworten nicht. Prüfe deine Verbindung und versuche es gleich noch einmal. Es wurde kein Versuch gezählt."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4488,6 +4548,18 @@
             "state" : "translated",
             "value" : "I server che proteggono il tuo Emergency Kit non rispondono. Controlla la connessione e riprova tra poco. Nessun tentativo è stato conteggiato."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Emergency Kit를 보호하는 서버가 응답하지 않습니다. 연결을 확인하고 잠시 후 다시 시도하세요. 시도 횟수는 차감되지 않았습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保护你的 Emergency Kit 的服务器没有响应。请检查网络连接，稍后再试。本次不计入尝试次数。"
+          }
         }
       }
     },
@@ -4495,6 +4567,24 @@
       "comment" : "Guarded Kit: wrong master password at the realms (unlock or Emergency Kit restore), with the attempts left before the kit stops working.",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Falsches Passwort. Du hast noch %lld Versuch."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "Falsches Passwort. Du hast noch %lld Versuche."
+                }
+              }
+            }
+          }
+        },
         "en" : {
           "variations" : {
             "plural" : {
@@ -4562,6 +4652,42 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Password errata. Ti restano %lld tentativi."
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "암호가 틀렸습니다. 남은 시도 횟수: %lld회."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "암호가 틀렸습니다. 남은 시도 횟수: %lld회."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "密码错误。你还剩 %lld 次尝试。"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "needs_review",
+                  "value" : "密码错误。你还剩 %lld 次尝试。"
                 }
               }
             }
