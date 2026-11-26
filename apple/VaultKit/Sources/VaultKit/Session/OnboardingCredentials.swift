@@ -28,6 +28,26 @@ public struct OnboardingCredentials {
         return typed
     }
 
+    /// The creation failed. A failure that is not about the password itself (keychain, storage,
+    /// iCloud) puts the submitted password back in both fields, so "Réessayer" is one tap; a password
+    /// failure leaves them empty. True when the fields were filled again.
+    @discardableResult
+    public mutating func creationFailed(_ error: VaultError, submitted: SecretBytes) -> Bool {
+        guard !Self.concernsPassword(error), let value = submitted.string() else { return false }
+        password = value
+        confirmation = value
+        return true
+    }
+
+    /// The error is about the typed master password (wrong, or refused by a check on it).
+    public static func concernsPassword(_ error: VaultError) -> Bool {
+        switch error {
+        case .wrongPassword, .passwordRequired: true
+        case .validation(let field, _): field.localizedCaseInsensitiveContains("password")
+        default: false
+        }
+    }
+
     /// The account exists: the Secret Key buffer is taken over (the caller drops its reference). The
     /// password is copied only when the biometric step will ask for it.
     public mutating func accountCreated(secretKey: SecretBytes, password: SecretBytes, keepPasswordForBiometrics: Bool) {

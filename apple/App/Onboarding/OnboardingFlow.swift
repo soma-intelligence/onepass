@@ -1,6 +1,7 @@
 import DesignKit
 import LocalAuthentication
 import Observation
+import os
 import SwiftUI
 import VaultKit
 
@@ -182,6 +183,7 @@ final class OnboardingModel {
     var effectivePairMethod: PairMethod { pairDeviceMode == .public ? .showCode : pairMethod }
 
     @ObservationIgnored private let model: AppModel
+    private static let log = Logger(subsystem: "me.somalabs.onepass", category: "onboarding")
 
     /// The AutoFill step is among the steps: the provider was not known to be on when this
     /// onboarding began (decided once, so the steps never move under the user). Passed over on
@@ -646,7 +648,6 @@ final class OnboardingModel {
         // as bytes.
         let typed = credentials.submitCreation()
         defer { typed.wipe() }
-        clearGeneratedPassword()
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             let key = managed
@@ -655,6 +656,9 @@ final class OnboardingModel {
                     password: typed, displayName: name, mode: mode, slot: model.accounts.activeSlot)
             // The password is kept only when the biometric step follows.
             credentials.accountCreated(secretKey: key, password: typed, keepPasswordForBiometrics: biometricsOffered)
+            clearGeneratedPassword()
+            // The kit is ready before its step shows: its buttons are there from the first frame.
+            prepareKit()
             if managed, let bytes = credentials.secretKey {
                 // In the background: publish or join, then the account mailbox. The join request is
                 // signed with the password just typed as the presence check (R31), wiped after.
@@ -673,11 +677,18 @@ final class OnboardingModel {
             successPulse &+= 1
             advance()
         } catch {
-            // The fields were emptied on submission: the next step is typing the password again
-            // (said in the message). A keychain refusal also offers the settings.
-            fail(
-                VaultError(error).localizedMessage + " " + String(localized: "onboarding.enterPasswordAgainTo"),
-                next: error is KeychainError ? .openSettings : nil)
+            // Not about the password (keychain, storage): both fields get it back and "Réessayer"
+            // runs the creation again. About the password: the fields stay empty, the message says
+            // to type it again.
+            let failure = VaultError(error)
+            if credentials.creationFailed(failure, submitted: typed) {
+                fail(failure.localizedMessage, next: .retry)
+            } else {
+                clearGeneratedPassword()
+                fail(
+                    failure.localizedMessage + " " + String(localized: "onboarding.enterPasswordAgainTo"),
+                    next: nil)
+            }
         }
     }
 
@@ -986,24 +997,70 @@ final class OnboardingModel {
     /// on Mac the destination chosen in the save panel. `deleteKit()` drops both.
     private(set) var kitData: Data?
     private(set) var kitURL: URL?
+    /// The kit could not be built: said on the step with "Réessayer" and "Copier la Secret Key",
+    /// never a silent missing button.
+    private(set) var kitProblem: String?
+    /// Bumped by "Réessayer": the problem card is rebuilt (visible change, VoiceOver reads it again)
+    /// even when the new attempt fails the same way.
+    private(set) var kitAttempts = 0
+    /// "Copier la Secret Key" was used: the step says the clipboard clears itself.
+    private(set) var secretKeyCopied = false
 
-    func prepareKit() {
-        guard kitData == nil, let secretKey, let accountID = model.settings.accountID else { return }
+    /// Builds the PDF once. False, with `kitProblem` set, when it cannot be built.
+    @discardableResult
+    func prepareKit() -> Bool {
+        if kitData != nil { return true }
+        guard let secretKey else {
+            reportKitProblem("no Secret Key in memory")
+            return false
+        }
+        guard let accountID = model.settings.accountID else {
+            reportKitProblem("no account id in the settings")
+            return false
+        }
         do {
             var server: URL?
             if case .selfHost(let url, _) = effectiveSyncChoice { server = url }
             kitData = try EmergencyKit.pdf(
                 secretKey: secretKey, accountID: accountID,
                 displayName: model.settings.displayName, createdAt: Date(), server: server)
+            kitProblem = nil
+            return true
         } catch {
-            errorMessage = ErrorText.appending(error, to: String(localized: "onboarding.emergencyKitCouldntPrepared"))
+            // A fixed case name: nothing from the error itself reaches the log.
+            switch error as? EmergencyKitError {
+            case .invalidSecretKey: reportKitProblem("invalid_secret_key")
+            case .renderFailed: reportKitProblem("render_failed")
+            case nil: reportKitProblem("unexpected_error")
+            }
+            return false
         }
+    }
+
+    private func reportKitProblem(_ reason: String) {
+        Self.log.error("Emergency Kit not prepared: \(reason, privacy: .public)")
+        kitProblem = String(localized: "onboarding.emergencyKitCouldntPrepared") + " "
+            + String(localized: "onboarding.kit.fallback")
+    }
+
+    /// "Réessayer" under the kit problem.
+    func retryKit() {
+        kitProblem = nil
+        kitAttempts &+= 1
+        prepareKit()
+    }
+
+    /// "Copier la Secret Key": the alternative when the kit cannot be printed or saved. Local only,
+    /// cleared after 90 s and on lock (`VaultSession.copy`).
+    func copySecretKey() {
+        guard let secretKey else { return }
+        session.copy(secretKey, concealed: true)
+        secretKeyCopied = true
     }
 
     /// "Imprimer le kit": the system print panel, from memory.
     func printKit() {
-        prepareKit()
-        guard let kitData else { return }
+        guard prepareKit(), let kitData else { return }
         if !KitPrinter.print(kitData) {
             errorMessage = String(localized: "onboarding.noPrinterAvailableOn")
         }
@@ -1012,8 +1069,7 @@ final class OnboardingModel {
     /// The temporary kit file for the share sheet, written on first use.
     func kitFileForSharing() -> URL? {
         if let kitURL { return kitURL }
-        prepareKit()
-        guard let kitData else { return nil }
+        guard prepareKit(), let kitData else { return nil }
         do {
             kitURL = try EmergencyKitFile.write(kitData, under: FileManager.default.temporaryDirectory)
         } catch {
@@ -1030,8 +1086,7 @@ final class OnboardingModel {
 
     /// Mac: writes the kit to the destination the user chose in the save panel.
     func saveKit(to url: URL) {
-        prepareKit()
-        guard let kitData else { return }
+        guard prepareKit(), let kitData else { return }
         do {
             try kitData.write(to: url, options: .atomic)
         } catch {
@@ -1042,6 +1097,8 @@ final class OnboardingModel {
     /// Drops the temporary file and wipes the PDF bytes (they hold the Secret Key in clear).
     func deleteKit() {
         sharingFinished()
+        kitProblem = nil
+        secretKeyCopied = false
         guard var bytes = kitData else { return }
         kitData = nil
         // Our copy is now the only reference, so the wipe happens in place.
@@ -1292,6 +1349,12 @@ private struct PhoneOnboardingLayout: View {
 
     @ViewBuilder private var bottomBar: some View {
         VStack(spacing: 12) {
+            // The error in the fixed zone, right above the primary button and the keyboard: under
+            // the fields it was hidden by the keyboard.
+            if let error = model.errorMessage {
+                OnboardingErrorCard(message: error, model: model)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             if let hint = model.primaryHint {
                 Text(hint)
                     .font(.footnote)
@@ -1337,6 +1400,15 @@ private struct PhoneOnboardingLayout: View {
             }
         }
         .animation(.smooth(duration: 0.25), value: model.primaryHint)
+        .animation(.smooth(duration: 0.3), value: model.errorMessage)
+        #if os(iOS)
+        // A failed creation the user can run again (fields kept): the keyboard goes, so the error,
+        // the fields and "Réessayer" all show. A refused password keeps the keyboard to type it again.
+        .onChange(of: model.errorPulse) {
+            guard model.step == .password, case .retry = model.errorAction else { return }
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+        #endif
     }
 }
 

@@ -28,7 +28,9 @@ struct OnboardingStepContent: View {
                 }
                 .font(.subheadline)
             }
-            if let error = model.errorMessage {
+            // iPhone and iPad: the error sits in the bottom bar, above the keyboard and the primary
+            // button, where it is always seen (under the fields it was hidden by the keyboard).
+            if Platform.isMac, let error = model.errorMessage {
                 OnboardingErrorCard(message: error, model: model)
                     .transition(.opacity.combined(with: .offset(y: 6)))
             }
@@ -36,11 +38,16 @@ struct OnboardingStepContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.smooth(duration: 0.3), value: model.errorMessage)
         .disabled(model.busy)
+        // VoiceOver hears every new error, wherever its focus is.
+        .onChange(of: model.errorPulse) {
+            guard let error = model.errorMessage else { return }
+            AccessibilityNotification.Announcement(error).post()
+        }
     }
 }
 
 /// An error where it happened, with its next step as a button: never only an alert.
-private struct OnboardingErrorCard: View {
+struct OnboardingErrorCard: View {
     let message: String
     let model: OnboardingModel
 
@@ -196,10 +203,13 @@ struct OnboardingField: View {
     /// keep their callers' `.onSubmit`.
     var submitNext = false
     var onSubmit: () -> Void = {}
+    /// Room kept for the trailing check or cross, scaled with the text so the two never overlap.
+    @ScaledMetric(relativeTo: .body) private var markRoom: CGFloat = 38
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label).font(.subheadline).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Group {
                 if secure {
                     // Emptied as it leaves the screen: iOS never offers to save the master password.
@@ -221,8 +231,10 @@ struct OnboardingField: View {
             .privacySensitive(secretKey || secure)
             .accessibilityIdentifier(identifier)
             .padding(.leading, 14)
-            .padding(.trailing, mismatch || valid ? 8 : 14)
-            .frame(height: Platform.isMac ? 40 : 52)
+            .padding(.trailing, mismatch || valid ? markRoom : 14)
+            // Grows with Dynamic Type (accessibility sizes included): a minimum, never a fixed height.
+            .padding(.vertical, Platform.isMac ? 8 : 12)
+            .frame(minHeight: Platform.isMac ? 40 : 52)
             .overlay(alignment: .trailing) {
                 if mismatch || valid {
                     Image(systemName: valid ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -748,11 +760,11 @@ private struct SecretKeyStep: View {
                     phone: "Créée sur cet \(Platform.deviceName), elle ne le quitte jamais. Il te la faudra pour un nouvel appareil si aucun autre n'est à côté."))
         VStack(alignment: .leading, spacing: 8) {
             Text("onboarding.secretKey")
-                .font(.system(size: 12, weight: .bold))
+                .font(.caption.weight(.bold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
             Text(verbatim: model.secretKey ?? "")
-                .font(.system(size: 16, design: .monospaced))
+                .font(.system(.body, design: .monospaced))
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
                 .privacySensitive()
@@ -786,23 +798,32 @@ private struct SecretKeyStep: View {
         }
         #endif
 
-        if model.kitData != nil {
-            Button {
-                model.printKit()
-            } label: {
-                Label("onboarding.printKit", systemImage: "printer")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(maxWidth: Platform.isMac ? nil : .infinity)
-                    .frame(height: Platform.isMac ? 28 : 40)
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(Platform.isMac ? .large : .regular)
-            .accessibilityIdentifier("onboarding.printKit")
+        // Always shown, as the text above asks for them: a kit that cannot be built says so below,
+        // with "Réessayer" and the Secret Key to copy instead.
+        Button {
+            model.printKit()
+        } label: {
+            Label("onboarding.printKit", systemImage: "printer")
+                .font(.headline)
+                .frame(maxWidth: Platform.isMac ? nil : .infinity)
+                .frame(minHeight: Platform.isMac ? 28 : 40)
+        }
+        .buttonStyle(.glassProminent)
+        .controlSize(Platform.isMac ? .large : .regular)
+        .accessibilityIdentifier("onboarding.printKit")
 
-            Button("app.saveFile") { saveWarning = true }
-                .buttonStyle(.borderless)
-                .font(.subheadline)
-                .accessibilityIdentifier("onboarding.saveKit")
+        Button("app.saveFile") {
+            if model.prepareKit() { saveWarning = true }
+        }
+        .buttonStyle(.borderless)
+        .font(.subheadline)
+        .accessibilityIdentifier("onboarding.saveKit")
+
+        if let problem = model.kitProblem {
+            KitProblemCard(message: problem, model: model)
+                // A new card per attempt: "Réessayer" visibly answers, and its announcement repeats.
+                .id(model.kitAttempts)
+                .transition(.opacity)
         }
         KitStoredRow(isOn: $model.kitStoredOffline)
             .accessibilityIdentifier("onboarding.kitStored")
@@ -841,6 +862,63 @@ private struct SecretKeyStep: View {
     }
 }
 
+/// The Emergency Kit could not be built: why, "Réessayer", and the Secret Key to copy so it can
+/// still be written down. Announced to VoiceOver as it appears.
+private struct KitProblemCard: View {
+    let message: String
+    let model: OnboardingModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.red)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(message)
+                    .font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("onboarding.kitProblem")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) { buttons }
+                    VStack(alignment: .leading, spacing: 10) { buttons }
+                }
+                if model.secretKeyCopied {
+                    Text("onboarding.kit.copied")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("onboarding.kitCopied")
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: Platform.isMac ? 12 : 16, style: .continuous)
+            shape.fill(Color.red.opacity(0.08))
+                .overlay(shape.strokeBorder(Color.red.opacity(0.22), lineWidth: 1))
+        }
+        .accessibilityElement(children: .contain)
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
+    }
+
+    @ViewBuilder private var buttons: some View {
+        Button("Réessayer") { model.retryKit() }
+            .font(.subheadline.weight(.semibold))
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("onboarding.kitRetry")
+        Button {
+            model.copySecretKey()
+        } label: {
+            Label("onboarding.kit.copySecretKey", systemImage: "doc.on.doc")
+        }
+        .font(.subheadline.weight(.semibold))
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("onboarding.kitCopy")
+    }
+}
+
 /// "Je l'ai rangée hors ligne": a checkbox on Mac; on iPhone and iPad a card whose circle draws a
 /// green check, the card turning green with it.
 private struct KitStoredRow: View {
@@ -868,7 +946,7 @@ private struct KitStoredRow: View {
                 .frame(width: 28, height: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Je l'ai rangée hors ligne")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
                     Text(isOn ? "C'est noté. Garde-la loin de tes écrans." : "Imprimée, ou sur un support hors ligne.")
                         .font(.footnote)
