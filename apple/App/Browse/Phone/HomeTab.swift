@@ -25,6 +25,7 @@ struct HomeTab: View {
     @Binding var query: String
     @Binding var isSearching: Bool
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("onepass.home.favoritesOpen", store: AppModel.browseDefaults) private var favoritesOpen = true
     @AppStorage("onepass.home.recentsOpen", store: AppModel.browseDefaults) private var recentsOpen = true
     @AppStorage("onepass.home.frequentOpen", store: AppModel.browseDefaults) private var frequentOpen = true
@@ -192,40 +193,56 @@ struct HomeTab: View {
 
     private func tiles(all: Int, favorites: Int) -> some View {
         let score = model.watchtower.report.map { Int($0.score) }
-        return Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-            GridRow {
-                NavigationLink(value: PhoneRoute.list(.all)) {
-                    HomeTile(title: "Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent) {
-                        Text(all, format: .number)
-                    }
-                }
-                .accessibilityIdentifier("home.all")
-                NavigationLink(value: PhoneRoute.list(.favorites)) {
-                    HomeTile(title: "Favoris", symbol: "star.fill", color: .orange) {
-                        Text(favorites, format: .number)
-                    }
-                }
-                .accessibilityIdentifier("home.favoritesTile")
+        let allTile = NavigationLink(value: PhoneRoute.list(.all)) {
+            HomeTile(title: "Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent) {
+                Text(all, format: .number)
             }
-            GridRow {
-                // Pushed on Accueil's stack, zooming out of the tile (as the RX score does).
-                NavigationLink(value: PhoneRoute.watchtowerPage) {
-                    HomeTile(title: "Watchtower", symbol: "shield.lefthalf.filled", color: Sidebar.watchtowerColor) {
-                        if let score {
-                            Text(score, format: .number).foregroundStyle(ScoreGauge.color(score))
-                        } else {
-                            Image(systemName: "chevron.forward").font(.body.weight(.semibold)).foregroundStyle(.tertiary)
-                        }
+        }
+        .accessibilityIdentifier("home.all")
+        let favoritesTile = NavigationLink(value: PhoneRoute.list(.favorites)) {
+            HomeTile(title: "Favoris", symbol: "star.fill", color: .orange) {
+                Text(favorites, format: .number)
+            }
+        }
+        .accessibilityIdentifier("home.favoritesTile")
+        // Pushed on Accueil's stack, zooming out of the tile (as the RX score does).
+        let watchtowerTile = NavigationLink(value: PhoneRoute.watchtowerPage) {
+            HomeTile(title: "Watchtower", symbol: "shield.lefthalf.filled", color: Sidebar.watchtowerColor) {
+                if let score {
+                    Text(score, format: .number).foregroundStyle(ScoreGauge.color(score))
+                } else {
+                    Image(systemName: "chevron.forward").font(.body.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .routeZoomSource(.watchtowerPage)
+        .accessibilityIdentifier("home.watchtower")
+        let nearbyTile = NavigationLink(value: PhoneRoute.list(.nearby)) {
+            HomeTile(title: "À proximité", symbol: "location.fill", color: Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)) {
+                Text("browse.n2Km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityIdentifier("home.nearby")
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // Accessibility text sizes: one tile a row, so every name reads in full.
+                VStack(spacing: 12) {
+                    allTile
+                    favoritesTile
+                    watchtowerTile
+                    nearbyTile
+                }
+            } else {
+                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                    GridRow {
+                        allTile
+                        favoritesTile
+                    }
+                    GridRow {
+                        watchtowerTile
+                        nearbyTile
                     }
                 }
-                .routeZoomSource(.watchtowerPage)
-                .accessibilityIdentifier("home.watchtower")
-                NavigationLink(value: PhoneRoute.list(.nearby)) {
-                    HomeTile(title: "À proximité", symbol: "location.fill", color: Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)) {
-                        Text("browse.n2Km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                    }
-                }
-                .accessibilityIdentifier("home.nearby")
             }
         }
         .buttonStyle(PressableButtonStyle())
@@ -291,7 +308,7 @@ private struct HomeCardHeader<Controls: View>: View {
                             Text(verbatim: subtitle)
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
-                                .lineLimit(1)
+                                .lineLimit(2)
                                 .minimumScaleFactor(0.85)
                                 .contentTransition(.numericText())
                         }
@@ -855,7 +872,7 @@ private struct HomeTile<Value: View>: View {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
                 .minimumScaleFactor(0.85)
         }
         .padding(Theme.Space.l)

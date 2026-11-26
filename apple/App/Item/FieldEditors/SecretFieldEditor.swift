@@ -29,57 +29,73 @@ struct SecretFieldEditor: View {
     @Environment(\.editorAdvance) private var advance
     /// The value the generator just put in, with its recipe bits (the meter shows those for it).
     @State private var generated: GeneratedValue?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var text: Binding<String> {
         Binding(get: { value.text }, set: { value = .fromText($0, kind: field.kind) })
     }
 
     var body: some View {
+        // Accessibility text sizes: the value on its own line, the strength and the buttons under
+        // it (side by side they left the value a few dots and broke "Excellent" in three).
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Space.xs))
+            : AnyLayout(HStackLayout(spacing: Theme.Space.m))
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            HStack(spacing: Theme.Space.m) {
+            layout {
                 input
                     .font(.body.monospaced())
                     .fieldInput(field.kind)
                     .privacySensitive()
                     .accessibilityIdentifier("editor.field.\(field.id)")
-                // Strength as a word and a ring on the field's line, like the read view.
-                if field.kind == .password, !value.text.isEmpty {
-                    StrengthBadge(bits: meterBits)
-                }
-                Button {
-                    revealed.toggle()
-                } label: {
-                    Image(systemName: revealed ? "eye.slash" : "eye").editorTapTarget()
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(revealed ? Text("Masquer") : Text("Révéler"))
-                if field.kind == .password {
+                HStack(spacing: Theme.Space.m) {
+                    // Strength as a word and a ring on the field's line, like the read view.
+                    if field.kind == .password, !value.text.isEmpty {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            // Its own width first: sharing it with the spacer broke the word.
+                            StrengthBadge(bits: meterBits).fixedSize()
+                            Spacer(minLength: 0)
+                        } else {
+                            StrengthBadge(bits: meterBits)
+                        }
+                    }
                     Button {
-                        openGenerator()
+                        revealed.toggle()
                     } label: {
-                        Image(systemName: "wand.and.stars").editorTapTarget()
+                        Image(systemName: revealed ? "eye.slash" : "eye").editorTapTarget()
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel(Text("Générer"))
-                    .accessibilityIdentifier("editor.generate.\(field.id)")
-                }
-                #if os(iOS)
-                // Shown whenever the device has a camera that can scan: the sheet explains a denied access.
-                if field.kind == .otp, SecretKeyScanner.isDeviceSupported {
-                    Button {
-                        scanning = true
-                    } label: {
-                        Image(systemName: "qrcode.viewfinder").editorTapTarget()
+                    .accessibilityLabel(revealed ? Text("Masquer") : Text("Révéler"))
+                    if field.kind == .password {
+                        Button {
+                            openGenerator()
+                        } label: {
+                            Image(systemName: "wand.and.stars").editorTapTarget()
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(Text("Générer"))
+                        .accessibilityIdentifier("editor.generate.\(field.id)")
                     }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel(Text("Scanner un QR code"))
-                    .accessibilityIdentifier("editor.scanOtp.\(field.id)")
+                    #if os(iOS)
+                    // Shown whenever the device has a camera that can scan: the sheet explains a denied access.
+                    if field.kind == .otp, SecretKeyScanner.isDeviceSupported {
+                        Button {
+                            scanning = true
+                        } label: {
+                            Image(systemName: "qrcode.viewfinder").editorTapTarget()
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(Text("Scanner un QR code"))
+                        .accessibilityIdentifier("editor.scanOtp.\(field.id)")
+                    }
+                    #elseif os(macOS)
+                    if field.kind == .otp {
+                        OtpScanButton { value = .otp(value: $0) }
+                    }
+                    #endif
                 }
-                #elseif os(macOS)
-                if field.kind == .otp {
-                    OtpScanButton { value = .otp(value: $0) }
-                }
-                #endif
+                // Side by side, the controls keep their own width and the value takes the rest.
+                .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: false)
             }
             if field.kind == .otp, showsLiveCode, !value.text.isEmpty {
                 if captured {

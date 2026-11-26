@@ -35,6 +35,7 @@
 		0E9D6B125A12F9AEA3FC361B /* AppModel+Accounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0678ACD447C474D9C9FA95CA /* AppModel+Accounts.swift */; };
 		0FEE4F27F2083359D12163E0 /* IdentityChangeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40A16278188C339AA5210876 /* IdentityChangeView.swift */; };
 		105CA920482F1F48B964BE6A /* Filler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF792B77F277D3C0B97B16A9 /* Filler.swift */; };
+		116889BCA47AF3D26B09A0BB /* EditorAccessibilityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35781A6DB2B93CD30228A712 /* EditorAccessibilityUITests.swift */; };
 		13C8E7A53B120D156D57F73C /* FillLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85849B22B4B3CEA9CE1AE971 /* FillLabApp.swift */; };
 		1477CD379703B78BDAF940D8 /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = A0A01364B1DB7E9E76CB8258 /* DesignKit */; };
 		15FB8F91DBC0162C7EBD40AC /* ReceivedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C620AB29D8AD99FA48847C5 /* ReceivedItemsView.swift */; };
@@ -529,6 +530,7 @@
 		3180B530BDCA288BB48F08A0 /* LockControlIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockControlIntent.swift; sourceTree = "<group>"; };
 		330D495CC522DCE23D31E82D /* WatchRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRootView.swift; sourceTree = "<group>"; };
 		3312802FBAE76D180E4D396E /* MembersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MembersView.swift; sourceTree = "<group>"; };
+		35781A6DB2B93CD30228A712 /* EditorAccessibilityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorAccessibilityUITests.swift; sourceTree = "<group>"; };
 		35BC01A25495F3371464D130 /* ApprovalPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalPanel.swift; sourceTree = "<group>"; };
 		37A148525A5253544CE1AB8D /* AgentsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsSettings.swift; sourceTree = "<group>"; };
 		3B49CB23CF87AA07996315C6 /* SignInRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInRow.swift; sourceTree = "<group>"; };
@@ -1140,6 +1142,7 @@
 			isa = PBXGroup;
 			children = (
 				F4424E39F848DCBA4C2959EB /* AutoFillUITests.swift */,
+				35781A6DB2B93CD30228A712 /* EditorAccessibilityUITests.swift */,
 				68F271DAA62CC1A9B33848C5 /* FillAnywhereUITests.swift */,
 				42BE6F635EE865D00B34DB84 /* FoldLayoutUITests.swift */,
 				422181E1C469D47ED766E877 /* IconLibraryUITests.swift */,
@@ -2342,6 +2345,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				116889BCA47AF3D26B09A0BB /* EditorAccessibilityUITests.swift in Sources */,
 				E6FE63D3C82773BAC6D19424 /* FoldLayoutUITests.swift in Sources */,
 				D0DF1CC20B088C7C36E85415 /* IconLibraryUITests.swift in Sources */,
 				77FD6100C463E6E202E2BD5A /* ItemEditorCardsUITests.swift in Sources */,

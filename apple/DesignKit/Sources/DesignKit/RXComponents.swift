@@ -394,6 +394,7 @@ public struct QuickActionLabel: View {
     let systemImage: String
     let title: Text
     let onPhoto: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(_ title: Text, systemImage: String, onPhoto: Bool = false) {
         self.title = title
@@ -402,7 +403,13 @@ public struct QuickActionLabel: View {
     }
 
     public var body: some View {
-        VStack(spacing: RX.Space.s) {
+        // Accessibility text sizes: the disc beside its label, one action a line
+        // (`QuickActionRow`), so "Générer" is never cut inside the word.
+        let stacked = !dynamicTypeSize.isAccessibilitySize
+        let layout = stacked
+            ? AnyLayout(VStackLayout(spacing: RX.Space.s))
+            : AnyLayout(HStackLayout(spacing: RX.Space.m))
+        layout {
             if onPhoto {
                 RXGlassGlyph(systemImage: systemImage, diameter: RX.Metrics.actionDisc, glyph: RX.Glyph.action, onPhoto: true)
             } else {
@@ -416,10 +423,11 @@ public struct QuickActionLabel: View {
             title
                 .rxFont(.calloutMedium)
                 .foregroundStyle(onPhoto ? Color.white : RX.Palette.textPrimary.color)
-                .multilineTextAlignment(.center)
-                .dbText(maxLines: 2, minimumScale: 0.8)
+                .multilineTextAlignment(stacked ? .center : .leading)
+                .dbText(maxLines: stacked ? 2 : nil, minimumScale: 0.8)
+            if !stacked { Spacer(minLength: 0) }
         }
-        .frame(maxWidth: RX.Metrics.actionWidth)
+        .frame(maxWidth: stacked ? RX.Metrics.actionWidth : .infinity)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
     }
@@ -449,8 +457,14 @@ public struct QuickActionRow<Content: View>: View {
         self.content = content()
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     public var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        // Accessibility text sizes: one action a line, each label on the full width.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: RX.Space.s))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+        layout {
             content
         }
         .frame(maxWidth: .infinity)
