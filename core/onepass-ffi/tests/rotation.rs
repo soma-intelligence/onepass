@@ -1400,7 +1400,10 @@ fn create_account_v2_bytes_starts_on_v2() {
         FfiLineageState::Current
     );
     assert_eq!(
-        created.session.migrate_to_v2(keys.c(), keys.half()).unwrap(),
+        created
+            .session
+            .migrate_to_v2(keys.c(), keys.half())
+            .unwrap(),
         FfiMigration::Already
     );
 }

@@ -447,7 +447,10 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
         let notes = rig.notes.lock().unwrap();
-        assert_eq!(notes[0], "client not identified: cannot identify the client: code lookup");
+        assert_eq!(
+            notes[0],
+            "client not identified: cannot identify the client: code lookup"
+        );
         assert_eq!(notes[1], "client not identified");
     }
 
