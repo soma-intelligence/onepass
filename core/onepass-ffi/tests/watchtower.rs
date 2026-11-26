@@ -128,13 +128,18 @@ fn breach_lookup_runs_in_two_passes_with_prefixes_only() {
     assert!(second.score < first.score);
 }
 
-const SIGNED: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../onepass-core/tests/fixtures/site-pack/signed/"
-);
-
+/// The signed site pack vectors of onepass-core. `ONEPASS_CORE_FIXTURES`
+/// points at a copy of its `tests/fixtures` when the test runs away from the
+/// source tree (the Android emulator, see android/scripts/test-core-emulator.sh).
 fn signed(name: &str) -> Vec<u8> {
-    std::fs::read(format!("{SIGNED}{name}")).unwrap()
+    let root = std::env::var_os("ONEPASS_CORE_FIXTURES").map_or_else(
+        || {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../onepass-core/tests/fixtures")
+        },
+        std::path::PathBuf::from,
+    );
+    std::fs::read(root.join("site-pack/signed").join(name)).unwrap()
 }
 
 fn signed_key() -> Vec<u8> {
