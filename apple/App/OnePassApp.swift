@@ -29,6 +29,8 @@ struct OnePassApp: App {
         Window("OnePass", id: "main") {
             root
                 .frame(minWidth: 820, minHeight: 600)
+                // The copy commands of the Élément menu act only while this window is key.
+                .focusedSceneValue(\.mainWindowFocused, true)
                 // The app outlives its window (menu bar icon): a closed window ends a guest session,
                 // as quitting does (ruling A7), but keeps the vault open for the browsers.
                 .onDisappear {
@@ -245,6 +247,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model?.lockAll()
     }
 
+    /// ⌘Q (and Quitter OnePass of the menu bar icon) while an edited item has unsaved changes: the
+    /// app stays, and the main window asks "Enregistrer", "Abandonner" or "Continuer l'édition";
+    /// the first two quit once done (`AppModel.GuardedAction.quit`).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model else { return .terminateNow }
+        // `.terminateLater`: the confirmation answers (`AppModel.answerQuit`), so a quit asked by
+        // the system (log out, restart) is not dropped.
+        return model.shouldQuitNow() ? .terminateNow : .terminateLater
+    }
+
     /// Quit (the app outlives its window, which no longer locks): locking every account drops the
     /// keys and clears our clipboard value, which macOS would otherwise keep after the process is
     /// gone (no system expiration).
@@ -315,7 +327,8 @@ struct MenuBarMenu: View {
             model.searchFocusRequest &+= 1
         }
         Divider()
-        Button("Verrouiller") { model.perform(.lock) }
+        // Never silent: unsaved changes bring the window and its confirmation forward.
+        Button("Verrouiller") { model.lockFromMenuBar() }
             .disabled(model.session.state != .unlocked)
         Button("Réglages…") {
             NSApp.activate()

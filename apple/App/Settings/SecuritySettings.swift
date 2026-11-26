@@ -295,7 +295,12 @@ struct SecuritySettings: View {
             Button("settings.lockNow", systemImage: "lock") {
                 // The discard confirmation of an edited draft belongs to the main screen.
                 model.showSettings = false
+                #if os(macOS)
+                // The Réglages window: the main window comes forward with the confirmation.
+                model.lockFromMenuBar()
+                #else
                 model.perform(.lock)
+                #endif
             }
             .accessibilityIdentifier("settings.lockNow")
         } footer: {

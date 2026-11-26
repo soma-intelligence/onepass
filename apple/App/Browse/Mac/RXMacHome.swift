@@ -161,7 +161,7 @@ struct RXMacHome: View {
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
         return VStack(alignment: .leading, spacing: 0) {
             // The words open Watchtower: one button, no tap gesture on the card (UX-PRESS-02).
-            Button { model.page = .watchtower } label: {
+            Button { model.perform(.page(.watchtower)) } label: {
                 VStack(alignment: .leading, spacing: RX.Space.s) {
                     greeting
                         .rxFont(.calloutMedium)
@@ -380,8 +380,7 @@ struct RXMacHome: View {
 
     /// The item in the list of all items, as a click in the sidebar search would show it.
     private func open(_ summary: FfiItemSummary) {
-        model.showItems(.all)
-        model.selectedItem = ItemRef(vaultID: summary.vaultId, itemID: summary.id)
+        model.perform(.open(ItemRef(vaultID: summary.vaultId, itemID: summary.id)))
     }
 }
 

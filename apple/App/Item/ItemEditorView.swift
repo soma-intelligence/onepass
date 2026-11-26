@@ -174,6 +174,7 @@ struct ItemEditorView: View {
         .onChange(of: editor.isDirty, initial: true) { _, dirty in model.editorDirty = dirty }
         .onDisappear {
             model.editorDirty = false
+            model.editorDisappeared()
             // A removed field's Undo holds its value (a password, a seed): it goes with the editor.
             model.dropToastActions(owner: editor)
         }
@@ -417,7 +418,10 @@ struct ItemEditorView: View {
 
     private func save() {
         Task {
-            if let saved = await editor.save(with: model.session) { onDone(saved) }
+            let saved = await editor.save(with: model.session)
+            if let saved { onDone(saved) }
+            // "Enregistrer" of the unsaved changes confirmation: its action follows a saved draft.
+            model.editorSaveFinished(saved: saved != nil)
         }
     }
 }

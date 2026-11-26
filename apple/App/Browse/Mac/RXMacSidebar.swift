@@ -153,7 +153,7 @@ struct RXMacSidebar: View {
         }
         ForEach(session.vaults, id: \.id) { vault in
             let filter = ItemFilter.vault(vault.id)
-            rowButton(selected: isSelected(filter), id: "sidebar.vaults.\(vault.id)", action: { model.showItems(filter) }) {
+            rowButton(selected: isSelected(filter), id: "sidebar.vaults.\(vault.id)", action: { model.perform(.showItems(filter)) }) {
                 Text(String(vault.meta.name.prefix(1)).uppercased())
                     .font(RX.Glyph.font(RX.Glyph.macInitial, weight: .bold))
                     .foregroundStyle(.white)
@@ -254,7 +254,7 @@ struct RXMacSidebar: View {
             if selectedTags.contains(tag) { selectedTags.remove(tag) } else { selectedTags.insert(tag) }
         } else {
             selectedTags = []
-            model.showItems(filter)
+            model.perform(.showItems(filter))
         }
     }
 
@@ -354,7 +354,7 @@ struct RXMacSidebar: View {
     private func filterRow(
         _ title: LocalizedStringKey, symbol: String, count value: Int?, filter: ItemFilter, id: String
     ) -> some View {
-        rowButton(selected: isSelected(filter), id: "sidebar.\(id)", action: { model.showItems(filter) }) {
+        rowButton(selected: isSelected(filter), id: "sidebar.\(id)", action: { model.perform(.showItems(filter)) }) {
             glyph(symbol)
             Text(title)
             count(value)
@@ -364,7 +364,7 @@ struct RXMacSidebar: View {
     private func pageRow(
         _ title: LocalizedStringKey, symbol: String, page: BrowsePage, id: String, count value: Int? = nil
     ) -> some View {
-        rowButton(selected: model.page == page, id: id, action: { model.page = page }) {
+        rowButton(selected: model.page == page, id: id, action: { model.perform(.page(page)) }) {
             glyph(symbol)
             Text(title)
             count(value)

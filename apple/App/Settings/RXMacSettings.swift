@@ -293,7 +293,12 @@ private struct RXMacSettingsColumn: View {
                 // not saved. Apart, as its own card on the iPhone.
                 separator
                 row(Text("Verrouiller"), selected: false, id: "rx.settings.lock") {
+                    #if os(macOS)
+                    // The confirmation lives in the main window: it comes forward.
+                    model.lockFromMenuBar()
+                    #else
                     model.perform(.lock)
+                    #endif
                 } glyph: {
                     symbol("lock.fill")
                 }

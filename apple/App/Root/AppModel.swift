@@ -151,6 +151,17 @@ final class AppModel {
     var editorDirty = false
     /// An action that would drop a dirty draft, waiting for "Abandonner les modifications ?".
     var pendingDiscard: GuardedAction?
+    /// "Enregistrer" in that confirmation: the action runs once the editor's save succeeds
+    /// (`editorSaveFinished`), and is dropped if the save fails (the editor shows why).
+    private(set) var afterSave: GuardedAction?
+    #if os(macOS)
+    /// Set once the user chose to quit from the unsaved changes confirmation: the next
+    /// `applicationShouldTerminate` lets the app go.
+    private(set) var quitConfirmed = false
+    /// `applicationShouldTerminate` answered `.terminateLater`: AppKit waits for
+    /// `reply(toApplicationShouldTerminate:)`, sent once the user chose (`answerQuit`).
+    private var quitReplyPending = false
+    #endif
     /// iPhone and iPad: the settings sheet (the Mac has its own `Settings` window).
     var showSettings = false
     /// iPhone: how many account panels are open (each tab has its own account button); the tabs dim
@@ -1479,6 +1490,14 @@ final class AppModel {
     func mainWindowClosed() {
         publicSession?.end()
         dropPendingOtpLink()
+        // The editor's draft lived in the window's views: it is gone with them. A lock or a quit
+        // must not wait on a confirmation that no window shows.
+        editing = false
+        newItemDraft = nil
+        editorDirty = false
+        pendingDiscard = nil
+        dropAfterSave()
+        answerQuit(false)
         if settings.autoLockDelay.locksInBackground { lock() }
         for entry in accounts.openSessions
         where entry.session !== session && entry.session.state == .unlocked
@@ -1486,6 +1505,32 @@ final class AppModel {
         {
             entry.session.lock()
         }
+    }
+
+    /// "Verrouiller" of the menu bar icon. Never silent: with unsaved changes the window comes
+    /// forward on "Abandonner les modifications ?" (it says why the vault is still open); if the
+    /// vault is still open for any other reason, the window says so in a notification.
+    func lockFromMenuBar() {
+        perform(.lock)
+        if pendingDiscard == .lock {
+            mainWindowRequest &+= 1
+            NSApplication.shared.activate()
+        } else if session.state == .unlocked {
+            showToast(String(localized: "lock.notLocked"), kind: .error)
+            mainWindowRequest &+= 1
+            NSApplication.shared.activate()
+        }
+    }
+
+    /// ⌘Q (`applicationShouldTerminate`): false keeps the app open while an edited item waits for
+    /// "Enregistrer", "Abandonner" or "Continuer l'édition" in the main window.
+    func shouldQuitNow() -> Bool {
+        if quitConfirmed || !(isEditing && editorDirty) { return true }
+        perform(.quit)
+        quitReplyPending = true
+        mainWindowRequest &+= 1
+        NSApplication.shared.activate()
+        return false
     }
 
     /// An extension asks to pair: the window comes forward for the sheet with its code, and stays.
@@ -1728,7 +1773,7 @@ final class AppModel {
         // Travel Mode: an item behind extra protection is read in its detail only, after the
         // password and Face ID (spec 2026-11-02).
         guard !(item.travelGuard && session.isTravelling) else {
-            showToast(String(localized: "Protégé en voyage : ouvre l'élément pour le lire."), kind: .error)
+            showToast(String(localized: "copy.command.travelGuarded"), kind: .error)
             return
         }
         let totp: FfiTotpCode
@@ -1745,6 +1790,71 @@ final class AppModel {
         }?.label ?? ""
         noteItemUse(ref, action: .totp, field: otpLabel)
         showToast(String(localized: "root.codeCopied"))
+    }
+
+    /// What the "Copier le mot de passe" (⌘C) and "Copier le code de vérification" (⌘⇧C) commands
+    /// copy from the selected item.
+    enum SelectedSecret {
+        case password, verificationCode
+    }
+
+    /// The copy commands of the Élément menu act on the selected item, outside its editor.
+    var canCopyFromSelection: Bool {
+        session.state == .unlocked && page == .items && selectedItem != nil && !isEditing
+    }
+
+    /// ⌘C / ⌘⇧C on the selected item: the same clipboard as the Copier buttons (local only,
+    /// concealed, cleared after 90 s and on lock), the same toast and use counting. A `reprompt`
+    /// item asks Face ID / Touch ID first, as its detail does; an item protected in Travel Mode is
+    /// read in its detail only. Every refusal says why.
+    func copyFromSelection(_ secret: SelectedSecret) async {
+        guard canCopyFromSelection, let ref = selectedItem else { return }
+        let item: FfiItem
+        do {
+            item = try await session.loadItem(vaultID: ref.vaultID, itemID: ref.itemID)
+        } catch {
+            Self.log.error("copy command: item not loaded")
+            showToast(String(localized: "copy.command.nothing"), kind: .error)
+            return
+        }
+        guard item.trashedAt == nil, !session.hiddenVaultIDs.contains(ref.vaultID) else {
+            showToast(String(localized: "copy.command.nothing"), kind: .error)
+            return
+        }
+        guard !(item.travelGuard && session.isTravelling) else {
+            showToast(String(localized: "copy.command.travelGuarded"), kind: .error)
+            return
+        }
+        switch secret {
+        case .password:
+            guard let field = firstPasswordField(of: item), case .password(let value) = field.value else {
+                showToast(String(localized: "copy.command.noPassword"), kind: .error)
+                return
+            }
+            if item.reprompt {
+                guard await session.confirmUserPresence(prompt: String(localized: "copy.command.password"))
+                else {
+                    showToast(String(localized: "copy.command.openToCopy"), kind: .error)
+                    return
+                }
+            }
+            session.copy(value, concealed: true)
+            noteItemUse(ref, action: .copied, field: field.label)
+            showToast(String(localized: "app.copiedClearedIn90"))
+        case .verificationCode:
+            guard firstOtpValue(of: item) != nil else {
+                showToast(String(localized: "root.itemHasNoOne"), kind: .error)
+                return
+            }
+            if item.reprompt {
+                guard await session.confirmUserPresence(prompt: String(localized: "copy.command.code"))
+                else {
+                    showToast(String(localized: "copy.command.openToCopy"), kind: .error)
+                    return
+                }
+            }
+            await copyTotpCode(ref)
+        }
     }
 
     /// An in-app use of an item (password or one-time code copied, website opened): it feeds
@@ -1788,6 +1898,8 @@ final class AppModel {
         newItemDraft = nil
         editorDirty = false
         pendingDiscard = nil
+        dropAfterSave()
+        answerQuit(false)
         showNewItemPicker = false
         showImport = false
         showDeviceSetup = false
@@ -1911,6 +2023,14 @@ final class AppModel {
         case newItem(FfiItemType)
         /// A deep link to an item: shown in the full list (iPhone: the Éléments tab).
         case reveal(ItemRef)
+        /// A full page of the sidebar (Watchtower, Doublons, Profil...), in place of list and detail.
+        case page(BrowsePage)
+        /// An item filter of the sidebar: the list (and detail) of that filter.
+        case showItems(ItemFilter)
+        /// An item opened from a page (Mac Home's favorites): the full list, then the item.
+        case open(ItemRef)
+        /// Quit the app (Mac, ⌘Q).
+        case quit
     }
 
     /// An item editor (existing or new item) is on screen.
@@ -1918,12 +2038,26 @@ final class AppModel {
 
     /// Runs the action, or asks first when it would drop a dirty draft (rule of Task 13).
     func perform(_ action: GuardedAction) {
+        // A save asked by an earlier confirmation no longer decides what happens next.
+        dropAfterSave()
         if isEditing, editorDirty {
             if case .select(let ref) = action, ref == selectedItem, newItemDraft == nil { return }
+            if case .page(let target) = action, target == page { return }
+            if case .showItems(let filter) = action, page == .items, filter == selection, watchtowerFilter == nil {
+                return
+            }
             pendingDiscard = action
             return
         }
         apply(action)
+    }
+
+    /// "Continuer l'édition" in the confirmation (or the dialog dismissed): nothing happens, and a
+    /// waiting ⌘Q is cancelled.
+    func keepEditing() {
+        guard let action = pendingDiscard else { return }
+        pendingDiscard = nil
+        if action == .quit { answerQuit(false) }
     }
 
     /// "Abandonner" in the confirmation.
@@ -1931,6 +2065,59 @@ final class AppModel {
         guard let action = pendingDiscard else { return }
         pendingDiscard = nil
         apply(action)
+    }
+
+    /// "Enregistrer" in the confirmation: asks the editor on screen to save; the action follows a
+    /// successful save (`editorSaveFinished`).
+    func saveThenContinue() {
+        guard let action = pendingDiscard else { return }
+        pendingDiscard = nil
+        afterSave = action
+        saveRequest &+= 1
+    }
+
+    /// The editor's save ended. Saved: the action waiting on it runs; failed: it is dropped and the
+    /// user stays in the editor, which shows the error.
+    func editorSaveFinished(saved: Bool) {
+        guard let action = afterSave else { return }
+        afterSave = nil
+        if saved {
+            editorDirty = false
+            apply(action)
+        } else if action == .quit {
+            answerQuit(false)
+        }
+    }
+
+    /// The editor left the screen: a save it was asked for no longer leads anywhere.
+    func editorDisappeared() {
+        dropAfterSave()
+    }
+
+    /// Forgets the action waiting on a save; a waiting ⌘Q is cancelled.
+    private func dropAfterSave() {
+        guard let action = afterSave else { return }
+        afterSave = nil
+        if action == .quit { answerQuit(false) }
+    }
+
+    /// Answers a ⌘Q left waiting (`.terminateLater`); does nothing when none waits.
+    private func answerQuit(_ quit: Bool) {
+        #if os(macOS)
+        guard quitReplyPending else { return }
+        quitReplyPending = false
+        if quit { quitConfirmed = true }
+        NSApplication.shared.reply(toApplicationShouldTerminate: quit)
+        #endif
+    }
+
+    /// What a guarded action waits on, for the confirmation's destructive button.
+    var discardButtonTitle: LocalizedStringKey {
+        switch pendingDiscard {
+        case .lock, .lockAll: "Abandonner et verrouiller"
+        case .quit: "editor.unsaved.discardAndQuit"
+        default: "editor.unsaved.discard"
+        }
     }
 
     private func apply(_ action: GuardedAction) {
@@ -1970,6 +2157,31 @@ final class AppModel {
             watchtowerFilter = nil
             browseReveal = .item(ref)
             selectedItem = ref
+        case .page(let target):
+            newItemDraft = nil
+            editing = false
+            editorDirty = false
+            page = target
+        case .showItems(let filter):
+            newItemDraft = nil
+            editing = false
+            editorDirty = false
+            showItems(filter)
+        case .open(let ref):
+            newItemDraft = nil
+            editing = false
+            editorDirty = false
+            showItems(.all)
+            selectedItem = ref
+        case .quit:
+            #if os(macOS)
+            if quitReplyPending {
+                answerQuit(true)
+            } else {
+                quitConfirmed = true
+                NSApplication.shared.terminate(nil)
+            }
+            #endif
         }
     }
 

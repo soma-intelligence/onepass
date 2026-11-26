@@ -252,6 +252,8 @@ extension VerticalAlignment {
 /// A read-only row of a detail card: small accent label above the value, an optional accessory on the
 /// right (strength, countdown). Clicking the row copies. On the Mac a hover highlights the row and
 /// shows "Copier" and the menu of the other actions; elsewhere the menu (with Copier) stays visible.
+/// Mac keyboard and VoiceOver: Tab reaches the same two controls (shown while one has the focus),
+/// and the row carries Copier and the menu's actions (Révéler, Afficher en grand) as named actions.
 struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
     let label: String
     let copyIdentifier: String?
@@ -265,6 +267,18 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
     /// verification code: the menu sits on the digits' row, not between label and code).
     var centersOnValue = false
     @State private var hovered = false
+    #if os(macOS)
+    /// The control of the actions that has the keyboard focus (full keyboard access).
+    @FocusState private var focusedAction: ActionFocus?
+
+    private enum ActionFocus: Hashable {
+        case copy, menu
+    }
+
+    /// Copier and the menu show under the pointer or while one of them has the keyboard focus;
+    /// at rest the row looks as before.
+    private var actionsShown: Bool { hovered || focusedAction != nil }
+    #endif
     #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Copies made from this row; each one plays the haptic and restarts the "copied" hold.
@@ -300,7 +314,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
             // Same slot at the trailing edge: the accessory gives way to Copier and the menu on hover,
             // so nothing reflows and the accessory sits flush right.
             ZStack(alignment: .trailing) {
-                accessory.opacity(hovered ? 0 : 1)
+                accessory.opacity(actionsShown ? 0 : 1)
                 actions
             }
             #else
@@ -318,7 +332,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                 .padding(Theme.Space.xs)
             #else
             RoundedRectangle(cornerRadius: 10)
-                .fill(Theme.accent.opacity(hovered ? 0.18 : 0))
+                .fill(Theme.accent.opacity(actionsShown ? 0.18 : 0))
                 .padding(4)
             #endif
         }
@@ -343,6 +357,10 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
         .accessibilityElement(children: .contain)
         #if os(macOS)
         .modifier(CopyAccessibilityAction(onCopy: onCopy, label: copyLabel))
+        // The menu's actions (Révéler / Masquer, Afficher en grand) without the hover.
+        .accessibilityActions {
+            if showsMenu { menu }
+        }
         #endif
     }
 
@@ -354,6 +372,7 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                     Text("Copier").font(.callout.weight(.medium)).foregroundStyle(Theme.readableAccent)
                 }
                 .buttonStyle(.borderless)
+                .focused($focusedAction, equals: .copy)
                 .accessibilityLabel(copyLabel)
                 .accessibilityIdentifier(copyIdentifier ?? "")
             }
@@ -371,12 +390,15 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
                 .buttonStyle(.borderless)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .focused($focusedAction, equals: .menu)
                 .accessibilityLabel(Text("app.actionsFor \(label)"))
             }
         }
-        .opacity(hovered ? 1 : 0)
-        .allowsHitTesting(hovered)
-        .accessibilityHidden(!hovered)
+        // Hidden at rest but still in the keyboard loop: focusing a control shows both. VoiceOver
+        // reads the row's named actions instead (`CopyAccessibilityAction`, `accessibilityActions`).
+        .opacity(actionsShown ? 1 : 0)
+        .allowsHitTesting(actionsShown)
+        .accessibilityHidden(!actionsShown)
         #elseif os(iOS)
         if onCopy != nil || showsMenu {
             Menu {

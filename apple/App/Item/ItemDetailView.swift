@@ -118,6 +118,9 @@ struct ItemDetailView: View {
         .onChange(of: model.editRequest) {
             if !standalone, let item, model.selectedItem == ref { startEditing(item) }
         }
+        // Leaving the detail ends its editor. Every way out the user takes while the draft has
+        // unsaved changes (sidebar, another item, lock, quit) asks first (`AppModel.perform`), so
+        // nothing dirty is left here by then.
         .onDisappear { if !standalone { model.editing = false } }
         // A remote change set was applied: show the stored item, or warn the editor (spec 8).
         .onChange(of: model.remoteRevision) {
@@ -128,7 +131,7 @@ struct ItemDetailView: View {
             Task { await remoteChanged() }
         }
         .alert(
-            "Élément modifié entre-temps",
+            "item.changedMeanwhile.title",
             isPresented: Binding(get: { remoteVersion != nil }, set: { if !$0 { remoteVersion = nil } })
         ) {
             Button("item.reload", role: .destructive) {
