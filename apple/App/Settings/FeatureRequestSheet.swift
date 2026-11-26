@@ -128,7 +128,9 @@ struct FeatureRequestSheet: View {
             .padding(.bottom, RX.Space.xl)
             .animation(.snappy, value: failure)
         }
+        #if !os(visionOS)
         .scrollDismissesKeyboard(.interactively)
+        #endif
         // Envoyer stays in reach above the keyboard, the one action of the page.
         .safeAreaInset(edge: .bottom) { sendBar }
     }

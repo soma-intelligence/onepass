@@ -278,6 +278,9 @@ struct DetailRow<Value: View, Accessory: View, MenuItems: View>: View {
     /// Copier and the menu show under the pointer or while one of them has the keyboard focus;
     /// at rest the row looks as before.
     private var actionsShown: Bool { hovered || focusedAction != nil }
+    #else
+    /// visionOS: the actions show while the row is hovered (gaze or pointer).
+    private var actionsShown: Bool { hovered }
     #endif
     #if os(iOS)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

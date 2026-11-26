@@ -261,6 +261,8 @@ struct AccountPanel: View {
     #else
     static let inset: CGFloat = Theme.Space.s
     static let cardRadius: CGFloat = Theme.Radius.card
+    /// visionOS: the panel keeps the iPhone width (the Mac caps it at the sidebar column instead).
+    static let width: CGFloat = 296
     #endif
 
     var body: some View {
