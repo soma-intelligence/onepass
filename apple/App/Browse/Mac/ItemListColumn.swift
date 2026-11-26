@@ -814,7 +814,7 @@ struct ItemListColumn: View {
         var items: [FfiItemSummary]
     }
 
-    /// Consecutive months of a list sorted by date, newest first: "OCTOBRE 2026".
+    /// Consecutive months of a list sorted by date, newest first: "OCTOBRE 2026", in the app's language.
     static func months(_ items: [FfiItemSummary], calendar: Calendar = .current) -> [Month] {
         var result: [Month] = []
         for item in items {
@@ -824,8 +824,8 @@ struct ItemListColumn: View {
             if result.last?.id == id {
                 result[result.count - 1].items.append(item)
             } else {
-                let title = date.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: "fr_FR")))
-                result.append(Month(id: id, title: title.uppercased(with: Locale(identifier: "fr_FR")), items: [item]))
+                let title = date.formatted(.dateTime.month(.wide).year())
+                result.append(Month(id: id, title: title.uppercased(with: .current), items: [item]))
             }
         }
         return result

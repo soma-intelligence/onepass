@@ -413,21 +413,21 @@ private struct BrowserExtensionsSection: View {
             }
             ForEach(bridge.blocked, id: \.self) { extensionId in
                 LabeledContent {
-                    Button("Autoriser de nouveau") { bridge.allowAgain(extensionId) }
+                    Button("settings.devices.browsers.allowAgain") { bridge.allowAgain(extensionId) }
                         .accessibilityIdentifier("settings.devices.browsers.allowAgain")
                 } label: {
                     // "fill" is OnePass Fill, the Mac login item (forgotten here, or turned on
                     // again in Remplir partout, which lets it pair again).
                     Text(extensionId == "safari" ? "Safari" : extensionId == "fill" ? "OnePass Fill" : extensionId)
                         .lineLimit(1)
-                    Text("Oubliée : ne se reconnecte plus seule. Associe-la avec le code, ou autorise-la de nouveau.")
+                    Text("settings.devices.browsers.forgotten")
                 }
                 .accessibilityIdentifier("settings.devices.browsers.blocked")
             }
         } header: {
             Text("settings.browserExtensions")
         } footer: {
-            Text("Elles se connectent seules à OnePass quand le Mac vérifie la signature du navigateur, remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui.")
+            Text("settings.devices.browsers.footer")
         }
         .confirmationDialog(
             Text("settings.forget2 \(forgetting?.browser ?? "")"),
@@ -437,8 +437,16 @@ private struct BrowserExtensionsSection: View {
             Button("settings.forgetExtension", role: .destructive) { bridge.forget(paired.id) }
                 .accessibilityIdentifier("settings.devices.browsers.confirmForget")
         } message: { _ in
-            Text("Elle ne pourra plus remplir ni se reconnecter seule. Pour la réutiliser, associe-la avec le code, ou autorise-la de nouveau ici.")
+            Text("settings.devices.browsers.forgetMessage")
         }
+    }
+
+    /// "Associée automatiquement · utilisée il y a 2 heures", or the extension's name in front.
+    private func usedText(_ paired: BrowserBridge.Paired) -> Text {
+        let used = paired.lastUsed.formatted(.relative(presentation: .named))
+        return paired.automatic
+            ? Text("settings.devices.browsers.autoPairedUsed \(used)")
+            : Text("\(paired.extensionName) · utilisée \(used)")
     }
 
     private func row(_ paired: BrowserBridge.Paired) -> some View {
@@ -459,9 +467,7 @@ private struct BrowserExtensionsSection: View {
                         .padding(.vertical, 2)
                         .background(.fill.tertiary, in: Capsule())
                 }
-                Text(paired.automatic
-                    ? "Associée automatiquement · utilisée \(paired.lastUsed.formatted(.relative(presentation: .named)))"
-                    : "\(paired.extensionName) · utilisée \(paired.lastUsed.formatted(.relative(presentation: .named)))")
+                usedText(paired)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

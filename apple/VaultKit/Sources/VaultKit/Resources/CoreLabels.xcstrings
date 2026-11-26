@@ -6152,43 +6152,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "Bestätigungscode"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Verification code"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Código de verificación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Code de vérification"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Codice di verifica"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "확인 코드"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "验证码"
           }
         }
       }
@@ -8840,43 +8840,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA-Backup-Codes"
+            "value" : "Backup-Codes"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "2FA backup codes"
+            "value" : "Backup codes"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Códigos de recuperación 2FA"
+            "value" : "Códigos de recuperación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codes de secours 2FA"
+            "value" : "Codes de secours"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codici di backup 2FA"
+            "value" : "Codici di backup"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA 백업 코드"
+            "value" : "백업 코드"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA 备用验证码"
+            "value" : "备用验证码"
           }
         }
       }
@@ -9080,43 +9080,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Telefonnummer für 2FA"
+            "value" : "Telefonnummer zur Wiederherstellung"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "2FA phone"
+            "value" : "Recovery phone"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Teléfono para la 2FA"
+            "value" : "Teléfono de recuperación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Téléphone pour la 2FA"
+            "value" : "Téléphone de secours"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Telefono per la 2FA"
+            "value" : "Telefono di recupero"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA 전화번호"
+            "value" : "복구 전화번호"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA 电话号码"
+            "value" : "恢复电话号码"
           }
         }
       }
@@ -9224,43 +9224,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "Bestätigungscode"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Verification code"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Código de verificación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Code de vérification"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Codice di verifica"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "확인 코드"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "验证码"
           }
         }
       }
@@ -14072,43 +14072,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "Bestätigungscode"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Verification code"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Código de verificación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Code de vérification"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Codice di verifica"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "확인 코드"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "验证码"
           }
         }
       }

@@ -32,6 +32,7 @@ final class SafariAutofillUITests: XCTestCase {
 
     override func setUp() async throws {
         continueAfterFailure = false
+        onePass.launchArguments += ["-OnePassRX", "NO"]
     }
 
     // MARK: - Preparation
@@ -114,8 +115,9 @@ final class SafariAutofillUITests: XCTestCase {
             tap(more, in: onePass)
             let search = onePass.textFields["editor.addField.search"]
             if search.waitForExistence(timeout: 5) {
-                search.typeText("totp")
-                let row = onePass.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'TOTP'")).firstMatch
+                search.typeText("code")
+                let row = onePass.buttons.matching(NSPredicate(
+                    format: "label CONTAINS[c] 'vérification' OR label CONTAINS[c] 'verification'")).firstMatch
                 if row.waitForExistence(timeout: 3) { row.tap() } else { print("Add field popover:\n\(onePass.debugDescription)") }
             }
             let totp = onePass.descendants(matching: .any)["editor.field.totp"].firstMatch

@@ -179,7 +179,7 @@ struct IgnoredDeletionsView: View {
 
     static func date(_ unix: Int64) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.locale = .current
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(unix)))
