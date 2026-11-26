@@ -57,6 +57,7 @@ final class OpenAndSignInUITests: XCTestCase {
 
     /// The app unlocked (Face ID by itself, else the master password), the Login opened from search.
     private func openItem() {
+        onePass.launchArguments += ["-OnePassRX", "NO"]
         onePass.launch()
         let home = onePass.buttons["items.new"]
         let field = onePass.secureTextFields["lock.password"]

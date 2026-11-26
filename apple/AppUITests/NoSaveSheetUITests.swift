@@ -24,7 +24,7 @@ final class NoSaveSheetUITests: XCTestCase {
 
     /// Debug: the app's own test store, defaults suite and keychain service, never the real ones.
     /// In French whatever the simulator's language: the steps look for French button labels.
-    private static let isolated = ["-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR"]
+    private static let isolated = ["-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR", "-OnePassRX", "NO"]
 
     override func setUp() async throws {
         continueAfterFailure = false

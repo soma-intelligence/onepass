@@ -28,7 +28,7 @@ final class RunThroughUITests: XCTestCase {
     /// Debug: the app's own test store, defaults suite and keychain service
     /// (`me.somalabs.onepass.uitest`), never the real ones. The store is in the App Group container
     /// and the extension follows the isolated launch (`UITestIsolation`).
-    private static let isolated = ["-OnePassTestIsolation", "YES"]
+    private static let isolated = ["-OnePassTestIsolation", "YES", "-OnePassRX", "NO"]
 
     override func setUp() async throws {
         continueAfterFailure = false

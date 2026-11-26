@@ -38,9 +38,9 @@ final class ScreenshotUITests: XCTestCase {
         Screen(name: "settings", arguments: demo + ["-OnePassDemoSettings", "YES"], ready: "settings.general"),
     ]
 
-    private static let demo = ["-OnePassDemoData", "YES"]
+    private static let demo = ["-OnePassDemoData", "YES", "-OnePassRX", "NO"]
     /// Debug: the app's own test store, defaults suite and keychain service (never the real ones).
-    private static let isolated = ["-OnePassTestIsolation", "YES"]
+    private static let isolated = ["-OnePassTestIsolation", "YES", "-OnePassRX", "NO"]
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -129,7 +129,7 @@ final class ListsFeedbackCaptureUITests: XCTestCase {
 
     private func launch(_ arguments: [String], ready: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO"] + arguments
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoBiometrics", "NO"] + arguments
         app.launch()
         let element = app.descendants(matching: .any)[ready].firstMatch
         XCTAssertTrue(element.waitForExistence(timeout: 90), "\(ready) not shown")

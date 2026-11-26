@@ -19,7 +19,7 @@ final class OnboardingAndItemUITests: XCTestCase {
     /// localized: the labels below are checked in French, its source language, whatever the
     /// language of the simulator.
     private static let isolated = [
-        "-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR",
+        "-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR", "-OnePassRX", "NO",
     ]
 
     override func setUp() async throws {
@@ -268,7 +268,7 @@ final class OnboardingAndItemUITests: XCTestCase {
     /// screen (`-OnePassDemoList crypto`) shows the demo wallets' balance from recorded answers.
     func testDemoDataOpensTheVaultWithCryptoBalances() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassDemoList", "crypto", "-OnePassDemoBiometrics", "NO"]
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoList", "crypto", "-OnePassDemoBiometrics", "NO"]
         app.launch()
 
         let welcome = app.buttons["onboarding.create"]
@@ -294,7 +294,7 @@ final class OnboardingAndItemUITests: XCTestCase {
         let app = XCUIApplication()
         // Demo data (fictional); `-OnePassDemoVaultPassage` locks the demo vault once, then
         // unlocks it through the session (Face ID simulated), so the vault door plays for real.
-        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassFoldLayout", "YES", "-OnePassDemoVaultPassage", "YES"]
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassFoldLayout", "YES", "-OnePassDemoVaultPassage", "YES"]
         app.launch()
         try XCTSkipUnless(app.windows.firstMatch.frame.width >= 600, "needs a wide simulator")
         let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'list.row.'"))

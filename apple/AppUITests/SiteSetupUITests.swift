@@ -34,7 +34,7 @@ final class SiteSetupUITests: XCTestCase {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone, "iPhone only")
         app = XCUIApplication()
         app.launchArguments += [
-            "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO", "-OnePassDemoCrypto", "NO",
+            "-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoBiometrics", "NO", "-OnePassDemoCrypto", "NO",
             "-OnePassDemoTab", "watchtower",
         ]
         app.launch()
