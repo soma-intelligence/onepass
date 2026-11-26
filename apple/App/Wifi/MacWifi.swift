@@ -203,7 +203,7 @@ final class MacWifiMonitor: NSObject, CWEventDelegate, CLLocationManagerDelegate
         Task {
             _ = try? await center.requestAuthorization(options: [.alert, .provisional])
             let content = UNMutableNotificationContent()
-            content.body = "Wi-Fi « \(ssid) » enregistré dans Kelid"
+            content.body = "Wi-Fi « \(ssid) » enregistré dans Cleon"
             content.categoryIdentifier = Self.category
             content.userInfo = ["itemID": itemID, "vaultID": vaultID]
             content.interruptionLevel = .passive

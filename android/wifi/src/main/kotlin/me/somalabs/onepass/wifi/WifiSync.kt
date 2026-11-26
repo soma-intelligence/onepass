@@ -7,7 +7,7 @@ enum class WifiSecurity { WPA2, WPA3 }
 data class NetworkKey(val ssid: String, val security: WifiSecurity)
 
 /**
- * One network Kelid hands to Android, as the core chose it
+ * One network Cleon hands to Android, as the core chose it
  * (`Session.wifiNetworks`, shared model `onepass_core::wifi`: SSID plus a
  * WPA2 or WPA3 personal key, never open, WEP or enterprise, one per SSID).
  * [fingerprint] is secret free and moves when the item changes. The
@@ -36,7 +36,7 @@ data class WifiNetwork(
             "fingerprint=$fingerprint, passphrase=[redacted])"
 }
 
-/** What Kelid gave Android for one SSID. No secret. */
+/** What Cleon gave Android for one SSID. No secret. */
 data class Applied(val security: WifiSecurity, val fingerprint: String)
 
 /** Android's answer about the one-time "allow suggested networks" prompt. */
@@ -57,7 +57,7 @@ sealed interface PortResult {
 }
 
 /**
- * The slice of WifiManager Kelid uses, behind an interface so the sync logic
+ * The slice of WifiManager Cleon uses, behind an interface so the sync logic
  * is tested on the JVM against a fake.
  */
 interface SuggestionPort {
@@ -80,7 +80,7 @@ interface SuggestionPort {
     fun approval(): SuggestionApproval
 }
 
-/** What Kelid last installed, by SSID. Lives in app preferences. */
+/** What Cleon last installed, by SSID. Lives in app preferences. */
 interface SyncLedger {
     fun read(): Map<String, Applied>
 
@@ -126,7 +126,7 @@ data class SyncPlan(
 /** What a sync did, for the settings screen. Counts only, never a network. */
 data class SyncReport(
     val enabled: Boolean,
-    /** Networks Android now holds from Kelid. */
+    /** Networks Android now holds from Cleon. */
     val installed: Int,
     val added: Int,
     val updated: Int,
@@ -177,7 +177,7 @@ class WifiAutoSync(
         )
     }
 
-    /** The switch is off: every Kelid suggestion leaves the device. */
+    /** The switch is off: every Cleon suggestion leaves the device. */
     @Synchronized
     fun disable(): SyncReport {
         val known = ledger.read()

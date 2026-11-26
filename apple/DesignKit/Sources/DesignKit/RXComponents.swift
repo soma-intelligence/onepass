@@ -2,7 +2,7 @@ import DesignBridgeKit
 import SwiftUI
 
 // The building blocks of the RX look, one per main component of the Penpot file (page
-// "Kelid RX · Components"): glass button, colour disc, item row, menu row, card, quick actions,
+// "Cleon RX · Components"): glass button, colour disc, item row, menu row, card, quick actions,
 // plan card and perk tile. They draw only; the screens wrap them in their own Button,
 // NavigationLink, ShareLink or Menu, so the actions stay where they are today.
 

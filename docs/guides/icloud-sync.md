@@ -1,10 +1,10 @@
-# How Kelid syncs through iCloud, and what Apple can see
+# How Cleon syncs through iCloud, and what Apple can see
 
-Kelid syncs your vault end to end encrypted through **CloudKit, in your own private iCloud database**. Each record is encrypted by the Kelid Rust core before it leaves the device, then stored by CloudKit in `encryptedValues`, so it is encrypted a second time by Apple; the threat model assumes Apple's layer fails and counts only Kelid's own encryption and signatures. There is no Kelid account server and no subscription for sync.
+Cleon syncs your vault end to end encrypted through **CloudKit, in your own private iCloud database**. Each record is encrypted by the Cleon Rust core before it leaves the device, then stored by CloudKit in `encryptedValues`, so it is encrypted a second time by Apple; the threat model assumes Apple's layer fails and counts only Cleon's own encryption and signatures. There is no Cleon account server and no subscription for sync.
 
 ## What lands in iCloud
 
-Private CloudKit database, zone `Kelid`, record type `OPRecord`. For each record:
+Private CloudKit database, zone `Cleon`, record type `OPRecord`. For each record:
 
 | Field | Content |
 |---|---|
@@ -29,7 +29,7 @@ Writes go to a local pending area and are sent with a conditional save (`ifServe
 
 ## Switching iCloud accounts
 
-On the first sync the app records the CloudKit user id. If a different iCloud account signs in later, sync stops and the app says "The iCloud account changed" until you sign back in or explicitly choose to use the new account. A zone holding another Kelid account is refused.
+On the first sync the app records the CloudKit user id. If a different iCloud account signs in later, sync stops and the app says "The iCloud account changed" until you sign back in or explicitly choose to use the new account. A zone holding another Cleon account is refused.
 
 ## Building it yourself
 
@@ -37,7 +37,7 @@ CloudKit sync is compiled only into the signed `Release-CloudKit` configuration,
 
 ## Related
 
-- [Can I self-host Kelid sync?](self-hosted-sync-server.md)
-- [Kelid threat model](threat-model.md)
+- [Can I self-host Cleon sync?](self-hosted-sync-server.md)
+- [Cleon threat model](threat-model.md)
 - [Add a new device](add-a-device.md)
 - [README](../../README.md)

@@ -403,7 +403,7 @@ private struct DeviceStep: View {
     var body: some View {
         StepTitle(
             title: Platform.isMac ? "Ce Mac est-il à toi ?" : "Cet appareil est-il à toi ?",
-            subtitle: "La réponse règle ce que Kelid garde sur cet appareil.")
+            subtitle: "La réponse règle ce que Cleon garde sur cet appareil.")
         VStack(spacing: 10) {
             option(
                 .personal, "Oui, il est à moi",
@@ -866,7 +866,7 @@ private struct BiometricsStep: View {
 
 // MARK: - Remplissage automatique
 
-/// Once the account exists: asks the system to make Kelid the AutoFill provider (the system
+/// Once the account exists: asks the system to make Cleon the AutoFill provider (the system
 /// prompt, the system settings when it does not show). "Plus tard" goes on without it: the tip
 /// card of Accueil offers it again. Never among the steps when the provider is already on.
 private struct AutoFillStep: View {

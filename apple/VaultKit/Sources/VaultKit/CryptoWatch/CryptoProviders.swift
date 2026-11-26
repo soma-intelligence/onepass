@@ -27,7 +27,7 @@ public struct LiveCryptoHTTP: CryptoHTTP {
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 45
         // No identifier beyond the addresses: a generic agent, no language header.
-        config.httpAdditionalHeaders = ["User-Agent": "Kelid", "Accept-Language": "en"]
+        config.httpAdditionalHeaders = ["User-Agent": "Cleon", "Accept-Language": "en"]
         session = URLSession(configuration: config)
     }
 

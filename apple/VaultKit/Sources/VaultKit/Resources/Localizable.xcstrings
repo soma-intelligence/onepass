@@ -148,43 +148,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Der erste Account auf diesem Gerät kann nicht entfernt werden. Setze Kelid zurück, um ihn zu löschen."
+            "value" : "Der erste Account auf diesem Gerät kann nicht entfernt werden. Setze Cleon zurück, um ihn zu löschen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The device's first account can't be removed. To erase it, reset Kelid."
+            "value" : "The device's first account can't be removed. To erase it, reset Cleon."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La primera cuenta del dispositivo no se puede quitar. Para borrarla, restablece Kelid."
+            "value" : "La primera cuenta del dispositivo no se puede quitar. Para borrarla, restablece Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le premier compte de l'appareil ne se retire pas. Pour l'effacer, réinitialise Kelid."
+            "value" : "Le premier compte de l'appareil ne se retire pas. Pour l'effacer, réinitialise Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il primo account del dispositivo non si può rimuovere. Per cancellarlo, reimposta Kelid."
+            "value" : "Il primo account del dispositivo non si può rimuovere. Per cancellarlo, reimposta Cleon."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "기기의 첫 번째 계정은 제거할 수 없어요. 지우려면 Kelid를 재설정해 주세요."
+            "value" : "기기의 첫 번째 계정은 제거할 수 없어요. 지우려면 Cleon를 재설정해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "无法移除这台设备上的第一个账户。要抹掉此账户，请重置 Kelid。"
+            "value" : "无法移除这台设备上的第一个账户。要抹掉此账户，请重置 Cleon。"
           }
         }
       }
@@ -424,48 +424,48 @@
         }
       }
     },
-    "Emergency Kit Kelid" : {
+    "Emergency Kit Cleon" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid Emergency Kit"
+            "value" : "Cleon Emergency Kit"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid Emergency Kit"
+            "value" : "Cleon Emergency Kit"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Emergency Kit de Kelid"
+            "value" : "Emergency Kit de Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Emergency Kit Kelid"
+            "value" : "Emergency Kit Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Emergency Kit di Kelid"
+            "value" : "Emergency Kit di Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid Emergency Kit"
+            "value" : "Cleon Emergency Kit"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid Emergency Kit"
+            "value" : "Cleon Emergency Kit"
           }
         }
       }
@@ -1134,43 +1134,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ mit Kelid koppeln"
+            "value" : "%@ mit Cleon koppeln"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair %@ with Kelid"
+            "value" : "Pair %@ with Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Asociar %@ a Kelid"
+            "value" : "Asociar %@ a Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Associer %@ à Kelid"
+            "value" : "Associer %@ à Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Associa %@ a Kelid"
+            "value" : "Associa %@ a Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@를 Kelid와 페어링"
+            "value" : "%@를 Cleon와 페어링"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "将 %@ 与 Kelid 配对"
+            "value" : "将 %@ 与 Cleon 配对"
           }
         }
       }
@@ -1463,43 +1463,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@ mit Kelid koppeln"
+            "value" : "%@ mit Cleon koppeln"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair %@ with Kelid"
+            "value" : "Pair %@ with Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enlazar %@ con Kelid"
+            "value" : "Enlazar %@ con Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Appairer %@ avec Kelid"
+            "value" : "Appairer %@ avec Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abbina %@ a Kelid"
+            "value" : "Abbina %@ a Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@와 Kelid 페어링"
+            "value" : "%@와 Cleon 페어링"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "将 %@ 与 Kelid 配对"
+            "value" : "将 %@ 与 Cleon 配对"
           }
         }
       }
@@ -2451,43 +2451,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Scanne diesen QR-Code mit Kelid auf deinem iPhone oder iPad, um ein Gerät hinzuzufügen. Gib auf einem Mac den Secret Key von Hand ein."
+            "value" : "Scanne diesen QR-Code mit Cleon auf deinem iPhone oder iPad, um ein Gerät hinzuzufügen. Gib auf einem Mac den Secret Key von Hand ein."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scan this QR code with Kelid on your iPhone or iPad to add a device. On a Mac, type the Secret Key by hand."
+            "value" : "Scan this QR code with Cleon on your iPhone or iPad to add a device. On a Mac, type the Secret Key by hand."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Escanea este código QR con Kelid en tu iPhone o iPad para añadir un dispositivo. En un Mac, escribe la Secret Key a mano."
+            "value" : "Escanea este código QR con Cleon en tu iPhone o iPad para añadir un dispositivo. En un Mac, escribe la Secret Key a mano."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scanne ce QR code avec Kelid sur ton iPhone ou ton iPad pour ajouter un appareil. Sur un Mac, tape la Secret Key à la main."
+            "value" : "Scanne ce QR code avec Cleon sur ton iPhone ou ton iPad pour ajouter un appareil. Sur un Mac, tape la Secret Key à la main."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scansiona questo codice QR con Kelid su iPhone o iPad per aggiungere un dispositivo. Su un Mac, digita la Secret Key a mano."
+            "value" : "Scansiona questo codice QR con Cleon su iPhone o iPad per aggiungere un dispositivo. Su un Mac, digita la Secret Key a mano."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "기기를 추가하려면 iPhone 또는 iPad의 Kelid로 이 QR 코드를 스캔하세요. Mac에서는 Secret Key를 직접 입력하세요."
+            "value" : "기기를 추가하려면 iPhone 또는 iPad의 Cleon로 이 QR 코드를 스캔하세요. Mac에서는 Secret Key를 직접 입력하세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在你的 iPhone 或 iPad 上使用 Kelid 扫描此二维码以添加设备。在 Mac 上，请手动输入 Secret Key。"
+            "value" : "在你的 iPhone 或 iPad 上使用 Cleon 扫描此二维码以添加设备。在 Mac 上，请手动输入 Secret Key。"
           }
         }
       }
@@ -2545,43 +2545,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Um ein neues Gerät hinzuzufügen, öffne Kelid und wähle „Ich habe mein Emergency Kit“. Gib dann den Secret Key ein oder scanne ihn und gib dein Master-Passwort ein."
+            "value" : "Um ein neues Gerät hinzuzufügen, öffne Cleon und wähle „Ich habe mein Emergency Kit“. Gib dann den Secret Key ein oder scanne ihn und gib dein Master-Passwort ein."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To add a new device, open Kelid, choose “I have my Emergency Kit”, then type or scan the Secret Key and enter your master password."
+            "value" : "To add a new device, open Cleon, choose “I have my Emergency Kit”, then type or scan the Secret Key and enter your master password."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Para añadir un dispositivo nuevo, abre Kelid, elige «Tengo mi Emergency Kit», escribe o escanea la Secret Key e introduce tu contraseña maestra."
+            "value" : "Para añadir un dispositivo nuevo, abre Cleon, elige «Tengo mi Emergency Kit», escribe o escanea la Secret Key e introduce tu contraseña maestra."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pour ajouter un nouvel appareil, ouvre Kelid, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître."
+            "value" : "Pour ajouter un nouvel appareil, ouvre Cleon, choisis « J'ai mon Emergency Kit », puis saisis ou scanne la Secret Key et entre ton mot de passe maître."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Per aggiungere un nuovo dispositivo, apri Kelid, scegli «Ho il mio Emergency Kit», poi digita o scansiona la Secret Key e inserisci la password principale."
+            "value" : "Per aggiungere un nuovo dispositivo, apri Cleon, scegli «Ho il mio Emergency Kit», poi digita o scansiona la Secret Key e inserisci la password principale."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "새 기기를 추가하려면 Kelid를 열고 ‘Emergency Kit가 있어요’를 선택하세요. 그런 다음 Secret Key를 입력하거나 스캔하고 마스터 암호를 입력하세요."
+            "value" : "새 기기를 추가하려면 Cleon를 열고 ‘Emergency Kit가 있어요’를 선택하세요. 그런 다음 Secret Key를 입력하거나 스캔하고 마스터 암호를 입력하세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "要添加新设备，请打开 Kelid，选择“我有 Emergency Kit”，然后输入或扫描 Secret Key，再输入你的主密码。"
+            "value" : "要添加新设备，请打开 Cleon，选择“我有 Emergency Kit”，然后输入或扫描 Secret Key，再输入你的主密码。"
           }
         }
       }
@@ -2639,43 +2639,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid-Backup %1$@.%2$@"
+            "value" : "Cleon-Backup %1$@.%2$@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid backup %1$@.%2$@"
+            "value" : "Cleon backup %1$@.%2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid copia de seguridad %1$@.%2$@"
+            "value" : "Cleon copia de seguridad %1$@.%2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid sauvegarde %1$@.%2$@"
+            "value" : "Cleon sauvegarde %1$@.%2$@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid backup %1$@.%2$@"
+            "value" : "Cleon backup %1$@.%2$@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 백업 %1$@.%2$@"
+            "value" : "Cleon 백업 %1$@.%2$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 备份 %1$@.%2$@"
+            "value" : "Cleon 备份 %1$@.%2$@"
           }
         }
       }
@@ -2921,43 +2921,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Diese Version von Kelid kann nicht auf den Schlüsselbund des Geräts zugreifen. Installiere Kelid erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
+            "value" : "Diese Version von Cleon kann nicht auf den Schlüsselbund des Geräts zugreifen. Installiere Cleon erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This copy of Kelid can't use the device keychain. Reinstall Kelid from the same source (App Store, TestFlight or Xcode)."
+            "value" : "This copy of Cleon can't use the device keychain. Reinstall Cleon from the same source (App Store, TestFlight or Xcode)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta copia de Kelid no puede usar el llavero del dispositivo. Reinstala Kelid desde la misma fuente (App Store, TestFlight o Xcode)."
+            "value" : "Esta copia de Cleon no puede usar el llavero del dispositivo. Reinstala Cleon desde la misma fuente (App Store, TestFlight o Xcode)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette version de Kelid n'a pas accès au trousseau de l'appareil. Réinstalle Kelid depuis la même source (App Store, TestFlight ou Xcode)."
+            "value" : "Cette version de Cleon n'a pas accès au trousseau de l'appareil. Réinstalle Cleon depuis la même source (App Store, TestFlight ou Xcode)."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questa copia di Kelid non può usare il portachiavi del dispositivo. Reinstalla Kelid dalla stessa fonte (App Store, TestFlight o Xcode)."
+            "value" : "Questa copia di Cleon non può usare il portachiavi del dispositivo. Reinstalla Cleon dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 버전의 Kelid는 기기 키체인에 접근할 수 없어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Kelid를 다시 설치해 주세요."
+            "value" : "이 버전의 Cleon는 기기 키체인에 접근할 수 없어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Cleon를 다시 설치해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此版本的 Kelid 无法访问设备钥匙串。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Kelid。"
+            "value" : "此版本的 Cleon 无法访问设备钥匙串。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Cleon。"
           }
         }
       }
@@ -2968,43 +2968,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Diese Version von Kelid ist nicht für iCloud eingerichtet. Installiere Kelid erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
+            "value" : "Diese Version von Cleon ist nicht für iCloud eingerichtet. Installiere Cleon erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This copy of Kelid isn't set up for iCloud. Reinstall Kelid from the same source (App Store, TestFlight or Xcode)."
+            "value" : "This copy of Cleon isn't set up for iCloud. Reinstall Cleon from the same source (App Store, TestFlight or Xcode)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta copia de Kelid no está configurada para iCloud. Reinstala Kelid desde la misma fuente (App Store, TestFlight o Xcode)."
+            "value" : "Esta copia de Cleon no está configurada para iCloud. Reinstala Cleon desde la misma fuente (App Store, TestFlight o Xcode)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette version de Kelid n'est pas configurée pour iCloud. Réinstalle Kelid depuis la même source (App Store, TestFlight ou Xcode)."
+            "value" : "Cette version de Cleon n'est pas configurée pour iCloud. Réinstalle Cleon depuis la même source (App Store, TestFlight ou Xcode)."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questa copia di Kelid non è configurata per iCloud. Reinstalla Kelid dalla stessa fonte (App Store, TestFlight o Xcode)."
+            "value" : "Questa copia di Cleon non è configurata per iCloud. Reinstalla Cleon dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 버전의 Kelid는 iCloud를 사용하도록 설정되지 않았어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Kelid를 다시 설치해 주세요."
+            "value" : "이 버전의 Cleon는 iCloud를 사용하도록 설정되지 않았어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Cleon를 다시 설치해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此版本的 Kelid 未配置 iCloud。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Kelid。"
+            "value" : "此版本的 Cleon 未配置 iCloud。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Cleon。"
           }
         }
       }
@@ -3579,43 +3579,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud verweigert Kelid den Zugriff. Prüfe in den Einstellungen, ob iCloud für Kelid aktiviert ist, und versuche es erneut."
+            "value" : "iCloud verweigert Cleon den Zugriff. Prüfe in den Einstellungen, ob iCloud für Cleon aktiviert ist, und versuche es erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud denies Kelid access. Check in Settings that iCloud is on for Kelid, then try again."
+            "value" : "iCloud denies Cleon access. Check in Settings that iCloud is on for Cleon, then try again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud deniega el acceso a Kelid. Comprueba en Ajustes que iCloud está activado para Kelid e inténtalo de nuevo."
+            "value" : "iCloud deniega el acceso a Cleon. Comprueba en Ajustes que iCloud está activado para Cleon e inténtalo de nuevo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud refuse l'accès à Kelid. Vérifie dans Réglages qu'iCloud est activé pour Kelid, puis réessaie."
+            "value" : "iCloud refuse l'accès à Cleon. Vérifie dans Réglages qu'iCloud est activé pour Cleon, puis réessaie."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud nega l'accesso a Kelid. Controlla in Impostazioni che iCloud sia attivo per Kelid, poi riprova."
+            "value" : "iCloud nega l'accesso a Cleon. Controlla in Impostazioni che iCloud sia attivo per Cleon, poi riprova."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud가 Kelid의 접근을 거부했어요. 설정에서 Kelid의 iCloud 사용이 켜져 있는지 확인한 후 다시 시도해 주세요."
+            "value" : "iCloud가 Cleon의 접근을 거부했어요. 설정에서 Cleon의 iCloud 사용이 켜져 있는지 확인한 후 다시 시도해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud 拒绝 Kelid 访问。请在“设置”中确认已为 Kelid 启用 iCloud，然后重试。"
+            "value" : "iCloud 拒绝 Cleon 访问。请在“设置”中确认已为 Cleon 启用 iCloud，然后重试。"
           }
         }
       }
@@ -3626,43 +3626,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud antwortet gerade nicht. Kelid versucht es automatisch erneut."
+            "value" : "iCloud antwortet gerade nicht. Cleon versucht es automatisch erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud isn't responding right now. Kelid will try again on its own."
+            "value" : "iCloud isn't responding right now. Cleon will try again on its own."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud no responde en este momento. Kelid lo volverá a intentar solo."
+            "value" : "iCloud no responde en este momento. Cleon lo volverá a intentar solo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud ne répond pas pour le moment. Kelid réessaiera tout seul."
+            "value" : "iCloud ne répond pas pour le moment. Cleon réessaiera tout seul."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud non risponde al momento. Kelid riproverà da solo."
+            "value" : "iCloud non risponde al momento. Cleon riproverà da solo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "현재 iCloud가 응답하지 않아요. Kelid가 자동으로 다시 시도해요."
+            "value" : "현재 iCloud가 응답하지 않아요. Cleon가 자동으로 다시 시도해요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud 暂时无响应。Kelid 将自动重试。"
+            "value" : "iCloud 暂时无响应。Cleon 将自动重试。"
           }
         }
       }
@@ -4096,43 +4096,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ein Kelid-Eintrag fehlt im Schlüsselbund des Geräts. Gib dein Master-Passwort ein. Wenn du Kelid neu installiert hast, stelle deinen Account mit deinem Emergency Kit wieder her."
+            "value" : "Ein Cleon-Eintrag fehlt im Schlüsselbund des Geräts. Gib dein Master-Passwort ein. Wenn du Cleon neu installiert hast, stelle deinen Account mit deinem Emergency Kit wieder her."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A Kelid entry is missing from the device keychain. Enter your master password. If you reinstalled Kelid, restore your account with your Emergency Kit."
+            "value" : "A Cleon entry is missing from the device keychain. Enter your master password. If you reinstalled Cleon, restore your account with your Emergency Kit."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Falta un dato de Kelid en el llavero del dispositivo. Introduce tu contraseña maestra. Si has reinstalado Kelid, restaura tu cuenta con tu Emergency Kit."
+            "value" : "Falta un dato de Cleon en el llavero del dispositivo. Introduce tu contraseña maestra. Si has reinstalado Cleon, restaura tu cuenta con tu Emergency Kit."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Une donnée de Kelid manque dans le trousseau de l'appareil. Saisis ton mot de passe maître. Si tu as réinstallé Kelid, restaure ton compte avec ton Emergency Kit."
+            "value" : "Une donnée de Cleon manque dans le trousseau de l'appareil. Saisis ton mot de passe maître. Si tu as réinstallé Cleon, restaure ton compte avec ton Emergency Kit."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manca un dato di Kelid nel portachiavi del dispositivo. Inserisci la password principale. Se hai reinstallato Kelid, ripristina il tuo account con il tuo Emergency Kit."
+            "value" : "Manca un dato di Cleon nel portachiavi del dispositivo. Inserisci la password principale. Se hai reinstallato Cleon, ripristina il tuo account con il tuo Emergency Kit."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "기기 키체인에 Kelid 데이터가 없어요. 마스터 암호를 입력해 주세요. Kelid를 다시 설치했다면 Emergency Kit으로 계정을 복원해 주세요."
+            "value" : "기기 키체인에 Cleon 데이터가 없어요. 마스터 암호를 입력해 주세요. Cleon를 다시 설치했다면 Emergency Kit으로 계정을 복원해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "设备钥匙串中缺少 Kelid 的某个条目。请输入你的主密码。如果你重新安装过 Kelid，请使用你的 Emergency Kit 恢复账户。"
+            "value" : "设备钥匙串中缺少 Cleon 的某个条目。请输入你的主密码。如果你重新安装过 Cleon，请使用你的 Emergency Kit 恢复账户。"
           }
         }
       }
@@ -4143,43 +4143,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid darf nicht auf diesen Speicherort zugreifen. Wähle einen anderen oder erlaube Kelid den Zugriff in den Einstellungen."
+            "value" : "Cleon darf nicht auf diesen Speicherort zugreifen. Wähle einen anderen oder erlaube Cleon den Zugriff in den Einstellungen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid isn't allowed to access this location. Pick another one, or give Kelid access in Settings."
+            "value" : "Cleon isn't allowed to access this location. Pick another one, or give Cleon access in Settings."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid no tiene permiso para acceder a esta ubicación. Elige otra o da acceso a Kelid en Ajustes."
+            "value" : "Cleon no tiene permiso para acceder a esta ubicación. Elige otra o da acceso a Cleon en Ajustes."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid n'a pas le droit d'accéder à cet emplacement. Choisis-en un autre, ou donne l'accès à Kelid dans Réglages."
+            "value" : "Cleon n'a pas le droit d'accéder à cet emplacement. Choisis-en un autre, ou donne l'accès à Cleon dans Réglages."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid non ha il permesso di accedere a questa posizione. Scegline un'altra, o dai l'accesso a Kelid in Impostazioni."
+            "value" : "Cleon non ha il permesso di accedere a questa posizione. Scegline un'altra, o dai l'accesso a Cleon in Impostazioni."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid에 이 위치에 접근할 권한이 없어요. 다른 위치를 선택하거나 설정에서 Kelid에 접근 권한을 허용해 주세요."
+            "value" : "Cleon에 이 위치에 접근할 권한이 없어요. 다른 위치를 선택하거나 설정에서 Cleon에 접근 권한을 허용해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 无权访问此位置。请选择其他位置，或在“设置”中授予 Kelid 访问权限。"
+            "value" : "Cleon 无权访问此位置。请选择其他位置，或在“设置”中授予 Cleon 访问权限。"
           }
         }
       }
@@ -4190,43 +4190,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid darf diesen Schlüsselbundeintrag nicht lesen. Installiere Kelid erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
+            "value" : "Cleon darf diesen Schlüsselbundeintrag nicht lesen. Installiere Cleon erneut aus derselben Quelle (App Store, TestFlight oder Xcode)."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid isn't allowed to read this keychain entry. Reinstall Kelid from the same source (App Store, TestFlight or Xcode)."
+            "value" : "Cleon isn't allowed to read this keychain entry. Reinstall Cleon from the same source (App Store, TestFlight or Xcode)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid no tiene permiso para leer este dato del llavero. Reinstala Kelid desde la misma fuente (App Store, TestFlight o Xcode)."
+            "value" : "Cleon no tiene permiso para leer este dato del llavero. Reinstala Cleon desde la misma fuente (App Store, TestFlight o Xcode)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid n'a pas le droit de lire cette donnée du trousseau. Réinstalle Kelid depuis la même source (App Store, TestFlight ou Xcode)."
+            "value" : "Cleon n'a pas le droit de lire cette donnée du trousseau. Réinstalle Cleon depuis la même source (App Store, TestFlight ou Xcode)."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid non ha il permesso di leggere questo dato del portachiavi. Reinstalla Kelid dalla stessa fonte (App Store, TestFlight o Xcode)."
+            "value" : "Cleon non ha il permesso di leggere questo dato del portachiavi. Reinstalla Cleon dalla stessa fonte (App Store, TestFlight o Xcode)."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid에 이 키체인 데이터를 읽을 권한이 없어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Kelid를 다시 설치해 주세요."
+            "value" : "Cleon에 이 키체인 데이터를 읽을 권한이 없어요. 같은 출처(App Store, TestFlight 또는 Xcode)에서 Cleon를 다시 설치해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 无权读取此钥匙串条目。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Kelid。"
+            "value" : "Cleon 无权读取此钥匙串条目。请从同一来源（App Store、TestFlight 或 Xcode）重新安装 Cleon。"
           }
         }
       }
@@ -4237,43 +4237,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Das System hat eine Anfrage von Kelid abgelehnt. Aktualisiere Kelid. Wenn der Fehler wieder auftritt, wende dich an den Support."
+            "value" : "Das System hat eine Anfrage von Cleon abgelehnt. Aktualisiere Cleon. Wenn der Fehler wieder auftritt, wende dich an den Support."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid made a request the system refused. Update Kelid. If it happens again, contact support."
+            "value" : "Cleon made a request the system refused. Update Cleon. If it happens again, contact support."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid ha hecho una solicitud que el sistema rechaza. Actualiza Kelid. Si vuelve a ocurrir, contacta con el soporte."
+            "value" : "Cleon ha hecho una solicitud que el sistema rechaza. Actualiza Cleon. Si vuelve a ocurrir, contacta con el soporte."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid a fait une demande que le système refuse. Mets à jour Kelid. Si l'erreur revient, contacte le support."
+            "value" : "Cleon a fait une demande que le système refuse. Mets à jour Cleon. Si l'erreur revient, contacte le support."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid ha fatto una richiesta che il sistema rifiuta. Aggiorna Kelid. Se succede di nuovo, contatta l'assistenza."
+            "value" : "Cleon ha fatto una richiesta che il sistema rifiuta. Aggiorna Cleon. Se succede di nuovo, contatta l'assistenza."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "시스템이 Kelid의 요청을 거부했어요. Kelid를 업데이트해 주세요. 오류가 반복되면 고객 지원에 문의해 주세요."
+            "value" : "시스템이 Cleon의 요청을 거부했어요. Cleon를 업데이트해 주세요. 오류가 반복되면 고객 지원에 문의해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "系统拒绝了 Kelid 的请求。请更新 Kelid。如果错误再次出现，请联系支持。"
+            "value" : "系统拒绝了 Cleon 的请求。请更新 Cleon。如果错误再次出现，请联系支持。"
           }
         }
       }
@@ -4378,43 +4378,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Diese Version von Kelid ist zu alt für iCloud. Aktualisiere Kelid."
+            "value" : "Diese Version von Cleon ist zu alt für iCloud. Aktualisiere Cleon."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This version of Kelid is too old for iCloud. Update Kelid."
+            "value" : "This version of Cleon is too old for iCloud. Update Cleon."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta versión de Kelid es demasiado antigua para iCloud. Actualiza Kelid."
+            "value" : "Esta versión de Cleon es demasiado antigua para iCloud. Actualiza Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette version de Kelid est trop ancienne pour iCloud. Mets à jour Kelid."
+            "value" : "Cette version de Cleon est trop ancienne pour iCloud. Mets à jour Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questa versione di Kelid è troppo vecchia per iCloud. Aggiorna Kelid."
+            "value" : "Questa versione di Cleon è troppo vecchia per iCloud. Aggiorna Cleon."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 Kelid 버전은 너무 오래되어 iCloud를 사용할 수 없어요. Kelid를 업데이트해 주세요."
+            "value" : "이 Cleon 버전은 너무 오래되어 iCloud를 사용할 수 없어요. Cleon를 업데이트해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此版本的 Kelid 太旧，无法使用 iCloud。请更新 Kelid。"
+            "value" : "此版本的 Cleon 太旧，无法使用 iCloud。请更新 Cleon。"
           }
         }
       }
@@ -4474,43 +4474,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Der Schutz des Emergency Kit wurde auf einem anderen Gerät geändert. Sperre Kelid, entsperre es mit deinem Master-Passwort und versuche es dann erneut."
+            "value" : "Der Schutz des Emergency Kit wurde auf einem anderen Gerät geändert. Sperre Cleon, entsperre es mit deinem Master-Passwort und versuche es dann erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Emergency Kit protection changed on another device. Lock Kelid, unlock it with your master password, then try again."
+            "value" : "Emergency Kit protection changed on another device. Lock Cleon, unlock it with your master password, then try again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La protección del Emergency Kit ha cambiado en otro dispositivo. Bloquea Kelid, desbloquéalo con tu contraseña maestra y vuelve a intentarlo."
+            "value" : "La protección del Emergency Kit ha cambiado en otro dispositivo. Bloquea Cleon, desbloquéalo con tu contraseña maestra y vuelve a intentarlo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La protection du kit d'urgence a changé sur un autre appareil. Verrouille Kelid, déverrouille-le avec ton mot de passe maître, puis réessaie."
+            "value" : "La protection du kit d'urgence a changé sur un autre appareil. Verrouille Cleon, déverrouille-le avec ton mot de passe maître, puis réessaie."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La protezione dell'Emergency Kit è cambiata su un altro dispositivo. Blocca Kelid, sbloccalo con la tua password principale, poi riprova."
+            "value" : "La protezione dell'Emergency Kit è cambiata su un altro dispositivo. Blocca Cleon, sbloccalo con la tua password principale, poi riprova."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "다른 기기에서 Emergency Kit 보호가 변경되었습니다. Kelid를 잠근 다음 마스터 암호로 잠금 해제하고 다시 시도하세요."
+            "value" : "다른 기기에서 Emergency Kit 보호가 변경되었습니다. Cleon를 잠근 다음 마스터 암호로 잠금 해제하고 다시 시도하세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Emergency Kit 保护已在另一台设备上更改。请锁定 Kelid，使用主密码解锁，然后重试。"
+            "value" : "Emergency Kit 保护已在另一台设备上更改。请锁定 Cleon，使用主密码解锁，然后重试。"
           }
         }
       }
@@ -6010,48 +6010,48 @@
       }
     },
     "org.refusal.mdmInvalid" : {
-      "comment" : "Join refused: the MDM profile's Kelid keys are not usable.",
+      "comment" : "Join refused: the MDM profile's Cleon keys are not usable.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Das Verwaltungsprofil deines Geräts enthält eine ungültige Kelid-Einstellung. Wende dich an deinen Administrator."
+            "value" : "Das Verwaltungsprofil deines Geräts enthält eine ungültige Cleon-Einstellung. Wende dich an deinen Administrator."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your device's management profile has an invalid Kelid setting. Contact your administrator."
+            "value" : "Your device's management profile has an invalid Cleon setting. Contact your administrator."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El perfil de gestión de tu dispositivo tiene un ajuste de Kelid no válido. Contacta con tu administrador."
+            "value" : "El perfil de gestión de tu dispositivo tiene un ajuste de Cleon no válido. Contacta con tu administrador."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le profil de gestion de ton appareil contient un réglage Kelid non valide. Contacte ton administrateur."
+            "value" : "Le profil de gestion de ton appareil contient un réglage Cleon non valide. Contacte ton administrateur."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il profilo di gestione del tuo dispositivo ha un'impostazione Kelid non valida. Contatta il tuo amministratore."
+            "value" : "Il profilo di gestione del tuo dispositivo ha un'impostazione Cleon non valida. Contatta il tuo amministratore."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "기기의 관리 프로파일에 유효하지 않은 Kelid 설정이 있어요. 관리자에게 문의해 주세요."
+            "value" : "기기의 관리 프로파일에 유효하지 않은 Cleon 설정이 있어요. 관리자에게 문의해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "你设备的管理描述文件包含无效的 Kelid 设置。请联系你的管理员。"
+            "value" : "你设备的管理描述文件包含无效的 Cleon 设置。请联系你的管理员。"
           }
         }
       }
@@ -8086,43 +8086,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieses Konto hat bereits einen Kelid-Passkey für diese Website."
+            "value" : "Dieses Konto hat bereits einen Cleon-Passkey für diese Website."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This account already has a Kelid passkey for this site."
+            "value" : "This account already has a Cleon passkey for this site."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta cuenta ya tiene una llave de acceso de Kelid para este sitio."
+            "value" : "Esta cuenta ya tiene una llave de acceso de Cleon para este sitio."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce compte a déjà une passkey Kelid pour ce site."
+            "value" : "Ce compte a déjà une passkey Cleon pour ce site."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo account ha già una passkey Kelid per questo sito."
+            "value" : "Questo account ha già una passkey Cleon per questo sito."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 계정에는 이 사이트의 Kelid 패스키가 이미 있어요."
+            "value" : "이 계정에는 이 사이트의 Cleon 패스키가 이미 있어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此账户已有用于此网站的 Kelid 通行密钥。"
+            "value" : "此账户已有用于此网站的 Cleon 通行密钥。"
           }
         }
       }
@@ -8462,43 +8462,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieses Backup stammt aus einer neueren Version von Kelid. Aktualisiere die App und versuche es erneut."
+            "value" : "Dieses Backup stammt aus einer neueren Version von Cleon. Aktualisiere die App und versuche es erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This backup comes from a newer version of Kelid. Update the app, then try again."
+            "value" : "This backup comes from a newer version of Cleon. Update the app, then try again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta copia de seguridad viene de una versión más reciente de Kelid. Actualiza la app e inténtalo de nuevo."
+            "value" : "Esta copia de seguridad viene de una versión más reciente de Cleon. Actualiza la app e inténtalo de nuevo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette sauvegarde vient d'une version plus récente de Kelid. Mets l'app à jour, puis réessaie."
+            "value" : "Cette sauvegarde vient d'une version plus récente de Cleon. Mets l'app à jour, puis réessaie."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo backup proviene da una versione più recente di Kelid. Aggiorna l'app, poi riprova."
+            "value" : "Questo backup proviene da una versione più recente di Cleon. Aggiorna l'app, poi riprova."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 백업은 더 최신 버전의 Kelid에서 생성되었어요. 앱을 업데이트한 후 다시 시도하세요."
+            "value" : "이 백업은 더 최신 버전의 Cleon에서 생성되었어요. 앱을 업데이트한 후 다시 시도하세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此备份来自较新版本的 Kelid。请更新 App 后重试。"
+            "value" : "此备份来自较新版本的 Cleon。请更新 App 后重试。"
           }
         }
       }
@@ -8745,43 +8745,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dein Kelid-Konto löschen"
+            "value" : "Dein Cleon-Konto löschen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete your Kelid account"
+            "value" : "Delete your Cleon account"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar tu cuenta de Kelid"
+            "value" : "Eliminar tu cuenta de Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Supprimer ton compte Kelid"
+            "value" : "Supprimer ton compte Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elimina il tuo account Kelid"
+            "value" : "Elimina il tuo account Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 계정 삭제"
+            "value" : "Cleon 계정 삭제"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "删除你的 Kelid 账户"
+            "value" : "删除你的 Cleon 账户"
           }
         }
       }
@@ -8839,43 +8839,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieses Gerät wurde aus deinem Kelid-Konto entfernt."
+            "value" : "Dieses Gerät wurde aus deinem Cleon-Konto entfernt."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This device was removed from your Kelid account."
+            "value" : "This device was removed from your Cleon account."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este dispositivo se ha quitado de tu cuenta de Kelid."
+            "value" : "Este dispositivo se ha quitado de tu cuenta de Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cet appareil a été retiré de ton compte Kelid."
+            "value" : "Cet appareil a été retiré de ton compte Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo dispositivo è stato rimosso dal tuo account Kelid."
+            "value" : "Questo dispositivo è stato rimosso dal tuo account Cleon."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 기기가 Kelid 계정에서 제거되었어요."
+            "value" : "이 기기가 Cleon 계정에서 제거되었어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此设备已从你的 Kelid 账户中移除。"
+            "value" : "此设备已从你的 Cleon 账户中移除。"
           }
         }
       }
@@ -8980,43 +8980,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dies ist ein verschlüsseltes Kelid-Archiv. Es kann hier nicht importiert werden."
+            "value" : "Dies ist ein verschlüsseltes Cleon-Archiv. Es kann hier nicht importiert werden."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This is an encrypted Kelid archive. It can't be imported here."
+            "value" : "This is an encrypted Cleon archive. It can't be imported here."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Es un archivo cifrado de Kelid: no se puede importar aquí."
+            "value" : "Es un archivo cifrado de Cleon: no se puede importar aquí."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "C'est une archive Kelid chiffrée : elle ne s'importe pas ici."
+            "value" : "C'est une archive Cleon chiffrée : elle ne s'importe pas ici."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "È un archivio Kelid cifrato: non si può importare qui."
+            "value" : "È un archivio Cleon cifrato: non si può importare qui."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "암호화된 Kelid 아카이브예요. 여기서는 가져올 수 없어요."
+            "value" : "암호화된 Cleon 아카이브예요. 여기서는 가져올 수 없어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "这是加密的 Kelid 归档文件，无法在此处导入。"
+            "value" : "这是加密的 Cleon 归档文件，无法在此处导入。"
           }
         }
       }
@@ -9121,43 +9121,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Diese Datei ist kein Kelid-Backup."
+            "value" : "Diese Datei ist kein Cleon-Backup."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This file is not a Kelid backup."
+            "value" : "This file is not a Cleon backup."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este archivo no es una copia de seguridad de Kelid."
+            "value" : "Este archivo no es una copia de seguridad de Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce fichier n'est pas une sauvegarde Kelid."
+            "value" : "Ce fichier n'est pas une sauvegarde Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo file non è un backup Kelid."
+            "value" : "Questo file non è un backup Cleon."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 파일은 Kelid 백업이 아니에요."
+            "value" : "이 파일은 Cleon 백업이 아니에요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此文件不是 Kelid 备份。"
+            "value" : "此文件不是 Cleon 备份。"
           }
         }
       }
@@ -10672,43 +10672,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid konnte diese Daten nicht verschlüsseln oder entschlüsseln. Versuche es erneut. Wenn der Fehler erneut auftritt, beende Kelid und öffne die App wieder."
+            "value" : "Cleon konnte diese Daten nicht verschlüsseln oder entschlüsseln. Versuche es erneut. Wenn der Fehler erneut auftritt, beende Cleon und öffne die App wieder."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid couldn't encrypt or decrypt this data. Try again. If it happens again, quit and reopen Kelid."
+            "value" : "Cleon couldn't encrypt or decrypt this data. Try again. If it happens again, quit and reopen Cleon."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid no ha podido cifrar ni descifrar este dato. Vuelve a intentarlo. Si vuelve a ocurrir, sal de Kelid y vuelve a abrirlo."
+            "value" : "Cleon no ha podido cifrar ni descifrar este dato. Vuelve a intentarlo. Si vuelve a ocurrir, sal de Cleon y vuelve a abrirlo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre Kelid."
+            "value" : "Cleon n'a pas pu chiffrer ou déchiffrer cette donnée. Réessaie. Si l'erreur revient, quitte et rouvre Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid non è riuscito a cifrare o decifrare questo dato. Riprova. Se succede di nuovo, esci da Kelid e riaprilo."
+            "value" : "Cleon non è riuscito a cifrare o decifrare questo dato. Riprova. Se succede di nuovo, esci da Cleon e riaprilo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid에서 이 데이터를 암호화하거나 복호화할 수 없어요. 다시 시도해 주세요. 오류가 반복되면 Kelid를 종료한 다음 다시 열어 주세요."
+            "value" : "Cleon에서 이 데이터를 암호화하거나 복호화할 수 없어요. 다시 시도해 주세요. 오류가 반복되면 Cleon를 종료한 다음 다시 열어 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 无法加密或解密此数据。请重试。如果错误再次出现，请退出并重新打开 Kelid。"
+            "value" : "Cleon 无法加密或解密此数据。请重试。如果错误再次出现，请退出并重新打开 Cleon。"
           }
         }
       }
@@ -10719,43 +10719,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid export non chiffré %@.csv"
+            "value" : "Cleon export non chiffré %@.csv"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid unencrypted export %@.csv"
+            "value" : "Cleon unencrypted export %@.csv"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid exportación sin cifrar %@.csv"
+            "value" : "Cleon exportación sin cifrar %@.csv"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid export non chiffré %@.csv"
+            "value" : "Cleon export non chiffré %@.csv"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid esportazione non cifrata %@.csv"
+            "value" : "Cleon esportazione non cifrata %@.csv"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 암호화되지 않은 내보내기 %@.csv"
+            "value" : "Cleon 암호화되지 않은 내보내기 %@.csv"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid export non chiffré %@.csv"
+            "value" : "Cleon export non chiffré %@.csv"
           }
         }
       }
@@ -10766,43 +10766,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Der lokale Speicher von Kelid kann nicht gelesen werden. Beende Kelid und öffne die App wieder. Wenn der Fehler erneut auftritt, stelle dein Konto mit deinem Emergency Kit wieder her."
+            "value" : "Der lokale Speicher von Cleon kann nicht gelesen werden. Beende Cleon und öffne die App wieder. Wenn der Fehler erneut auftritt, stelle dein Konto mit deinem Emergency Kit wieder her."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid's local storage can't be read. Quit and reopen Kelid. If it happens again, restore your account with your Emergency Kit."
+            "value" : "Cleon's local storage can't be read. Quit and reopen Cleon. If it happens again, restore your account with your Emergency Kit."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se puede leer el almacenamiento local de Kelid. Sal de Kelid y vuelve a abrirlo. Si vuelve a ocurrir, restaura tu cuenta con tu Emergency Kit."
+            "value" : "No se puede leer el almacenamiento local de Cleon. Sal de Cleon y vuelve a abrirlo. Si vuelve a ocurrir, restaura tu cuenta con tu Emergency Kit."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le stockage local de Kelid est illisible. Quitte et rouvre Kelid. Si l'erreur revient, restaure ton compte avec ton Emergency Kit."
+            "value" : "Le stockage local de Cleon est illisible. Quitte et rouvre Cleon. Si l'erreur revient, restaure ton compte avec ton Emergency Kit."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "L'archivio locale di Kelid è illeggibile. Esci da Kelid e riaprilo. Se succede di nuovo, ripristina il tuo account con il tuo Emergency Kit."
+            "value" : "L'archivio locale di Cleon è illeggibile. Esci da Cleon e riaprilo. Se succede di nuovo, ripristina il tuo account con il tuo Emergency Kit."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid의 로컬 저장 공간을 읽을 수 없어요. Kelid를 종료한 다음 다시 열어 주세요. 오류가 반복되면 Emergency Kit으로 계정을 복원해 주세요."
+            "value" : "Cleon의 로컬 저장 공간을 읽을 수 없어요. Cleon를 종료한 다음 다시 열어 주세요. 오류가 반복되면 Emergency Kit으로 계정을 복원해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "无法读取 Kelid 的本地存储。请退出并重新打开 Kelid。如果错误再次出现，请使用你的 Emergency Kit 恢复账户。"
+            "value" : "无法读取 Cleon 的本地存储。请退出并重新打开 Cleon。如果错误再次出现，请使用你的 Emergency Kit 恢复账户。"
           }
         }
       }
@@ -11612,43 +11612,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ein unerwarteter Fehler ist aufgetreten. Versuche es erneut. Wenn der Fehler erneut auftritt, beende Kelid und öffne die App wieder."
+            "value" : "Ein unerwarteter Fehler ist aufgetreten. Versuche es erneut. Wenn der Fehler erneut auftritt, beende Cleon und öffne die App wieder."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Something unexpected went wrong. Try again. If it happens again, quit and reopen Kelid."
+            "value" : "Something unexpected went wrong. Try again. If it happens again, quit and reopen Cleon."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se ha producido un error inesperado. Vuelve a intentarlo. Si vuelve a ocurrir, sal de Kelid y vuelve a abrirlo."
+            "value" : "Se ha producido un error inesperado. Vuelve a intentarlo. Si vuelve a ocurrir, sal de Cleon y vuelve a abrirlo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre Kelid."
+            "value" : "Une erreur inattendue est survenue. Réessaie. Si l'erreur revient, quitte et rouvre Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si è verificato un errore imprevisto. Riprova. Se succede di nuovo, esci da Kelid e riaprilo."
+            "value" : "Si è verificato un errore imprevisto. Riprova. Se succede di nuovo, esci da Cleon e riaprilo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "예기치 않은 오류가 발생했어요. 다시 시도해 주세요. 오류가 반복되면 Kelid를 종료한 다음 다시 열어 주세요."
+            "value" : "예기치 않은 오류가 발생했어요. 다시 시도해 주세요. 오류가 반복되면 Cleon를 종료한 다음 다시 열어 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "发生了意外错误。请重试。如果错误再次出现，请退出并重新打开 Kelid。"
+            "value" : "发生了意外错误。请重试。如果错误再次出现，请退出并重新打开 Cleon。"
           }
         }
       }
@@ -12129,43 +12129,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid entsperren"
+            "value" : "Cleon entsperren"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock Kelid"
+            "value" : "Unlock Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desbloquear Kelid"
+            "value" : "Desbloquear Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Déverrouiller Kelid"
+            "value" : "Déverrouiller Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sblocca Kelid"
+            "value" : "Sblocca Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 잠금 해제"
+            "value" : "Cleon 잠금 해제"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "解锁 Kelid"
+            "value" : "解锁 Cleon"
           }
         }
       }
@@ -12176,43 +12176,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid entsperren, um dich bei %@ anzumelden"
+            "value" : "Cleon entsperren, um dich bei %@ anzumelden"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock Kelid to sign in to %@"
+            "value" : "Unlock Cleon to sign in to %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desbloquear Kelid para iniciar sesión en %@"
+            "value" : "Desbloquear Cleon para iniciar sesión en %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Déverrouiller Kelid pour te connecter à %@"
+            "value" : "Déverrouiller Cleon pour te connecter à %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sblocca Kelid per accedere a %@"
+            "value" : "Sblocca Cleon per accedere a %@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "%@에 로그인하려면 Kelid의 잠금을 해제해 주세요."
+            "value" : "%@에 로그인하려면 Cleon의 잠금을 해제해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "解锁 Kelid 以登录 %@"
+            "value" : "解锁 Cleon 以登录 %@"
           }
         }
       }
@@ -13355,43 +13355,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Dieser iCloud-Account enthält bereits einen anderen Kelid-Tresor. Wechsle zum ursprünglichen iCloud-Account zurück, um zu synchronisieren."
+            "value" : "Dieser iCloud-Account enthält bereits einen anderen Cleon-Tresor. Wechsle zum ursprünglichen iCloud-Account zurück, um zu synchronisieren."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This iCloud account already holds another Kelid vault. Switch back to the original iCloud account to sync."
+            "value" : "This iCloud account already holds another Cleon vault. Switch back to the original iCloud account to sync."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta cuenta de iCloud ya contiene otra bóveda de Kelid. Vuelve a la cuenta de iCloud original para sincronizar."
+            "value" : "Esta cuenta de iCloud ya contiene otra bóveda de Cleon. Vuelve a la cuenta de iCloud original para sincronizar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce compte iCloud contient déjà un autre coffre Kelid. Reviens au compte iCloud d'origine pour synchroniser."
+            "value" : "Ce compte iCloud contient déjà un autre coffre Cleon. Reviens au compte iCloud d'origine pour synchroniser."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo account iCloud contiene già un'altra cassaforte Kelid. Torna all'account iCloud originale per sincronizzare."
+            "value" : "Questo account iCloud contiene già un'altra cassaforte Cleon. Torna all'account iCloud originale per sincronizzare."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 iCloud 계정에 이미 다른 Kelid 보관함이 있어요. 동기화하려면 원래 iCloud 계정으로 전환해 주세요."
+            "value" : "이 iCloud 계정에 이미 다른 Cleon 보관함이 있어요. 동기화하려면 원래 iCloud 계정으로 전환해 주세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此 iCloud 账户中已有另一个 Kelid 保险库。请切换回原来的 iCloud 账户以进行同步。"
+            "value" : "此 iCloud 账户中已有另一个 Cleon 保险库。请切换回原来的 iCloud 账户以进行同步。"
           }
         }
       }
@@ -13449,43 +13449,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ein iCloud-Datensatz kann weiterhin nicht gelesen werden. Die Synchronisierung ist blockiert. Kelid versucht es erneut."
+            "value" : "Ein iCloud-Datensatz kann weiterhin nicht gelesen werden. Die Synchronisierung ist blockiert. Cleon versucht es erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "An iCloud record still can't be read, so sync is blocked. Kelid will try again."
+            "value" : "An iCloud record still can't be read, so sync is blocked. Cleon will try again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un registro de iCloud sigue sin poder leerse, así que la sincronización está bloqueada. Kelid lo volverá a intentar."
+            "value" : "Un registro de iCloud sigue sin poder leerse, así que la sincronización está bloqueada. Cleon lo volverá a intentar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. Kelid réessaiera."
+            "value" : "Un enregistrement iCloud reste illisible : la synchronisation est bloquée. Cleon réessaiera."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un record iCloud resta illeggibile, quindi la sincronizzazione è bloccata. Kelid riproverà."
+            "value" : "Un record iCloud resta illeggibile, quindi la sincronizzazione è bloccata. Cleon riproverà."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iCloud 기록을 아직 읽을 수 없어 동기화가 중단되었어요. Kelid가 다시 시도할 거예요."
+            "value" : "iCloud 기록을 아직 읽을 수 없어 동기화가 중단되었어요. Cleon가 다시 시도할 거예요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "仍无法读取一条 iCloud 记录，同步已受阻。Kelid 将重试。"
+            "value" : "仍无法读取一条 iCloud 记录，同步已受阻。Cleon 将重试。"
           }
         }
       }
@@ -13538,7 +13538,7 @@
       }
     },
     "sync.mailbox.forbidden" : {
-      "comment" : "Error: the Kelid server refuses this action to this device's credential.",
+      "comment" : "Error: the Cleon server refuses this action to this device's credential.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -13585,7 +13585,7 @@
       }
     },
     "sync.mailbox.retrying" : {
-      "comment" : "Sync status: the Kelid server could not be reached, a new round comes soon.",
+      "comment" : "Sync status: the Cleon server could not be reached, a new round comes soon.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -13820,48 +13820,48 @@
       }
     },
     "sync.server.hosted" : {
-      "comment" : "Name of the Kelid server hosted by Soma, in the sync settings and status.",
+      "comment" : "Name of the Cleon server hosted by Soma, in the sync settings and status.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid-Server"
+            "value" : "Cleon-Server"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid Server"
+            "value" : "Cleon Server"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Servidor de Kelid"
+            "value" : "Servidor de Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Serveur Kelid"
+            "value" : "Serveur Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Server Kelid"
+            "value" : "Server Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 서버"
+            "value" : "Cleon 서버"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 服务器"
+            "value" : "Cleon 服务器"
           }
         }
       }
@@ -13961,48 +13961,48 @@
       }
     },
     "sync.setup.noHostedServer" : {
-      "comment" : "Error: this build has no Kelid server URL, the account stays on the device.",
+      "comment" : "Error: this build has no Cleon server URL, the account stays on the device.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Für diese Version von Kelid ist kein Server festgelegt. Dein Tresor bleibt auf diesem Gerät."
+            "value" : "Für diese Version von Cleon ist kein Server festgelegt. Dein Tresor bleibt auf diesem Gerät."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This version of Kelid has no server set. Your vault stays on this device."
+            "value" : "This version of Cleon has no server set. Your vault stays on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta versión de Kelid no tiene servidor. Tu bóveda se queda en este dispositivo."
+            "value" : "Esta versión de Cleon no tiene servidor. Tu bóveda se queda en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette version de Kelid ne connaît pas de serveur. Ton coffre reste sur cet appareil."
+            "value" : "Cette version de Cleon ne connaît pas de serveur. Ton coffre reste sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questa versione di Kelid non ha un server. La tua cassaforte resta su questo dispositivo."
+            "value" : "Questa versione di Cleon non ha un server. La tua cassaforte resta su questo dispositivo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 버전의 Kelid에는 서버가 설정되어 있지 않아요. 보관함은 이 기기에 유지돼요."
+            "value" : "이 버전의 Cleon에는 서버가 설정되어 있지 않아요. 보관함은 이 기기에 유지돼요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此版本的 Kelid 未设置服务器。你的保险库将保留在此设备上。"
+            "value" : "此版本的 Cleon 未设置服务器。你的保险库将保留在此设备上。"
           }
         }
       }
@@ -14055,7 +14055,7 @@
       }
     },
     "sync.status.waitingForMailbox" : {
-      "comment" : "Sync status: a mailbox account waits for the Kelid server to catch up.",
+      "comment" : "Sync status: a mailbox account waits for the Cleon server to catch up.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -14619,43 +14619,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Auf diesem Gerät gibt es bereits ein Kelid-Konto."
+            "value" : "Auf diesem Gerät gibt es bereits ein Cleon-Konto."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A Kelid account already exists on this device."
+            "value" : "A Cleon account already exists on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ya existe una cuenta de Kelid en este dispositivo."
+            "value" : "Ya existe una cuenta de Cleon en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un compte Kelid existe déjà sur cet appareil."
+            "value" : "Un compte Cleon existe déjà sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esiste già un account Kelid su questo dispositivo."
+            "value" : "Esiste già un account Cleon su questo dispositivo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 기기에 Kelid 계정이 이미 있어요."
+            "value" : "이 기기에 Cleon 계정이 이미 있어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "此设备上已有 Kelid 账户。"
+            "value" : "此设备上已有 Cleon 账户。"
           }
         }
       }

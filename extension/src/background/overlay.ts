@@ -75,7 +75,7 @@ export interface OverlayRecord extends BoundRecord {
   auto?: OverlayAuto;
 }
 
-/** The face of a card that appeared by itself: the sign-in pill (or the generic card), or "Create with Kelid". */
+/** The face of a card that appeared by itself: the sign-in pill (or the generic card), or "Create with Cleon". */
 export type OverlayAuto = "signin" | "signup";
 
 function parsePending(raw: unknown): OverlayPending | null {

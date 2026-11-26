@@ -89,12 +89,12 @@ describe("popup", () => {
     expect(r.querySelectorAll(".row-account")).toHaveLength(1);
   });
 
-  it("unpaired: Appairer avec Kelid, then the code and its two buttons", async () => {
+  it("unpaired: Appairer avec Cleon, then the code and its two buttons", async () => {
     const w = worker((m) => (m.type === "popup_status" ? { err: "unpaired" } : null));
     const { r, handle } = setup(w);
     await handle.ready;
-    expect(text(r)).toContain("Kelid n'est pas appairé");
-    button(r, "Appairer avec Kelid").click();
+    expect(text(r)).toContain("Cleon n'est pas appairé");
+    button(r, "Appairer avec Cleon").click();
     await handle.settled();
     expect(text(r)).toContain("123 456");
     expect(button(r, "Les codes sont identiques")).toBeTruthy();
@@ -102,7 +102,7 @@ describe("popup", () => {
     button(r, "Annuler").click();
     await handle.settled();
     expect(w.types()).toContain("popup_pair_cancel");
-    expect(text(r)).toContain("Appairer avec Kelid");
+    expect(text(r)).toContain("Appairer avec Cleon");
   });
 
   it("re-pairing is offered on unpaired even when a record exists, and approval reloads", async () => {
@@ -118,7 +118,7 @@ describe("popup", () => {
     });
     const { r, handle } = setup(w);
     await handle.ready;
-    button(r, "Appairer avec Kelid").click();
+    button(r, "Appairer avec Cleon").click();
     await handle.settled();
     button(r, "Les codes sont identiques").click();
     await handle.settled();
@@ -143,11 +143,11 @@ describe("popup", () => {
     });
     const { r, handle } = setup(w);
     await handle.ready;
-    button(r, "Appairer avec Kelid").click();
+    button(r, "Appairer avec Cleon").click();
     await handle.settled();
     expect(w.types()).not.toContain("popup_pair_start");
     expect(text(r)).not.toContain("123 456");
-    expect(text(r)).toContain("Connectée à Kelid");
+    expect(text(r)).toContain("Connectée à Cleon");
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
   });
 
@@ -160,12 +160,12 @@ describe("popup", () => {
     });
     const { r, handle, timers } = setup(w);
     await handle.ready;
-    button(r, "Déverrouiller dans Kelid").click();
+    button(r, "Déverrouiller dans Cleon").click();
     await handle.settled();
-    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     timers.runTimeouts();
     await handle.settled();
-    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     locked = false;
     timers.runTimeouts();
     await handle.settled();
@@ -227,22 +227,22 @@ describe("popup", () => {
     });
     const { r, handle, timers } = setup(w);
     await handle.ready;
-    button(r, "Déverrouiller dans Kelid").click();
+    button(r, "Déverrouiller dans Cleon").click();
     await handle.settled();
     for (let i = 0; i < UNLOCK_WAIT_TRIES - 1; i++) {
       timers.runTimeouts();
       await handle.settled();
     }
     // Still waiting just before the shared deadline.
-    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     timers.runTimeouts();
     await handle.settled();
-    expect(text(r)).toContain("Kelid est verrouillé");
-    expect(button(r, "Déverrouiller dans Kelid")).toBeTruthy();
+    expect(text(r)).toContain("Cleon est verrouillé");
+    expect(button(r, "Déverrouiller dans Cleon")).toBeTruthy();
     expect(w.types().filter((t) => t === "popup_status").length).toBeLessThanOrEqual(UNLOCK_WAIT_TRIES + 2);
   });
 
-  it("locked: Déverrouiller dans Kelid", async () => {
+  it("locked: Déverrouiller dans Cleon", async () => {
     let locked = true;
     const w = worker((m) => {
       if (m.type === "popup_status") return { ok: { ...STATUS, locked } };
@@ -254,8 +254,8 @@ describe("popup", () => {
     });
     const { r, handle } = setup(w);
     await handle.ready;
-    expect(text(r)).toContain("Kelid est verrouillé");
-    button(r, "Déverrouiller dans Kelid").click();
+    expect(text(r)).toContain("Cleon est verrouillé");
+    button(r, "Déverrouiller dans Cleon").click();
     await handle.settled();
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
   });
@@ -285,32 +285,32 @@ describe("popup", () => {
     button(r, "Oublier").click();
     await handle.settled();
     expect(w.types().filter((t) => t === "popup_forget")).toHaveLength(1);
-    expect(text(r)).toContain("Kelid n'est pas appairé");
-    expect(button(r, "Appairer avec Kelid")).toBeTruthy();
+    expect(text(r)).toContain("Cleon n'est pas appairé");
+    expect(button(r, "Appairer avec Cleon")).toBeTruthy();
   });
 
   it("Oublier cet appairage is reachable while locked", async () => {
     const w = worker((m) => (m.type === "popup_status" ? { ok: { ...STATUS, locked: true } } : null));
     const { r, handle } = setup(w);
     await handle.ready;
-    expect(text(r)).toContain("Kelid est verrouillé");
+    expect(text(r)).toContain("Cleon est verrouillé");
     button(r, "Oublier cet appairage").click();
     await handle.settled();
     button(r, "Annuler").click();
     await handle.settled();
-    expect(text(r)).toContain("Kelid est verrouillé");
+    expect(text(r)).toContain("Cleon est verrouillé");
     button(r, "Oublier cet appairage").click();
     await handle.settled();
     button(r, "Oublier").click();
     await handle.settled();
     expect(w.types()).toContain("popup_forget");
-    expect(text(r)).toContain("Appairer avec Kelid");
+    expect(text(r)).toContain("Appairer avec Cleon");
   });
 
-  it("host missing: App Kelid introuvable", async () => {
+  it("host missing: App Cleon introuvable", async () => {
     const { r, handle } = setup(worker((m) => (m.type === "popup_status" ? { err: "host_missing" } : null)));
     await handle.ready;
-    expect(text(r)).toContain("App Kelid introuvable");
+    expect(text(r)).toContain("App Cleon introuvable");
     expect(button(r, "Réessayer")).toBeTruthy();
   });
 
@@ -322,7 +322,7 @@ describe("popup", () => {
     expect(r.querySelector("img.site-icon")!.getAttribute("src")).toBe("https://atlas-cloud.test/favicon.ico");
     expect(text(r)).toContain("Atlas Cloud");
     expect(text(r)).toContain("alex@atlas.dev");
-    expect(r.querySelector("input[type=search]")!.getAttribute("placeholder")).toBe("Rechercher dans Kelid");
+    expect(r.querySelector("input[type=search]")!.getAttribute("placeholder")).toBe("Rechercher dans Cleon");
   });
 
   it("detail with masked password, reveal on click, TOTP countdown, Remplir toast", async () => {
@@ -541,7 +541,7 @@ describe("popup", () => {
     await handle.ready;
     button(r, "Atlas Cloud").click();
     await handle.settled();
-    expect(text(r)).toContain("Kelid est verrouillé");
+    expect(text(r)).toContain("Cleon est verrouillé");
   });
 
   it("renders data as text only", async () => {

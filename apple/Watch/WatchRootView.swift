@@ -8,7 +8,7 @@ struct WatchRootView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Kelid")
+                .navigationTitle("Cleon")
         }
     }
 

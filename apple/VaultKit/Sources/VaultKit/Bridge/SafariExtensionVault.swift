@@ -91,7 +91,7 @@ public final class SafariExtensionVault {
         delegate.owner = self
         let account = environment.settings.displayName
         session.coreSessionChanged = { [weak server] core in
-            server?.setSession(session: core, accountName: account.isEmpty ? "Kelid" : account)
+            server?.setSession(session: core, accountName: account.isEmpty ? "Cleon" : account)
         }
         session.hiddenVaultsChanged = { [weak server] ids in
             try? server?.setExcludedVaults(vaultIds: ids.sorted())

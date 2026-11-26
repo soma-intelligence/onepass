@@ -1,6 +1,6 @@
-# How to import passwords into Kelid from another password manager
+# How to import passwords into Cleon from another password manager
 
-Kelid imports unencrypted exports from 1Password, Bitwarden, Apple Passwords, Chrome and other browsers, LastPass, Dashlane, Proton Pass, NordPass, Keeper, RoboForm, Enpass and KeePass or KeePassXC (as KeePass 2 XML), plus Credential Exchange (CXF) files, `otpauth://` links and Wi-Fi QR codes. In the app, use "Import from Another Password Manager…" (in Browse, or Settings > General), pick the source or "Detect Automatically", and choose the file. Parsing happens on your device in the Rust core; nothing is uploaded.
+Cleon imports unencrypted exports from 1Password, Bitwarden, Apple Passwords, Chrome and other browsers, LastPass, Dashlane, Proton Pass, NordPass, Keeper, RoboForm, Enpass and KeePass or KeePassXC (as KeePass 2 XML), plus Credential Exchange (CXF) files, `otpauth://` links and Wi-Fi QR codes. In the app, use "Import from Another Password Manager…" (in Browse, or Settings > General), pick the source or "Detect Automatically", and choose the file. Parsing happens on your device in the Rust core; nothing is uploaded.
 
 ## Supported sources and how to export from each
 
@@ -26,11 +26,11 @@ The export steps below are the hints the app itself shows in its import sheet (`
 | Any app that speaks Credential Exchange | `cxf` | A .json file in Credential Exchange Format |
 | Google Authenticator and other TOTP apps | `otpauth` | `otpauth://` links, one per line |
 | Wi-Fi networks | `wifi-qr` | Wi-Fi QR code text (`WIFI:S:...`), one per line |
-| Kelid | `onepass`, `onepass-csv` | A `.onepass` archive or Kelid's own CSV export |
+| Cleon | `onepass`, `onepass-csv` | A `.onepass` archive or Cleon's own CSV export |
 
-## What Kelid refuses, and why
+## What Cleon refuses, and why
 
-- **Encrypted third-party exports.** A Bitwarden export with `encrypted: true` and an encrypted Dashlane `.dash` file are refused with a message asking for a plain export. Kelid never decrypts another vendor's format.
+- **Encrypted third-party exports.** A Bitwarden export with `encrypted: true` and an encrypted Dashlane `.dash` file are refused with a message asking for a plain export. Cleon never decrypts another vendor's format.
 - **KeePass `.kdbx` databases.** A KDBX file is recognized by its signature and refused with `KeePass KDBX is not supported: export as KeePass 2 XML`. Export from KeePass or KeePassXC as KeePass 2 XML instead.
 - **Encrypted 1Password `.1pif`.** Not handled; use 1PUX or CSV.
 
@@ -57,9 +57,9 @@ An import file is treated as hostile input (`docs/security/README.md`, section 8
 
 ## Related
 
-- [Export or back up a Kelid vault](export-and-backup.md)
-- [Kelid vs 1Password](../comparison/onepass-vs-1password.md)
-- [Kelid vs Bitwarden](../comparison/onepass-vs-bitwarden.md)
-- [Kelid vs KeePassXC](../comparison/onepass-vs-keepassxc.md)
-- [Store 2FA codes in Kelid](two-factor-codes-totp.md)
+- [Export or back up a Cleon vault](export-and-backup.md)
+- [Cleon vs 1Password](../comparison/onepass-vs-1password.md)
+- [Cleon vs Bitwarden](../comparison/onepass-vs-bitwarden.md)
+- [Cleon vs KeePassXC](../comparison/onepass-vs-keepassxc.md)
+- [Store 2FA codes in Cleon](two-factor-codes-totp.md)
 - [README](../../README.md)

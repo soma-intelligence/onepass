@@ -3,9 +3,9 @@ import Foundation
 import SafariRelay
 import SafariServices
 
-/// Receives each `browser.runtime.sendNativeMessage` of the Kelid Safari
+/// Receives each `browser.runtime.sendNativeMessage` of the Cleon Safari
 /// extension (`extension/src/background/safari.ts`) and relays it to the
-/// bridge host: the Kelid app's socket in signed builds, the development
+/// bridge host: the Cleon app's socket in signed builds, the development
 /// host in Debug (`BridgeHost.launcher`). Safari routes only this app's own extension here; the bridge
 /// pairing and session (spec 6.4 and 6.5) authenticate both ends on top.
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
@@ -13,7 +13,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     /// bridge sessions they hold) survive between requests.
     private static let hub = RelayHub(launcher: BridgeHost.launcher(), openApp: openApp)
 
-    /// "Déverrouiller dans Kelid": since macOS 14 an app in the background cannot bring itself
+    /// "Déverrouiller dans Cleon": since macOS 14 an app in the background cannot bring itself
     /// forward while Safari is in front, so this extension process, which serves the user's click,
     /// asks LaunchServices to open `onepass://unlock` in the app that contains it. That also
     /// launches the app when it is not running. Only this bundle's own app, never a URL handler

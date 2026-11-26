@@ -52,7 +52,7 @@ const dirs = {
 
 /** The manifest for `browser`, pointing at `relay`. */
 export function manifestFor(browser, relay, extensionId) {
-  const m = { name: HOST_NAME, description: "Kelid", path: relay, type: "stdio" };
+  const m = { name: HOST_NAME, description: "Cleon", path: relay, type: "stdio" };
   if (browser === "firefox") return { ...m, allowed_extensions: [FIREFOX_ID] };
   if (!extensionId || !CHROME_ID.test(extensionId)) throw new Error(`${browser}: pass --extension-id <32 letters a-p>`);
   return { ...m, allowed_origins: [`chrome-extension://${extensionId}/`] };
@@ -64,7 +64,7 @@ function main() {
     console.log("node scripts/install-app-host.mjs --app <OnePass.app> --browser chrome|chromium|firefox|all [--extension-id <id>] [--profile <dir>]");
     return;
   }
-  if (platform() !== "darwin") throw new Error("the Kelid app relay is macOS only");
+  if (platform() !== "darwin") throw new Error("the Cleon app relay is macOS only");
   if (!o.app) throw new Error("pass --app <path to OnePass.app>");
   const relay = join(o.app, "Contents/Helpers/onepass-relay");
   if (!existsSync(relay) || !statSync(relay).isFile()) {

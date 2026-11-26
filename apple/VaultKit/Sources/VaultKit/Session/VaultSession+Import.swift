@@ -11,7 +11,7 @@ extension VaultSession {
     /// Largest export the core reads (256 MiB).
     nonisolated public static let importMaxBytes = 256 << 20
 
-    /// Format names the import takes (the Kelid archive is not one of them).
+    /// Format names the import takes (the Cleon archive is not one of them).
     nonisolated public static var importFormatNames: [String] { OnePassCore.importFormats() }
 
     /// The format of an export guessed from its content, `nil` when unknown. The file name is only a

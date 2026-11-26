@@ -281,42 +281,42 @@
         }
       }
     },
-    "Déverrouiller Kelid" : {
+    "Déverrouiller Cleon" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid entsperren"
+            "value" : "Cleon entsperren"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock Kelid"
+            "value" : "Unlock Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desbloquear Kelid"
+            "value" : "Desbloquear Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sblocca Kelid"
+            "value" : "Sblocca Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 잠금 해제"
+            "value" : "Cleon 잠금 해제"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "解锁 Kelid"
+            "value" : "解锁 Cleon"
           }
         }
       }
@@ -870,7 +870,7 @@
       }
     },
     "term.masterPassword" : {
-      "comment" : "The account password that unlocks Kelid.",
+      "comment" : "The account password that unlocks Cleon.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -1397,43 +1397,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "App-ID: %@\nKelid schlägt diesen Login beim nächsten Mal in dieser App zuerst vor."
+            "value" : "App-ID: %@\nCleon schlägt diesen Login beim nächsten Mal in dieser App zuerst vor."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "App ID: %@\nKelid will suggest this login first in this app next time."
+            "value" : "App ID: %@\nCleon will suggest this login first in this app next time."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ID de la app: %@\nKelid sugerirá este inicio de sesión primero en esta app la próxima vez."
+            "value" : "ID de la app: %@\nCleon sugerirá este inicio de sesión primero en esta app la próxima vez."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Identifiant de l'app : %@\nKelid proposera ce login en premier dans cette app la prochaine fois."
+            "value" : "Identifiant de l'app : %@\nCleon proposera ce login en premier dans cette app la prochaine fois."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ID dell'app: %@\nKelid suggerirà questo login per primo in questa app la prossima volta."
+            "value" : "ID dell'app: %@\nCleon suggerirà questo login per primo in questa app la prossima volta."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "앱 ID: %@\n다음부터 Kelid가 이 앱에서 이 로그인을 먼저 제안해요."
+            "value" : "앱 ID: %@\n다음부터 Cleon가 이 앱에서 이 로그인을 먼저 제안해요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "App ID：%@\nKelid 下次会在此 App 中优先推荐这条登录信息。"
+            "value" : "App ID：%@\nCleon 下次会在此 App 中优先推荐这条登录信息。"
           }
         }
       }
@@ -1822,43 +1822,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Erstelle dein Konto in der Kelid-App oder stelle es wieder her. Kehre dann hierher zurück."
+            "value" : "Erstelle dein Konto in der Cleon-App oder stelle es wieder her. Kehre dann hierher zurück."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create or restore your account in the Kelid app, then come back here."
+            "value" : "Create or restore your account in the Cleon app, then come back here."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Crea o restaura tu cuenta en la app Kelid y vuelve aquí."
+            "value" : "Crea o restaura tu cuenta en la app Cleon y vuelve aquí."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Crée ou restaure ton compte dans l'app Kelid, puis reviens ici."
+            "value" : "Crée ou restaure ton compte dans l'app Cleon, puis reviens ici."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Crea o ripristina il tuo account nell'app Kelid, poi torna qui."
+            "value" : "Crea o ripristina il tuo account nell'app Cleon, poi torna qui."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 앱에서 계정을 만들거나 복원한 다음 여기로 돌아오세요."
+            "value" : "Cleon 앱에서 계정을 만들거나 복원한 다음 여기로 돌아오세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在 Kelid App 中创建或恢复你的账户，然后返回此处。"
+            "value" : "在 Cleon App 中创建或恢复你的账户，然后返回此处。"
           }
         }
       }
@@ -1916,43 +1916,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Gib deinen Secret Key in der Kelid-App auf diesem Gerät ein. Kehre dann hierher zurück."
+            "value" : "Gib deinen Secret Key in der Cleon-App auf diesem Gerät ein. Kehre dann hierher zurück."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter your Secret Key in the Kelid app on this device, then come back here."
+            "value" : "Enter your Secret Key in the Cleon app on this device, then come back here."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Introduce tu Secret Key en la app Kelid de este dispositivo y vuelve aquí."
+            "value" : "Introduce tu Secret Key en la app Cleon de este dispositivo y vuelve aquí."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saisis ta Secret Key dans l'app Kelid sur cet appareil, puis reviens ici."
+            "value" : "Saisis ta Secret Key dans l'app Cleon sur cet appareil, puis reviens ici."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inserisci la tua Secret Key nell'app Kelid su questo dispositivo, poi torna qui."
+            "value" : "Inserisci la tua Secret Key nell'app Cleon su questo dispositivo, poi torna qui."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 기기의 Kelid 앱에서 Secret Key를 입력한 다음 여기로 돌아오세요."
+            "value" : "이 기기의 Cleon 앱에서 Secret Key를 입력한 다음 여기로 돌아오세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在此设备的 Kelid App 中输入你的 Secret Key，然后返回此处。"
+            "value" : "在此设备的 Cleon App 中输入你的 Secret Key，然后返回此处。"
           }
         }
       }
@@ -2950,43 +2950,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         }
       }
@@ -2997,43 +2997,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid-Konto"
+            "value" : "Cleon-Konto"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid account"
+            "value" : "Cleon account"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuenta de Kelid"
+            "value" : "Cuenta de Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Compte Kelid"
+            "value" : "Compte Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Account Kelid"
+            "value" : "Account Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 계정"
+            "value" : "Cleon 계정"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 账户"
+            "value" : "Cleon 账户"
           }
         }
       }
@@ -3044,43 +3044,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid ist bereit"
+            "value" : "Cleon ist bereit"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid Is Ready"
+            "value" : "Cleon Is Ready"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid está listo"
+            "value" : "Cleon está listo"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid est prêt"
+            "value" : "Cleon est prêt"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid è pronto"
+            "value" : "Cleon è pronto"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 준비 완료"
+            "value" : "Cleon 준비 완료"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 已就绪"
+            "value" : "Cleon 已就绪"
           }
         }
       }
@@ -3091,43 +3091,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Öffne Kelid, um mehr zu erfahren."
+            "value" : "Öffne Cleon, um mehr zu erfahren."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Kelid to learn more."
+            "value" : "Open Cleon to learn more."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre Kelid para saber más."
+            "value" : "Abre Cleon para saber más."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre Kelid pour en savoir plus."
+            "value" : "Ouvre Cleon pour en savoir plus."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apri Kelid per saperne di più."
+            "value" : "Apri Cleon per saperne di più."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "자세히 알아보려면 Kelid를 여세요."
+            "value" : "자세히 알아보려면 Cleon를 여세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "打开 Kelid 以了解更多。"
+            "value" : "打开 Cleon 以了解更多。"
           }
         }
       }
@@ -3138,43 +3138,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Öffne Kelid, um deinen Tresor einzurichten"
+            "value" : "Öffne Cleon, um deinen Tresor einzurichten"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Kelid to set up your vault"
+            "value" : "Open Cleon to set up your vault"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre Kelid para configurar tu bóveda"
+            "value" : "Abre Cleon para configurar tu bóveda"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre Kelid pour configurer ton coffre"
+            "value" : "Ouvre Cleon pour configurer ton coffre"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apri Kelid per configurare la tua cassaforte"
+            "value" : "Apri Cleon per configurare la tua cassaforte"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "보관함을 설정하려면 Kelid를 여세요."
+            "value" : "보관함을 설정하려면 Cleon를 여세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "打开 Kelid 以设置你的保险库"
+            "value" : "打开 Cleon 以设置你的保险库"
           }
         }
       }
@@ -3185,43 +3185,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Öffne Kelid, um deinen Tresor einzurichten und dich anzumelden."
+            "value" : "Öffne Cleon, um deinen Tresor einzurichten und dich anzumelden."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Kelid to set up your vault and sign in."
+            "value" : "Open Cleon to set up your vault and sign in."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre Kelid para configurar tu bóveda e iniciar sesión."
+            "value" : "Abre Cleon para configurar tu bóveda e iniciar sesión."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre Kelid pour configurer ton coffre et te connecter."
+            "value" : "Ouvre Cleon pour configurer ton coffre et te connecter."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apri Kelid per configurare la tua cassaforte e accedere."
+            "value" : "Apri Cleon per configurare la tua cassaforte e accedere."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "보관함을 설정하고 로그인하려면 Kelid를 여세요."
+            "value" : "보관함을 설정하고 로그인하려면 Cleon를 여세요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "打开 Kelid 以设置你的保险库并登录。"
+            "value" : "打开 Cleon 以设置你的保险库并登录。"
           }
         }
       }
@@ -3279,43 +3279,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Der Passkey bleibt in deinem Kelid-Tresor, verschlüsselt auf deinen Geräten."
+            "value" : "Der Passkey bleibt in deinem Cleon-Tresor, verschlüsselt auf deinen Geräten."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The passkey stays in your Kelid vault, encrypted on your devices."
+            "value" : "The passkey stays in your Cleon vault, encrypted on your devices."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La llave de acceso se queda en tu bóveda de Kelid, cifrada en tus dispositivos."
+            "value" : "La llave de acceso se queda en tu bóveda de Cleon, cifrada en tus dispositivos."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La passkey reste dans ton coffre Kelid, chiffrée sur tes appareils."
+            "value" : "La passkey reste dans ton coffre Cleon, chiffrée sur tes appareils."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La passkey resta nella tua cassaforte Kelid, cifrata sui tuoi dispositivi."
+            "value" : "La passkey resta nella tua cassaforte Cleon, cifrata sui tuoi dispositivi."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "패스키는 기기에서 암호화되어 Kelid 보관함에 보관돼요."
+            "value" : "패스키는 기기에서 암호화되어 Cleon 보관함에 보관돼요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "通行密钥保留在你的 Kelid 保险库中，并在你的设备上加密。"
+            "value" : "通行密钥保留在你的 Cleon 保险库中，并在你的设备上加密。"
           }
         }
       }
@@ -3655,43 +3655,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "In Kelid sichern"
+            "value" : "In Cleon sichern"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save in Kelid"
+            "value" : "Save in Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar en Kelid"
+            "value" : "Guardar en Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enregistrer dans Kelid"
+            "value" : "Enregistrer dans Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Salva in Kelid"
+            "value" : "Salva in Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid에 저장"
+            "value" : "Cleon에 저장"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "存储到 Kelid"
+            "value" : "存储到 Cleon"
           }
         }
       }
@@ -3796,43 +3796,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "In Kelid suchen"
+            "value" : "In Cleon suchen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search Kelid"
+            "value" : "Search Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buscar en Kelid"
+            "value" : "Buscar en Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rechercher dans Kelid"
+            "value" : "Rechercher dans Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerca in Kelid"
+            "value" : "Cerca in Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid에서 검색"
+            "value" : "Cleon에서 검색"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在 Kelid 中搜索"
+            "value" : "在 Cleon 中搜索"
           }
         }
       }
@@ -4266,43 +4266,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Entsperre Kelid"
+            "value" : "Entsperre Cleon"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock Kelid"
+            "value" : "Unlock Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desbloquea Kelid"
+            "value" : "Desbloquea Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Déverrouille Kelid"
+            "value" : "Déverrouille Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sblocca Kelid"
+            "value" : "Sblocca Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid 잠금 해제"
+            "value" : "Cleon 잠금 해제"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "解锁 Kelid"
+            "value" : "解锁 Cleon"
           }
         }
       }

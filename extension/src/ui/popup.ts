@@ -93,7 +93,7 @@ const MASK = "••••••••••••";
 const TOAST_MS = 1600;
 /**
  * A copied password or one-time code leaves the clipboard this long after the copy: the rule of
- * the Kelid app itself (VaultKit `Clipboard`, 90 s, cleared only if unchanged). The clipboard is
+ * the Cleon app itself (VaultKit `Clipboard`, 90 s, cleared only if unchanged). The clipboard is
  * never read (that needs a permission and makes browsers prompt): while the timer lives, the popup
  * is the only writer it knows of, so it clears only when its own last copy is still that secret.
  * Any later copy from the popup, a username included, cancels the clear. Limit: the timer lives in the
@@ -294,7 +294,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   /**
-   * "Pair with Kelid": first without a code (the app vouches for this browser by its
+   * "Pair with Cleon": first without a code (the app vouches for this browser by its
    * signature), then the code comparison when the app cannot.
    */
   async function connect(): Promise<void> {
@@ -416,7 +416,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
   /**
    * Locked. iOS (IOSSAF-01): the native vault of the Safari handler answers, and the popup turns
-   * into the unlock sheet (the menu's). Elsewhere it has none: "Déverrouiller dans Kelid".
+   * into the unlock sheet (the menu's). Elsewhere it has none: "Déverrouiller dans Cleon".
    */
   function renderLocked(): Promise<void> {
     return track(
@@ -619,7 +619,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "pp-head" },
-        h("span", { class: "brand" }, mark("m"), "Kelid"),
+        h("span", { class: "brand" }, mark("m"), "Cleon"),
         h("label", { class: "search glass" }, icon("search", 14), input),
         genBtn,
         // The account chip also holds "Oublier cet appairage", out of the way.

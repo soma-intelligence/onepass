@@ -1,11 +1,11 @@
-// Content script side of the dev-only recorder: remembers which fields Kelid
+// Content script side of the dev-only recorder: remembers which fields Cleon
 // filled (by role) and which the user edited (a trusted input or change event,
 // never the value), and reports a step on each submission.
 import type { FieldRole } from "../shared/messages";
 import { type FilledRole, MSG_STEP, recordSubmit } from "./recorder";
 
 export interface RecorderHooks {
-  /** Kelid wrote `role` into `el`. */
+  /** Cleon wrote `role` into `el`. */
   noteFilled(el: Element, role: FieldRole): void;
   /** A form (or container) was submitted by the user. */
   step(container: Element): void;
@@ -21,7 +21,7 @@ export function createRecorderContent(o: {
   isTrusted: (e: Event) => boolean;
 }): RecorderHooks {
   const filled = new WeakMap<Element, FilledRole>();
-  // Latest value seen in each field this script saw Kelid fill or the user edit.
+  // Latest value seen in each field this script saw Cleon fill or the user edit.
   // Memory only (never stored or sent): used to redact page text that echoes a
   // value, on a later step too. Bounded; the oldest entries go first.
   const seen = new Map<Element, string>();

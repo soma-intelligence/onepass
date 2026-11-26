@@ -158,8 +158,8 @@ describe("setup card", () => {
     const { r, handle, worker, click } = setup(state(), (m) => (m.type === "setup_save" ? { ok: { status: n++ === 0 ? "locked" : "saved" } } : null));
     await handle.ready;
     await click("Add");
-    expect(button(r, "Unlock Kelid")).toBeTruthy();
-    await click("Unlock Kelid");
+    expect(button(r, "Unlock Cleon")).toBeTruthy();
+    await click("Unlock Cleon");
     expect(saves(worker)).toEqual([
       { type: "setup_save", token: TOKEN, itemId: "it_01" },
       { type: "setup_save", token: TOKEN, itemId: "it_01" },
@@ -175,8 +175,8 @@ describe("setup card", () => {
     await handle.ready;
     await click("Add");
     await click("Replace");
-    expect(button(r, "Unlock Kelid")).toBeTruthy();
-    await click("Unlock Kelid");
+    expect(button(r, "Unlock Cleon")).toBeTruthy();
+    await click("Unlock Cleon");
     expect(saves(worker)).toEqual([
       { type: "setup_save", token: TOKEN, itemId: "it_01" },
       { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
@@ -197,7 +197,7 @@ describe("setup card", () => {
     await handle.ready;
     await click("Add");
     await click("Replace");
-    await click("Unlock Kelid");
+    await click("Unlock Cleon");
     expect(saves(worker).slice(1)).toEqual([
       { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
       { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
@@ -218,9 +218,9 @@ describe("setup card", () => {
     let locked = true;
     const { r, handle, worker, click } = setup(state(), (m) => (m.type === "setup_init" && locked ? { err: "locked" } : null));
     await handle.ready;
-    expect(button(r, "Unlock Kelid")).toBeTruthy();
+    expect(button(r, "Unlock Cleon")).toBeTruthy();
     locked = false;
-    await click("Unlock Kelid");
+    await click("Unlock Cleon");
     expect(worker.sent.filter((m) => m.type === "setup_init")).toHaveLength(2);
     expect(text(r)).toContain("Add the 2FA code to Atlas Cloud?");
   });

@@ -54,7 +54,7 @@ function shots(lang: "fr" | "en") {
       await page.emulateMedia({ colorScheme: scheme });
       await page.setViewportSize({ width: 1100, height: 640 });
 
-      // A login the vault does not know: Kelid saves it and says so in a toast.
+      // A login the vault does not know: Cleon saves it and says so in a toast.
       await signUp(page, `alex.${scheme}.${lang}@atlas.dev`, "Nouv-Pass-0043");
       let save = await card(ext, page, T.save);
       await page.screenshot({ path: name("save-new") });

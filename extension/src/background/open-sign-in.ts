@@ -1,6 +1,6 @@
 // Open and sign in (spec docs/superpowers/specs/2026-11-04-open-and-sign-in-design.md).
 //
-// The user tapped a login's website in the Kelid app ("Ouvrir et se connecter"): the app
+// The user tapped a login's website in the Cleon app ("Ouvrir et se connecter"): the app
 // recorded a single-use pending sign-in (item id and site, 60 s, never a secret) where the bridge
 // host reads it, then opened the page. Here, when a top frame loads an https page that shows a
 // sign-in form, the service worker asks the host to take it (`take_sign_in`, origin and top origin

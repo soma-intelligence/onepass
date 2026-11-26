@@ -69,7 +69,7 @@ struct BrowseRoot: View {
                 ApproveDeviceSheet()
             }
             #endif
-            // Fichier > Restaurer une sauvegarde…: a Kelid archive (.onepass).
+            // Fichier > Restaurer une sauvegarde…: a Cleon archive (.onepass).
             .sheet(isPresented: $model.showRestore) {
                 RestoreSheet()
             }

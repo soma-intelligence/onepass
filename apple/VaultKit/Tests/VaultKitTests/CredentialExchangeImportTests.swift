@@ -6,7 +6,7 @@ import Testing
 @testable import VaultKit
 
 /// Passkeys handed over by another app through the system's Credential Exchange (Passwords >
-/// Export to Kelid, iOS and macOS 26): `CredentialExchangeImport` turns the system's data into the
+/// Export to Cleon, iOS and macOS 26): `CredentialExchangeImport` turns the system's data into the
 /// CXF JSON the core already imports, and the imported passkey signs like one created by a site.
 @MainActor
 @Suite("Credential Exchange import")

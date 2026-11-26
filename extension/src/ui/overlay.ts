@@ -17,7 +17,7 @@
 //   stop with what to do next, and "Réessayer" when trying again can help.
 //
 // A click that finds the vault locked (or the app not running) asks the app
-// at once: the card then waits ("Déverrouille Kelid pour continuer",
+// at once: the card then waits ("Déverrouille Cleon pour continuer",
 // "Annuler"), polled like a running chain, and the worker starts or continues
 // the sign-in the moment the vault opens. No second click; past the shared
 // deadline the offer (or the stop with "Réessayer") comes back.
@@ -37,7 +37,7 @@
 // "Détails" unfolds the steps, and the choice is kept for this browser.
 //
 // A card that appeared by itself on a recognised page (`auto`, no gesture) is the same pill, the
-// generic card, or "Créer avec Kelid" on a signup page; it adds "Jamais sur ce site" and folds
+// generic card, or "Créer avec Cleon" on a signup page; it adds "Jamais sur ce site" and folds
 // away AUTO_PILL_MS after it showed unless the user acted on it (its button, its list).
 import { AUTO_PILL_MS } from "../shared/auto-pill";
 import { ext } from "../shared/browser";
@@ -519,7 +519,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   }
 
   /**
-   * "Créer avec Kelid" (a card that appeared by itself on a signup page): its click asks the
+   * "Créer avec Cleon" (a card that appeared by itself on a signup page): its click asks the
    * worker to fill the page's signup form with a strong password made with the site's rules.
    * Nothing is sent: the site's own button stays the user's. The worker then removes the card.
    */
@@ -613,7 +613,7 @@ export function mountOverlay(root: HTMLElement, deps: FrameDeps): OverlayHandle 
   };
 
   /**
-   * The generic card: the site, "Sign in with Kelid", that it is locked, one button. Its click
+   * The generic card: the site, "Sign in with Cleon", that it is locked, one button. Its click
    * asks the worker to unlock and to run the page's plan; nothing here comes from the vault.
    */
   const renderGeneric = (): void => {

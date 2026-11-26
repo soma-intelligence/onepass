@@ -25,7 +25,7 @@ public struct MailboxHome: Codable, Equatable, Hashable, Sendable {
 }
 
 /// Where a new account keeps its encrypted vault (cross-platform spec D.2, D.3). Default: the
-/// Kelid server hosted by Soma.
+/// Cleon server hosted by Soma.
 public enum SyncChoice: Codable, Equatable, Hashable, Sendable {
     case hosted
     case iCloud
@@ -61,7 +61,7 @@ public enum SyncBackendState: Codable, Equatable, Sendable {
         try await CoreThread.run { try store.setMeta(key: metaKey, value: data) }
     }
 
-    /// What the settings line names: "Serveur Kelid" for the hosted instance, the host of a
+    /// What the settings line names: "Serveur Cleon" for the hosted instance, the host of a
     /// self-host, "iCloud" otherwise.
     public func displayName(hosted: URL?) -> String {
         switch self {

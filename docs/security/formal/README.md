@@ -1,6 +1,6 @@
-# Kelid : modèle formel du protocole
+# Cleon : modèle formel du protocole
 
-Ce document décrit les modèles ProVerif de Kelid, ce qu'ils prouvent, comment ils ont été construits à partir du code, et ce qu'ils ne prouvent pas. Spec : [`docs/superpowers/specs/2026-10-26-formal-model-design.md`](../../superpowers/specs/2026-10-26-formal-model-design.md). Modèles : [`formal/`](../../../formal/). Derniers résultats : [`results.md`](results.md) (généré par `make formal`, ne pas modifier à la main).
+Ce document décrit les modèles ProVerif de Cleon, ce qu'ils prouvent, comment ils ont été construits à partir du code, et ce qu'ils ne prouvent pas. Spec : [`docs/superpowers/specs/2026-10-26-formal-model-design.md`](../../superpowers/specs/2026-10-26-formal-model-design.md). Modèles : [`formal/`](../../../formal/). Derniers résultats : [`results.md`](results.md) (généré par `make formal`, ne pas modifier à la main).
 
 Le modèle est symbolique (Dolev-Yao) : les primitives sont idéales, l'attaquant contrôle le réseau et le stockage, et ProVerif cherche une trace qui viole chaque propriété pour un nombre non borné de sessions. Un résultat « vrai » est une preuve dans ce modèle, pas une borne de sécurité calculatoire (section 10).
 
@@ -127,7 +127,7 @@ Requêtes vraies complémentaires : `Weak secret pw_main` dans `emergency_kit.pv
 
 ## 6. Requêtes à attaque attendue et limites documentées (ruling F-03)
 
-Une requête dont le résultat attendu est « faux » n'est permise que pour la sanité et pour une limite déjà documentée. Elle montre ce que Kelid ne garantit pas.
+Une requête dont le résultat attendu est « faux » n'est permise que pour la sanité et pour une limite déjà documentée. Elle montre ce que Cleon ne garantit pas.
 
 1. **Mot de passe faible une fois la Secret Key connue** (`account.pv`, `Weak secret pw_sk_leaked` ; `emergency_kit.pv`, `Weak secret pw_kit_lost`). Avec la Secret Key, le keyset scellé est un vérificateur : l'attaquant teste chaque mot de passe hors ligne. P2 (attaquant avec la Secret Key) et P17 ne valent donc que pour un mot de passe fort ; le coût Argon2id (section 10) est la seule défense. Documenté en spec section 3 et dans `docs/security/README.md` section 1.
 2. **Écart de plus d'un `seq` accepté sans chaînage** (`manifest.pv`, `Fetched(d,v,seen(2,h0),4,mh) ==> Signed(v,4,p,mh,e) && Signed(v,3,h0,p,e3)`). `verify_manifest` (`manifest.rs:227-240`) refuse un `seq` plus ancien et exige le chaînage pour `seq + 1`, mais accepte un écart plus grand sans vérifier l'ascendance : un appareil qui a vu `seq = 2` accepte un `seq = 4` construit sur une bifurcation de 2. Tous les manifestes restent signés par le compte (P6) et l'appareil ne recule jamais (P7). Documenté dans `docs/security/README.md` section 3.7.

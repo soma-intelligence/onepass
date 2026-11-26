@@ -56,7 +56,7 @@ private struct NumberDemo: View {
         LabeledContent("Balance") { DBNumber(balance, currencyCode: "EUR") }
         LabeledContent("Score") { DBNumber(score, format: .percent()) }
         Button("Change") {
-            // A fixed cycle, not a random draw: Kelid forbids OS random draws in apple/ (rng_guard).
+            // A fixed cycle, not a random draw: Cleon forbids OS random draws in apple/ (rng_guard).
             let deltas = [640, -220, 870, -90, 310]
             step = (step + 1) % deltas.count
             count += deltas[step]

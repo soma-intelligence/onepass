@@ -128,7 +128,7 @@ public actor MailboxSetup {
 
     private static let log = Logger(subsystem: "me.somalabs.onepass", category: "mailbox-setup")
 
-    /// `hosted`: the Kelid server of this build (`MailboxEndpoints.hosted()`). `memberToken`: for a
+    /// `hosted`: the Cleon server of this build (`MailboxEndpoints.hosted()`). `memberToken`: for a
     /// managed account only, the token its mailbox is created with on the organisation's server (the
     /// caller wipes it after the run). `managed`: a managed setup even without a token (one resumed
     /// past its creation needs none). `pendingCredentialID`: see `pendingCredentialID(slot:)`.

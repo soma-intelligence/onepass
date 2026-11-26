@@ -33,7 +33,7 @@ class AndroidSuggestionPort(context: Context) : SuggestionPort {
         }
         val code = call { wifi.addNetworkSuggestions(suggestions) }
         if (code == WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_ADD_DUPLICATE) {
-            // Android 10 holds an older copy Kelid lost track of: replace it.
+            // Android 10 holds an older copy Cleon lost track of: replace it.
             remove(networks.map { it.key })
             return status(call { wifi.addNetworkSuggestions(suggestions) })
         }

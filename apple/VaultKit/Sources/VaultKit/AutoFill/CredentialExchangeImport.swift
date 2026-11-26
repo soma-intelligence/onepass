@@ -3,7 +3,7 @@ import AuthenticationServices
 import Foundation
 
 /// Credentials another app hands over through the system's Credential Exchange (iOS, macOS and
-/// visionOS 26: Passwords > Export Data to Another App > Kelid). The system opens Kelid with a
+/// visionOS 26: Passwords > Export Data to Another App > Cleon). The system opens Cleon with a
 /// `ASCredentialExchangeActivity` user activity carrying a one-time token; `receive(token:)` reads
 /// the credentials with it, and `cxfJSON` turns them into the FIDO CXF JSON the core's `cxf` import
 /// already reads (passkeys with their private key, passwords, codes, cards, Wi-Fi, notes). The

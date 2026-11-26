@@ -1,7 +1,7 @@
 # DesignBridge (vendored)
 
 DesignBridgeKit and DesignBridgeTesting come from DesignBridge, the Soma Labs bridge between
-Penpot and SwiftUI. They are copied here so the Kelid repository builds on its own.
+Penpot and SwiftUI. They are copied here so the Cleon repository builds on its own.
 
 - DesignBridgeKit: toast, rolling numbers, motion, states, glass and theme primitives used by
   DesignKit and the app (the RX look).

@@ -45,7 +45,7 @@ enum IntentBridge {
 enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     /// The app did not come up in time to run the intent.
     case unavailable
-    /// The picked item is not a valid Kelid item reference.
+    /// The picked item is not a valid Cleon item reference.
     case itemNotFound
     /// Locked, and nothing to pick from (spec 9).
     case locked
@@ -54,9 +54,9 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
-        case .unavailable: "Kelid n'a pas pu s'ouvrir"
+        case .unavailable: "Cleon n'a pas pu s'ouvrir"
         case .itemNotFound: "Élément introuvable"
-        case .locked: "Déverrouille Kelid pour choisir un élément"
+        case .locked: "Déverrouille Cleon pour choisir un élément"
         case .generationFailed: "Le mot de passe n'a pas pu être généré"
         }
     }

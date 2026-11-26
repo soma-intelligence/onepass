@@ -4,7 +4,7 @@
 // It keeps the STRUCTURE of each form step the user fills (the shared
 // extractor's features: attributes, labels, geometry) and never a value: no
 // typed text, no value attribute, no length, no "does it match" flag. `filled`
-// only says which role Kelid wrote into a field, or "user" for a field the
+// only says which role Cleon wrote into a field, or "user" for a field the
 // user edited. Steps are stored under the host alone.
 import { extractFeatures, type FieldFeatures, type PageFeatures, type Visibility } from "../content/detect/features.ts";
 import type { FieldRole } from "../shared/messages.ts";
@@ -25,7 +25,7 @@ export interface RecordedStep {
   host: string;
   at: number;
   form: PageFeatures["forms"][number];
-  /** Field index in `form.fields` to the role Kelid filled, or "user". */
+  /** Field index in `form.fields` to the role Cleon filled, or "user". */
   filled: Record<number, FilledRole>;
 }
 
@@ -148,7 +148,7 @@ function clean(f: FieldFeatures, values: readonly string[]): FieldFeatures {
 
 /**
  * The structure of the form step `form` (a <form>, or any container for a page
- * without one), and which of its fields Kelid or the user filled.
+ * without one), and which of its fields Cleon or the user filled.
  */
 export function recordSubmit(
   form: HTMLFormElement | Element,

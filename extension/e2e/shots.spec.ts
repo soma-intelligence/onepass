@@ -76,9 +76,9 @@ for (const scheme of ["dark", "light"] as const) {
     await popup.emulateMedia({ colorScheme: scheme });
     await popup.setViewportSize({ width: 780, height: 600 });
     await popup.goto(`chrome-extension://${ext.id}/popup.html`);
-    await expect(popup.getByPlaceholder("Rechercher dans Kelid")).toBeVisible();
+    await expect(popup.getByPlaceholder("Rechercher dans Cleon")).toBeVisible();
     // Opened as a tab, the popup has no site of its own: search instead.
-    await popup.getByPlaceholder("Rechercher dans Kelid").fill("Atlas");
+    await popup.getByPlaceholder("Rechercher dans Cleon").fill("Atlas");
     const first = popup.locator(".pp-list button.row").first();
     await first.click();
     await expect(popup.locator(".pp-detail")).toBeVisible();

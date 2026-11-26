@@ -21,7 +21,7 @@ struct OnePassShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: LockVaultIntent(),
             phrases: ["Verrouiller \(.applicationName)"],
-            shortTitle: "Verrouiller Kelid",
+            shortTitle: "Verrouiller Cleon",
             systemImageName: "lock")
     }
 }

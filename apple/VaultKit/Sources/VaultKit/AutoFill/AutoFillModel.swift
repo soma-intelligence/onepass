@@ -20,7 +20,7 @@ public final class AutoFillModel {
     public enum Screen: Equatable, Sendable {
         /// Before `start`: the interface shows nothing yet.
         case starting
-        /// No account, or a store that cannot be read: "open Kelid" and cancel.
+        /// No account, or a store that cannot be read: "open Cleon" and cancel.
         case noAccount
         /// This device has no Secret Key for the account: the app must restore it first.
         case needsSecretKey
@@ -86,7 +86,7 @@ public final class AutoFillModel {
 
     /// Answer to a `...WithoutUserInteraction` call without any session (the provider asks
     /// `resultFromUnlockWindow` first: outside that window, the extension is never unlocked outside
-    /// a request). A save coming from Kelid itself, or of a generated password just filled,
+    /// a request). A save coming from Cleon itself, or of a generated password just filled,
     /// ends as saved without writing; a conditional passkey registration (automatic upgrade by the
     /// site) fails, since a passkey is never created without an explicit choice (ruling A9); everything
     /// else asks for the interface. Never nil today.

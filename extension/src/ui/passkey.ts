@@ -1,6 +1,6 @@
 // Passkey choice window (spec 3.2): `passkey.html#<token>`, a popup window
 // the worker opens for one `navigator.credentials` request of one document.
-// Sign-in lists the accounts of Kelid holding a passkey for the site;
+// Sign-in lists the accounts of Cleon holding a passkey for the site;
 // creation names the account the site asked for and the vault. "Autre
 // appareil" hands the request back to the browser's own dialog, "Annuler"
 // gives the page NotAllowedError. Nothing is signed before a trusted click

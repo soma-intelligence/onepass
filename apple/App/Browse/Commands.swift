@@ -49,7 +49,7 @@ struct BrowseCommands: Commands {
                 .disabled(!unlocked || listFocused != true || !model.canTrashSelection)
         }
         CommandGroup(after: .appSettings) {
-            Button("Verrouiller Kelid") { model.perform(.lock) }
+            Button("Verrouiller Cleon") { model.perform(.lock) }
                 .keyboardShortcut("l", modifiers: .command)
                 .disabled(model.session.state != .unlocked)
         }

@@ -198,9 +198,9 @@ struct BrowserBridgeTests {
         let session = h.makeSession()
         _ = try await session.createAccount(password: testPassword, displayName: "Camille", mode: .personal)
         let bridge = bridge(h, session)
-        #expect(bridge.published == [.init(slot: "primary", name: "Kelid", unlocked: true, excluded: [])])
+        #expect(bridge.published == [.init(slot: "primary", name: "Cleon", unlocked: true, excluded: [])])
         session.lock()
-        #expect(bridge.published == [.init(slot: "primary", name: "Kelid", unlocked: false, excluded: [])])
+        #expect(bridge.published == [.init(slot: "primary", name: "Cleon", unlocked: false, excluded: [])])
     }
 
     @Test func everySignedInAccountIsToldWithItsOwnLock() async throws {

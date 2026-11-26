@@ -3,7 +3,7 @@ import SwiftUI
 import VaultKit
 
 /// "Ajouter une passkey", the last row of a login's card (editor and detail). A passkey cannot be
-/// typed in: the site creates it, and Kelid, as the AutoFill provider, saves it into this login.
+/// typed in: the site creates it, and Cleon, as the AutoFill provider, saves it into this login.
 /// So the row opens the page where the site enrolls a passkey: the `enroll` address the site
 /// publishes at /.well-known/passkey-endpoints when it has one, else the site itself. That request
 /// goes to the login's own site, and only on a tap.

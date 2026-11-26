@@ -1,6 +1,6 @@
-# How Kelid Travel Mode works before you cross a border
+# How Cleon Travel Mode works before you cross a border
 
-Travel Mode removes every vault you have not marked **"Safe for Travel"** from your iPhone, iPad or Mac before a border crossing, without deleting it from iCloud. Back home, you turn it off and the hidden vaults come back, checked against the last signed manifests the device saw, so a server cannot slip you an old or altered copy. Kelid can also plan ahead: add a trip and it reminds you, then offers or turns on Travel Mode during the trip.
+Travel Mode removes every vault you have not marked **"Safe for Travel"** from your iPhone, iPad or Mac before a border crossing, without deleting it from iCloud. Back home, you turn it off and the hidden vaults come back, checked against the last signed manifests the device saw, so a server cannot slip you an old or altered copy. Cleon can also plan ahead: add a trip and it reminds you, then offers or turns on Travel Mode during the trip.
 
 ## Turn it on
 
@@ -10,7 +10,7 @@ Travel Mode removes every vault you have not marked **"Safe for Travel"** from y
 
 ## Trips and suggestions
 
-- Add a trip and Kelid reminds you the evening before ("Remember to turn on Travel Mode before the border.") and three hours before.
+- Add a trip and Cleon reminds you the evening before ("Remember to turn on Travel Mode before the border.") and three hours before.
 - At your first unlock during the trip, it offers or turns on Travel Mode.
 - Away from home, the app suggests it ("Suggest Travel Mode" in Settings). An unusual time zone counts as a sign you've left.
 - Watchtower flags a funded crypto wallet whose recovery phrase is not protected by Travel Mode.
@@ -45,6 +45,6 @@ The CLI's upstream is a development SQLite file standing in for sync.
 ## Related
 
 - [How sync through iCloud works](icloud-sync.md)
-- [Kelid threat model](threat-model.md)
-- [Kelid command line (CLI)](command-line-cli.md)
+- [Cleon threat model](threat-model.md)
+- [Cleon command line (CLI)](command-line-cli.md)
 - [README](../../README.md)

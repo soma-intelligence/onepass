@@ -7,43 +7,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         }
       }
@@ -54,43 +54,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Öffnet Kelid."
+            "value" : "Öffnet Cleon."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens Kelid."
+            "value" : "Opens Cleon."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre Kelid."
+            "value" : "Abre Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre Kelid."
+            "value" : "Ouvre Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre Kelid."
+            "value" : "Apre Cleon."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid를 열어요."
+            "value" : "Cleon를 열어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "打开 Kelid。"
+            "value" : "打开 Cleon。"
           }
         }
       }

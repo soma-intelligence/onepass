@@ -148,7 +148,7 @@ struct KeychainGroupSettingTests {
         let yml = try String(contentsOf: Self.appleDir.appendingPathComponent("project.yml"), encoding: .utf8)
         #expect(yml.contains("ONEPASS_KEYCHAIN_GROUP: \(VaultEnvironment.defaultKeychainGroup)\n"))
         let infoLine = "OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)"
-        #expect(yml.components(separatedBy: infoLine).count - 1 >= 2, "the Kelid and OnePassAutoFill Info.plist need \(infoLine)")
+        #expect(yml.components(separatedBy: infoLine).count - 1 >= 2, "the Cleon and OnePassAutoFill Info.plist need \(infoLine)")
         // The committed project was regenerated from it.
         let pbxproj = try String(
             contentsOf: Self.appleDir.appendingPathComponent("OnePass.xcodeproj/project.pbxproj"), encoding: .utf8)

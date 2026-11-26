@@ -348,7 +348,7 @@ struct SessionErrorText: View {
     }
 }
 
-/// "Open Kelid" screens: nothing can be filled from the extension, only "Annuler".
+/// "Open Cleon" screens: nothing can be filled from the extension, only "Annuler".
 private struct MessageView: View {
     let model: AutoFillModel
     let title: String
