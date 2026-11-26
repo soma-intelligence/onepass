@@ -110527,43 +110527,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Neues Design (Vorschau)"
+            "value" : "Neues Design"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New Design (Preview)"
+            "value" : "New design"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nuevo diseño (vista previa)"
+            "value" : "Nuevo diseño"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nouveau design (aperçu)"
+            "value" : "Nouveau design"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nuovo design (anteprima)"
+            "value" : "Nuovo design"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "새로운 디자인 (미리보기)"
+            "value" : "새로운 디자인"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "全新设计（预览）"
+            "value" : "全新设计"
           }
         }
       }
@@ -110574,43 +110574,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Eine Vorschau, nur auf diesem Gerät."
+            "value" : "Das Standarddesign. Schalte es aus, um zum klassischen Design zurückzukehren, nur auf diesem Gerät."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A preview, on this device only."
+            "value" : "The default design. Turn it off to go back to the classic design, on this device only."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una vista previa, solo en este dispositivo."
+            "value" : "El diseño predeterminado. Desactívalo para volver al diseño clásico, solo en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un aperçu, sur cet appareil uniquement."
+            "value" : "Le design par défaut. Désactive-le pour retrouver l'ancien design, sur cet appareil uniquement."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un'anteprima, solo su questo dispositivo."
+            "value" : "Il design predefinito. Disattivalo per tornare al design classico, solo su questo dispositivo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이 기기에서만 적용되는 미리보기예요."
+            "value" : "기본 디자인이에요. 끄면 이 기기에서만 이전 디자인으로 돌아가요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "仅在此设备上预览。"
+            "value" : "默认设计。关闭后可恢复经典设计，仅限此设备。"
           }
         }
       }
@@ -110910,43 +110910,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA verfügbar"
+            "value" : "Zwei Schritte"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "2FA Available"
+            "value" : "Two-step"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "2FA disponible"
+            "value" : "Dos pasos"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "2FA disponible"
+            "value" : "Deux étapes"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "2FA disponibile"
+            "value" : "Due passaggi"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "이중 인증 사용 가능"
+            "value" : "2단계 인증"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "可启用双重认证"
+            "value" : "两步验证"
           }
         }
       }
@@ -112968,7 +112968,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verification Code"
+            "value" : "Verification code"
           }
         },
         "es" : {
@@ -117849,6 +117849,1040 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "开始"
+          }
+        }
+      }
+    },
+    "settings.macPasswordRequiredToApprove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ohne Touch ID fragt OnePass zum Bestätigen nach deinem Mac-Passwort."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Without Touch ID, approving asks for your Mac password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin Touch ID, OnePass te pide la contraseña de tu Mac para aprobar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sans Touch ID, OnePass te demande le mot de passe de ton Mac pour approuver."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Senza Touch ID, OnePass ti chiede la password del tuo Mac per approvare."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Touch ID를 사용할 수 없으면 승인할 때 OnePass가 Mac 암호를 요청합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法使用触控 ID 时，OnePass 会要求输入 Mac 密码以批准。"
+          }
+        }
+      }
+    },
+    "editor.unsaved.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save Your Changes?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Your Changes?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save Your Changes?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer tes modifications ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save Your Changes?"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save Your Changes?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save Your Changes?"
+          }
+        }
+      }
+    },
+    "editor.unsaved.save" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Save"
+          }
+        }
+      }
+    },
+    "editor.unsaved.discard" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard Changes"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard Changes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard Changes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abandonner les modifications"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard Changes"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard Changes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard Changes"
+          }
+        }
+      }
+    },
+    "editor.unsaved.discardAndQuit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard and Quit"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard and Quit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard and Quit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abandonner et quitter"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard and Quit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard and Quit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discard and Quit"
+          }
+        }
+      }
+    },
+    "lock.notLocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass didn't lock. Try again."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass didn't lock. Try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass didn't lock. Try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OnePass ne s'est pas verrouillé. Réessaie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass didn't lock. Try again."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass didn't lock. Try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "OnePass didn't lock. Try again."
+          }
+        }
+      }
+    },
+    "copy.command.password" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Password"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Password"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Password"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier le mot de passe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Password"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Password"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Password"
+          }
+        }
+      }
+    },
+    "copy.command.code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Verification Code"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Verification Code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Verification Code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier le code de vérification"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Verification Code"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Verification Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy Verification Code"
+          }
+        }
+      }
+    },
+    "copy.command.nothing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nothing to copy from this item."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to copy from this item."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nothing to copy from this item."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien à copier dans cet élément."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nothing to copy from this item."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nothing to copy from this item."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nothing to copy from this item."
+          }
+        }
+      }
+    },
+    "copy.command.noPassword" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "This item has no password."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This item has no password."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "This item has no password."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet élément n'a pas de mot de passe."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "This item has no password."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "This item has no password."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "This item has no password."
+          }
+        }
+      }
+    },
+    "copy.command.openToCopy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Open the item to copy it."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the item to copy it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Open the item to copy it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre l'élément pour le copier."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Open the item to copy it."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Open the item to copy it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Open the item to copy it."
+          }
+        }
+      }
+    },
+    "copy.command.travelGuarded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auf Reisen geschützt: Öffne das Objekt, um es zu lesen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protected while travelling: open the item to read it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protegido en viaje: abre el elemento para leerlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protégé en voyage : ouvre l'élément pour le lire."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protetto in viaggio: apri l'elemento per leggerlo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "여행 중 보호됨: 항목을 열어서 확인하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "旅行中受保护：请打开该项目查看。"
+          }
+        }
+      }
+    },
+    "item.changedMeanwhile.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Item Changed Meanwhile"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Item Changed Meanwhile"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Item Changed Meanwhile"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Élément modifié entre-temps"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Item Changed Meanwhile"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Item Changed Meanwhile"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Item Changed Meanwhile"
+          }
+        }
+      }
+    },
+    "onboarding.kit.fallback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Try again, or copy your Secret Key and write it down by hand on a sheet of paper."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again, or copy your Secret Key and write it down by hand on a sheet of paper."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Try again, or copy your Secret Key and write it down by hand on a sheet of paper."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessaie, ou copie ta Secret Key et recopie-la à la main sur une feuille."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Try again, or copy your Secret Key and write it down by hand on a sheet of paper."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Try again, or copy your Secret Key and write it down by hand on a sheet of paper."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Try again, or copy your Secret Key and write it down by hand on a sheet of paper."
+          }
+        }
+      }
+    },
+    "onboarding.kit.copySecretKey" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy the Secret Key"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy the Secret Key"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy the Secret Key"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier la Secret Key"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy the Secret Key"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy the Secret Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copy the Secret Key"
+          }
+        }
+      }
+    },
+    "onboarding.kit.copied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copied. The clipboard clears itself in 90 seconds and when OnePass locks."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied. The clipboard clears itself in 90 seconds and when OnePass locks."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copied. The clipboard clears itself in 90 seconds and when OnePass locks."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiée. Le presse-papiers s'efface tout seul après 90 secondes et au verrouillage."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copied. The clipboard clears itself in 90 seconds and when OnePass locks."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copied. The clipboard clears itself in 90 seconds and when OnePass locks."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copied. The clipboard clears itself in 90 seconds and when OnePass locks."
+          }
+        }
+      }
+    },
+    "settings.devices.browsers.allowAgain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erneut erlauben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a permitir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoriser de nouveau"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consenti di nuovo"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다시 허용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重新允许"
+          }
+        }
+      }
+    },
+    "settings.devices.browsers.forgotten" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vergessen: Sie verbindet sich nicht mehr von selbst. Kopple sie mit dem Code oder erlaube sie erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forgotten: it no longer reconnects on its own. Pair it with the code, or allow it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Olvidada: ya no se reconecta sola. Vincúlala con el código o vuelve a permitirla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oubliée : ne se reconnecte plus seule. Associe-la avec le code, ou autorise-la de nouveau."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dimenticata: non si riconnette più da sola. Associala con il codice o consentila di nuovo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "삭제됨: 더 이상 자동으로 다시 연결되지 않아요. 코드로 연결하거나 다시 허용하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已忘记：不再自动重新连接。请用代码配对，或重新允许。"
+          }
+        }
+      }
+    },
+    "settings.devices.browsers.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sie verbinden sich von selbst mit OnePass, wenn der Mac die Signatur des Browsers prüft, füllen aus dem auf diesem Mac geöffneten Tresor aus und sperren sich mit ihm."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "They connect to OnePass on their own when the Mac checks the browser's signature, fill from the vault open on this Mac and lock with it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se conectan solas a OnePass cuando el Mac verifica la firma del navegador, rellenan desde la bóveda abierta en este Mac y se bloquean con ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elles se connectent seules à OnePass quand le Mac vérifie la signature du navigateur, remplissent depuis le coffre ouvert sur ce Mac et se verrouillent avec lui."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si connettono da sole a OnePass quando il Mac verifica la firma del browser, compilano dalla cassaforte aperta su questo Mac e si bloccano con essa."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac이 브라우저 서명을 확인하면 OnePass에 자동으로 연결되고, 이 Mac에서 열린 보관함으로 채우며, 보관함과 함께 잠겨요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac 验证浏览器签名后，它们会自动连接 OnePass，从此 Mac 上打开的保险库填充，并随保险库一起锁定。"
+          }
+        }
+      }
+    },
+    "settings.devices.browsers.forgetMessage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sie kann nicht mehr ausfüllen und sich nicht mehr von selbst verbinden. Um sie wieder zu nutzen, kopple sie mit dem Code oder erlaube sie hier erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It won't be able to fill or reconnect on its own. To use it again, pair it with the code, or allow it again here."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya no podrá rellenar ni reconectarse sola. Para volver a usarla, vincúlala con el código o vuelve a permitirla aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle ne pourra plus remplir ni se reconnecter seule. Pour la réutiliser, associe-la avec le code, ou autorise-la de nouveau ici."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non potrà più compilare né riconnettersi da sola. Per riutilizzarla, associala con il codice o consentila di nuovo qui."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "더 이상 채우거나 자동으로 다시 연결할 수 없어요. 다시 사용하려면 코드로 연결하거나 여기에서 다시 허용하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "它将无法再填充或自动重新连接。要再次使用，请用代码配对，或在此处重新允许。"
+          }
+        }
+      }
+    },
+    "settings.devices.browsers.autoPairedUsed %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Automatisch gekoppelt · verwendet %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paired automatically · used %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vinculada automáticamente · usada %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Associée automatiquement · utilisée %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Associata automaticamente · usata %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "자동으로 연결됨 · %@ 사용"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已自动配对 · %@使用"
+          }
+        }
+      }
+    },
+    "Quitter OnePass" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quit OnePass"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit OnePass"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salir de OnePass"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitter OnePass"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esci da OnePass"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quit OnePass"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quit OnePass"
           }
         }
       }
