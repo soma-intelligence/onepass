@@ -200,28 +200,33 @@ public final class BrowserBridge {
         requests = []
     }
 
-    /// False when "Approuver" would be refused: the vault is locked or Touch ID is off in OnePass.
-    /// The pairing sheet says so before the user tries.
+    /// False when "Approuver" would be refused: the vault is locked, or this Mac has Touch ID and it
+    /// is off in OnePass. The pairing sheet says so before the user tries.
     public var canApprove: Bool {
-        session.state == .unlocked && session.canUseBiometrics
+        session.state == .unlocked && (session.canUseBiometrics || session.ownerCheckWithoutBiometry)
     }
 
-    /// "Approuver": Touch ID (or the watch) on an unlocked vault, then the code is accepted.
-    /// Touch ID refused or cancelled: the pairing is refused. Locked or Touch ID off (when the tap
-    /// comes, or by the time the check answers): nothing is answered, the request waits on its sheet
-    /// for the user to unlock or enroll, until the extension gives up.
+    /// A Mac with no Touch ID (nor Watch): "Approuver" asks the Mac password instead.
+    public var approvesWithMacPassword: Bool {
+        !session.canUseBiometrics && session.ownerCheckWithoutBiometry
+    }
+
+    /// "Approuver": Touch ID (or the watch) on an unlocked vault, then the code is accepted; on a Mac
+    /// with no biometry, the Mac password. Refused or cancelled: the pairing is refused. Locked or
+    /// Touch ID off (when the tap comes, or by the time the check answers): nothing is answered, the
+    /// request waits on its sheet for the user to unlock or enroll, until the extension gives up.
     public func approve(_ id: UInt64) async {
         guard let request = requests.first(where: { $0.id == id }) else { return }
         guard canApprove else { return }
         let prompt = String(
             localized: "bridge.pairWithOnepass \(request.browser)", bundle: VaultKitStrings.bundle)
-        let ok = await session.confirmUserPresence(prompt: prompt)
+        let ok = await session.confirmOwnerPresence(prompt: prompt)
         if !ok, session.state != .unlocked {
             // A lock during the check (sleep, the idle delay) is not the user's refusal.
             BridgeLog.note("pairing approval interrupted by a lock")
             return
         }
-        BridgeLog.note(ok ? "pairing approved" : "pairing refused: no user presence (locked or Touch ID off)")
+        BridgeLog.note(ok ? "pairing approved" : "pairing refused: no user presence (cancelled, locked or Touch ID off)")
         server?.answerPairing(requestId: id, approved: ok)
         requests.removeAll { $0.id == id }
     }

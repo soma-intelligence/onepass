@@ -713,7 +713,7 @@ export type UiToBg =
   | { type: "passkey_other"; token: string }
   | { type: "passkey_cancel"; token: string }
   // ---- two-factor setup (setup.html, background/setup) ----
-  /** "Scan 2FA QR code" in the popup: the active tab is scanned, then the setup card shows. */
+  /** "Scan verification code QR" in the popup: the active tab is scanned, then the setup card shows. */
   | { type: "popup_scan_qr" }
   | { type: "setup_init"; token: string }
   /** `itemId` null: a new login (`username`, else the QR account). `replace`: the second click after `exists`. */

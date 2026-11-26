@@ -27,6 +27,7 @@ import {
   type Send,
   type Timers,
   call,
+  errorHelp,
   errorText,
   h,
   icon,
@@ -540,36 +541,46 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "actions" },
-        button(t("menu.unlockInOnepass"), "btn btn-primary", () =>
-          void track(
-            call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
-              if (r.ok && !r.value.locked) return load();
-              if (r.ok) waitForUnlock();
-              else toast(errorText(r.code), "error");
-              return undefined;
-            }),
-          ),
-        ),
+        button(t("menu.unlockInOnepass"), "btn btn-primary", openOnepass),
       ),
       forgetButton(),
     );
   }
+
+  /**
+   * Brings the app forward, launching it when it does not answer, and asks it to unlock
+   * (`popup_unlock`). Open: the popup loads. On its lock screen: the popup waits.
+   */
+  function openOnepass(): void {
+    void track(
+      call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
+        if (r.ok && !r.value.locked) return load();
+        if (r.ok) waitForUnlock();
+        else toast(errorText(r.code), "error");
+        return undefined;
+      }),
+    );
+  }
+
+  const retry = (cls = "btn btn-primary") => button(t("popup.tryAgain"), cls, () => void track(load()));
 
   function renderHostMissing(): void {
     center(
       mark("l"),
       h("h1", null, t("ui.onepassAppNotFound")),
       h("p", null, t("popup.installOrOpenOnepass")),
-      h("div", { class: "actions" }, button(t("popup.tryAgain"), "btn btn-primary", () => void track(load()))),
+      h("div", { class: "actions" }, button(t("menu.openOnepass"), "btn btn-primary", openOnepass), retry("btn")),
     );
   }
 
   function renderError(code: string): void {
-    center(
-      mark("l"),
-      h("h1", null, errorText(code)),
-      h("div", { class: "actions" }, button(t("popup.tryAgain"), "btn btn-primary", () => void track(load()))),
-    );
+    const help = errorHelp(code);
+    // Silent app: it may be stuck or asleep, the same button as when it is missing.
+    const actions =
+      code === "timeout"
+        ? h("div", { class: "actions" }, button(t("menu.openOnepass"), "btn btn-primary", openOnepass), retry("btn"))
+        : h("div", { class: "actions" }, retry());
+    center(mark("l"), h("h1", null, errorText(code)), help ? h("p", null, help) : null, actions);
   }
 
   // ---- main view ----
@@ -812,7 +823,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   /**
-   * "Scan 2FA QR code": the worker scans the active tab. A card is then in the page (the code
+   * "Scan verification code QR": the worker scans the active tab. A card is then in the page (the code
    * read, or `none`: the card asks for the setup key), so the popup leaves it the page.
    */
   async function scanQr(): Promise<void> {

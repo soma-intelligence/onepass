@@ -1480,6 +1480,28 @@ public final class VaultSession {
     /// passcode) confirms the user. False means: ask the master password (`verifyMasterPassword`).
     public func confirmUserPresence(prompt: String) async -> Bool {
         guard state == .unlocked, canUseBiometrics else { return false }
+        return await confirmPresence(prompt: prompt)
+    }
+
+    /// No biometry can ever be enrolled on this device (a Mac without Touch ID, such as a Mac mini
+    /// or a Mac Studio with another keyboard, and no Apple Watch set up), in personal mode. The
+    /// device owner's own check (`.deviceOwnerAuthentication`: the Mac password) then stands in for
+    /// the biometric one where the user would otherwise be stuck.
+    public var ownerCheckWithoutBiometry: Bool {
+        _ = biometricsRevision
+        return settings.deviceMode.biometricsAllowed && biometrics.availability == .noBiometry
+    }
+
+    /// Approving a browser pairing: `confirmUserPresence` when biometric unlock is enrolled (Touch
+    /// ID, or the Mac password it falls back to). On a device with no biometry at all
+    /// (`ownerCheckWithoutBiometry`), the same `.deviceOwnerAuthentication` prompt, which asks the
+    /// Mac password. A device that has Touch ID but did not enroll it in OnePass still refuses.
+    public func confirmOwnerPresence(prompt: String) async -> Bool {
+        guard state == .unlocked, canUseBiometrics || ownerCheckWithoutBiometry else { return false }
+        return await confirmPresence(prompt: prompt)
+    }
+
+    private func confirmPresence(prompt: String) async -> Bool {
         let gen = generation
         let confirmed = await environment.presence.confirm(prompt: prompt)
         guard confirmed, gen == generation, state == .unlocked else { return false }

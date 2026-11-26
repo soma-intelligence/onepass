@@ -40,7 +40,7 @@
   "ui.onepassNotPaired": "OnePass is not paired.",
   "ui.onepassAppNotFound": "OnePass app not found",
   "ui.onepassAppNotResponding": "The OnePass app is not responding.",
-  "ui.pairingRefusedInOnepass": "Pairing refused in the OnePass app. It asks for Touch ID: turn it on in OnePass (Settings > Security), then try again.",
+  "ui.pairingRefusedInOnepass": "Pairing refused in the OnePass app. Start again if that was a mistake.",
   "ui.codeExpiredStartPairing": "The code expired. Start pairing again.",
   "ui.noFormToFill": "No form to fill on this page.",
   "ui.siteRefusesGeneratedPassword": "This site refuses the generated password",
@@ -332,12 +332,12 @@
   "popup.pillNeverSites": "Never on these sites",
   "popup.removeSite": "Remove {site}",
   "setup.previousCode": "Previous code",
-  "popup.scanQr": "Scan 2FA QR code",
-  "setup.title": "Add the 2FA code to {item}?",
+  "popup.scanQr": "Scan verification code QR",
+  "setup.title": "Add the verification code to {item}?",
   "setup.from": "{issuer}, {account}",
   "setup.mismatch": "The code is for {account}. This login is {username}.",
   "setup.add": "Add",
-  "setup.replaceTitle": "{item} already has a 2FA code. Replace it?",
+  "setup.replaceTitle": "{item} already has a verification code. Replace it?",
   "setup.replaceNote": "The old code stays on the login.",
   "setup.replace": "Replace",
   "setup.cancel": "Cancel",
@@ -351,5 +351,9 @@
     "other": "Save {count} recovery codes on {item}?"
   },
   "setup.codesSave": "Save",
-  "setup.recoveryLabel": "Recovery codes"
+  "setup.recoveryLabel": "Recovery codes",
+  "ui.checkOnepassOpenUnlocked": "Check that the OnePass app is open and unlocked, then try again.",
+  "ui.updateExtensionThenRetry": "The OnePass app is newer: update the extension from your browser's store, then try again.",
+  "ui.updateOnepassThenRetry": "The extension is newer: update the OnePass app, then try again.",
+  "ui.updateBothThenRetry": "Update the OnePass app and the extension, then try again."
 }

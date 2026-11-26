@@ -3,8 +3,8 @@ import SwiftUI
 import VaultKit
 
 /// A browser extension asks to pair (spec 6.4): the user compares the code with the one the
-/// extension shows, then approves with Touch ID. The name and browser are what the extension
-/// says about itself.
+/// extension shows, then approves with Touch ID (the Mac password on a Mac without Touch ID). The
+/// name and browser are what the extension says about itself.
 struct BrowserPairingSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
@@ -44,7 +44,14 @@ struct BrowserPairingSheet: View {
                 .disabled(working || !bridge.canApprove)
                 .accessibilityIdentifier("bridge.pairing.approve")
             }
-            if bridge.canApprove {
+            if bridge.approvesWithMacPassword {
+                // No usable Touch ID: the same check, answered with the Mac password.
+                Text("settings.macPasswordRequiredToApprove")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("bridge.pairing.macPassword")
+            } else if bridge.canApprove {
                 Text("settings.touchIdRequiredWithout")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

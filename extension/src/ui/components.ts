@@ -531,6 +531,8 @@ const KNOWN_CODES: ReadonlySet<string> = new Set([
   "expired",
   "no_form",
   "site_refused",
+  "version_update_extension",
+  "version_update_app",
 ]);
 
 /** One request; the reply is validated by `parse` (null: malformed). */
@@ -556,6 +558,8 @@ export async function call<T>(send: Send, msg: UiToBg, parse: (v: unknown) => T 
 export function errorText(code: string): string {
   switch (code) {
     case "version":
+    case "version_update_extension":
+    case "version_update_app":
       return t("ui.extensionAndOnepassApp");
     case "bad_mac":
     case "bad_frame":
@@ -594,6 +598,25 @@ export function errorText(code: string): string {
       return t("ui.siteRefusesGeneratedPassword");
     default:
       return t("ui.onepassInternalError");
+  }
+}
+
+/**
+ * What to do about a code that leaves the user stuck (the app silent, a version mismatch),
+ * shown under `errorText`; undefined when the sentence says it all.
+ */
+export function errorHelp(code: string): string | undefined {
+  switch (code) {
+    case "timeout":
+      return t("ui.checkOnepassOpenUnlocked");
+    case "version_update_extension":
+      return t("ui.updateExtensionThenRetry");
+    case "version_update_app":
+      return t("ui.updateOnepassThenRetry");
+    case "version":
+      return t("ui.updateBothThenRetry");
+    default:
+      return undefined;
   }
 }
 

@@ -364,4 +364,10 @@ describe("toBgError", () => {
     expect(toBgError(new BridgeError("host", "x", "excluded")).code).toBe("excluded");
     expect(toBgError(new Error("boom")).code).toBe("internal");
   });
+
+  it("a version mismatch names the side to update when the frame says which is behind", () => {
+    expect(toBgError(new BridgeError("version", undefined, undefined, "newer")).code).toBe("version_update_extension");
+    expect(toBgError(new BridgeError("version", undefined, undefined, "older")).code).toBe("version_update_app");
+    expect(toBgError(new BridgeError("version")).code).toBe("version");
+  });
 });

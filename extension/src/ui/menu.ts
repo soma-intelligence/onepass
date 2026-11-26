@@ -21,6 +21,7 @@ import {
   accountNotes,
   autosize,
   call,
+  errorHelp,
   errorText,
   h,
   hostOf,
@@ -313,6 +314,18 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       label,
     );
 
+  /** "Réessayer": the menu asks the worker again from the start. */
+  const retryButton = (primary = false): HTMLButtonElement =>
+    h(
+      "button",
+      {
+        class: primary ? "btn btn-primary" : "btn",
+        attrs: { type: "button", "data-opt": "" },
+        on: { click: guard.wrap(() => void load()) },
+      },
+      t("popup.tryAgain"),
+    );
+
   /** Face ID ran once by itself in this menu: never again without a tap (no loop). */
   let autoBiometricDone = false;
   /** A biometric or password unlock is running: the buttons wait. */
@@ -467,8 +480,18 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       body = messageBlock(t("popup.onepassNotPaired"), undefined, btn);
     } else if (code === "host_missing" || code === "host_missing_plain") {
       body = messageBlock(t("ui.onepassAppNotFound"), t("menu.openOnepassAppOn"), askButton(t("menu.openOnepass"), "host_missing", origin));
-    } else {
+    } else if (code === "timeout") {
+      // The app may be stuck or asleep: bring it forward (as when missing), or ask again.
+      body = messageBlock(
+        errorText(code),
+        errorHelp(code),
+        h("div", { class: "actions" }, askButton(t("menu.openOnepass"), "host_missing", origin), retryButton()),
+      );
+    } else if (code === "invalid") {
+      // No token, or a page that changed under the menu: asking again cannot help.
       body = messageBlock(errorText(code));
+    } else {
+      body = messageBlock(errorText(code), errorHelp(code), retryButton(true));
     }
     mount(container, header(origin), body);
     active = -1;

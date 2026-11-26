@@ -1,4 +1,4 @@
-// "Scan 2FA QR code" in the popup (spec section 1). Only the popup starts it (router: from
+// "Scan verification code QR" in the popup (spec section 1). Only the popup starts it (router: from
 // popup.html only), never a page. The active tab of the popup's window must be an https page (or
 // loopback http) in a normal window. The scanner (`setup-scan.js`) is injected in every frame of
 // that tab and each frame is asked on its own (`frameId`): a frame that cannot read the top
