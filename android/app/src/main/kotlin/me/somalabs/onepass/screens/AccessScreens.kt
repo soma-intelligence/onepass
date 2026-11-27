@@ -31,9 +31,9 @@ internal const val MASTER_MIN_LENGTH = 10
 
 /**
  * What comes before the vault, as on iPhone: the three intro cards
- * (OnboardingIntro), "Bienvenue dans OnePass / Comment veux-tu commencer ?",
+ * (OnboardingIntro), "Bienvenue dans Cleon / Comment veux-tu commencer ?",
  * the master password, the Secret Key to store, and the lock screen
- * ("Déverrouille OnePass").
+ * ("Déverrouille Cleon").
  */
 class AccessScreens(private val a: MainActivity) {
     private val ui get() = a.ui
@@ -62,7 +62,7 @@ class AccessScreens(private val a: MainActivity) {
 
     fun problem(detail: String): View = page {
         addView(appIcon(88))
-        addView(ui.text("OnePass", 26f, ui.label, 600).apply { setPadding(0, ui.dp(20), 0, ui.dp(8)) })
+        addView(ui.text("Cleon", 26f, ui.label, 600).apply { setPadding(0, ui.dp(20), 0, ui.dp(8)) })
         addView(ui.text(detail, 16f, ui.secondary).apply { gravity = Gravity.CENTER })
     }
 
@@ -72,7 +72,7 @@ class AccessScreens(private val a: MainActivity) {
 
     private val introCards = listOf(
         IntroCard(R.drawable.ic_key, "Tous tes mots de passe, au même endroit", "All your passwords in one place",
-            "OnePass les retient pour toi et les remplit quand tu te connectes.", "OnePass remembers them for you and fills them in when you sign in."),
+            "Cleon les retient pour toi et les remplit quand tu te connectes.", "Cleon remembers them for you and fills them in when you sign in."),
         IntroCard(R.drawable.ic_lock, "Toi seul as la clé", "Only you hold the key",
             "Pas de compte chez nous. Ton coffre est chiffré sur ton appareil, et même nous ne pouvons pas l'ouvrir.",
             "No account with us. Your vault is encrypted on your device, and even we can't open it."),
@@ -109,11 +109,11 @@ class AccessScreens(private val a: MainActivity) {
 
     private fun welcome(): View = page {
         addView(appIcon(88))
-        addView(ui.text(a.t("Bienvenue dans OnePass", "Welcome to OnePass"), 28f, ui.label, 700).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(24), 0, ui.dp(6)) })
+        addView(ui.text(a.t("Bienvenue dans Cleon", "Welcome to Cleon"), 28f, ui.label, 700).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(24), 0, ui.dp(6)) })
         addView(ui.text(a.t("Comment veux-tu commencer ?", "How would you like to start?"), 17f, ui.secondary).apply { gravity = Gravity.CENTER })
         full(ui.card(
             ui.row(icon = ui.symbolTile(R.drawable.ic_vault_new, ui.accent, 36), title = a.t("Créer un coffre", "Create a Vault"),
-                subtitle = a.t("Première fois sur OnePass", "First time on OnePass"), minHeightDp = 68) { a.showFull { create() } },
+                subtitle = a.t("Première fois sur Cleon", "First time on Cleon"), minHeightDp = 68) { a.showFull { create() } },
             ui.row(icon = ui.symbolTile(R.drawable.ic_person_add, ui.blue, 36), title = a.t("Ajouter cet appareil", "Add This Device"),
                 subtitle = a.t("Avec un code, depuis ton autre appareil", "With a code from your other device"), minHeightDp = 68) { a.showFull { a.pairing.joinPage { a.showFull { welcome() } } } },
             ui.row(icon = ui.symbolTile(R.drawable.ic_restore, ui.orange, 36), title = a.t("Restaurer avec mon Emergency Kit", "Restore with My Emergency Kit"),
@@ -265,13 +265,13 @@ class AccessScreens(private val a: MainActivity) {
         full(next, 16)
     }
 
-    /** Where a new account syncs: the OnePass server by default, as on iPhone. */
+    /** Where a new account syncs: the Cleon server by default, as on iPhone. */
     private var syncChoice: me.somalabs.onepass.vaultkit.sync.SyncChoice = me.somalabs.onepass.vaultkit.sync.SyncChoice.DEFAULT
 
     /**
      * "Utiliser ton Emergency Kit" (spec D.4, 7.5): the Secret Key typed, the
      * master password, the kit's server. The account is found by its locator
-     * (the kit's server, then the OnePass server), fetched with the recovery
+     * (the kit's server, then the Cleon server), fetched with the recovery
      * credential, opened with `restore_from_kit` and new device keys; this
      * device then gets its own mailbox credential and syncs. `missingKey`:
      * the store holds an account whose device secrets are gone.
@@ -389,7 +389,7 @@ class AccessScreens(private val a: MainActivity) {
                 busy.text = ""
                 r.onSuccess {
                     pw.text.clear()
-                    pw.announceForAccessibility(a.t("OnePass déverrouillé", "OnePass unlocked"))
+                    pw.announceForAccessibility(a.t("Cleon déverrouillé", "Cleon unlocked"))
                     a.openTabs()
                 }.onFailure {
                     err.text = if (it is me.somalabs.onepass.core.OnePassException.WrongPassword) a.t("Mot de passe incorrect.", "Incorrect password.") + " " + a.t("Tu peux réessayer.", "You can try again.") else a.message(it)
@@ -420,7 +420,7 @@ class AccessScreens(private val a: MainActivity) {
             if (bioRunning) return
             bioRunning = true
             err.text = ""
-            bio.unlock(a, a.t("Déverrouille OnePass", "Unlock OnePass"), a.profileName.ifEmpty { a.t("Compte OnePass", "OnePass Account") },
+            bio.unlock(a, a.t("Déverrouille Cleon", "Unlock Cleon"), a.profileName.ifEmpty { a.t("Compte Cleon", "Cleon Account") },
                 a.t("Utiliser le mot de passe maître", "Use the master password")) { outcome ->
                 bioRunning = false
                 when (outcome) {
@@ -430,7 +430,7 @@ class AccessScreens(private val a: MainActivity) {
                         a.background({ a.vault.unlockWithAuk(auk) }) { r ->
                             busy.text = ""
                             r.onSuccess {
-                                pw.announceForAccessibility(a.t("OnePass déverrouillé", "OnePass unlocked"))
+                                pw.announceForAccessibility(a.t("Cleon déverrouillé", "Cleon unlocked"))
                                 a.openTabs()
                             }.onFailure { err.text = a.message(it) }
                         }
@@ -463,7 +463,7 @@ class AccessScreens(private val a: MainActivity) {
             gravity = Gravity.CENTER
             addView(View(a), LinearLayout.LayoutParams(1, ui.dp(60)))
             addView(appIcon(96))
-            addView(ui.text(a.t("Déverrouille OnePass", "Unlock OnePass"), 26f, ui.label, 600).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(20), 0, 0) })
+            addView(ui.text(a.t("Déverrouille Cleon", "Unlock Cleon"), 26f, ui.label, 600).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(20), 0, 0) })
             val name = runCatching { a.profileName }.getOrDefault("")
             val capsule = LinearLayout(a).apply {
                 gravity = Gravity.CENTER_VERTICAL
@@ -471,7 +471,7 @@ class AccessScreens(private val a: MainActivity) {
                 setPadding(ui.dp(3), ui.dp(3), ui.dp(12), ui.dp(3))
             }
             capsule.addView(ui.monogram(name.take(1).uppercase().ifEmpty { "1" }, ui.accent, 26))
-            capsule.addView(ui.text(name.ifEmpty { a.t("Compte OnePass", "OnePass Account") }, 15f, ui.secondary, 500).apply { setPadding(ui.dp(8), 0, 0, 0) })
+            capsule.addView(ui.text(name.ifEmpty { a.t("Compte Cleon", "Cleon Account") }, 15f, ui.secondary, 500).apply { setPadding(ui.dp(8), 0, 0, 0) })
             addView(capsule, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(10) })
             full(box, 26)
             full(err)

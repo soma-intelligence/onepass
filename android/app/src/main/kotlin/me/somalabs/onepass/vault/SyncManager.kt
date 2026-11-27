@@ -303,7 +303,7 @@ class SyncManager private constructor(context: Context) {
 
     // ---- restore and pairing -----------------------------------------------------------
 
-    /** Where the account of `secretKey` lives: the kit's server, then the OnePass server. Blocking. */
+    /** Where the account of `secretKey` lives: the kit's server, then the Cleon server. Blocking. */
     fun locate(secretKey: String, kitServer: FfiMailboxEndpoint?): RestoreSource =
         MailboxRestore(vault.dbPath, credentials).locate(secretKey, kitServer)
 
@@ -346,7 +346,7 @@ class SyncManager private constructor(context: Context) {
 
     fun serverName(url: String) = MailboxEndpoints.displayName(url, hostedName())
 
-    fun hostedName(): String = if (french()) "Serveur OnePass" else "OnePass Server"
+    fun hostedName(): String = if (french()) "Serveur Cleon" else "Cleon Server"
 
     private fun french() = app.resources.configuration.locales[0].language == "fr"
 

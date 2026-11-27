@@ -86,7 +86,7 @@ class SettingsScreens(private val a: MainActivity) {
                 setOnClickListener { a.push { accounts() } }
             }
             addView(avatar, LinearLayout.LayoutParams(ui.dp(96), ui.dp(96)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = ui.dp(24) })
-            addView(ui.text(name.ifEmpty { a.t("Compte OnePass", "OnePass Account") }, 28f, Color.WHITE, 700).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(14), 0, ui.dp(4)) },
+            addView(ui.text(name.ifEmpty { a.t("Compte Cleon", "Cleon Account") }, 28f, Color.WHITE, 700).apply { gravity = Gravity.CENTER; maxLines = 2; setPadding(0, ui.dp(14), 0, ui.dp(4)) },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(ui.text(a.t("Appareil personnel", "Personal device"), 17f, Color.argb(0xCC, 255, 255, 255)).apply { gravity = Gravity.CENTER },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -124,13 +124,13 @@ class SettingsScreens(private val a: MainActivity) {
         a.getSystemService(android.view.autofill.AutofillManager::class.java)?.hasEnabledAutofillServices()
     }.getOrNull()
 
-    /** As on iPhone: OnePass as the system's AutoFill provider, then what it learns from the user's choices. */
+    /** As on iPhone: Cleon as the system's AutoFill provider, then what it learns from the user's choices. */
     private fun autofill(): View = a.pushedPage(a.t("Remplissage automatique", "AutoFill"), largeTitle = true) {
         val on = autofillOn()
         addView(ui.footnote(a.t("Identifiants, codes et passkeys, dans les apps et les navigateurs.", "Logins, codes and passkeys, in apps and browsers.")))
-        val rows = mutableListOf<View>(ui.row(icon = a.itemIconArt(R.mipmap.ic_launcher, 30), title = "OnePass",
+        val rows = mutableListOf<View>(ui.row(icon = a.itemIconArt(R.mipmap.ic_launcher, 30), title = "Cleon",
             value = when (on) { true -> a.t("Activé", "On"); false -> a.t("Désactivé", "Off"); null -> "" }, chevron = false))
-        rows += ui.row(title = if (on == true) a.t("Gérer dans les réglages du système", "Manage in System Settings") else a.t("Activer OnePass", "Turn On OnePass"),
+        rows += ui.row(title = if (on == true) a.t("Gérer dans les réglages du système", "Manage in System Settings") else a.t("Activer Cleon", "Turn On Cleon"),
             titleColor = ui.readableAccent, chevron = false) {
             val i = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, Uri.parse("package:" + a.packageName))
             a.launch(i) { _, _ -> a.render() }
@@ -141,7 +141,7 @@ class SettingsScreens(private val a: MainActivity) {
                 .onFailure { runCatching { a.startActivity(Intent(Settings.ACTION_SETTINGS)) } }
         }
         addView(ui.inset(ui.card(*rows.toTypedArray()), top = Ios.Space.S))
-        addView(ui.footnote(if (on == true) a.t("Touche un champ d'identifiant : OnePass propose tes comptes.", "Tap a username field: OnePass offers your accounts.")
+        addView(ui.footnote(if (on == true) a.t("Touche un champ d'identifiant : Cleon propose tes comptes.", "Tap a username field: Cleon offers your accounts.")
         else a.t("Sinon : Réglages du système > Mots de passe et saisie automatique.", "Otherwise: System Settings > Passwords & autofill.")))
 
         val s = a.vault.session ?: return@pushedPage
@@ -155,8 +155,8 @@ class SettingsScreens(private val a: MainActivity) {
                 }
             },
         ), top = Ios.Space.XL))
-        addView(ui.footnote(a.t("OnePass retient quel compte tu choisis sur chaque site ou app, pour le proposer en premier. Cet historique reste chiffré sur cet appareil : il n'est jamais synchronisé ni envoyé. Désactivé, il est effacé.",
-            "OnePass remembers which account you pick on each site or app, to offer it first. This history stays encrypted on this device: it is never synced or sent. Turned off, it is erased.")))
+        addView(ui.footnote(a.t("Cleon retient quel compte tu choisis sur chaque site ou app, pour le proposer en premier. Cet historique reste chiffré sur cet appareil : il n'est jamais synchronisé ni envoyé. Désactivé, il est effacé.",
+            "Cleon remembers which account you pick on each site or app, to offer it first. This history stays encrypted on this device: it is never synced or sent. Turned off, it is erased.")))
         addView(ui.inset(ui.card(ui.row(title = a.t("Comptes retenus par site", "Remembered Accounts")) { a.push { remembered() } }), top = Ios.Space.L))
         addView(ui.footnote(a.t("Le compte choisi sur un site est proposé en premier.", "The account you pick on a site comes first next time.")))
     }
@@ -205,7 +205,7 @@ class SettingsScreens(private val a: MainActivity) {
                 runCatching { a.startActivity(Intent(Settings.ACTION_APP_LOCALE_SETTINGS, Uri.fromParts("package", a.packageName, null))) }
             },
         ), top = Ios.Space.S))
-        addView(ui.footnote(a.t("OnePass se verrouille après 5 minutes sans utilisation.", "OnePass locks after 5 minutes of inactivity.")))
+        addView(ui.footnote(a.t("Cleon se verrouille après 5 minutes sans utilisation.", "Cleon locks after 5 minutes of inactivity.")))
         addView(ui.sectionHeader("Wi-Fi"))
         val status = ui.text("", 13f, ui.secondary).apply { setPadding(ui.dp(16), 0, ui.dp(16), ui.dp(12)) }
         wifiStatus = status
@@ -290,10 +290,10 @@ class SettingsScreens(private val a: MainActivity) {
         addView(ui.footnote(if (avail == me.somalabs.onepass.vault.BiometricUnlock.Availability.AVAILABLE)
             a.t("La clé reste dans le Keystore Android. Le mot de passe maître est redemandé tous les 14 jours, après un redémarrage et quand les empreintes ou le visage enregistrés changent.",
                 "The key stays in the Android Keystore. Your master password is asked for again every 14 days, after a restart and when the enrolled fingerprints or face change.")
-        else a.t("La biométrie n'est pas configurée sur cet appareil. Le mot de passe maître déverrouille OnePass.", "Biometrics aren't set up on this device. Your master password unlocks OnePass.")))
+        else a.t("La biométrie n'est pas configurée sur cet appareil. Le mot de passe maître déverrouille Cleon.", "Biometrics aren't set up on this device. Your master password unlocks Cleon.")))
         a.background({ a.vault.protection }) { r ->
             info.text = a.t("Les clés de cet appareil sont scellées par ", "This device's keys are sealed by ") + r.getOrDefault("Android Keystore") +
-                a.t(". Les captures d'écran sont bloquées dans OnePass.", ". Screenshots are blocked in OnePass.") +
+                a.t(". Les captures d'écran sont bloquées dans Cleon.", ". Screenshots are blocked in Cleon.") +
                 if (a.debuggable) a.t(" (Build de test : captures autorisées.)", " (Test build: screenshots allowed.)") else ""
         }
         addView(ui.sectionHeader(a.t("Presse-papiers", "Clipboard")))
@@ -317,9 +317,9 @@ class SettingsScreens(private val a: MainActivity) {
                 r.onSuccess { auk ->
                     proceeding = true
                     d.dismiss()
-                    bio.enroll(a, a.t("Activer la biométrie", "Turn On Biometrics"), a.t("Confirme pour déverrouiller OnePass ainsi.", "Confirm to unlock OnePass this way."), a.t("Annuler", "Cancel"), auk) { ok, e ->
+                    bio.enroll(a, a.t("Activer la biométrie", "Turn On Biometrics"), a.t("Confirme pour déverrouiller Cleon ainsi.", "Confirm to unlock Cleon this way."), a.t("Annuler", "Cancel"), auk) { ok, e ->
                         sw.isChecked = ok
-                        if (ok) a.toast(a.t("La prochaine fois, la biométrie suffit pour ouvrir OnePass.", "Next time, biometrics are all it takes to open OnePass."))
+                        if (ok) a.toast(a.t("La prochaine fois, la biométrie suffit pour ouvrir Cleon.", "Next time, biometrics are all it takes to open Cleon."))
                         else if (e != null) a.toast(e.toString())
                     }
                 }.onFailure { err.text = if (it is me.somalabs.onepass.core.OnePassException.WrongPassword) a.t("Mot de passe incorrect.", "Incorrect password.") else a.message(it) }
@@ -383,7 +383,7 @@ class SettingsScreens(private val a: MainActivity) {
         })
         val s = a.vault.session
         val id = runCatching { s?.accountId() }.getOrNull().orEmpty()
-        addView(ui.capsLabel(a.t("Compte OnePass", "OnePass Account")))
+        addView(ui.capsLabel(a.t("Compte Cleon", "Cleon Account")))
         addView(ui.inset(ui.card(ui.row(title = a.t("Identifiant", "ID"), subtitle = id, chevron = false) { a.copy(id, false) })))
         addView(ui.footnote(a.t("Cet identifiant est imprimé sur ton Emergency Kit.", "This ID is printed on your Emergency Kit.")))
     }
@@ -463,7 +463,7 @@ class SettingsScreens(private val a: MainActivity) {
     private fun about(): View = a.pushedPage(a.t("À propos", "About"), largeTitle = true) {
         val head = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, ui.dp(8), 0, ui.dp(8)) }
         head.addView(a.itemIconArt(R.mipmap.ic_launcher, 80))
-        head.addView(ui.text("OnePass", 22f, ui.label, 700).apply { setPadding(0, ui.dp(12), 0, ui.dp(2)) })
+        head.addView(ui.text("Cleon", 22f, ui.label, 700).apply { setPadding(0, ui.dp(12), 0, ui.dp(2)) })
         head.addView(ui.text("Version " + runCatching { a.packageManager.getPackageInfo(a.packageName, 0).let { "${it.versionName} (${it.longVersionCode})" } }.getOrDefault(""), 15f, ui.secondary))
         addView(head)
         addView(ui.inset(ui.card(

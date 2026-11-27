@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OnePass",
+  "productName": "Cleon",
   "version": "0.1.0",
   "identifier": "me.somalabs.onepass",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "OnePass",
+        "title": "Cleon",
         "width": 1100,
         "height": 720,
         "minWidth": 760,

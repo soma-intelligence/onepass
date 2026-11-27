@@ -1183,7 +1183,7 @@ pub fn open_attachment(
     if !crate::shell::opens_safely(&name) {
         return Err(view::UiError {
             code: "NoPreview".into(),
-            detail: "this kind of file does not open from OnePass".into(),
+            detail: "this kind of file does not open from Cleon".into(),
         });
     }
     let dir = crate::state::opened_dir().join(format!(
@@ -1351,9 +1351,9 @@ pub async fn unlock_with_hello(
         return Err(hello_dropped(&state, reason));
     }
     let message = if fr() {
-        "Déverrouiller OnePass"
+        "Déverrouiller Cleon"
     } else {
-        "Unlock OnePass"
+        "Unlock Cleon"
     };
     let h = hwnd(&window)?;
     if blocking(move || crate::hello::verify(h, message)).await? != crate::hello::Verdict::Verified
@@ -1515,9 +1515,9 @@ pub async fn export_backup(
     let bytes =
         Zeroizing::new(blocking(move || s.export_encrypted_backup(passphrase.to_vec())).await??);
     let name = if fr() {
-        format!("OnePass sauvegarde {}.onepass", today())
+        format!("Cleon sauvegarde {}.onepass", today())
     } else {
-        format!("OnePass backup {}.onepass", today())
+        format!("Cleon backup {}.onepass", today())
     };
     let title = if fr() {
         "Sauvegarde chiffrée"
@@ -1529,7 +1529,7 @@ pub async fn export_backup(
         &state,
         title,
         &name,
-        ("OnePass", &["onepass"]),
+        ("Cleon", &["onepass"]),
         bytes,
     )
     .await
@@ -1547,9 +1547,9 @@ pub async fn export_csv(
     let s = session(&state)?;
     let bytes = Zeroizing::new(s.export_plaintext_csv(vault_ids)?);
     let name = if fr() {
-        format!("OnePass export non chiffré {}.csv", today())
+        format!("Cleon export non chiffré {}.csv", today())
     } else {
-        format!("OnePass unencrypted export {}.csv", today())
+        format!("Cleon unencrypted export {}.csv", today())
     };
     let title = if fr() {
         "Export non chiffré"
@@ -1679,7 +1679,7 @@ pub async fn pick_backup(
     } else {
         "Restore a Backup"
     };
-    if pick_into_pending(&window, &state, title, &[("OnePass", &["onepass"])])
+    if pick_into_pending(&window, &state, title, &[("Cleon", &["onepass"])])
         .await?
         .is_none()
     {
@@ -1689,7 +1689,7 @@ pub async fn pick_backup(
 }
 
 /// The header of the file `pick_import` read when it turned out to be a
-/// OnePass archive.
+/// Cleon archive.
 #[tauri::command]
 pub fn pending_archive(state: State<'_, AppState>) -> UiResult<ArchiveView> {
     archive_view(&state)

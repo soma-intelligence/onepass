@@ -25,7 +25,7 @@ import me.somalabs.onepass.vaultkit.sync.SyncStatus
  * account syncs, the status line, "Synchroniser maintenant". Android has no
  * iCloud: an account kept on this device turns sync on here, which creates
  * its mailbox as a new account's setup does. And "Où est rangé mon coffre ?"
- * (SyncChoiceSheet): the OnePass server, the user's own server (https URL,
+ * (SyncChoiceSheet): the Cleon server, the user's own server (https URL,
  * optional CA in PEM, pasted or picked from a file, "Tester"), or this
  * device only.
  */
@@ -114,7 +114,7 @@ class SyncScreens(private val a: MainActivity) {
         when (backend) {
             is SyncBackendState.Mailbox -> addView(ui.footnote(when (sync.status) {
                 is SyncStatus.Refused -> a.t("Rien de ce que le serveur a envoyé n'a été utilisé.", "Nothing the server sent was used.")
-                SyncStatus.WaitingForMailbox -> a.t("Le serveur a une version plus ancienne. OnePass renvoie la sienne, rien à faire.", "The server has an older version. OnePass sends its own back, nothing to do.")
+                SyncStatus.WaitingForMailbox -> a.t("Le serveur a une version plus ancienne. Cleon renvoie la sienne, rien à faire.", "The server has an older version. Cleon sends its own back, nothing to do.")
                 else -> a.t("Chiffré avant de quitter l'appareil.", "Encrypted before it leaves the device.")
             }))
             is SyncBackendState.PendingSetup -> pending(this, backend)
@@ -202,7 +202,7 @@ class SyncScreens(private val a: MainActivity) {
     // ---- Où est rangé mon coffre ? ---------------------------------------------------------
 
     /**
-     * "Où est rangé mon coffre ?" (SyncChoiceSheet): the OnePass server
+     * "Où est rangé mon coffre ?" (SyncChoiceSheet): the Cleon server
      * (default), the user's own server with a "Tester" button, or, on
      * Android, this device only (`allowLocal`).
      */

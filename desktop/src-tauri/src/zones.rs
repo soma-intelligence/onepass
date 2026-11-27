@@ -174,7 +174,7 @@ impl Zones {
 
 /// The server whose drops carry a contact invitation (`InviteServer.url`):
 /// the one the link names (`onepass://contact/<host>#...`), else the
-/// OnePass server.
+/// Cleon server.
 pub fn server_for_link(link: &str) -> sync::Server {
     let text = link.trim();
     if let Some(rest) = text.strip_prefix("onepass://contact/")
@@ -193,7 +193,7 @@ pub fn server_for_link(link: &str) -> sync::Server {
     sync::hosted()
 }
 
-/// The host a new link names: none for the OnePass server.
+/// The host a new link names: none for the Cleon server.
 pub fn link_host(server: &sync::Server) -> Option<String> {
     if server.base_url == sync::hosted().base_url {
         return None;

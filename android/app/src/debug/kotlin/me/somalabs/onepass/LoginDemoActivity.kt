@@ -10,10 +10,10 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Debug builds only: a plain login form in another task, to drive OnePass
+ * Debug builds only: a plain login form in another task, to drive Cleon
  * AutoFill on the emulator (fill, save prompt). `adb shell am start -n
  * me.somalabs.onepass/.LoginDemoActivity`. The service fills it as the app
- * "me.somalabs.onepass" (OnePass's other screens are never filled).
+ * "me.somalabs.onepass" (Cleon's other screens are never filled).
  */
 class LoginDemoActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {

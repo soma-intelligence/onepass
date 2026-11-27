@@ -254,7 +254,7 @@ class MainActivity : Activity() {
     fun message(e: Throwable): String = when (e) {
         is OnePassException.WrongPassword -> t("Mot de passe incorrect.", "Wrong password.")
         is OnePassException.Validation -> t("Champ « ${e.field} » : ${e.reason}", "Field “${e.field}”: ${e.reason}")
-        is OnePassException.Locked -> t("OnePass est verrouillé.", "OnePass is locked.")
+        is OnePassException.Locked -> t("Cleon est verrouillé.", "Cleon is locked.")
         is OnePassException.ReadOnlyRole -> t("Tu peux seulement consulter ce coffre.", "You can only view this vault.")
         is OnePassException.IdentityPending -> t("Un gestionnaire du coffre doit confirmer tes nouvelles clés avant que tu puisses modifier.", "A vault manager must confirm your new keys before you can make changes.")
         is OnePassException.ContactNotVerified -> t("Vérifie d'abord ce contact en personne ou avec son numéro de sécurité.", "Verify this contact in person or with their safety number first.")
@@ -277,7 +277,7 @@ class MainActivity : Activity() {
 
     fun copy(value: String, secret: Boolean) {
         val cm = getSystemService(ClipboardManager::class.java)
-        val clip = ClipData.newPlainText("OnePass", value)
+        val clip = ClipData.newPlainText("Cleon", value)
         if (secret && Build.VERSION.SDK_INT >= 33) {
             clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
         }
@@ -300,7 +300,7 @@ class MainActivity : Activity() {
                 DeviceVault.State.LOCKED -> showFull { access.lock() }
                 DeviceVault.State.UNLOCKED -> openTabs()
                 DeviceVault.State.NO_DEVICE_FILE -> showFull { access.restore(missingKey = true) }
-                DeviceVault.State.MISSING -> showFull { access.problem(t("Le compte de cet appareil a disparu du coffre. C'est une anomalie d'intégrité : OnePass ne crée pas de compte par-dessus.", "This device's account is gone from the vault. That is an integrity fault: OnePass does not create an account over it.")) }
+                DeviceVault.State.MISSING -> showFull { access.problem(t("Le compte de cet appareil a disparu du coffre. C'est une anomalie d'intégrité : Cleon ne crée pas de compte par-dessus.", "This device's account is gone from the vault. That is an integrity fault: Cleon does not create an account over it.")) }
                 null -> showFull { access.problem(message(r.exceptionOrNull()!!)) }
             }
         }

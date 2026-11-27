@@ -238,7 +238,7 @@ class SharingScreens(private val a: MainActivity) {
                 box.removeAllViews()
                 box.addView(ui.inset(ui.card(ui.row(icon = ui.glyph(R.drawable.ic_link, ui.accent, 24), title = a.t("Créer un lien", "Create link"), titleColor = ui.readableAccent, chevron = false) {
                     val f = sharing.createInvite(myName())
-                    if (f == null) a.toast(a.t("OnePass est verrouillé.", "OnePass is locked.")) else follow(d, box, f, intro)
+                    if (f == null) a.toast(a.t("Cleon est verrouillé.", "Cleon is locked.")) else follow(d, box, f, intro)
                 }), top = Ios.Space.S))
                 box.addView(ui.footnote(a.t("Le lien expire après 24 heures. Un contact ajouté par lien n'a que la lecture tant qu'il n'est pas vérifié.", "The link expires after 24 hours. A contact added by link only gets Read until verified.")))
             }
@@ -256,7 +256,7 @@ class SharingScreens(private val a: MainActivity) {
                 box.removeAllViews()
                 val field = ui.field("onepass://contact…", link ?: "")
                 box.addView(ui.inset(ui.card(field), top = Ios.Space.S))
-                box.addView(ui.footnote(a.t("Colle le lien que ton contact t'a envoyé. OnePass lui répond ; vous serez contacts dès qu'il aura confirmé.", "Paste the link your contact sent you. OnePass answers it; you become contacts once they confirm.")))
+                box.addView(ui.footnote(a.t("Colle le lien que ton contact t'a envoyé. Cleon lui répond ; vous serez contacts dès qu'il aura confirmé.", "Paste the link your contact sent you. Cleon answers it; you become contacts once they confirm.")))
                 box.addView(ui.inset(ui.card(ui.row(title = a.t("Répondre à l'invitation", "Answer the invitation"), titleColor = ui.readableAccent, chevron = false) {
                     val text = field.text.toString().trim()
                     if (!text.startsWith("onepass://contact")) {
@@ -264,7 +264,7 @@ class SharingScreens(private val a: MainActivity) {
                         return@row
                     }
                     val f = sharing.openLink(text, myName())
-                    if (f == null) a.toast(a.t("OnePass est verrouillé.", "OnePass is locked.")) else follow(d, box, f, intro)
+                    if (f == null) a.toast(a.t("Cleon est verrouillé.", "Cleon is locked.")) else follow(d, box, f, intro)
                 }), top = Ios.Space.L))
             }
             intro()

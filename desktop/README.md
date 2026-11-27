@@ -1,4 +1,4 @@
-# OnePass pour Windows (Tauri 2)
+# Cleon pour Windows (Tauri 2)
 
 L'app de bureau du jalon X2 de la spec `docs/superpowers/specs/2026-10-30-cross-platform-clients-design.md` (décision 4 du fondateur : Tauri 2). Windows d'abord ; Linux suivra avec le même code, une fois son stockage sûr écrit (section 6.4).
 
@@ -48,7 +48,7 @@ Les données vont dans `%LOCALAPPDATA%\me.somalabs.onepass\` (`vault.db`, `devic
 
 ## Synchronisation
 
-La sync passe par la boîte aux lettres OnePass, comme le chemin « serveur OnePass » des apps Apple : serveur hébergé par défaut (`https://mailbox.somalabs.me/functions/v1/mailbox`) ou serveur à soi (URL `https://` et, au besoin, une autorité en PEM) dans « Où est rangé mon coffre ? » et Réglages > Sync. Restauration par l'Emergency Kit (Secret Key et mot de passe maître), ajout d'un appareil par un code à 8 caractères (rendez-vous par la boîte, 6 chiffres tapés sur l'appareil qui approuve), liste des appareils (renommer, retirer).
+La sync passe par la boîte aux lettres Cleon, comme le chemin « serveur Cleon » des apps Apple : serveur hébergé par défaut (`https://mailbox.somalabs.me/functions/v1/mailbox`) ou serveur à soi (URL `https://` et, au besoin, une autorité en PEM) dans « Où est rangé mon coffre ? » et Réglages > Sync. Restauration par l'Emergency Kit (Secret Key et mot de passe maître), ajout d'un appareil par un code à 8 caractères (rendez-vous par la boîte, 6 chiffres tapés sur l'appareil qui approuve), liste des appareils (renommer, retirer).
 
 Les graines des identifiants de boîte sont dans `mailbox.bin`, scellé par DPAPI comme `device.bin`.
 
@@ -61,4 +61,4 @@ cargo run --features test-mailbox --bin test-mailbox -- --port 47800 --ca-out ..
 
 Il affiche l'URL de base (`https://localhost:47800/functions/v1/mailbox`) et écrit l'autorité de test (`core/onepass-mailbox/tests/fixtures/ca.pem`). Dans l'app : « Mon serveur », cette URL, et le contenu du PEM. Un émulateur Android l'atteint après `adb reverse tcp:47800 tcp:47800`. Un seul processus garde l'état : tous les clients d'un test parlent au même.
 
-Variables des builds de debug : `ONEPASS_MAILBOX_URL` et `ONEPASS_MAILBOX_CA` (fichier PEM) remplacent le serveur OnePass ; avec `--features test-mailbox`, `ONEPASS_TEST_MAILBOX=1` lance le serveur de test dans l'app (port `ONEPASS_TEST_MAILBOX_PORT`). Le test de bout en bout de la sync : `node e2e/sync.mjs` (trois instances, une boîte) ; celui du partage : `node e2e/sharing.mjs` (deux comptes, une boîte : contacts par lien, numéro de sécurité, coffre partagé, envoi d'un élément, famille, récupération). `ONEPASS_INVITE_POLL_SECS` raccourcit l'attente des invitations de contact.
+Variables des builds de debug : `ONEPASS_MAILBOX_URL` et `ONEPASS_MAILBOX_CA` (fichier PEM) remplacent le serveur Cleon ; avec `--features test-mailbox`, `ONEPASS_TEST_MAILBOX=1` lance le serveur de test dans l'app (port `ONEPASS_TEST_MAILBOX_PORT`). Le test de bout en bout de la sync : `node e2e/sync.mjs` (trois instances, une boîte) ; celui du partage : `node e2e/sharing.mjs` (deux comptes, une boîte : contacts par lien, numéro de sécurité, coffre partagé, envoi d'un élément, famille, récupération). `ONEPASS_INVITE_POLL_SECS` raccourcit l'attente des invitations de contact.

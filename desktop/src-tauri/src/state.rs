@@ -173,7 +173,7 @@ impl AppState {
 /// Where an attachment is written to be opened by another app. Emptied at
 /// lock, at exit, at start (after a crash) and 10 minutes after each open.
 pub fn opened_dir() -> PathBuf {
-    std::env::temp_dir().join("OnePass-open")
+    std::env::temp_dir().join("Cleon-open")
 }
 
 pub fn purge_opened() {

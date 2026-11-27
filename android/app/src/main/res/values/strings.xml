@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OnePass</string>
+    <string name="app_name">Cleon</string>
     <string name="settings_title">Réglages</string>
     <string name="wifi_auto_title">Wi-Fi automatique</string>
     <string name="wifi_auto_idle">Les réseaux de tes routeurs rejoignent Android dès que ton coffre est ouvert.</string>
@@ -9,13 +9,13 @@
         <item quantity="other">%d réseaux de ton coffre sont connus d\'Android. Ton téléphone s\'y connecte tout seul.</item>
     </plurals>
     <string name="wifi_auto_none">Aucun réseau à proposer : il faut un SSID et un mot de passe WPA2 ou WPA3. Les réseaux ouverts et d\'entreprise restent dehors.</string>
-    <string name="wifi_auto_pending">Android te demandera une seule fois d\'autoriser les réseaux suggérés par OnePass, la première fois que l\'un d\'eux sera à portée.</string>
-    <string name="wifi_auto_rejected">Android a refusé les réseaux suggérés par OnePass. Touche ici pour les autoriser dans les réglages de l\'app.</string>
-    <string name="wifi_auto_off">Désactivé. Les réseaux de OnePass ont quitté Android.</string>
-    <string name="wifi_auto_failed">Android a refusé un réseau (%s). OnePass réessaie à la prochaine modification du coffre.</string>
+    <string name="wifi_auto_pending">Android te demandera une seule fois d\'autoriser les réseaux suggérés par Cleon, la première fois que l\'un d\'eux sera à portée.</string>
+    <string name="wifi_auto_rejected">Android a refusé les réseaux suggérés par Cleon. Touche ici pour les autoriser dans les réglages de l\'app.</string>
+    <string name="wifi_auto_off">Désactivé. Les réseaux de Cleon ont quitté Android.</string>
+    <string name="wifi_auto_failed">Android a refusé un réseau (%s). Cleon réessaie à la prochaine modification du coffre.</string>
 
     <!-- Vault -->
-    <string name="welcome_title">Bienvenue dans OnePass</string>
+    <string name="welcome_title">Bienvenue dans Cleon</string>
     <string name="welcome_body">Ton coffre est chiffré sur ce téléphone avec ton mot de passe maître et une Secret Key créée ici. Personne d\'autre, pas même Soma, ne peut l\'ouvrir.</string>
     <string name="master_password">Mot de passe maître</string>
     <string name="master_password_again">Encore une fois</string>
@@ -27,13 +27,13 @@
     <string name="secret_key_body">Note-la et garde-la en lieu sûr, avec ton mot de passe : il faut les deux pour ouvrir ton coffre sur un autre appareil. Ce téléphone la garde scellée dans son Keystore.</string>
     <string name="secret_key_noted">J\'ai noté ma Secret Key.</string>
     <string name="continue_label">Continuer</string>
-    <string name="locked_title">OnePass est verrouillé</string>
+    <string name="locked_title">Cleon est verrouillé</string>
     <string name="locked_body">Verrouillage automatique après 5 minutes. Secrets de l\'appareil protégés par %s.</string>
     <string name="unlock">Déverrouiller</string>
     <string name="unlocking">Déverrouillage…</string>
     <string name="wrong_password">Mot de passe incorrect.</string>
     <string name="no_device_file">Les secrets de cet appareil sont introuvables. La restauration par l\'Emergency Kit arrive dans une prochaine version.</string>
-    <string name="account_missing">Le compte de cet appareil a disparu du coffre. C\'est une anomalie d\'intégrité : OnePass ne crée pas de compte par-dessus.</string>
+    <string name="account_missing">Le compte de cet appareil a disparu du coffre. C\'est une anomalie d\'intégrité : Cleon ne crée pas de compte par-dessus.</string>
     <string name="search">Rechercher</string>
     <string name="all_items">Tous les éléments</string>
     <string name="favorites">Favoris</string>

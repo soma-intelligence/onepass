@@ -103,7 +103,7 @@ object WebAuthn {
         return b.build()
     }
 
-    /** "Déverrouille OnePass" when the vault is locked. */
+    /** "Déverrouille Cleon" when the vault is locked. */
     fun authenticationSlice(title: String, intent: PendingIntent): Slice {
         val b = Slice.Builder(Uri.EMPTY, SliceSpec("AuthenticationAction", 0))
             .addText(title, null, listOf(AUTH + "SLICE_HINT_TITLE"))

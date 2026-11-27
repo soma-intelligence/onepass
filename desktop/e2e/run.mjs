@@ -144,7 +144,7 @@ try {
   await click(button("Continuer"));
   await click(button("Continuer"));
   await click(button("Commencer"));
-  await find("//h1[normalize-space(.)='Bienvenue dans OnePass']");
+  await find("//h1[normalize-space(.)='Bienvenue dans Cleon']");
   await shot("02-bienvenue");
   await click("//button[.//span[normalize-space(.)='Créer un coffre']]");
 
@@ -392,7 +392,7 @@ try {
   // Lock, wrong password, unlock
   await click("//button[@title='Compte']");
   await click(menuItem("Verrouiller"));
-  await find("//h1[normalize-space(.)='Déverrouille OnePass']");
+  await find("//h1[normalize-space(.)='Déverrouille Cleon']");
   check("Verrouiller locks", true);
   await shot("21-verrouille");
   await type("//input[@id='pw']", "mauvais-mot-de-passe");

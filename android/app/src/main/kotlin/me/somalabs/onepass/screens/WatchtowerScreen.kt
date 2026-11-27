@@ -166,8 +166,8 @@ class WatchtowerScreen(private val a: MainActivity) {
         }
         row.addView(a.barIcon(R.drawable.ic_info, a.t("Ce qui est envoyé", "What is sent")) {
             android.app.AlertDialog.Builder(a).setTitle(a.t("Ce qui est envoyé", "What is sent"))
-                .setMessage(a.t("Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine ; les vérifications 2FA et passkeys lisent le catalogue des sites livré avec l'app. Désactivé, aucune requête réseau.",
-                    "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The list of breached sites is downloaded whole and kept for a week; the 2FA and passkey checks read the site catalog shipped with the app. When off, no network request."))
+                .setMessage(a.t("Pour chaque mot de passe, Cleon envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine ; les vérifications 2FA et passkeys lisent le catalogue des sites livré avec l'app. Désactivé, aucune requête réseau.",
+                    "For each password, Cleon sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The list of breached sites is downloaded whole and kept for a week; the 2FA and passkey checks read the site catalog shipped with the app. When off, no network request."))
                 .setPositiveButton("OK", null).show()
         }, row.childCount - 1)
         return ui.card(row)
@@ -189,7 +189,7 @@ class WatchtowerScreen(private val a: MainActivity) {
                 addView(a.accountButton())
                 addView(View(a), LinearLayout.LayoutParams(0, 1, 1f))
                 if (score != null) addView(ui.roundButton(R.drawable.ic_share, a.t("Partager mon score", "Share My Score")) {
-                    val text = a.t("Mon score de sécurité OnePass : $score sur 100.", "My OnePass security score: $score out of 100.")
+                    val text = a.t("Mon score de sécurité Cleon : $score sur 100.", "My Cleon security score: $score out of 100.")
                     a.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null))
                 }.apply { (getChildAt(0) as android.widget.ImageView).imageTintList = android.content.res.ColorStateList.valueOf(ui.label) })
             })

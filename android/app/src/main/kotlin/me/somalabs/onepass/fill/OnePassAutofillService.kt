@@ -27,13 +27,13 @@ import me.somalabs.onepass.vaultkit.core.CoreLoader
 /**
  * Android AutoFill (iPhone: the AutoFill extension). For a login form in an
  * app or a browser it offers the matching Logins (core plan, then
- * candidates), "Rechercher dans OnePass" for any other, and a save prompt
+ * candidates), "Rechercher dans Cleon" for any other, and a save prompt
  * for a new login.
  *
  * No secret ever goes to the system before the user picks a Login: each
  * suggestion is an authenticated dataset, and [FillActivity] (ours, not
  * exported) unlocks if needed and returns the values of that one Login. A
- * locked vault gives one "Déverrouille OnePass" entry. A save request leaves
+ * locked vault gives one "Déverrouille Cleon" entry. A save request leaves
  * the typed values in this process only ([PendingSaves]), never in an Intent.
  */
 class OnePassAutofillService : AutofillService() {
@@ -55,7 +55,7 @@ class OnePassAutofillService : AutofillService() {
         callback.onSuccess(response)
     }
 
-    /** OnePass's own screens are never filled (the debug login demo aside, for emulator tests). */
+    /** Cleon's own screens are never filled (the debug login demo aside, for emulator tests). */
     private fun own(st: android.app.assist.AssistStructure): Boolean {
         val c = st.activityComponent ?: return false
         return c.packageName == packageName && !c.className.endsWith(".LoginDemoActivity")
@@ -159,7 +159,7 @@ object Fills {
                 .putExtra(FillActivity.EXTRA_VAULT, cand.vaultId).putExtra(FillActivity.EXTRA_ITEM, cand.itemId)
             b.addDataset(authDataset(c, form, cand.title.ifBlank { cand.user }, cand.user.takeIf { it.isNotBlank() && it != cand.title } ?: cand.url, intent))
         }
-        b.addDataset(authDataset(c, form, t(c, "Rechercher dans OnePass", "Search OnePass"), if (list.isEmpty()) t(c, "Aucun élément pour ce site.", "No items for this site.") else null,
+        b.addDataset(authDataset(c, form, t(c, "Rechercher dans Cleon", "Search Cleon"), if (list.isEmpty()) t(c, "Aucun élément pour ce site.", "No items for this site.") else null,
             Intent(c, FillActivity::class.java).setAction(FillActivity.ACTION_SEARCH)))
         saveInfo(form)?.let { b.setSaveInfo(it) }
         return b.build()
@@ -169,7 +169,7 @@ object Fills {
     fun lockedResponse(c: Context, form: ParsedForm): FillResponse {
         val b = FillResponse.Builder()
         b.setAuthentication(form.allIds.toTypedArray(), pending(c, Intent(c, FillActivity::class.java).setAction(FillActivity.ACTION_UNLOCK)),
-            presentation(c, t(c, "Déverrouille OnePass", "Unlock OnePass"), t(c, "pour remplir ", "to fill ") + label(c, form)))
+            presentation(c, t(c, "Déverrouille Cleon", "Unlock Cleon"), t(c, "pour remplir ", "to fill ") + label(c, form)))
         saveInfo(form)?.let { b.setSaveInfo(it) }
         return b.build()
     }

@@ -32,7 +32,7 @@ import me.somalabs.onepass.core.OnePassException
  * text are previewed in the app (FLAG_SECURE outside debug builds); another
  * kind is handed to an app the user picks through [AttachmentProvider], with a
  * read grant on that one URI. Exporting writes where the user chooses (SAF).
- * The cache is emptied when OnePass locks.
+ * The cache is emptied when Cleon locks.
  */
 class Attachments(private val a: MainActivity) {
     private val ui get() = a.ui

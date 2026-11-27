@@ -7,7 +7,7 @@
 //   ONEPASS_SHOTS=<folder for the screenshots>
 //   node e2e/sync.mjs
 //
-// A creates an account on the "OnePass server" (the test mailbox, through
+// A creates an account on the "Cleon server" (the test mailbox, through
 // ONEPASS_MAILBOX_URL, debug builds only) and adds an item; B restores it
 // from the Emergency Kit and sees the item; an edit on B reaches A; C joins
 // as a new device with A's code; then Travel Mode goes and comes back on A.
@@ -155,7 +155,7 @@ async function welcome(I) {
   await I.click(button("Continuer"));
   await I.click(button("Continuer"));
   await I.click(button("Commencer"));
-  await I.find("//h1[normalize-space(.)='Bienvenue dans OnePass']");
+  await I.find("//h1[normalize-space(.)='Bienvenue dans Cleon']");
 }
 /** Settings > Sync until its status is `state` (or `timeout`). */
 async function syncState(I, state, timeout = 60000) {
@@ -171,12 +171,12 @@ async function syncState(I, state, timeout = 60000) {
 
 let A, B, C;
 try {
-  // ---- A: a new account on the OnePass server --------------------------------------------
+  // ---- A: a new account on the Cleon server --------------------------------------------
   A = await instance("A", 4460);
   await welcome(A);
   await A.shot("sync/01-A-bienvenue");
   await A.click("//button[.//span[normalize-space(.)='Créer un coffre']]");
-  check("the account creation names the OnePass server by default", (await A.text("//button[@id='sync-choice']")).includes("Serveur OnePass"));
+  check("the account creation names the Cleon server by default", (await A.text("//button[@id='sync-choice']")).includes("Serveur Cleon"));
   await A.click("//button[@id='sync-choice']");
   await A.find("//dialog[@open]//button[@id='sync-option-selfHost']");
   await A.click("//dialog[@open]//button[@id='sync-option-selfHost']");
@@ -210,7 +210,7 @@ try {
   await settings(A, "Sync");
   const aIdle = await syncState(A, "idle");
   check("A's mailbox is set up and synced", aIdle === true, String(aIdle));
-  check("Settings > Sync names the OnePass server", (await A.text("//div[@id='sync-backend']")).includes("Serveur OnePass"));
+  check("Settings > Sync names the Cleon server", (await A.text("//div[@id='sync-backend']")).includes("Serveur Cleon"));
   await A.shot("sync/03-A-reglages-sync");
   await closeSheet(A);
 

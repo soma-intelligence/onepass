@@ -7,7 +7,7 @@ import me.somalabs.onepass.core.FfiSyncBackend
 import me.somalabs.onepass.core.SyncStoreHandle
 
 /**
- * The OnePass server URLs the app accepts (iOS `MailboxEndpoints`).
+ * The Cleon server URLs the app accepts (iOS `MailboxEndpoints`).
  *
  * The hosted instance is the default of a new account, as on iPhone. A
  * self-hosted server is any `https://` base URL, with the PEM of a CA trusted
@@ -30,7 +30,7 @@ object MailboxEndpoints {
             uri.rawQuery == null && uri.rawFragment == null
     }
 
-    /** "Serveur OnePass" for the hosted instance, the host of a self-host. */
+    /** "Serveur Cleon" for the hosted instance, the host of a self-host. */
     fun displayName(url: String, hostedName: String): String =
         if (url == HOSTED) hostedName else runCatching { URI(url).host }.getOrNull() ?: url
 
@@ -49,7 +49,7 @@ data class MailboxHome(val baseUrl: String, val mailboxId: String, val extraCaPe
 
 /** Where a new account keeps its encrypted vault (iOS `SyncChoice`, without iCloud). */
 sealed class SyncChoice {
-    /** The OnePass server hosted by Soma Labs (default). */
+    /** The Cleon server hosted by Soma Labs (default). */
     object Hosted : SyncChoice()
 
     /** The user's own server. */

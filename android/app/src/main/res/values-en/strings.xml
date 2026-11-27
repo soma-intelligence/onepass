@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OnePass</string>
+    <string name="app_name">Cleon</string>
     <string name="settings_title">Settings</string>
     <string name="wifi_auto_title">Automatic Wi-Fi</string>
     <string name="wifi_auto_idle">The networks of your routers join Android as soon as your vault is open.</string>
@@ -9,13 +9,13 @@
         <item quantity="other">%d networks from your vault are known to Android. Your phone joins them by itself.</item>
     </plurals>
     <string name="wifi_auto_none">No network to suggest: it takes an SSID and a WPA2 or WPA3 password. Open and enterprise networks stay out.</string>
-    <string name="wifi_auto_pending">Android will ask you once to allow the networks OnePass suggests, the first time one of them is in range.</string>
-    <string name="wifi_auto_rejected">Android turned down the networks OnePass suggests. Tap here to allow them in the app\'s settings.</string>
-    <string name="wifi_auto_off">Off. The networks from OnePass left Android.</string>
-    <string name="wifi_auto_failed">Android refused a network (%s). OnePass tries again at the next change to your vault.</string>
+    <string name="wifi_auto_pending">Android will ask you once to allow the networks Cleon suggests, the first time one of them is in range.</string>
+    <string name="wifi_auto_rejected">Android turned down the networks Cleon suggests. Tap here to allow them in the app\'s settings.</string>
+    <string name="wifi_auto_off">Off. The networks from Cleon left Android.</string>
+    <string name="wifi_auto_failed">Android refused a network (%s). Cleon tries again at the next change to your vault.</string>
 
     <!-- Vault -->
-    <string name="welcome_title">Welcome to OnePass</string>
+    <string name="welcome_title">Welcome to Cleon</string>
     <string name="welcome_body">Your vault is encrypted on this phone with your master password and a Secret Key made here. Nobody else, not even Soma, can open it.</string>
     <string name="master_password">Master password</string>
     <string name="master_password_again">Once more</string>
@@ -27,13 +27,13 @@
     <string name="secret_key_body">Write it down and keep it safe, with your password: both are needed to open your vault on another device. This phone keeps it sealed in its Keystore.</string>
     <string name="secret_key_noted">I wrote down my Secret Key.</string>
     <string name="continue_label">Continue</string>
-    <string name="locked_title">OnePass is locked</string>
+    <string name="locked_title">Cleon is locked</string>
     <string name="locked_body">Locks by itself after 5 minutes. Device secrets protected by %s.</string>
     <string name="unlock">Unlock</string>
     <string name="unlocking">Unlocking…</string>
     <string name="wrong_password">Wrong password.</string>
     <string name="no_device_file">This device\'s secrets are missing. Restoring from the Emergency Kit comes in a later version.</string>
-    <string name="account_missing">This device\'s account is gone from the vault. That is an integrity fault: OnePass does not create an account over it.</string>
+    <string name="account_missing">This device\'s account is gone from the vault. That is an integrity fault: Cleon does not create an account over it.</string>
     <string name="search">Search</string>
     <string name="all_items">All items</string>
     <string name="favorites">Favorites</string>

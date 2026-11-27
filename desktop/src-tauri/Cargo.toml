@@ -6,7 +6,7 @@ license = "AGPL-3.0-or-later"
 publish = false
 default-run = "onepass-desktop"
 rust-version = "1.99"
-description = "OnePass for Windows and Linux (Tauri 2), milestone X2"
+description = "Cleon for Windows and Linux (Tauri 2), milestone X2"
 
 # Its own workspace: Tauri and its tree stay out of core/Cargo.lock, which
 # the Apple and Android builds share.

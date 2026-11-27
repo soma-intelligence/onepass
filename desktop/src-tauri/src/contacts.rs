@@ -257,7 +257,7 @@ fn start(
 
 // ---- the inviter ----------------------------------------------------------------------
 
-/// "Créer un lien": a new invitation on the OnePass server, then the wait
+/// "Créer un lien": a new invitation on the Cleon server, then the wait
 /// for the reply, the pair's mailbox and the answer.
 pub fn start_inviter(app: &AppHandle, session: Arc<Session>) {
     start(app, "inviter", "creating", move |app, view, cancel| {

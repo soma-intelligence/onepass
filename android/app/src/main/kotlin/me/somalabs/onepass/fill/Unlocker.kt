@@ -18,7 +18,7 @@ import me.somalabs.onepass.vault.BiometricUnlock
 import me.somalabs.onepass.vault.DeviceVault
 
 /**
- * "Déverrouille OnePass" for the AutoFill and passkey screens (iPhone: the
+ * "Déverrouille Cleon" for the AutoFill and passkey screens (iPhone: the
  * extension's unlock view): fingerprint or face first when it is on, else the
  * master password. The session is the app's own (one vault per process).
  */
@@ -46,7 +46,7 @@ class Unlocker(private val activity: Activity, private val ui: Ios, private val 
             clipToOutline = true
             (layoutParams as LinearLayout.LayoutParams).topMargin = ui.dp(24)
         })
-        col.addView(ui.text(t("Déverrouille OnePass", "Unlock OnePass"), 24f, ui.label, 600).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(18), 0, ui.dp(4)) })
+        col.addView(ui.text(t("Déverrouille Cleon", "Unlock Cleon"), 24f, ui.label, 600).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(18), 0, ui.dp(4)) })
         reason?.let { col.addView(ui.text(it, 15f, ui.secondary).apply { gravity = Gravity.CENTER }) }
         val pw = ui.field(t("Mot de passe maître", "Master Password"), password = true).apply {
             imeOptions = EditorInfo.IME_ACTION_GO or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
@@ -90,7 +90,7 @@ class Unlocker(private val activity: Activity, private val ui: Ios, private val 
         val bio = vault.biometrics
         val canBio = bio.enrolled && bio.availability() == BiometricUnlock.Availability.AVAILABLE
         fun biometric() {
-            bio.unlock(activity, t("Déverrouille OnePass", "Unlock OnePass"), reason ?: "OnePass", t("Utiliser le mot de passe maître", "Use the master password")) { o ->
+            bio.unlock(activity, t("Déverrouille Cleon", "Unlock Cleon"), reason ?: "Cleon", t("Utiliser le mot de passe maître", "Use the master password")) { o ->
                 when (o) {
                     is BiometricUnlock.Outcome.Unlocked -> worker.execute {
                         val r = runCatching { vault.unlockWithAuk(o.auk) }

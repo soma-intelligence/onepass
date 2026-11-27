@@ -105,7 +105,7 @@ fn agent() -> ureq::Agent {
         .timeout_connect(Some(Duration::from_secs(15)))
         .timeout_recv_response(Some(Duration::from_secs(15)))
         .timeout_global(Some(Duration::from_secs(60)))
-        .user_agent("OnePass-Watchtower")
+        .user_agent("Cleon-Watchtower")
         .http_status_as_error(true)
         .build()
         .into()

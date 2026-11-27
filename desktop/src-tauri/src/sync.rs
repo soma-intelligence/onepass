@@ -1,4 +1,4 @@
-//! Cross-device sync through the OnePass mailbox (cross-platform spec 4.14,
+//! Cross-device sync through the Cleon mailbox (cross-platform spec 4.14,
 //! D.2 to D.4), as the Apple apps' mailbox path does it:
 //!
 //! - where the account syncs (`Backend`, store meta `sync.backend`): on this
@@ -29,7 +29,7 @@ use zeroize::Zeroizing;
 
 use crate::state::{AppState, now};
 
-/// The OnePass server hosted by Soma Labs (the Apple apps' `OnePassMailboxURL`).
+/// The Cleon server hosted by Soma Labs (the Apple apps' `OnePassMailboxURL`).
 pub const HOSTED_URL: &str = "https://mailbox.somalabs.me/functions/v1/mailbox";
 /// The backoff of failed rounds (`SyncCoordinator.retryDelays`).
 pub const RETRY_DELAYS: [u64; 3] = [30, 120, 600];
@@ -116,13 +116,13 @@ impl Server {
 static DEBUG_HOSTED: std::sync::OnceLock<Server> = std::sync::OnceLock::new();
 
 /// Debug builds: the test mailbox started in this process stands for the
-/// OnePass server.
+/// Cleon server.
 #[cfg(all(debug_assertions, feature = "test-mailbox"))]
 pub fn set_debug_hosted(server: Server) {
     let _ = DEBUG_HOSTED.set(server);
 }
 
-/// The OnePass server of this build. A debug build may point it elsewhere:
+/// The Cleon server of this build. A debug build may point it elsewhere:
 /// the test mailbox of this process, or ONEPASS_MAILBOX_URL (with the CA in
 /// the file ONEPASS_MAILBOX_CA), for the end-to-end test.
 pub fn hosted() -> Server {
@@ -146,7 +146,7 @@ pub fn hosted() -> Server {
     }
 }
 
-/// The CA to trust for `base_url`: the OnePass server's own (none, or the
+/// The CA to trust for `base_url`: the Cleon server's own (none, or the
 /// debug test CA), else `fallback`.
 pub fn ca_for(base_url: &str, fallback: Option<String>) -> Option<String> {
     let h = hosted();
@@ -177,7 +177,7 @@ pub fn valid_url(text: &str) -> bool {
     }
 }
 
-/// What the settings line names: the OnePass server, or a self-host's host.
+/// What the settings line names: the Cleon server, or a self-host's host.
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerName {

@@ -164,7 +164,7 @@ class BrowseScreens(private val a: MainActivity) {
                 ui.quickAction(R.drawable.ic_add, a.t("Nouvel élément", "New Item"), onPhoto) { a.items.newItem(null) },
                 ui.quickAction(R.drawable.ic_key, a.t("Générer", "Generate"), onPhoto) { a.items.generator(null) },
                 ui.quickAction(R.drawable.ic_share, a.t("Partager", "Share"), onPhoto, enabled = score != null) {
-                    val text = a.t("Mon score de sécurité OnePass : $score sur 100.", "My OnePass security score: $score out of 100.")
+                    val text = a.t("Mon score de sécurité Cleon : $score sur 100.", "My Cleon security score: $score out of 100.")
                     a.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text), null))
                 },
             ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(40) })
@@ -185,14 +185,14 @@ class BrowseScreens(private val a: MainActivity) {
         }
     }
 
-    /** Récents: the last items opened (until OnePass locks), how long ago, "Tout voir". */
+    /** Récents: the last items opened (until Cleon locks), how long ago, "Tout voir". */
     private fun recentCard(active: List<FfiItemSummary>): View = ui.rxCard {
         val byId = active.associateBy { it.id }
         val recents = a.recents.mapNotNull { byId[it] }
         addView(ui.rxCardHeader(a.t("Récents", "Recents"), if (recents.isEmpty()) null else ui.rxLink(a.t("Tout voir", "See All")) {
             a.push { list(a.t("Tous les éléments", "All Items"), active) }
         }))
-        if (recents.isEmpty()) addView(ui.rxMessage(a.t("Les éléments que tu ouvres apparaissent ici jusqu'au verrouillage.", "Items you open appear here until OnePass locks.")))
+        if (recents.isEmpty()) addView(ui.rxMessage(a.t("Les éléments que tu ouvres apparaissent ici jusqu'au verrouillage.", "Items you open appear here until Cleon locks.")))
         recents.take(3).forEach { s ->
             val ago = a.openedAt[s.id]?.let { at ->
                 if (System.currentTimeMillis() - at < 60_000) a.t("maintenant", "now")

@@ -23,7 +23,7 @@ import org.json.JSONObject
 /**
  * Debug builds only: a relying party for "passkeys.onepass.test" that asks
  * Android's Credential Manager to create then use a passkey, to drive the
- * OnePass provider on the emulator. It shows what came back (sizes and the
+ * Cleon provider on the emulator. It shows what came back (sizes and the
  * relying party hash check, never a secret).
  */
 @TargetApi(34)
@@ -46,7 +46,7 @@ class PasskeyDemoActivity : Activity() {
 
     private fun create() {
         val json = JSONObject().put("challenge", challenge())
-            .put("rp", JSONObject().put("id", rp).put("name", "OnePass Test"))
+            .put("rp", JSONObject().put("id", rp).put("name", "Cleon Test"))
             .put("user", JSONObject().put("id", WebAuthn.b64("user-42".toByteArray())).put("name", "bob@onepass.test").put("displayName", "Bob"))
             .put("pubKeyCredParams", org.json.JSONArray().put(JSONObject().put("type", "public-key").put("alg", -7)))
             .put("authenticatorSelection", JSONObject().put("residentKey", "required").put("userVerification", "required")).toString()

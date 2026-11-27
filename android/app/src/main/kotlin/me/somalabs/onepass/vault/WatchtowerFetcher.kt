@@ -107,7 +107,7 @@ class WatchtowerFetcher(private val context: Context) {
             c.readTimeout = 30_000
             c.useCaches = false
             c.instanceFollowRedirects = false
-            c.setRequestProperty("User-Agent", "OnePass-Android")
+            c.setRequestProperty("User-Agent", "Cleon-Android")
             if (url.startsWith(RANGE_BASE)) c.setRequestProperty("Add-Padding", "true")
             if (c.responseCode != HttpURLConnection.HTTP_OK) return null
             c.inputStream.use { input ->

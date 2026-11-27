@@ -27,10 +27,10 @@ import me.somalabs.onepass.vault.DeviceVault
 import me.somalabs.onepass.vaultkit.core.CoreLoader
 
 /**
- * OnePass in Android's Credential Manager (Android 14+), as the passkey and
+ * Cleon in Android's Credential Manager (Android 14+), as the passkey and
  * password provider (iPhone: the AutoFill extension's passkeys). The selector
  * lists the Logins' passkeys for the relying party and the passwords for the
- * calling app; picking one, or "Déverrouille OnePass" when locked, opens
+ * calling app; picking one, or "Déverrouille Cleon" when locked, opens
  * [PasskeyActivity], which signs with the core (`passkey_assertion`) or
  * creates the passkey (`create_passkey`). The private keys never leave the
  * core.
@@ -48,7 +48,7 @@ class OnePassCredentialService : CredentialProviderService() {
                 val b = BeginGetCredentialResponse.Builder()
                 if (vault.state() == DeviceVault.State.LOCKED) {
                     val i = Intent(this, PasskeyActivity::class.java).setAction(PasskeyActivity.ACTION_UNLOCK)
-                    b.addAuthenticationAction(Action(WebAuthn.authenticationSlice(Credentials.t(this, "Déverrouille OnePass", "Unlock OnePass"), Credentials.pending(this, i))))
+                    b.addAuthenticationAction(Action(WebAuthn.authenticationSlice(Credentials.t(this, "Déverrouille Cleon", "Unlock Cleon"), Credentials.pending(this, i))))
                 }
                 b.build()
             } else Credentials.entries(this, s, request)
@@ -65,15 +65,15 @@ class OnePassCredentialService : CredentialProviderService() {
             CoreLoader.ensureLoaded()
             val vault = DeviceVault.get(this)
             if (vault.state() == DeviceVault.State.EMPTY) return@runCatching BeginCreateCredentialResponse.Builder().build()
-            // The vaults are named only while unlocked; locked, one entry ("OnePass") unlocks first.
+            // The vaults are named only while unlocked; locked, one entry ("Cleon") unlocks first.
             val vaults = runCatching { vault.session?.vaults() }.getOrNull().orEmpty()
             val b = BeginCreateCredentialResponse.Builder()
             val icon = Icon.createWithResource(this, R.mipmap.ic_launcher)
-            val note = if (request.type == WebAuthn.TYPE_PUBLIC_KEY) Credentials.t(this, "La passkey reste dans ton coffre OnePass, chiffrée sur tes appareils.",
-                "The passkey stays in your OnePass vault, encrypted on your devices.") else null
+            val note = if (request.type == WebAuthn.TYPE_PUBLIC_KEY) Credentials.t(this, "La passkey reste dans ton coffre Cleon, chiffrée sur tes appareils.",
+                "The passkey stays in your Cleon vault, encrypted on your devices.") else null
             val action = if (request.type == WebAuthn.TYPE_PUBLIC_KEY) PasskeyActivity.ACTION_CREATE_PASSKEY else PasskeyActivity.ACTION_CREATE_PASSWORD
             if (vaults.isEmpty()) {
-                b.addCreateEntry(CreateEntry(WebAuthn.createSlice("OnePass", note, icon, Credentials.pending(this, Intent(this, PasskeyActivity::class.java).setAction(action)))))
+                b.addCreateEntry(CreateEntry(WebAuthn.createSlice("Cleon", note, icon, Credentials.pending(this, Intent(this, PasskeyActivity::class.java).setAction(action)))))
             } else vaults.forEach { v ->
                 val i = Intent(this, PasskeyActivity::class.java).setAction(action).putExtra(PasskeyActivity.EXTRA_VAULT, v.id)
                 b.addCreateEntry(CreateEntry(WebAuthn.createSlice(v.meta.name, note, icon, Credentials.pending(this, i))))

@@ -1,4 +1,4 @@
-//! OnePass for Windows (and later Linux): Tauri 2, milestone X2 of spec
+//! Cleon for Windows (and later Linux): Tauri 2, milestone X2 of spec
 //! 2026-10-30. The backend links the core directly; the web view gets typed
 //! commands only (each one declared in build.rs and allowed in
 //! capabilities/main.json) and never a key or a blob.
@@ -47,7 +47,7 @@ where
 }
 
 /// Debug builds with `test-mailbox` and ONEPASS_TEST_MAILBOX=1: the test
-/// mailbox runs in this process and stands for the OnePass server. Its port
+/// mailbox runs in this process and stands for the Cleon server. Its port
 /// is ONEPASS_TEST_MAILBOX_PORT (else any free one); its URL and the path of
 /// its CA (written next to the vault) are printed.
 #[cfg(all(debug_assertions, feature = "test-mailbox"))]
@@ -236,5 +236,5 @@ fn main() {
             sharing_cmds::recovery_status,
         ]))
         .run(tauri::generate_context!())
-        .expect("OnePass failed to start");
+        .expect("Cleon failed to start");
 }

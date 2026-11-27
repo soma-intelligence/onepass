@@ -154,7 +154,7 @@ async function welcome(I) {
   await I.click(button("Continuer"));
   await I.click(button("Continuer"));
   await I.click(button("Commencer"));
-  await I.find("//h1[normalize-space(.)='Bienvenue dans OnePass']");
+  await I.find("//h1[normalize-space(.)='Bienvenue dans Cleon']");
 }
 async function syncState(I, state, timeout = 60000) {
   const end = Date.now() + timeout;
@@ -166,7 +166,7 @@ async function syncState(I, state, timeout = 60000) {
   }
   return last;
 }
-/** A new account on the OnePass server (the test mailbox), synced. */
+/** A new account on the Cleon server (the test mailbox), synced. */
 async function newAccount(I, name) {
   await welcome(I);
   await I.click("//button[.//span[normalize-space(.)='Créer un coffre']]");

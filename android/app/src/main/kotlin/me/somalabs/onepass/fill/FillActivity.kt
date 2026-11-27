@@ -35,11 +35,11 @@ import me.somalabs.onepass.vaultkit.core.CoreLoader
 
 /**
  * The AutoFill screens (iPhone: the extension's views), started by the system
- * from a OnePass suggestion or a save prompt:
+ * from a Cleon suggestion or a save prompt:
  * - [ACTION_UNLOCK]: the vault was locked; unlock, then answer with the Logins.
  * - [ACTION_PICK]: the user picked one Login; return its values (unlocking first if needed).
- * - [ACTION_SEARCH]: "Rechercher dans OnePass", every Login, with a search.
- * - [ACTION_SAVE]: "Enregistrer dans OnePass", a new Login or an update.
+ * - [ACTION_SEARCH]: "Rechercher dans Cleon", every Login, with a search.
+ * - [ACTION_SAVE]: "Enregistrer dans Cleon", a new Login or an update.
  *
  * Not exported; the Intents carry ids only.
  */
@@ -168,7 +168,7 @@ class FillActivity : Activity() {
         val all = runCatching { s.autofillServiceCandidates(svc, true, emptyList()) }.getOrDefault(emptyList())
         val label = Fills.label(this, f)
         page(t("Choisis un compte", "Choose an Account")) {
-            val search = ui.searchField(t("Rechercher dans OnePass", "Search OnePass"))
+            val search = ui.searchField(t("Rechercher dans Cleon", "Search Cleon"))
             addView(ui.inset(search, top = Ios.Space.S))
             addView(ui.footnote(t("pour ", "For ") + label))
             val list = LinearLayout(this@FillActivity).apply { orientation = LinearLayout.VERTICAL }
@@ -225,7 +225,7 @@ class FillActivity : Activity() {
         val sameUser = runCatching { s.autofillServiceCandidates(pending.service, false, emptyList()) }.getOrDefault(emptyList())
             .filter { it.quality != FfiMatchQuality.OTHER && it.user.equals(pending.username, ignoreCase = true) }
         val vaults = runCatching { s.vaults() }.getOrDefault(emptyList())
-        page(t("Enregistrer dans OnePass", "Save in OnePass")) {
+        page(t("Enregistrer dans Cleon", "Save in Cleon")) {
             addView(ui.inset(ui.card(
                 ui.row(icon = ui.image(R.mipmap.ic_launcher, 30), title = pending.title, subtitle = pending.username.ifBlank { null }, chevron = false),
                 ui.row(title = t("mot de passe", "Password"), value = "••••••••••", chevron = false),
@@ -269,7 +269,7 @@ class FillActivity : Activity() {
             val r = runCatching(work)
             runOnUiThread {
                 r.onSuccess {
-                    android.widget.Toast.makeText(this, t("Enregistré dans OnePass", "Saved in OnePass"), android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(this, t("Enregistré dans Cleon", "Saved in Cleon"), android.widget.Toast.LENGTH_SHORT).show()
                     setResult(RESULT_OK)
                     finish()
                 }.onFailure { android.widget.Toast.makeText(this, t("Erreur : ", "Error: ") + it.javaClass.simpleName, android.widget.Toast.LENGTH_LONG).show() }

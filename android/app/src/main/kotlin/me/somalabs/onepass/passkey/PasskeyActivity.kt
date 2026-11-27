@@ -36,7 +36,7 @@ import me.somalabs.onepass.vault.DeviceVault
 import me.somalabs.onepass.vaultkit.core.CoreLoader
 
 /**
- * What the Credential Manager opens from a OnePass entry: unlock, then sign
+ * What the Credential Manager opens from a Cleon entry: unlock, then sign
  * with a passkey, hand over a password, or save a new passkey or password
  * ("Enregistrer une passkey pour …"). Not exported; the PendingIntents carry
  * ids only, the request comes from the system.
@@ -57,7 +57,7 @@ class PasskeyActivity : Activity() {
         ui = Ios(this)
         vault.lockIfIdle()
         if (vault.session == null) {
-            if (vault.state() != DeviceVault.State.LOCKED) return fail(t("Ouvre OnePass pour configurer ton coffre", "Open OnePass to set up your vault"))
+            if (vault.state() != DeviceVault.State.LOCKED) return fail(t("Ouvre Cleon pour configurer ton coffre", "Open Cleon to set up your vault"))
             window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(ui.page))
             val u = Unlocker(this, ui, null)
             unlocker = u
@@ -181,14 +181,14 @@ class PasskeyActivity : Activity() {
         // A Login of this site with the same user name takes the passkey.
         val existing = runCatching { s.autofillServiceCandidates(FfiAutofillService.Site(rpId), false, emptyList()) }.getOrDefault(emptyList())
             .firstOrNull { it.vaultId == vaultId && it.user.equals(c.userName, true) }
-        val vaultName = runCatching { s.vaults().firstOrNull { it.id == vaultId }?.meta?.name }.getOrNull() ?: "OnePass"
+        val vaultName = runCatching { s.vaults().firstOrNull { it.id == vaultId }?.meta?.name }.getOrNull() ?: "Cleon"
         page(t("Enregistrer une passkey pour $rpId", "Save a Passkey for $rpId")) {
             addView(ui.inset(ui.card(
                 ui.row(title = c.userName.ifBlank { c.userDisplayName }, subtitle = c.rpName.ifBlank { rpId }, chevron = false),
                 ui.row(title = t("Coffre", "Vault"), value = vaultName, chevron = false),
                 existing?.let { ui.row(title = t("Ajouter à ", "Add to ") + it.title, chevron = false) },
             ), top = Ios.Space.L))
-            addView(ui.footnote(t("La passkey reste dans ton coffre OnePass, chiffrée sur tes appareils.", "The passkey stays in your OnePass vault, encrypted on your devices.")))
+            addView(ui.footnote(t("La passkey reste dans ton coffre Cleon, chiffrée sur tes appareils.", "The passkey stays in your Cleon vault, encrypted on your devices.")))
             addView(ui.capsule(t("Enregistrer la passkey", "Save Passkey")) {
                 worker.execute {
                     val r = runCatching {
@@ -217,7 +217,7 @@ class PasskeyActivity : Activity() {
         val pkg = req.callingAppInfo.packageName
         val vaultId = vaultFor(s) ?: return fail("no vault")
         val title = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
-        page(t("Enregistrer dans OnePass", "Save in OnePass")) {
+        page(t("Enregistrer dans Cleon", "Save in Cleon")) {
             addView(ui.inset(ui.card(
                 ui.row(title = title, subtitle = user.ifBlank { null }, chevron = false),
                 ui.row(title = t("mot de passe", "Password"), value = "••••••••••", chevron = false),

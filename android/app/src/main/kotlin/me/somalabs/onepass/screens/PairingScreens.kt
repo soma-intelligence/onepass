@@ -146,8 +146,8 @@ class PairingScreens(private val a: MainActivity) {
     private fun revoke(d: FfiDevice, err: TextView) {
         android.app.AlertDialog.Builder(a)
             .setTitle(a.t("Retirer ${d.name} ?", "Remove ${d.name}?"))
-            .setMessage(a.t("Il efface ses données OnePass dès qu'il voit la liste des appareils. Tu pourras l'ajouter de nouveau plus tard.",
-                "It erases its OnePass data as soon as it sees the device list. You can add it again later."))
+            .setMessage(a.t("Il efface ses données Cleon dès qu'il voit la liste des appareils. Tu pourras l'ajouter de nouveau plus tard.",
+                "It erases its Cleon data as soon as it sees the device list. You can add it again later."))
             .setPositiveButton(a.t("Retirer cet appareil", "Remove This Device")) { _, _ ->
                 passwordSheet(a.t("Retirer ${d.name}", "Remove ${d.name}"), a.t("Confirme avec ton mot de passe maître pour retirer cet appareil.", "Confirm with your master password to remove this device.")) { done ->
                     val s = a.session() ?: return@passwordSheet

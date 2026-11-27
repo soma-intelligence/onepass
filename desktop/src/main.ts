@@ -1,4 +1,4 @@
-// OnePass for Windows, laid out like the iPad and Mac app of the same
+// Cleon for Windows, laid out like the iPad and Mac app of the same
 // codebase (sidebar, list, item) with the iPhone's look (DesignKit colors,
 // cards, category tiles, Watchtower). Plain DOM, no framework. Every text
 // from an item is set with textContent, never innerHTML (spec 2026-10-30
@@ -158,7 +158,7 @@ function message(e: unknown): string {
     case "WeakPassword":
       return t("Pas encore assez solide : ajoute un mot, ou touche Générer.", "Not strong enough yet. Add a word, or tap Generate.");
     case "Locked":
-      return t("OnePass est verrouillé.", "OnePass is locked.");
+      return t("Cleon est verrouillé.", "Cleon is locked.");
     case "Validation":
       return t("Un champ n'est pas valide : ", "A field is not valid: ") + err.detail;
     case "NotFound":
@@ -472,7 +472,7 @@ async function route(): Promise<void> {
     status = await invoke<Status>("status");
     setFrench(status.language === "fr");
   } catch (e) {
-    mount(problem(t("OnePass n'a pas pu lire son coffre.", "OnePass could not read its vault."), message(e)));
+    mount(problem(t("Cleon n'a pas pu lire son coffre.", "Cleon could not read its vault."), message(e)));
     return;
   }
   switch (status.state) {
@@ -492,7 +492,7 @@ async function route(): Promise<void> {
       break;
     case "missing":
       mount(problem(t("Le compte de cet appareil a disparu du coffre.", "This device's account is gone from the vault."),
-        t("C'est une anomalie d'intégrité : OnePass ne crée pas de compte par-dessus.", "That is an integrity fault: OnePass does not create an account over it.")));
+        t("C'est une anomalie d'intégrité : Cleon ne crée pas de compte par-dessus.", "That is an integrity fault: Cleon does not create an account over it.")));
       break;
   }
 }
@@ -511,7 +511,7 @@ function problem(title: string, detail: string): HTMLElement {
 
 const introCards = (): { icon: IconName; title: string; body: string }[] => [
   { icon: "key", title: t("Tous tes mots de passe, au même endroit", "All your passwords in one place"),
-    body: t("OnePass les retient pour toi et les remplit quand tu te connectes.", "OnePass remembers them for you and fills them in when you sign in.") },
+    body: t("Cleon les retient pour toi et les remplit quand tu te connectes.", "Cleon remembers them for you and fills them in when you sign in.") },
   { icon: "lock", title: t("Toi seul as la clé", "Only you hold the key"),
     body: t("Pas de compte chez nous. Ton coffre est chiffré sur ton appareil, et même nous ne pouvons pas l'ouvrir.",
       "No account with us. Your vault is encrypted on your device, and even we can't open it.") },
@@ -550,12 +550,12 @@ function welcome(): HTMLElement {
       "div",
       { class: "column" },
       appIcon(88),
-      h("h1", { class: "big" }, t("Bienvenue dans OnePass", "Welcome to OnePass")),
+      h("h1", { class: "big" }, t("Bienvenue dans Cleon", "Welcome to Cleon")),
       h("p", { class: "secondary lead" }, t("Comment veux-tu commencer ?", "How would you like to start?")),
       h(
         "div",
         { class: "card list-card" },
-        option("vault_new", "var(--accent)", t("Créer un coffre", "Create a Vault"), t("Première fois sur OnePass", "First time on OnePass"), () => mount(create())),
+        option("vault_new", "var(--accent)", t("Créer un coffre", "Create a Vault"), t("Première fois sur Cleon", "First time on Cleon"), () => mount(create())),
         option("person_add", "var(--blue)", t("Ajouter cet appareil", "Add This Device"), t("Avec un code, depuis ton autre appareil", "With a code from your other device"), () => mount(joinScreen())),
         option("restore", "var(--orange)", t("Restaurer avec mon Emergency Kit", "Restore with My Emergency Kit"), t("Aucun autre appareil sous la main", "No other device at hand"), () => mount(restoreScreen())),
       ),
@@ -599,7 +599,7 @@ function create(): HTMLElement {
     if (p) meterBox.append(meter(await call<number>("strength", { password: p }).catch(() => 0)));
   });
   const go = h("button", { class: "capsule prominent", type: "submit" }, t("Créer un coffre", "Create a Vault"));
-  // "Où est rangé mon coffre ?" (D.2, point 1): the OnePass server unless the user picks theirs.
+  // "Où est rangé mon coffre ?" (D.2, point 1): the Cleon server unless the user picks theirs.
   const whereLink = h("button", { class: "bar-text where", type: "button", id: "sync-choice" });
   const whereLabel = () => (whereLink.textContent = t(`Où est rangé mon coffre ? ${choiceName(syncChoice)}`, `Where Is My Vault Kept? ${choiceName(syncChoice)}`));
   whereLabel();
@@ -717,7 +717,7 @@ function lockScreen(status: Status): HTMLElement {
   const go = h("button", { class: "go", type: "submit", title: t("Déverrouiller", "Unlock"), "aria-label": t("Déverrouiller", "Unlock") }, icon("arrow_forward", 20));
   const hint = h("p", { class: "footnote center-text hello-hint" });
   if (status.helloDropped) err.textContent = helloReason(status.helloDropped);
-  else if (status.helloWanted && !status.helloEnrolled) hint.textContent = t(`Déverrouille une fois avec ton mot de passe : OnePass te proposera ${HELLO}.`, `Unlock once with your password: OnePass will offer ${HELLO}.`);
+  else if (status.helloWanted && !status.helloEnrolled) hint.textContent = t(`Déverrouille une fois avec ton mot de passe : Cleon te proposera ${HELLO}.`, `Unlock once with your password: Cleon will offer ${HELLO}.`);
   if (status.helloEnrolled) {
     const days = status.helloDaysLeft ?? 14;
     const tip = t(`Déverrouiller avec ${HELLO}`, `Unlock with ${HELLO}`);
@@ -775,8 +775,8 @@ function lockScreen(status: Status): HTMLElement {
     },
     appIcon(96),
     h("div", { id: "lock-alerts" }),
-    h("h1", {}, t("Déverrouille OnePass", "Unlock OnePass")),
-    h("div", { class: "account-capsule" }, monogram("1", "var(--accent)", 26, true), h("span", {}, t("Compte OnePass", "OnePass Account"))),
+    h("h1", {}, t("Déverrouille Cleon", "Unlock Cleon")),
+    h("div", { class: "account-capsule" }, monogram("1", "var(--accent)", 26, true), h("span", {}, t("Compte Cleon", "Cleon Account"))),
     box,
     err,
     hint,
@@ -815,7 +815,7 @@ function resetSession(): void {
 
 // ---- shell -------------------------------------------------------------------------------
 
-const sidebarEl = h("nav", { class: "sidebar", "aria-label": "OnePass" });
+const sidebarEl = h("nav", { class: "sidebar", "aria-label": "Cleon" });
 const mainEl = h("div", { class: "main" });
 
 async function shell(): Promise<void> {
@@ -888,7 +888,7 @@ function renderSidebar(): void {
   } }, icon("search", 18), h("span", {}, t("Rechercher", "Search")), h("kbd", {}, "Ctrl F"));
   sidebarEl.replaceChildren(
     h("div", { class: "sidebar-top" },
-      h("div", { class: "brand" }, h("span", { class: "brand-glyph" }, icon("grid", 16)), h("span", { class: "brand-name" }, "OnePass"),
+      h("div", { class: "brand" }, h("span", { class: "brand-glyph" }, icon("grid", 16)), h("span", { class: "brand-name" }, "Cleon"),
         h("button", { class: "round", title: t("Nouvel élément", "New Item"), "aria-label": t("Nouvel élément", "New Item"), onclick: () => newItem() }, icon("add", 18))),
       search),
     h(
@@ -972,7 +972,7 @@ function homePage(): HTMLElement {
   const recentsCard = h("div", { class: "rx-card" }, cardHead(t("Récents", "Recents")),
     recents.length
       ? h("div", { class: "rx-rows" }, ...recents.map((s) => homeRow(itemArt(s, 32), s.title || t("Sans titre", "Untitled"), secondLine(s), null, () => openItem(s))))
-      : h("p", { class: "rx-empty" }, t("Les éléments ouverts apparaissent ici jusqu'au verrouillage.", "Items you open appear here until OnePass locks.")));
+      : h("p", { class: "rx-empty" }, t("Les éléments ouverts apparaissent ici jusqu'au verrouillage.", "Items you open appear here until Cleon locks.")));
   const vaultsCard = h("div", { class: "rx-card" }, cardHead(t("Coffres", "Vaults")),
     h("div", { class: "rx-rows" }, ...ui.vaults.slice().sort((a, b) => a.name.localeCompare(b.name)).map((v) =>
       homeRow(monogram(v.name.slice(0, 1).toUpperCase(), vaultColor(v.color), 32), v.name, countLabel(live.filter((i) => i.vaultId === v.id).length),
@@ -2174,8 +2174,8 @@ function breachSetting(r: Report): HTMLElement {
       toast(message(e));
     }
   });
-  const sent = h("p", { class: "footnote", hidden: true }, t("Pour chaque mot de passe, OnePass envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine. Les sites qui proposent la double authentification ou les passkeys viennent du catalogue fourni avec l'app. Désactivé, aucune requête réseau.",
-    "For each password, OnePass sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The list of breached sites is downloaded whole and kept for a week. Sites that offer two-factor authentication or passkeys come from the catalog shipped with the app. When off, no network request."));
+  const sent = h("p", { class: "footnote", hidden: true }, t("Pour chaque mot de passe, Cleon envoie à Have I Been Pwned les 5 premiers caractères de son empreinte SHA-1, partagés avec des centaines d'autres, et compare le reste ici. La liste des sites piratés est téléchargée en entier et gardée une semaine. Les sites qui proposent la double authentification ou les passkeys viennent du catalogue fourni avec l'app. Désactivé, aucune requête réseau.",
+    "For each password, Cleon sends Have I Been Pwned the first 5 characters of its SHA-1 hash, shared with hundreds of others, and compares the rest here. The list of breached sites is downloaded whole and kept for a week. Sites that offer two-factor authentication or passkeys come from the catalog shipped with the app. When off, no network request."));
   const info = h("button", { class: "bar-text small-link", type: "button", onclick: () => (sent.hidden = !sent.hidden) }, t("Ce qui est envoyé", "What is sent"));
   return h("div", { class: "card list-card breach-card" },
     h("label", { class: "toggle-row", for: "check-breaches" }, tile("compromised", "var(--red)", 30),
@@ -2254,7 +2254,7 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
       return [head, ...wallpaperPicker(redraw), h("div", { class: "caps" }, t("Général", "General")), h("div", { class: "card list-card" }, row(t("Verrouillage automatique", "Auto-Lock"), t(`${status.autoLockMinutes} minutes`, `${status.autoLockMinutes} minutes`)),
         row(t("Langue", "Language"), t("Français (système)", "English (system)")),
         iconsToggle(status.siteIcons, redraw)),
-        h("p", { class: "footnote" }, t("OnePass se verrouille aussi quand la session Windows se verrouille.", "OnePass also locks when the Windows session locks.")),
+        h("p", { class: "footnote" }, t("Cleon se verrouille aussi quand la session Windows se verrouille.", "Cleon also locks when the Windows session locks.")),
         h("div", { class: "caps" }, t("Importer", "Import")),
         h("div", { class: "card list-card" }, h("button", { class: "row", id: "open-import", onclick: () => importSheet() }, tile("import", "var(--blue)", 28),
           h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Importer…", "Import…")), h("span", { class: "row-sub" }, t("Apple, 1Password, Bitwarden, navigateurs et 8 autres.", "Apple, 1Password, Bitwarden, browsers and 8 more."))), icon("chevron_right", 18, "chev"))),
@@ -2306,7 +2306,7 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
           await refresh(undefined);
           toast(t("Enregistré", "Saved"));
         } }, t("Enregistrer le nom", "Save Name")),
-        h("div", { class: "caps" }, t("Compte OnePass", "OnePass Account")),
+        h("div", { class: "caps" }, t("Compte Cleon", "Cleon Account")),
         h("div", { class: "card list-card" }, row(t("Identifiant", "ID"), acc.accountId)),
         h("p", { class: "footnote" }, t("Cet identifiant est imprimé sur ton Emergency Kit.", "This ID is printed on your Emergency Kit."))];
     }
@@ -2319,7 +2319,7 @@ async function settingsPage(key: string, redraw: () => void): Promise<Node[]> {
           h("span", { class: "row-text" }, h("span", { class: "row-title" }, v.name), h("span", { class: "row-sub" }, countLabel(v.itemCount))), icon("chevron_right", 18, "chev"))),
         h("button", { class: "row", onclick: () => vaultEditor(null, redraw) }, icon("add", 22, "accent"), h("span", { class: "row-text" }, h("span", { class: "row-title accent" }, t("Nouveau coffre", "New Vault")))))];
     case "about":
-      return [head, h("div", { class: "about" }, appIcon(80), h("div", { class: "bold big-text" }, "OnePass"), h("div", { class: "secondary" }, "Version 0.1.0")),
+      return [head, h("div", { class: "about" }, appIcon(80), h("div", { class: "bold big-text" }, "Cleon"), h("div", { class: "secondary" }, "Version 0.1.0")),
         h("div", { class: "card list-card" }, row(t("Licence", "License"), "AGPL-3.0"), row(t("Code source", "Source Code"), "github.com/soma-intelligence/onepass"),
           row(t("Icônes de l'interface", "Interface Icons"), "Material Symbols, Apache-2.0")),
         h("p", { class: "footnote" }, t("Chiffré de bout en bout. Ton coffre ne quitte pas ce PC sans ton mot de passe maître et ta Secret Key.", "End-to-end encrypted. Your vault never leaves this PC without your master password and Secret Key."))];
@@ -2439,8 +2439,8 @@ function backupSheet(): void {
   const pw = secretInput("bk-pw", t("Mot de passe maître", "Master Password"), "current-password");
   const a = secretInput("bk-pass", t("Phrase de passe de la sauvegarde", "Backup Passphrase"), "new-password");
   const b = secretInput("bk-pass2", t("Confirmer la phrase de passe", "Confirm the passphrase"), "new-password");
-  const advice = t("Choisis une phrase longue que tu n'utilises nulle part ailleurs, par exemple plusieurs mots. OnePass refuse une phrase trop facile à deviner.",
-    "Choose a long passphrase you don't use anywhere else, several words for example. OnePass refuses a passphrase that is too easy to guess.");
+  const advice = t("Choisis une phrase longue que tu n'utilises nulle part ailleurs, par exemple plusieurs mots. Cleon refuse une phrase trop facile à deviner.",
+    "Choose a long passphrase you don't use anywhere else, several words for example. Cleon refuses a passphrase that is too easy to guess.");
   const foot = h("p", { class: "footnote" }, advice);
   const err = h("div", { class: "error", role: "alert" });
   const check = () => {
@@ -2476,8 +2476,8 @@ function backupSheet(): void {
   for (const x of [pw, a, b]) x.input.addEventListener("input", check);
   check();
   s.body.append(
-    h("p", { class: "secondary sheet-intro" }, t("Une archive OnePass chiffrée de tout ce que cet appareil contient, coffres et éléments à la corbeille compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte.",
-      "An encrypted OnePass archive of everything this device holds, vaults and items in the trash included. It opens with the passphrase chosen here or with your account.")),
+    h("p", { class: "secondary sheet-intro" }, t("Une archive Cleon chiffrée de tout ce que cet appareil contient, coffres et éléments à la corbeille compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte.",
+      "An encrypted Cleon archive of everything this device holds, vaults and items in the trash included. It opens with the passphrase chosen here or with your account.")),
     pw.box, a.box, b.box, foot, err,
     h("p", { class: "footnote" }, t("Garde aussi ta phrase de passe : sans elle ni ton compte, la sauvegarde ne s'ouvre pas.", "Keep your passphrase too: without it or your account, the backup won't open.")),
     h("p", { class: "footnote" }, t("Choisis un emplacement hors ligne, par exemple une clé USB.", "Choose an offline location, such as a USB drive.")),
@@ -2500,8 +2500,8 @@ function restoreError(e: unknown): string {
   if (err?.code === "WrongPassword" || (err?.code === "InvalidInput" && /"passphrase"/.test(d))) return t("Phrase de passe incorrecte.", "Wrong passphrase.");
   if (d.includes("archive passphrase")) return t("Cette sauvegarde vient d'un autre compte : saisis sa phrase de passe.", "This backup comes from another account: enter its passphrase.");
   if (d.includes("archive of another account")) return t("Cette sauvegarde appartient à un autre compte et n'a pas de phrase de passe : elle ne s'ouvre qu'avec ce compte.", "This backup belongs to another account and has no passphrase: it opens only with that account.");
-  if (d.includes("newer version")) return t("Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie.", "This backup comes from a newer version of OnePass. Update the app, then try again.");
-  if (err?.code === "InvalidInput") return t("Ce fichier n'est pas une sauvegarde OnePass.", "This file is not a OnePass backup.");
+  if (d.includes("newer version")) return t("Cette sauvegarde vient d'une version plus récente de Cleon. Mets l'app à jour, puis réessaie.", "This backup comes from a newer version of Cleon. Update the app, then try again.");
+  if (err?.code === "InvalidInput") return t("Ce fichier n'est pas une sauvegarde Cleon.", "This file is not a Cleon backup.");
   if (err?.code === "TooLarge" || err?.code === "Unreadable") return t("Ce fichier n'a pas pu être lu, ou il est trop gros.", "This file could not be read, or it is too large.");
   return message(e);
 }
@@ -2544,8 +2544,8 @@ function restoreSheet(preloaded?: ArchiveInfo): void {
   const draw = () => {
     if (!info) {
       content.replaceChildren(
-        h("p", { class: "secondary sheet-intro" }, t("Choisis un fichier .onepass : une sauvegarde chiffrée de ce compte, ou une sauvegarde d'un autre compte avec sa phrase de passe. Rien de ce qui est déjà dans OnePass n'est remplacé.",
-          "Choose a .onepass file: an encrypted backup of this account, or another account's backup with its passphrase. Nothing already in OnePass is replaced.")),
+        h("p", { class: "secondary sheet-intro" }, t("Choisis un fichier .onepass : une sauvegarde chiffrée de ce compte, ou une sauvegarde d'un autre compte avec sa phrase de passe. Rien de ce qui est déjà dans Cleon n'est remplacé.",
+          "Choose a .onepass file: an encrypted backup of this account, or another account's backup with its passphrase. Nothing already in Cleon is replaced.")),
         h("button", { class: "capsule prominent", type: "button", id: "pick-backup", onclick: () => void pick() }, t("Choisir une sauvegarde…", "Choose a Backup…")),
       );
       return;
@@ -2553,7 +2553,7 @@ function restoreSheet(preloaded?: ArchiveInfo): void {
     const i = info;
     const file = h("div", { class: "card list-card" },
       h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Fichier", "File"))), h("span", { class: "secondary" }, i.fileName)),
-      h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, "Type")), h("span", { class: "secondary" }, i.kind === "backup" ? t("Sauvegarde du compte", "Account backup") : t("Export OnePass", "OnePass export"))),
+      h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, "Type")), h("span", { class: "secondary" }, i.kind === "backup" ? t("Sauvegarde du compte", "Account backup") : t("Export Cleon", "Cleon export"))),
       h("div", { class: "row static" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Créée le", "Created"))), h("span", { class: "secondary" }, dateTime(i.createdAt))),
       h("div", { class: "row static" }, icon(i.forThisAccount || preview?.signatureVerified ? "shield_check" : "warning", 20, i.forThisAccount ? "green" : "orange"), h("span", { class: "row-text" }, h("span", { class: "row-sub" }, signatureLine(i)))));
     const parts: (Node | null)[] = [h("div", { class: "caps" }, t("Fichier", "File")), file];
@@ -2571,7 +2571,7 @@ function restoreSheet(preloaded?: ArchiveInfo): void {
     if (preview) {
       const p = preview;
       parts.push(h("div", { class: "caps" }, t("Contenu", "Contents")),
-        p.items === 0 ? h("p", { class: "secondary" }, t("Tout ce que contient cette sauvegarde est déjà dans OnePass.", "Everything in this backup is already in OnePass.")) : countsLine(p.byType),
+        p.items === 0 ? h("p", { class: "secondary" }, t("Tout ce que contient cette sauvegarde est déjà dans Cleon.", "Everything in this backup is already in Cleon.")) : countsLine(p.byType),
         p.vaultsCreated ? h("p", { class: "secondary" }, plural(p.vaultsCreated, t("1 coffre sera créé", "1 vault will be created"), t("%d coffres seront créés", "%d vaults will be created"))) : null,
         p.skipped ? h("p", { class: "secondary" }, plural(p.skipped, t("1 élément déjà présent, laissé tel quel", "1 item already here, left as it is"), t("%d éléments déjà présents, laissés tels quels", "%d items already here, left as they are"))) : null,
         h("p", { class: "footnote" }, t("Les éléments gardent leur identifiant, ceux de la corbeille et les archivés compris. Une restauration signée par ton compte est enregistrée pour tes autres appareils.",
@@ -2595,7 +2595,7 @@ function restoreSheet(preloaded?: ArchiveInfo): void {
     preview = null;
     passphrase = undefined;
     err.textContent = "";
-    if (i.newerVersion) err.textContent = t("Cette sauvegarde vient d'une version plus récente de OnePass. Mets l'app à jour, puis réessaie.", "This backup comes from a newer version of OnePass. Update the app, then try again.");
+    if (i.newerVersion) err.textContent = t("Cette sauvegarde vient d'une version plus récente de Cleon. Mets l'app à jour, puis réessaie.", "This backup comes from a newer version of Cleon. Update the app, then try again.");
     else if (!i.forThisAccount && !i.hasPassphrase) err.textContent = t("Cette sauvegarde appartient à un autre compte et n'a pas de phrase de passe : elle ne s'ouvre qu'avec ce compte.", "This backup belongs to another account and has no passphrase: it opens only with that account.");
     else if (i.forThisAccount) return load();
     draw();
@@ -2707,7 +2707,7 @@ const importSources = (): ImportSource[] => [
   { id: "cxf", name: t("Autre gestionnaire (Credential Exchange)", "Other Password Manager (Credential Exchange)"), formats: ["cxf"], group: 2, hint: t("Fichier .json au format d'échange d'identifiants (CXF).", "A .json file in Credential Exchange Format (CXF).") },
   { id: "otpauth", name: t("Codes à usage unique", "One-Time Codes"), formats: ["otpauth"], group: 2, hint: t("Liens otpauth:// (Google Authenticator et autres), un par ligne.", "otpauth:// links (Google Authenticator and others), one per line.") },
   { id: "wifi", name: t("Réseaux Wi-Fi (codes QR)", "Wi-Fi Networks (QR Codes)"), formats: ["wifi-qr"], group: 2, hint: t("Texte des codes QR Wi-Fi (WIFI:S:...), un par ligne.", "Wi-Fi QR code text (WIFI:S:...), one per line.") },
-  { id: "onepass-csv", name: t("OnePass (export CSV)", "OnePass (CSV Export)"), formats: ["onepass-csv"], group: 2, hint: t("Le fichier CSV en clair exporté par OnePass.", "The plain-text CSV file exported by OnePass.") },
+  { id: "onepass-csv", name: t("Cleon (export CSV)", "Cleon (CSV Export)"), formats: ["onepass-csv"], group: 2, hint: t("Le fichier CSV en clair exporté par Cleon.", "The plain-text CSV file exported by Cleon.") },
 ];
 
 function formatName(format: string): string {
@@ -2727,7 +2727,7 @@ function formatName(format: string): string {
     "cxf": "Credential Exchange",
     "otpauth": t("Codes à usage unique", "One-Time Codes"),
     "wifi-qr": t("Réseaux Wi-Fi (codes QR)", "Wi-Fi Networks (QR Codes)"),
-    "onepass-csv": t("OnePass (export CSV)", "OnePass (CSV Export)"),
+    "onepass-csv": t("Cleon (export CSV)", "Cleon (CSV Export)"),
     "nordpass-csv": "NordPass (CSV)",
     "keeper-csv": "Keeper (CSV)",
     "enpass-json": "Enpass (JSON)",
@@ -2745,7 +2745,7 @@ function importError(e: unknown): string {
   if (what.startsWith("encrypted bitwarden")) return t("Cet export Bitwarden est chiffré. Refais l'export en JSON non chiffré (ou en CSV), puis réessaie.", "This Bitwarden export is encrypted. Export again as unencrypted JSON (or CSV), then try again.");
   if (what.startsWith("encrypted dashlane")) return t("Cet export Dashlane est chiffré. Refais l'export en CSV, puis réessaie.", "This Dashlane export is encrypted. Export again as CSV, then try again.");
   if (what.startsWith("keepass kdbx")) return t("Les bases KeePass (.kdbx) ne se lisent pas directement. Exporte-la en XML KeePass 2, puis réessaie.", "KeePass databases (.kdbx) can't be read directly. Export it as KeePass 2 XML, then try again.");
-  if (what.startsWith("onepass archive")) return t("C'est une archive OnePass chiffrée : elle ne s'importe pas ici.", "This is an encrypted OnePass archive. It can't be imported here.");
+  if (what.startsWith("onepass archive")) return t("C'est une archive Cleon chiffrée : elle ne s'importe pas ici.", "This is an encrypted Cleon archive. It can't be imported here.");
   if (what === "import format") return t("Format d'import inconnu.", "Unknown import format.");
   if (what === "import file too large" || what.startsWith("too many") || what.endsWith("too large")) return t("Ce fichier est trop gros pour être importé.", "This file is too large to import.");
   return t("Ce fichier ne correspond pas au format choisi, ou il est abîmé.", "This file doesn't match the chosen format, or it's damaged.");
@@ -2885,7 +2885,7 @@ function importSheet(): void {
       : null;
     return keep(
       h("button", { class: "drop-zone", type: "button", id: "pick-import", onclick: () => void pick() }, icon("import", 34, "accent"),
-        h("span", { class: "bold" }, t("Choisis ton export", "Choose Your Export")), h("span", { class: "secondary" }, t("OnePass reconnaît le format d'après le contenu du fichier.", "OnePass recognizes the format from the file's contents."))),
+        h("span", { class: "bold" }, t("Choisis ton export", "Choose Your Export")), h("span", { class: "secondary" }, t("Cleon reconnaît le format d'après le contenu du fichier.", "Cleon recognizes the format from the file's contents."))),
       h("div", { class: "caps" }, t("Ou choisis la source", "Or Choose the Source")),
       h("label", { class: "search" }, icon("search", 18, "secondary"), search),
       steps,
@@ -2909,8 +2909,8 @@ function importSheet(): void {
     ];
     const notes = [...p.warnings.map((w) => warningLine(w.code, w.count)), ...(p.skipped ? [warningLine("skipped", p.skipped)] : [])];
     if (notes.length) nodes.push(h("div", { class: "card pad" }, ...notes.map((n) => h("div", { class: "warning-line" }, icon("info", 16, "secondary"), n))));
-    nodes.push(h("p", { class: "footnote" }, t("Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.",
-      "Each item is added with a new ID, so nothing already in OnePass is replaced. The original folder becomes a tag.")));
+    nodes.push(h("p", { class: "footnote" }, t("Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans Cleon n'est remplacé. Le dossier d'origine devient un tag.",
+      "Each item is added with a new ID, so nothing already in Cleon is replaced. The original folder becomes a tag.")));
     nodes.push(h("div", { class: "caps" }, t("Destination", "Destination")), h("div", { class: "card list-card" }, h("label", { class: "row static", for: "import-vault" }, h("span", { class: "row-text" }, h("span", { class: "row-title" }, t("Coffre", "Vault"))), vault)));
     nodes.push(h("p", { class: "footnote" }, t(`${p.updated} mis à jour, ${p.added} créés, ${p.converted} convertis depuis une note, ${p.archivedDuplicates} doublons exacts archivés, ${p.unchanged} inchangés`,
       `${p.updated} updated, ${p.added} created, ${p.converted} converted from a note, ${p.archivedDuplicates} exact duplicates archived, ${p.unchanged} unchanged`)));
@@ -3387,7 +3387,7 @@ function duplicatesPage(): HTMLElement {
       : []),
     ...(review.length
       ? [h("div", { class: "caps" }, t("À vérifier", "To Check")),
-         h("p", { class: "footnote" }, t("Les copies se contredisent. OnePass garde la copie la plus complète et met l'autre mot de passe dans l'historique.", "The copies disagree. OnePass keeps the most complete copy and puts the other password in the history.")),
+         h("p", { class: "footnote" }, t("Les copies se contredisent. Cleon garde la copie la plus complète et met l'autre mot de passe dans l'historique.", "The copies disagree. Cleon keeps the most complete copy and puts the other password in the history.")),
          ...reviewCards]
       : []),
   );
@@ -3470,8 +3470,8 @@ async function travelPage(head: HTMLElement, redraw: () => void): Promise<Node[]
   ];
   return [head,
     h("div", { class: "card list-card" }, status), h("div", { class: "buttons-row left" }, button), err,
-    h("p", { class: "footnote" }, t("Les coffres retirés restent sur le serveur et sont vérifiés au retour. OnePass refuse de retirer un coffre qui ne serait pas encore synchronisé.",
-      "Removed vaults stay on the server and are checked on return. OnePass refuses to remove a vault that isn't synced yet.")),
+    h("p", { class: "footnote" }, t("Les coffres retirés restent sur le serveur et sont vérifiés au retour. Cleon refuse de retirer un coffre qui ne serait pas encore synchronisé.",
+      "Removed vaults stay on the server and are checked on return. Cleon refuses to remove a vault that isn't synced yet.")),
     h("div", { class: "caps" }, t("Éléments", "Items")),
     itemRows.length ? h("div", { class: "card list-card" }, ...itemRows) : h("p", { class: "secondary" }, t("Aucun élément marqué.", "No marked items.")),
     h("p", { class: "footnote" }, t("Se règle dans chaque élément : Caché en voyage, ou Protection renforcée en voyage.", "Set in each item: Hidden in Travel Mode, or Extra Protection in Travel Mode.")),
@@ -3509,13 +3509,13 @@ interface SyncView {
 }
 type SyncChoice = { kind: "hosted" } | { kind: "selfHost"; url: string; caPem: string | null };
 
-/** "Où est rangé mon coffre ?" for the next account made here (D.2: the OnePass server by default). */
+/** "Où est rangé mon coffre ?" for the next account made here (D.2: the Cleon server by default). */
 let syncChoice: SyncChoice = { kind: "hosted" };
 let syncView: SyncView | null = null;
 /** Redraws the open Settings > Sync page when the status changes. */
 let syncRedraw: (() => void) | null = null;
 
-const hostedName = (): string => t("Serveur OnePass", "OnePass Server");
+const hostedName = (): string => t("Serveur Cleon", "Cleon Server");
 const hostOf = (url: string): string => {
   try {
     return new URL(url).host;
@@ -3592,7 +3592,7 @@ function statusRow(v: SyncView): HTMLElement {
   return el;
 }
 
-/** "Où est rangé mon coffre ?": the OnePass server (default) or the user's own, with "Tester". */
+/** "Où est rangé mon coffre ?": the Cleon server (default) or the user's own, with "Tester". */
 function syncChoiceSheet(current: SyncChoice, onDone: (c: SyncChoice) => void, title = t("Où est rangé mon coffre ?", "Where Is My Vault Kept?")): void {
   let option: "hosted" | "selfHost" = current.kind;
   const url = h("input", { id: "sync-url", placeholder: t("URL de base (https://...)", "Base URL (https://...)"), spellcheck: false, autocomplete: "off", value: current.kind === "selfHost" ? current.url : "" });
@@ -3680,7 +3680,7 @@ async function syncPage(head: HTMLElement, redraw: () => void): Promise<Node[]> 
     redraw();
   });
   const footer = v.state === "refused" ? t("Rien de ce que le serveur a envoyé n'a été utilisé.", "Nothing the server sent was used.")
-    : v.state === "waiting" ? t("Le serveur a une version plus ancienne. OnePass renvoie la sienne, rien à faire.", "The server has an older version. OnePass sends its own back, nothing to do.")
+    : v.state === "waiting" ? t("Le serveur a une version plus ancienne. Cleon renvoie la sienne, rien à faire.", "The server has an older version. Cleon sends its own back, nothing to do.")
     : t("Chiffré avant de quitter l'appareil.", "Encrypted before it leaves the device.");
   return [head, h("div", { class: "card list-card" }, row(t("Synchronisé avec", "Synced With"), serverLabel(v), "sync-backend"), statusRow(v), now), h("p", { class: "footnote" }, footer)];
 }
@@ -3803,7 +3803,7 @@ function revokeDevice(d: DeviceInfo, redraw: () => void): void {
     },
   });
   (s.dialog.querySelector(".bar-text.bold") as HTMLElement).classList.add("destructive");
-  s.body.append(h("p", { class: "secondary" }, t("Il efface ses données OnePass dès qu'il voit la liste des appareils. Tu pourras l'ajouter de nouveau plus tard.", "It erases its OnePass data as soon as it sees the device list. You can add it again later.")),
+  s.body.append(h("p", { class: "secondary" }, t("Il efface ses données Cleon dès qu'il voit la liste des appareils. Tu pourras l'ajouter de nouveau plus tard.", "It erases its Cleon data as soon as it sees the device list. You can add it again later.")),
     pw.box, h("p", { class: "footnote" }, t("Confirme avec ton mot de passe maître.", "Confirm with your master password.")), err);
   queueMicrotask(() => pw.input.focus());
 }
@@ -4261,7 +4261,7 @@ function sharingMessage(e: unknown): string {
     case "NoSync":
       return t("Le partage passe par la synchronisation : active-la dans Réglages > Sync.", "Sharing goes through sync: turn it on in Settings > Sync.");
     case "BadLink":
-      return t("Ce n'est pas un lien d'invitation OnePass.", "This isn't a OnePass invitation link.");
+      return t("Ce n'est pas un lien d'invitation Cleon.", "This isn't a Cleon invitation link.");
     case "BadCode":
       return t("Saisis les 6 chiffres.", "Type the 6 digits.");
     default:
@@ -4408,7 +4408,7 @@ function inviteSheet(after: () => void): void {
       case "failed": {
         const text = v.error === "expired" ? t("L'invitation a expiré. Envoie un nouveau lien.", "The invitation expired. Send a new link.")
           : v.error === "offline" ? t("Connecte-toi à Internet pour terminer l'ajout de ce contact.", "Connect to the internet to finish adding this contact.")
-          : v.error === "badLink" ? t("Ce n'est pas un lien d'invitation OnePass.", "This isn't a OnePass invitation link.")
+          : v.error === "badLink" ? t("Ce n'est pas un lien d'invitation Cleon.", "This isn't a Cleon invitation link.")
           : v.error === "own" ? t("Ce lien vient de ton propre compte.", "This link comes from your own account.")
           : v.error === "noSync" ? sharingMessage({ code: "NoSync" })
           : v.detail ?? t("L'ajout n'a pas abouti.", "Adding didn't go through.");

@@ -121,7 +121,7 @@ pub fn enable_sync(state: State<'_, AppState>, choice: ChoiceInput) -> UiResult<
 // ---- Emergency Kit restore (MailboxRestore.swift) ---------------------------------------
 
 /// "Restaurer avec mon Emergency Kit": the account of `secret_key` is
-/// looked up by its locator (the kit's server first, then the OnePass
+/// looked up by its locator (the kit's server first, then the Cleon
 /// server), fetched with the recovery credential, unlocked with
 /// `password`, then this PC gets its own credential. A wrong password
 /// leaves nothing granted and an empty store. Errors: `BadKey`,
@@ -281,7 +281,7 @@ pub fn rename_device(state: State<'_, AppState>, id: String, name: String) -> Ui
 }
 
 /// "Retirer l'appareil": fresh presence (the master password), then the
-/// device is marked revoked in the signed list; it erases its OnePass data
+/// device is marked revoked in the signed list; it erases its Cleon data
 /// when it sees the list.
 #[tauri::command]
 pub async fn revoke_device(

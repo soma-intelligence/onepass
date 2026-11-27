@@ -31,7 +31,7 @@ import me.somalabs.onepass.ui.Ios
 /**
  * Réglages > Général, "Importer…" and "Sauvegarde" as on iPhone
  * (GeneralSettings, ImportSheet, BackupSheets): an encrypted backup
- * (master password, then a passphrase), restoring one (nothing in OnePass is
+ * (master password, then a passphrase), restoring one (nothing in Cleon is
  * overwritten), the unencrypted CSV export for leaving, and importing the
  * export of another manager with its possible duplicates.
  *
@@ -134,27 +134,27 @@ class BackupScreens(private val a: MainActivity) {
                     d.dismiss()
                     a.confirm(a.t("Le fichier contient tout ton coffre, chiffré avec la phrase de passe que tu viens de choisir. Range-le hors ligne, par exemple sur une clé USB : les clouds et les messageries en gardent une copie ailleurs.",
                         "The file holds your whole vault, encrypted with the passphrase you just chose. Keep it offline, on a USB drive for example: clouds and messaging apps keep a copy elsewhere."), a.t("Continuer", "Continue"), destructive = false) {
-                        saveAs(a.t("OnePass sauvegarde ${day()}.onepass", "OnePass backup ${day()}.onepass"), "application/octet-stream", archive) {
+                        saveAs(a.t("Cleon sauvegarde ${day()}.onepass", "Cleon backup ${day()}.onepass"), "application/octet-stream", archive) {
                             a.toast(a.t("Sauvegarde enregistrée", "Backup saved"))
                         }
                     }
                 }.onFailure {
                     err.text = when (it) {
                         is OnePassException.WrongPassword -> a.t("Mot de passe incorrect.", "Incorrect password.")
-                        is OnePassException.Validation, is OnePassException.InvalidInput -> a.t("Choisis une phrase longue que tu n'utilises nulle part ailleurs, par exemple plusieurs mots. OnePass refuse une phrase trop facile à deviner.",
-                            "Choose a long passphrase you don't use anywhere else, several words for example. OnePass refuses one that is too easy to guess.")
+                        is OnePassException.Validation, is OnePassException.InvalidInput -> a.t("Choisis une phrase longue que tu n'utilises nulle part ailleurs, par exemple plusieurs mots. Cleon refuse une phrase trop facile à deviner.",
+                            "Choose a long passphrase you don't use anywhere else, several words for example. Cleon refuses one that is too easy to guess.")
                         else -> a.message(it)
                     }
                 }
             }
         }) { _ ->
             sheetBody {
-                addView(ui.footnote(a.t("Une archive OnePass chiffrée de tout ce que cet appareil contient, coffres et éléments à la corbeille compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte.",
-                    "An encrypted OnePass archive of everything on this device, vaults and deleted items included. It opens with the passphrase chosen here or with your account.")))
+                addView(ui.footnote(a.t("Une archive Cleon chiffrée de tout ce que cet appareil contient, coffres et éléments à la corbeille compris. Elle s'ouvre avec la phrase de passe choisie ici ou avec ton compte.",
+                    "An encrypted Cleon archive of everything on this device, vaults and deleted items included. It opens with the passphrase chosen here or with your account.")))
                 addView(ui.inset(ui.card(pw), top = Ios.Space.S))
                 addView(ui.inset(ui.card(p1, p2), top = Ios.Space.L))
-                addView(ui.footnote(a.t("Choisis une phrase longue que tu n'utilises nulle part ailleurs, par exemple plusieurs mots. OnePass refuse une phrase trop facile à deviner.",
-                    "Choose a long passphrase you don't use anywhere else, several words for example. OnePass refuses one that is too easy to guess.")))
+                addView(ui.footnote(a.t("Choisis une phrase longue que tu n'utilises nulle part ailleurs, par exemple plusieurs mots. Cleon refuse une phrase trop facile à deviner.",
+                    "Choose a long passphrase you don't use anywhere else, several words for example. Cleon refuses one that is too easy to guess.")))
                 addView(ui.footnote(a.t("Garde aussi ta phrase de passe : sans elle ni ton compte, la sauvegarde ne s'ouvre pas.", "Keep your passphrase too: without it or your account, the backup won't open.")))
                 addView(err)
             }
@@ -187,7 +187,7 @@ class BackupScreens(private val a: MainActivity) {
             body.removeAllViews()
             val df = DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.SHORT)
             body.addView(ui.inset(ui.card(
-                ui.row(title = if (info.kind == FfiArchiveKind.BACKUP) a.t("Sauvegarde du compte", "Account backup") else a.t("Export OnePass", "OnePass export"),
+                ui.row(title = if (info.kind == FfiArchiveKind.BACKUP) a.t("Sauvegarde du compte", "Account backup") else a.t("Export Cleon", "Cleon export"),
                     subtitle = df.format(Date(info.createdAt * 1000)), chevron = false),
                 ui.row(title = when {
                     info.forThisAccount -> a.t("Signée par ton compte : la signature est vérifiée à l'ouverture", "Signed by your account: the signature is checked when it opens")
@@ -203,7 +203,7 @@ class BackupScreens(private val a: MainActivity) {
                 }
             } else {
                 val rows = mutableListOf<View>()
-                if (p.items == 0u) rows += ui.row(title = a.t("Tout ce que contient cette sauvegarde est déjà dans OnePass.", "Everything in this backup is already in OnePass."), chevron = false)
+                if (p.items == 0u) rows += ui.row(title = a.t("Tout ce que contient cette sauvegarde est déjà dans Cleon.", "Everything in this backup is already in Cleon."), chevron = false)
                 if (p.vaultsCreated > 0u) rows += ui.row(title = if (p.vaultsCreated == 1u) a.t("1 coffre sera créé", "1 vault will be created") else a.t("${p.vaultsCreated} coffres seront créés", "${p.vaultsCreated} vaults will be created"), chevron = false)
                 if (p.skipped > 0u) rows += ui.row(title = if (p.skipped == 1u) a.t("1 élément déjà présent, laissé tel quel", "1 item already here, left as it is") else a.t("${p.skipped} éléments déjà présents, laissés tels quels", "${p.skipped} items already here, left as they are"), chevron = false)
                 if (p.items > 0u) rows += ui.row(title = a.t("Contenu", "Contents"), subtitle = null, chevron = false).apply {
@@ -259,7 +259,7 @@ class BackupScreens(private val a: MainActivity) {
                     d.dismiss()
                     a.confirm(a.t("Ce fichier n'est pas chiffré. Choisis un emplacement hors ligne et supprime-le après usage.", "This file is not encrypted. Choose an offline location and delete it after use."),
                         a.t("Enregistrer le fichier…", "Save File…")) {
-                        saveAs("OnePass export ${day()}.csv", "text/csv", csv) { a.toast(a.t("Export enregistré", "Export saved")) }
+                        saveAs("Cleon export ${day()}.csv", "text/csv", csv) { a.toast(a.t("Export enregistré", "Export saved")) }
                     }
                 }.onFailure { err.text = if (it is OnePassException.WrongPassword) a.t("Mot de passe incorrect.", "Incorrect password.") else a.message(it) }
             }
@@ -309,15 +309,15 @@ class BackupScreens(private val a: MainActivity) {
         "keepass-xml" -> "KeePass (XML)"
         "otpauth" -> a.t("Codes à usage unique", "One-Time Codes")
         "wifi-qr" -> a.t("Réseaux Wi-Fi (QR)", "Wi-Fi Networks (QR)")
-        "onepass-csv" -> a.t("Export CSV OnePass", "OnePass CSV export")
+        "onepass-csv" -> a.t("Export CSV Cleon", "Cleon CSV export")
         else -> f
     }
 
     private fun importer() {
         a.sheet(a.t("Importer", "Import"), a.t("Annuler", "Cancel"), null) { d ->
             sheetBody {
-                addView(ui.footnote(a.t("Choisis l'export de ton ancien gestionnaire (CSV, JSON, 1PUX, XML…). OnePass reconnaît le format au contenu.",
-                    "Choose your old manager's export (CSV, JSON, 1PUX, XML…). OnePass recognizes the format from its content.")))
+                addView(ui.footnote(a.t("Choisis l'export de ton ancien gestionnaire (CSV, JSON, 1PUX, XML…). Cleon reconnaît le format au contenu.",
+                    "Choose your old manager's export (CSV, JSON, 1PUX, XML…). Cleon recognizes the format from its content.")))
                 addView(ui.inset(ui.card(ui.row(icon = ui.glyph(R.drawable.ic_import, ui.accent, 24), title = a.t("Choisir le fichier", "Choose File"), titleColor = ui.readableAccent, chevron = false) {
                     open { name, bytes ->
                         val f = runCatching { detectImportFormat(name, bytes) }.getOrNull()
