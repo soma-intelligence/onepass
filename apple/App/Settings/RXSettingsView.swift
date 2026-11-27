@@ -17,6 +17,7 @@ struct RXSettingsHome: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @State private var showsFeatureRequest = false
 
     private typealias RX = Theme.RX
 
@@ -63,6 +64,13 @@ struct RXSettingsHome: View {
             }
             RXFrostedCard {
                 menu(.about)
+                Button {
+                    showsFeatureRequest = true
+                } label: {
+                    RXFrostedRow(Text("featureRequest.title", tableName: FeatureRequestSheet.table),
+                                 systemImage: "lightbulb")
+                }
+                .accessibilityIdentifier("settings.featureRequest")
                 #if DEBUG
                 menu(.iconCheck)
                 #endif
@@ -80,7 +88,7 @@ struct RXSettingsHome: View {
             }
             RXFrostedFooter([
                 // swiftlint:disable:next db_unlocalized_string - product name and version number
-                Text(verbatim: "OnePass \(Self.version)"),
+                Text(verbatim: "Cleon \(Self.version)"),
                 Text("settings.onepassOpenSourceAgpl"),
             ])
         }
@@ -94,6 +102,7 @@ struct RXSettingsHome: View {
             }
         }
         .accessibilityIdentifier("rx.settings")
+        .sheet(isPresented: $showsFeatureRequest) { FeatureRequestSheet() }
     }
 
     static let planZoomID = "rx.plan"
@@ -313,7 +322,7 @@ struct RXPerkCarousel: View {
             tile(perk)
         }
         .zoomSource("perk.\(perk.id)")
-        #else
+        #elseif os(macOS)
         if let select {
             // In the Réglages page of the main window: the page opens in place.
             Button { select(.page(perk.page)) } label: { tile(perk) }
@@ -321,6 +330,10 @@ struct RXPerkCarousel: View {
             NavigationLink(value: SettingsRoute.page(perk.page)) {
                 tile(perk)
             }
+        }
+        #else
+        NavigationLink(value: SettingsRoute.page(perk.page)) {
+            tile(perk)
         }
         #endif
     }
@@ -359,7 +372,7 @@ struct RXAvatar: View {
 }
 /// The Plus card's page (Penpot "Plan benefits", laid out as a plan page: the name big over the
 /// photo, the perk carousel, then grouped lists). Each line opens the page of Réglages that
-/// already holds it. OnePass has no plan or subscription data: every benefit listed is a feature
+/// already holds it. Cleon has no plan or subscription data: every benefit listed is a feature
 /// of this build, so nothing here is invented. The system back button stays (long press menu,
 /// swipe back) on a clear bar over the photo.
 struct RXPlanPage: View {

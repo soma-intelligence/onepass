@@ -863,14 +863,22 @@ describe("re-rendered forms (B2)", () => {
 });
 
 describe("overlay offer", () => {
-  it("on a sign-in page of a site with logins, once per document", async () => {
+  it("on a sign-in page of a site with logins, once per site and tab", async () => {
     const t = await setup();
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
     expect(toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay")).toHaveLength(1);
+    // A new document of the same site in the tab (a reload, the next page): not again
+    // (the auto card's gate, real-site bench 2026-11-21).
     t.ext.navigate(7, 0, `${SITE}/login`, "doc-2");
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]), "doc-2");
-    expect(toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay")).toHaveLength(2);
+    expect(toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay")).toHaveLength(1);
+  });
+
+  it("no offer on a signed-in page", async () => {
+    const t = await setup();
+    await analyze(t, `${SITE}/login`, { ...page(`${SITE}/login`, [loginForm]), signedIn: true });
+    expect(toTab(t, "show_frame").filter((m) => (m as { kind: string }).kind === "overlay")).toHaveLength(0);
   });
 
   describe("a sign-in page reached with the vault locked: a generic card", () => {
@@ -974,10 +982,10 @@ describe("overlay offer", () => {
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [{ ...userForm, ref: "f7", fields: [{ ref: "u7", role: "email" }] }]));
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]));
     expect(overlays(t)).toHaveLength(1);
-    // A new document offers again.
+    // A new document of the same site (a reload): x keeps it closed (real-site bench 2026-11-21).
     t.ext.navigate(7, 0, `${SITE}/login`, "doc-2");
     await analyze(t, `${SITE}/login`, page(`${SITE}/login`, [loginForm]), "doc-2");
-    expect(overlays(t)).toHaveLength(2);
+    expect(overlays(t)).toHaveLength(1);
   });
 
   it("an offer the content script could not show is retried by the next analysis of that form", async () => {

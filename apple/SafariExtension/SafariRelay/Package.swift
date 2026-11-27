@@ -2,7 +2,7 @@
 import PackageDescription
 
 // SafariRelay: the transport between the Safari Web Extension handler and the
-// OnePass bridge host. Pure Swift (Foundation only), so `swift test` runs it
+// Cleon bridge host. Pure Swift (Foundation only), so `swift test` runs it
 // without the Rust core or a signed app. macOS: a host process or the app's
 // socket; iOS: a bridge served in the extension's own process.
 let package = Package(

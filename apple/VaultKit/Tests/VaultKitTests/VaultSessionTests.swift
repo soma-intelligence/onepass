@@ -355,6 +355,27 @@ struct VaultSessionTests {
         #expect(session.state == .locked)
     }
 
+    @Test func removeTagsTakesThemOffEveryItem() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = h.makeSession()
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        let vault = session.allVaults[0].id
+        let both = try await addItem(session, title: "Atelier", tags: ["travail", "maison", "garder"])
+        let archived = try await addItem(session, title: "Ancien badge", tags: ["travail"])
+        let untouched = try await addItem(session, title: "Banque", tags: ["garder"])
+        try await session.archive(itemID: archived.id, vaultID: vault)
+
+        let result = try await session.removeTags(["travail", "maison"])
+
+        #expect(result == .init(updated: 2, failed: 0))
+        #expect(session.counts().byTag == ["garder": 2])
+        #expect(try await session.loadItem(vaultID: vault, itemID: both.id).tags == ["garder"])
+        #expect(try await session.loadItem(vaultID: vault, itemID: archived.id).tags.isEmpty)
+        #expect(try await session.loadItem(vaultID: vault, itemID: untouched.id).title == "Banque")
+        #expect(try await session.removeTags(["absent"]) == .init(updated: 0, failed: 0))
+    }
+
     @Test func filtersExcludeArchiveAndTrash() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }

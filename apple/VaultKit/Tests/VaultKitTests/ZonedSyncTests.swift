@@ -27,7 +27,7 @@ import Testing
         let zones = FakeZoneSync(onRound: { seen.withLock { $0.append(mailbox.rounds) } })
         let sleeper = ManualSleeper()
         let c = MailboxSyncCoordinator(
-            sync: mailbox, serverName: "Serveur OnePass", sleep: { try await sleeper.sleep($0) }, zones: zones)
+            sync: mailbox, serverName: "Serveur Cleon", sleep: { try await sleeper.sleep($0) }, zones: zones)
         await c.syncNow()
         #expect(mailbox.rounds == 1)
         #expect(zones.rounds == 1)
@@ -43,7 +43,7 @@ import Testing
         let zones = FakeZoneSync()
         let vault = FakeZoneSync.zone(.vault)
         zones.script([FakeZoneSync.report(zones: [(vault, .idle)])])
-        let c = MailboxSyncCoordinator(sync: FakeMailboxSync(), serverName: "Serveur OnePass", zones: zones)
+        let c = MailboxSyncCoordinator(sync: FakeMailboxSync(), serverName: "Serveur Cleon", zones: zones)
         await c.syncNow()
         let scheduler = try #require(c.zoneRounds)
         #expect(await scheduler.refusals.isEmpty)
@@ -74,7 +74,7 @@ import Testing
         ])
         let sleeper = ManualSleeper()
         let c = MailboxSyncCoordinator(
-            sync: FakeMailboxSync(), serverName: "Serveur OnePass", sleep: { try await sleeper.sleep($0) }, zones: zones)
+            sync: FakeMailboxSync(), serverName: "Serveur Cleon", sleep: { try await sleeper.sleep($0) }, zones: zones)
         await c.syncNow()
         let scheduler = try #require(c.zoneRounds)
         #expect(await scheduler.quotaFull == [vault])
@@ -88,7 +88,7 @@ import Testing
         let zones = FakeZoneSync()
         let (a, b) = (FakeZoneSync.zone(.vault, 1), FakeZoneSync.zone(.contact, 2))
         zones.script([FakeZoneSync.report(zones: [(a, .offline), (b, .idle)], changed: true)])
-        let c = MailboxSyncCoordinator(sync: FakeMailboxSync(), serverName: "Serveur OnePass", zones: zones)
+        let c = MailboxSyncCoordinator(sync: FakeMailboxSync(), serverName: "Serveur Cleon", zones: zones)
         let scheduler = try #require(c.zoneRounds)
         let changes = await scheduler.remoteChanges()
         await c.syncNow()
@@ -104,7 +104,7 @@ import Testing
         let zones = FakeZoneSync()
         let vault = FakeZoneSync.zone(.vault)
         zones.script([FakeZoneSync.report(refusals: [FfiZoneRefusal(zone: vault, removed: false)])])
-        let c = MailboxSyncCoordinator(sync: FakeMailboxSync(), serverName: "Serveur OnePass", zones: zones)
+        let c = MailboxSyncCoordinator(sync: FakeMailboxSync(), serverName: "Serveur Cleon", zones: zones)
         await c.syncNow()
         let scheduler = try #require(c.zoneRounds)
         #expect(await scheduler.refusals == [ZoneRefusal(zone: vault, removed: false)])
@@ -116,7 +116,7 @@ import Testing
         zones.setTopics([wake])
         let sleeper = ManualSleeper()
         let c = MailboxSyncCoordinator(
-            sync: FakeMailboxSync(), serverName: "Serveur OnePass", sleep: { try await sleeper.sleep($0) }, zones: zones)
+            sync: FakeMailboxSync(), serverName: "Serveur Cleon", sleep: { try await sleeper.sleep($0) }, zones: zones)
         await c.enterForeground()
         try await waitUntil { zones.wakeListeners == 1 }
         let before = zones.rounds

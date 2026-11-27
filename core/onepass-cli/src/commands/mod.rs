@@ -4,6 +4,7 @@ pub mod display;
 pub mod exec;
 pub mod export;
 pub mod generate;
+pub mod guard;
 pub mod import;
 pub mod item;
 pub mod mcp;

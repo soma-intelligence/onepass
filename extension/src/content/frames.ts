@@ -21,7 +21,7 @@ export const FRAME_WIDTH = 360;
  * room their shadows need. The ghost takes its field's box, at most this wide
  * (ruling R3: a very wide field gets a narrower ghost, from its left edge).
  */
-export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 430, save: 340, ghost: 600, setup: 340 };
+export const FRAME_WIDTHS: Readonly<Record<FrameKind, number>> = { menu: 380, overlay: 420, save: 340, ghost: 600, setup: 340 };
 /**
  * Largest frame heights: each page asks for its content height (a resize
  * message vouched by the worker) and scrolls inside past these. The ghost
@@ -965,7 +965,7 @@ export function createFrames(opts: FramesOptions): Frames {
       iframe.setAttribute("referrerpolicy", "no-referrer");
       iframe.setAttribute("scrolling", "no");
       // Named for assistive technologies only: a `title` shows as a tooltip over the frame.
-      iframe.setAttribute("aria-label", "OnePass");
+      iframe.setAttribute("aria-label", "Cleon");
       iframe.setAttribute("src", url);
       const height = maxHeight(kind);
       place(kind, iframe, anchor, height);

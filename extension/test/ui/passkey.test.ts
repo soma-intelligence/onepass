@@ -108,7 +108,7 @@ describe("passkey choice window", () => {
     clock.advance(300);
     button(r, "alex@atlas.dev").click();
     await flush();
-    expect(text(r)).toContain("Confirme dans l'app OnePass");
+    expect(text(r)).toContain("Confirme dans l'app Cleon");
     expect(button(r, "alex@atlas.dev").disabled).toBe(false);
   });
 

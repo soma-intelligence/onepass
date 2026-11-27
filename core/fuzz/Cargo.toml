@@ -356,3 +356,10 @@ path = "fuzz_targets/site_pack.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "guard_realm"
+path = "fuzz_targets/guard_realm.rs"
+test = false
+doc = false
+bench = false

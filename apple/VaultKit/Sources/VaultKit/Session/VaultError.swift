@@ -13,6 +13,12 @@ public enum VaultError: Error, Equatable, Sendable {
     case passwordRequired
     /// The signed device list marks this device revoked: everything was erased from it.
     case deviceRevoked
+    /// Guarded Kit (spec 2026-11-20, section 9): wrong password at the realms, `remaining` attempts
+    /// left at the realm with the fewest.
+    case guardWrongPassword(remaining: Int)
+    /// Guarded Kit: too few realms answered (offline, or realms down). Nothing was spent at the
+    /// realms that did not answer: retry later.
+    case guardUnavailable
     case other(String)
 
     /// Maps a core, biometric or keychain error. Anything else becomes `.other` with a generic message.
@@ -69,6 +75,15 @@ public enum VaultError: Error, Equatable, Sendable {
             case .OrgPinMismatch:
                 // Same value the generic integrity arm gave before the variant existed.
                 self = .integrity(kind: "org_pin_mismatch")
+            // Guarded Kit (spec 2026-11-20, sections 7.2 and 9). `GuardRequired` reaches the screens
+            // from a password check without a current kept `G` (renewed on another device): a
+            // password unlock brings it, the check never asks the realms.
+            case .GuardWrongPassword(let remaining): self = .guardWrongPassword(remaining: Int(remaining))
+            case .GuardUnavailable: self = .guardUnavailable
+            case .GuardRequired:
+                self = .other(String(localized: "guard.error.required", bundle: VaultKitStrings.bundle))
+            case .GuardRealm:
+                self = .other(String(localized: "guard.error.realm", bundle: VaultKitStrings.bundle))
             }
         case let error as BiometricError:
             switch error {
@@ -120,8 +135,21 @@ public enum VaultError: Error, Equatable, Sendable {
             String(localized: "vaultKit.enterMasterPassword", bundle: VaultKitStrings.bundle)
         case .deviceRevoked:
             String(localized: "session.deviceWasRemovedFrom", bundle: VaultKitStrings.bundle)
+        case .guardWrongPassword(let remaining):
+            String(localized: "guard.error.wrongPassword \(remaining)", bundle: VaultKitStrings.bundle)
+        case .guardUnavailable:
+            String(localized: "guard.error.unavailable", bundle: VaultKitStrings.bundle)
         case .other(let message):
             message
+        }
+    }
+
+    /// A wrong master password, locally or at the Guarded Kit realms: counts toward the failure
+    /// throttle.
+    public var isWrongPassword: Bool {
+        switch self {
+        case .wrongPassword, .guardWrongPassword: true
+        default: false
         }
     }
 

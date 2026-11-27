@@ -36,7 +36,7 @@ struct SplitBrowseView: View {
                         // iPad: the list column fades under its bar like every iPhone screen.
                         .headerFade(color: Color(uiColor: .systemBackground))
                         #endif
-                        .navigationSplitViewColumnWidth(min: 280, ideal: 330, max: 440)
+                        .navigationSplitViewColumnWidth(min: 320, ideal: 340, max: 440)
                 } detail: {
                     DetailColumn()
                 }
@@ -66,7 +66,7 @@ struct SplitBrowseView: View {
             #if os(macOS)
             .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 320)
             #else
-            .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
+            .navigationSplitViewColumnWidth(min: 290, ideal: 300, max: 360)
             #endif
     }
 }

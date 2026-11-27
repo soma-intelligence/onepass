@@ -204,7 +204,7 @@ public actor SyncCoordinator: SyncTrigger {
     }
 
     /// What the zone of the signed-in iCloud account holds, for `.accountChanged`: nothing, the account
-    /// of this store (same account id), or another OnePass account. Reads the zone without touching the
+    /// of this store (same account id), or another Cleon account. Reads the zone without touching the
     /// store. No remote: `.emptyZone`.
     public func checkAccountChange() async throws -> AccountChangeCheck {
         guard let remote else { return .emptyZone }
@@ -215,7 +215,7 @@ public actor SyncCoordinator: SyncTrigger {
 
     /// The user chose "Utiliser ce compte iCloud" (after `.accountChanged`), having seen `expected`
     /// (`checkAccountChange`, and for an empty zone the upload confirmation). The zone is inspected
-    /// again: another OnePass account is refused (`.refusedOtherVault`); a zone that no longer holds
+    /// again: another Cleon account is refused (`.refusedOtherVault`); a zone that no longer holds
     /// what the user confirmed, or an identity that changed during the inspection (other identity, or
     /// a `CKAccountChanged` signal meanwhile), is refused as `.changedDuringCheck`, so an empty zone is
     /// never filled without its confirmation. Otherwise the new identity is stored, the old change token

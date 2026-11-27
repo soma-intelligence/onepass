@@ -243,7 +243,7 @@ func verifiedPair() async throws -> (SharingAccount, SharingAccount) {
 
         session.sharing.sharedVaults = [vault("v1", .read), vault("v2", .write)]
         #expect(session.identityChangeOffer(for: change) == .inPerson(message:
-            "Les clés de Bob ont changé le \(date). Pour lui rendre l'accès, vérifiez-vous en personne avec le QR."))
+            "Les clés de Bob ont changé le \(date). Pour lui rendre l'accès, scanne son QR code en personne et laisse-le scanner le tien."))
 
         session.sharing.sharedVaults = [vault("v1", .manage)]
         if case .inPerson = session.identityChangeOffer(for: change) {} else { Issue.record("a manager is checked in person") }

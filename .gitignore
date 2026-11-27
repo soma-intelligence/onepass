@@ -51,3 +51,9 @@ docs/superpowers/plans/
 docs/superpowers/reviews/
 docs/superpowers/research/
 .mcp.json
+
+# Store visuals: generated backgrounds' call log, the AI background script (names a private
+# Azure resource) and local simulator ids stay out of the public repository
+store/visuals/sources/ai/calls.log
+store/visuals/sources/tools/ai_bg.py
+store/visuals/sources/simulators.txt*

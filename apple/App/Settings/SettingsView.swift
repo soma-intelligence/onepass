@@ -175,6 +175,7 @@ struct SettingsView: View {
     /// RX (iPhone): the zoom from a row or tile of Réglages into its page.
     @Namespace private var settingsZoom
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    @State private var showsFeatureRequest = false
 
     /// Screenshots (Debug): `-OnePassDemoSettingsPage <page>` opens that page; in the RX look,
     /// `-OnePassDemoRXSettings plan|profileQR` opens the plan page or the profile QR code.
@@ -265,6 +266,7 @@ struct SettingsView: View {
             }
             Section {
                 row(.about)
+                featureRequestRow
                 #if DEBUG
                 row(.iconCheck)
                 #endif
@@ -276,6 +278,19 @@ struct SettingsView: View {
         }
         .settingsPage("Réglages")
         .toolbar { doneItem }
+        .sheet(isPresented: $showsFeatureRequest) { FeatureRequestSheet() }
+    }
+
+    /// "Suggérer une fonctionnalité": a sheet over Réglages, the row drawn like the others.
+    private var featureRequestRow: some View {
+        Button {
+            showsFeatureRequest = true
+        } label: {
+            SettingsRowLabel(title: Text("featureRequest.title", tableName: FeatureRequestSheet.table),
+                             symbol: "lightbulb.fill", color: SettingsTint.featureRequest)
+                .foregroundStyle(.primary)
+        }
+        .accessibilityIdentifier("settings.featureRequest")
     }
 
     /// The root: the RX Réglages while the look is on (iPhone), else the classic list.
@@ -400,15 +415,26 @@ private struct SettingsAccountHeader: View {
 
 /// A settings row: the colored tile of the Mac sidebar and the page's name.
 struct SettingsRowLabel: View {
-    let title: LocalizedStringKey
+    let title: Text
     let symbol: String
     let color: Color
     /// A drawn tile from Assets, in place of the symbol on its tint.
     var artwork: String? = nil
 
+    init(title: LocalizedStringKey, symbol: String, color: Color, artwork: String? = nil) {
+        self.init(title: Text(title), symbol: symbol, color: color, artwork: artwork)
+    }
+
+    init(title: Text, symbol: String, color: Color, artwork: String? = nil) {
+        self.title = title
+        self.symbol = symbol
+        self.color = color
+        self.artwork = artwork
+    }
+
     var body: some View {
         Label {
-            Text(title)
+            title
         } icon: {
             if let artwork {
                 Image(artwork)
@@ -427,6 +453,7 @@ struct SettingsRowLabel: View {
 enum SettingsTint {
     static let watch = Color(red: 0.20, green: 0.52, blue: 0.80)
     static let agents = Color(red: 0.55, green: 0.30, blue: 0.85)
+    static let featureRequest = Color(red: 0.96, green: 0.65, blue: 0.0)
 }
 #endif
 
@@ -512,6 +539,7 @@ struct MacSettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var page: SettingsPage? = .general
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    @State private var showsFeatureRequest = false
 
     var body: some View {
         Group {
@@ -540,6 +568,7 @@ struct MacSettingsView: View {
                             #if DEBUG
                             row(.iconCheck)
                             #endif
+                            featureRequestRow
                         }
                     }
                     .listStyle(.sidebar)
@@ -565,6 +594,30 @@ struct MacSettingsView: View {
         .onAppear(perform: takeRequest)
         .onChange(of: model.settingsPageRequest) { takeRequest() }
         .simultaneousGesture(TapGesture().onEnded { model.session.noteActivity() })
+        .sheet(isPresented: $showsFeatureRequest) { FeatureRequestSheet() }
+    }
+
+    /// "Suggérer une fonctionnalité": opens its sheet, nothing selected (the sidebar rows' look).
+    private var featureRequestRow: some View {
+        Button {
+            showsFeatureRequest = true
+        } label: {
+            Label {
+                Text("featureRequest.title", tableName: FeatureRequestSheet.table)
+            } icon: {
+                Image(systemName: "lightbulb.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(Color(red: 0.96, green: 0.65, blue: 0.0),
+                                in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("settings.featureRequest")
     }
 
     /// A page asked by another screen (Développeur page cards).

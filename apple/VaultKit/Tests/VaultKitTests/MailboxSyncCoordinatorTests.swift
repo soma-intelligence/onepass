@@ -11,7 +11,7 @@ import Testing
     init() { VaultKitStrings.pinSourceLanguage() }
 
     private func coordinator(_ fake: FakeMailboxSync, sleeper: ManualSleeper = ManualSleeper()) -> MailboxSyncCoordinator {
-        MailboxSyncCoordinator(sync: fake, serverName: "Serveur OnePass", sleep: { try await sleeper.sleep($0) })
+        MailboxSyncCoordinator(sync: fake, serverName: "Serveur Cleon", sleep: { try await sleeper.sleep($0) })
     }
 
     @Test func roundStatusMapping() async {

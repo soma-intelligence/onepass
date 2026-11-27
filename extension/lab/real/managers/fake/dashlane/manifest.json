@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Lab fake Dashlane",
+  "short_name": "fake-dashlane",
+  "version": "0.1.0",
+  "description": "OnePass lab only. Imitates the in-page DOM of Dashlane on login fields; fills fictional values on a click of its own row, sends nothing.",
+  "permissions": [],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["fake.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

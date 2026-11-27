@@ -4,6 +4,14 @@
     "Copier le code de ${item} avec ${applicationName}" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "Code für ${item} mit ${applicationName} kopieren"
+            ]
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29,12 +37,36 @@
             "state" : "translated",
             "value" : "Copia il codice di ${item} con ${applicationName}"
           }
+        },
+        "ko" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "${applicationName}으로 ${item}의 코드 복사"
+            ]
+          }
+        },
+        "zh-Hans" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "使用 ${applicationName} 拷贝 ${item} 的验证码"
+            ]
+          }
         }
       }
     },
     "Générer un mot de passe avec ${applicationName}" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "Passwort mit ${applicationName} generieren"
+            ]
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -60,12 +92,36 @@
             "state" : "translated",
             "value" : "Genera una password con ${applicationName}"
           }
+        },
+        "ko" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "${applicationName}으로 암호 생성"
+            ]
+          }
+        },
+        "zh-Hans" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "使用 ${applicationName} 生成密码"
+            ]
+          }
         }
       }
     },
     "Ouvrir ${item} dans ${applicationName}" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "${item} in ${applicationName} öffnen"
+            ]
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -91,12 +147,36 @@
             "state" : "translated",
             "value" : "Apri ${item} in ${applicationName}"
           }
+        },
+        "ko" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "${applicationName}에서 ${item} 열기"
+            ]
+          }
+        },
+        "zh-Hans" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "在 ${applicationName} 中打开 ${item}"
+            ]
+          }
         }
       }
     },
     "Verrouiller ${applicationName}" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "${applicationName} sperren"
+            ]
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -121,6 +201,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blocca ${applicationName}"
+          }
+        },
+        "ko" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "${applicationName} 잠금"
+            ]
+          }
+        },
+        "zh-Hans" : {
+          "stringSet" : {
+            "state" : "needs_review",
+            "values" : [
+              "锁定 ${applicationName}"
+            ]
           }
         }
       }

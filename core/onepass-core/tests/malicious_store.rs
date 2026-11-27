@@ -409,6 +409,7 @@ fn downgrade_kdf() {
         kem_pub: p.kem_pub.clone(),
         identity_sig: identity.sign(b"account-params/v2", &msg).unwrap(),
         epoch: p.epoch,
+        guard: None,
     };
     let params = forged.encode().unwrap();
     assert_eq!(

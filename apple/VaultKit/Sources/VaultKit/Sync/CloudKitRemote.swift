@@ -7,7 +7,7 @@ import Foundation
 import os
 
 /// CloudKit private database as a `RemoteRecordStore` (spec 4 point 7, rulings R7 and R8): zone
-/// `OnePass`, record type `OPRecord`, atomic conditional batches, zone change tokens owned by the caller.
+/// `Cleon`, record type `OPRecord`, atomic conditional batches, zone change tokens owned by the caller.
 public actor CloudKitRemote: RemoteRecordStore {
     public nonisolated let maxBatchRecords = 400
     public nonisolated let maxBatchBytes = 1_572_864
@@ -27,7 +27,7 @@ public actor CloudKitRemote: RemoteRecordStore {
         zoneID = CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName)
     }
 
-    /// The account ids of the added accounts' zones in this iCloud database (`OnePass.<id>`): how another
+    /// The account ids of the added accounts' zones in this iCloud database (`Cleon.<id>`): how another
     /// device finds the zone of an account it signs in to.
     public static func accountZones(containerIdentifier: String = "iCloud.me.somalabs.onepass") async throws -> [String] {
         let zones: [CKRecordZone]

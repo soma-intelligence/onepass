@@ -12,6 +12,8 @@ final class AccountModelLink {
     var syncs: [String: AccountSync] = [:]
     /// The sync of each managed account (its mailbox on the org server), by slot.
     var managedSyncs: [String: ManagedAccountSync] = [:]
+    /// The zone transport of each added personal account, by slot, once its sync is made.
+    var zones: [String: AccountZones] = [:]
 }
 
 /// An account being added: its slot, the account shown before, and whether the user signs in to an
@@ -57,15 +59,20 @@ extension AppModel {
             #if ONEPASS_CLOUDKIT
             if remote != nil {
                 let path = url.path
+                let keychain = primary.keychain
                 let sync = AccountSync(
                     syncsWithServer: true,
                     make: { accountID in
                         guard let store = try? openSyncStore(dbPath: path) else { return nil }
+                        // Its contacts and shared vaults through the hosted mailbox (decision 15).
+                        let zones = AccountZones.make(store: store, keychain: keychain)
+                        Task { @MainActor in link.zones[slot] = zones }
                         return SyncCoordinator(
                             store: store,
                             remote: CloudKitRemote(
                                 containerIdentifier: containerIdentifier,
-                                zoneName: CloudKitMapping.zoneName(forAccount: accountID)))
+                                zoneName: CloudKitMapping.zoneName(forAccount: accountID)),
+                            zones: zones?.sync)
                     },
                     made: { coordinator in
                         Task { @MainActor in link.model?.listen(to: coordinator, slot: slot) }
@@ -237,6 +244,7 @@ extension AppModel {
     func forgetAccountLinks(_ slot: String) {
         accountLink.syncs[slot] = nil
         accountLink.managedSyncs[slot] = nil
+        accountLink.zones[slot] = nil
         orgSessions[slot] = nil
         orgBackends[slot] = nil
         if managedOnboarding?.slot == slot { managedOnboarding = nil }

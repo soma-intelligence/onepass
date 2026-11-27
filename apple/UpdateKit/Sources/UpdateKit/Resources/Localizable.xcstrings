@@ -4,28 +4,46 @@
     "updates.refused.notNewer" : {
       "comment" : "Error shown when an update offered by the feed is not newer than the installed app (downgrade refused)",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dieses Update ist nicht neuer als die installierte Version: Cleon hat es abgelehnt."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This update is not newer than the installed version: OnePass refused it."
+            "value" : "This update is not newer than the installed version: Cleon refused it."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta actualización no es más reciente que la versión instalada: OnePass la ha rechazado."
+            "value" : "Esta actualización no es más reciente que la versión instalada: Cleon la ha rechazado."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette mise à jour n'est pas plus récente que la version installée : OnePass l'a refusée."
+            "value" : "Cette mise à jour n'est pas plus récente que la version installée : Cleon l'a refusée."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questo aggiornamento non è più recente della versione installata: OnePass l'ha rifiutato."
+            "value" : "Questo aggiornamento non è più recente della versione installata: Cleon l'ha rifiutato."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 업데이트는 설치된 버전보다 최신이 아니어서 Cleon가 거부했어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此更新不比已安装的版本新，Cleon 已拒绝安装。"
           }
         }
       }

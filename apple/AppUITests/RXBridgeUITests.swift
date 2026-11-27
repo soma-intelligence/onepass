@@ -113,7 +113,7 @@ final class RXBridgeUITests: DBUITestCase {
 
     // MARK: Private
 
-    /// Opens `url` in the app, accepting the system's "Open in OnePass?" prompt when it shows.
+    /// Opens `url` in the app, accepting the system's "Open in Cleon?" prompt when it shows.
     private func openLink(_ url: URL) {
         app.open(url)
         let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]

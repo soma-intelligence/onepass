@@ -271,12 +271,11 @@ struct ItemDetailView: View {
         #endif
         #if os(iOS) || os(macOS)
         // A soft wash in the item's identity color, fixed at the top like the page's tint. It sits
-        // under the content and the navigation bar, and never takes a touch.
+        // under the content and the navigation bar, and never takes a touch. RX keeps it too: the
+        // page takes the item's colour (Tesla red, a card's brand) instead of the generic orb.
         .background(alignment: .top) {
-            if !rxHeader { identityWash(item) }
+            identityWash(item)
         }
-        // RX: the soft glass orb behind the header (high key: the text stays dark), moving with the page.
-        .modifier(RXScrollingBackdrop(name: RXHero.item, height: 320, lightOpacity: 0.7, darkOpacity: 0.3, active: rxHeader))
         #endif
         .groupedScreen()
         .environment(\.rxCards, rxDesign)
@@ -1739,7 +1738,7 @@ struct ItemWindowRoot: View {
             if model.session.state == .unlocked, let ref = ItemWindow.ref(key) {
                 NavigationStack { ItemDetailView(ref: ref, standalone: true) }
             } else {
-                EmptyState(title: String(localized: "OnePass est verrouillé"), systemImage: "lock",
+                EmptyState(title: String(localized: "Cleon est verrouillé"), systemImage: "lock",
                            message: String(localized: "item.unlockOnepassInMain"))
             }
         }

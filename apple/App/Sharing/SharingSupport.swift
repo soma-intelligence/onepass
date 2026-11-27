@@ -3,15 +3,29 @@ import VaultKit
 
 /// What the sharing screens need from the app beyond the session (sharing plan 4, Task 9).
 extension AppModel {
-    /// This device's keys for contact cards and recovery cancels. None until the Swift plan of key
-    /// rotation v2 lands (device keys in the Keychain and the Secure Enclave): the verification and
-    /// recovery screens say so instead of starting.
-    var deviceKeys: (any DeviceKeySource)? { nil }
+    /// This device's keys for contact cards and recovery cancels (`AccountDeviceKeys`): made at the
+    /// creation of a new account, or at the first unlock of an older one on this device
+    /// (`migrateToV2AfterUnlock`). None until then: the verification and recovery screens say so
+    /// instead of starting.
+    var deviceKeys: (any DeviceKeySource)? { session.readableDeviceKeys() }
+
+    /// The zone transport of the account shown: the primary account's, or the one an added account
+    /// made with its sync. None for a managed account (its sync is the org's) and without a hosted
+    /// server.
+    var activeZones: AccountZones? {
+        let slot = accounts.activeSlot
+        return slot == AccountDirectoryStore.primarySlot ? zones : accountLink.zones[slot]
+    }
 
     /// What the contact flows need: the device keys, the zone transport that makes a pair's
-    /// mailbox, the invitation drops and the Soma instance. None until the device keys exist and
-    /// the zone transport is wired here (the same plan).
-    var contactServices: ContactServices? { nil }
+    /// mailbox, the invitation drops and the hosted server. None until the device keys and the
+    /// zone transport both exist.
+    var contactServices: ContactServices? {
+        guard let transport = session.contactTransport(zones: activeZones) else { return nil }
+        return ContactServices(
+            keys: transport.keys, creator: ContactZoneCreator(handle: transport.zones.handle),
+            drops: ContactInviteDrops(), hosted: transport.zones.hosted)
+    }
 
     /// The account syncs through a mailbox (the Emergency Kit matters for recovery, spec 11.7).
     var syncsThroughMailbox: Bool { mailbox != nil }

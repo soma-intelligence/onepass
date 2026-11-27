@@ -61,11 +61,15 @@ final class AppModel {
     @ObservationIgnored var accountTasks: [String: [Task<Void, Never>]] = [:]
     /// The iCloud coordinator, for an account that syncs with iCloud (nil on the mailbox).
     @ObservationIgnored let coordinator: SyncCoordinator?
-    /// The mailbox coordinator, for an account on a OnePass server (cross-platform spec D.3).
+    /// The mailbox coordinator, for an account on a Cleon server (cross-platform spec D.3).
     @ObservationIgnored private(set) var mailbox: MailboxSyncCoordinator?
+    /// The primary account's zone transport (shared vaults, contacts, family), handed to its sync
+    /// coordinators; nil without a sync store, with demo data, in UI tests, or without a hosted
+    /// server in this build.
+    @ObservationIgnored let zones: AccountZones?
     /// What the session's sync goes through: the current coordinator of either kind.
     @ObservationIgnored let router: SyncRouter?
-    /// "Serveur OnePass", the host of a self-host, or "iCloud" (Réglages > Sync).
+    /// "Serveur Cleon", the host of a self-host, or "iCloud" (Réglages > Sync).
     private(set) var syncBackendName: String
     /// The sync store and its database, for the mailbox setup.
     @ObservationIgnored private let syncStore: SyncStoreHandle?
@@ -104,7 +108,7 @@ final class AppModel {
     /// onboarding model).
     var onboardingStart: OnboardingPath?
 
-    /// The onboarding stays on screen until "Ouvrir OnePass", even though the account creation
+    /// The onboarding stays on screen until "Ouvrir Cleon", even though the account creation
     /// already unlocked the session.
     var onboardingInProgress = false
     #if DEBUG
@@ -198,7 +202,7 @@ final class AppModel {
     @ObservationIgnored private var toastActionOrder: [UUID] = []
     /// RX look: the last toast handed to the host, so a bridge that appears again never sends it twice.
     @ObservationIgnored private var forwardedToastID: UUID?
-    /// OnePass is the system AutoFill provider; nil until the first read. Read again on every return
+    /// Cleon is the system AutoFill provider; nil until the first read. Read again on every return
     /// to the foreground and after an activation request.
     private(set) var autofillEnabled: Bool?
 
@@ -233,7 +237,7 @@ final class AppModel {
         case search
     }
 
-    /// "Verrouiller OnePass" Control: shared with the widget extension through the App Group.
+    /// "Verrouiller Cleon" Control: shared with the widget extension through the App Group.
     @ObservationIgnored private let lockSignal = LockSignal(
         defaults: UserDefaults(suiteName: AppGroup.identifier) ?? .standard)
     @ObservationIgnored private var lockObservation: LockSignalObservation?
@@ -291,6 +295,7 @@ final class AppModel {
         var syncStore: SyncStoreHandle?
         var syncDatabaseURL: URL?
         var pendingSetupChoice: SyncChoice?
+        var zones: AccountZones?
         var storeSplit = false
         #if ONEPASS_CLOUDKIT
         let remote: (any RemoteRecordStore)? = demo == nil
@@ -342,6 +347,8 @@ final class AppModel {
                 environment = VaultEnvironment.live(sync: coordinator ?? NoSync(), container: container)
                 #endif
                 if let store {
+                    // UI tests never reach the hosted server.
+                    zones = isolated ? nil : AccountZones.make(store: store, keychain: environment.keychain)
                     let backend: SyncBackendState
                     do {
                         backend = try SyncBackendState.readNow(store: store)
@@ -352,13 +359,13 @@ final class AppModel {
                     syncBackendName = backend.displayName(hosted: MailboxEndpoints.hosted())
                     switch backend {
                     case .iCloud:
-                        let iCloud = SyncCoordinator(store: store, remote: isolated ? nil : remote)
+                        let iCloud = SyncCoordinator(store: store, remote: isolated ? nil : remote, zones: zones?.sync)
                         coordinator = iCloud
                         router = SyncRouter(current: iCloud)
                     case .mailbox(let home):
                         mailbox = Self.openMailbox(
                             home: home, databaseURL: databaseURL, keychain: environment.keychain,
-                            serverName: syncBackendName)
+                            serverName: syncBackendName, zones: zones)
                         router = mailbox.map { SyncRouter(current: $0) }
                     case .pendingSetup(let choice):
                         // Nothing leaves the device until the setup, resumed by `start`, is done.
@@ -382,6 +389,7 @@ final class AppModel {
         self.syncStore = syncStore
         self.syncDatabaseURL = syncDatabaseURL
         self.pendingSetupChoice = pendingSetupChoice
+        self.zones = zones
         self.remote = remote
         let session = VaultSession(environment: environment)
         if storeSplit { session.refuseStore(.other(Self.storeSplitMessage)) }
@@ -478,7 +486,7 @@ final class AppModel {
     /// Moves the milestone 2 store and settings into the shared container (ruling A3). If the move
     /// fails, the migration has put back every file it moved (database, `-wal` and `-shm` together),
     /// and this launch keeps the legacy store and settings: the vault stays usable in the app. The
-    /// AutoFill extension finds no shared store and never creates one (it shows "open OnePass"), so a
+    /// AutoFill extension finds no shared store and never creates one (it shows "open Cleon"), so a
     /// later launch completes the move; an empty shared store left by an older extension is set aside.
     /// Nil when the files could not be put back either (store split between the two folders): no store
     /// is opened this launch, the session shows "Données refusées".
@@ -502,7 +510,7 @@ final class AppModel {
 
     /// Shown on "Données refusées" when the store is split between the two folders.
     static var storeSplitMessage: String { String(localized:
-        "Le déplacement du stockage vers le dossier partagé avec l'extension AutoFill a échoué et n'a pas pu être annulé. Aucune donnée n'est ouverte pour éviter toute perte. Quitte puis relance OnePass : le déplacement reprend au lancement suivant.") }
+        "Le déplacement du stockage vers le dossier partagé avec l'extension AutoFill a échoué et n'a pas pu être annulé. Aucune donnée n'est ouverte pour éviter toute perte. Quitte puis relance Cleon : le déplacement reprend au lancement suivant.") }
 
     /// Starts listening to the sync layer and runs a first round. Called once by the root view.
     func start() {
@@ -529,7 +537,7 @@ final class AppModel {
         }
         #endif
         #if os(iOS)
-        // A "Verrouiller OnePass" Control while the app runs: the Darwin notification locks now.
+        // A "Verrouiller Cleon" Control while the app runs: the Darwin notification locks now.
         lockObservation = LockSignal.observe { [weak self] in
             Task { @MainActor in self?.lockIfRequested() }
         }
@@ -547,7 +555,7 @@ final class AppModel {
         let phoneApprovals = self.phoneApprovals
         tasks.append(Task { await phoneApprovals.start() })
         if let browserBridge {
-            // "Déverrouiller dans OnePass" from an extension: the app comes forward on its lock screen.
+            // "Déverrouiller dans Cleon" from an extension: the app comes forward on its lock screen.
             // Set before the socket listens, so what a waiting browser asks at launch is not lost.
             browserBridge.attentionRequested = { [weak self] attention in
                 guard let self else { return }
@@ -608,7 +616,7 @@ final class AppModel {
         syncBackendName = SyncBackendState.pendingSetup(choice).displayName(hosted: MailboxEndpoints.hosted())
     }
 
-    /// Where the account of `secretKey` lives (spec D.4): the kit's server, the OnePass server,
+    /// Where the account of `secretKey` lives (spec D.4): the kit's server, the Cleon server,
     /// then iCloud.
     func locateAccount(secretKey: SecretBytes, kitServer: URL?) async -> RestoreSource {
         let restore = MailboxRestore(
@@ -634,7 +642,8 @@ final class AppModel {
         let client = try await session.restoreMailbox(
             restore, home: home, secretKey: secretKey, store: syncStore, unlock: unlock)
         syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
-        let coordinator = MailboxSyncCoordinator(sync: client, serverName: syncBackendName)
+        zones?.useAccountMailbox(home, keychain: session.environment.keychain)
+        let coordinator = MailboxSyncCoordinator(sync: client, serverName: syncBackendName, zones: zones?.sync)
         mailbox = coordinator
         await router.switchTo(coordinator)
         await coordinator.enterForeground()
@@ -651,14 +660,15 @@ final class AppModel {
             setup: MailboxSetup(provisioning: provisioning, credentials: credentials, store: syncStore),
             provisioning: provisioning, credentials: credentials, remote: remote, cloudKit: coordinator,
             router: router,
-            makeCoordinator: { sync, home in
+            makeCoordinator: { [zones] sync, home in
                 let name = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
-                return MailboxSyncCoordinator(sync: sync, serverName: name)
+                zones?.useAccountMailbox(home, keychain: keychain)
+                return MailboxSyncCoordinator(sync: sync, serverName: name, zones: zones?.sync)
             })
         return MailboxMigration(store: syncStore, parts: parts)
     }
 
-    /// "Passer au serveur OnePass": the migration of this account, on its gesture.
+    /// "Passer au serveur Cleon": the migration of this account, on its gesture.
     func migrateToMailbox(choice: SyncChoice) async -> MailboxMigration.Outcome {
         guard let migration = mailboxMigration() else { return .failed(String(localized: "settings.sync.migrate.unavailable")) }
         if let blocker = await session.migrationBlocker(migration, status: syncStatus) { return .blocked(blocker) }
@@ -675,10 +685,11 @@ final class AppModel {
 
     /// The mailbox coordinator the router switched to, for the scene phases and the wake.
     /// The system gave an APNs token: an account on a mailbox registers it (once per token,
-    /// X1b Task 10). An iCloud account needs nothing (CloudKit pushes on its own).
+    /// X1b Task 10), and every account registers it on its zone mailboxes (sharing spec 13.7). An
+    /// iCloud account needs nothing more (CloudKit pushes on its own).
     func didRegisterPush(token: Data) {
-        guard let mailbox, let syncStore else { return }
-        let push = PushRegistration(sync: mailbox.client, store: syncStore)
+        guard let syncStore, mailbox != nil || zones != nil else { return }
+        let push = PushRegistration(sync: mailbox?.client, store: syncStore, zones: zones?.sync)
         Task { await push.didRegister(token: token) }
     }
 
@@ -689,7 +700,7 @@ final class AppModel {
             if let coordinator { await coordinator.syncNow() }
             return coordinator != nil
         }
-        let push = PushRegistration(sync: mailbox.client, store: syncStore)
+        let push = PushRegistration(sync: mailbox.client, store: syncStore, zones: zones?.sync)
         return await push.didReceiveSilent { await router.syncNow() }
     }
 
@@ -738,7 +749,7 @@ final class AppModel {
             syncBackendName = SyncBackendState.mailbox(home).displayName(hosted: MailboxEndpoints.hosted())
             if let opened = Self.openMailbox(
                 home: home, databaseURL: syncDatabaseURL, keychain: session.environment.keychain,
-                serverName: syncBackendName) {
+                serverName: syncBackendName, zones: zones) {
                 mailbox = opened
                 await router.switchTo(opened)
                 await opened.enterForeground()
@@ -747,10 +758,13 @@ final class AppModel {
         return outcome
     }
 
-    /// The mailbox client of an account on a OnePass server, signed by this device's credential.
+    /// The mailbox client of an account on a Cleon server, signed by this device's credential.
     /// Without its seed (Keychain restored elsewhere, item deleted) nothing syncs and the log says so.
+    /// `zones`: the account's zone transport, set to make its zones under this mailbox and run after
+    /// each private round.
     static func openMailbox(
-        home: MailboxHome, databaseURL: URL, keychain: any KeychainStore, serverName: String
+        home: MailboxHome, databaseURL: URL, keychain: any KeychainStore, serverName: String,
+        zones: AccountZones? = nil
     ) -> MailboxSyncCoordinator? {
         do {
             guard let seed = try MailboxCredentialStore(keychain: keychain).seed(mailboxID: home.mailboxID) else {
@@ -761,7 +775,9 @@ final class AppModel {
                 try MailboxSync.open(
                     dbPath: databaseURL.path, endpoint: home.endpoint, mailboxId: home.mailboxID, credentialSeed: $0)
             }
-            return MailboxSyncCoordinator(sync: FfiMailboxSyncAdapter(sync: sync), serverName: serverName)
+            zones?.useAccountMailbox(home, keychain: keychain)
+            return MailboxSyncCoordinator(
+                sync: FfiMailboxSyncAdapter(sync: sync), serverName: serverName, zones: zones?.sync)
         } catch {
             log.error("mailbox client not opened, sync disabled")
             return nil
@@ -841,7 +857,7 @@ final class AppModel {
     /// that, a background wake (remote notification) or the return locks first.
     private func lockWhileBackgroundTimeLasts() {
         guard accounts.anyUnlocked, backgroundLock == nil else { return }
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "OnePass auto-lock") { [weak self] in
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Cleon auto-lock") { [weak self] in
             MainActor.assumeIsolated { self?.endBackgroundLock() }
         }
         backgroundLock = Task { [weak self] in
@@ -1131,6 +1147,15 @@ final class AppModel {
         return !cloudKitEnabled && session.state == .unlocked
     }
 
+    /// The sync server a new Emergency Kit names: a self-hosted mailbox, as the onboarding kit does.
+    /// Nil for iCloud and the OnePass server.
+    func emergencyKitServer() -> URL? {
+        guard let syncStore, case .mailbox(let home) = try? SyncBackendState.readNow(store: syncStore) else {
+            return nil
+        }
+        return home.baseURL == MailboxEndpoints.hosted() ? nil : home.baseURL
+    }
+
     // MARK: - Account missing
 
     /// "Restaurer avec mon Emergency Kit" on "Le compte a disparu du stockage", confirmed: the
@@ -1205,7 +1230,7 @@ final class AppModel {
         session.lock()
     }
 
-    /// Locks when a "Verrouiller OnePass" request is newer than the last unlock, this launch and
+    /// Locks when a "Verrouiller Cleon" request is newer than the last unlock, this launch and
     /// any request already seen while locked. iOS only (the Controls exist only there).
     func lockIfRequested() {
         #if os(iOS)
@@ -1265,6 +1290,10 @@ final class AppModel {
             iconEpoch &+= 1
             resumeMailboxSetup()
             resumeMigration()
+            // Key rotation v2 (spec 15): an account from before it gets this device's keys, after
+            // the unlock and never in its way (logged, tried again at the next unlock).
+            let unlocked = session
+            Task { await unlocked.migrateToV2AfterUnlock() }
             if activeProfile?.isManaged == true {
                 let slot = accounts.activeSlot
                 Task { await resumeManagedAccount(slot) }
@@ -1371,7 +1400,7 @@ final class AppModel {
     /// being the one view that lives while no window is open.
     var mainWindowRequest = 0
 
-    /// "Déverrouiller dans OnePass" (`onepass://unlock` or the bridge's request): the main window
+    /// "Déverrouiller dans Cleon" (`onepass://unlock` or the bridge's request): the main window
     /// comes forward on the lock screen, which then asks for biometrics once. The activation alone
     /// is not enough since macOS 14 while the browser is in front; the link, opened through
     /// LaunchServices by the extension's process, is what brings the app forward.
@@ -1662,7 +1691,7 @@ final class AppModel {
         }
     }
 
-    /// Copies the item's current one-time code with the OnePass clipboard (90 s, local only).
+    /// Copies the item's current one-time code with the Cleon clipboard (90 s, local only).
     func copyTotpCode(_ ref: ItemRef) async {
         guard session.state == .unlocked else { return }
         let noCode = String(localized: "root.itemHasNoOne")
@@ -1816,7 +1845,7 @@ final class AppModel {
         UserDefaults.standard.set(true, forKey: Self.safariSetupCardDismissedKey)
     }
 
-    /// "Activer OnePass": the system prompt, then the state is read again.
+    /// "Activer Cleon": the system prompt, then the state is read again.
     func requestAutoFillActivation() async {
         #if DEBUG
         // Demo data: the in-memory store stands for the system, nothing is asked.

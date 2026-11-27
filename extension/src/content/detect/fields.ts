@@ -24,7 +24,7 @@ import { ownText } from "./text";
 
 export type FieldElement = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 
-/** Input types that never hold a value OnePass fills. */
+/** Input types that never hold a value Cleon fills. */
 const NON_FIELD_INPUT_TYPES: ReadonlySet<string> = new Set([
   "hidden",
   "submit",

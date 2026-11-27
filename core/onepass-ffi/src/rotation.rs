@@ -1226,6 +1226,40 @@ pub fn create_account_v2(
     )
 }
 
+/// `create_account_v2` with the password as UTF-8 bytes, wiped here (the
+/// apps' personal accounts, like `create_account_bytes` before v2).
+#[uniffi::export]
+#[allow(clippy::too_many_arguments)]
+pub fn create_account_v2_bytes(
+    db_path: String,
+    password: Vec<u8>,
+    kdf: Option<crate::types::FfiKdfParams>,
+    classical: Vec<u8>,
+    pq: Arc<dyn FfiPqDeviceHalf>,
+    name: String,
+    kind: FfiDeviceKind,
+    mode: FfiDeviceMode,
+) -> Result<crate::types::FfiCreatedAccount, OnePassError> {
+    let password = Zeroizing::new(password);
+    let password = std::str::from_utf8(&password).map_err(|_| invalid("password"))?;
+    let classical = Zeroizing::new(classical);
+    let kdf = match kdf {
+        Some(k) => crate::kdf_params(k)?,
+        None => onepass_core::crypto::KdfParams::new_default()?,
+    };
+    let keys = device_keys(&classical, pq)?;
+    crate::create_v2(
+        &db_path,
+        password,
+        kdf,
+        &keys,
+        &name,
+        kind.into(),
+        mode.into(),
+        None,
+    )
+}
+
 /// "Restaurer avec mon Emergency Kit" (spec 7.5, R14), after a full sync:
 /// with the master password, the kit's Secret Key and the device keys the
 /// app just created. An outdated kit is `OutdatedKit` (nothing restored).

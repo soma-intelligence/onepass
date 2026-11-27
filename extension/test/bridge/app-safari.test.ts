@@ -44,7 +44,7 @@ describe.skipIf(!PROBE)("Safari handler to the bridge socket", () => {
     "pairs, saves, lists and fills through the Safari handler",
     async () => {
       const client = new BridgeClient(safariTransport({ sendNativeMessage }));
-      const record = await client.pair("OnePass", "Safari", async () => true);
+      const record = await client.pair("Cleon", "Safari", async () => true);
       await client.open(record);
       expect((await client.request({ op: "status" })).locked).toBe(false);
       const vaults = await client.request({ op: "vaults" });

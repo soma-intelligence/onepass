@@ -1,7 +1,7 @@
 // The sign-in pill that appears by itself (auto-pill.ts): when it shows, which face, and never
 // anything filled, submitted or started by its appearance.
 import { describe, expect, it } from "vitest";
-import { AUTO_PILL_SHOWN_KEY, AutoPill, type AutoFace, type AutoPillDeps, type AutoVault } from "../../src/background/auto-pill";
+import { AUTO_PILL_SHOWN_KEY, AUTO_PILL_SIGNED_IN_KEY, AutoPill, type AutoFace, type AutoPillDeps, type AutoVault } from "../../src/background/auto-pill";
 import type { CsContext } from "../../src/background/frames";
 import { AUTO_PILL_KEY, AUTO_PILL_NEVER_KEY, readAutoPill } from "../../src/shared/auto-pill";
 import { FakeArea } from "./fake-ext";
@@ -18,10 +18,16 @@ interface Page {
   logins: number;
   busy: boolean;
   incognito: boolean;
+  /** What the browser says of the tab's load (`tabs.get(...).status === "complete"`). */
+  loaded?: boolean;
   /** The analysis is of another document than the top frame's. */
   staleDoc?: string;
   /** Runs while the vault answers (the tab may move meanwhile). */
   onVault?: () => void;
+  /** The page carries a sign-out control. */
+  signedIn?: boolean;
+  /** The login form asks a password. */
+  password?: boolean;
 }
 
 function setup(over: Partial<Page> = {}, session?: FakeArea) {
@@ -35,8 +41,16 @@ function setup(over: Partial<Page> = {}, session?: FakeArea) {
     ...(session ? { session } : {}),
     topFrame: async () => ({ url: page.url, documentId: page.doc }),
     incognito: async () => page.incognito,
+    loaded: async () => page.loaded ?? false,
     busy: async () => page.busy,
-    page: async () => ({ origin: new URL(page.url).origin, documentId: page.staleDoc ?? page.doc, login: page.login, signup: page.signup }),
+    page: async () => ({
+      origin: new URL(page.url).origin,
+      documentId: page.staleDoc ?? page.doc,
+      login: page.login,
+      signup: page.signup,
+      ...(page.signedIn ? { signedIn: true } : {}),
+      ...(page.password ? { password: true } : {}),
+    }),
     prefilled: async (_cs, refs) => {
       asked.push(`prefilled:${refs.join(",")}`);
       return page.prefilled;
@@ -130,6 +144,23 @@ describe("auto sign-in pill: appearance", () => {
     t.page.login = ["f1"];
     await t.pill.onAnalysis(7, 0);
     expect(t.opened).toHaveLength(1);
+  });
+
+  it("a form that shows up after the worker restarted, on a page loaded before: the pill (Safari stops idle workers)", async () => {
+    const t = setup({ login: [] });
+    await t.pill.onReady(7);
+    t.page.login = ["f1"];
+    t.page.loaded = true;
+    const again = t.restart();
+    await again.onAnalysis(7, 0);
+    expect(t.opened).toHaveLength(1);
+  });
+
+  it("after a restart, an analysis of a page the browser says is still loading waits for its load", async () => {
+    const t = setup({ loaded: false });
+    const again = t.restart();
+    await again.onAnalysis(7, 0);
+    expect(t.opened).toEqual([]);
   });
 
   it("an analysis of a child frame never brings it", async () => {
@@ -314,5 +345,43 @@ describe("auto sign-in pill: settings", () => {
     await t.pill.never(SITE);
     await t.pill.never(`${SITE}/login`);
     expect((await readAutoPill(t.local)).never).toEqual(["atlas-cloud.test"]);
+  });
+});
+
+describe("auto sign-in pill: already signed in", () => {
+  it("a page with a sign-out control: nothing, whatever the vault says", async () => {
+    for (const vault of ["open", "locked"] as const) {
+      for (const over of [{}, { login: [], signup: ["f2"] }]) {
+        const t = setup({ vault, signedIn: true, ...over });
+        await t.pill.onReady(7);
+        expect(t.opened).toEqual([]);
+      }
+    }
+  });
+
+  it("after our sign-in on the site: no card over a lone identifier step, the browser session long", async () => {
+    const session = new FakeArea();
+    const t = setup({ vault: "locked" }, session);
+    await t.pill.signedIn("atlas-cloud.test");
+    await t.pill.onReady(7);
+    expect(t.opened).toEqual([]);
+    expect(await session.get(AUTO_PILL_SIGNED_IN_KEY)).toEqual({ [AUTO_PILL_SIGNED_IN_KEY]: ["atlas-cloud.test"] });
+    // A worker restarted reads it back.
+    await t.restart().onReady(8);
+    expect(t.opened).toEqual([]);
+  });
+
+  it("after our sign-in, a form that asks a password (signed out since) still gets the card", async () => {
+    const t = setup({ password: true });
+    await t.pill.signedIn("atlas-cloud.test");
+    await t.pill.onReady(7);
+    expect(t.opened.map((x) => x.face)).toEqual(["signin"]);
+  });
+
+  it("a sign-in on another site changes nothing here", async () => {
+    const t = setup();
+    await t.pill.signedIn("other.test");
+    await t.pill.onReady(7);
+    expect(t.opened.map((x) => x.face)).toEqual(["signin"]);
   });
 });

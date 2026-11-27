@@ -129,10 +129,26 @@ final class Connection: @unchecked Sendable {
     private(set) var ended = false
     var polling = false
     var lastUse: UInt64
+    /** When the extension last sent, polled, or got a poll's answer (orphan reaping). */
+    var lastSeen: Date
 
-    init(host: any HostProcess, now: UInt64) {
+    init(host: any HostProcess, now: UInt64, seen: Date) {
         self.host = host
         self.lastUse = now
+        self.lastSeen = seen
+    }
+
+    /// A poll of the extension is waiting on this connection now: it is alive.
+    var isPolling: Bool {
+        cond.lock()
+        defer { cond.unlock() }
+        return polling
+    }
+
+    var isEnded: Bool {
+        cond.lock()
+        defer { cond.unlock() }
+        return ended
     }
 
     /// Read the host's frames on a dedicated thread until it ends.
@@ -166,7 +182,7 @@ final class Connection: @unchecked Sendable {
                 }
             }
         }
-        thread.name = "OnePass bridge relay reader"
+        thread.name = "Cleon bridge relay reader"
         thread.start()
     }
 
@@ -204,7 +220,7 @@ public final class RelayHub: @unchecked Sendable {
     private let launcher: (any HostLauncher)?
     private let pollTimeout: TimeInterval
     private let maxConnections: Int
-    /// Brings the OnePass app forward on its lock screen (launching it if needed). Run from the
+    /// Brings the Cleon app forward on its lock screen (launching it if needed). Run from the
     /// extension process that served the user's click, so macOS lets the app come forward.
     private let openApp: (@Sendable () -> Bool)?
     /// iOS: the vault of this process, for the unlock sheet. Nil on the Mac (the app unlocks).
@@ -212,14 +228,22 @@ public final class RelayHub: @unchecked Sendable {
     private let lock = NSLock()
     private var conns: [String: Connection] = [:]
     private var clock: UInt64 = 0
+    private let now: @Sendable () -> Date
+
+    /// Each Safari profile runs its own copy of the extension, each with a session that sits in a
+    /// long poll on this one process: room for several profiles, a pairing and a reconnect in
+    /// flight. The app takes 8 connections at most (`onepass-relay` `MAX_CONNECTIONS`).
+    public static let defaultMaxConnections = 8
 
     /// `launcher` nil: this build has no bridge host, every `open` answers
     /// `unavailable`.
     public init(
-        launcher: (any HostLauncher)?, pollTimeout: TimeInterval = 20, maxConnections: Int = 4,
-        openApp: (@Sendable () -> Bool)? = nil, vault: (any VaultGate)? = nil
+        launcher: (any HostLauncher)?, pollTimeout: TimeInterval = 20, maxConnections: Int = RelayHub.defaultMaxConnections,
+        openApp: (@Sendable () -> Bool)? = nil, vault: (any VaultGate)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.launcher = launcher
+        self.now = now
         self.openApp = openApp
         self.vault = vault
         self.pollTimeout = pollTimeout
@@ -283,16 +307,19 @@ public final class RelayHub: @unchecked Sendable {
         }
         lock.lock()
         clock += 1
-        let conn = Connection(host: host, now: clock)
-        var evicted: [Connection] = []
+        let conn = Connection(host: host, now: clock, seen: now())
         if conns[id] != nil {
             lock.unlock()
             host.terminate()
             return .failure(.exists)
         }
-        while conns.count >= maxConnections,
-            let oldest = conns.min(by: { $0.value.lastUse < $1.value.lastUse })
-        {
+        var evicted = reapLocked()
+        // Full: the least recently used that no poll waits on. A connection whose poll is waiting
+        // is the extension's live session (its last use is the poll's start, up to `pollTimeout`
+        // ago), never the first to go.
+        while conns.count >= maxConnections {
+            let idle = conns.filter { !$0.value.isPolling }
+            guard let oldest = (idle.isEmpty ? conns : idle).min(by: { $0.value.lastUse < $1.value.lastUse }) else { break }
             conns[oldest.key] = nil
             evicted.append(oldest.value)
         }
@@ -321,11 +348,27 @@ public final class RelayHub: @unchecked Sendable {
         return .ok(frames: [], closed: false)
     }
 
+    /// Drops what no extension will come back for: connections whose host ended and that nobody
+    /// polled since, and connections not used for two poll timeouts (a live one polls again within
+    /// moments of each answer; a worker the browser stopped never sends `close`). Call with `lock`.
+    private func reapLocked() -> [Connection] {
+        let limit = now().addingTimeInterval(-2 * pollTimeout)
+        var out: [Connection] = []
+        for (key, c) in conns where c.isEnded || (!c.isPolling && c.lastSeen < limit) {
+            conns[key] = nil
+            out.append(c)
+        }
+        return out
+    }
+
     private func poll(_ id: String) -> RelayResponse {
         guard let conn = touch(id) else { return .failure(.unknownConn) }
         guard let (frames, ended) = conn.poll(until: Date().addingTimeInterval(pollTimeout)) else {
             return .failure(.busy)
         }
+        lock.lock()
+        conn.lastSeen = now()
+        lock.unlock()
         if ended {
             lock.lock()
             if conns[id] === conn { conns[id] = nil }
@@ -340,6 +383,7 @@ public final class RelayHub: @unchecked Sendable {
         guard let c = conns[id] else { return nil }
         clock += 1
         c.lastUse = clock
+        c.lastSeen = now()
         return c
     }
 

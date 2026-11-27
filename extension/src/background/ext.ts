@@ -95,7 +95,7 @@ export interface BgExt {
      * Is the tab the active one of its window, and which window (no permission needed for these
      * two). `incognito`: a private window (Chromium, Firefox, and Safari's private windows).
      */
-    get?(tabId: number): Promise<{ active?: boolean; windowId?: number; incognito?: boolean } | undefined>;
+    get?(tabId: number): Promise<{ active?: boolean; windowId?: number; incognito?: boolean; status?: string } | undefined>;
   };
   webNavigation: {
     getFrame(details: { tabId: number; frameId: number }): Promise<FrameDetails | null>;
