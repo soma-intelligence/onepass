@@ -29,7 +29,7 @@ public struct DeveloperPaths: Sendable, Equatable {
     /// The shell line for tools that read `SSH_AUTH_SOCK`.
     public var exportLine: String { "export SSH_AUTH_SOCK=\"\(sshSocket.path)\"" }
 
-    /// The block to paste into an MCP client's configuration (OnePass never writes it for you).
+    /// The block to paste into an MCP client's configuration (Kelid never writes it for you).
     public var mcpClientConfig: String {
         """
         {

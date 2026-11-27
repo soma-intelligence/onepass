@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="docs/assets/brand/icon.svg" width="96" height="96" alt="OnePass app icon">
+<img src="docs/assets/brand/icon.svg" width="96" height="96" alt="Kelid app icon">
 
-# OnePass
+# Kelid
 
 ### Every password, one calm place.
 
-OnePass is an open source, post-quantum password manager for iPhone, iPad, Mac, Apple Watch and Vision Pro that keeps your passwords, passkeys and 2FA codes end to end encrypted on your devices and in your own private iCloud.<br>
+Kelid is an open source, post-quantum password manager for iPhone, iPad, Mac, Apple Watch and Vision Pro that keeps your passwords, passkeys and 2FA codes end to end encrypted on your devices and in your own private iCloud.<br>
 Free, AGPL-3.0-or-later, on the App Store, with every line of code public.
 
 <br>
@@ -19,7 +19,7 @@ Free, AGPL-3.0-or-later, on the App Store, with every line of code public.
 
 <br>
 
-<img src="docs/assets/readme/hero-devices.jpg" width="100%" alt="OnePass on Mac, iPad, iPhone and Apple Watch, showing a fictional demo vault">
+<img src="docs/assets/readme/hero-devices.jpg" width="100%" alt="Kelid on Mac, iPad, iPhone and Apple Watch, showing a fictional demo vault">
 
 <br><br>
 
@@ -33,7 +33,7 @@ Free, AGPL-3.0-or-later, on the App Store, with every line of code public.
 ![Post-quantum](https://img.shields.io/badge/crypto-ML--KEM--1024%20·%20ML--DSA--87%20·%20SLH--DSA-1D1D2B)
 ![No tracking](https://img.shields.io/badge/analytics-none-1D1D2B)
 
-**[Quick start](#quick-start)** · **[At a glance](#at-a-glance)** · **[Tour](#a-quick-tour)** · **[Why OnePass](#why-onepass)** · **[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-onepass-compares)** · **[Install](#install)** · **[FAQ](#faq)** · **[Docs](#documentation)** · **[Build](#build-from-source)** · **[Roadmap](#roadmap)**
+**[Quick start](#quick-start)** · **[At a glance](#at-a-glance)** · **[Tour](#a-quick-tour)** · **[Why Kelid](#why-kelid)** · **[Features](#features)** · **[Security](#security-model)** · **[Compare](#how-kelid-compares)** · **[Install](#install)** · **[FAQ](#faq)** · **[Docs](#documentation)** · **[Build](#build-from-source)** · **[Roadmap](#roadmap)**
 
 </div>
 
@@ -41,9 +41,9 @@ Free, AGPL-3.0-or-later, on the App Store, with every line of code public.
 
 **Use the app** on iPhone, iPad, Mac, Apple Watch or Vision Pro:
 
-1. Install OnePass from the [App Store](https://apps.apple.com/app/id6831411523). It's free.
-2. Open it, choose **Create Vault** and pick a master password. OnePass makes your Secret Key and an Emergency Kit to keep.
-3. On Home, tap **Turn On OnePass**. The next sign-in field you tap in Safari or an app offers your logins.
+1. Install Kelid from the [App Store](https://apps.apple.com/app/id6831411523). It's free.
+2. Open it, choose **Create Vault** and pick a master password. Kelid makes your Secret Key and an Emergency Kit to keep.
+3. On Home, tap **Turn On Kelid**. The next sign-in field you tap in Safari or an app offers your logins.
 
 **Try the code** with Rust installed, no account needed:
 
@@ -55,7 +55,7 @@ cargo run -q --manifest-path core/Cargo.toml -p onepass-cli -- generate --words 
 The second line builds the Rust core and prints a fresh five-word passphrase. Next steps: [Install](#install) for the extension and Mac builds, [Build from source](#build-from-source) for the apps.
 
 > [!IMPORTANT]
-> OnePass is on the App Store (version 1.0.2, November 2026) for iPhone, iPad, Apple Watch, Mac and Vision Pro. Its core **has not had an external security audit yet** (planned for milestone 8): the design, the formal models and the tests are public, but no outside firm has reviewed them. Weigh that before OnePass holds your only copy of a secret, and keep an encrypted export. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use OnePass day to day.
+> Kelid is on the App Store (version 1.0.2, November 2026) for iPhone, iPad, Apple Watch, Mac and Vision Pro. Its core **has not had an external security audit yet** (planned for milestone 8): the design, the formal models and the tests are public, but no outside firm has reviewed them. Weigh that before Kelid holds your only copy of a secret, and keep an encrypted export. The dev CLI and the dev native messaging host keep secrets in a form meant for development only: the apps are the way to use Kelid day to day.
 
 ## At a glance
 
@@ -91,7 +91,7 @@ The second line builds the Rust core and prints a fresh five-word passphrase. Ne
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/readme/tour/mac-01-browse.jpg" alt="OnePass on the Mac: sidebar, item list and a login with its one-time code"></td>
+<td width="50%"><img src="docs/assets/readme/tour/mac-01-browse.jpg" alt="Kelid on the Mac: sidebar, item list and a login with its one-time code"></td>
 <td width="50%"><img src="docs/assets/readme/tour/mac-02-watchtower.jpg" alt="Watchtower on the Mac: a score dial and one card per check"></td>
 </tr>
 <tr>
@@ -102,7 +102,7 @@ The second line builds the Rust core and prints a fresh five-word passphrase. Ne
 
 <p align="center"><sub>Real captures of the apps, filled with a fictional demo vault. Native SwiftUI on every platform, Mac included (not Catalyst).</sub></p>
 
-## Why OnePass
+## Why Kelid
 
 <table>
 <tr>
@@ -156,7 +156,7 @@ Shipped on `main` in November 2026:
 - **A fresh look.** Every platform got the redesign: calmer colors that carry meaning, an item editor in cards, item headers tinted by the site's own color.
 - **19,323 site icons** for 22,541 domains, bundled with the app and never fetched site by site, plus an icon library to pick your own.
 - **Key usage log.** Each item shows where its secret was used: AutoFill, the CLI, the SSH agent or an AI agent through MCP. Synced and sealed like the item itself.
-- **Travel Mode that plans ahead.** Add a trip and OnePass reminds you the evening before and three hours before, then offers or turns on Travel Mode at your first unlock during the trip. An unusual time zone counts as a sign you've left.
+- **Travel Mode that plans ahead.** Add a trip and Kelid reminds you the evening before and three hours before, then offers or turns on Travel Mode at your first unlock during the trip. An unusual time zone counts as a sign you've left.
 - **Duplicates review.** See which copies are safe to merge and which differ, field by field, then merge in one go.
 - **Profile, account and security** in one place, with Delete My Account on iPhone, iPad, Mac and Vision Pro.
 - **Encrypted attachments** on any item, with a built-in PDF reader.
@@ -206,7 +206,7 @@ Shipped on `main` in November 2026:
 <summary><b>Browser extension</b></summary>
 
 - Manifest V3, TypeScript, no framework, in the app's look, in French, English, Spanish and Italian.
-- **Safari** extension built into the Mac app. **Chrome and Firefox** builds talk to the same app through its signed relay. One end-to-end encrypted, post-quantum channel. On the Mac that runs the app, the extension pairs on its own, with no code to type (real-browser check pending). "Unlock in OnePass" in the extension brings the app forward to unlock, even when it was closed.
+- **Safari** extension built into the Mac app. **Chrome and Firefox** builds talk to the same app through its signed relay. One end-to-end encrypted, post-quantum channel. On the Mac that runs the app, the extension pairs on its own, with no code to type (real-browser check pending). "Unlock in Kelid" in the extension brings the app forward to unlock, even when it was closed.
 - Inline menu under the focused field, keyboard included. **One-click sign-in** that walks multi-step logins and "Sign in with Google, Apple, Microsoft or GitHub" chains, remembers which provider account you use on each site, and stops as soon as a step leaves the allowed domains.
 - Save and update prompts, never-save list, HTTPS origins only. Payment iframes from other sites are never filled.
 
@@ -236,7 +236,7 @@ Shipped on `main` in November 2026:
 | Enpass | JSON |
 | KeePass 2 | XML |
 | FIDO Credential Exchange | CXF |
-| Other | `otpauth://` URIs, Wi-Fi QR codes, OnePass archive, OnePass CSV |
+| Other | `otpauth://` URIs, Wi-Fi QR codes, Kelid archive, Kelid CSV |
 
 Export to a signed, encrypted `.onepass` archive (passphrase or account recipient). Plaintext CSV export exists but needs an explicit `--plaintext` flag.
 
@@ -258,7 +258,7 @@ All in Settings > Developer on the Mac, and stopped as soon as the app locks (un
 
 - **MCP server**: AI clients launch `OnePass.app/Contents/Helpers/onepass-mcp` (a copyable `mcpServers` block is in the app). Scoped tools (`metadata`, `use`, `write`, `totp`, `reveal`), vaults exposed only if a signed policy lists them, per-client grants you can revoke. Commands run with secrets injected and masked in output. Every secret request asks you in a floating panel, with Touch ID.
 - **Web fill for agents**: the `fill_in_browser` tool fills a login or a card into a Chromium page (Chrome, Edge, Brave, Arc through the extension, or any browser an agent drives over local CDP) and returns only the names of the fields filled, never a value. The `fill` scope is off by default: turn it on per vault in Settings > Developer, then tick "Web fill" in the client's menu. A login asks for a strong gesture the first time, then can stay approved for the same client, item, site and browser (once, 5, 15 or 60 minutes). A card asks every time, is never remembered and never submitted. A page script, or an agent that can run JS in the page or read the DOM over CDP, can read what was filled, so fill only browsers you trust.
-- **Agent-ready MCP**: one command adds OnePass to an AI client, `OnePass.app/Contents/Helpers/onepass-mcp install --client claude-code|claude-desktop|codex|cursor` (`--dry-run` shows the diff, a backup is kept, only the `onepass` entry changes; Settings > Developer gives you the command to copy). Approve each request on the Mac panel or on your iPhone with Face ID, whichever answers first; the agent is told a 4-letter code to match on screen, and the audit log records where you approved. Away from a locked Mac, your iPhone can unlock it for agents only: the app's own screens stay locked, the window lasts 1 hour by default (15 minutes to 8 hours) and ends on sleep, lock or "Lock now" on the phone. Off by default, enrolled per Mac and iPhone pair.
+- **Agent-ready MCP**: one command adds Kelid to an AI client, `OnePass.app/Contents/Helpers/onepass-mcp install --client claude-code|claude-desktop|codex|cursor` (`--dry-run` shows the diff, a backup is kept, only the `onepass` entry changes; Settings > Developer gives you the command to copy). Approve each request on the Mac panel or on your iPhone with Face ID, whichever answers first; the agent is told a 4-letter code to match on screen, and the audit log records where you approved. Away from a locked Mac, your iPhone can unlock it for agents only: the app's own screens stay locked, the window lasts 1 hour by default (15 minutes to 8 hours) and ends on sleep, lock or "Lock now" on the phone. Off by default, enrolled per Mac and iPhone pair.
 - **SSH agent**: Ed25519, ECDSA P-256/384/521 and RSA 3072/4096 keys from your vaults, generated or imported in the app. Approval for every signature, or for 5, 15 or 60 minutes. Agent forwarding refused by default.
 - **Audit log**: hash-chained and signed, readable in the app.
 - **Travel Mode** (Mac and iOS): mark vaults "Safe for Travel", and the others leave the device before you cross a border without being deleted from iCloud. Back home, they come back and are checked against the last manifests seen. Away from home, the app suggests turning it on, and single items can be marked safe for travel.
@@ -272,13 +272,13 @@ All in Settings > Developer on the Mac, and stopped as soon as the app locks (un
 
 ## Use cases
 
-- Use OnePass to keep passwords, passkeys and one-time codes for every site on iPhone, iPad, Mac, Apple Watch and Vision Pro, synced through your own iCloud.
-- Use OnePass to move off 1Password, Bitwarden, LastPass, Dashlane, Proton Pass, Apple Passwords or KeePass ([import guide](docs/guides/import-from-other-password-managers.md)).
-- Use OnePass to set up two-factor authentication on a site from its QR code and fill the first code ([how](docs/guides/two-factor-codes-totp.md)).
-- Use OnePass to let Claude Code, Codex or Cursor run a command with an API key it never sees ([MCP guide](docs/guides/mcp-server-ai-agents.md)).
-- Use OnePass as your SSH agent, with an approval for each signature ([SSH guide](docs/guides/ssh-agent.md)).
-- Use OnePass to take sensitive vaults off your devices before a border crossing ([Travel Mode](docs/guides/travel-mode.md)).
-- Use OnePass to find weak, reused and breached passwords without sending them anywhere ([Watchtower](docs/guides/breached-password-check.md)).
+- Use Kelid to keep passwords, passkeys and one-time codes for every site on iPhone, iPad, Mac, Apple Watch and Vision Pro, synced through your own iCloud.
+- Use Kelid to move off 1Password, Bitwarden, LastPass, Dashlane, Proton Pass, Apple Passwords or KeePass ([import guide](docs/guides/import-from-other-password-managers.md)).
+- Use Kelid to set up two-factor authentication on a site from its QR code and fill the first code ([how](docs/guides/two-factor-codes-totp.md)).
+- Use Kelid to let Claude Code, Codex or Cursor run a command with an API key it never sees ([MCP guide](docs/guides/mcp-server-ai-agents.md)).
+- Use Kelid as your SSH agent, with an approval for each signature ([SSH guide](docs/guides/ssh-agent.md)).
+- Use Kelid to take sensitive vaults off your devices before a border crossing ([Travel Mode](docs/guides/travel-mode.md)).
+- Use Kelid to find weak, reused and breached passwords without sending them anywhere ([Watchtower](docs/guides/breached-password-check.md)).
 
 ## How it works
 
@@ -337,21 +337,21 @@ Crypto comes from `aws-lc-rs`, `argon2` and `slh-dsa` in Rust, and from WebCrypt
 
 Found a vulnerability? Please do not open a public issue. See [Reporting a vulnerability](#reporting-a-vulnerability).
 
-## How OnePass compares
+## How Kelid compares
 
 As of November 2026. Two honest caveats first.
 
-- **OnePass is the youngest product in every table below, and the only one without an outside audit.** Its design is strong on paper and its proof is thin. The vendors below have years of public scrutiny, bug bounties, audits and real users. OnePass has none of those yet (an external audit is planned for M8).
+- **Kelid is the youngest product in every table below, and the only one without an outside audit.** Its design is strong on paper and its proof is thin. The vendors below have years of public scrutiny, bug bounties, audits and real users. Kelid has none of those yet (an external audit is planned for M8).
 - **Everything about other products comes from their own pages or from named reports, checked on 2026-11-02.** Each claim links to its source, and the full dated list is in [docs/comparison/closed-source-sources.md](docs/comparison/closed-source-sources.md). Where a vendor does not say, the cell says "not public" or "not found". That is not proof of absence. Prices and plans change: check the vendor before you buy. Product names are the property of their owners and are used here only to name them.
 
 ### Against open source managers
 
-On 2026-10-28 OnePass was scored against 10 open source managers with one 11-point rubric: design (8 dimensions, out of 40) and proof, meaning tests, releases and maturity (3 dimensions, out of 15). **OnePass was scored from its code, the others from public evidence**, which favors products that have had years of public bug reports. It is a desk review, not a pentest.
+On 2026-10-28 Kelid was scored against 10 open source managers with one 11-point rubric: design (8 dimensions, out of 40) and proof, meaning tests, releases and maturity (3 dimensions, out of 15). **Kelid was scored from its code, the others from public evidence**, which favors products that have had years of public bug reports. It is a desk review, not a pentest.
 
 | Product | Type | Design /40 | Proof /15 | Total /55 |
 |---|---|---|---|---|
 | KeePassXC | Local file, desktop | 29 | 10 | 39 |
-| **OnePass v0.2.0** | Cloud sync (CloudKit), Apple and extension | **29** | **5** | **34** |
+| **Kelid v0.2.0** | Cloud sync (CloudKit), Apple and extension | **29** | **5** | **34** |
 | [Proton Pass](https://proton.me/blog/pass-open-source-security-audit) | Cloud | 24 | 9 | 33 |
 | AliasVault | Cloud or self-host | 26 | 6 | 32 |
 | Bitwarden | Cloud or self-host | 22 | 9 | 31 |
@@ -362,7 +362,7 @@ On 2026-10-28 OnePass was scored against 10 open source managers with one 11-poi
 | Vaultwarden | Bitwarden server, self-host | 20 | 8 | 28 |
 | Strongbox | Local file, Apple | 24 | 4 | 28 |
 
-OnePass ties for first on design and is second to last on proof. It is the only one of the 11 scored shipping hybrid post-quantum public-key encryption, and its KDF default is the strongest found. Proton Pass is open source with published audits ([Cure53, 2023](https://proton.me/blog/pass-open-source-security-audit), [Recurity Labs, Jan to Apr 2026](https://proton.me/business/pass/security)), wraps keys with bcrypt ([Proton](https://proton.me/blog/proton-pass-security-model)), and since 2026-05-21 offers read-only, vault-scoped [access tokens for AI agents](https://proton.me/blog/pass-access-tokens). KeePassXC, Bitwarden, Proton Pass, gopass and Passbolt are ahead of it on proof.
+Kelid ties for first on design and is second to last on proof. It is the only one of the 11 scored shipping hybrid post-quantum public-key encryption, and its KDF default is the strongest found. Proton Pass is open source with published audits ([Cure53, 2023](https://proton.me/blog/pass-open-source-security-audit), [Recurity Labs, Jan to Apr 2026](https://proton.me/business/pass/security)), wraps keys with bcrypt ([Proton](https://proton.me/blog/proton-pass-security-model)), and since 2026-05-21 offers read-only, vault-scoped [access tokens for AI agents](https://proton.me/blog/pass-access-tokens). KeePassXC, Bitwarden, Proton Pass, gopass and Passbolt are ahead of it on proof.
 
 ### Against closed source managers
 
@@ -376,7 +376,7 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 
 | | Source and license | Independent audits | Key derivation, Secret Key | Zero-knowledge | Post-quantum |
 |---|---|---|---|---|---|
-| **OnePass** | AGPL-3.0-or-later, all of it | None yet. Own desk review (2026-10-28), ProVerif models, 19 fuzz targets, NIST ACVP vectors | Argon2id (256 MiB, t=4, p=4) + 256-bit Secret Key | Yes, end to end. Signed, hash-chained manifests detect a hostile server | ML-KEM-1024 + X25519, ML-DSA-87 + Ed25519, SLH-DSA |
+| **Kelid** | AGPL-3.0-or-later, all of it | None yet. Own desk review (2026-10-28), ProVerif models, 19 fuzz targets, NIST ACVP vectors | Argon2id (256 MiB, t=4, p=4) + 256-bit Secret Key | Yes, end to end. Signed, hash-chained manifests detect a hostile server | ML-KEM-1024 + X25519, ML-DSA-87 + Ed25519, SLH-DSA |
 | 1Password | Proprietary, source not published | Says it publishes independent audit results ([security][1p-sec]) | PBKDF2-HMAC-SHA256 + 128-bit Secret Key, SRP login ([support][1p-support]) | Not named on the page, but the account password is never shared ([support][1p-support]) | Not public |
 | NordPass | Proprietary, source not published | Says Cure53 audited it, first in March 2020, and that Business holds ISO 27001 and SOC 2 Type 2 ([NordPass][np-sec]). Reports not retrieved | Argon2id, XChaCha20-Poly1305. No Secret Key described ([NordPass][np-sec]) | Claimed ([NordPass][np-sec]) | Not public |
 | Dashlane | Proprietary, source not published | No independent audit report found | Argon2d (3 iterations, 32 MB, 2 threads), AES-256-CBC + HMAC-SHA256. No Secret Key ([Dashlane][dl-sec]) | Claimed ([Dashlane][dl-sec]) | Prototype only, not shipped ([Dashlane][dl-pq], 2022, updated 2024) |
@@ -388,7 +388,7 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 
 | | Self-hosting | Platforms | Passkeys | Travel mode | Family and business sharing | Agent and MCP access |
 |---|---|---|---|---|---|---|
-| **OnePass** | Planned after v1. Today sync is CloudKit in your own iCloud | iPhone, iPad, Mac, Apple Watch, Vision Pro. Safari, Chrome and Firefox extension. CLI (development). **No Android, Windows or Linux app** | Yes, created and used inside the Rust core | "Safe for Travel" vaults and items on Mac and iOS, with a suggestion when you are away from home | Several accounts side by side (personal and business). **Being built, not in a release yet:** shared vaults, family, mailbox for invites. No business admin console | Built in: MCP server and SSH agent, per-secret approval on Mac or iPhone, signed audit log |
+| **Kelid** | Planned after v1. Today sync is CloudKit in your own iCloud | iPhone, iPad, Mac, Apple Watch, Vision Pro. Safari, Chrome and Firefox extension. CLI (development). **No Android, Windows or Linux app** | Yes, created and used inside the Rust core | "Safe for Travel" vaults and items on Mac and iOS, with a suggestion when you are away from home | Several accounts side by side (personal and business). **Being built, not in a release yet:** shared vaults, family, mailbox for invites. No business admin console | Built in: MCP server and SSH agent, per-secret approval on Mac or iPhone, signed audit log |
 | 1Password | Not offered, none found | macOS, iOS, watchOS, Windows, Android, Linux. Chrome, Safari, Edge, Firefox, Brave ([pricing][1p-price]) | Yes ([pricing][1p-price]) | Yes, every plan ([support][1p-travel]) | Families (up to 5) with shared vaults. Business with admin controls ([pricing][1p-price], [travel][1p-travel]) | Secure Agentic Autofill, early access with Browserbase since Oct 2025, and an MCP server for Environments ([1Password][1p-ai]) |
 | NordPass | Not offered, none found | Windows, macOS, Linux, iOS, Android and browsers ([NordPass][np-pass]) | Yes ([NordPass][np-pass]) | Not documented | Family (6 vaults) with sharing and emergency access. Business plan ([NordPass][np-pass]) | None found |
 | Dashlane | Not offered, none found | iOS, Android, Windows, macOS. Linux only through the browser extension ([Dashlane][dl-pass]) | Yes ([Dashlane][dl-pass]) | Not documented | Friends and Family (10 members). Business with SSO and SCIM ([Dashlane][dl-plans], [business][dl-biz]) | Official MCP server (beta) for Business audit logs, read only. No credential access documented ([Dashlane][dl-mcp]) |
@@ -400,7 +400,7 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 
 | | Price model | Breach history |
 |---|---|---|
-| **OnePass** | Free, AGPL. No subscription and no hosted service to pay for. A commercial license is available on request | None known. The product is young, so this is not evidence of anything |
+| **Kelid** | Free, AGPL. No subscription and no hosted service to pay for. A commercial license is available on request | None known. The product is young, so this is not evidence of anything |
 | 1Password | Subscription, billed yearly. Regular list price $3.99 a month (Individual) and $5.99 (Families) on 2026-11-02, with first-year promotions ([pricing][1p-price]) | No breach of user data documented. In the 2023 Okta support-system incident, 1Password says no user data was accessed ([1Password][1p-okta]) |
 | NordPass | Subscription with a free tier. Current prices not retrieved, check the [plans page](https://nordpass.com/plans/) | None found in the sources reviewed |
 | Dashlane | Subscription, annual billing only, no monthly plans ([Dashlane][dl-plans]) | Security advisory on its support site: a brute-force attack let an attacker register a device on fewer than 20 personal accounts and download their encrypted vaults, which stayed encrypted ([Dashlane][dl-adv]). Date not retrieved |
@@ -410,14 +410,14 @@ OnePass ties for first on design and is second to last on proof. It is the only 
 
 #### Where each choice fits
 
-- **Pick OnePass if** you live in Apple's ecosystem, want a password manager whose code you and others can read, and want post-quantum encryption and agent access built in. Wait if you need proof from outside: it has no external audit yet, no family sharing in a release, no Android or Windows app and no self-hosted server.
+- **Pick Kelid if** you live in Apple's ecosystem, want a password manager whose code you and others can read, and want post-quantum encryption and agent access built in. Wait if you need proof from outside: it has no external audit yet, no family sharing in a release, no Android or Windows app and no self-hosted server.
 - **Pick 1Password, NordPass, Dashlane or Keeper if** you need Android, Windows or Linux apps, family or business sharing today, and a longer track record. The tables above show how they differ on the points that can be checked.
 - **Pick Apple Passwords if** you want the simplest option and only use Apple devices, with Windows as an occasional second platform.
 - **Pick LastPass with care.** The 2022 breach is documented, and the vendor has since raised its iteration defaults ([LastPass][lp-support]).
 
 </details>
 
-One page per alternative, with how to move your data: [OnePass vs 1Password](docs/comparison/onepass-vs-1password.md) · [vs Bitwarden](docs/comparison/onepass-vs-bitwarden.md) · [vs Apple Passwords](docs/comparison/onepass-vs-apple-passwords.md) · [vs KeePassXC](docs/comparison/onepass-vs-keepassxc.md) · [vs Proton Pass](docs/comparison/onepass-vs-proton-pass.md).
+One page per alternative, with how to move your data: [Kelid vs 1Password](docs/comparison/onepass-vs-1password.md) · [vs Bitwarden](docs/comparison/onepass-vs-bitwarden.md) · [vs Apple Passwords](docs/comparison/onepass-vs-apple-passwords.md) · [vs KeePassXC](docs/comparison/onepass-vs-keepassxc.md) · [vs Proton Pass](docs/comparison/onepass-vs-proton-pass.md).
 
 Spot an error or an out-of-date claim? Open an issue with a link to the vendor's page and we will correct it.
 
@@ -455,9 +455,9 @@ Spot an error or an out-of-date claim? Open an issue with a link to the vendor's
 
 ## Privacy
 
-OnePass has no analytics and no telemetry. The Mac app's update check is the one request it makes to GitHub: at launch and every 24 hours it reads the signed update feed of the latest release on GitHub. That is a plain HTTPS GET to `github.com` (redirected to GitHub's release storage) with the usual User-Agent (app name and version, Sparkle version), and nothing else: no account, device or install identifier, no system profile, no cookie. Settings > About > "Automatically Check for Updates" turns it off. The iPhone, iPad, Apple Watch and Vision Pro apps update through the App Store and never check on their own.
+Kelid has no analytics and no telemetry. The Mac app's update check is the one request it makes to GitHub: at launch and every 24 hours it reads the signed update feed of the latest release on GitHub. That is a plain HTTPS GET to `github.com` (redirected to GitHub's release storage) with the usual User-Agent (app name and version, Sparkle version), and nothing else: no account, device or install identifier, no system profile, no cookie. Settings > About > "Automatically Check for Updates" turns it off. The iPhone, iPad, Apple Watch and Vision Pro apps update through the App Store and never check on their own.
 
-Autofill history stays on the device. To put the account you use on a site first, OnePass remembers which suggestion you picked, on which site, in which browser (Safari, Chrome and others) and in which browser profile. A profile is an opaque random id the extension draws once and keeps in that profile's own storage: browsers do not give extensions the profile name. Only item ids, the site, the browser kind, the rank and the time are kept, never a password, username or any other field value. Each event is sealed with a key derived from your account key (AES-256-GCM-SIV) and filed under a keyed hash of the site, in the vault database of that device. It is never synced, never sent to a server and never reaches any analytics service. Events older than 180 days go, with at most 200 per site and 5000 in all. Settings > AutoFill > "Learn from my choices" turns it off and erases it, the button under it clears it, "Forget site" erases that site's events, and Travel Mode erases all of them and records nothing while you travel.
+Autofill history stays on the device. To put the account you use on a site first, Kelid remembers which suggestion you picked, on which site, in which browser (Safari, Chrome and others) and in which browser profile. A profile is an opaque random id the extension draws once and keeps in that profile's own storage: browsers do not give extensions the profile name. Only item ids, the site, the browser kind, the rank and the time are kept, never a password, username or any other field value. Each event is sealed with a key derived from your account key (AES-256-GCM-SIV) and filed under a keyed hash of the site, in the vault database of that device. It is never synced, never sent to a server and never reaches any analytics service. Events older than 180 days go, with at most 200 per site and 5000 in all. Settings > AutoFill > "Learn from my choices" turns it off and erases it, the button under it clears it, "Forget site" erases that site's events, and Travel Mode erases all of them and records nothing while you travel.
 
 Crypto balances are off by default. Once you turn them on, the iPhone and iPad apps send your wallets' public addresses to the blockchain explorers you pick (mempool.space, PublicNode and the Solana Foundation by default, or your own), and ask CoinGecko for prices unless you turn prices off. Those services see your addresses and your IP address. The recovery phrase and private keys never leave the device.
 
@@ -472,7 +472,7 @@ Crypto balances are off by default. Once you turn them on, the iPhone and iPad a
 
 Website: [somalabs.me/onepass](https://somalabs.me/onepass) · [Privacy policy](https://somalabs.me/onepass/privacy)
 
-Pre-release Mac builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`OnePass-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move OnePass to Applications, open it once, then turn the extension on in Safari > Settings > Extensions. The Mac app then updates itself from the latest release (OnePass > Check for Updates…): an update installs only with your approval, and only if its archive and feed carry the release key's EdDSA signature and the app is signed by the same Apple team ([details](docs/security/release-pipeline.md#mises-à-jour-de-lapp-mac)).
+Pre-release Mac builds are on the [Releases](https://github.com/soma-intelligence/onepass/releases) page: a notarized Mac app (`Kelid-<version>-mac.zip`), the Chrome extension, and `SHA256SUMS`. Move Kelid to Applications, open it once, then turn the extension on in Safari > Settings > Extensions. The Mac app then updates itself from the latest release (Kelid > Check for Updates…): an update installs only with your approval, and only if its archive and feed carry the release key's EdDSA signature and the app is signed by the same Apple team ([details](docs/security/release-pipeline.md#mises-à-jour-de-lapp-mac)).
 
 For Chrome or Firefox, point the browser at the app's relay from a clone of this repository:
 ```bash
@@ -580,7 +580,7 @@ onepass/
     ├── security/              whitepaper and threat model
     ├── specs/                 design specs per milestone
     ├── guides/                one-question how-to pages
-    ├── comparison/            OnePass against named alternatives
+    ├── comparison/            Kelid against named alternatives
     └── lab/                   autofill lab reports
 ```
 
@@ -605,35 +605,35 @@ Each milestone has its design spec in [`docs/specs/`](docs/specs/).
 
 ## FAQ
 
-**Is OnePass free?**
+**Is Kelid free?**
 Yes. The apps are free on the App Store, with no subscription, no hosted service to pay for and no ads. The code is AGPL-3.0-or-later; a commercial license is available on request.
 
-**Is OnePass open source?**
+**Is Kelid open source?**
 Yes, all of it: the Rust core, the Apple apps, the browser extension, the sync server and the formal models are in this repository under AGPL-3.0-or-later.
 
-**Is OnePass a good open source alternative to 1Password?**
-For Apple-only users, it covers the same core jobs (passwords, passkeys, TOTP, AutoFill, Watchtower, Travel Mode) and adds post-quantum encryption and agent access. It lacks Android, Windows and Linux apps, family sharing in a release, and an external audit. See [OnePass vs 1Password](docs/comparison/onepass-vs-1password.md).
+**Is Kelid a good open source alternative to 1Password?**
+For Apple-only users, it covers the same core jobs (passwords, passkeys, TOTP, AutoFill, Watchtower, Travel Mode) and adds post-quantum encryption and agent access. It lacks Android, Windows and Linux apps, family sharing in a release, and an external audit. See [Kelid vs 1Password](docs/comparison/onepass-vs-1password.md).
 
-**Has OnePass been audited?**
+**Has Kelid been audited?**
 Not yet. An external audit is planned for milestone 8. The whitepaper, ProVerif models, fuzzing and test vectors are public. See [audit status](docs/guides/security-audit-status.md).
 
-**What post-quantum algorithms does OnePass use?**
+**What post-quantum algorithms does Kelid use?**
 ML-KEM-1024 + X25519 to wrap vault keys, ML-DSA-87 + Ed25519 to sign manifests and backups, and SLH-DSA-SHA2-256s for the account identity. See [post-quantum cryptography](docs/guides/post-quantum-encryption.md).
 
-**Does OnePass work on Android, Windows or Linux?**
+**Does Kelid work on Android, Windows or Linux?**
 No app yet. Chrome and Firefox extensions work with the Mac app, and a development CLI runs on Linux. See [platform status](docs/guides/android-windows-linux.md).
 
 **Where is my data stored?**
-On your devices and, encrypted by OnePass before upload, in your own private iCloud database (CloudKit). There is no OnePass account server. See [iCloud sync](docs/guides/icloud-sync.md).
+On your devices and, encrypted by Kelid before upload, in your own private iCloud database (CloudKit). There is no Kelid account server. See [iCloud sync](docs/guides/icloud-sync.md).
 
-**Can I self-host OnePass?**
+**Can I self-host Kelid?**
 Not in a released app yet. The sync server for that work (`mailbox/`, on Supabase) is in the repository with self-hosting steps, and the roadmap lists a self-hosted server as planned. See [self-hosting](docs/guides/self-hosted-sync-server.md).
 
-**Does OnePass support passkeys?**
+**Does Kelid support passkeys?**
 Yes, in AutoFill on iPhone, iPad and Mac and in the browser extension. Private keys are created and used inside the Rust core. See [passkeys](docs/guides/passkeys.md).
 
 **How do I import from 1Password, Bitwarden or LastPass?**
-Export from the old manager, then use "Import from Another Password Manager…" in OnePass. It reads 21 formats, including 1PUX, Bitwarden JSON, LastPass CSV and KeePass 2 XML. See the [import guide](docs/guides/import-from-other-password-managers.md).
+Export from the old manager, then use "Import from Another Password Manager…" in Kelid. It reads 21 formats, including 1PUX, Bitwarden JSON, LastPass CSV and KeePass 2 XML. See the [import guide](docs/guides/import-from-other-password-managers.md).
 
 **What happens if I forget my master password?**
 You need both your master password and your Secret Key (on your Emergency Kit) to unlock. The repository documents no recovery without them for a personal account; recovery codes are on the roadmap. See [master password and Secret Key](docs/guides/master-password-secret-key-emergency-kit.md).
@@ -641,7 +641,7 @@ You need both your master password and your Secret Key (on your Emergency Kit) t
 **Can AI agents use my passwords safely?**
 Through the built-in MCP server, an agent can run a command or fill a form with a secret without seeing it, only in vaults you expose, and only after you approve each request on the Mac or iPhone. See the [MCP guide](docs/guides/mcp-server-ai-agents.md).
 
-**Does OnePass collect analytics?**
+**Does Kelid collect analytics?**
 No analytics and no telemetry. The Mac app checks GitHub for its signed update feed (you can turn that off). The [Privacy](#privacy) section describes what leaves the device.
 
 **How do I verify a download?**
@@ -685,7 +685,7 @@ Please report security issues privately through [GitHub Security Advisories](htt
 
 ## License
 
-OnePass is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). You can use, study, change and share it. If you distribute a modified version, or run one as a network service, you must publish its source under the same license.
+Kelid is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). You can use, study, change and share it. If you distribute a modified version, or run one as a network service, you must publish its source under the same license.
 
 For a commercial license without the AGPL terms, write to security@somalabs.me with "License" in the subject. Third-party word lists keep their own licenses, listed in [`core/onepass-core/data/LICENSES.md`](core/onepass-core/data/LICENSES.md). Site icons come from a pack built from Simple Icons (CC0), gilbarbara/logos (CC0) and 2FA Directory (MIT), downloaded whole and never site by site: see [`docs/icon-pack.md`](docs/icon-pack.md) and [`NOTICE`](NOTICE). Logos remain trademarks of their owners.
 

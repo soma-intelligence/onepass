@@ -58,7 +58,7 @@ public enum ArchiveError: Error, Equatable, Sendable {
     }
 }
 
-/// Restore of a OnePass archive (`.onepass`) and its preview. The archive's header says how it
+/// Restore of a Kelid archive (`.onepass`) and its preview. The archive's header says how it
 /// opens: by this account (its signature is then verified, no passphrase) or by its passphrase.
 /// Nothing in the account is overwritten: items already there are skipped and counted. The caller
 /// owns the archive bytes; the passphrase crosses the FFI as bytes, wiped by the core.
@@ -95,7 +95,7 @@ extension VaultSession {
 public enum PlaintextExportFile {
     static let folderPrefix = "plaintext-"
 
-    /// "OnePass export non chiffré 2026-10-26.csv" (the day in the device's time zone).
+    /// "Kelid export non chiffré 2026-10-26.csv" (the day in the device's time zone).
     public static func fileName(for date: Date, timeZone: TimeZone = .current) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone

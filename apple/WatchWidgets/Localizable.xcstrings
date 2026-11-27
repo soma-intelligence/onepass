@@ -7,43 +7,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass"
+            "value" : "Kelid"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass"
+            "value" : "Kelid"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass"
+            "value" : "Kelid"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass"
+            "value" : "Kelid"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass"
+            "value" : "Kelid"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass"
+            "value" : "Kelid"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass"
+            "value" : "Kelid"
           }
         }
       }
@@ -54,43 +54,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Öffnet OnePass."
+            "value" : "Öffnet Kelid."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens OnePass."
+            "value" : "Opens Kelid."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre OnePass."
+            "value" : "Abre Kelid."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre OnePass."
+            "value" : "Ouvre Kelid."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre OnePass."
+            "value" : "Apre Kelid."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "OnePass를 열어요."
+            "value" : "Kelid를 열어요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "打开 OnePass。"
+            "value" : "打开 Kelid。"
           }
         }
       }

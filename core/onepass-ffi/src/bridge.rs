@@ -642,6 +642,23 @@ impl<'a> AppVault<'a> {
 }
 
 impl VaultAccess for AppVault<'_> {
+    fn checked_status(&self) -> onepass_bridge::Result<VaultStatus> {
+        let account = self.shared.primary_name();
+        match self.vaults() {
+            Ok(v) => Ok(VaultStatus {
+                locked: false,
+                account,
+                vaults: v.len(),
+            }),
+            Err(BridgeError::App(AppErrorCode::Locked)) => Ok(VaultStatus {
+                locked: true,
+                account,
+                vaults: 0,
+            }),
+            Err(e) => Err(e),
+        }
+    }
+
     fn status(&self) -> VaultStatus {
         let account = self.shared.primary_name();
         match self.vaults() {

@@ -89,12 +89,12 @@ describe("popup", () => {
     expect(r.querySelectorAll(".row-account")).toHaveLength(1);
   });
 
-  it("unpaired: Appairer avec OnePass, then the code and its two buttons", async () => {
+  it("unpaired: Appairer avec Kelid, then the code and its two buttons", async () => {
     const w = worker((m) => (m.type === "popup_status" ? { err: "unpaired" } : null));
     const { r, handle } = setup(w);
     await handle.ready;
-    expect(text(r)).toContain("OnePass n'est pas appairé");
-    button(r, "Appairer avec OnePass").click();
+    expect(text(r)).toContain("Kelid n'est pas appairé");
+    button(r, "Appairer avec Kelid").click();
     await handle.settled();
     expect(text(r)).toContain("123 456");
     expect(button(r, "Les codes sont identiques")).toBeTruthy();
@@ -102,7 +102,7 @@ describe("popup", () => {
     button(r, "Annuler").click();
     await handle.settled();
     expect(w.types()).toContain("popup_pair_cancel");
-    expect(text(r)).toContain("Appairer avec OnePass");
+    expect(text(r)).toContain("Appairer avec Kelid");
   });
 
   it("re-pairing is offered on unpaired even when a record exists, and approval reloads", async () => {
@@ -118,7 +118,7 @@ describe("popup", () => {
     });
     const { r, handle } = setup(w);
     await handle.ready;
-    button(r, "Appairer avec OnePass").click();
+    button(r, "Appairer avec Kelid").click();
     await handle.settled();
     button(r, "Les codes sont identiques").click();
     await handle.settled();
@@ -143,11 +143,11 @@ describe("popup", () => {
     });
     const { r, handle } = setup(w);
     await handle.ready;
-    button(r, "Appairer avec OnePass").click();
+    button(r, "Appairer avec Kelid").click();
     await handle.settled();
     expect(w.types()).not.toContain("popup_pair_start");
     expect(text(r)).not.toContain("123 456");
-    expect(text(r)).toContain("Connectée à OnePass");
+    expect(text(r)).toContain("Connectée à Kelid");
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
   });
 
@@ -160,12 +160,12 @@ describe("popup", () => {
     });
     const { r, handle, timers } = setup(w);
     await handle.ready;
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Kelid").click();
     await handle.settled();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     timers.runTimeouts();
     await handle.settled();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     locked = false;
     timers.runTimeouts();
     await handle.settled();
@@ -227,22 +227,22 @@ describe("popup", () => {
     });
     const { r, handle, timers } = setup(w);
     await handle.ready;
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Kelid").click();
     await handle.settled();
     for (let i = 0; i < UNLOCK_WAIT_TRIES - 1; i++) {
       timers.runTimeouts();
       await handle.settled();
     }
     // Still waiting just before the shared deadline.
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
     timers.runTimeouts();
     await handle.settled();
-    expect(text(r)).toContain("OnePass est verrouillé");
-    expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
+    expect(text(r)).toContain("Kelid est verrouillé");
+    expect(button(r, "Déverrouiller dans Kelid")).toBeTruthy();
     expect(w.types().filter((t) => t === "popup_status").length).toBeLessThanOrEqual(UNLOCK_WAIT_TRIES + 2);
   });
 
-  it("locked: Déverrouiller dans OnePass", async () => {
+  it("locked: Déverrouiller dans Kelid", async () => {
     let locked = true;
     const w = worker((m) => {
       if (m.type === "popup_status") return { ok: { ...STATUS, locked } };
@@ -254,8 +254,8 @@ describe("popup", () => {
     });
     const { r, handle } = setup(w);
     await handle.ready;
-    expect(text(r)).toContain("OnePass est verrouillé");
-    button(r, "Déverrouiller dans OnePass").click();
+    expect(text(r)).toContain("Kelid est verrouillé");
+    button(r, "Déverrouiller dans Kelid").click();
     await handle.settled();
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
   });
@@ -285,36 +285,36 @@ describe("popup", () => {
     button(r, "Oublier").click();
     await handle.settled();
     expect(w.types().filter((t) => t === "popup_forget")).toHaveLength(1);
-    expect(text(r)).toContain("OnePass n'est pas appairé");
-    expect(button(r, "Appairer avec OnePass")).toBeTruthy();
+    expect(text(r)).toContain("Kelid n'est pas appairé");
+    expect(button(r, "Appairer avec Kelid")).toBeTruthy();
   });
 
   it("Oublier cet appairage is reachable while locked", async () => {
     const w = worker((m) => (m.type === "popup_status" ? { ok: { ...STATUS, locked: true } } : null));
     const { r, handle } = setup(w);
     await handle.ready;
-    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(text(r)).toContain("Kelid est verrouillé");
     button(r, "Oublier cet appairage").click();
     await handle.settled();
     button(r, "Annuler").click();
     await handle.settled();
-    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(text(r)).toContain("Kelid est verrouillé");
     button(r, "Oublier cet appairage").click();
     await handle.settled();
     button(r, "Oublier").click();
     await handle.settled();
     expect(w.types()).toContain("popup_forget");
-    expect(text(r)).toContain("Appairer avec OnePass");
+    expect(text(r)).toContain("Appairer avec Kelid");
   });
 
-  it("host missing: App OnePass introuvable", async () => {
+  it("host missing: App Kelid introuvable", async () => {
     const { r, handle } = setup(worker((m) => (m.type === "popup_status" ? { err: "host_missing" } : null)));
     await handle.ready;
-    expect(text(r)).toContain("App OnePass introuvable");
+    expect(text(r)).toContain("App Kelid introuvable");
     expect(button(r, "Réessayer")).toBeTruthy();
   });
 
-  it("host missing: Ouvrir OnePass asks the app to come forward, then the popup loads", async () => {
+  it("host missing: Ouvrir Kelid asks the app to come forward, then the popup loads", async () => {
     let up = false;
     const w = worker((m) => {
       if (m.type === "popup_status") return up ? null : { err: "host_missing" };
@@ -326,34 +326,34 @@ describe("popup", () => {
     });
     const { r, handle } = setup(w);
     await handle.ready;
-    button(r, "Ouvrir OnePass").click();
+    button(r, "Ouvrir Kelid").click();
     await handle.settled();
     expect(w.types()).toContain("popup_unlock");
     expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
   });
 
-  it("app not responding: says what to check, offers Ouvrir OnePass and Réessayer", async () => {
+  it("app not responding: says what to check, offers Ouvrir Kelid and Réessayer", async () => {
     const { r, handle, w } = setup(worker((m) => (m.type === "popup_status" ? { err: "timeout" } : m.type === "popup_unlock" ? { ok: { locked: true } } : null)));
     await handle.ready;
-    expect(text(r)).toContain("L'app OnePass ne répond pas.");
-    expect(text(r)).toContain("Vérifie que l'app OnePass est ouverte et déverrouillée, puis réessaie.");
+    expect(text(r)).toContain("L'app Kelid ne répond pas.");
+    expect(text(r)).toContain("Vérifie que l'app Kelid est ouverte et déverrouillée, puis réessaie.");
     expect(button(r, "Réessayer")).toBeTruthy();
-    button(r, "Ouvrir OnePass").click();
+    button(r, "Ouvrir Kelid").click();
     await handle.settled();
     expect(w.types()).toContain("popup_unlock");
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Kelid pour continuer");
   });
 
   it("version mismatch: names the side to update", async () => {
     const cases: [string, string][] = [
       ["version_update_extension", "mets à jour l'extension depuis la boutique de ton navigateur"],
-      ["version_update_app", "mets à jour l'app OnePass, puis réessaie."],
-      ["version", "Mets à jour l'app OnePass et l'extension, puis réessaie."],
+      ["version_update_app", "mets à jour l'app Kelid, puis réessaie."],
+      ["version", "Mets à jour l'app Kelid et l'extension, puis réessaie."],
     ];
     for (const [code, help] of cases) {
       const { r, handle } = setup(worker((m) => (m.type === "popup_status" ? { err: code } : null)));
       await handle.ready;
-      expect(text(r)).toContain("L'extension et l'app OnePass ne sont pas à la même version.");
+      expect(text(r)).toContain("L'extension et l'app Kelid ne sont pas à la même version.");
       expect(text(r)).toContain(help);
       expect(button(r, "Réessayer")).toBeTruthy();
       expect(r.querySelector("button.btn-primary")!.textContent).toBe("Réessayer");
@@ -368,7 +368,7 @@ describe("popup", () => {
     expect(r.querySelector("img.site-icon")!.getAttribute("src")).toBe("https://atlas-cloud.test/favicon.ico");
     expect(text(r)).toContain("Atlas Cloud");
     expect(text(r)).toContain("alex@atlas.dev");
-    expect(r.querySelector("input[type=search]")!.getAttribute("placeholder")).toBe("Rechercher dans OnePass");
+    expect(r.querySelector("input[type=search]")!.getAttribute("placeholder")).toBe("Rechercher dans Kelid");
   });
 
   it("detail with masked password, reveal on click, TOTP countdown, Remplir toast", async () => {
@@ -587,7 +587,7 @@ describe("popup", () => {
     await handle.ready;
     button(r, "Atlas Cloud").click();
     await handle.settled();
-    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(text(r)).toContain("Kelid est verrouillé");
   });
 
   it("renders data as text only", async () => {

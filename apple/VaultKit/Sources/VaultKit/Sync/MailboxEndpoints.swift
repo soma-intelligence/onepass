@@ -1,6 +1,6 @@
 import Foundation
 
-/// The OnePass server URLs the app accepts.
+/// The Kelid server URLs the app accepts.
 public enum MailboxEndpoints {
     /// Info.plist key of the hosted instance's base URL.
     public static let infoKey = "OnePassMailboxURL"

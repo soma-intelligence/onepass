@@ -40,7 +40,7 @@ struct AgentInstallerTests {
     @Test func previewThenInstallWithTheAppSocket() async {
         let runner = FakeHelperRunner([
             HelperResult(status: 0, output: "--- config.toml\n+++ config.toml\n+[mcp_servers.onepass]\n"),
-            HelperResult(status: 0, output: "OnePass added to Codex. Quit Codex first, then open it again."),
+            HelperResult(status: 0, output: "Kelid added to Codex. Quit Codex first, then open it again."),
         ])
         let installer = AgentInstaller(paths: paths, home: URL(fileURLWithPath: "/Users/camille"), runner: runner)
         installer.client = .codex

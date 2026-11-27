@@ -1,4 +1,4 @@
-// Smart fill end to end (Task 10): a trusted click on a field's OnePass icon
+// Smart fill end to end (Task 10): a trusted click on a field's Kelid icon
 // plans the page through the real native host (fixture vault) and runs the
 // plan. The icon lives in a closed shadow root: it is clicked where it is
 // drawn, with the mouse (a trusted click, as a user's).
@@ -10,7 +10,7 @@ const ATLAS = "https://atlas-cloud.test";
 /** content/icon.ts: a 20 px icon, 6 px inside the field's right edge. */
 const ICON_CENTER_FROM_RIGHT = 6 + 10;
 
-/** Clicks the OnePass icon of `selector` (a trusted mouse click on its drawn position). */
+/** Clicks the Kelid icon of `selector` (a trusted mouse click on its drawn position). */
 async function clickIcon(ext: Ext, page: Page, selector: string): Promise<void> {
   await expect(page.locator("onepass-root")).toHaveCount(1);
   const field = page.locator(selector);
@@ -202,7 +202,7 @@ paired("smart_fill_signup_passkey_choice_opens_the_onepass_window", async ({ ext
   await clickIcon(ext, page, "#email");
   const opened = ext.context.waitForEvent("page", { predicate: (p) => /\/passkey\.html#[A-Za-z0-9_-]{22}$/.test(p.url()), timeout: 20_000 });
   await pickSignup(ext, page, "passkey");
-  // The identity, then the site's own passkey button: OnePass's window asks.
+  // The identity, then the site's own passkey button: Kelid's window asks.
   const win = await opened;
   await expect(win.getByRole("heading", { name: "Enregistrer une passkey" })).toBeVisible();
   await expect(win.getByText(FX.identity.email)).toBeVisible();

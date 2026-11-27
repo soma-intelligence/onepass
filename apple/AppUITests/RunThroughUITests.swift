@@ -1,7 +1,7 @@
 import XCTest
 
-/// AutoFill end-to-end on `OnePass M3 iPhone` against the `AutoFillHost` test app (ruling A16):
-/// OnePass reset, account created, a Login saved, OnePass turned on as the AutoFill provider, a
+/// AutoFill end-to-end on `Kelid M3 iPhone` against the `AutoFillHost` test app (ruling A16):
+/// Kelid reset, account created, a Login saved, Kelid turned on as the AutoFill provider, a
 /// second Login saved without the system "Save Password?" sheet (spec 7), then the Login filled
 /// into the host app through the extension, unlocked with the master password.
 /// Fictional data only (`exemple.fr`, Camille Durand, Projet Atlas).
@@ -49,7 +49,7 @@ final class RunThroughUITests: XCTestCase {
         onePass.launch()
         createAccount()
 
-        // First Login, while OnePass is not the provider yet: the system sheet may still show up.
+        // First Login, while Kelid is not the provider yet: the system sheet may still show up.
         addLogin(title: Self.title, username: Self.username, password: Self.password)
         // iOS 27 can raise the sheet a second time right after the first is dismissed; a sheet
         // left up would cover the account menu.
@@ -59,10 +59,10 @@ final class RunThroughUITests: XCTestCase {
             dismissSaveSheet()
         }
 
-        // Réglages > Remplissage automatique > "Activer OnePass": the system alert, accepted.
+        // Réglages > Remplissage automatique > "Activer Kelid": the system alert, accepted.
         openAutoFillSettings()
         activateProvider()
-        // The system settings show OnePass turned on (the proof that the provider is on).
+        // The system settings show Kelid turned on (the proof that the provider is on).
         verifyOnInSystemSettings()
         onePass.activate()
         let status = onePass.descendants(matching: .any)["autofill.status"].firstMatch
@@ -73,10 +73,10 @@ final class RunThroughUITests: XCTestCase {
         if !waitForValue(status, "Activé", timeout: Self.uiTimeout) {
             // iOS 27.0 Simulator: `ASCredentialIdentityStore.state()` cannot reach
             // `com.apple.SafariFoundation.CredentialProviderExtensionHelper` (bootstrap look-up
-            // fails, "No such process") and answers "off" while the system settings show OnePass on.
+            // fails, "No such process") and answers "off" while the system settings show Kelid on.
             // Kept visible in the log and the report; to check on a device, where "Activé" is expected.
             attachScreenshot("status-not-refreshed")
-            print("Simulator limit: autofill.status is \(String(describing: status.value)) while the system settings show OnePass on")
+            print("Simulator limit: autofill.status is \(String(describing: status.value)) while the system settings show Kelid on")
         }
         // Back to the settings list, closed with "OK" (Réglages is a sheet, opened from the
         // account menu), then to the root of Accueil.
@@ -103,12 +103,12 @@ final class RunThroughUITests: XCTestCase {
             pops += 1
         }
 
-        // Second Login, OnePass now the provider: no "Save Password?" sheet (spec 7). Limit: an
+        // Second Login, Kelid now the provider: no "Save Password?" sheet (spec 7). Limit: an
         // absence is only watched for 10 s (the sheet came within 3 s before activation).
         if !isPad { addLogin(title: Self.secondTitle, username: Self.secondUsername, password: Self.secondPassword) }
         if !isPad, let sheet = saveSheet(timeout: 10) {
             attachScreenshot("save-sheet-after-activation")
-            XCTFail("Save Password sheet shown with OnePass as the provider: \(sheet)")
+            XCTFail("Save Password sheet shown with Kelid as the provider: \(sheet)")
         }
 
         // Tour of the app: every tab, slowly, for the recording.
@@ -202,7 +202,7 @@ final class RunThroughUITests: XCTestCase {
         guard field.waitForExistence(timeout: 5) else { return false }
         type(Self.masterPassword, into: field, in: onePass)
         tap(onePass.buttons["lock.unlock"], in: onePass)
-        XCTAssertTrue(field.waitForNonExistence(timeout: Self.kdfTimeout), "OnePass not unlocked")
+        XCTAssertTrue(field.waitForNonExistence(timeout: Self.kdfTimeout), "Kelid not unlocked")
         return true
     }
 
@@ -221,7 +221,7 @@ final class RunThroughUITests: XCTestCase {
         if row.waitForExistence(timeout: 3) { row.tap() } else { print("sidebar row \(id) not found") }
     }
 
-    // MARK: - OnePass
+    // MARK: - Kelid
 
     /// Same steps as `OnboardingAndItemUITests`.
     private func createAccount() {
@@ -294,25 +294,25 @@ final class RunThroughUITests: XCTestCase {
         } while !status.waitForExistence(timeout: 3) && row.exists && taps < 3
     }
 
-    /// "Activer OnePass", then the system alert accepted through Springboard. No alert when the
+    /// "Activer Kelid", then the system alert accepted through Springboard. No alert when the
     /// provider is already on for the system (the request answers at once).
     private func activateProvider() {
         let status = onePass.descendants(matching: .any)["autofill.status"].firstMatch
         require(status, in: onePass, "autofill settings page")
         // Read once the page appears: empty while the state is read.
         _ = waitForValue(status, "Désactivé", timeout: Self.uiTimeout)
-        // The provider was turned off first: "Activer OnePass" is shown and asks the system.
+        // The provider was turned off first: "Activer Kelid" is shown and asks the system.
         tap(onePass.buttons["autofill.enable"], in: onePass)
         let accept = springboard.buttons
             .matching(Self.labelPredicate(["Turn On", "Activer", "Allow", "Autoriser"])).firstMatch
         guard accept.waitForExistence(timeout: 10) else {
             // iOS 27.2 Simulator: the request answers "off" at once, without the alert, and the app
             // falls back to the system AutoFill settings (`AppModel.requestAutoFillActivation`).
-            // Only accepted when that fallback is on screen; OnePass is then turned on there.
+            // Only accepted when that fallback is on screen; Kelid is then turned on there.
             guard preferences.wait(for: .runningForeground, timeout: 5) else {
                 dump("springboard without the activation alert", springboard)
                 attachScreenshot("no-activation-alert")
-                XCTFail("no system alert after \"Activer OnePass\", and no system settings either")
+                XCTFail("no system alert after \"Activer Kelid\", and no system settings either")
                 return
             }
             attachScreenshot("activation-fallback-settings")
@@ -337,20 +337,20 @@ final class RunThroughUITests: XCTestCase {
         XCTAssertTrue(accept.waitForNonExistence(timeout: Self.uiTimeout), "activation alert still shown")
     }
 
-    /// Settings > General > AutoFill & Passwords: the alert turned the OnePass switch on. Only read,
+    /// Settings > General > AutoFill & Passwords: the alert turned the Kelid switch on. Only read,
     /// never flipped here.
     private func verifyOnInSystemSettings() {
         preferences.launch()
         let toggle = systemSwitch()
         XCTAssertTrue(waitForValue(toggle, "1", timeout: Self.uiTimeout),
-                      "OnePass not on in the system settings after the alert: \(String(describing: toggle.value))")
+                      "Kelid not on in the system settings after the alert: \(String(describing: toggle.value))")
         print("System settings: \(toggle.label) = \(String(describing: toggle.value))")
         attachScreenshot("system-autofill-settings")
     }
 
-    /// The OnePass switch of Settings > General > AutoFill & Passwords (Settings may reopen there).
+    /// The Kelid switch of Settings > General > AutoFill & Passwords (Settings may reopen there).
     private func systemSwitch() -> XCUIElement {
-        let toggle = preferences.switches.matching(NSPredicate(format: "label CONTAINS 'OnePass'")).firstMatch
+        let toggle = preferences.switches.matching(NSPredicate(format: "label CONTAINS 'Kelid'")).firstMatch
         if toggle.waitForExistence(timeout: 3) { return toggle }
         let general = preferences.descendants(matching: .any).matching(Self.labelPredicate(["General", "Général"])).firstMatch
         tap(general, in: preferences)
@@ -366,15 +366,15 @@ final class RunThroughUITests: XCTestCase {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     }
 
-    /// The provider survives a reinstall: turned off first, so "Activer OnePass" shows the alert.
+    /// The provider survives a reinstall: turned off first, so "Activer Kelid" shows the alert.
     private func turnOffInSystemSettings() {
         preferences.launch()
         let toggle = systemSwitch()
         if toggle.value as? String == "1" {
             flip(toggle)
-            print("OnePass turned off in the system settings before the test")
+            print("Kelid turned off in the system settings before the test")
         }
-        XCTAssertTrue(waitForValue(toggle, "0", timeout: Self.uiTimeout), "OnePass still on in the system settings")
+        XCTAssertTrue(waitForValue(toggle, "0", timeout: Self.uiTimeout), "Kelid still on in the system settings")
         preferences.terminate()
     }
 
@@ -387,7 +387,7 @@ final class RunThroughUITests: XCTestCase {
         repeat {
             for app in [onePass, springboard] {
                 let button = app.buttons.matching(notNow).firstMatch
-                if button.exists { return "\(app == onePass ? "OnePass" : "Springboard"): \(button.label)" }
+                if button.exists { return "\(app == onePass ? "Kelid" : "Springboard"): \(button.label)" }
                 if app.buttons["autofill.save"].exists { return "extension save screen" }
             }
             Thread.sleep(forTimeInterval: 0.5)
@@ -405,11 +405,11 @@ final class RunThroughUITests: XCTestCase {
         if cancel.exists { cancel.tap() }
     }
 
-    /// The AutoFill key of the QuickType bar ("Passwords", or the OnePass suggestion), then OnePass
+    /// The AutoFill key of the QuickType bar ("Passwords", or the Kelid suggestion), then Kelid
     /// in the provider chooser when the system shows one.
     private func openOnePassFromKeyboard() {
-        let labels = ["Passwords", "Mots de passe", "Password", "Mot de passe", "OnePass"]
-        let predicate = NSPredicate(format: "label IN %@ OR label CONTAINS 'OnePass' OR identifier CONTAINS[c] 'password'", labels)
+        let labels = ["Passwords", "Mots de passe", "Password", "Mot de passe", "Kelid"]
+        let predicate = NSPredicate(format: "label IN %@ OR label CONTAINS 'Kelid' OR identifier CONTAINS[c] 'password'", labels)
         _ = host.keyboards.firstMatch.waitForExistence(timeout: Self.uiTimeout)
         let deadline = Date().addingTimeInterval(Self.uiTimeout)
         var key: XCUIElement?
@@ -434,11 +434,11 @@ final class RunThroughUITests: XCTestCase {
         print("AutoFill key: \(key)")
         key.tap()
 
-        // A provider chooser (Passwords or OnePass) when several providers are on.
+        // A provider chooser (Passwords or Kelid) when several providers are on.
         if element("autofill.password", type: .secureTextField).waitForExistence(timeout: 3) { return }
         for app in [host, springboard] {
             let onePassChoice = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label == 'OnePass' AND elementType != %d", XCUIElement.ElementType.secureTextField.rawValue))
+                .matching(NSPredicate(format: "label == 'Kelid' AND elementType != %d", XCUIElement.ElementType.secureTextField.rawValue))
                 .firstMatch
             if onePassChoice.exists, onePassChoice.isHittable {
                 print("Provider chooser: \(onePassChoice)")

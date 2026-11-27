@@ -181,7 +181,8 @@ targets:
     info:
       path: App/Support/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Kelid
+        CFBundleName: Kelid
         CFBundleDevelopmentRegion: en
         LSApplicationCategoryType: public.app-category.productivity
         AppIdentifierPrefix: $(AppIdentifierPrefix)
@@ -211,17 +212,17 @@ targets:
         # The app ships its own cryptography. No ITSAppUsesNonExemptEncryption key: without an
         # export compliance code the store refuses the upload, so each build answers it in App Store
         # Connect until the classification is settled.
-        NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
-        NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
+        NSFaceIDUsageDescription: "Kelid utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
+        NSCameraUsageDescription: "Kelid utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
         # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
-        NSLocalNetworkUsageDescription: "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
+        NSLocalNetworkUsageDescription: "Kelid utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
         NSBonjourServices: [_onepass-pair._tcp, _onepass-contact._tcp]
         # Asked only on "Utiliser ma position" or when "À proximité" opens. iOS reads
         # NSLocationWhenInUseUsageDescription, macOS reads NSLocationUsageDescription, which also
         # names Wi-Fi automatique (macOS gives the network name only with it). Translated in
         # App/Support/InfoPlist.xcstrings.
-        NSLocationWhenInUseUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
-        NSLocationUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
+        NSLocationWhenInUseUsageDescription: "Kelid utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+        NSLocationUsageDescription: "Kelid utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
         # The launch screen: the RX page colour and the bare mark tile; RXSplash carries on from it.
         UILaunchScreen:
           UIColorName: LaunchBackground
@@ -315,7 +316,7 @@ targets:
     info:
       path: AutoFill/Support/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Kelid
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -323,7 +324,7 @@ targets:
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
         OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
-        NSFaceIDUsageDescription: "OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
+        NSFaceIDUsageDescription: "Kelid utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
         NSExtension:
           NSExtensionPointIdentifier: com.apple.authentication-services-credential-provider-ui
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).CredentialProviderViewController
@@ -399,7 +400,7 @@ targets:
     info:
       path: SafariExtension/Support/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Kelid
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -465,7 +466,7 @@ targets:
     info:
       path: SafariExtension/Support/Info-iOS.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Kelid
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -473,7 +474,7 @@ targets:
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
         OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
-        NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre et remplir tes mots de passe dans Safari."
+        NSFaceIDUsageDescription: "Kelid utilise Face ID pour déverrouiller ton coffre et remplir tes mots de passe dans Safari."
         NSExtension:
           NSExtensionPointIdentifier: com.apple.Safari.web-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
@@ -534,7 +535,7 @@ targets:
     info:
       path: Fill/Support/Info.plist
       properties:
-        CFBundleDisplayName: OnePass Fill
+        CFBundleDisplayName: Kelid Fill
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -691,7 +692,7 @@ targets:
     info:
       path: Watch/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Kelid
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -732,7 +733,7 @@ targets:
     info:
       path: WatchWidgets/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Kelid
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -776,7 +777,7 @@ targets:
     info:
       path: Widgets/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Kelid
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -818,7 +819,7 @@ targets:
     info:
       path: NotificationService/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Kelid
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)

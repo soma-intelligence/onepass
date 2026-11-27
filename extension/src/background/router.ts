@@ -228,6 +228,7 @@ function analysis(v: unknown): PageAnalysis {
   return {
     ...(o.captchaWidget !== undefined ? { captchaWidget: bool(o.captchaWidget) } : {}),
     ...(o.passkeySignIn !== undefined ? { passkeySignIn: bool(o.passkeySignIn) } : {}),
+    ...(o.signedIn !== undefined ? { signedIn: bool(o.signedIn) } : {}),
     // Page-influenced hint, never used for policy: the origin comes from sender.
     url: str(o.url, MAX_URL),
     forms: list(o.forms, MAX_FORMS, form),

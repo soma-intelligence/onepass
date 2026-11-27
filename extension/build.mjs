@@ -4,7 +4,7 @@
 // inline maps. --e2e writes dist/<browser>-e2e/ instead, whose service worker
 // entry is src/background/e2e-entry.ts (the regular one plus a handle for the
 // end-to-end security suite); the regular build never bundles that file.
-// The native messaging host is the OnePass app's (`me.somalabs.onepass`);
+// The native messaging host is the Kelid app's (`me.somalabs.onepass`);
 // --dev-host builds for the development host (`me.somalabs.onepass.dev`),
 // as the end-to-end tests and the lab do. Safari ignores it.
 //

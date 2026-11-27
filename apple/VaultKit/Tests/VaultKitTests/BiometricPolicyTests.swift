@@ -19,7 +19,7 @@ struct BiometricPolicyTests {
 
     func expectPassword(_ reason: PasswordReason, _ unlock: BiometricUnlock, sourceLocation: SourceLocation = #_sourceLocation) async {
         await #expect(throws: BiometricError.passwordRequired(reason: reason), sourceLocation: sourceLocation) {
-            _ = try await unlock.unlock(accountID: account, prompt: "Déverrouiller OnePass")
+            _ = try await unlock.unlock(accountID: account, prompt: "Déverrouiller Kelid")
         }
         #expect(!unlock.isEnrolled(accountID: account), sourceLocation: sourceLocation)
     }
@@ -30,7 +30,7 @@ struct BiometricPolicyTests {
         #expect(unlock.isEnrolled(accountID: account))
         let stored = try #require(try keychain.read("biometric.enrollment.\(account)"))
         #expect(stored.range(of: auk) == nil)
-        let out = try await unlock.unlock(accountID: account, prompt: "Déverrouiller OnePass")
+        let out = try await unlock.unlock(accountID: account, prompt: "Déverrouiller Kelid")
         #expect(out == auk)
     }
 

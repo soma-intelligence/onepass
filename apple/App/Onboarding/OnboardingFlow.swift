@@ -7,7 +7,7 @@ import VaultKit
 
 enum OnboardingStep: Hashable, Sendable {
     case welcome, device, password, secretKey, visibleVaults, restore, done
-    /// "J'ai déjà OnePass sur un autre appareil": the mode, then the QR, code and password.
+    /// "J'ai déjà Kelid sur un autre appareil": the mode, then the QR, code and password.
     case pairMode, pairing
     /// "Ouvrir mon coffre iCloud": the account is in iCloud and its Secret Key in iCloud Keychain,
     /// only the master password is asked (spec 2026-11-25).
@@ -127,7 +127,7 @@ final class OnboardingModel {
     private(set) var successPulse = 0
     private(set) var movingForward = true
 
-    /// The mode asked for on "J'ai déjà OnePass sur un autre appareil" (public included).
+    /// The mode asked for on "J'ai déjà Kelid sur un autre appareil" (public included).
     var pairDeviceMode: FfiDeviceMode = .personal
     /// How this device meets the other one: it scans the code the other device shows, types it, or
     /// shows its own QR code for an iPhone or an iPad to scan.
@@ -137,7 +137,7 @@ final class OnboardingModel {
     /// The welcome's search for an account already in iCloud.
     private(set) var iCloudVault: ICloudVaultState = .unknown
     /// The first name stored with the Secret Key in iCloud Keychain: the account the first screen
-    /// proposes. Nil: unknown (an older copy), the screen says "Ton coffre OnePass".
+    /// proposes. Nil: unknown (an older copy), the screen says "Ton coffre Kelid".
     private(set) var iCloudOwner: String?
     /// The iCloud search takes long (slow network): the welcome shows its choices meanwhile.
     private(set) var iCloudLookupSlow = false
@@ -151,7 +151,7 @@ final class OnboardingModel {
     private(set) var asksDeviceKind = false
     /// "Plus tard" on the Emergency Kit step (the key is in iCloud Keychain).
     private(set) var kitSkipped = false
-    /// The scanner read a QR code that is not a OnePass pairing code: said under the camera.
+    /// The scanner read a QR code that is not a Kelid pairing code: said under the camera.
     var scanRejected = false
     /// The running pairing (new device side), from the QR step on.
     private(set) var pairing: PairingNewcomerFlow?
@@ -194,7 +194,7 @@ final class OnboardingModel {
     /// The request was made and the provider is still off (the prompt was refused, or the system
     /// settings were opened instead): the step says where to turn it on.
     private(set) var autoFillAsked = false
-    /// OnePass is the system AutoFill provider (read again on every return to the foreground).
+    /// Kelid is the system AutoFill provider (read again on every return to the foreground).
     var autoFillEnabled: Bool { model.autofillEnabled == true }
 
     private static func offersAutoFill(_ model: AppModel) -> Bool {
@@ -239,7 +239,7 @@ final class OnboardingModel {
     }
 
     var session: VaultSession { model.session }
-    /// Where the new vault syncs (spec D.2): the OnePass server unless chosen otherwise. iCloud
+    /// Where the new vault syncs (spec D.2): the Kelid server unless chosen otherwise. iCloud
     /// while mailbox signup is off in this build.
     var syncChoice: SyncChoice = .default
     var showSyncChoice = false
@@ -692,7 +692,7 @@ final class OnboardingModel {
         }
     }
 
-    /// iCloud signed in and holding no OnePass account yet; false after saying what to do.
+    /// iCloud signed in and holding no Kelid account yet; false after saying what to do.
     private func checkICloudBeforeCreation() async -> Bool {
         guard await model.iCloudAccountAvailable() else {
             fail(String(localized: "onboarding.signInToIcloud"), next: .openSettings)
@@ -1527,7 +1527,7 @@ private struct StepRail: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
                 AppGlyph(size: 34).accessibilityHidden(true)
-                Text("OnePass").font(.title3.bold()).foregroundStyle(label)
+                Text("Kelid").font(.title3.bold()).foregroundStyle(label)
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 22)

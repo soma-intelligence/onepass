@@ -154,6 +154,10 @@ pub enum Error {
         rotator: String,
         at: i64,
     },
+    /// Guarded Kit (spec `2026-11-20-guarded-kit-design.md`): the account
+    /// needs its guard `G` (none given, realms out of reach, wrong password
+    /// at the realms with the attempts left, a realm that misbehaved).
+    Guard(crate::guarded_kit::GuardError),
 }
 
 impl fmt::Display for Error {
@@ -171,6 +175,7 @@ impl fmt::Display for Error {
             Self::OutdatedKit { .. } => {
                 f.write_str("emergency kit outdated: the keys changed since")
             }
+            Self::Guard(e) => write!(f, "guarded kit: {e}"),
         }
     }
 }
@@ -187,6 +192,15 @@ impl std::error::Error for Error {
 impl From<IntegrityError> for Error {
     fn from(e: IntegrityError) -> Self {
         Self::Integrity(e)
+    }
+}
+
+impl From<crate::guarded_kit::GuardError> for Error {
+    fn from(e: crate::guarded_kit::GuardError) -> Self {
+        match e {
+            crate::guarded_kit::GuardError::Crypto => Self::Crypto,
+            other => Self::Guard(other),
+        }
     }
 }
 

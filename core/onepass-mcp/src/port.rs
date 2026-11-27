@@ -53,6 +53,8 @@ impl From<Error> for PortError {
             }
             // Only a kit restore returns it; never reached through a port.
             Error::OutdatedKit { .. } => PortError::Other("emergency kit outdated".into()),
+            // Only an unlock with the password returns it.
+            Error::Guard(_) => PortError::Other("guarded kit".into()),
         }
     }
 }

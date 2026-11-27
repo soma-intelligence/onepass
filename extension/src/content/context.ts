@@ -285,7 +285,7 @@ function fieldContexts(form: PageAnalysis["forms"][number], refs: RefRegistry, g
  * The page as the planner sees it: at most 32 forms (the first ones, in
  * document order), 64 fields and 32 buttons each. A ref whose element is gone
  * is dropped. No value of any field is read into the result, only whether the
- * field is empty, typed or filled by OnePass.
+ * field is empty, typed or filled by Kelid.
  */
 export function buildPageContext(
   doc: Document,
@@ -327,7 +327,7 @@ export function buildPageContext(
  *
  * The username the user typed in the page's first form, to hash with
  * `withTypedUsernameHash`. Stays in the content script: it is never put in a
- * context or a message. Fields OnePass filled are not the user's typing.
+ * context or a message. Fields Kelid filled are not the user's typing.
  */
 export function findTypedUsername(analysis: PageAnalysis, refs: RefRegistry): string | undefined {
   for (const form of analysis.forms.slice(0, PAGE_CONTEXT_MAX_FORMS)) {

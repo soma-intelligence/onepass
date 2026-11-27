@@ -100,7 +100,7 @@ struct RXSettingsHome: View {
             }
             RXFrostedFooter([
                 // swiftlint:disable:next db_unlocalized_string - product name and version number
-                Text(verbatim: "OnePass \(Self.version)"),
+                Text(verbatim: "Kelid \(Self.version)"),
                 Text("settings.onepassOpenSourceAgpl"),
             ])
         }
@@ -392,7 +392,7 @@ struct RXAvatar: View {
 }
 /// The Plus card's page (Penpot "Plan benefits", laid out as a plan page: the name big over the
 /// photo, the perk carousel, then grouped lists). Each line opens the page of Réglages that
-/// already holds it. OnePass has no plan or subscription data: every benefit listed is a feature
+/// already holds it. Kelid has no plan or subscription data: every benefit listed is a feature
 /// of this build, so nothing here is invented. The system back button stays (long press menu,
 /// swipe back) on a clear bar over the photo.
 struct RXPlanPage: View {

@@ -97,7 +97,7 @@ async function setup(
 }
 
 describe("popup background", () => {
-  it("Déverrouiller dans OnePass with the app running: the unlock alone, Touch ID over the browser", async () => {
+  it("Déverrouiller dans Kelid with the app running: the unlock alone, Touch ID over the browser", async () => {
     const { send, client, opened } = await setup();
     expect(await send({ type: "popup_unlock" })).toHaveProperty("ok");
     // The launch link would bring the window forward before Touch ID: the app does it only when refused.
@@ -106,14 +106,14 @@ describe("popup background", () => {
     expect(client.requests.at(-1)).toEqual({ op: "unlock", origin: SITE });
   });
 
-  it("Déverrouiller dans OnePass with the app not running: the launch link opens it, then the unlock goes", async () => {
+  it("Déverrouiller dans Kelid with the app not running: the launch link opens it, then the unlock goes", async () => {
     const { send, client, opened } = await setup(answer, { appDown: true });
     expect(await send({ type: "popup_unlock" })).toHaveProperty("ok");
     expect(opened.n).toBe(1);
     expect(client.requests.at(-1)).toEqual({ op: "unlock", origin: SITE });
   });
 
-  it("Déverrouiller dans OnePass with no page to fill in front (a browser page, plain http): the unlock names no origin", async () => {
+  it("Déverrouiller dans Kelid with no page to fill in front (a browser page, plain http): the unlock names no origin", async () => {
     const { ext, send, client } = await setup();
     for (const tab of [null, { id: 7, url: "chrome://extensions/" }, { id: 7, url: "http://atlas.dev/login" }]) {
       ext.activeTab = tab;
@@ -163,7 +163,7 @@ describe("popup background", () => {
     expect(await send({ type: "popup_fill", itemId: "it_01", tabId: 99, origin: "https://evil.test" })).toEqual({
       ok: { domain: "atlas-cloud.test" },
     });
-    expect(client.requests.at(-1)).toEqual({
+    expect(client.requests.filter((r) => (r as { op?: string }).op === "fill_login").at(-1)).toEqual({
       op: "fill_login",
       ctx: "popup",
       item_id: "it_01",

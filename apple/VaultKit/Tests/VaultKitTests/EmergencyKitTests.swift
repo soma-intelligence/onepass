@@ -29,7 +29,7 @@ struct EmergencyKitTests {
         #expect(bounds.height == 842)
         let text = try #require(document.string)
         #expect(text.contains(Self.secretKey))
-        #expect(text.contains("Emergency Kit OnePass"))
+        #expect(text.contains("Emergency Kit Kelid"))
         #expect(text.contains("Ta Secret Key"))
         #expect(text.contains("Ton mot de passe maître"))
         #expect(text.contains("En cas de perte"))

@@ -342,6 +342,7 @@ public final class AccountSessions {
         if let session, let accountID {
             let environment = session.environment
             try? SecretKeyVault(keychain: environment.keychain).remove(accountID: accountID)
+            try? GuardVault(keychain: environment.keychain).remove(accountID: accountID)
             environment.biometrics.disable(accountID: accountID)
         }
         if profile(slot)?.isManaged == true {

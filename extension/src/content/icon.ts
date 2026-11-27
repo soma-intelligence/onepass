@@ -72,7 +72,7 @@ export interface IconsOptions {
   avoid?: (zone: Rect) => Rect[];
   /**
    * The layout right now (frames.ts). Touch (iPhone, iPad, with or without a trackpad): a larger
-   * icon for a finger, and a "OnePass" label beside the icon of the focused field (spec
+   * icon for a finger, and a "Kelid" label beside the icon of the focused field (spec
    * 2026-11-03-ios-safari-autofill 5). Read at every placement; `readLayout` by default.
    */
   layout?: () => Layout;
@@ -97,7 +97,7 @@ export interface Icons {
 }
 
 function glyph(doc: Document): SVGElement {
-  // The OnePass mark: the Lattice (2 x 3 dots and a bar), in the glyph's colour.
+  // The Kelid mark: the Lattice (2 x 3 dots and a bar), in the glyph's colour.
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 100 100");
   svg.setAttribute("fill", "currentColor");
@@ -313,6 +313,12 @@ export function createIcons(opts: IconsOptions): Icons {
         const hit = theirs.filter((o) => o.left < me.left + me.width + 2 && me.left < o.left + o.width + 2 && o.top < me.top + me.height && me.top < o.top + o.height);
         if (hit.length === 0) break;
         left = Math.min(...hit.map((o) => o.left)) - size - 4;
+      }
+      // No room left inside the field (several managers' icons, real-site bench 2026-11-21): no
+      // icon rather than one over the page's label or the next field; the menu still opens on focus.
+      if (r.width >= NARROW_FIELD && left < r.left + ICON_INSET) {
+        icon.hidden = true;
+        return null;
       }
     }
     // Client coordinates to the fixed layer's (iOS with the keyboard up: not the same).

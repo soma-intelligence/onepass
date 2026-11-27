@@ -63,7 +63,7 @@ struct BrowseCommands: Commands {
                 .disabled(!unlocked || listFocused != true || !model.canTrashSelection)
         }
         CommandGroup(after: .appSettings) {
-            Button("Verrouiller OnePass") {
+            Button("Verrouiller Kelid") {
                 #if os(macOS)
                 // Never silent: unsaved changes bring the window and its confirmation forward.
                 model.lockFromMenuBar()

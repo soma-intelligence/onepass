@@ -1454,7 +1454,7 @@ struct AutoFillProviderTests {
         await laterSession.waitForAutofillIdentities()
     }
 
-    /// G10: right after turning OnePass on, the configuration screen unlocks once and publishes.
+    /// G10: right after turning Kelid on, the configuration screen unlocks once and publishes.
     @Test func configurationPublishesSuggestions() async throws {
         let store = InMemoryIdentityStore()
         let f = try Fixture(identityStore: store)

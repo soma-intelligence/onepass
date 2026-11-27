@@ -3,7 +3,7 @@ import SwiftUI
 import VaultKit
 
 /// Lock screen: one centered column (on the window's glass on Mac): the app glyph, "Déverrouille
-/// OnePass", the account (badge and name), ONE master password field (show or hide button, accent
+/// Kelid", the account (badge and name), ONE master password field (show or hide button, accent
 /// focus ring, shakes on a wrong password) and below it the main action: "Déverrouiller avec
 /// Touch ID" (Face ID, Optic ID) while the field is empty and biometric unlock is on, otherwise
 /// "Déverrouiller". Return unlocks. The Secret Key is never asked here: it stays in this device's
@@ -447,7 +447,7 @@ struct LockView: View {
         if message == nil, model.biometricOfferDue {
             // Face ID is not set up on this device yet: it needs one password unlock first.
             Label(
-                "Déverrouille une fois avec ton mot de passe : OnePass te proposera \(OnboardingModel.biometryName).",
+                "Déverrouille une fois avec ton mot de passe : Kelid te proposera \(OnboardingModel.biometryName).",
                 systemImage: "faceid")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -605,6 +605,10 @@ struct LockView: View {
                 message = left > 0
                     ? String(localized: "lock.wrongPasswordLeft \(left)")
                     : String(localized: "lock.incorrectPassword")
+                withAnimation(.linear(duration: 0.42)) { refusals += 1 }
+            case .guardWrongPassword:
+                // Guarded Kit: the realms counted the attempt; their count is the one that matters.
+                message = failure.localizedMessage
                 withAnimation(.linear(duration: 0.42)) { refusals += 1 }
             case .lockedOut:
                 message = nil
