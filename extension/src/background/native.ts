@@ -95,7 +95,7 @@ export function openTransport(runtime: RuntimeApi): Transport {
 const OPEN_APP = { onepass: 1, op: "open_app" } as const;
 
 /**
- * "Déverrouiller dans Kelid", and any trusted gesture that finds the vault
+ * "Déverrouiller dans Cleon", and any trusted gesture that finds the vault
  * locked or the app not running (app.ts decides, never a page load or a
  * timer): since macOS 14 the app cannot bring itself forward while the
  * browser is in front, so the process that serves this click asks

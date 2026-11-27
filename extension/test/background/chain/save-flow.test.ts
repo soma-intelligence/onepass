@@ -272,7 +272,7 @@ describe("save flow", () => {
     expect(t.opened[1]).toMatchObject({ username: "", password: "Gen-Pass-123", status: "new" });
   });
 
-  it("no identifier after Kelid filled a login here: nothing (its own password)", async () => {
+  it("no identifier after Cleon filled a login here: nothing (its own password)", async () => {
     const t = setup("new");
     t.flow.noteFilled(7, SITE, "login", "it_01");
     await t.submit("", "Some-Pass");
@@ -286,7 +286,7 @@ describe("save flow", () => {
     t.flow.rememberGenerated(7, "https://other.test", "Gen-Pass-123");
     await t.submit("", "Gen-Pass-123", true);
     await t.succeed();
-    // Not confirmed as Kelid's own: the card of a submission without identifier (spec 5.1).
+    // Not confirmed as Cleon's own: the card of a submission without identifier (spec 5.1).
     expect(t.requests.map((r) => r.op)).toEqual(["check_credentials"]);
     expect(t.opened).toEqual([expect.objectContaining({ status: "new", username: "" })]);
     expect(t.opened[0]?.view).toBeUndefined();
@@ -750,7 +750,7 @@ describe("pending save of a generated password (spec 7)", () => {
   });
 });
 
-// Founder, 2026-11-04: the card every time a credential Kelid does not hold is used.
+// Founder, 2026-11-04: the card every time a credential Cleon does not hold is used.
 describe("save every time", () => {
   interface Held {
     site: string;
@@ -839,7 +839,7 @@ describe("save every time", () => {
       expect(t.opened[i]).toMatchObject({ origin, kind: "login", status: "new", username: `user${i}@exemple.fr` });
       t.save(origin, `user${i}@exemple.fr`, `Pass-${i}-un`);
     }
-    // Signed in again with what Kelid now holds: nothing to ask.
+    // Signed in again with what Cleon now holds: nothing to ask.
     await t.signIn(BOREALIS, "user1@exemple.fr", "Pass-1-un");
     expect(t.opened).toHaveLength(3);
   });
@@ -896,7 +896,7 @@ describe("save every time", () => {
       ]);
     });
 
-    it("the card Kelid filled here: nothing; one it holds but did not fill: shown as known (no oracle); new expiry: an update", async () => {
+    it("the card Cleon filled here: nothing; one it holds but did not fill: shown as known (no oracle); new expiry: an update", async () => {
       const t = everyTime({ cards: [{ number: "4111111111111111", exp: "04/2029", id: "card_1" }] });
       await t.sendForm(ATLAS, cardForm({ cc_number: "4111111111111111", cc_exp_month: "04", cc_exp_year: "2029" }));
       expect(t.opened).toEqual([expect.objectContaining({ kind: "card", known: true })]);
@@ -921,7 +921,7 @@ describe("save every time", () => {
       expect(t.requests).toEqual([]);
     });
 
-    it("an address: check_identity with the name split; one Kelid filled here gets nothing; a contact form is no identity", async () => {
+    it("an address: check_identity with the name split; one Cleon filled here gets nothing; a contact form is no identity", async () => {
       const t = everyTime();
       await t.sendForm(ATLAS, addressForm({ full_name: "Camille Durand", email: "camille@exemple.fr", address_line1: "1 rue de la Paix", postal_code: "75002", city: "Paris" }));
       expect(t.requests.at(-1)).toEqual({
@@ -936,7 +936,7 @@ describe("save every time", () => {
         address: { line1: "1 rue de la Paix", line2: "", city: "Paris", postal_code: "75002", region: "", country: "" },
       });
       expect(t.opened).toEqual([expect.objectContaining({ kind: "identity", status: "new" })]);
-      // Filled from Kelid, then reformatted by the page: never a duplicate offered.
+      // Filled from Cleon, then reformatted by the page: never a duplicate offered.
       t.flow.noteFilled(7, ATLAS, "identity", "id_1");
       await t.sendForm(ATLAS, addressForm({ given_name: "Alex", family_name: "Martin", tel: "06 00 00 00 00", address_line1: "1 rue X", city: "Paris" }));
       expect(t.opened).toHaveLength(1);

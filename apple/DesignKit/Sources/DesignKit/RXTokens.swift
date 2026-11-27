@@ -6,7 +6,7 @@ import UIKit
 import AppKit
 #endif
 
-/// The RX look (Revolut-style structure on the Kelid identity): grouped cards on a grey or black
+/// The RX look (Revolut-style structure on the Cleon identity): grouped cards on a grey or black
 /// page, photo heroes under a rounded page sheet, round glass buttons, white glyphs on coloured
 /// discs, a floating pill tab bar. The colours, spacing, radii and typographies come from the
 /// Penpot file through `RXTokens+Generated.swift` (`dbridge export` then `dbridge gen`, see

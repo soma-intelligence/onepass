@@ -500,7 +500,7 @@ private struct DeviceStep: View {
     var body: some View {
         StepTitle(
             title: Platform.isMac ? "Ce Mac est-il à toi ?" : "Cet appareil est-il à toi ?",
-            subtitle: "La réponse règle ce que Kelid garde sur cet appareil.")
+            subtitle: "La réponse règle ce que Cleon garde sur cet appareil.")
         VStack(spacing: 10) {
             option(
                 .personal, "Oui, il est à moi",

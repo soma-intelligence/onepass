@@ -93,7 +93,7 @@ describe.skipIf(!hasCargo)("interop with onepass-native-host", () => {
     async () => {
       const client = new BridgeClient(connect());
       let shown = "";
-      const record = await client.pair("Kelid", "Chromium", async (sas) => {
+      const record = await client.pair("Cleon", "Chromium", async (sas) => {
         shown = sas;
         return true;
       });

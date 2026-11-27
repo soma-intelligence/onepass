@@ -87,7 +87,7 @@ describe("recordSubmit: no value ever", () => {
     expect(Object.keys(step).sort()).toEqual(["at", "filled", "form", "host"]);
   });
 
-  it("filled maps field index to the role Kelid wrote, or user", () => {
+  it("filled maps field index to the role Cleon wrote, or user", () => {
     document.body.innerHTML = '<form><input name="a" id="a"><input type="hidden" name="h"><input name="b" id="b"><input name="c" id="c"></form>';
     const filled = new Map<Element, "email" | "user">([
       [document.getElementById("a")!, "email"],
@@ -282,7 +282,7 @@ describe("storage quota", () => {
 });
 
 describe("content side", () => {
-  it("marks a trusted input as user, an Kelid fill by role, and sends host-only steps once", async () => {
+  it("marks a trusted input as user, an Cleon fill by role, and sends host-only steps once", async () => {
     document.body.innerHTML = '<form id="f"><input name="a" id="a"><input name="b" id="b"></form>';
     const sent: unknown[] = [];
     const trusted = new WeakSet<Event>();

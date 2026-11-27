@@ -1,14 +1,14 @@
 {
   "extDescription": {
-    "message": "Fill your logins, cards and identities from the Kelid app.",
+    "message": "Fill your logins, cards and identities from the Cleon app.",
     "description": "Description of the extension in the store and the extensions page."
   },
   "fillSmartCommand": {
-    "message": "Fill the page in one click with Kelid",
+    "message": "Fill the page in one click with Cleon",
     "description": "Description of the keyboard shortcut that runs smart fill in the active tab."
   },
   "actionTitle": {
-    "message": "Kelid",
+    "message": "Cleon",
     "description": "Tooltip of the toolbar button."
   }
 }

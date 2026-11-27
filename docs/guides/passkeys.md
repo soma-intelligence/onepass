@@ -1,18 +1,18 @@
-# Does Kelid support passkeys?
+# Does Cleon support passkeys?
 
-Yes. Kelid creates and uses passkeys on iPhone, iPad and Mac through the system AutoFill provider, and in Chrome, Firefox and Safari through its browser extension. The private key is generated and used inside the Rust core (`onepass-core::webauthn`, ECDSA P-256 / ES256 via `aws-lc-rs`) and never crosses into Swift or the extension: Swift and the browser only receive the attestation, authenticator data and signature. Passkeys are stored on the Login item, encrypted like any other value, and sync with the vault.
+Yes. Cleon creates and uses passkeys on iPhone, iPad and Mac through the system AutoFill provider, and in Chrome, Firefox and Safari through its browser extension. The private key is generated and used inside the Rust core (`onepass-core::webauthn`, ECDSA P-256 / ES256 via `aws-lc-rs`) and never crosses into Swift or the extension: Swift and the browser only receive the attestation, authenticator data and signature. Passkeys are stored on the Login item, encrypted like any other value, and sync with the vault.
 
 ## Use a passkey on iPhone, iPad or Mac
 
-1. Turn on Kelid as an AutoFill provider in the system settings (iOS, iPadOS or macOS).
-2. On a site or app that offers a passkey, pick Kelid in the system sheet.
+1. Turn on Cleon as an AutoFill provider in the system settings (iOS, iPadOS or macOS).
+2. On a site or app that offers a passkey, pick Cleon in the system sheet.
 3. Unlock with Face ID, Touch ID or your master password. Every request goes through a fresh unlock.
 
-To save a new passkey, choose Kelid when the site offers to create one. Kelid never creates a passkey silently: conditional registration (a site upgrading you to a passkey automatically) always answers `failed`, so a passkey is created only after an explicit choice.
+To save a new passkey, choose Cleon when the site offers to create one. Cleon never creates a passkey silently: conditional registration (a site upgrading you to a passkey automatically) always answers `failed`, so a passkey is created only after an explicit choice.
 
 ## Use a passkey in the browser extension
 
-A shim replaces `navigator.credentials.get` and `create` for `publicKey` requests only. A Kelid window shows the exact origin and `rpId`, and nothing is signed before a trusted click in that window. The host builds `clientDataJSON` itself, checks that the `rpId` matches the page's registrable domain (never a public suffix), and refuses mismatched top-level origins. In these cases the page gets the browser's own passkey dialog instead:
+A shim replaces `navigator.credentials.get` and `create` for `publicKey` requests only. A Cleon window shows the exact origin and `rpId`, and nothing is signed before a trusted click in that window. The host builds `clientDataJSON` itself, checks that the `rpId` matches the page's registrable domain (never a public suffix), and refuses mismatched top-level origins. In these cases the page gets the browser's own passkey dialog instead:
 
 - conditional mediation (`mediation: "conditional"`),
 - `cross-platform` authenticator requests,
@@ -30,7 +30,7 @@ Rate limits stop a page from opening windows in a loop: at most 3 windows per ta
 | Credential id | 16 random bytes |
 | Signature counter | Always 0 (synced passkeys cannot keep a monotonic counter) |
 | Flags (apps) | UP, UV, BE, BS |
-| Attestation | `none`, with a Kelid AAGUID |
+| Attestation | `none`, with a Cleon AAGUID |
 
 ## Watchtower and passkeys
 
@@ -38,12 +38,12 @@ Watchtower lists logins whose site supports passkeys or 2FA where you have not t
 
 ## Limits
 
-- A passkey deleted in Kelid stays known to the site: Kelid does not yet report unknown credentials back.
+- A passkey deleted in Cleon stays known to the site: Cleon does not yet report unknown credentials back.
 - The plaintext CSV export writes only `passkey:<rp_id>`, never the private key. Use the encrypted `.onepass` archive for a full backup.
 
 ## Related
 
 - [Store 2FA codes and set up 2FA from a QR code](two-factor-codes-totp.md)
-- [Use Kelid in Chrome, Firefox and Safari](browser-extension.md)
-- [Post-quantum cryptography in Kelid](post-quantum-encryption.md)
+- [Use Cleon in Chrome, Firefox and Safari](browser-extension.md)
+- [Post-quantum cryptography in Cleon](post-quantum-encryption.md)
 - [README](../../README.md)

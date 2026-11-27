@@ -1,7 +1,7 @@
 import Foundation
 import OnePassCore
 
-/// `otpauth://` and `otpauth-migration://` links, opened by the system once Kelid is chosen in
+/// `otpauth://` and `otpauth-migration://` links, opened by the system once Cleon is chosen in
 /// Réglages > Général > Saisie auto et mots de passe > Codes de vérification (the camera, Safari or
 /// another app hands the link over). The core parses them (`otp_link_accounts`); the link holds the
 /// secret: never logged, never kept past the sheet that adds it.

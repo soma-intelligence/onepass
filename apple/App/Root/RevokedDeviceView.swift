@@ -2,7 +2,7 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// The signed device list marked this device revoked: the session is locked and its Kelid data
+/// The signed device list marked this device revoked: the session is locked and its Cleon data
 /// kept (rule 8.4 of the key rotation v2 spec: a revoked device can sign that list too). "Effacer cet
 /// appareil" erases it after a confirmation. When the erase failed (L6), the screen says so and
 /// "Réessayer" tries again (also once on appear, after a relaunch). A device the key lineage removed
@@ -65,7 +65,7 @@ struct RevokedDeviceView: View {
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .confirmationDialog(
-            "Effacer les données Kelid de cet appareil ?", isPresented: $confirmErase, titleVisibility: .visible
+            "Effacer les données Cleon de cet appareil ?", isPresented: $confirmErase, titleVisibility: .visible
         ) {
             Button("app.erase", role: .destructive) { Task { await model.session.eraseRevokedDevice() } }
                 .accessibilityIdentifier("revoked.confirmErase")

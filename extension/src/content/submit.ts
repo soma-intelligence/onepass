@@ -20,7 +20,7 @@
 // browser has it, under user activation (`navigator.userActivation.isActive`).
 // User activation alone is page-wide: after any click elsewhere, a page could
 // submit a credential form filled with values of its choosing. Otherwise a
-// page could make Kelid report credentials of its choosing at will (save
+// page could make Cleon report credentials of its choosing at will (save
 // prompt spoofing, probing for stored credentials).
 //
 // A card, identity or address form sent the same ways (submit event after a
@@ -41,7 +41,7 @@
 // script's start (an error or captcha page after a sign-in): the worker only
 // ever makes a pending sign-in more cautious with either.
 //
-// Where a submission goes (security review M3): Kelid never submits a form
+// Where a submission goes (security review M3): Cleon never submits a form
 // itself (`submitForm`, the chain's and the plan's submit) when the browser
 // would send it to another site than the page's: the form's `action`, the
 // `formaction` of the control clicked, or of any submit control of the form

@@ -74,7 +74,7 @@ public struct QRMatrix: Equatable, Sendable {
 
 /// A pairing code on its white tile, as one object through the three moments of a pairing:
 ///
-/// - `code`: the QR in round dots with the Kelid mark in the middle. It arrives as a wave of
+/// - `code`: the QR in round dots with the Cleon mark in the middle. It arrives as a wave of
 ///   cipher characters from the center that settle into dots, then stands still: nothing moves
 ///   while a camera reads it. A thin ring around the tile drains until `expiresAt`.
 /// - `connecting`: the same wave turns the dots back into cipher characters and clears the tile;
@@ -336,7 +336,7 @@ public struct CipherQRCode: View {
                 context.fill(square(2.5, 1.5), with: .color(.white))
                 context.fill(square(1.5, 0.9), with: ink)
             }
-            // The Kelid mark, one color, over the middle.
+            // The Cleon mark, one color, over the middle.
             let markScale = back(unit((frame.appear - 0.15) / 0.4)) * (1 - unit((frame.dissolve ?? 0) / 0.2))
             if markScale > 0.01 {
                 let s = markSide * markScale

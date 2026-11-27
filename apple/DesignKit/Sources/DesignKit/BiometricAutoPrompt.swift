@@ -84,7 +84,7 @@ public struct BiometricAutoPrompt: Equatable, Sendable {
         userLockPending = true
     }
 
-    /// An explicit request to unlock (Mac: "Déverrouiller dans Kelid").
+    /// An explicit request to unlock (Mac: "Déverrouiller dans Cleon").
     public mutating func unlockRequested() {
         beginPresentation(due: true)
     }

@@ -26,7 +26,7 @@ struct OnePassApp: App {
         // One window in milestone 2: navigation and editing state live in the process-wide
         // `AppModel` (spec 6.3). iPad: `UIApplicationSupportsMultipleScenes` is false.
         #if os(macOS)
-        Window("Kelid", id: "main") {
+        Window("Cleon", id: "main") {
             root
                 .frame(minWidth: 820, minHeight: 600)
                 // The copy commands of the Élément menu act only while this window is key.
@@ -54,7 +54,7 @@ struct OnePassApp: App {
             // View > Show/Hide Sidebar (⌃⌘S): the toolbar has no sidebar button on the Mac.
             SidebarCommands()
             #if !ONEPASS_APP_STORE
-            // Kelid > Rechercher les mises à jour…, after À propos.
+            // Cleon > Rechercher les mises à jour…, after À propos.
             CommandGroup(after: .appInfo) {
                 if let updater {
                     CheckForUpdatesButton(updater: updater)
@@ -281,7 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 #if !ONEPASS_APP_STORE
-/// Kelid > Rechercher les mises à jour…: Sparkle's window shows what it finds. A view, so the menu
+/// Cleon > Rechercher les mises à jour…: Sparkle's window shows what it finds. A view, so the menu
 /// item follows `canCheckForUpdates` (disabled while a check or an install runs).
 struct CheckForUpdatesButton: View {
     let updater: AppUpdater
@@ -294,7 +294,7 @@ struct CheckForUpdatesButton: View {
 #endif
 
 /// The menu bar icon. It lives while no window is open, so it reopens the main window when the
-/// model asks (`mainWindowRequest`: "Déverrouiller dans Kelid" from an extension).
+/// model asks (`mainWindowRequest`: "Déverrouiller dans Cleon" from an extension).
 struct MenuBarLabel: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
@@ -302,7 +302,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         Image(systemName: model.session.state == .unlocked ? "key.horizontal.fill" : "key.horizontal")
-            .accessibilityLabel(Text("Kelid"))
+            .accessibilityLabel(Text("Cleon"))
             .onChange(of: model.mainWindowRequest) {
                 openWindow(id: "main")
                 NSApp.activate()
@@ -336,7 +336,7 @@ struct MenuBarMenu: View {
             if !model.openSettingsInWindow(bringWindow: true) { openSettings() }
         }
         Divider()
-        Button("Quitter Kelid") { NSApp.terminate(nil) }
+        Button("Quitter Cleon") { NSApp.terminate(nil) }
     }
 
     private func show() {

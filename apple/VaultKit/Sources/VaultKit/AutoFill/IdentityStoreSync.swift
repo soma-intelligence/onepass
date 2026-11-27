@@ -5,7 +5,7 @@ import Synchronization
 
 /// The system credential identity store, behind a protocol for tests and the demo.
 public protocol IdentityStoreClient: Sendable {
-    /// Kelid is turned on as an AutoFill provider (the store accepts identities).
+    /// Cleon is turned on as an AutoFill provider (the store accepts identities).
     func isEnabled() async -> Bool
     /// Replaces the whole content of the store.
     func replaceAll(_ identities: [FfiAutofillIdentity]) async throws

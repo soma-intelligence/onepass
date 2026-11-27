@@ -1,7 +1,7 @@
 import XCTest
 
 /// Watches for the system "Save Password?" sheet (iOS offering to copy a typed secret into the
-/// system password manager), which Kelid must never trigger (ruling X24 of the milestone 3 spec).
+/// system password manager), which Cleon must never trigger (ruling X24 of the milestone 3 spec).
 @MainActor
 enum SaveSheetWatch {
     /// Texts of the sheet, in English (a fresh simulator) and in French.

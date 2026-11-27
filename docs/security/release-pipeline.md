@@ -1,6 +1,6 @@
 # Chaîne de publication
 
-Comment une version de Kelid est construite, signée, attestée et publiée, ce qu'il faut configurer une fois sur GitHub et comment quiconque vérifie un téléchargement. Le workflow est `.github/workflows/release.yml` ; les constructions qui n'ont pas besoin de la signature Apple passent par `scripts/release-build.sh`, que tout le monde peut relancer (`docs/security/reproducible-builds.md`).
+Comment une version de Cleon est construite, signée, attestée et publiée, ce qu'il faut configurer une fois sur GitHub et comment quiconque vérifie un téléchargement. Le workflow est `.github/workflows/release.yml` ; les constructions qui n'ont pas besoin de la signature Apple passent par `scripts/release-build.sh`, que tout le monde peut relancer (`docs/security/reproducible-builds.md`).
 
 ## Ce que fait le workflow
 
@@ -10,11 +10,11 @@ Déclenché par le push d'un tag `v*` (par exemple `v0.2.1`, ou `v0.3.0-rc.1` po
 | --- | --- | --- | --- |
 | `meta` | ubuntu-24.04 | version (le tag sans `v`, refusé s'il ne correspond pas à `core/Cargo.toml`, `extension/package.json`, `extension/manifests/base.json` et `MARKETING_VERSION`), `SOURCE_DATE_EPOCH` = date du commit | `contents: read` |
 | `preflight` | ubuntu-24.04 | `cargo deny check`, `cargo vet --locked`, `cargo audit`, actions épinglées | `contents: read` |
-| `extension` | ubuntu-24.04 | `Kelid-<v>-chrome.zip`, `Kelid-<v>-firefox.zip` | `contents: read` |
+| `extension` | ubuntu-24.04 | `Cleon-<v>-chrome.zip`, `Cleon-<v>-firefox.zip` | `contents: read` |
 | `cli` | macos-26, ubuntu-24.04 | `onepass-<v>-aarch64-apple-darwin`, `onepass-<v>-x86_64-unknown-linux-gnu` | `contents: read` |
 | `rebuild` | ubuntu-24.04 | reconstruit l'extension et la CLI Linux depuis un second checkout, à un autre chemin, et exige les mêmes octets | `contents: read` |
-| `sbom` | ubuntu-24.04 | `Kelid-<v>-sbom.zip` (CycloneDX de chaque crate et de l'extension) | `contents: read` |
-| `mac` | macos-26, Xcode épinglé (`XCODE_APP`) | `Kelid-<v>-mac.zip` : app signée Developer ID, notarisée, ticket agrafé, `CFBundleVersion` = cœur numérique du tag, clé publique de mise à jour dans l'Info.plist | `contents: read`, environnement `release` |
+| `sbom` | ubuntu-24.04 | `Cleon-<v>-sbom.zip` (CycloneDX de chaque crate et de l'extension) | `contents: read` |
+| `mac` | macos-26, Xcode épinglé (`XCODE_APP`) | `Cleon-<v>-mac.zip` : app signée Developer ID, notarisée, ticket agrafé, `CFBundleVersion` = cœur numérique du tag, clé publique de mise à jour dans l'Info.plist | `contents: read`, environnement `release` |
 | `appcast` | ubuntu-24.04 | `appcast.xml` : flux Sparkle signé (zip et flux signés Ed25519), après contrôle de la clé et des numéros de l'app | `contents: read`, environnement `release` |
 | `attest` | ubuntu-24.04 | `SHA256SUMS` et une attestation de provenance SLSA (`actions/attest-build-provenance`) dont les sujets sont tous les fichiers, `SHA256SUMS` compris | `contents: read`, `id-token: write`, `attestations: write` |
 | `release` | ubuntu-24.04 | release GitHub en **brouillon** avec tous les fichiers ; elle est marquée préversion seulement si la version porte un suffixe (`-rc.1`) | `contents: write` |
@@ -96,7 +96,7 @@ python3 -I scripts/appcast.py build --version 0.3.0 --archive OnePass-0.3.0-mac.
 python3 -I scripts/appcast.py verify --appcast appcast.xml --archive OnePass-0.3.0-mac.zip
 ```
 
-Ce que la vérification envoie : une requête HTTPS GET vers `github.com`, redirigée vers le stockage des releases de GitHub, avec l'en-tête User-Agent habituel (nom et version de l'app, version de Sparkle). Aucun identifiant de compte, d'appareil ou d'installation, aucun profil système, aucun cookie posé par Kelid. Le réglage « Rechercher automatiquement les mises à jour » (Réglages, À propos) coupe toute requête automatique ; le menu Kelid, « Rechercher les mises à jour… », reste disponible.
+Ce que la vérification envoie : une requête HTTPS GET vers `github.com`, redirigée vers le stockage des releases de GitHub, avec l'en-tête User-Agent habituel (nom et version de l'app, version de Sparkle). Aucun identifiant de compte, d'appareil ou d'installation, aucun profil système, aucun cookie posé par Cleon. Le réglage « Rechercher automatiquement les mises à jour » (Réglages, À propos) coupe toute requête automatique ; le menu Cleon, « Rechercher les mises à jour… », reste disponible.
 
 Points à connaître :
 

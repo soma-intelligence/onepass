@@ -8,7 +8,7 @@ import VaultKit
 import UIKit
 #endif
 
-/// Turning the Kelid Safari extension on (MS-02 on the Mac, IOSSAF-13 on iPhone and iPad).
+/// Turning the Cleon Safari extension on (MS-02 on the Mac, IOSSAF-13 on iPhone and iPad).
 /// Safari keeps the switch and the website access; the app shows the state it can know and opens
 /// the right settings page. The Mac reads the state from Safari; iOS has no such API, so the app
 /// knows only whether the extension already answered here (a pairing it stored, `SafariSetup`).
@@ -22,7 +22,7 @@ enum SafariExtensionSetup {
         return await withCheckedContinuation { readState(identifier, into: $0) }
     }
 
-    /// Safari > Réglages > Extensions, on Kelid.
+    /// Safari > Réglages > Extensions, on Cleon.
     static func openSettings() {
         guard let identifier else { return }
         showSettings(identifier)
@@ -54,7 +54,7 @@ enum SafariExtensionSetup {
         await Task.detached(priority: .utility) { SafariSetup.extensionHasPaired() }.value
     }
 
-    /// Kelid's page in Réglages, the closest the system lets an app open.
+    /// Cleon's page in Réglages, the closest the system lets an app open.
     @MainActor static func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
@@ -87,7 +87,7 @@ struct SafariExtensionSection: View {
                     .foregroundStyle(.green)
                     .accessibilityIdentifier("safari.setup.seen")
             }
-            // The three steps and the note on what Kelid can know sit behind the info button
+            // The three steps and the note on what Cleon can know sit behind the info button
             // (owner feedback 2026-11-16: less text under the cards).
             Button("safari.setup.openSettings", systemImage: "gear") { SafariExtensionSetup.openSettings() }
                 .accessibilityIdentifier("safari.setup.open")

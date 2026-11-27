@@ -15,7 +15,7 @@ private typealias PlatformViewController = NSViewController
 private typealias HostingController = NSHostingController
 #endif
 
-/// The Kelid credential provider (spec 5). Every decision lives in VaultKit's `AutoFillModel`;
+/// The Cleon credential provider (spec 5). Every decision lives in VaultKit's `AutoFillModel`;
 /// this controller only translates each system call into an `AutoFillRequest`, hosts
 /// `AutoFillRootView` over the model, and turns the `AutoFillResult` back into the matching
 /// `extensionContext` call.

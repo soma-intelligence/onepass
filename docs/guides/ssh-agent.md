@@ -1,6 +1,6 @@
-# How to use Kelid as an SSH agent
+# How to use Cleon as an SSH agent
 
-Kelid includes an SSH agent that signs with Ed25519, ECDSA P-256/384/521 and RSA 3072/4096 keys stored in your vaults, generated or imported in the app. Every signature asks for your approval, or you can allow a key for 5, 15 or 60 minutes. Agent forwarding is refused by default. On the Mac it lives in Settings > Developer and stops as soon as the app locks; for development and Linux, the `onepass ssh-agent` command runs the same agent from the CLI.
+Cleon includes an SSH agent that signs with Ed25519, ECDSA P-256/384/521 and RSA 3072/4096 keys stored in your vaults, generated or imported in the app. Every signature asks for your approval, or you can allow a key for 5, 15 or 60 minutes. Agent forwarding is refused by default. On the Mac it lives in Settings > Developer and stops as soon as the app locks; for development and Linux, the `onepass ssh-agent` command runs the same agent from the CLI.
 
 ## With the development CLI
 
@@ -44,5 +44,5 @@ RSA 2048 is refused at generation (3072 minimum) and accepted at import. The imp
 ## Related
 
 - [Let an AI agent use a password without seeing it](mcp-server-ai-agents.md)
-- [Kelid command line (CLI)](command-line-cli.md)
+- [Cleon command line (CLI)](command-line-cli.md)
 - [README](../../README.md)

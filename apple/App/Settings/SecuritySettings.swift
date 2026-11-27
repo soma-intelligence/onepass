@@ -332,7 +332,7 @@ struct SecuritySettings: View {
 
     private var modeDialogMessage: LocalizedStringKey {
         if pendingMode == .shared {
-            "\(biometry) est désactivé sur cet appareil, Kelid se verrouille après 5 minutes au plus et le mot de passe maître est demandé à chaque déverrouillage. Tu choisis ensuite les coffres visibles."
+            "\(biometry) est désactivé sur cet appareil, Cleon se verrouille après 5 minutes au plus et le mot de passe maître est demandé à chaque déverrouillage. Tu choisis ensuite les coffres visibles."
         } else {
             "Tous les coffres redeviennent visibles. \(biometry) reste désactivé jusqu'à ce que tu le réactives avec ton mot de passe maître."
         }

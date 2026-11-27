@@ -1,16 +1,16 @@
 # Constructions reproductibles
 
-Objectif : qu'un tiers puisse reconstruire Kelid à partir d'un commit et retrouver des fichiers identiques bit à bit, hors signature. Ce document dit ce qui est démontré, ce qui ne l'est pas et comment vérifier. La chaîne de publication elle-même (workflow, secrets, attestations) est décrite dans `docs/security/release-pipeline.md`.
+Objectif : qu'un tiers puisse reconstruire Cleon à partir d'un commit et retrouver des fichiers identiques bit à bit, hors signature. Ce document dit ce qui est démontré, ce qui ne l'est pas et comment vérifier. La chaîne de publication elle-même (workflow, secrets, attestations) est décrite dans `docs/security/release-pipeline.md`.
 
 ## État au 2026-10-28
 
 | Fichier publié | Reproductible ? | Comment c'est établi |
 | --- | --- | --- |
-| `Kelid-<v>-chrome.zip`, `Kelid-<v>-firefox.zip` | **Oui**, à système identique | Deux constructions depuis deux copies du commit à des chemins différents (macOS, Node 22) donnent les mêmes octets. Le contenu du zip Chrome est identique fichier par fichier à celui de la version 0.2.0 publiée à la main. En CI, le job `rebuild` refait la construction sur un autre runner, à un autre chemin, et bloque la release en cas d'écart. |
+| `Cleon-<v>-chrome.zip`, `Cleon-<v>-firefox.zip` | **Oui**, à système identique | Deux constructions depuis deux copies du commit à des chemins différents (macOS, Node 22) donnent les mêmes octets. Le contenu du zip Chrome est identique fichier par fichier à celui de la version 0.2.0 publiée à la main. En CI, le job `rebuild` refait la construction sur un autre runner, à un autre chemin, et bloque la release en cas d'écart. |
 | `onepass-<v>-aarch64-apple-darwin` (CLI) | **Oui**, à Xcode et chaîne Rust identiques | Deux constructions à des chemins différents donnent les mêmes octets, une fois l'option `-Wl,-S` ajoutée (voir plus bas). Pas encore comparé entre deux machines. |
 | `onepass-<v>-x86_64-unknown-linux-gnu` (CLI) | **À confirmer** | Mêmes réglages ; le job `rebuild` le compare à chaque release. Aucun run n'a encore eu lieu à la date de ce document. |
-| `Kelid-<v>-mac.zip` (app notarisée) | **Non** | Voir plus bas. |
-| `Kelid-<v>-sbom.zip` | **Non** | `cargo cyclonedx` et `npm sbom` écrivent un horodatage et un numéro de série aléatoire dans chaque SBOM. Le contenu (liste des composants) est stable ; le fichier ne l'est pas. Il est attesté comme les autres. |
+| `Cleon-<v>-mac.zip` (app notarisée) | **Non** | Voir plus bas. |
+| `Cleon-<v>-sbom.zip` | **Non** | `cargo cyclonedx` et `npm sbom` écrivent un horodatage et un numéro de série aléatoire dans chaque SBOM. Le contenu (liste des composants) est stable ; le fichier ne l'est pas. Il est attesté comme les autres. |
 
 "À système identique" : le zip est écrit par `scripts/deterministic-zip.py` avec la zlib de Python ; deux versions différentes de zlib peuvent compresser différemment. La comparaison de référence se fait sur `ubuntu-24.04`, comme le build de release.
 
@@ -50,7 +50,7 @@ Le profil `release` du workspace (`lto = true`, `codegen-units = 1`, `panic = "a
 
 ## Pourquoi l'app Mac publiée n'est pas reproductible
 
-L'app est signée Developer ID, notarisée et porte son ticket agrafé. Ni la signature (certificat de l'équipe, horodatage du serveur d'Apple), ni le ticket de notarisation ne peuvent être reproduits par un tiers ; l'archive Xcode contient en plus des horodatages et des UUID. Le zip `Kelid-<v>-mac.zip` n'est donc pas reproductible et ce document ne le présente pas comme tel. Ce qui le rattache aux sources est l'attestation de provenance : elle dit quel workflow, quel commit et quel tag l'ont produit (`release-pipeline.md`, "Vérifier un téléchargement").
+L'app est signée Developer ID, notarisée et porte son ticket agrafé. Ni la signature (certificat de l'équipe, horodatage du serveur d'Apple), ni le ticket de notarisation ne peuvent être reproduits par un tiers ; l'archive Xcode contient en plus des horodatages et des UUID. Le zip `Cleon-<v>-mac.zip` n'est donc pas reproductible et ce document ne le présente pas comme tel. Ce qui le rattache aux sources est l'attestation de provenance : elle dit quel workflow, quel commit et quel tag l'ont produit (`release-pipeline.md`, "Vérifier un téléchargement").
 
 Une comparaison du contenu non signé (binaires de l'app et des extensions, sans `_CodeSignature` ni ticket) entre deux constructions n'a pas encore été faite. Elle supposerait de retirer les signatures (`codesign --remove-signature`) puis de comparer avec `diffoscope`. Écarts connus à attendre : UUID et horodatages de l'archive, chemins de la machine dans les parties Swift, ordre de liaison selon la version de l'éditeur de liens.
 

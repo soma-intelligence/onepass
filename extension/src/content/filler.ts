@@ -7,7 +7,7 @@
 // still of the classified role are written: the form is analysed again at
 // fill time, so a field the page hid or moved since the last analysis is
 // skipped. Nothing else is ever written, with one exception: the hidden
-// native select that backs a visible country or region combobox Kelid just
+// native select that backs a visible country or region combobox Cleon just
 // filled gets the same choice (spec 2026-10-31, section 4).
 //
 // Re-rendered forms (spec B2): a ref that died during the fill (the page
@@ -137,13 +137,13 @@ function fire(el: Element, type: string): void {
 }
 
 /**
- * What each control held right after Kelid wrote it. Lives in this closure
+ * What each control held right after Cleon wrote it. Lives in this closure
  * only (a page cannot read or forge it); `filledByUs` compares it with the
  * control's value now, so a field the user edited since is theirs again.
  */
 const written = new WeakMap<Element, string>();
 
-/** True when `el` still holds exactly what Kelid wrote into it. */
+/** True when `el` still holds exactly what Cleon wrote into it. */
 export function filledByUs(el: Element): boolean {
   const v = written.get(el);
   return v !== undefined && v !== "" && v === nativeValue(el);

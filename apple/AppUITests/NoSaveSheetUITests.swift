@@ -1,8 +1,8 @@
 import XCTest
 
 /// iOS must never offer to copy a vault secret into the system password manager ("Save Password?"),
-/// whatever the AutoFill provider. Runs on `Kelid Fresh iPhone`, erased before each run
-/// (`make -C apple uitest-fresh`), so Kelid is never the provider and nothing closes the request
+/// whatever the AutoFill provider. Runs on `Cleon Fresh iPhone`, erased before each run
+/// (`make -C apple uitest-fresh`), so Cleon is never the provider and nothing closes the request
 /// for it. Every place where a typed secret leaves the screen is watched for 10 s: account creation,
 /// a new Login saved with a typed password, a typed password dropped ("Annuler", "Abandonner"), the
 /// Login edited with a generated password (and "Confirmer avant d'afficher" turned on), lock and

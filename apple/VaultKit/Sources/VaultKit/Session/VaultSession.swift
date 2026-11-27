@@ -50,7 +50,7 @@ public final class VaultSession {
     /// device id (spec 6.8, O6: "à jour" or "en attente"). Empty before the first rotation, on a
     /// legacy device and when it cannot be read: display only, never a trust decision. Emptied on lock.
     public internal(set) var rotationAcks: [String: FfiDeviceAck] = [:]
-    /// The device list marks this device revoked and its Kelid data could not be erased yet (L6):
+    /// The device list marks this device revoked and its Cleon data could not be erased yet (L6):
     /// the revoked screen must not say "effacées". `refresh` tries again.
     public private(set) var revokedEraseFailed = false
     /// A lineage record removed this device (key rotation v2 quarantine): the date it erases itself,
@@ -960,7 +960,7 @@ public final class VaultSession {
         biometricsRevision += 1
     }
 
-    /// The reason one biometric unlock shows instead of "Déverrouiller Kelid" (`biometricPrompt`).
+    /// The reason one biometric unlock shows instead of "Déverrouiller Cleon" (`biometricPrompt`).
     public struct BiometricPrompt: Sendable, Equatable {
         public let text: String
         /// Past this, the usual wording.
@@ -1773,7 +1773,7 @@ public final class VaultSession {
 
     /// The identity set may have changed: publishes the AutoFill identities (debounced). Does nothing
     /// unless unlocked with the "Suggestions au-dessus du clavier" setting on. A lock keeps what was
-    /// published: suggestions must work while Kelid is locked. Whatever becomes of this refresh (a
+    /// published: suggestions must work while Cleon is locked. Whatever becomes of this refresh (a
     /// lock that drops it, a process killed), the store counts as behind until a publication ends.
     public func refreshAutofillIdentities() {
         identityLedger.markChanged()
@@ -1814,7 +1814,7 @@ public final class VaultSession {
         }
     }
 
-    /// "Exporter une sauvegarde chiffrée": an encrypted Kelid archive of what this device serves
+    /// "Exporter une sauvegarde chiffrée": an encrypted Cleon archive of what this device serves
     /// (every vault, its verified copy when the server is behind), readable with `passphrase` (strength
     /// checked by the core) or the account. Asks the master password first. The caller wipes both
     /// buffers and saves the bytes. Nothing changes in the store or the state.

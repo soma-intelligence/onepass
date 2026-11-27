@@ -65,7 +65,7 @@ public enum NativeMessagingManifests {
     /// The manifest for `family`, or nil when no served id belongs to it.
     static func manifest(_ family: Family, relay: URL, extensionIDs: [String]) -> Data? {
         var object: [String: Any] = [
-            "name": hostName, "description": "Kelid", "path": relay.path, "type": "stdio",
+            "name": hostName, "description": "Cleon", "path": relay.path, "type": "stdio",
         ]
         switch family {
         case .chromium:

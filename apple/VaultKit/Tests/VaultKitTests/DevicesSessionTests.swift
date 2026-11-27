@@ -89,7 +89,7 @@ struct DevicesSessionTests {
         try await #require(f.server).deliver(to: f.newcomerPath)
         await f.newcomer.reload()
         #expect(f.newcomer.state == .failed(.deviceRevoked))
-        #expect(VaultError.deviceRevoked.localizedMessage == "Cet appareil a été retiré de ton compte Kelid.")
+        #expect(VaultError.deviceRevoked.localizedMessage == "Cet appareil a été retiré de ton compte Cleon.")
         #expect(f.newcomer.summaries.isEmpty)
         #expect(f.newcomerHarness.settings.accountID == accountID)
         #expect(try SecretKeyVault(keychain: f.newcomerHarness.keychain).load(accountID: accountID) != nil)

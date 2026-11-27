@@ -79,7 +79,7 @@ export interface SavePending {
   username: string;
   password: string;
   /**
-   * Kinds `card` and `identity`: Kelid already holds it (`check_card` or `check_identity` said
+   * Kinds `card` and `identity`: Cleon already holds it (`check_card` or `check_identity` said
    * `same`). The card shows anyway (a page must not learn what the vault holds from whether a
    * card appears); Save then says it is already there, nothing written.
    */
@@ -94,7 +94,7 @@ export interface SavePending {
   provider?: { id: ProviderId; accountItemId: string; email: string; title?: string };
   /**
    * Open straight in the edit view (menu "Enregistrer un nouveau login"), or as done (`saved`: a
-   * generated signup password Kelid saved and the submission confirmed).
+   * generated signup password Cleon saved and the submission confirmed).
    */
   view?: "edit" | "saved" | "toast";
   /** View `toast`: the login `autoSave` just wrote (what Undo deletes). */
@@ -206,7 +206,7 @@ interface SaveRecord extends BoundRecord, Omit<SavePending, "tabId" | "origin" |
 export const PENDING_TAG = "onepass:pending";
 /** Tag of a Login whose password the site forced to be weak (onepass_core::model::WEAK_BY_SITE_TAG). */
 export const WEAK_BY_SITE_TAG = "onepass:weak-by-site";
-/** Tags only Kelid sets: never taken from what a user types in the prompt. */
+/** Tags only Cleon sets: never taken from what a user types in the prompt. */
 const RESERVED_TAGS: ReadonlySet<string> = new Set([PENDING_TAG, WEAK_BY_SITE_TAG]);
 
 /** "atlas-cloud.test" -> "Atlas Cloud". */
@@ -585,7 +585,7 @@ export class SavePrompts {
     let update = h.update;
     if (!checked && !h.locked && decision === "save" && h.password !== "" && (!edits || edits.password === "")) {
       // The card may have waited: the same login can have been saved since (iOS's own "Save
-      // Password?" sheet through Kelid's AutoFill, another tab). Never a second copy.
+      // Password?" sheet through Cleon's AutoFill, another tab). Never a second copy.
       const r = await this.deps.session
         .request({ op: "check_credentials", ctx: "save_prompt", origin: h.origin, username: edits && edits.username.trim() !== "" ? edits.username : h.username, password: h.password })
         .catch(() => null);

@@ -1,42 +1,42 @@
 {
   "sourceLanguage" : "fr",
   "strings" : {
-    "Kelid" : {
+    "Cleon" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid"
+            "value" : "Cleon"
           }
         }
       }
@@ -424,43 +424,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Markiere Objekte in Kelid auf deinem iPhone als „Auf der Apple Watch“."
+            "value" : "Markiere Objekte in Cleon auf deinem iPhone als „Auf der Apple Watch“."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mark items “On Apple Watch” in Kelid on your iPhone."
+            "value" : "Mark items “On Apple Watch” in Cleon on your iPhone."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Marca elementos «En el Apple Watch» en Kelid en tu iPhone."
+            "value" : "Marca elementos «En el Apple Watch» en Cleon en tu iPhone."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Marque des éléments « Sur l'Apple Watch » dans Kelid sur ton iPhone."
+            "value" : "Marque des éléments « Sur l'Apple Watch » dans Cleon sur ton iPhone."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Contrassegna elementi «Su Apple Watch» in Kelid su iPhone."
+            "value" : "Contrassegna elementi «Su Apple Watch» in Cleon su iPhone."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "iPhone의 Kelid에서 항목을 ‘Apple Watch에 표시’로 설정해요."
+            "value" : "iPhone의 Cleon에서 항목을 ‘Apple Watch에 표시’로 설정해요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在你 iPhone 上的 Kelid 中，将项目标记为“在 Apple Watch 上”。"
+            "value" : "在你 iPhone 上的 Cleon 中，将项目标记为“在 Apple Watch 上”。"
           }
         }
       }
@@ -471,43 +471,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Aktiviere einen Code auf deiner Apple Watch, um Kelid zu verwenden"
+            "value" : "Aktiviere einen Code auf deiner Apple Watch, um Cleon zu verwenden"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set a passcode on your Apple Watch to use Kelid"
+            "value" : "Set a passcode on your Apple Watch to use Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configura un código en tu Apple Watch para usar Kelid"
+            "value" : "Configura un código en tu Apple Watch para usar Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Active un code sur ton Apple Watch pour utiliser Kelid"
+            "value" : "Active un code sur ton Apple Watch pour utiliser Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Imposta un codice su Apple Watch per usare Kelid"
+            "value" : "Imposta un codice su Apple Watch per usare Cleon"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid를 사용하려면 Apple Watch에 암호를 설정해요."
+            "value" : "Cleon를 사용하려면 Apple Watch에 암호를 설정해요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "在你的 Apple Watch 上设置密码以使用 Kelid"
+            "value" : "在你的 Apple Watch 上设置密码以使用 Cleon"
           }
         }
       }
@@ -518,43 +518,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Entsperre deine Apple Watch, um Kelid zu öffnen."
+            "value" : "Entsperre deine Apple Watch, um Cleon zu öffnen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlock your Apple Watch to open Kelid."
+            "value" : "Unlock your Apple Watch to open Cleon."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desbloquea tu Apple Watch para abrir Kelid."
+            "value" : "Desbloquea tu Apple Watch para abrir Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Déverrouille ton Apple Watch pour ouvrir Kelid."
+            "value" : "Déverrouille ton Apple Watch pour ouvrir Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sblocca Apple Watch per aprire Kelid."
+            "value" : "Sblocca Apple Watch per aprire Cleon."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kelid를 열려면 Apple Watch의 잠금을 해제해요."
+            "value" : "Cleon를 열려면 Apple Watch의 잠금을 해제해요."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "解锁你的 Apple Watch 以打开 Kelid。"
+            "value" : "解锁你的 Apple Watch 以打开 Cleon。"
           }
         }
       }

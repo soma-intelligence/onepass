@@ -39,7 +39,7 @@ public struct RelayRequest: Equatable, Sendable {
         case send(frame: Data)
         case poll
         case close
-        /// "Déverrouiller dans Kelid": bring the app forward, outside any bridge connection.
+        /// "Déverrouiller dans Cleon": bring the app forward, outside any bridge connection.
         case openApp
         /// iOS (spec 2026-11-03-ios-safari-autofill 4): the vault of this extension's own process.
         case vaultState

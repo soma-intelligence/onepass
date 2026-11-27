@@ -8,7 +8,7 @@ struct LaunchOverridesTests {
         // The exact arguments DBLaunchConfiguration(theme: .dark, contentSize: .accessibility5,
         // reduceMotion: true).launchArguments produces.
         let arguments = [
-            "/path/Kelid", "-DBColorScheme", "dark", "-DBDynamicTypeSize", "accessibility5",
+            "/path/Cleon", "-DBColorScheme", "dark", "-DBDynamicTypeSize", "accessibility5",
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
             "-DBReduceMotion", "YES", "-UIAccessibilityReduceMotionEnabled", "YES",
         ]
@@ -19,13 +19,13 @@ struct LaunchOverridesTests {
 
     @Test func pinsTheSizeWithoutTheSystemArgument() {
         let overrides = DBLaunchOverrides.parse(
-            arguments: ["/path/Kelid", "-DBDynamicTypeSize", "accessibility5"], environment: [:])
+            arguments: ["/path/Cleon", "-DBDynamicTypeSize", "accessibility5"], environment: [:])
         #expect(overrides.dynamicTypeSize == .accessibility5)
     }
 
     @Test func readsTheEnvironmentWhenNoArgument() {
         let overrides = DBLaunchOverrides.parse(
-            arguments: ["/path/Kelid"],
+            arguments: ["/path/Cleon"],
             environment: ["DB_THEME": "light", "DB_CONTENT_SIZE": "xSmall", "DB_REDUCE_MOTION": "0"])
         #expect(overrides == DBLaunchOverrides(colorScheme: .light, dynamicTypeSize: .xSmall, reduceMotion: false))
     }

@@ -1,6 +1,6 @@
-# Has Kelid been security audited?
+# Has Cleon been security audited?
 
-No. As of November 2026, Kelid **has not had an external security audit**; one is planned for milestone 8 on the [roadmap](../../README.md#roadmap). The design, formal models and tests are public, but no outside firm has reviewed them. The README asks you to weigh that before Kelid holds your only copy of a secret, and to keep an encrypted export.
+No. As of November 2026, Cleon **has not had an external security audit**; one is planned for milestone 8 on the [roadmap](../../README.md#roadmap). The design, formal models and tests are public, but no outside firm has reviewed them. The README asks you to weigh that before Cleon holds your only copy of a secret, and to keep an encrypted export.
 
 ## What exists instead of an audit
 
@@ -18,9 +18,9 @@ No. As of November 2026, Kelid **has not had an external security audit**; one i
 
 Run the formal models yourself with `make formal` and the core checks with `make -C core check`.
 
-## How Kelid scored in its own comparison
+## How Cleon scored in its own comparison
 
-On 2026-10-28 Kelid was scored against 10 open source managers with one rubric: design (out of 40) and proof, meaning tests, releases and maturity (out of 15). Kelid scored 29 on design, tied for first, and 5 on proof, second to last. It was scored from its code, the others from public evidence, and it is a desk review rather than a penetration test. See [How Kelid compares](../../README.md#how-onepass-compares).
+On 2026-10-28 Cleon was scored against 10 open source managers with one rubric: design (out of 40) and proof, meaning tests, releases and maturity (out of 15). Cleon scored 29 on design, tied for first, and 5 on proof, second to last. It was scored from its code, the others from public evidence, and it is a desk review rather than a penetration test. See [How Cleon compares](../../README.md#how-onepass-compares).
 
 ## Known gaps the project lists
 
@@ -35,7 +35,7 @@ Report privately through [GitHub private vulnerability reporting](https://github
 
 ## Related
 
-- [Kelid threat model](threat-model.md)
-- [Post-quantum cryptography in Kelid](post-quantum-encryption.md)
-- [Verify a Kelid download](verify-a-download.md)
+- [Cleon threat model](threat-model.md)
+- [Post-quantum cryptography in Cleon](post-quantum-encryption.md)
+- [Verify a Cleon download](verify-a-download.md)
 - [README](../../README.md)

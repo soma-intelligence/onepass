@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-/// The sync of a managed account (Kelid Business): its own account mailbox on the organisation's
+/// The sync of a managed account (Cleon Business): its own account mailbox on the organisation's
 /// server. The mailbox exists only once the managed setup ran, so the coordinator arrives later
 /// (`attach`); until then writes stay on this device and an erase is refused as offline, as
 /// `AccountSync` does before its coordinator exists.

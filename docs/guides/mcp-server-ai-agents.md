@@ -1,8 +1,8 @@
 # How to let an AI agent (Claude Code, Codex, Cursor) use a password without seeing it
 
-Kelid ships an MCP (Model Context Protocol) server inside the Mac app that lets AI agents *use* a credential without *seeing* it: the agent runs a command with secrets injected and masked in the output, fills a template, or fills a login into a browser page, and gets back only the result. Every secret request asks you first, in a floating panel on the Mac with Touch ID or on your iPhone with Face ID, and lands in a signed, hash-chained audit log. Only vaults that a signed policy exposes exist for the agent.
+Cleon ships an MCP (Model Context Protocol) server inside the Mac app that lets AI agents *use* a credential without *seeing* it: the agent runs a command with secrets injected and masked in the output, fills a template, or fills a login into a browser page, and gets back only the result. Every secret request asks you first, in a floating panel on the Mac with Touch ID or on your iPhone with Face ID, and lands in a signed, hash-chained audit log. Only vaults that a signed policy exposes exist for the agent.
 
-## Add Kelid to an AI client in one command
+## Add Cleon to an AI client in one command
 
 ```bash
 /Applications/OnePass.app/Contents/Helpers/onepass-mcp install --client claude-code
@@ -28,7 +28,7 @@ A vault is visible to agents only if the signed MCP policy lists it. Vault or it
 
 ## How a request is approved
 
-1. The agent calls a tool. Kelid checks arguments, visibility, scope, then asks you.
+1. The agent calls a tool. Cleon checks arguments, visibility, scope, then asks you.
 2. The Mac shows a floating panel (Touch ID); your iPhone can answer too (Face ID), whichever comes first. The agent is told a 4-letter code to match on screen.
 3. The audit log records the request and where you approved it.
 
@@ -52,7 +52,7 @@ For development and Linux, `onepass mcp` runs the same server on stdio from the 
 
 ## Related
 
-- [Use Kelid as an SSH agent](ssh-agent.md)
-- [Kelid command line (CLI)](command-line-cli.md)
-- [Kelid threat model](threat-model.md)
+- [Use Cleon as an SSH agent](ssh-agent.md)
+- [Cleon command line (CLI)](command-line-cli.md)
+- [Cleon threat model](threat-model.md)
 - [README: Developer tools](../../README.md#features)

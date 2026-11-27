@@ -1,7 +1,7 @@
 import SwiftUI
 import VaultKit
 
-/// Remplissage automatique (spec 6): provider state, "Activer Kelid" (system prompt, with the system
+/// Remplissage automatique (spec 6): provider state, "Activer Cleon" (system prompt, with the system
 /// settings as fallback), verification code app, QuickType suggestions, and what the system sees.
 /// The state is read again when the page appears, after the prompt, and on every return to the
 /// foreground (`AppModel.scenePhaseChanged`).
@@ -101,7 +101,7 @@ struct AutoFillSettings: View {
     @ViewBuilder private var providerSection: some View {
         let enabled = model.autofillEnabled
         Section {
-            LabeledContent("Kelid") {
+            LabeledContent("Cleon") {
                 Group {
                     switch enabled {
                     case true?: Label("app.on", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
@@ -112,7 +112,7 @@ struct AutoFillSettings: View {
             }
             // UI tests read the value: "Activé", "Désactivé", or empty while the state is read.
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("Kelid"))
+            .accessibilityLabel(Text("Cleon"))
             .accessibilityValue(statusValue(enabled))
             .accessibilityIdentifier("autofill.status")
             if enabled == false {

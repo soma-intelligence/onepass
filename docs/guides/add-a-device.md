@@ -1,10 +1,10 @@
-# How to add a new iPhone, iPad or Mac to Kelid
+# How to add a new iPhone, iPad or Mac to Cleon
 
 On the new device, choose to add it from another device: it shows a QR code that renews every 30 seconds. On an unlocked iPhone or iPad, go to Settings > Devices > Add a Device and scan it. Both screens then show the same 6-digit code; check that they match and confirm with Face ID or your master password. Nothing leaves the approving device before both confirmations.
 
 ## Step by step
 
-1. Install Kelid on the new device ([App Store](https://apps.apple.com/app/id6831411523)) and pick the option to add it from another device.
+1. Install Cleon on the new device ([App Store](https://apps.apple.com/app/id6831411523)) and pick the option to add it from another device.
 2. On your unlocked iPhone or iPad: Settings > Devices > Add a Device, then scan the QR shown by the new device.
 3. Compare the 6-digit code on both screens. If they differ, cancel: someone may be on the channel.
 4. Confirm with Face ID or your master password.
@@ -24,5 +24,5 @@ You can lend a few items to a device that is not yours for 15 to 60 minutes. The
 
 - [Master password, Secret Key and Emergency Kit](master-password-secret-key-emergency-kit.md)
 - [How sync through iCloud works](icloud-sync.md)
-- [Kelid threat model](threat-model.md)
+- [Cleon threat model](threat-model.md)
 - [README](../../README.md)

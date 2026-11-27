@@ -299,7 +299,7 @@ struct Sidebar: View {
             }
         }
         #if os(iOS) || os(visionOS)
-        .navigationTitle("Kelid")
+        .navigationTitle("Cleon")
         #endif
     }
 

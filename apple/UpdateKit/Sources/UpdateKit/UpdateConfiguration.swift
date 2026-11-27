@@ -55,7 +55,7 @@ public struct UpdateConfiguration: Equatable, Sendable {
     }
 }
 
-/// Kelid's own downgrade guard, on top of Sparkle's: an update is offered only when its
+/// Cleon's own downgrade guard, on top of Sparkle's: an update is offered only when its
 /// `sparkle:version` is strictly greater than the installed `CFBundleVersion`, both read as dotted
 /// numbers. Anything else (a suffix, an empty part, a letter) is refused.
 public enum UpdateVersionPolicy {

@@ -10,7 +10,7 @@ import UIKit
 /// to the system print panel and no file is written by the app.
 @MainActor
 enum KitPrinter {
-    static let jobName = "Emergency Kit Kelid"
+    static let jobName = "Emergency Kit Cleon"
 
     /// Shows the system print panel for `pdf`. Returns false when printing is unavailable or the
     /// PDF cannot be read.

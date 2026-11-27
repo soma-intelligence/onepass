@@ -73,10 +73,10 @@ final class OnboardingAndItemUITests: XCTestCase {
         let later = app.buttons["onboarding.skip"]
         if later.waitForExistence(timeout: 3) { tap(later) }
 
-        // Terminé: "Ouvrir Kelid".
+        // Terminé: "Ouvrir Cleon".
         let open = app.buttons["onboarding.primary"]
         XCTAssertTrue(open.waitForExistence(timeout: Self.uiTimeout))
-        XCTAssertEqual(open.label, "Ouvrir Kelid")
+        XCTAssertEqual(open.label, "Ouvrir Cleon")
         tap(open)
 
         // New Login.
@@ -170,7 +170,7 @@ final class OnboardingAndItemUITests: XCTestCase {
     }
 
     /// Search, open a result, come back: the field keeps "atlas" and the filtered results stay
-    /// under it, never the Accueil dashboard (with its "Activer Kelid" card) below a live query.
+    /// under it, never the Accueil dashboard (with its "Activer Cleon" card) below a live query.
     /// Debug seed: `-OnePassDebugItem none` unlocks the fictional account and adds its items.
     func testSearchResultBackKeepsResults() throws {
         let app = XCUIApplication()

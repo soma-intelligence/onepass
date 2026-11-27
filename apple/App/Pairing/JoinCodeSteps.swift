@@ -36,7 +36,7 @@ struct TypeCodeStep: View {
 }
 
 #if os(iOS)
-/// "Scanner un QR code": Kelid's own scanner, which takes only an `OPPAIR2:` text.
+/// "Scanner un QR code": Cleon's own scanner, which takes only an `OPPAIR2:` text.
 struct ScanCodeStep: View {
     @Bindable var model: OnboardingModel
 

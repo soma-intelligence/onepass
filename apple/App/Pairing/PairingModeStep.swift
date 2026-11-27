@@ -2,7 +2,7 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// First question of "J'ai déjà Kelid sur un autre appareil" (spec 2b section 6): personal, shared
+/// First question of "J'ai déjà Cleon sur un autre appareil" (spec 2b section 6): personal, shared
 /// or public. Public is a guest session: a few items lent for a while, nothing kept here.
 struct PairingModeStep: View {
     @Bindable var model: OnboardingModel

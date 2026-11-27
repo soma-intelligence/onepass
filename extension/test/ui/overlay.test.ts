@@ -472,7 +472,7 @@ describe("overlay", () => {
     expect(worker.sent.at(-1)).toEqual({ type: "overlay_close", token: TOKEN });
   });
 
-  it("the app slow to answer: Connexion à Kelid… after 1.5 s; it fails: the cause and Réessayer", async () => {
+  it("the app slow to answer: Connexion à Cleon… after 1.5 s; it fails: the cause and Réessayer", async () => {
     let seen = "";
     let starts = 0;
     const s: ReturnType<typeof setup> = setup(() => null, null, (m) => {
@@ -486,10 +486,10 @@ describe("overlay", () => {
     await s.handle.ready;
     button(s.r, "Se connecter").click();
     await flush();
-    expect(seen).toContain("Connexion à Kelid…");
+    expect(seen).toContain("Connexion à Cleon…");
     const fail = s.r.querySelector(".ov-line.ov-stop.ov-fail.ov-tone-warn")!;
     expect(fail.getAttribute("data-code")).toBe("host_missing");
-    expect(fail.querySelector(".t1")!.textContent).toBe("App Kelid introuvable");
+    expect(fail.querySelector(".t1")!.textContent).toBe("App Cleon introuvable");
     expect(fail.querySelector(".ov-close")).not.toBeNull();
     s.clock.advance(300);
     button(s.r, "Réessayer").click();
@@ -514,7 +514,7 @@ describe("overlay", () => {
       unknown: "Étape inconnue, termine à la main",
       timeout: "Délai de 60 s dépassé",
       user: "Arrêté",
-      locked: "Kelid est verrouillé",
+      locked: "Cleon est verrouillé",
       repeat: "Mot de passe refusé par le site",
       account: "alex.perso@example.com n'est pas proposé par Google",
     };
@@ -598,8 +598,8 @@ describe("overlay", () => {
       button(r, "Se connecter").click();
       await flush();
       // The run line: the account that was clicked, what the user has to do, said to screen readers too.
-      expect(says(runEl(r))).toBe("alex@atlas.dev | Déverrouille Kelid pour continuer");
-      expect(liveStatus(r).textContent).toBe("Déverrouille Kelid pour continuer");
+      expect(says(runEl(r))).toBe("alex@atlas.dev | Déverrouille Cleon pour continuer");
+      expect(liveStatus(r).textContent).toBe("Déverrouille Cleon pour continuer");
       // The wait can be cancelled.
       expect(cancelX(r).getAttribute("aria-label")).toBe("Annuler");
       expect(r.querySelector(".spinner")).not.toBeNull();
@@ -614,7 +614,7 @@ describe("overlay", () => {
       state = { chain: { ...running, itemId: "it_01", provider: undefined, title: "Atlas Cloud", email: "alex@atlas.dev", phase: "signin", steps: [] } as ChainView };
       await handle.poll();
       expect(text(r)).toContain("Connexion…");
-      expect(text(r)).not.toContain("Déverrouille Kelid pour continuer");
+      expect(text(r)).not.toContain("Déverrouille Cleon pour continuer");
       expect(worker.types().filter((t) => t === "overlay_start")).toHaveLength(1);
       void clock;
     });
@@ -631,7 +631,7 @@ describe("overlay", () => {
       await flush();
       state = { chain: null };
       await handle.poll();
-      expect(text(r)).not.toContain("Déverrouille Kelid pour continuer");
+      expect(text(r)).not.toContain("Déverrouille Cleon pour continuer");
       expect(button(r, "Se connecter")).toBeTruthy();
       expect(timers.intervals.size).toBe(0);
     });
@@ -646,12 +646,12 @@ describe("overlay", () => {
       await handle.ready;
       button(r, "Se connecter").click();
       await flush();
-      expect(runEl(r).querySelector(".t2")!.textContent).toBe("Ouverture de Kelid…");
-      expect(liveStatus(r).textContent).toBe("Ouverture de Kelid…");
+      expect(runEl(r).querySelector(".t2")!.textContent).toBe("Ouverture de Cleon…");
+      expect(liveStatus(r).textContent).toBe("Ouverture de Cleon…");
       state = { chain: null, waiting: "locked" };
       await handle.poll();
-      expect(runEl(r).querySelector(".t2")!.textContent).toBe("Déverrouille Kelid pour continuer");
-      expect(liveStatus(r).textContent).toBe("Déverrouille Kelid pour continuer");
+      expect(runEl(r).querySelector(".t2")!.textContent).toBe("Déverrouille Cleon pour continuer");
+      expect(liveStatus(r).textContent).toBe("Déverrouille Cleon pour continuer");
     });
 
     it("Annuler while waiting stops the wait and closes the card", async () => {
@@ -675,7 +675,7 @@ describe("overlay", () => {
       await handle.ready;
       await handle.poll();
       // No dead end "unlock then retry": the unlock was asked, the card waits.
-      expect(text(r)).toContain("Déverrouille Kelid pour continuer");
+      expect(text(r)).toContain("Déverrouille Cleon pour continuer");
       expect(text(r)).not.toContain("puis réessaie");
       expect(runEl(r).querySelector(".t1")!.textContent).toBe("alex.perso@example.com");
       expect(timers.intervals.size).toBe(1);
@@ -686,7 +686,7 @@ describe("overlay", () => {
       // Locked again later, the wait over: the stop, with its retry.
       state = { chain: lockedStop };
       await handle.poll();
-      expect(text(r)).toContain("Kelid est verrouillé");
+      expect(text(r)).toContain("Cleon est verrouillé");
       expect(button(r, "Réessayer")).toBeTruthy();
       expect(timers.intervals.size).toBe(0);
     });
@@ -699,7 +699,7 @@ describe("overlay", () => {
         (m) => (m.type === "overlay_init" ? { ok: { origin: SITE, accounts: [], chain: lockedStop, waiting: "locked" } } : m.type === "overlay_state" ? { ok: state } : null),
       );
       await handle.ready;
-      expect(text(r)).toContain("Déverrouille Kelid pour continuer");
+      expect(text(r)).toContain("Déverrouille Cleon pour continuer");
       expect(runEl(r).querySelector(".t1")!.textContent).toBe("alex.perso@example.com");
       expect(timers.intervals.size).toBe(1);
       await handle.poll();
@@ -710,7 +710,7 @@ describe("overlay", () => {
       const { r, handle } = setup(() => null, null, (m) => (m.type === "overlay_state" ? { ok: { chain: null, waiting: "<b>x</b>" } } : null));
       await handle.ready;
       await handle.poll();
-      expect(text(r)).toContain("Erreur interne de Kelid.");
+      expect(text(r)).toContain("Erreur interne de Cleon.");
     });
   });
 
@@ -723,7 +723,7 @@ describe("overlay", () => {
       const pill = r.querySelector(".ov-pill[data-generic]")!;
       expect(says(pill)).toBe("atlas-cloud.test");
       // Nothing about the lock: the click asks Touch ID and goes on by itself.
-      expect(text(r)).not.toContain("Kelid est verrouillé");
+      expect(text(r)).not.toContain("Cleon est verrouillé");
       expect(text(r)).not.toContain("Atlas Cloud");
       expect(text(r)).not.toContain("alex");
       expect(r.querySelector(".ov-others")).toBeNull();
@@ -742,7 +742,7 @@ describe("overlay", () => {
       unlockBtn(r).click();
       await flush();
       expect(worker.types()).toContain("overlay_unlock");
-      expect(text(r)).toContain("Déverrouille Kelid pour continuer");
+      expect(text(r)).toContain("Déverrouille Cleon pour continuer");
       expect(timers.intervals.size).toBe(1);
       // Still waiting on the locked vault: still no request to the site.
       expect(r.querySelector("img")).toBeNull();
@@ -790,7 +790,7 @@ describe("overlay", () => {
       await handle.ready;
       unlockBtn(r).click();
       await flush();
-      expect(text(r)).toContain("Kelid est verrouillé");
+      expect(text(r)).toContain("Cleon est verrouillé");
     });
 
     it("a generic card that lists an account is refused (nothing of the vault may ride on it)", async () => {
@@ -806,17 +806,17 @@ describe("overlay", () => {
   it("locked and unpaired states", async () => {
     let s = setup(() => null, null, (m) => (m.type === "overlay_init" ? { err: "locked" } : null));
     await s.handle.ready;
-    expect(text(s.r)).toContain("Kelid est verrouillé");
+    expect(text(s.r)).toContain("Cleon est verrouillé");
     s = setup(() => null, null, (m) => (m.type === "overlay_init" ? { err: "unpaired" } : null));
     await s.handle.ready;
-    expect(text(s.r)).toContain("Appairer Kelid depuis la barre d'outils");
+    expect(text(s.r)).toContain("Appairer Cleon depuis la barre d'outils");
   });
 
   it("rejects a malformed chain view", async () => {
     const { r, handle } = setup(() => ({ itemId: "it_01", status: "pwned", steps: [] }) as unknown as ChainView, running);
     await handle.ready;
     await handle.poll();
-    expect(text(r)).toContain("Erreur interne de Kelid.");
+    expect(text(r)).toContain("Erreur interne de Cleon.");
   });
 });
 
@@ -909,11 +909,11 @@ describe("the card that appeared by itself (auto sign-in pill)", () => {
     expect(closes(worker)).toEqual([]);
   });
 
-  it("case 3: \"Create with Kelid\" on a signup page; its click asks the fill, nothing else", async () => {
+  it("case 3: \"Create with Cleon\" on a signup page; its click asks the fill, nothing else", async () => {
     const { r, handle, worker, timers } = setup(() => null, null, autoInit({ accounts: [], auto: "signup" }));
     await handle.ready;
     const pill = r.querySelector(".ov-pill[data-create]")!;
-    expect(says(pill)).toBe("Créer avec Kelid");
+    expect(says(pill)).toBe("Créer avec Cleon");
     expect(pill.querySelector(".t1")!.getAttribute("title")).toBe("Un mot de passe fort pour ce site");
     expect(pill.querySelector(".ov-signin")!.textContent).toBe("Créer");
     expect(text(r)).toContain("Jamais sur ce site");

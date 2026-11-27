@@ -58,7 +58,7 @@ public final class BrowserBridge {
     public enum Attention: Sendable, Equatable {
         /// A pairing code to compare: the window comes forward and stays.
         case pairing
-        /// "Déverrouiller dans Kelid": the lock screen comes forward, then the browser again.
+        /// "Déverrouiller dans Cleon": the lock screen comes forward, then the browser again.
         case unlock
     }
 
@@ -201,7 +201,7 @@ public final class BrowserBridge {
     }
 
     /// False when "Approuver" would be refused: the vault is locked, or this Mac has Touch ID and it
-    /// is off in Kelid. The pairing sheet says so before the user tries.
+    /// is off in Cleon. The pairing sheet says so before the user tries.
     public var canApprove: Bool {
         session.state == .unlocked && (session.canUseBiometrics || session.ownerCheckWithoutBiometry)
     }
@@ -284,10 +284,10 @@ public final class BrowserBridge {
     /// The accounts the browsers may reach, primary first: the primary one, and each added account
     /// that is signed in (bound to its store) and that the user made available in browsers (off by
     /// default: a paired browser reads every account listed here). One account: its name stays
-    /// "Kelid", as before.
+    /// "Cleon", as before.
     private func roster() -> [Served] {
         guard let accounts, accounts.hasSeveralAccounts else {
-            return [Served(slot: Self.primarySlot, name: "Kelid", vault: session)]
+            return [Served(slot: Self.primarySlot, name: "Cleon", vault: session)]
         }
         return accounts.profiles.compactMap { profile in
             if profile.isPrimary {
@@ -303,7 +303,7 @@ public final class BrowserBridge {
     private static func name(_ profile: AccountProfile, _ vault: VaultSession?) -> String {
         if !profile.label.isEmpty { return profile.label }
         let shown = vault?.environment.settings.displayName ?? ""
-        return shown.isEmpty ? "Kelid" : shown
+        return shown.isEmpty ? "Cleon" : shown
     }
 
     /// The session of the account in `slot`, if it was made.
@@ -541,7 +541,7 @@ enum BridgeLog {
 }
 
 extension BrowserBridge {
-    /// "Déverrouiller dans Kelid": opened by the Safari extension's handler and by the relay of
+    /// "Déverrouiller dans Cleon": opened by the Safari extension's handler and by the relay of
     /// Chrome and Firefox through LaunchServices, from the process that served the user's click.
     /// Since macOS 14 the app cannot bring itself forward while the browser is in front; a link
     /// opened for it can, and launches it when it is not running. It carries nothing.

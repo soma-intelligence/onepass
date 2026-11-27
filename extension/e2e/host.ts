@@ -95,7 +95,7 @@ export async function prebuildFixtureCache(dir: string, staged: StagedHost): Pro
   try {
     // A big vault (the lab's 500-item profiles) takes about half a minute to build, more when several build at once.
     const client = new BridgeClient(t, { requestTimeoutMs: 180_000, stepTimeoutMs: 180_000 });
-    const record = await client.pair("Kelid", "Chromium", async () => true);
+    const record = await client.pair("Cleon", "Chromium", async () => true);
     await client.open(record);
     await client.request({ op: "status" });
     client.close();
@@ -144,7 +144,7 @@ export function installHost(
     JSON.stringify(
       {
         name: NATIVE_HOST,
-        description: "Kelid development native host (e2e tests)",
+        description: "Cleon development native host (e2e tests)",
         path: wrapper,
         type: "stdio",
         allowed_origins: [`chrome-extension://${extensionId}/`],

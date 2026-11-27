@@ -23,11 +23,11 @@ pushed, tagged or published.
 
 ### Summary
 
-Kelid signs the device list with account keys that every device of the account holds, a revoked
+Cleon signs the device list with account keys that every device of the account holds, a revoked
 device included. A revoked device that has not yet seen its own revocation (for example because it
 was offline) can mark the device that revoked it as revoked too. The device list merge is monotone,
 so both revocations are kept. In the affected code, a device that finds itself marked revoked erases
-its local Kelid data at its next unlock or sync. A device the user revoked can therefore make a
+its local Cleon data at its next unlock or sync. A device the user revoked can therefore make a
 legitimate device erase itself.
 
 ### Impact
@@ -44,7 +44,7 @@ legitimate device erase itself.
 ### Affected versions
 
 - **Affected:** `>= 0.2.0, < 0.2.1`. Device revocation with automatic erase first appeared in the
-  0.2.0 source on `main`, commit `89ad2a36` ("Kelid v0.2.0", 2026-10-28), and stayed through
+  0.2.0 source on `main`, commit `89ad2a36` ("Cleon v0.2.0", 2026-10-28), and stayed through
   `e8993759` and `8661a566`. 0.2.0 was never tagged or released as a binary on GitHub, so this only
   concerns people who built `main` themselves between those commits.
 - **Not affected:** every tagged release, v0.1.0 to v0.1.4. Their core already has the signed device
@@ -69,15 +69,15 @@ revoked screen, and the user decides.
 
 If you cannot update yet:
 
-- keep an export of the vault outside Kelid and keep your Emergency Kit;
-- after revoking a device, make sure it cannot come back online with Kelid unlocked (wipe it, or
+- keep an export of the vault outside Cleon and keep your Emergency Kit;
+- after revoking a device, make sure it cannot come back online with Cleon unlocked (wipe it, or
   keep it off the network);
 - if a device you did not revoke shows the revoked screen, do not unlock or sync it again before
   updating; check the device list from another device.
 
 ### Credits
 
-- Found by: `<CREDIT PLACEHOLDER: name or "the Kelid team">`
+- Found by: `<CREDIT PLACEHOLDER: name or "the Cleon team">`
 
 ### Timeline
 
@@ -89,7 +89,7 @@ If you cannot update yet:
 
 ---
 
-## 2. Release notes: Kelid v0.2.1
+## 2. Release notes: Cleon v0.2.1
 
 **Why 0.2.1 and not 0.2.0 or 0.1.5.** The vulnerable code already carries version 0.2.0 everywhere
 (`core/Cargo.toml`, `MARKETING_VERSION`, the extension manifest), so anyone who built `main` has a
@@ -102,7 +102,7 @@ Paste below as the release body.
 ```markdown
 A security fix on top of the 0.2.0 source, and the first tagged 0.2 release.
 
-> **Pre-release.** Kelid has not had an external security audit yet. Please don't store real secrets in it until the first audited release. Security reports: see [SECURITY.md](https://github.com/soma-intelligence/onepass/blob/main/SECURITY.md).
+> **Pre-release.** Cleon has not had an external security audit yet. Please don't store real secrets in it until the first audited release. Security reports: see [SECURITY.md](https://github.com/soma-intelligence/onepass/blob/main/SECURITY.md).
 
 ## Security
 - **GHSA-8wp4-pjw5-pppg (medium):** a revoked device could make the device that revoked it erase its local vault. A device the signed device list marks revoked is now locked, never erased: its encrypted data stays, the revoked screen stays across launches, and only you can erase it, after a confirmation. Affected: 0.2.0 built from `main` (never tagged). Not affected: v0.1.0 to v0.1.4. Details in the advisory.
@@ -133,7 +133,7 @@ below assume the remote is `public`. Each step is the owner's call; stop at any 
 1. **Check the branch.** Three commits on top of `public/main` (8661a566), signed with the Soma Labs
    key and authored by Soma Labs like earlier exports: the squashed fix
    (`fix(devices): lock a device the list marks revoked, never erase it`), the version bump
-   (`Kelid v0.2.1`), then this file. This file holds the owner checklist and the advisory before
+   (`Cleon v0.2.1`), then this file. This file holds the owner checklist and the advisory before
    publication: keep it off the public push (steps 4 and 6 push `release/advisory-fix~1`), and add
    it after the advisory is published if wanted.
 
@@ -189,7 +189,7 @@ below assume the remote is `public`. Each step is the owner's call; stop at any 
 7. **Tag** the merged head with a signed, annotated tag, the same form as v0.1.4.
 
    ```sh
-   git tag -s v0.2.1 -m "Kelid v0.2.1" public/main
+   git tag -s v0.2.1 -m "Cleon v0.2.1" public/main
    git tag -v v0.2.1
    git push public v0.2.1
    ```
@@ -205,7 +205,7 @@ below assume the remote is `public`. Each step is the owner's call; stop at any 
 
    ```sh
    gh release create v0.2.1 -R soma-intelligence/onepass --verify-tag --prerelease \
-     --title "Kelid v0.2.1" --notes-file release-notes-v0.2.1.md \
+     --title "Cleon v0.2.1" --notes-file release-notes-v0.2.1.md \
      OnePass-0.2.1-mac.zip OnePass-0.2.1-chrome.zip SHA256SUMS
    ```
 

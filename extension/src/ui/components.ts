@@ -76,7 +76,7 @@ const ICONS = {
   edit: ["M9.5 2.2l2.3 2.3-7 7H2.5V9.2z"],
   lock: ["M4 5.5V4a2 2 0 014 0v1.5", "R2.5 5.5 7 5"],
   copy: ["R5 5 8.5 8.5", "M3 10.5H2.5a1 1 0 01-1-1v-7a1 1 0 011-1h7a1 1 0 011 1V3"],
-  // The Kelid mark: two columns of dots and one bar (render.mjs geometry).
+  // The Cleon mark: two columns of dots and one bar (render.mjs geometry).
   lattice: [
     "C23.5 24 9", "C23.5 50 9", "C23.5 76 9", "C49.5 24 9", "C49.5 50 9", "C49.5 76 9",
     "M67.5 24a9 9 0 0118 0v52a9 9 0 01-18 0z",
@@ -413,7 +413,7 @@ export function vaultChip(v: { id: string; name: string }): HTMLSpanElement {
   return chip;
 }
 
-/** The Kelid mark: indigo tile with the white Lattice. */
+/** The Cleon mark: indigo tile with the white Lattice. */
 export function mark(size: "s" | "m" | "l" = "m"): HTMLSpanElement {
   const px = size === "s" ? 12 : size === "m" ? 17 : 34;
   return h("span", { class: `mark mark-${size}`, attrs: { "aria-hidden": "true" } }, icon("lattice", px));

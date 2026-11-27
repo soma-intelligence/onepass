@@ -5,7 +5,7 @@ import SwiftUI
 import VaultKit
 
 /// The Mac sidebar in the RX look (Penpot "Mac · *"), while the switch is on: flat, on the RX
-/// sidebar colour. The Kelid mark on top (the search lives in the title bar), plain rows with small counts and the
+/// sidebar colour. The Cleon mark on top (the search lives in the title bar), plain rows with small counts and the
 /// selected one on a soft accent pill, the vaults with their coloured initials, the tags, Archive
 /// and Supprimés récemment, then the account row at the bottom, which opens the account panel.
 /// Every row leads where the native sidebar's row leads.
@@ -125,7 +125,7 @@ struct RXMacSidebar: View {
                 .foregroundStyle(RX.Palette.accent.color)
                 .frame(width: RX.Metrics.macRowGlyph)
             // swiftlint:disable:next db_unlocalized_string - app name, the same in every language
-            Text(verbatim: "Kelid")
+            Text(verbatim: "Cleon")
                 .rxFont(.headline)
                 .foregroundStyle(RX.Palette.textPrimary.color)
         }
