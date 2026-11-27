@@ -140,6 +140,7 @@
 		7A2B262E6969EE52D3FC0950 /* HostDeviceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C58541193889A75520499FE /* HostDeviceSheet.swift */; };
 		7AEA699FF3A88E00762246B2 /* EditorFieldRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A28B0CFB737900012034BCE /* EditorFieldRow.swift */; };
 		7D0DDE3FABB48308DBAC99CD /* OnePassApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D64EBFE57E2DE8181340998 /* OnePassApp.swift */; };
+		7D83669CF7FD59C3C5B74611 /* FeatureRequestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43F977517907A77E028039E9 /* FeatureRequestSheet.swift */; };
 		7DBB7C517094C7437C51CD1F /* OrgMemberRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FCE2DECE5899A4DD9F923C4 /* OrgMemberRow.swift */; };
 		7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7347C36F3EBEC57C4780E87 /* FieldValueView.swift */; };
 		7ED93210A934374EA1850A74 /* FavoritesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FAA9A80B992B1D8AA9DA62 /* FavoritesWidget.swift */; };
@@ -205,6 +206,7 @@
 		B4E15F549C1237B3AF03FA6B /* SecretFieldEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79113AA7B53A92888B8DEF34 /* SecretFieldEditor.swift */; };
 		B541812EDB3F1C6447F87E04 /* TotpRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2276FC48964520BC441BFD23 /* TotpRing.swift */; };
 		B677A1398E6D4F1C5FEE2B18 /* OtpRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD6C7960D7F5CAED7D23ADD7 /* OtpRow.swift */; };
+		B6783A307C068E2B7D76FD5F /* FeatureRequest.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A01B17D75AA547FF85108BEC /* FeatureRequest.xcstrings */; };
 		B6F74C3A30CD7A8C8205842C /* NewItemMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD14548F52D76A5B6DD1923 /* NewItemMenu.swift */; };
 		B716F92C9616BABA814C0AF7 /* OnePassCore in Frameworks */ = {isa = PBXBuildFile; productRef = 451A77F800231FE2450B58B4 /* OnePassCore */; };
 		B79C51D23F0756ECAC48EBCE /* CompanionLink in Frameworks */ = {isa = PBXBuildFile; productRef = 958DAB1110F5AA509D48EAC7 /* CompanionLink */; };
@@ -484,6 +486,7 @@
 		4287066FEEE80DF7B6BF8D9E /* RXBridgeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RXBridgeUITests.swift; sourceTree = "<group>"; };
 		42BE6F635EE865D00B34DB84 /* FoldLayoutUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldLayoutUITests.swift; sourceTree = "<group>"; };
 		430C9CAE5FD32B895AA0C129 /* DemoCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoCrypto.swift; sourceTree = "<group>"; };
+		43F977517907A77E028039E9 /* FeatureRequestSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureRequestSheet.swift; sourceTree = "<group>"; };
 		4589B26BB420AF0E483B2C36 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		4590FC000AF13D1212563044 /* ItemEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEditorView.swift; sourceTree = "<group>"; };
 		45D8BD3F7692AE36317D569D /* EntryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDetailView.swift; sourceTree = "<group>"; };
@@ -580,6 +583,7 @@
 		9ECDDE937D4E4BDE4D69A1F3 /* SyncChoiceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncChoiceSheet.swift; sourceTree = "<group>"; };
 		9F3D0CCC863E2381D9DDB9C8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		9F62927DD974B4ACF8E38F93 /* ScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotUITests.swift; sourceTree = "<group>"; };
+		A01B17D75AA547FF85108BEC /* FeatureRequest.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = FeatureRequest.xcstrings; sourceTree = "<group>"; };
 		A106C3614367687097B3B54C /* AllAccountsSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllAccountsSearch.swift; sourceTree = "<group>"; };
 		A23CA29E63D4925E27950509 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		A2983041B52739B7915CA649 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -972,6 +976,7 @@
 			children = (
 				17FDCEFF95D8CB4ED8362F26 /* AppShortcuts.xcstrings */,
 				63F69FE9CD92A7C0ACFAF883 /* Assets.xcassets */,
+				A01B17D75AA547FF85108BEC /* FeatureRequest.xcstrings */,
 				19D9899D8B640FB4F5F8B0E6 /* Localizable.xcstrings */,
 			);
 			path = Resources;
@@ -1306,6 +1311,7 @@
 				815AF1A53D95850ADA3D7263 /* BrowserBridgeViews.swift */,
 				E6608A2696A8CFEDC8DD3AD5 /* ChangePasswordSheet.swift */,
 				4FAA14239035AEBB97155D9B /* DevicesSettings.swift */,
+				43F977517907A77E028039E9 /* FeatureRequestSheet.swift */,
 				257C8A4056D753F50F27FF62 /* GeneralSettings.swift */,
 				18CB70C246AF39BB3009C194 /* GeneratorProfileRow.swift */,
 				6578DD1A294793BBA2E5AB8A /* IconCheckSettings.swift */,
@@ -1709,10 +1715,13 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
+				de,
 				en,
 				es,
 				fr,
 				it,
+				ko,
+				"zh-Hans",
 			);
 			mainGroup = 1F7631CD98A4452524E10D73;
 			minimizedProjectReferenceProxies = 1;
@@ -1780,6 +1789,7 @@
 			files = (
 				D09283BD32DDA65DBC4BD2BE /* AppShortcuts.xcstrings in Resources */,
 				FB411F7806F39B54F7C84C1D /* Assets.xcassets in Resources */,
+				B6783A307C068E2B7D76FD5F /* FeatureRequest.xcstrings in Resources */,
 				6632869371D8005F4FA8616D /* InfoPlist.xcstrings in Resources */,
 				45A42F714F279F1DECDF9060 /* Localizable.xcstrings in Resources */,
 				A4381FA9F265F6360D1A4C49 /* PrivacyInfo.xcprivacy in Resources */,
@@ -2108,6 +2118,7 @@
 				7AEA699FF3A88E00762246B2 /* EditorFieldRow.swift in Sources */,
 				D35C6AC2BAD5E6311803E2F8 /* EditorHeader.swift in Sources */,
 				C3CFC7C4BCC28F81C382FFF0 /* FamilyView.swift in Sources */,
+				7D83669CF7FD59C3C5B74611 /* FeatureRequestSheet.swift in Sources */,
 				7DF62A388EF15365E18729D9 /* FieldValueView.swift in Sources */,
 				A47CF462E52EB1ED8E010791 /* FreeSectionCard.swift in Sources */,
 				A4AF77CCB8C26E750F66D3DF /* GeneralSettings.swift in Sources */,

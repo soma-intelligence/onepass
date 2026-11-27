@@ -329,8 +329,13 @@ def ext_text(value) -> str:
     return value
 
 
+def ext_languages(cfg: dict) -> list[str]:
+    """The browser extension may ship fewer languages than the Apple apps."""
+    return cfg["extension"].get("languages", cfg["languages"])
+
+
 def check_extension(cfg: dict, glossary: dict, rep: Report, terms: bool) -> None:
-    langs, source = cfg["languages"], cfg["source"]
+    langs, source = ext_languages(cfg), cfg["source"]
     base = os.path.join(ROOT, cfg["extension"]["catalogs"])
     if os.path.isdir(base):
         cats = {}
@@ -456,7 +461,7 @@ def cmd_stats(args) -> int:
         print(f"{rel(path)}: {len(live)} entries, {sem} semantic, {len(live) - sem} legacy, " + ", ".join(f"{l} {c}" for l, c in cover.items()))
     base = os.path.join(ROOT, cfg["extension"]["catalogs"])
     if os.path.isdir(base):
-        for lang in langs:
+        for lang in ext_languages(cfg):
             p = ext_catalog_path(cfg, lang)
             if os.path.exists(p):
                 print(f"{rel(p)}: {len(read_json(p))} keys")
@@ -582,7 +587,7 @@ def cmd_sync(args) -> int:
             write_xcstrings(path, cat)
     base = os.path.join(ROOT, cfg["extension"]["catalogs"])
     if os.path.isdir(base):
-        for lang in cfg["languages"]:
+        for lang in ext_languages(cfg):
             p = ext_catalog_path(cfg, lang)
             if not os.path.exists(p):
                 continue

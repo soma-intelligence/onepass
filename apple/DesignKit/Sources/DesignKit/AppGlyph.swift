@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The OnePass mark as the app icon draws it: an indigo tile with the Lattice,
+/// The Cleon mark as the app icon draws it: an indigo tile with the Lattice,
 /// two columns of dots and one bar where the third would be.
 /// Drawn from `Shape`s so it scales and needs no asset. Geometry matches
 /// `docs/assets/brand/render.mjs`.
@@ -19,7 +19,7 @@ public struct AppGlyph: View {
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "OnePass"))
+        .accessibilityLabel(Text(verbatim: "Cleon"))
         .accessibilityAddTraits(.isImage)
     }
 

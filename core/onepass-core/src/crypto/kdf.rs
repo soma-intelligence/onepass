@@ -20,6 +20,8 @@ pub const KDF_FLOOR: (u32, u32, u32) = (262144, 4, 4);
 pub const DEV_KDF_FLOOR: (u32, u32, u32) = (8192, 1, 1);
 
 const AUK_INFO: &[u8] = b"onepass/auk/v1";
+const AUK_V2_INFO: &[u8] = b"onepass/auk/v2";
+const GUARD_X_INFO: &[u8] = b"onepass/guard/x/v1";
 
 /// Argon2id cost parameters and salt, stored with the account.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,18 +65,13 @@ fn nfc_password(password: &str) -> Zeroizing<String> {
     out
 }
 
-/// Derive the Account Unlock Key.
-///
-/// `AUK = HKDF-SHA256(salt = params.salt, ikm = argon2id(NFC(password)) || secret_key,
-/// info = "onepass/auk/v1")`, 32 bytes.
+/// Argon2id of the NFC password: the 32-byte stretched password, shared by
+/// the AUK (v1 and v2) and the guard input. The one 256 MiB computation of
+/// an unlock.
 ///
 /// Errors: Argon2 parameters that the Argon2 implementation rejects (for
 /// example a memory cost below 8 KiB per lane) give `Error::Crypto`.
-pub fn derive_auk(
-    password: &str,
-    secret_key: &SecretKey,
-    params: &KdfParams,
-) -> Result<SymmetricKey> {
+pub fn stretch_password(password: &str, params: &KdfParams) -> Result<Zeroizing<[u8; 32]>> {
     let pw = nfc_password(password);
     let argon_params =
         Params::new(params.m_kib, params.t, params.p, Some(32)).map_err(|_| Error::Crypto)?;
@@ -87,18 +84,67 @@ pub fn derive_auk(
         .map_err(|_| Error::Crypto)?;
     memory.resize(argon_params.block_count(), Block::new());
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
-
-    let mut ikm: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(64));
-    ikm.resize(32, 0);
+    let mut out = Zeroizing::new([0u8; 32]);
     argon
         .hash_password_into_with_memory(
             pw.as_bytes(),
             &params.salt,
-            &mut ikm[..32],
+            out.as_mut_slice(),
             memory.as_mut_slice(),
         )
         .map_err(|_| Error::Crypto)?;
-    ikm.extend_from_slice(&secret_key.0);
+    Ok(out)
+}
 
+/// Derive the Account Unlock Key.
+///
+/// `AUK = HKDF-SHA256(salt = params.salt, ikm = argon2id(NFC(password)) || secret_key,
+/// info = "onepass/auk/v1")`, 32 bytes.
+///
+/// Errors: as [`stretch_password`].
+pub fn derive_auk(
+    password: &str,
+    secret_key: &SecretKey,
+    params: &KdfParams,
+) -> Result<SymmetricKey> {
+    let stretched = stretch_password(password, params)?;
+    derive_auk_stretched(&stretched, secret_key, params)
+}
+
+/// [`derive_auk`] from a password already stretched by
+/// [`stretch_password`] under `params`.
+pub fn derive_auk_stretched(
+    stretched: &[u8; 32],
+    secret_key: &SecretKey,
+    params: &KdfParams,
+) -> Result<SymmetricKey> {
+    let mut ikm: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(64));
+    ikm.extend_from_slice(stretched);
+    ikm.extend_from_slice(&secret_key.0);
     hkdf32(&params.salt, &ikm, &[AUK_INFO])
+}
+
+/// Guard input `x` of the Guarded Kit (spec 4): what the realms' OPRF sees,
+/// blinded. `HKDF-SHA256(salt = params.salt, ikm = stretched,
+/// info = "onepass/guard/x/v1")`.
+pub fn guard_input(stretched: &[u8; 32], params: &KdfParams) -> Result<Zeroizing<[u8; 32]>> {
+    let k = hkdf32(&params.salt, stretched, &[GUARD_X_INFO])?;
+    Ok(Zeroizing::new(*k.expose()))
+}
+
+/// AUK of a guarded account (spec 4): `HKDF-SHA256(salt = params.salt,
+/// ikm = stretched || secret_key || guard, info = "onepass/auk/v2")`.
+/// No v1 AUK ever equals it, so a keyset sealed under it cannot be opened
+/// by a client that drops the guard.
+pub fn derive_auk_v2(
+    stretched: &[u8; 32],
+    secret_key: &SecretKey,
+    guard: &[u8; 32],
+    params: &KdfParams,
+) -> Result<SymmetricKey> {
+    let mut ikm: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(96));
+    ikm.extend_from_slice(stretched);
+    ikm.extend_from_slice(&secret_key.0);
+    ikm.extend_from_slice(guard);
+    hkdf32(&params.salt, &ikm, &[AUK_V2_INFO])
 }

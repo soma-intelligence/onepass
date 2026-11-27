@@ -1,12 +1,12 @@
-# What does OnePass protect against? The threat model in plain English
+# What does Cleon protect against? The threat model in plain English
 
-OnePass treats its own sync storage as the main adversary: iCloud (CloudKit), a future server, the network or a stolen disk may modify, replay, delete, reorder or inject records, and the app must detect it and refuse the data. Hostile web pages, compromised browser renderers and untrusted AI agents are also in scope. A device compromised at the operating system level (root, jailbreak) and an attacker who reads process memory are out of scope. The full model is in [`docs/security/README.md`](../security/README.md) (in French) and [`SECURITY.md`](../../SECURITY.md).
+Cleon treats its own sync storage as the main adversary: iCloud (CloudKit), a future server, the network or a stolen disk may modify, replay, delete, reorder or inject records, and the app must detect it and refuse the data. Hostile web pages, compromised browser renderers and untrusted AI agents are also in scope. A device compromised at the operating system level (root, jailbreak) and an attacker who reads process memory are out of scope. The full model is in [`docs/security/README.md`](../security/README.md) (in French) and [`SECURITY.md`](../../SECURITY.md).
 
 ## What the storage can see
 
-For every record the server learns its id, type, version number and padded blob size. It can count items per vault and tell which vault each item belongs to, and it sees manifest sequence numbers and write timing. It never sees titles, URLs, item types, tags, field counts or contents. On iCloud, records live in your private CloudKit database, zone `OnePass`, record type `OPRecord`.
+For every record the server learns its id, type, version number and padded blob size. It can count items per vault and tell which vault each item belongs to, and it sees manifest sequence numbers and write timing. It never sees titles, URLs, item types, tags, field counts or contents. On iCloud, records live in your private CloudKit database, zone `Cleon`, record type `OPRecord`.
 
-## What OnePass guarantees against a hostile storage
+## What Cleon guarantees against a hostile storage
 
 - Confidentiality of item contents and metadata.
 - Detection of an item that was deleted, injected, replayed in an older version, moved to another vault or swapped with another.
@@ -44,8 +44,8 @@ When an integrity check fails, the app shows a "Data Refused" screen with the ty
 
 ## Related
 
-- [Post-quantum cryptography in OnePass](post-quantum-encryption.md)
+- [Post-quantum cryptography in Cleon](post-quantum-encryption.md)
 - [How sync through iCloud works and what Apple sees](icloud-sync.md)
-- [Has OnePass been audited?](security-audit-status.md)
+- [Has Cleon been audited?](security-audit-status.md)
 - [How to report a vulnerability](../../SECURITY.md)
 - [README](../../README.md)

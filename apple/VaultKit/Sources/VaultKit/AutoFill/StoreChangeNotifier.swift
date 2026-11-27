@@ -2,7 +2,7 @@ import CoreFoundation
 import Foundation
 import Synchronization
 
-/// Tells other OnePass processes (app, AutoFill extension) that the shared store changed, through the
+/// Tells other Cleon processes (app, AutoFill extension) that the shared store changed, through the
 /// Darwin notification `me.somalabs.onepass.store-changed`. No data travels with it: a receiver
 /// re-reads the store.
 ///

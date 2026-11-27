@@ -52,9 +52,9 @@ public struct PasskeyRegistrationRequest: Sendable, Equatable {
     public var userName: String
     public var userHandle: Data
     public var clientDataHash: Data
-    /// Credentials the relying party already holds for this user: creation refused if OnePass has one.
+    /// Credentials the relying party already holds for this user: creation refused if Cleon has one.
     public var excludedCredentialIDs: [Data]
-    /// ES256 (P-256) is among the accepted algorithms. OnePass creates ES256 passkeys only.
+    /// ES256 (P-256) is among the accepted algorithms. Cleon creates ES256 passkeys only.
     public var supportsES256: Bool
     /// The PRF salts to evaluate at creation (`prf.eval`), nil when none came.
     public var prf: PrfInput?

@@ -10,7 +10,7 @@
 // non-HTTPS page, for conditional mediation (autofill UI), for a request
 // asking for a cross-platform authenticator or userVerification "required"
 // (the bridge signs with UV=0), and when the worker says so (no
-// OnePass passkey, frame of another site, "Autre appareil").
+// Cleon passkey, frame of another site, "Autre appareil").
 
 declare const __PASSKEY_SHIM__: boolean | undefined;
 

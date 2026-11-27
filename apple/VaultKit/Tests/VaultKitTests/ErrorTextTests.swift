@@ -70,10 +70,10 @@ struct ErrorTextTests {
         let fr = try #require(Self.lproj("fr")), en = try #require(Self.lproj("en"))
         let french = ErrorText.keychain(-34018, bundle: fr)
         #expect(french.sentence.contains("trousseau"))
-        #expect(french.sentence.contains("Réinstalle OnePass"))
+        #expect(french.sentence.contains("Réinstalle Cleon"))
         #expect(french.text(bundle: fr).hasSuffix("(code -34018)"))
         let english = ErrorText.keychain(-34018, bundle: en)
-        #expect(english.sentence.contains("Reinstall OnePass"))
+        #expect(english.sentence.contains("Reinstall Cleon"))
         #expect(english.text(bundle: en).hasSuffix("(code -34018)"))
     }
 
@@ -157,7 +157,7 @@ struct ErrorTextTests {
     @Test func keychainErrorMessageIsASentence() {
         VaultKitStrings.pinSourceLanguage()
         let message = KeychainError.unexpectedStatus(-34018).message
-        #expect(message.hasPrefix("Cette version de OnePass n'a pas accès au trousseau"))
+        #expect(message.hasPrefix("Cette version de Cleon n'a pas accès au trousseau"))
         #expect(message.hasSuffix("(code -34018)"))
         #expect(!message.contains("34,018") && !message.contains("34 018"))
         let vault = VaultError(KeychainError.unexpectedStatus(-25308)).localizedMessage
@@ -170,7 +170,7 @@ struct ErrorTextTests {
         #expect(file.hasPrefix("Fichier introuvable."))
         #expect(file.hasSuffix("(code -43)"))
         let enclave = VaultError(EnclaveError.failed(code: -34018)).localizedMessage
-        #expect(enclave.hasPrefix("Cette version de OnePass n'a pas accès au trousseau"))
+        #expect(enclave.hasPrefix("Cette version de Cleon n'a pas accès au trousseau"))
         struct Custom: Error {}
         let other = VaultError(Custom()).localizedMessage
         #expect(other.hasPrefix("Une erreur inattendue est survenue."))

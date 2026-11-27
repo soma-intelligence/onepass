@@ -998,6 +998,17 @@ describe("overlay", () => {
     expect(await ext.send({ type: "overlay_close", token }, uiSender("overlay.html", 7))).toEqual({ ok: {} });
     expect(ext.sentToTabs.at(-1)?.message).toEqual({ type: "remove_frame", kind: "overlay" });
   });
+
+  it("x on a card whose token the worker no longer knows still removes the card of that tab", async () => {
+    const { ext, bg, top } = await setup();
+    const token = await bg.overlays.open(top);
+    await bg.overlays.tokens.drop(token);
+    const before = ext.sentToTabs.length;
+    expect(await ext.send({ type: "overlay_close", token }, uiSender("overlay.html", 7))).toEqual({ ok: {} });
+    const sent = ext.sentToTabs.slice(before);
+    expect(sent.map((x) => x.message)).toEqual([{ type: "remove_frame", kind: "overlay" }]);
+    expect(sent[0]?.tabId).toBe(7);
+  });
 });
 
 describe("save prompt", () => {
@@ -1088,7 +1099,7 @@ describe("save prompt", () => {
     expect(client.requests.at(-1)).toMatchObject({ op: "save_login", password: "Gen-Pass-123" });
   });
 
-  it("tags only OnePass sets are dropped from the prompt's edits", async () => {
+  it("tags only Cleon sets are dropped from the prompt's edits", async () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open(pending);
     const ui = uiSender(`save.html#${token}`, 7);
@@ -1454,7 +1465,7 @@ describe("save prompt", () => {
     expect(held).not.toContain("alex");
   });
 
-  it("IOSSAF-10: a login saved meanwhile (iOS's own sheet through OnePass) is not saved twice", async () => {
+  it("IOSSAF-10: a login saved meanwhile (iOS's own sheet through Cleon) is not saved twice", async () => {
     const { ext, bg, client } = await setup();
     const token = await bg.saves.open(pending);
     checkAnswer = { status: "same", item_id: "it_01" };
@@ -1533,7 +1544,7 @@ describe("save prompt", () => {
       expect(client.requests.at(-1)).toEqual({ op: "save_identity", ctx: "save_prompt", origin: SITE, vault_id: "v2", title: "", ...identity });
     });
 
-    it("a card OnePass already holds but did not fill here: shown, Save writes nothing and says so", async () => {
+    it("a card Cleon already holds but did not fill here: shown, Save writes nothing and says so", async () => {
       const { ext, bg, client } = await setup();
       const token = await bg.saves.open({ ...cardPending, known: true });
       const n = client.requests.length;

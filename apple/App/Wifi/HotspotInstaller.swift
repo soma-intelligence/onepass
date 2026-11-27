@@ -4,7 +4,7 @@ import NetworkExtension
 import VaultKit
 
 /// iPhone and iPad: each network becomes a persistent NEHotspotConfiguration (joinOnce false).
-/// iOS asks once per network ("OnePass souhaite rejoindre le réseau..."): that question belongs to
+/// iOS asks once per network ("Cleon souhaite rejoindre le réseau..."): that question belongs to
 /// the system and cannot be skipped. The batch stops at the first "no" or transient error, so a
 /// user who dismisses is not asked again in a row. Needs the Hotspot Configuration entitlement.
 struct HotspotInstaller: WifiInstaller {

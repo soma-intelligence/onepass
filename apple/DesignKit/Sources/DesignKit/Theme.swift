@@ -46,7 +46,7 @@ public enum Theme {
     public static let cardHairline = Color.primary.opacity(0.06)
 }
 
-/// The appearance the person picked in Réglages > Général: follow the system, or keep OnePass
+/// The appearance the person picked in Réglages > Général: follow the system, or keep Cleon
 /// light or dark whatever the system does. Stored per device (a phone in dark mode and a Mac in
 /// light mode is a normal mix), never synced.
 public enum Appearance: String, CaseIterable, Identifiable, Sendable {

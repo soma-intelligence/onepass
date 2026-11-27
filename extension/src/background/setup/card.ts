@@ -78,7 +78,7 @@ export interface SetupCardsDeps {
   session: Pick<Session, "request">;
   filler: Pick<Filler, "fillLogin">;
   analyses: Pick<PageAnalyses, "top">;
-  /** The login OnePass last filled in `tabId` on the site of `origin` (save-flow), if any. */
+  /** The login Cleon last filled in `tabId` on the site of `origin` (save-flow), if any. */
   lastUsed?: (tabId: number, origin: string) => string | null;
   /** The existing unlock ask of a click in a card (the app, or Face ID on iOS). */
   askUnlock?: (tabId: number) => Promise<unknown>;

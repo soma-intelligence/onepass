@@ -6,9 +6,9 @@ import VaultKit
 
 enum OnboardingStep: Hashable, Sendable {
     case welcome, device, password, secretKey, biometrics, visibleVaults, restore, done
-    /// "J'ai déjà OnePass sur un autre appareil": the mode, then the QR, code and password.
+    /// "J'ai déjà Cleon sur un autre appareil": the mode, then the QR, code and password.
     case pairMode, pairing
-    /// "Remplis tes mots de passe avec OnePass": once the account exists, asks the system to turn
+    /// "Remplis tes mots de passe avec Cleon": once the account exists, asks the system to turn
     /// the AutoFill provider on. Skippable; never among the steps when the provider is already on.
     case autoFill
 }
@@ -115,7 +115,7 @@ final class OnboardingModel {
     private(set) var successPulse = 0
     private(set) var movingForward = true
 
-    /// The mode asked for on "J'ai déjà OnePass sur un autre appareil" (public included).
+    /// The mode asked for on "J'ai déjà Cleon sur un autre appareil" (public included).
     var pairDeviceMode: FfiDeviceMode = .personal
     /// How this device meets the other one: it scans the code the other device shows, types it, or
     /// shows its own QR code for an iPhone or an iPad to scan.
@@ -160,7 +160,7 @@ final class OnboardingModel {
     /// The request was made and the provider is still off (the prompt was refused, or the system
     /// settings were opened instead): the step says where to turn it on.
     private(set) var autoFillAsked = false
-    /// OnePass is the system AutoFill provider (read again on every return to the foreground).
+    /// Cleon is the system AutoFill provider (read again on every return to the foreground).
     var autoFillEnabled: Bool { model.autofillEnabled == true }
 
     private static func offersAutoFill(_ model: AppModel) -> Bool {
@@ -205,7 +205,7 @@ final class OnboardingModel {
     }
 
     var session: VaultSession { model.session }
-    /// Where the new vault syncs (spec D.2): the OnePass server unless chosen otherwise. iCloud
+    /// Where the new vault syncs (spec D.2): the Cleon server unless chosen otherwise. iCloud
     /// while mailbox signup is off in this build.
     var syncChoice: SyncChoice = .default
     var showSyncChoice = false
@@ -562,7 +562,7 @@ final class OnboardingModel {
         }
     }
 
-    /// iCloud signed in and holding no OnePass account yet; false after saying what to do.
+    /// iCloud signed in and holding no Cleon account yet; false after saying what to do.
     private func checkICloudBeforeCreation() async -> Bool {
         guard await model.iCloudAccountAvailable() else {
             fail(String(localized: "onboarding.signInToIcloud"), next: .openSettings)
@@ -608,7 +608,7 @@ final class OnboardingModel {
         }
     }
 
-    /// "Activer OnePass": the system prompt (the system settings when it does not show,
+    /// "Activer Cleon": the system prompt (the system settings when it does not show,
     /// `AppModel.requestAutoFillActivation`), then on to the next step once the provider is on.
     /// Still off: the step stays, with "Plus tard".
     private func turnOnAutoFill() async {
@@ -1047,6 +1047,12 @@ struct OnboardingFlow: View {
 private struct PhoneOnboardingLayout: View {
     @Bindable var model: OnboardingModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private var centersSteps: Bool { sizeClass == .regular }
+    #else
+    private var centersSteps: Bool { false }
+    #endif
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1054,18 +1060,25 @@ private struct PhoneOnboardingLayout: View {
                 .padding(.horizontal, 16)
                 .frame(height: 52)
             ZStack {
-                ScrollView {
-                    OnboardingStepContent(model: model)
-                        .frame(maxWidth: 520, alignment: .leading)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 20)
-                        .padding(.bottom, 32)
-                        .frame(maxWidth: .infinity)
-                }
+                // On iPad (regular width) a short step sits in the middle of the screen, not glued to
+                // the top over an empty two thirds; a long one scrolls as before.
+                GeometryReader { proxy in
+                    ScrollView {
+                        OnboardingStepContent(model: model)
+                            .frame(maxWidth: 520, alignment: .leading)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 20)
+                            .padding(.bottom, 32)
+                            .frame(maxWidth: .infinity)
+                            .frame(
+                                minHeight: centersSteps ? proxy.size.height : nil,
+                                alignment: centersSteps ? .center : .top)
+                    }
                 #if os(iOS)
                 .scrollDismissesKeyboard(.interactively)
                 #endif
-                .scrollBounceBehavior(.basedOnSize)
+                    .scrollBounceBehavior(.basedOnSize)
+                }
                 .id(model.step)
                 .transition(stepTransition)
             }
@@ -1288,7 +1301,7 @@ private struct StepRail: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
                 AppGlyph(size: 34).accessibilityHidden(true)
-                Text("OnePass").font(.title3.bold()).foregroundStyle(label)
+                Text("Cleon").font(.title3.bold()).foregroundStyle(label)
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 22)

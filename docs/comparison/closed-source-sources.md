@@ -55,6 +55,6 @@ Rule used in the README: "not public" or "not found" means the vendor pages revi
 - Recurity Labs audit, Jan to Apr 2026: https://proton.me/business/pass/security
 - AI access tokens (21 May 2026): https://proton.me/blog/pass-access-tokens
 
-## OnePass
-- 2026-10-28 security comparison with 11 open source managers (desk review, OnePass scored from code, peers from public evidence): kept by the maintainers, summarized in the README.
-- Everything in the OnePass rows is from this repository: README feature list, `docs/security/README.md`, and the roadmap. Sharing, mailbox, multi-account and travel detection are marked in progress because they are not in a release.
+## Cleon
+- 2026-10-28 security comparison with 11 open source managers (desk review, Cleon scored from code, peers from public evidence): kept by the maintainers, summarized in the README.
+- Everything in the Cleon rows is from this repository: README feature list, `docs/security/README.md`, and the roadmap. Sharing, mailbox, multi-account and travel detection are marked in progress because they are not in a release.

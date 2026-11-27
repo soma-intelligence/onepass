@@ -1,6 +1,6 @@
 # Security policy
 
-OnePass is a password manager. A flaw in it directly affects the people who use it, so we would much rather hear about one through a private report than read about it in public.
+Cleon is a password manager. A flaw in it directly affects the people who use it, so we would much rather hear about one through a private report than read about it in public.
 
 ## Reporting a vulnerability
 
@@ -68,7 +68,7 @@ The Mac app's MCP server can ask the owner's iPhone to approve a request, and th
 | A6. Stolen or lost iPhone | Holds the phone, not the owner's face | `K_r` sits behind `.biometryCurrentSet`; every answer needs Face ID through a `.biometryCurrentSet` check; `K_r` and the phone's approver keys stay on this device only, never synced. Revoking the phone in the device list makes the Mac erase `C` and refuse its answers. |
 | A7. Stolen Mac, or a session left open | The disk, or physical access during an agent window | `C` alone opens nothing. The agent window is agents only (the app, AutoFill, the extension and widgets see a locked vault), bounded, and ends when the Mac sleeps or its user session goes inactive, on lock, or on "Lock now" on the phone; the display going to sleep does not end it. While a window is open, an approval clicked on the Mac panel counts only after Touch ID (MCP and SSH). |
 | A8. An agent that spams unlock requests | Triggers requests in a loop | Only the first tool call of a paired client asks the phone (the locked app answers the MCP handshake itself, and an unpaired client is told to pair at the Mac); at most one unlock request per 10 minutes per Mac; 3 refusals (an unanswered request counts as one) block remote unlock for 1 hour; the existing per-client limits. |
-| A9. A fake notification | Shows the owner a notification that looks like OnePass | Nothing can be answered from the notification itself; the app shows the decrypted, signature-checked request before Face ID; for approvals, the same 4-letter code is shown to the agent and on the phone. Unlock requests carry no code: they show the agent's identity and the window length, and the agent's request then goes through an approval with its code. |
+| A9. A fake notification | Shows the owner a notification that looks like Cleon | Nothing can be answered from the notification itself; the app shows the decrypted, signature-checked request before Face ID; for approvals, the same 4-letter code is shown to the agent and on the phone. Unlock requests carry no code: they show the agent's identity and the window length, and the agent's request then goes through an approval with its code. |
 
 Residual risks, known and accepted for now:
 
@@ -85,9 +85,9 @@ Residual risks, known and accepted for now:
 
 ## Supported versions
 
-OnePass has no 1.0 release yet. Only `main` receives security fixes. After 1.0, this section will list the maintained versions.
+Cleon has no 1.0 release yet. Only `main` receives security fixes. After 1.0, this section will list the maintained versions.
 
-OnePass has not had an external audit yet. One is planned before the first stable release.
+Cleon has not had an external audit yet. One is planned before the first stable release.
 
 ## Supply chain
 

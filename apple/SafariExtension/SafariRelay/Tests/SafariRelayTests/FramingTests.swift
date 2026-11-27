@@ -93,7 +93,7 @@ struct RelayRequestTests {
     }
 
     @Test func parsesOpenApp() throws {
-        // "Déverrouiller dans OnePass": not a bridge frame, no connection.
+        // "Déverrouiller dans Cleon": not a bridge frame, no connection.
         #expect(try RelayRequest.parse(["onepass": 1, "op": "open_app"]) == RelayRequest(conn: "", op: .openApp))
         for m: [String: Any] in [
             ["onepass": 1, "op": "open_app", "conn": conn],

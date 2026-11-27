@@ -238,6 +238,7 @@ struct RXMacSettingsBackBar: View {
 private struct RXMacSettingsColumn: View {
     @Environment(AppModel.self) private var model
     @Binding var selection: RXMacSettingsSelection
+    @State private var showsFeatureRequest = false
 
     private typealias RX = Theme.RX
 
@@ -259,6 +260,12 @@ private struct RXMacSettingsColumn: View {
                 #else
                 group([.about])
                 #endif
+                row(Text("featureRequest.title", tableName: FeatureRequestSheet.table), selected: false,
+                    id: "settings.featureRequest") {
+                    showsFeatureRequest = true
+                } glyph: {
+                    symbol("lightbulb")
+                }
                 // The account menu's words; through `perform`, which asks first when an edit is
                 // not saved.
                 row(Text("Verrouiller"), selected: false, id: "rx.settings.lock") {
@@ -273,6 +280,7 @@ private struct RXMacSettingsColumn: View {
         }
         .scrollIndicators(.never)
         .accessibilityIdentifier("rx.settings.categories")
+        .sheet(isPresented: $showsFeatureRequest) { FeatureRequestSheet() }
     }
 
     @ViewBuilder private func group(_ pages: [SettingsPage]) -> some View {

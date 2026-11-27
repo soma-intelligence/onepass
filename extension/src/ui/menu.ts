@@ -66,6 +66,8 @@ function methodOf(it: Summary): string {
 
 /** An empty `menu_keys` answer sooner than this: ask again only after it. */
 const KEYS_BACKOFF_MS = 1000;
+/** No answer from the worker this long after opening: "Connexion à OnePass…" instead of a bare header. */
+export const MENU_PLACEHOLDER_MS = 250;
 
 
 export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
@@ -160,13 +162,13 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   };
   document.addEventListener("keydown", keydown);
 
-  /** The OnePass mark and the site on the left, how many logins it has on the right. */
+  /** The Cleon mark and the site on the left, how many logins it has on the right. */
   const header = (origin: string | null, logins?: number) =>
     h(
       "h1",
       { class: "menu-head" },
       mark("s"),
-      h("span", { class: "menu-host" }, origin ? hostOf(origin) : "OnePass"),
+      h("span", { class: "menu-host" }, origin ? hostOf(origin) : "Cleon"),
       logins ? h("span", { class: "menu-count" }, tn("menu.loginCount", logins, { n: logins })) : null,
     );
   const glyphTile = (name: IconName, size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
@@ -803,7 +805,14 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       renderState("invalid", null);
       return;
     }
+    // The worker answers at once when the app is there. Slower (the app is being looked for):
+    // the menu says so instead of a bare header, until the answer replaces it.
+    const slow = timers.setTimeout(() => {
+      mount(container, header(null), messageBlock(t("popup.connecting")));
+      remeasure();
+    }, MENU_PLACEHOLDER_MS);
     const r = await call(deps.send, { type: "menu_init", token }, parseMenuInit);
+    timers.clearTimeout(slow);
     if (r.ok) {
       suggestion = null;
       if (NEW_PASSWORD_FORMS.has(r.value.formKind)) {

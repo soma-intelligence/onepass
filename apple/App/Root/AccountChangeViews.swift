@@ -3,7 +3,7 @@ import SwiftUI
 import VaultKit
 
 /// "Utiliser ce compte iCloud" (spec 14, ruling E23): checks the new account's zone first. Another
-/// OnePass vault there is refused; our own vault is accepted at once; an empty zone asks before the
+/// Cleon vault there is refused; our own vault is accepted at once; an empty zone asks before the
 /// encrypted vault is uploaded there.
 struct UseICloudAccountButton: View {
     @Environment(AppModel.self) private var model

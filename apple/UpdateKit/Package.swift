@@ -3,7 +3,7 @@ import PackageDescription
 
 // Updates of the Developer ID Mac app through Sparkle (spec
 // docs/superpowers/specs/2026-11-02-mac-updater-design.md). Mac only: the
-// OnePass target links it for its macOS destination; iOS, watchOS and visionOS
+// Cleon target links it for its macOS destination; iOS, watchOS and visionOS
 // update through the App Store.
 let package = Package(
     name: "UpdateKit",

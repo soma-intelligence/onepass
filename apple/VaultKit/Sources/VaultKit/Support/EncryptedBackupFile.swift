@@ -9,7 +9,7 @@ public enum EncryptedBackupFile {
     public static let fileExtension = "onepass"
     static let folderPrefix = "backup-"
 
-    /// "OnePass sauvegarde 2026-10-26.onepass" (the day in the device's time zone).
+    /// "Cleon sauvegarde 2026-10-26.onepass" (the day in the device's time zone).
     public static func fileName(for date: Date, timeZone: TimeZone = .current) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone

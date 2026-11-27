@@ -125,6 +125,21 @@ describe("a login that holds a one-time code and has sent its password", () => {
     expect(tick(s, T0 + 500 + PASSWORD_WAIT_MS).state.status).toBe("done");
   });
 
+  it("is done after DONE_SETTLE_MS when the next page shows the open session", () => {
+    const r = step(withTotp(), page([loginForm()]), SITE, T0 + 100);
+    let s = navigated(r.state, `${SITE}/home`, T0 + 400);
+    s = settled(s, T0 + 500);
+    s = step(s, page([], { signedIn: true }, `${SITE}/home`), SITE, T0 + 600).state;
+    // A sign-out control on the page: no code form will come, no 10 s of "Connexion…".
+    expect(nextDue(s)).toBe(T0 + 600 + DONE_SETTLE_MS);
+    expect(tick(s, T0 + 600 + DONE_SETTLE_MS).state.status).toBe("done");
+    // Kept through storage.
+    expect(parseChainState(JSON.parse(JSON.stringify(s)))?.page.signedIn).toBe(true);
+    // The same page without the control again: the wait for a late code form is back.
+    const back = step(s, page([], {}, `${SITE}/home`), SITE, T0 + 700).state;
+    expect(nextDue(back)).toBe(T0 + 500 + PASSWORD_WAIT_MS);
+  });
+
   it("a login without a code, and a chain whose code already went, are done as before", () => {
     // No code in the item.
     let s = navigated(step(start(), page([loginForm()]), SITE, T0 + 100).state, `${SITE}/home`, T0 + 400);

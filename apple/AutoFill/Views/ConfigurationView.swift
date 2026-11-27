@@ -2,7 +2,7 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// Shown once OnePass is turned on as a provider: "OnePass est prêt", and a reminder to open the
+/// Shown once Cleon is turned on as a provider: "Cleon est prêt", and a reminder to open the
 /// app first when this device has no usable account yet. With an account, "Afficher mes comptes
 /// au-dessus du clavier" unlocks once and publishes the identities (G10), so QuickType works at once.
 /// "OK" ends the configuration request.

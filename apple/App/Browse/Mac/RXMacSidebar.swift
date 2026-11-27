@@ -5,7 +5,7 @@ import SwiftUI
 import VaultKit
 
 /// The Mac sidebar in the RX look (Penpot "Mac · *"), while the switch is on: flat, on the RX
-/// sidebar colour. The OnePass mark and a search field on top, plain rows with small counts and the
+/// sidebar colour. The Cleon mark and a search field on top, plain rows with small counts and the
 /// selected one on a soft accent pill, the vaults with their coloured initials, the tags, Archive
 /// and Supprimés récemment, then the account row at the bottom, which opens the account panel.
 /// Every row leads where the native sidebar's row leads.
@@ -16,6 +16,12 @@ struct RXMacSidebar: View {
     let duplicateGroups: Int
     @State private var accountMenuOpen = false
     @State private var titlebarHeight: CGFloat = 52
+    /// Tags picked with ⌘-click or ⇧-click, to delete several at once (right-click, or the header's
+    /// trash button). A plain click empties it and opens the tag as before.
+    @State private var selectedTags: Set<String> = []
+    /// The tags the confirmation asks about.
+    @State private var tagsToDelete: Set<String> = []
+    @State private var tagDeletionFailed = false
 
     private typealias RX = Theme.RX
     private var session: VaultSession { model.session }
@@ -123,7 +129,7 @@ struct RXMacSidebar: View {
                 .foregroundStyle(RX.Palette.accent.color)
                 .frame(width: RX.Metrics.macRowGlyph)
             // swiftlint:disable:next db_unlocalized_string - app name, the same in every language
-            Text(verbatim: "OnePass")
+            Text(verbatim: "Cleon")
                 .rxFont(.headline)
                 .foregroundStyle(RX.Palette.textPrimary.color)
         }
@@ -194,10 +200,31 @@ struct RXMacSidebar: View {
     @ViewBuilder private func tags(_ counts: ItemCounts) -> some View {
         let tags = counts.byTag.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         if !tags.isEmpty {
-            header(Text("Tags"))
+            HStack(alignment: .lastTextBaseline) {
+                header(Text("Tags"))
+                Spacer(minLength: 0)
+                if !selectedTags.isEmpty {
+                    Button {
+                        tagsToDelete = selectedTags
+                    } label: {
+                        Label("sidebar.tags.deleteSelected \(selectedTags.count)", systemImage: "trash")
+                            .labelStyle(.titleAndIcon)
+                            .rxFont(.caption)
+                            .foregroundStyle(RX.Palette.negative.color)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, RX.Space.s)
+                    .padding(.bottom, RX.Space.xs)
+                    .help(Text("sidebar.tags.deleteHelp"))
+                    .accessibilityIdentifier("sidebar.tags.deleteSelected")
+                }
+            }
             ForEach(tags, id: \.self) { tag in
                 let filter = ItemFilter.tag(tag)
-                rowButton(selected: isSelected(filter), id: "sidebar.tags.\(tag)", action: { model.showItems(filter) }) {
+                rowButton(
+                    selected: isSelected(filter) || selectedTags.contains(tag), id: "sidebar.tags.\(tag)",
+                    action: { clickTag(tag, filter: filter) }
+                ) {
                     Circle()
                         .fill(TagColor.of(tag))
                         .frame(width: RX.Metrics.macTagDot, height: RX.Metrics.macTagDot)
@@ -206,7 +233,71 @@ struct RXMacSidebar: View {
                     Text(tag)
                     count(counts.byTag[tag])
                 }
+                .contextMenu {
+                    let targets = selectedTags.contains(tag) ? selectedTags : [tag]
+                    Button(role: .destructive) {
+                        tagsToDelete = targets
+                    } label: {
+                        if targets.count == 1 {
+                            Label("sidebar.tags.deleteOne", systemImage: "trash")
+                        } else {
+                            Label("sidebar.tags.deleteSelected \(targets.count)", systemImage: "trash")
+                        }
+                    }
+                }
             }
+            .confirmationDialog(
+                deletionTitle, isPresented: Binding(get: { !tagsToDelete.isEmpty }, set: { if !$0 { tagsToDelete = [] } }),
+                titleVisibility: .visible
+            ) {
+                Button("sidebar.tags.deleteConfirm", role: .destructive) {
+                    let targets = tagsToDelete
+                    Task { await deleteTags(targets) }
+                }
+                Button("Annuler", role: .cancel) { tagsToDelete = [] }
+            } message: {
+                Text("sidebar.tags.deleteMessage")
+            }
+            .alert("sidebar.tags.deleteFailed", isPresented: $tagDeletionFailed) {
+                Button("OK", role: .cancel) {}
+            }
+        }
+    }
+
+    private var deletionTitle: Text {
+        if tagsToDelete.count == 1, let tag = tagsToDelete.first {
+            Text("sidebar.tags.deleteTitleOne \(tag)")
+        } else {
+            Text("sidebar.tags.deleteTitleMany \(tagsToDelete.count)")
+        }
+    }
+
+    /// ⌘-click or ⇧-click adds or removes the tag from the selection; a plain click opens it.
+    private func clickTag(_ tag: String, filter: ItemFilter) {
+        let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
+        if flags.contains(.command) || flags.contains(.shift) {
+            if selectedTags.isEmpty, model.page == .items, case .tag(let current) = model.selection {
+                selectedTags.insert(current)
+            }
+            if selectedTags.contains(tag) { selectedTags.remove(tag) } else { selectedTags.insert(tag) }
+        } else {
+            selectedTags = []
+            model.showItems(filter)
+        }
+    }
+
+    private func deleteTags(_ targets: Set<String>) async {
+        tagsToDelete = []
+        selectedTags = []
+        // The list showed one of these tags: it would be empty now.
+        if case .tag(let current) = model.selection, targets.contains(current) {
+            model.showItems(.all)
+        }
+        do {
+            let result = try await session.removeTags(targets)
+            if result.failed > 0 { tagDeletionFailed = true }
+        } catch {
+            tagDeletionFailed = true
         }
     }
 

@@ -110,6 +110,10 @@ enum Command {
     /// agent that keeps both in step on its own.
     #[command(subcommand)]
     Wifi(WifiCmd),
+    /// Guarded Kit: realms that count wrong passwords, so a stolen
+    /// Emergency Kit is not enough to guess the password offline.
+    #[command(subcommand)]
+    Guard(commands::guard::GuardCmd),
 }
 
 #[derive(Subcommand)]
@@ -179,6 +183,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::SshAgent(a) => commands::ssh_agent::run(&ctx, a),
         Command::Travel(c) => commands::travel::run(&ctx, c),
         Command::Wifi(c) => commands::wifi::run(&ctx, c),
+        Command::Guard(c) => commands::guard::run(&ctx, c),
         Command::Generate(_) => unreachable!("handled above"),
     }
 }

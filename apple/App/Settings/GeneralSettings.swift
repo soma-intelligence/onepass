@@ -162,7 +162,7 @@ struct ProfileSettings: View {
 }
 
 #if os(iOS)
-/// Apparence: follow the system, or keep OnePass light or dark. Three small screens to pick from,
+/// Apparence: follow the system, or keep Cleon light or dark. Three small screens to pick from,
 /// as in the system's Display settings. Stored on this device only.
 private struct AppearanceSection: View {
     @AppStorage(Appearance.storageKey, store: AppModel.browseDefaults) private var stored = Appearance.system.rawValue
@@ -485,10 +485,13 @@ extension View {
 extension EnvironmentValues {
     /// True on a page of Réglages drawn in the RX look.
     @Entry var rxSettings = false
+    /// RX Réglages on iPad: the side margin that keeps each page's rows in a readable column.
+    @Entry var rxSettingsSideMargin: CGFloat = 0
 }
 
 private struct RXSettingsSkin: ViewModifier {
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
+    @Environment(\.rxSettingsSideMargin) private var sideMargin
 
     private typealias RX = Theme.RX
 
@@ -498,7 +501,7 @@ private struct RXSettingsSkin: ViewModifier {
             content
                 .rxFont(.bodyMedium)
                 .listSectionSpacing(RX.Space.l)
-                .contentMargins(.horizontal, RX.Space.gutter, for: .scrollContent)
+                .contentMargins(.horizontal, max(RX.Space.gutter, sideMargin), for: .scrollContent)
                 .scrollContentBackground(.hidden)
                 // No colour of its own: `settingsPage` draws the frosted backdrop behind.
                 .tint(RX.Palette.accentText.color)

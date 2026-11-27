@@ -2,7 +2,8 @@
 
 usage: python3 -I apple/scripts/core_labels/gen.py core apple/VaultKit/Sources/VaultKit/Resources/CoreLabels.xcstrings
 Rerun after any change to templates.rs or menus.rs; a new label fails until en_core.py, es_core.py
-and it_core.py have it. Adding a language: copy en_core.py to <lang>_core.py, translate, add it to LANGS."""
+and it_core.py have it. Other languages (de, ko, zh-Hans) are machine-filled by
+apple/scripts/translate-strings.py and kept across reruns while the French text is unchanged."""
 import json, os, sys, re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from parse import parse
@@ -60,6 +61,17 @@ for t, (fr, en) in TYPE.items():
     put(f"type.{t}", fr, en, "Singular name of an item type.", type_name(t))
 unknown = [o for o in options if o not in MENU]
 print("menu options kept as stored:", unknown, file=sys.stderr)
+# Languages without a <lang>_core.py (filled by apple/scripts/translate-strings.py) survive a rerun:
+# their value is kept while the entry's French text is unchanged.
+if os.path.exists(out):
+    with open(out, encoding="utf-8") as f:
+        previous = json.load(f).get("strings", {})
+    for key, entry in strings.items():
+        old = previous.get(key, {}).get("localizations", {})
+        if old.get("fr", {}).get("stringUnit", {}).get("value") != entry["localizations"]["fr"]["stringUnit"]["value"]:
+            continue
+        for lang, loc in old.items():
+            entry["localizations"].setdefault(lang, loc)
 cat = {"sourceLanguage": "fr", "strings": strings, "version": "1.0"}
 with open(out, "w") as f:
     f.write(dump(cat))

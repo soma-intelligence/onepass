@@ -128,9 +128,9 @@ describe("shell placement", () => {
     const css = shell.root.querySelector("style")!.textContent!;
     const rule = /iframe \{[^}]*\}/.exec(css)?.[0] ?? "";
     expect(rule).toMatch(/color-scheme:\s*light dark/);
-    // A `title` shows as a "OnePass" tooltip over the frame's corner: named for assistive tech only.
+    // A `title` shows as a "Cleon" tooltip over the frame's corner: named for assistive tech only.
     expect(iframe.hasAttribute("title")).toBe(false);
-    expect(iframe.getAttribute("aria-label")).toBe("OnePass");
+    expect(iframe.getAttribute("aria-label")).toBe("Cleon");
     frames.destroy();
   });
 

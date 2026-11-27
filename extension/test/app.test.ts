@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_ASKS_PER_MIN, createBackground, FILL_SMART_COMMAND, GESTURE_MENU_MS } from "../src/background/app";
+import { APP_ASKS_PER_MIN, AUTO_MENU_WAIT_MS, createBackground, FILL_SMART_COMMAND, GESTURE_MENU_MS } from "../src/background/app";
 import type { BridgeLike } from "../src/background/session";
 import { BridgeError } from "../src/bridge/bytes";
 import { UNLOCK_WAIT_MS } from "../src/shared/unlock";
@@ -620,10 +620,11 @@ describe("one gesture on a locked vault (Mac): the app is asked at once and the 
   });
 
   it("only the gesture's own menu waits: not an auto menu, another field, another document, or a late one", async () => {
-    // A click into the field (auto) cannot open on a locked vault, and does not use the gesture up.
+    // A click into the field (auto) on a locked vault opens the menu that says so, and does not
+    // use the gesture up.
     let t = await lockedMac();
     await click(t);
-    expect(await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login", auto: true }, t.top)).toEqual({ err: "not_found" });
+    expect(await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login", auto: true }, t.top)).toHaveProperty("ok.url");
     let m = await menuOf(t);
     expect(await t.ext.send({ type: "menu_resume", token: m.token }, m.ui)).toEqual({ err: "locked" });
     // The link is single-use: a second menu of the frame is not the gesture's.
@@ -747,7 +748,9 @@ describe("one gesture when the app is not running: it is launched, then the fill
   it("never launched without a gesture: a page analysis, an auto menu and a menu's polls leave the app alone", async () => {
     const t = await noApp();
     await t.ext.send({ type: "page_analysis", analysis: { url: `${SITE}/login`, forms: [], captcha: false, push: false, providerButtons: [], accountChooser: [] } }, t.top);
-    expect(await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login", auto: true }, t.top)).toHaveProperty("err");
+    // The auto menu opens to say the app is missing; opening it launches nothing.
+    expect(await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login", auto: true }, t.top)).toHaveProperty("ok.url");
+    expect(t.opened.n).toBe(0);
     const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
     const token = open.ok.url.split("#")[1] as string;
     const ui = uiSender(`menu.html#${token}`, 7);
@@ -867,7 +870,7 @@ describe("one gesture when the app is not running: it is launched, then the fill
       expect(t.opened.n).toBe(0);
     });
 
-    it("the Open OnePass button on a cold app: `unlock` once when it answers, already unlocked or not", async () => {
+    it("the Open Cleon button on a cold app: `unlock` once when it answers, already unlocked or not", async () => {
       const t = await noApp();
       const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
       const token = open.ok.url.split("#")[1] as string;
@@ -882,7 +885,7 @@ describe("one gesture when the app is not running: it is launched, then the fill
     });
   });
 
-  it("the menu's Open OnePass button launches it and waits the same way", async () => {
+  it("the menu's Open Cleon button launches it and waits the same way", async () => {
     const t = await noApp();
     const open = (await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login" }, t.top)) as { ok: { url: string } };
     const token = open.ok.url.split("#")[1] as string;
@@ -963,6 +966,19 @@ describe("icon click (plan_context with the gesture's form and field)", () => {
     expect(init.ok.items.map((x) => x.item_id)).toEqual([B, A, C]);
     expect(init.ok.best).toBe(B);
     expect(t.chainCalls).toEqual([]);
+  });
+
+  it("a click into the field with nothing saved for the site stays quiet (auto menu: not_found)", async () => {
+    const t = await bg(() => plan({ action: "show_menu", confidence: "low" }), (r) => (r.op === "list_for_origin" ? { items: [] } : undefined));
+    expect(await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login", auto: true }, t.top)).toEqual({ err: "not_found" });
+  });
+
+  it("a click into the field while the app is slow to answer: the menu opens after AUTO_MENU_WAIT_MS and waits itself", async () => {
+    const t = await bg(() => plan({ action: "show_menu", confidence: "low" }), (r) => (r.op === "list_for_origin" ? new Promise(() => undefined) : undefined));
+    const started = Date.now();
+    const open = await t.ext.send({ type: "open_menu", fieldRef: "f1e0", formRef: "f1", formKind: "login", auto: true }, t.top);
+    expect(open).toHaveProperty("ok.url");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(AUTO_MENU_WAIT_MS - 50);
   });
 
   it("a menu opened by a click into the field (auto) ignores a plan's alternatives", async () => {
@@ -1430,7 +1446,7 @@ describe("manifest", () => {
     });
     for (const lang of ["en", "fr"]) {
       const msgs = JSON.parse(readFileSync(join(process.cwd(), `src/_locales/${lang}/messages.json`), "utf8")) as Record<string, { message: string }>;
-      expect(msgs.fillSmartCommand?.message).toMatch(/OnePass/);
+      expect(msgs.fillSmartCommand?.message).toMatch(/Cleon/);
       expect(msgs.fillSmartCommand?.message).not.toContain(String.fromCharCode(0x2014));
     }
   });

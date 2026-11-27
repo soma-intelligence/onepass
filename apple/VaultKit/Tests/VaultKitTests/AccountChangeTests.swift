@@ -77,7 +77,7 @@ struct AccountChangeTests {
     }
 
     @Test func otherVaultInTheNewZoneIsRefused() async throws {
-        // Zone "b" already holds another OnePass account.
+        // Zone "b" already holds another Cleon account.
         let zoneB = InMemoryRemote()
         let other = try SyncDevice(remote: zoneB, name: "Autre")
         defer { other.cleanUp() }
@@ -94,7 +94,7 @@ struct AccountChangeTests {
         await a.coordinator.syncNow()
         #expect(await a.coordinator.status == .accountChanged)
         #expect(await zoneB.sentBatches.count == sentBefore)
-        #expect(AccountChangeOutcome.otherVaultMessage.hasPrefix("Ce compte iCloud contient déjà un autre coffre OnePass."))
+        #expect(AccountChangeOutcome.otherVaultMessage.hasPrefix("Ce compte iCloud contient déjà un autre coffre Cleon."))
     }
 
     @Test func sameVaultInTheNewZoneIsAccepted() async throws {

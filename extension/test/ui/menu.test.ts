@@ -338,13 +338,38 @@ describe("inline menu", () => {
     });
     await handle.ready;
     await flush();
-    expect(text(r)).toContain("OnePass est verrouillé");
+    expect(text(r)).toContain("Cleon est verrouillé");
     clock.advance(300);
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Cleon").click();
     await flush();
     await flush();
     expect(worker.types()).toEqual(["menu_init", "menu_vault", "menu_resume", "menu_unlock", "menu_resume", "menu_init"]);
     expect(text(r)).toContain("Atlas Cloud");
+  });
+
+  it("says it is looking for the app while the worker has not answered, then shows the honest state", async () => {
+    let answer!: (r: Reply) => void;
+    const { r, handle, timers } = setup((m) => {
+      if (m.type === "menu_init") return new Promise<Reply>((res) => (answer = res)) as unknown as Reply;
+      if (m.type === "menu_resume") return { err: "invalid" };
+      return ok();
+    });
+    await flush();
+    // Never a bare header: the wait says what it is.
+    timers.runTimeouts();
+    expect(text(r)).toContain("Connexion à Cleon…");
+    answer({ err: "host_missing" });
+    await handle.ready;
+    await flush();
+    expect(text(r)).toContain("App Cleon introuvable");
+    expect(text(r)).not.toContain("Connexion à Cleon…");
+  });
+
+  it("a quick answer never shows the wait", async () => {
+    const { r, handle, timers } = setup(def);
+    await handle.ready;
+    expect(timers.timeouts.size).toBe(0);
+    expect(text(r)).not.toContain("Connexion à Cleon…");
   });
 
   it("one gesture: the menu of a click that already asked the unlock opens waiting, no button, and resumes by itself", async () => {
@@ -359,11 +384,11 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     expect(r.querySelector("button")).toBeNull();
     timers.runTimeouts();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     locked = false;
     timers.runTimeouts();
     await flush();
@@ -390,12 +415,12 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     clock.advance(300);
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Cleon").click();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     timers.runTimeouts();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     locked = false;
     timers.runTimeouts();
     await flush();
@@ -419,18 +444,18 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     clock.advance(300);
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Cleon").click();
     await flush();
     expect(UNLOCK_WAIT_TRIES * UNLOCK_POLL_MS).toBe(UNLOCK_WAIT_MS);
     for (let i = 0; i < UNLOCK_WAIT_TRIES - 1; i++) {
       timers.runTimeouts();
       await flush();
     }
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     timers.runTimeouts();
     await flush();
-    expect(text(r)).toContain("OnePass est verrouillé");
-    expect(button(r, "Déverrouiller dans OnePass")).toBeTruthy();
+    expect(text(r)).toContain("Cleon est verrouillé");
+    expect(button(r, "Déverrouiller dans Cleon")).toBeTruthy();
     // The wait is over: nothing polls any more.
     expect(timers.timeouts.size).toBe(0);
     expect(worker.types().filter((t) => t === "menu_resume")).toHaveLength(UNLOCK_WAIT_TRIES + 1);
@@ -445,12 +470,12 @@ describe("inline menu", () => {
     });
     await handle.ready;
     await flush();
-    expect(text(r)).toContain("Ouverture de OnePass…");
+    expect(text(r)).toContain("Ouverture de Cleon…");
     expect(r.querySelector("button")).toBeNull();
     state = "locked";
     timers.runTimeouts();
     await flush();
-    expect(text(r)).toContain("Déverrouille OnePass pour continuer");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
     state = "open";
     timers.runTimeouts();
     await flush();
@@ -458,7 +483,7 @@ describe("inline menu", () => {
     expect(timers.timeouts.size).toBe(0);
   });
 
-  it("the app is not running and no gesture launched it: Open OnePass launches it, then waits; the button comes back after 90 s", async () => {
+  it("the app is not running and no gesture launched it: Open Cleon launches it, then waits; the button comes back after 90 s", async () => {
     let asked = false;
     const { r, handle, worker, clock, timers } = setup((m) => {
       if (m.type === "menu_init") return { err: "host_missing" };
@@ -471,18 +496,18 @@ describe("inline menu", () => {
     });
     await handle.ready;
     await flush();
-    expect(text(r)).toContain("App OnePass introuvable");
+    expect(text(r)).toContain("App Cleon introuvable");
     clock.advance(300);
-    button(r, "Ouvrir OnePass").click();
+    button(r, "Ouvrir Cleon").click();
     await flush();
     expect(worker.types()).toEqual(["menu_init", "menu_resume", "menu_unlock"]);
-    expect(text(r)).toContain("Ouverture de OnePass…");
+    expect(text(r)).toContain("Ouverture de Cleon…");
     for (let i = 0; i < UNLOCK_WAIT_TRIES; i++) {
       timers.runTimeouts();
       await flush();
     }
-    expect(text(r)).toContain("App OnePass introuvable");
-    expect(button(r, "Ouvrir OnePass")).toBeTruthy();
+    expect(text(r)).toContain("App Cleon introuvable");
+    expect(button(r, "Ouvrir Cleon")).toBeTruthy();
     expect(timers.timeouts.size).toBe(0);
   });
 
@@ -494,11 +519,11 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     clock.advance(300);
-    button(r, "Ouvrir OnePass").click();
+    button(r, "Ouvrir Cleon").click();
     await flush();
-    expect(text(r)).toContain("App OnePass introuvable");
-    expect(text(r)).toContain("Ouvre l'app OnePass sur cet ordinateur, puis réessaie.");
-    expect(button(r, "Ouvrir OnePass")).toBeTruthy();
+    expect(text(r)).toContain("App Cleon introuvable");
+    expect(text(r)).toContain("Ouvre l'app Cleon sur cet ordinateur, puis réessaie.");
+    expect(button(r, "Ouvrir Cleon")).toBeTruthy();
   });
 
   it("iOS: the unlock sheet runs Face ID once by itself, then loads the menu", async () => {
@@ -575,7 +600,7 @@ describe("inline menu", () => {
     await handle.ready;
     await flush();
     clock.advance(300);
-    button(r, "Déverrouiller dans OnePass").click();
+    button(r, "Déverrouiller dans Cleon").click();
     await flush();
     locked = false;
     timers.runTimeouts();
@@ -642,18 +667,18 @@ describe("inline menu", () => {
   it("unpaired, host missing and malformed replies", async () => {
     let s = setup(() => ({ err: "unpaired" }));
     await s.handle.ready;
-    expect(text(s.r)).toContain("OnePass n'est pas appairé");
+    expect(text(s.r)).toContain("Cleon n'est pas appairé");
     s = setup((m) => (m.type === "menu_resume" ? { err: "invalid" } : { err: "host_missing" }));
     await s.handle.ready;
     await flush();
-    expect(text(s.r)).toContain("App OnePass introuvable");
+    expect(text(s.r)).toContain("App Cleon introuvable");
     s = setup(() => ok({ origin: SITE, formKind: "login", items: [{ item_id: 3 }] }));
     await s.handle.ready;
-    expect(text(s.r)).toContain("Erreur interne de OnePass.");
+    expect(text(s.r)).toContain("Erreur interne de Cleon.");
     // A raw host message is never shown.
     s = setup(() => ({ err: "<b>raw host text</b>" }));
     await s.handle.ready;
-    expect(text(s.r)).toContain("Erreur interne de OnePass.");
+    expect(text(s.r)).toContain("Erreur interne de Cleon.");
     expect(s.r.querySelector("b")).toBeNull();
   });
 
@@ -691,11 +716,11 @@ describe("inline menu", () => {
     }
   });
 
-  it("unpaired: Appairer avec OnePass asks the worker to open the popup", async () => {
+  it("unpaired: Appairer avec Cleon asks the worker to open the popup", async () => {
     const { r, handle, worker, clock } = setup((m) => (m.type === "menu_init" ? { err: "unpaired" } : ok()));
     await handle.ready;
     clock.advance(300);
-    button(r, "Appairer avec OnePass").click();
+    button(r, "Appairer avec Cleon").click();
     await Promise.resolve();
     expect(worker.sent.at(-1)).toEqual({ type: "menu_pair", token: TOKEN });
   });

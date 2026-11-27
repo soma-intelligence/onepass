@@ -23,6 +23,7 @@ pub mod family;
 pub mod fill_plan;
 pub mod format;
 pub mod generator;
+pub mod guarded_kit;
 pub mod icon;
 pub mod id;
 pub mod import;

@@ -1,7 +1,7 @@
 import SwiftUI
 import VaultKit
 
-/// "Où est rangé mon coffre ?" (cross-platform spec D.2, point 1): the OnePass server (default),
+/// "Où est rangé mon coffre ?" (cross-platform spec D.2, point 1): the Cleon server (default),
 /// iCloud, or the user's own server with a "Tester" button (`GET /v1/config`).
 struct SyncChoiceSheet: View {
     @Binding var choice: SyncChoice

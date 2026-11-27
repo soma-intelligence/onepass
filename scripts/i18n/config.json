@@ -1,6 +1,6 @@
 {
   "source": "fr",
-  "languages": ["fr", "en", "es", "it"],
+  "languages": ["fr", "en", "es", "it", "de", "ko", "zh-Hans"],
   "apple": {
     "catalogs": "apple/**/*.xcstrings",
     "exclude": ["/.build/", "/build/", "/DerivedData/", "/apple/Vendor/"],
@@ -20,6 +20,7 @@
     }
   },
   "extension": {
+    "languages": ["fr", "en", "es", "it"],
     "catalogs": "extension/src/shared/l10n",
     "manifest": "extension/src/_locales",
     "code": "extension/src",
