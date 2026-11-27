@@ -10949,6 +10949,12 @@
       "comment" : "Field of the passport template (core id chip_read_on).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelesen am"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10972,6 +10978,18 @@
             "state" : "translated",
             "value" : "Letto il"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "읽은 날짜"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取日期"
+          }
         }
       }
     },
@@ -10979,6 +10997,12 @@
       "comment" : "Field of the passport template (core id chip_status).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip-Status"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11002,6 +11026,18 @@
             "state" : "translated",
             "value" : "Stato del chip"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "칩 상태"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "芯片状态"
+          }
         }
       }
     },
@@ -11009,6 +11045,12 @@
       "comment" : "Field of the passport template (core id document_code).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dokumentcode"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11031,6 +11073,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Codice del documento"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "문서 코드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "证件代码"
           }
         }
       }
@@ -11519,6 +11573,12 @@
       "comment" : "Field of the passport template (core id portrait).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11541,6 +11601,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Foto"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "사진"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "照片"
           }
         }
       }
@@ -17357,6 +17429,12 @@
       "comment" : "Option of a menu field (stored value stays French).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durch den Chip authentifiziert"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17379,6 +17457,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Autenticato dal chip"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "칩으로 인증됨"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已通过芯片验证"
           }
         }
       }
@@ -18059,6 +18149,12 @@
       "comment" : "Option of a menu field (stored value stays French).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vom Chip gelesen, Signatur nicht prüfbar"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18081,6 +18177,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Letto dal chip, firma non verificabile"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "칩에서 읽음, 서명 확인 불가"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已从芯片读取，签名无法验证"
           }
         }
       }
@@ -18809,6 +18917,12 @@
       "comment" : "Option of a menu field (stored value stays French).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ungültige Signatur"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18831,6 +18945,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Firma non valida"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잘못된 서명"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名无效"
           }
         }
       }
@@ -20231,6 +20357,12 @@
       "comment" : "Section of the passport template (core id chip).",
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20253,6 +20385,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chip"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "칩"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "芯片"
           }
         }
       }
