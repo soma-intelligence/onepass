@@ -92,6 +92,11 @@ export interface ChainPage {
   replanned?: boolean;
   /** The latest analysis showed a CAPTCHA widget that asked nothing: a refused submit here is a CAPTCHA, not a wrong password. */
   widget?: boolean;
+  /**
+   * Back on the site, the page carries a sign-out control (`PageAnalysis.signedIn`): the session
+   * is open, no later form (password, code) is waited for. Done after `DONE_SETTLE_MS`.
+   */
+  signedIn?: true;
 }
 
 export interface ChainState {
@@ -385,13 +390,17 @@ export function step(s: ChainState, a: PageAnalysis, pageOrigin: string, now: nu
       // Back on the site without a sign-in form: done, once it stays so.
       n.page.doneAt ??= now;
       n.page.idle = false;
+      if (a.signedIn === true) n.page.signedIn = true;
+      else delete n.page.signedIn;
     } else {
+      delete n.page.signedIn;
       n.page.doneAt = undefined;
       n.page.idle = !waitingForUser;
     }
     return { state: n, actions: [] };
   }
   n.page.doneAt = undefined;
+  delete n.page.signedIn;
   n.page.idle = false;
   if (d.kind === "stop") return stopped(s, d.reason, now);
   if (d.kind === "otp") {
@@ -642,6 +651,8 @@ function awaitsCode(s: ChainState): boolean {
 
 function doneDue(s: ChainState): number | null {
   if (s.page.doneAt === undefined) return null;
+  // The page shows the open session: nothing more will come, done once it stays so.
+  if (s.page.signedIn) return s.page.doneAt + DONE_SETTLE_MS;
   // The identifier went alone, or the password of a login with a code: the next form (password,
   // code) may be built late (delayed or client-rendered steps).
   if (s.steps.at(-1)?.identifier || awaitsCode(s)) return (s.page.settledAt ?? s.page.doneAt) + PASSWORD_WAIT_MS;
@@ -836,6 +847,7 @@ export function parseChainState(raw: unknown): ChainState | null {
     if (doneAt !== undefined) page.doneAt = doneAt;
     if (pg.replanned !== undefined) page.replanned = bool(pg.replanned);
     if (pg.widget === true) page.widget = true;
+    if (pg.signedIn === true) page.signedIn = true;
     if (!Array.isArray(o.steps) || o.steps.length > 64) return null;
     const s: ChainState = {
       v: 1,

@@ -4,6 +4,12 @@
     "codesWidget.addFavoriteWithCode" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Füge einen Favoriten mit einem Code hinzu"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27,12 +33,30 @@
             "state" : "translated",
             "value" : "Aggiungi un preferito con un codice"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "코드가 있는 항목을 즐겨찾기에 추가하세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加包含一次性验证码的个人收藏项目"
+          }
         }
       }
     },
     "codesWidget.codes" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Codes"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -56,12 +80,30 @@
             "state" : "translated",
             "value" : "Codici"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "코드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "验证码"
+          }
         }
       }
     },
     "codesWidget.oneTimeCodesFrom" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Einmalcodes deiner Favoriten."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -85,12 +127,30 @@
             "state" : "translated",
             "value" : "I codici monouso dei tuoi preferiti."
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "즐겨찾기의 일회용 코드예요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你个人收藏中的一次性验证码。"
+          }
         }
       }
     },
     "controls.generatePassword" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Passwort generieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -114,34 +174,64 @@
             "state" : "translated",
             "value" : "Genera una password"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "암호 생성"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "生成密码"
+          }
         }
       }
     },
     "controls.opensOnepassPasswordGenerator" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffnet den Passwortgenerator von Cleon."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens the OnePass password generator."
+            "value" : "Opens the Cleon password generator."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre el generador de contraseñas de OnePass."
+            "value" : "Abre el generador de contraseñas de Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre le générateur de mots de passe de OnePass."
+            "value" : "Ouvre le générateur de mots de passe de Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre il generatore di password di OnePass."
+            "value" : "Apre il generatore di password di Cleon."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon 암호 생성기를 열어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 Cleon 密码生成器。"
           }
         }
       }
@@ -149,28 +239,46 @@
     "controls.opensOnepassSearch" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffnet die Suche in Cleon."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens OnePass search."
+            "value" : "Opens Cleon search."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre la búsqueda de OnePass."
+            "value" : "Abre la búsqueda de Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre la recherche de OnePass."
+            "value" : "Ouvre la recherche de Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre la ricerca di OnePass."
+            "value" : "Apre la ricerca di Cleon."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon 검색을 열어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 Cleon 搜索。"
           }
         }
       }
@@ -178,28 +286,46 @@
     "controls.searchOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In Cleon suchen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search OnePass"
+            "value" : "Search Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buscar en OnePass"
+            "value" : "Buscar en Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rechercher dans OnePass"
+            "value" : "Rechercher dans Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerca in OnePass"
+            "value" : "Cerca in Cleon"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon에서 검색"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 Cleon 中搜索"
           }
         }
       }
@@ -207,28 +333,46 @@
     "favoritesWidget.addFavoriteInOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Füge einen Favoriten in Cleon hinzu"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add a favorite in OnePass"
+            "value" : "Add a favorite in Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añade un favorito en OnePass"
+            "value" : "Añade un favorito en Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ajoute un favori dans OnePass"
+            "value" : "Ajoute un favori dans Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aggiungi un preferito in OnePass"
+            "value" : "Aggiungi un preferito in Cleon"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon에서 즐겨찾기를 추가하세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 Cleon 中添加个人收藏项目"
           }
         }
       }
@@ -236,28 +380,46 @@
     "favoritesWidget.opensOneOfFavorites" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffnet einen deiner Favoriten in Cleon."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens one of your favorites in OnePass."
+            "value" : "Opens one of your favorites in Cleon."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre uno de tus favoritos en OnePass."
+            "value" : "Abre uno de tus favoritos en Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre un de tes favoris dans OnePass."
+            "value" : "Ouvre un de tes favoris dans Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre uno dei tuoi preferiti in OnePass."
+            "value" : "Apre uno dei tuoi preferiti in Cleon."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon에서 즐겨찾기 항목을 열어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 Cleon 中打开你的一个个人收藏项目。"
           }
         }
       }
@@ -265,6 +427,12 @@
     "glanceViews.unlockIphone" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Entsperre dein iPhone"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -288,12 +456,30 @@
             "state" : "translated",
             "value" : "Sblocca iPhone"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "iPhone의 잠금을 해제하세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "解锁你的 iPhone"
+          }
         }
       }
     },
     "term.favorites" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoriten"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -317,34 +503,64 @@
             "state" : "translated",
             "value" : "Preferiti"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "즐겨찾기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个人收藏"
+          }
         }
       }
     },
     "widgets.lockOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon sperren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lock OnePass"
+            "value" : "Lock Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloquear OnePass"
+            "value" : "Bloquear Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verrouiller OnePass"
+            "value" : "Verrouiller Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Blocca OnePass"
+            "value" : "Blocca Cleon"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon 잠금"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "锁定 Cleon"
           }
         }
       }
@@ -352,28 +568,46 @@
     "widgets.locksOnepassOnDevice" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sperrt Cleon auf diesem Gerät."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Locks OnePass on this device."
+            "value" : "Locks Cleon on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bloquea OnePass en este dispositivo."
+            "value" : "Bloquea Cleon en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verrouille OnePass sur cet appareil."
+            "value" : "Verrouille Cleon sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Blocca OnePass su questo dispositivo."
+            "value" : "Blocca Cleon su questo dispositivo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 기기에서 Cleon를 잠가요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "锁定此设备上的 Cleon。"
           }
         }
       }
@@ -381,6 +615,12 @@
     "widgets.more %lld" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "+ %lld weitere"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -404,34 +644,64 @@
             "state" : "translated",
             "value" : "+ altri %lld"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "+ %lld개 더"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "+ %lld 个其他项目"
+          }
         }
       }
     },
     "widgets.openOnepassToRefresh" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffne Cleon zum Aktualisieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open OnePass to refresh"
+            "value" : "Open Cleon to refresh"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre OnePass para actualizar"
+            "value" : "Abre Cleon para actualizar"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre OnePass pour actualiser"
+            "value" : "Ouvre Cleon pour actualiser"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apri OnePass per aggiornare"
+            "value" : "Apri Cleon per aggiornare"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새로 고치려면 Cleon를 여세요"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 Cleon 以刷新"
           }
         }
       }

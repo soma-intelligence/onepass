@@ -4,28 +4,46 @@
     "onePassWatchWidgets.onepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass"
+            "value" : "Cleon"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass"
+            "value" : "Cleon"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass"
+            "value" : "Cleon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass"
+            "value" : "Cleon"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon"
           }
         }
       }
@@ -33,28 +51,46 @@
     "onePassWatchWidgets.opensOnepass" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffnet Cleon."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens OnePass."
+            "value" : "Opens Cleon."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre OnePass."
+            "value" : "Abre Cleon."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre OnePass."
+            "value" : "Ouvre Cleon."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre OnePass."
+            "value" : "Apre Cleon."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon를 열어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 Cleon。"
           }
         }
       }

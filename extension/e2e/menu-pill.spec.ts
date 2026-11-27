@@ -67,7 +67,9 @@ paired("pill_other_logins_are_reachable", async ({ ext }) => {
   // The site has exactly one other login: the tab under the capsule is that login itself, named,
   // and one click signs in with it (9b7731354); a searchable list only with more.
   await expect(others).toHaveClass(/\bov-other\b/);
-  await expect(others.locator(".t1")).toHaveText("Atlas Cloud (multi)");
+  // The row names the account; the login's title is its tooltip.
+  await expect(others.locator(".t1")).toHaveText(FX.ops.email);
+  await expect(others.locator(".t1")).toHaveAttribute("title", "Atlas Cloud (multi)");
   await expect(others).toHaveAttribute("aria-label", `Se connecter avec ${FX.ops.email}`);
   await others.click();
   await expect(page.locator("#status")).toHaveText("Connecté", { timeout: 30_000 });
@@ -131,7 +133,7 @@ paired.describe("dark system", () => {
 
 /**
  * A password sign-in held on its password page (the page answers 204 once):
- * the card shows one line, and "Détails" unfolds the steps.
+ * the card shows its one running line.
  */
 async function heldSignIn(ext: Ext) {
   const { page } = ext;
@@ -148,39 +150,43 @@ async function heldSignIn(ext: Ext) {
   await expect
     .poll(async () => {
       const f = ext.findExtFrame(page, "overlay");
-      return f ? await f.locator(".ov-step.done").count().catch(() => 0) : 0;
+      return f ? await f.locator(".ov-tone-run").count().catch(() => 0) : 0;
     }, { timeout: 30_000 })
     .toBeGreaterThan(0);
   await ext.settle(700);
   return ext.findExtFrame(page, "overlay")!;
 }
 
-paired("signing_in_shows_one_line_and_details_unfold_the_steps", async ({ ext }) => {
+paired("signing_in_shows_one_line_and_nothing_else", async ({ ext }) => {
   const overlay = await heldSignIn(ext);
-  const details = overlay.locator("button.ov-details");
-  // Folded by default: the line under way, "Annuler", "Détails"; no step shown.
-  await expect(details).toHaveText("Détails");
-  await expect(details).toHaveAttribute("aria-expanded", "false");
-  await expect(overlay.locator(".ov-step.done:visible")).toHaveCount(0);
-  await expect(overlay.locator(".ov-now .ov-status")).toBeVisible();
-  await expect(overlay.locator(".ov-cancel")).toHaveText("Annuler");
-  await details.click();
-  await expect(details).toHaveAttribute("aria-expanded", "true");
-  await expect(overlay.locator(".ov-step.done").first()).toBeVisible();
-  await expect(overlay.locator(".ov-step.done .ov-step-label").first()).toHaveText("Identifiant rempli");
+  // One line: the account, "Connexion…", x that cancels. No steps, no details, no bar.
+  await expect(overlay.locator(".ov-tone-run .t1")).toHaveText(FX.atlas.email);
+  await expect(overlay.locator(".ov-tone-run .t2")).toHaveText("Connexion…");
+  await expect(overlay.locator(".ov-cancel")).toHaveAttribute("aria-label", "Annuler");
+  await expect(overlay.locator(".ov-steps, .ov-details, .ov-bar")).toHaveCount(0);
 });
 
 paired.describe("english", () => {
   paired.use({ uiLang: "en" });
 
-  paired("signing_in_details_in_english", async ({ ext }) => {
+  paired("signing_in_line_in_english", async ({ ext }) => {
     const overlay = await heldSignIn(ext);
-    const details = overlay.locator("button.ov-details");
-    await expect(details).toHaveText("Details");
-    await expect(details).toHaveAttribute("aria-expanded", "false");
-    await expect(overlay.locator(".ov-cancel")).toHaveText("Cancel");
-    await details.click();
-    await expect(details).toHaveAttribute("aria-expanded", "true");
-    await expect(overlay.locator(".ov-step.done .ov-step-label").first()).toHaveText("Username filled");
+    await expect(overlay.locator(".ov-tone-run .t2")).toHaveText("Signing in…");
+    await expect(overlay.locator(".ov-cancel")).toHaveAttribute("aria-label", "Cancel");
   });
+});
+
+// Real-site bench, 2026-11-21 (cloudflare.com): the card closed with x came back after a reload.
+paired("card_closed_with_x_stays_closed_after_reload", async ({ ext }) => {
+  const { page } = ext;
+  await page.goto(`${ATLAS}/login`);
+  const overlay = await ext.extFrame(page, "overlay");
+  await ext.settle();
+  await overlay.locator(".ov-pill .ov-close").click();
+  await expect.poll(() => ext.findExtFrame(page, "overlay")).toBeUndefined();
+  await page.reload();
+  await page.locator("#email").waitFor();
+  // Long enough for the page to be read and the card to come back if it were going to.
+  await new Promise((r) => setTimeout(r, 4_000));
+  expect(ext.findExtFrame(page, "overlay")).toBeUndefined();
 });

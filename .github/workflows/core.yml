@@ -117,6 +117,7 @@ jobs:
           - blob_open
           - signed_manifest
           - account_params
+          - guard_realm
           - item_record
           - signature_verify
           - otpauth_parse

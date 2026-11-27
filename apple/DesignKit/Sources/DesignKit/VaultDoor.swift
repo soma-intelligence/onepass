@@ -158,7 +158,7 @@ public struct VaultDial: View {
         }
         .sensoryFeedback(.error, trigger: refusals)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "OnePass"))
+        .accessibilityLabel(Text(verbatim: "Cleon"))
         .accessibilityAddTraits(.isImage)
     }
 

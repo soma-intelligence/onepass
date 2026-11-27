@@ -245,6 +245,14 @@ criteria = "safe-to-deploy"
 version = "0.4.8"
 criteria = "safe-to-deploy"
 
+[[exemptions.curve25519-dalek]]
+version = "4.1.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.curve25519-dalek-derive]]
+version = "0.1.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.data-encoding]]
 version = "2.11.1"
 criteria = "safe-to-deploy"

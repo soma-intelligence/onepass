@@ -8,7 +8,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "OnePass"
+            "value" : "Cleon"
           }
         }
       },
@@ -21,25 +21,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass reads the chip of your documents and cards to keep them in your vault. Nothing leaves your phone unencrypted."
+            "value" : "Cleon reads the chip of your documents and cards to keep them in your vault. Nothing leaves your phone unencrypted."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass lee el chip de tus documentos y tarjetas para guardarlos en tu bóveda. Nada sale de tu teléfono sin cifrar."
+            "value" : "Cleon lee el chip de tus documentos y tarjetas para guardarlos en tu bóveda. Nada sale de tu teléfono sin cifrar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "OnePass lit la puce de tes documents et cartes pour les ranger dans ton coffre. Rien ne quitte ton téléphone sans chiffrement."
+            "value" : "Cleon lit la puce de tes documents et cartes pour les ranger dans ton coffre. Rien ne quitte ton téléphone sans chiffrement."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass legge il chip dei tuoi documenti e delle tue carte per conservarli nella tua cassaforte. Niente lascia il tuo telefono senza crittografia."
+            "value" : "Cleon legge il chip dei tuoi documenti e delle tue carte per conservarli nella tua cassaforte. Niente lascia il tuo telefono senza crittografia."
           }
         }
       }
@@ -48,28 +48,46 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon verwendet die Kamera, um den QR-Code auf deinem Emergency Kit, auf einem neuen Gerät oder für einen Bestätigungscode zu lesen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass uses the camera to read the QR code on your Emergency Kit, the one shown by a new device or one for a verification code."
+            "value" : "Cleon uses the camera to read the QR code on your Emergency Kit, the one shown by a new device or one for a verification code."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa la cámara para leer el código QR de tu Emergency Kit, el que muestra un dispositivo nuevo o el de un código de verificación."
+            "value" : "Cleon usa la cámara para leer el código QR de tu Emergency Kit, el que muestra un dispositivo nuevo o el de un código de verificación."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
+            "value" : "Cleon utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa la fotocamera per leggere il codice QR del tuo Emergency Kit, quello di un nuovo dispositivo o quello di un codice di verifica."
+            "value" : "Cleon usa la fotocamera per leggere il codice QR del tuo Emergency Kit, quello di un nuovo dispositivo o quello di un codice di verifica."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon는 카메라로 Emergency Kit, 새 기기 또는 확인 코드의 QR 코드를 읽어요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon 使用相机扫描你的 Emergency Kit 上的二维码、新设备显示的二维码或验证码二维码。"
           }
         }
       }
@@ -78,28 +96,46 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon verwendet Face ID, um deinen Tresor zu entsperren, ohne dass du dein Master-Passwort erneut eingeben musst."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass uses Face ID to unlock your vault without retyping your master password."
+            "value" : "Cleon uses Face ID to unlock your vault without retyping your master password."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa Face ID para desbloquear tu bóveda sin volver a escribir tu contraseña maestra."
+            "value" : "Cleon usa Face ID para desbloquear tu bóveda sin volver a escribir tu contraseña maestra."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
+            "value" : "Cleon utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa Face ID per sbloccare la cassaforte senza digitare di nuovo la password principale."
+            "value" : "Cleon usa Face ID per sbloccare la cassaforte senza digitare di nuovo la password principale."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon는 Face ID로 마스터 암호를 다시 입력하지 않고 보관함의 잠금을 해제해요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon 使用面容 ID 解锁你的保险库，无需重新输入主密码。"
           }
         }
       }
@@ -108,28 +144,46 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon verwendet das lokale Netzwerk, um deinem Account ein Gerät hinzuzufügen, ohne einen Server zu nutzen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass uses the local network to add a device to your account, without going through a server."
+            "value" : "Cleon uses the local network to add a device to your account, without going through a server."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa la red local para añadir un dispositivo a tu cuenta, sin pasar por un servidor."
+            "value" : "Cleon usa la red local para añadir un dispositivo a tu cuenta, sin pasar por un servidor."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
+            "value" : "Cleon utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa la rete locale per aggiungere un dispositivo al tuo account, senza passare da un server."
+            "value" : "Cleon usa la rete locale per aggiungere un dispositivo al tuo account, senza passare da un server."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon는 서버를 거치지 않고 로컬 네트워크로 계정에 기기를 추가해요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon 使用本地网络将设备添加到你的账户，无需通过服务器。"
           }
         }
       }
@@ -138,28 +192,46 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon verwendet deinen Standort, um einem Objekt einen Ort zuzuweisen, Objekte in der Nähe anzuzeigen und den Namen des WLANs dieses Mac auszulesen (Automatisches WLAN). Dein Standort bleibt auf diesem Gerät."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass uses your location to add a place to an item, to list the items nearby and to read the name of this Mac's Wi-Fi network (Automatic Wi-Fi). It stays on this device."
+            "value" : "Cleon uses your location to add a place to an item, to list the items nearby and to read the name of this Mac's Wi-Fi network (Automatic Wi-Fi). It stays on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa tu ubicación para añadir un lugar a un elemento, mostrar los elementos cercanos y leer el nombre de la red Wi-Fi de este Mac (Wi-Fi automático). Se queda en este dispositivo."
+            "value" : "Cleon usa tu ubicación para añadir un lugar a un elemento, mostrar los elementos cercanos y leer el nombre de la red Wi-Fi de este Mac (Wi-Fi automático). Se queda en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
+            "value" : "Cleon utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa la tua posizione per aggiungere un luogo a un elemento, elencare gli elementi nelle vicinanze e leggere il nome della rete Wi-Fi di questo Mac (Wi-Fi automatico). Resta su questo dispositivo."
+            "value" : "Cleon usa la tua posizione per aggiungere un luogo a un elemento, elencare gli elementi nelle vicinanze e leggere il nome della rete Wi-Fi di questo Mac (Wi-Fi automatico). Resta su questo dispositivo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon는 위치 정보로 항목에 장소를 추가하고, 근처 항목을 표시하고, 이 Mac의 Wi-Fi 네트워크 이름을 읽어요(자동 Wi-Fi). 위치 정보는 이 기기에만 저장돼요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon 使用你的位置信息为项目添加地点、列出附近的项目，以及读取此 Mac 的 Wi-Fi 网络名称（自动 Wi-Fi）。位置信息仅保留在此设备上。"
           }
         }
       }
@@ -168,28 +240,46 @@
       "comment" : "",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon verwendet deinen Standort, um einem Objekt einen Ort zuzuweisen und Objekte in der Nähe anzuzeigen. Dein Standort bleibt auf diesem Gerät."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass uses your location to add a place to an item and to list the items nearby. It stays on this device."
+            "value" : "Cleon uses your location to add a place to an item and to list the items nearby. It stays on this device."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa tu ubicación para añadir un lugar a un elemento y mostrar los elementos cercanos. Se queda en este dispositivo."
+            "value" : "Cleon usa tu ubicación para añadir un lugar a un elemento y mostrar los elementos cercanos. Se queda en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+            "value" : "Cleon utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OnePass usa la tua posizione per aggiungere un luogo a un elemento ed elencare gli elementi nelle vicinanze. Resta su questo dispositivo."
+            "value" : "Cleon usa la tua posizione per aggiungere un luogo a un elemento ed elencare gli elementi nelle vicinanze. Resta su questo dispositivo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon는 위치 정보로 항목에 장소를 추가하고 근처 항목을 표시해요. 위치 정보는 이 기기에만 저장돼요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cleon 使用你的位置信息为项目添加地点，以及列出附近的项目。位置信息仅保留在此设备上。"
           }
         }
       }

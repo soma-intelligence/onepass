@@ -128,7 +128,7 @@ struct CryptoReceiveSheet: View {
     }
 }
 
-/// "Ouvrir dans…": hands off to the user's wallet app. OnePass only opens the app (its URL scheme,
+/// "Ouvrir dans…": hands off to the user's wallet app. Cleon only opens the app (its URL scheme,
 /// or the chain's payment URI for the system's default wallet); the user swaps or sends there.
 struct WalletHandoffMenu<Label: View>: View {
     @Environment(\.openURL) private var openURL

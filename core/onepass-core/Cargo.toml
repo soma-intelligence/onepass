@@ -39,6 +39,10 @@ zip = { version = "9.1.1", default-features = false, features = ["deflate"] }
 k256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
 ripemd = "0.1"
 sha3 = "0.10"
+# Guarded Kit threshold OPRF (RFC 9497, ristretto255-SHA512, written in
+# guarded_kit::oprf): the group, Shamir shares of the OPRF key and the
+# Lagrange combination of the realms' evaluations.
+curve25519-dalek = { version = "4.1", default-features = false, features = ["alloc", "zeroize"] }
 
 # Chip reading (scan module): BAC/PACE secure messaging, DG decoding and
 # passive authentication of an eMRTD. Verify-side only.

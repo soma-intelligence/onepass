@@ -385,7 +385,7 @@ struct EncryptedBackupFileTests {
     @Test func fileNameCarriesTheDay() {
         let date = Date(timeIntervalSince1970: 1_793_000_000)  // 2026-10-26 in UTC
         let utc = TimeZone(identifier: "UTC")!
-        #expect(EncryptedBackupFile.fileName(for: date, timeZone: utc) == "OnePass sauvegarde 2026-10-26.onepass")
+        #expect(EncryptedBackupFile.fileName(for: date, timeZone: utc) == "Cleon sauvegarde 2026-10-26.onepass")
     }
 
     @Test func temporaryCopyIsWrittenThenRemoved() throws {
@@ -394,7 +394,7 @@ struct EncryptedBackupFileTests {
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: parent) }
         let data = Data("OPARCH test".utf8)
-        let url = try EncryptedBackupFile.write(data, named: "OnePass sauvegarde 2026-10-26.onepass", under: parent)
+        let url = try EncryptedBackupFile.write(data, named: "Cleon sauvegarde 2026-10-26.onepass", under: parent)
         #expect(try Data(contentsOf: url) == data)
         #expect(url.deletingLastPathComponent().lastPathComponent.hasPrefix("backup-"))
         // A file outside a backup folder of `parent` is never removed.

@@ -18,8 +18,12 @@ struct Sidebar: View {
     @State private var editingVaultID: String?
     /// Doublons possibles (spec 2026-11-03-duplicates): the groups behind the row's count.
     @State private var duplicates = DuplicatesLoader()
+    /// The tag a row's context menu asked to delete (confirmation shown while set).
+    @State private var tagToDelete: String?
     @AppStorage("onepass.sidebar.vaultsExpanded", store: AppModel.browseDefaults) private var vaultsExpanded = true
     @AppStorage("onepass.sidebar.tagsExpanded", store: AppModel.browseDefaults) private var tagsExpanded = true
+    /// iPad: the types fold like the vaults, closed at first, so the column fits without scrolling.
+    @AppStorage("onepass.sidebar.categoriesExpanded", store: AppModel.browseDefaults) private var categoriesExpanded = false
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var rxDesign = RXDesign.launchDefault
     #if os(macOS)
     /// Height of the window's title bar and toolbar, which the sidebar column does not report as
@@ -149,11 +153,6 @@ struct Sidebar: View {
     private var list: some View {
         let counts = session.counts()
         return List(selection: selection) {
-            #if !os(macOS)
-            Section {
-                AccountHeader()
-            }
-            #endif
             Section {
                 #if os(macOS)
                 // The RX look's Accueil (Penpot "Mac · Home"), first while the switch is on.
@@ -274,14 +273,20 @@ struct Sidebar: View {
                     SyncStatusChip(status: model.syncStatus)
                 }
                 #if os(macOS)
-                // Réglages live in the account menu at the top on the Mac.
+                // Réglages live in the account menu at the top: no second button here.
                 Color.clear.frame(height: 6)
                 #else
-                SettingsRow()
+                // iPad: the account stays pinned at the bottom, out of the scrolling rows. Its menu
+                // holds Réglages, so no second button here.
+                AccountHeader()
+                    .padding(.horizontal, 10)
+                    .padding(.top, 6)
+                    .padding(.bottom, 8)
                 #endif
             }
             #if !os(macOS)
-            .background { SidebarFooterBackground() }
+            // Down to the screen's edge: no strip of rows showing under the account row.
+            .background { SidebarFooterBackground().ignoresSafeArea(.container, edges: .bottom) }
             #endif
         }
         .sheet(isPresented: $creatingVault) {
@@ -293,7 +298,7 @@ struct Sidebar: View {
             }
         }
         #if os(iOS) || os(visionOS)
-        .navigationTitle("OnePass")
+        .navigationTitle("Cleon")
         #endif
     }
 
@@ -353,19 +358,21 @@ struct Sidebar: View {
         let present = ItemCategory.all.filter { (counts.byType[$0.type] ?? 0) > 0 }
         if !present.isEmpty {
             Section {
-                ForEach(present) { category in
-                    Label {
-                        Text(category.plural)
-                    } icon: {
-                        CategoryTile(category: category)
+                if categoriesExpanded {
+                    ForEach(present) { category in
+                        Label {
+                            Text(category.plural)
+                        } icon: {
+                            CategoryTile(category: category)
+                        }
+                        .visionHoverEffect()
+                        .badge(counts.byType[category.type] ?? 0)
+                        .tag(Destination.filter(.category(category.type)))
+                        .accessibilityIdentifier("sidebar.categories.\(NewItemMenu.key(category.type))")
                     }
-                    .visionHoverEffect()
-                    .badge(counts.byType[category.type] ?? 0)
-                    .tag(Destination.filter(.category(category.type)))
-                    .accessibilityIdentifier("sidebar.categories.\(NewItemMenu.key(category.type))")
                 }
             } header: {
-                Text("Catégories").textCase(.uppercase)
+                SectionFoldHeader(title: "Catégories", expanded: $categoriesExpanded, id: "sidebar.categories.fold")
             }
         }
     }
@@ -385,11 +392,31 @@ struct Sidebar: View {
                     }
                     .badge(counts.byTag[tag] ?? 0)
                     .tag(Destination.filter(.tag(tag)))
+                    .contextMenu {
+                        Button("sidebar.tags.deleteOne", systemImage: "trash", role: .destructive) {
+                            tagToDelete = tag
+                        }
+                    }
                     .accessibilityIdentifier("sidebar.tags.\(tag)")
                 }
                 }
             } header: {
                 SectionFoldHeader(title: "Tags", expanded: $tagsExpanded, id: "sidebar.tags.fold")
+            }
+            .confirmationDialog(
+                Text("sidebar.tags.deleteTitleOne \(tagToDelete ?? "")"),
+                isPresented: Binding(get: { tagToDelete != nil }, set: { if !$0 { tagToDelete = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("sidebar.tags.deleteConfirm", role: .destructive) {
+                    guard let tag = tagToDelete else { return }
+                    tagToDelete = nil
+                    if case .tag(let current) = model.selection, current == tag { model.showItems(.all) }
+                    Task { try? await session.removeTags([tag]) }
+                }
+                Button("Annuler", role: .cancel) { tagToDelete = nil }
+            } message: {
+                Text("sidebar.tags.deleteMessage")
             }
         }
     }
@@ -537,7 +564,7 @@ struct AccountHeader: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
             }

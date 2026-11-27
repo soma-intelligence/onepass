@@ -15,7 +15,7 @@ struct OtpLinkRequest: Identifiable {
     let source: Source
 }
 
-/// "Ajouter un code": a verification code link opened by the system (OnePass chosen in Réglages >
+/// "Ajouter un code": a verification code link opened by the system (Cleon chosen in Réglages >
 /// Codes de vérification), or a QR code scanned in the app. One account goes straight to its page;
 /// a Google Authenticator export lists its accounts, one Login each. Each code goes into an
 /// existing Login (search, the likely ones first) or a new one, with the live code shown.

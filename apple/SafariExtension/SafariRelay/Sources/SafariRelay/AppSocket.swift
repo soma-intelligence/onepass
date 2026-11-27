@@ -139,7 +139,7 @@ public enum AppSocket {
 
 /// Connects to the app's socket, once per extension connection. Fails with
 /// `.unavailable` when the app is not running (no socket, or nobody
-/// listening) or when the listener is not the OnePass app of this team.
+/// listening) or when the listener is not the Cleon app of this team.
 public struct AppSocketLauncher: HostLauncher {
     public let path: String
     public let verifyListener: @Sendable (Int32) -> Bool

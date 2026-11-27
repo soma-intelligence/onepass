@@ -50,7 +50,7 @@ public final class VaultSession {
     /// device id (spec 6.8, O6: "à jour" or "en attente"). Empty before the first rotation, on a
     /// legacy device and when it cannot be read: display only, never a trust decision. Emptied on lock.
     public internal(set) var rotationAcks: [String: FfiDeviceAck] = [:]
-    /// The device list marks this device revoked and its OnePass data could not be erased yet (L6):
+    /// The device list marks this device revoked and its Cleon data could not be erased yet (L6):
     /// the revoked screen must not say "effacées". `refresh` tries again.
     public private(set) var revokedEraseFailed = false
     /// A lineage record removed this device (key rotation v2 quarantine): the date it erases itself,
@@ -148,6 +148,9 @@ public final class VaultSession {
     @ObservationIgnored var passwordChangedHere: (() -> Void)?
     /// Told with the device list each time `refreshDevices` reads it.
     @ObservationIgnored var devicesRefreshed: (([FfiDevice]) -> Void)?
+    /// Guarded Kit: the last health poll said a realm lost the guard (spec 8.4). The next password
+    /// unlock renews it, same `G` (`renewGuardAfterUnlock`).
+    @ObservationIgnored var guardRenewalDue = false
 
     static let maxRecents = 20
     nonisolated static let trashRetentionDays: UInt32 = 30
@@ -366,6 +369,7 @@ public final class VaultSession {
             } catch {
                 Self.log.error("Secret Key of the erased account not removed")
             }
+            try? guardVault.remove(accountID: accountID)
             biometrics.disable(accountID: accountID)
         }
         settings.accountID = nil
@@ -792,21 +796,25 @@ public final class VaultSession {
         defer { passwordCheckInFlight = false }
         let path = dbPath
         let device = Self.deviceIdentity(mode: settings.deviceMode)
+        // Guarded Kit (spec 7.2): the `G` this device kept opens the account without the realms;
+        // without one (new device, Emergency Kit restore), a guarded account asks the realms.
+        let kept = keptGuard(accountID: settings.accountID)
+        defer { kept?.wipe() }
+        let transport = environment.realmTransport
         let gen = beginUnlocking()
         let opened: Opened
         do {
             opened = try await background {
-                var unlocked = try Self.withBytes(password, secretKey) { password, secretKey in
-                    try unlockWithPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
-                }
-                let auk = SecretBytes(taking: &unlocked.auk)
+                let unlocked = try Self.unlockMaybeGuarded(
+                    dbPath: path, password: password, secretKey: secretKey, kept: kept, transport: transport)
                 do {
                     return Opened(
                         session: unlocked.session, accountID: unlocked.session.accountId(),
                         snapshot: try Self.load(unlocked.session, purge: true, checkRevoked: true, register: device),
-                        auk: auk)
+                        auk: unlocked.auk, guardSecret: unlocked.guardSecret, guardVersion: unlocked.guardVersion)
                 } catch {
-                    auk.wipe()
+                    unlocked.auk.wipe()
+                    unlocked.guardSecret?.wipe()
                     unlocked.session.lock()
                     throw error
                 }
@@ -817,7 +825,10 @@ public final class VaultSession {
         } catch {
             throw unlockFailed(error, generation: gen)
         }
-        defer { opened.auk.wipe() }
+        defer {
+            opened.auk.wipe()
+            opened.guardSecret?.wipe()
+        }
 
         if storeSecretKey {
             // Without the Secret Key in the keychain this device could not unlock again: the session
@@ -832,6 +843,7 @@ public final class VaultSession {
             }
             settings.accountID = opened.accountID
         }
+        keepGuard(opened.guardSecret, version: opened.guardVersion, accountID: opened.accountID)
         settings.resetFailedUnlocks()
         settings.lockoutUntil = nil
         afterPasswordUnlock(accountID: opened.accountID, auk: opened.auk)
@@ -842,6 +854,7 @@ public final class VaultSession {
             return
         }
         install(opened.session, opened.snapshot)
+        if opened.guardSecret != nil { renewGuardAfterUnlock(password: password) }
     }
 
     /// Spec 4 point 3: restart the 14 day clock, and enroll again when biometrics are wanted but the
@@ -858,7 +871,7 @@ public final class VaultSession {
         biometricsRevision += 1
     }
 
-    /// The reason one biometric unlock shows instead of "Déverrouiller OnePass" (`biometricPrompt`).
+    /// The reason one biometric unlock shows instead of "Déverrouiller Cleon" (`biometricPrompt`).
     public struct BiometricPrompt: Sendable, Equatable {
         public let text: String
         /// Past this, the usual wording.
@@ -958,19 +971,18 @@ public final class VaultSession {
         try beginPasswordCheck()
         defer { passwordCheckInFlight = false }
         let path = dbPath
+        let kept = keptGuard(accountID: accountID)
+        defer { kept?.wipe() }
         let auk: SecretBytes
         do {
             // `verify_password` never writes the device state: the live session may be moving
             // `last_seen` forward meanwhile (Settings while unlocked).
             auk = try await background {
-                var bytes = try Self.withBytes(password, secretKey) { password, secretKey in
-                    try verifyPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
-                }
-                return SecretBytes(taking: &bytes)
+                try Self.verifyMaybeGuarded(dbPath: path, password: password, secretKey: secretKey, kept: kept)
             }
         } catch {
             let failure = VaultError(error)
-            if failure == .wrongPassword { recordFailedUnlock() }
+            if failure.isWrongPassword { recordFailedUnlock() }
             throw fail(failure)
         }
         defer { auk.wipe() }
@@ -1407,22 +1419,21 @@ public final class VaultSession {
     public func verifyMasterPassword(_ password: SecretBytes) async throws {
         guard state == .unlocked else { throw fail(.passwordRequired) }
         try checkLockout()
-        let secretKey = try loadSecretKey().secretKey
+        let (accountID, secretKey) = try loadSecretKey()
         defer { secretKey.wipe() }
         try beginPasswordCheck()
         defer { passwordCheckInFlight = false }
         let path = dbPath
         let gen = generation
+        let kept = keptGuard(accountID: accountID)
+        defer { kept?.wipe() }
         do {
             try await background {
-                var auk = try Self.withBytes(password, secretKey) { password, secretKey in
-                    try verifyPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
-                }
-                SecretBytes(taking: &auk).wipe()
+                try Self.verifyMaybeGuarded(dbPath: path, password: password, secretKey: secretKey, kept: kept).wipe()
             }
         } catch {
             let failure = VaultError(error)
-            if failure == .wrongPassword { recordFailedUnlock() }
+            if failure.isWrongPassword { recordFailedUnlock() }
             throw fail(failure)
         }
         settings.resetFailedUnlocks()
@@ -1647,7 +1658,7 @@ public final class VaultSession {
 
     /// The identity set may have changed: publishes the AutoFill identities (debounced). Does nothing
     /// unless unlocked with the "Suggestions au-dessus du clavier" setting on. A lock keeps what was
-    /// published: suggestions must work while OnePass is locked. Whatever becomes of this refresh (a
+    /// published: suggestions must work while Cleon is locked. Whatever becomes of this refresh (a
     /// lock that drops it, a process killed), the store counts as behind until a publication ends.
     public func refreshAutofillIdentities() {
         identityLedger.markChanged()
@@ -1688,7 +1699,7 @@ public final class VaultSession {
         }
     }
 
-    /// "Exporter une sauvegarde chiffrée": an encrypted OnePass archive of what this device serves
+    /// "Exporter une sauvegarde chiffrée": an encrypted Cleon archive of what this device serves
     /// (every vault, its verified copy when the server is behind), readable with `passphrase` (strength
     /// checked by the core) or the account. Asks the master password first. The caller wipes both
     /// buffers and saves the bytes. Nothing changes in the store or the state.
@@ -1878,12 +1889,15 @@ public final class VaultSession {
         guard safeExitAvailable else { throw fail(.passwordRequired) }
         try checkStoreUsable()
         try checkLockout()
-        let secretKey = try loadSecretKey().secretKey
+        let (accountID, secretKey) = try loadSecretKey()
         defer { secretKey.wipe() }
         try beginPasswordCheck()
         defer { passwordCheckInFlight = false }
         let path = dbPath
         let gen = generation
+        let kept = keptGuard(accountID: accountID)
+        defer { kept?.wipe() }
+        let transport = environment.realmTransport
         let open = state == .unlocked ? session : nil
         // The password check and `op` run in one core call; `op`'s outcome is kept apart, so a right
         // password resets the throttle even when the exit itself is refused.
@@ -1891,16 +1905,13 @@ public final class VaultSession {
         do {
             result = try await background {
                 if let open {
-                    var auk = try Self.withBytes(password, secretKey) { password, secretKey in
-                        try verifyPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
-                    }
-                    SecretBytes(taking: &auk).wipe()
+                    try Self.verifyMaybeGuarded(dbPath: path, password: password, secretKey: secretKey, kept: kept).wipe()
                     return (Result { try op(open) }, open, nil)
                 }
-                var unlocked = try Self.withBytes(password, secretKey) { password, secretKey in
-                    try unlockWithPasswordBytes(dbPath: path, password: password, secretKey: secretKey)
-                }
-                SecretBytes(taking: &unlocked.auk).wipe()
+                let unlocked = try Self.unlockMaybeGuarded(
+                    dbPath: path, password: password, secretKey: secretKey, kept: kept, transport: transport)
+                unlocked.auk.wipe()
+                unlocked.guardSecret?.wipe()
                 let session = unlocked.session
                 let outcome = Result { try op(session) }
                 guard case .success = outcome else {
@@ -1911,7 +1922,7 @@ public final class VaultSession {
             }
         } catch {
             let failure = VaultError(error)
-            if failure == .wrongPassword { recordFailedUnlock() }
+            if failure.isWrongPassword { recordFailedUnlock() }
             throw fail(failure)
         }
         settings.resetFailedUnlocks()
@@ -2042,6 +2053,10 @@ public final class VaultSession {
         var accountID: String
         var snapshot: Snapshot
         let auk: SecretBytes
+        /// Guarded Kit: `G` handed back by a guarded account, nil for an unguarded one, and the
+        /// guard version it belongs to.
+        var guardSecret: SecretBytes? = nil
+        var guardVersion: UInt32 = 0
     }
 
     private struct Created: Sendable {
@@ -2220,7 +2235,7 @@ public final class VaultSession {
     private func unlockFailed(_ error: any Error, generation gen: Int) -> VaultError {
         let failure = VaultError(error)
         if case .integrity = failure, gen == generation { return enterFailed(failure) }
-        if failure == .wrongPassword {
+        if failure.isWrongPassword {
             recordFailedUnlock()
             if gen == generation { state = .locked }
         } else if gen == generation {

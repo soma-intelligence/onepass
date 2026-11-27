@@ -9,7 +9,7 @@ struct OrgInviteLinkTests {
         let yes = [
             "onepass://org/join?v=1&s=https%3A%2F%2Forg.example.com",
             "onepass://org/join",
-            "OnePass://ORG/join?v=1",
+            "Cleon://ORG/join?v=1",
             "onepass://org/join/?v=1",
         ]
         for text in yes {

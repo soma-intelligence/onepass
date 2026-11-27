@@ -81,15 +81,19 @@ STAMP="$OUT_DIR/.core-stamp"
 # Every file under core/ except build output and fuzz scratch: Rust sources,
 # manifests, lockfile, rust-toolchain.toml, .cargo config, and data files
 # pulled in with include_str!. NUL-safe and sorted.
-fingerprint() {
+source_hashes() {
   (
     cd "$CORE_DIR"
     find . \
       \( -path ./target -o -path ./fuzz/target -o -path ./fuzz/corpus \
          -o -path ./fuzz/artifacts -o -name .DS_Store \) -prune -o \
       -type f -print0 \
-      | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1
+      | LC_ALL=C sort -z | xargs -0 shasum -a 256
   )
+}
+SOURCE_HASHES="$(source_hashes)"
+fingerprint() {
+  echo "$SOURCE_HASHES" | shasum -a 256 | cut -d' ' -f1
   # A different script also invalidates the output.
   shasum -a 256 "$SCRIPT_DIR/build-core.sh" | cut -d' ' -f1
 }
@@ -147,6 +151,26 @@ for dir in "$TARGET_DIR" "${TARGETS[@]/#/$TARGET_DIR/}"; do
   fi
 done
 
+# Cargo decides freshness from mtimes, not content. A source put back with an
+# old mtime (a copy or restore that keeps timestamps, files moved between
+# checkouts) looks older than a target's last libonepass_ffi.a, so cargo keeps
+# that stale library while other targets rebuild: the bindings, generated from
+# the macOS library, then call functions the iOS or visionOS library lacks
+# ("Undefined symbols: _uniffi_onepass_ffi_checksum_func_..."). Every file
+# whose content differs from the last build of this target directory (any
+# mode) gets a fresh mtime first, so every target recompiles it.
+SOURCES_SEEN="$TARGET_DIR/.onepass-core-sources"
+mkdir -p "$TARGET_DIR"
+if [ -f "$SOURCES_SEEN" ]; then
+  changed="$(LC_ALL=C comm -13 <(LC_ALL=C sort "$SOURCES_SEEN") <(echo "$SOURCE_HASHES" | LC_ALL=C sort) | cut -c67-)"
+else
+  changed="$(echo "$SOURCE_HASHES" | cut -c67-)"
+fi
+if [ -n "$changed" ]; then
+  echo "core ($MODE): $(echo "$changed" | wc -l | tr -d ' ') changed source files get a fresh mtime"
+  (cd "$CORE_DIR" && echo "$changed" | while IFS= read -r file; do [ -f "$file" ] && touch "$file"; done)
+fi
+
 echo "core ($MODE): cargo build ${TARGETS[*]}"
 # Only the deployment target of the platform being built may be in the
 # environment: clang refuses a compile that sees two of them ("conflicting
@@ -186,6 +210,26 @@ echo "core ($MODE): generating Swift bindings"
 if ! cmp -s "$GEN_DIR/onepass_ffi.swift" "$SWIFT_OUT/onepass_ffi.swift"; then
   cp "$GEN_DIR/onepass_ffi.swift" "$SWIFT_OUT/onepass_ffi.swift"
 fi
+
+# Backstop for the mtime refresh above: every library must export exactly the
+# interface of the bindings, so each one's bindings must equal the macOS ones.
+for target in "${TARGETS[@]}"; do
+  [ "$target" = aarch64-apple-darwin ] && continue
+  check_dir="$GEN_DIR/check-$target"
+  mkdir -p "$check_dir"
+  (cd "$CORE_DIR" && env -u IPHONEOS_DEPLOYMENT_TARGET -u WATCHOS_DEPLOYMENT_TARGET -u XROS_DEPLOYMENT_TARGET \
+    cargo run -q -p onepass-ffi --features bindgen --bin uniffi-bindgen -- \
+    generate --library "$TARGET_DIR/$target/$PROFILE_DIR/libonepass_ffi.a" --language swift --out-dir "$check_dir")
+  if ! cmp -s "$GEN_DIR/onepass_ffi.swift" "$check_dir/onepass_ffi.swift"; then
+    echo "core ($MODE): $TARGET_DIR/$target/$PROFILE_DIR/libonepass_ffi.a does not export what the" \
+      "macOS library exports (stale cargo output); in core/ run" \
+      "cargo clean -p onepass-ffi --target $target$([ "$PROFILE_DIR" = release ] && echo ' --release')," \
+      "then this script again" >&2
+    exit 1
+  fi
+  rm -rf "$check_dir"
+done
+echo "$SOURCE_HASHES" > "$SOURCES_SEEN"
 
 HEADERS="$OUT_DIR/headers"
 rm -rf "$HEADERS"

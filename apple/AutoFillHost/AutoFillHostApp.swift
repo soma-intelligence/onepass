@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Test host for the AutoFill UI test (ruling A16): a sign-in form whose fields carry the content
-/// types AutoFill looks for. iOS only, never embedded in OnePass, never shipped. UIKit text fields
+/// types AutoFill looks for. iOS only, never embedded in Cleon, never shipped. UIKit text fields
 /// rather than SwiftUI ones, so the content types reach AutoFill exactly as an ordinary app sets them.
 @main
 struct AutoFillHostApp: App {

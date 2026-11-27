@@ -1826,3 +1826,20 @@ fn key_use_queue_flushed_at_cli_session_start() {
     assert_eq!(uses.len(), 1, "{uses:?}");
     assert_eq!(uses[0].count, 2);
 }
+
+#[test]
+fn guard_status_off_and_enable_refused_without_pinned_realms() {
+    let dir = fresh();
+    let off = run(dir.path(), &["guard", "status"]);
+    assert_eq!(off.code, 0, "{}", off.stderr);
+    assert_eq!(off.stdout.trim(), "Guarded Kit: off");
+    // No realm is deployed yet: the build pins none, so turning the guard
+    // on fails and writes nothing.
+    let on = run(dir.path(), &["guard", "enable"]);
+    assert_ne!(on.code, 0);
+    assert!(on.stderr.contains("realm"), "{}", on.stderr);
+    let still = run(dir.path(), &["guard", "status"]);
+    assert_eq!(still.stdout.trim(), "Guarded Kit: off");
+    let read = run(dir.path(), &["read", "onepass://Personnel/GitHub/password"]);
+    assert_eq!(read.code, 0, "{}", read.stderr);
+}

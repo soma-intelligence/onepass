@@ -21,7 +21,7 @@ struct ScanCover: View {
     }
 }
 
-/// "Que veux-tu ajouter ?" (spec 6.1): the documents OnePass can scan. P1 reads passports only, so
+/// "Que veux-tu ajouter ?" (spec 6.1): the documents Cleon can scan. P1 reads passports only, so
 /// the other types are not listed yet.
 struct ScanEntrySheet: View {
     @Environment(AppModel.self) private var app

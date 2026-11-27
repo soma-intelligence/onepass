@@ -6,6 +6,9 @@
       "en": "Vault",
       "es": "Bóveda",
       "it": "Cassaforte",
+      "de": "Tresor",
+      "ko": "보관함",
+      "zh-Hans": "保险库",
       "note": "A container of items, encrypted with its own key.",
       "forms": {
         "en": [
@@ -23,6 +26,17 @@
         "it": [
           "cassaforte",
           "casseforti"
+        ],
+        "de": [
+          "tresor",
+          "tresore",
+          "tresors"
+        ],
+        "ko": [
+          "보관함"
+        ],
+        "zh-Hans": [
+          "保险库"
         ]
       }
     },
@@ -31,6 +45,9 @@
       "en": "Vaults",
       "es": "Bóvedas",
       "it": "Casseforti",
+      "de": "Tresore",
+      "ko": "보관함",
+      "zh-Hans": "保险库",
       "note": "Plural of term.vault."
     },
     "term.item": {
@@ -38,6 +55,9 @@
       "en": "Item",
       "es": "Elemento",
       "it": "Elemento",
+      "de": "Objekt",
+      "ko": "항목",
+      "zh-Hans": "项目",
       "note": "Anything stored in a vault (login, card, note...).",
       "forms": {
         "en": [
@@ -55,6 +75,16 @@
         "it": [
           "elemento",
           "elementi"
+        ],
+        "de": [
+          "objekt",
+          "objekte"
+        ],
+        "ko": [
+          "항목"
+        ],
+        "zh-Hans": [
+          "项目"
         ]
       }
     },
@@ -63,6 +93,9 @@
       "en": "Items",
       "es": "Elementos",
       "it": "Elementi",
+      "de": "Objekte",
+      "ko": "항목",
+      "zh-Hans": "项目",
       "note": "Plural of term.item."
     },
     "term.password": {
@@ -70,6 +103,9 @@
       "en": "Password",
       "es": "Contraseña",
       "it": "Password",
+      "de": "Passwort",
+      "ko": "암호",
+      "zh-Hans": "密码",
       "note": "Italian keeps the English word, feminine (la password).",
       "forms": {
         "en": [
@@ -86,6 +122,16 @@
         ],
         "it": [
           "password"
+        ],
+        "de": [
+          "passwort",
+          "passwörter"
+        ],
+        "ko": [
+          "암호"
+        ],
+        "zh-Hans": [
+          "密码"
         ]
       }
     },
@@ -94,6 +140,9 @@
       "en": "Passwords",
       "es": "Contraseñas",
       "it": "Password",
+      "de": "Passwörter",
+      "ko": "암호",
+      "zh-Hans": "密码",
       "note": "Plural of term.password."
     },
     "term.masterPassword": {
@@ -101,6 +150,9 @@
       "en": "Master Password",
       "es": "Contraseña maestra",
       "it": "Password principale",
+      "de": "Master-Passwort",
+      "ko": "마스터 암호",
+      "zh-Hans": "主密码",
       "note": "The account password that unlocks OnePass.",
       "forms": {
         "en": [
@@ -114,6 +166,15 @@
         ],
         "it": [
           "password principale"
+        ],
+        "de": [
+          "master-passwort"
+        ],
+        "ko": [
+          "마스터 암호"
+        ],
+        "zh-Hans": [
+          "主密码"
         ]
       }
     },
@@ -122,6 +183,9 @@
       "en": "Passkey",
       "es": "Llave de acceso",
       "it": "Passkey",
+      "de": "Passkey",
+      "ko": "패스키",
+      "zh-Hans": "通行密钥",
       "note": "Apple's terms: llave de acceso (es), passkey (it).",
       "forms": {
         "en": [
@@ -138,6 +202,15 @@
         ],
         "it": [
           "passkey"
+        ],
+        "de": [
+          "passkey"
+        ],
+        "ko": [
+          "패스키"
+        ],
+        "zh-Hans": [
+          "通行密钥"
         ]
       }
     },
@@ -146,6 +219,9 @@
       "en": "Passkeys",
       "es": "Llaves de acceso",
       "it": "Passkey",
+      "de": "Passkeys",
+      "ko": "패스키",
+      "zh-Hans": "通行密钥",
       "note": "Plural of term.passkey."
     },
     "term.oneTimeCode": {
@@ -153,6 +229,9 @@
       "en": "One-Time Code",
       "es": "Código de un solo uso",
       "it": "Codice monouso",
+      "de": "Einmalcode",
+      "ko": "일회용 코드",
+      "zh-Hans": "一次性验证码",
       "note": "TOTP code.",
       "forms": {
         "en": [
@@ -170,6 +249,15 @@
         "it": [
           "codice monouso",
           "codici monouso"
+        ],
+        "de": [
+          "einmalcode"
+        ],
+        "ko": [
+          "일회용 코드"
+        ],
+        "zh-Hans": [
+          "验证码"
         ]
       }
     },
@@ -178,6 +266,9 @@
       "en": "Watchtower",
       "es": "Watchtower",
       "it": "Watchtower",
+      "de": "Watchtower",
+      "ko": "Watchtower",
+      "zh-Hans": "Watchtower",
       "note": "Feature name, never translated.",
       "forms": {
         "en": [
@@ -191,6 +282,15 @@
         ],
         "it": [
           "watchtower"
+        ],
+        "de": [
+          "watchtower"
+        ],
+        "ko": [
+          "watchtower"
+        ],
+        "zh-Hans": [
+          "watchtower"
         ]
       }
     },
@@ -199,6 +299,9 @@
       "en": "Travel Mode",
       "es": "Travel Mode",
       "it": "Travel Mode",
+      "de": "Travel Mode",
+      "ko": "Travel Mode",
+      "zh-Hans": "Travel Mode",
       "note": "Feature name, never translated (French keeps it too).",
       "forms": {
         "en": [
@@ -212,6 +315,15 @@
         ],
         "it": [
           "travel mode"
+        ],
+        "de": [
+          "travel mode"
+        ],
+        "ko": [
+          "travel mode"
+        ],
+        "zh-Hans": [
+          "travel mode"
         ]
       }
     },
@@ -220,6 +332,9 @@
       "en": "Secret Key",
       "es": "Secret Key",
       "it": "Secret Key",
+      "de": "Secret Key",
+      "ko": "Secret Key",
+      "zh-Hans": "Secret Key",
       "note": "Feature name, never translated.",
       "forms": {
         "en": [
@@ -232,6 +347,15 @@
           "secret key"
         ],
         "it": [
+          "secret key"
+        ],
+        "de": [
+          "secret key"
+        ],
+        "ko": [
+          "secret key"
+        ],
+        "zh-Hans": [
           "secret key"
         ]
       }
@@ -241,6 +365,9 @@
       "en": "Emergency Kit",
       "es": "Emergency Kit",
       "it": "Emergency Kit",
+      "de": "Emergency Kit",
+      "ko": "Emergency Kit",
+      "zh-Hans": "Emergency Kit",
       "note": "Feature name, never translated.",
       "forms": {
         "en": [
@@ -254,6 +381,15 @@
         ],
         "it": [
           "emergency kit"
+        ],
+        "de": [
+          "emergency kit"
+        ],
+        "ko": [
+          "emergency kit"
+        ],
+        "zh-Hans": [
+          "emergency kit"
         ]
       }
     },
@@ -262,6 +398,9 @@
       "en": "AutoFill",
       "es": "Autorrelleno",
       "it": "Riempimento automatico",
+      "de": "Automatisch ausfüllen",
+      "ko": "자동 완성",
+      "zh-Hans": "自动填充",
       "note": "Apple's system feature name in each language.",
       "forms": {
         "en": [
@@ -275,6 +414,16 @@
         ],
         "it": [
           "riempimento automatico"
+        ],
+        "de": [
+          "automatisch ausfüllen",
+          "autofill"
+        ],
+        "ko": [
+          "자동 완성"
+        ],
+        "zh-Hans": [
+          "自动填充"
         ]
       }
     },
@@ -283,6 +432,9 @@
       "en": "Trash",
       "es": "Papelera",
       "it": "Cestino",
+      "de": "Papierkorb",
+      "ko": "휴지통",
+      "zh-Hans": "废纸篓",
       "forms": {
         "en": [
           "trash"
@@ -295,6 +447,15 @@
         ],
         "it": [
           "cestino"
+        ],
+        "de": [
+          "papierkorb"
+        ],
+        "ko": [
+          "휴지통"
+        ],
+        "zh-Hans": [
+          "废纸篓"
         ]
       }
     },
@@ -303,6 +464,9 @@
       "en": "Archive",
       "es": "Archivo",
       "it": "Archivio",
+      "de": "Archiv",
+      "ko": "아카이브",
+      "zh-Hans": "归档",
       "note": "The place (noun). The action is common.archive."
     },
     "term.favorites": {
@@ -310,6 +474,9 @@
       "en": "Favorites",
       "es": "Favoritos",
       "it": "Preferiti",
+      "de": "Favoriten",
+      "ko": "즐겨찾기",
+      "zh-Hans": "个人收藏",
       "forms": {
         "en": [
           "favorite",
@@ -326,6 +493,15 @@
         "it": [
           "preferito",
           "preferiti"
+        ],
+        "de": [
+          "favoriten"
+        ],
+        "ko": [
+          "즐겨찾기"
+        ],
+        "zh-Hans": [
+          "个人收藏"
         ]
       }
     },
@@ -333,13 +509,19 @@
       "fr": "Tags",
       "en": "Tags",
       "es": "Etiquetas",
-      "it": "Tag"
+      "it": "Tag",
+      "de": "Tags",
+      "ko": "태그",
+      "zh-Hans": "标签"
     },
     "term.settings": {
       "fr": "Réglages",
       "en": "Settings",
       "es": "Ajustes",
       "it": "Impostazioni",
+      "de": "Einstellungen",
+      "ko": "설정",
+      "zh-Hans": "设置",
       "note": "Apple's name for settings in each language.",
       "forms": {
         "en": [
@@ -353,6 +535,15 @@
         ],
         "it": [
           "impostazioni"
+        ],
+        "de": [
+          "einstellungen"
+        ],
+        "ko": [
+          "설정"
+        ],
+        "zh-Hans": [
+          "设置"
         ]
       }
     },
@@ -361,6 +552,9 @@
       "en": "Device",
       "es": "Dispositivo",
       "it": "Dispositivo",
+      "de": "Gerät",
+      "ko": "기기",
+      "zh-Hans": "设备",
       "forms": {
         "en": [
           "device",
@@ -377,6 +571,17 @@
         "it": [
           "dispositivo",
           "dispositivi"
+        ],
+        "de": [
+          "gerät",
+          "geräte",
+          "geräts"
+        ],
+        "ko": [
+          "기기"
+        ],
+        "zh-Hans": [
+          "设备"
         ]
       }
     },
@@ -385,6 +590,9 @@
       "en": "Recovery Phrase",
       "es": "Frase de recuperación",
       "it": "Frase di recupero",
+      "de": "Wiederherstellungsphrase",
+      "ko": "복구 문구",
+      "zh-Hans": "恢复短语",
       "note": "Crypto wallet seed phrase."
     },
     "term.login": {
@@ -392,170 +600,254 @@
       "en": "Login",
       "es": "Inicio de sesión",
       "it": "Login",
+      "de": "Login",
+      "ko": "로그인",
+      "zh-Hans": "登录信息",
       "note": "The item type that holds a username and password."
     },
     "common.cancel": {
       "fr": "Annuler",
       "en": "Cancel",
       "es": "Cancelar",
-      "it": "Annulla"
+      "it": "Annulla",
+      "de": "Abbrechen",
+      "ko": "취소",
+      "zh-Hans": "取消"
     },
     "common.ok": {
       "fr": "OK",
       "en": "OK",
       "es": "OK",
-      "it": "OK"
+      "it": "OK",
+      "de": "OK",
+      "ko": "확인",
+      "zh-Hans": "好"
     },
     "common.done": {
       "fr": "Terminé",
       "en": "Done",
       "es": "OK",
       "it": "Fine",
+      "de": "Fertig",
+      "ko": "완료",
+      "zh-Hans": "完成",
       "note": "Apple's Done button: OK (es), Fine (it)."
     },
     "common.save": {
       "fr": "Enregistrer",
       "en": "Save",
       "es": "Guardar",
-      "it": "Salva"
+      "it": "Salva",
+      "de": "Sichern",
+      "ko": "저장",
+      "zh-Hans": "存储"
     },
     "common.delete": {
       "fr": "Supprimer",
       "en": "Delete",
       "es": "Eliminar",
-      "it": "Elimina"
+      "it": "Elimina",
+      "de": "Löschen",
+      "ko": "삭제",
+      "zh-Hans": "删除"
     },
     "common.edit": {
       "fr": "Modifier",
       "en": "Edit",
       "es": "Editar",
-      "it": "Modifica"
+      "it": "Modifica",
+      "de": "Bearbeiten",
+      "ko": "편집",
+      "zh-Hans": "编辑"
     },
     "common.copy": {
       "fr": "Copier",
       "en": "Copy",
       "es": "Copiar",
-      "it": "Copia"
+      "it": "Copia",
+      "de": "Kopieren",
+      "ko": "복사",
+      "zh-Hans": "拷贝"
     },
     "common.copied": {
       "fr": "Copié",
       "en": "Copied",
       "es": "Copiado",
-      "it": "Copiato"
+      "it": "Copiato",
+      "de": "Kopiert",
+      "ko": "복사됨",
+      "zh-Hans": "已拷贝"
     },
     "common.share": {
       "fr": "Partager",
       "en": "Share",
       "es": "Compartir",
-      "it": "Condividi"
+      "it": "Condividi",
+      "de": "Teilen",
+      "ko": "공유",
+      "zh-Hans": "共享"
     },
     "common.close": {
       "fr": "Fermer",
       "en": "Close",
       "es": "Cerrar",
-      "it": "Chiudi"
+      "it": "Chiudi",
+      "de": "Schließen",
+      "ko": "닫기",
+      "zh-Hans": "关闭"
     },
     "common.continue": {
       "fr": "Continuer",
       "en": "Continue",
       "es": "Continuar",
-      "it": "Continua"
+      "it": "Continua",
+      "de": "Fortfahren",
+      "ko": "계속",
+      "zh-Hans": "继续"
     },
     "common.tryAgain": {
       "fr": "Réessayer",
       "en": "Try Again",
       "es": "Reintentar",
-      "it": "Riprova"
+      "it": "Riprova",
+      "de": "Erneut versuchen",
+      "ko": "다시 시도",
+      "zh-Hans": "重试"
     },
     "common.add": {
       "fr": "Ajouter",
       "en": "Add",
       "es": "Añadir",
-      "it": "Aggiungi"
+      "it": "Aggiungi",
+      "de": "Hinzufügen",
+      "ko": "추가",
+      "zh-Hans": "添加"
     },
     "common.remove": {
       "fr": "Retirer",
       "en": "Remove",
       "es": "Quitar",
-      "it": "Rimuovi"
+      "it": "Rimuovi",
+      "de": "Entfernen",
+      "ko": "제거",
+      "zh-Hans": "移除"
     },
     "common.search": {
       "fr": "Rechercher",
       "en": "Search",
       "es": "Buscar",
-      "it": "Cerca"
+      "it": "Cerca",
+      "de": "Suchen",
+      "ko": "검색",
+      "zh-Hans": "搜索"
     },
     "common.back": {
       "fr": "Retour",
       "en": "Back",
       "es": "Atrás",
-      "it": "Indietro"
+      "it": "Indietro",
+      "de": "Zurück",
+      "ko": "뒤로",
+      "zh-Hans": "返回"
     },
     "common.unlock": {
       "fr": "Déverrouiller",
       "en": "Unlock",
       "es": "Desbloquear",
-      "it": "Sblocca"
+      "it": "Sblocca",
+      "de": "Entsperren",
+      "ko": "잠금 해제",
+      "zh-Hans": "解锁"
     },
     "common.lock": {
       "fr": "Verrouiller",
       "en": "Lock",
       "es": "Bloquear",
-      "it": "Blocca"
+      "it": "Blocca",
+      "de": "Sperren",
+      "ko": "잠금",
+      "zh-Hans": "锁定"
     },
     "common.show": {
       "fr": "Afficher",
       "en": "Show",
       "es": "Mostrar",
-      "it": "Mostra"
+      "it": "Mostra",
+      "de": "Einblenden",
+      "ko": "보기",
+      "zh-Hans": "显示"
     },
     "common.hide": {
       "fr": "Masquer",
       "en": "Hide",
       "es": "Ocultar",
-      "it": "Nascondi"
+      "it": "Nascondi",
+      "de": "Ausblenden",
+      "ko": "가리기",
+      "zh-Hans": "隐藏"
     },
     "common.generate": {
       "fr": "Générer",
       "en": "Generate",
       "es": "Generar",
-      "it": "Genera"
+      "it": "Genera",
+      "de": "Generieren",
+      "ko": "생성",
+      "zh-Hans": "生成"
     },
     "common.open": {
       "fr": "Ouvrir",
       "en": "Open",
       "es": "Abrir",
-      "it": "Apri"
+      "it": "Apri",
+      "de": "Öffnen",
+      "ko": "열기",
+      "zh-Hans": "打开"
     },
     "common.rename": {
       "fr": "Renommer",
       "en": "Rename",
       "es": "Cambiar nombre",
-      "it": "Rinomina"
+      "it": "Rinomina",
+      "de": "Umbenennen",
+      "ko": "이름 변경",
+      "zh-Hans": "重命名"
     },
     "common.import": {
       "fr": "Importer",
       "en": "Import",
       "es": "Importar",
-      "it": "Importa"
+      "it": "Importa",
+      "de": "Importieren",
+      "ko": "가져오기",
+      "zh-Hans": "导入"
     },
     "common.export": {
       "fr": "Exporter",
       "en": "Export",
       "es": "Exportar",
-      "it": "Esporta"
+      "it": "Esporta",
+      "de": "Exportieren",
+      "ko": "내보내기",
+      "zh-Hans": "导出"
     },
     "common.create": {
       "fr": "Créer",
       "en": "Create",
       "es": "Crear",
-      "it": "Crea"
+      "it": "Crea",
+      "de": "Erstellen",
+      "ko": "만들기",
+      "zh-Hans": "创建"
     },
     "common.archive": {
       "fr": "Archiver",
       "en": "Archive",
       "es": "Archivar",
       "it": "Archivia",
+      "de": "Archivieren",
+      "ko": "보관",
+      "zh-Hans": "归档",
       "note": "The action (verb)."
     },
     "common.fill": {
@@ -563,6 +855,9 @@
       "en": "Fill",
       "es": "Rellenar",
       "it": "Compila",
+      "de": "Ausfüllen",
+      "ko": "채우기",
+      "zh-Hans": "填充",
       "note": "Fill a form on a web page."
     }
   }

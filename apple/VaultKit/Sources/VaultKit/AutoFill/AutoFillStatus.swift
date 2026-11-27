@@ -5,12 +5,12 @@ import Foundation
 /// Every call goes to the system; nothing is cached here (the app reads the state again on each
 /// return to the foreground).
 public enum AutoFillStatus {
-    /// OnePass is turned on as an AutoFill provider (`ASCredentialIdentityStore` state).
+    /// Cleon is turned on as an AutoFill provider (`ASCredentialIdentityStore` state).
     public static func isEnabled() async -> Bool {
         await ASCredentialIdentityStore.shared.state().isEnabled
     }
 
-    /// Shows the system prompt that turns the OnePass extension on (iOS 18+, macOS 15+). Returns
+    /// Shows the system prompt that turns the Cleon extension on (iOS 18+, macOS 15+). Returns
     /// whether the provider is on afterwards. The system ignores a new request within 10 seconds of
     /// the previous one and answers with the current state.
     public static func requestActivation() async -> Bool {

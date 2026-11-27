@@ -6,7 +6,7 @@ public enum CompanionStatus: Sendable, Equatable {
     case unsupported
     /// No paired watch (or the session is not activated yet).
     case notPaired
-    /// A watch is paired but the OnePass watch app is not installed on it.
+    /// A watch is paired but the Cleon watch app is not installed on it.
     case appNotInstalled
     case ready
 }

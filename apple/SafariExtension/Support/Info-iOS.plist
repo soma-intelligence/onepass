@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>OnePass</string>
+	<string>Cleon</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -30,7 +30,7 @@
 		<string>$(PRODUCT_MODULE_NAME).SafariWebExtensionHandler</string>
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
-	<string>OnePass utilise Face ID pour déverrouiller ton coffre et remplir tes mots de passe dans Safari.</string>
+	<string>Cleon utilise Face ID pour déverrouiller ton coffre et remplir tes mots de passe dans Safari.</string>
 	<key>OnePassAppGroup</key>
 	<string>$(ONEPASS_APP_GROUP)</string>
 	<key>OnePassKeychainGroup</key>

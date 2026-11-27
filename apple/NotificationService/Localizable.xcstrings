@@ -4,6 +4,12 @@
     "notificationService.requestFromAgent" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anfrage eines Agenten"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27,12 +33,30 @@
             "state" : "translated",
             "value" : "Richiesta di un agente"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "에이전트의 요청"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "来自智能体的请求"
+          }
         }
       }
     },
     "notificationService.requestFromAgentOn %@" : {
       "extractionState" : "manual",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anfrage eines Agenten auf %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -55,6 +79,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Richiesta di un agente su %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@의 에이전트 요청"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "来自 %@ 上的智能体的请求"
           }
         }
       }

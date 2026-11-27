@@ -1,7 +1,7 @@
 import SwiftUI
 import VaultKit
 
-/// One planned trip (Réglages > Travel Mode > Voyages): departure, return, and whether OnePass may
+/// One planned trip (Réglages > Travel Mode > Voyages): departure, return, and whether Cleon may
 /// turn Travel Mode on by itself before the border. Pushed from `TravelSettings`; `trip` is `nil`
 /// for a new one. Saving goes through `TravelDetection.saveTrip`, which owns the rules.
 struct TravelTripEditor: View {

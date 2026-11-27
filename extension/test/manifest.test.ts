@@ -36,7 +36,7 @@ describe.each(BROWSERS)("manifest %s", (b) => {
   it("has the exact permissions, and http on the three loopback hosts only", () => {
     const m = load(b);
     expect(m.manifest_version).toBe(3);
-    expect(m.name).toBe("OnePass");
+    expect(m.name).toBe("Cleon");
     expect(m.version).toBe("0.3.0");
     expect([...m.permissions].sort()).toEqual(
       ["activeTab", "alarms", "nativeMessaging", "scripting", "storage", "webNavigation"].sort(),

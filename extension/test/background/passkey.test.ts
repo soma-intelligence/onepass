@@ -148,7 +148,7 @@ const cs = (extra: Partial<CsContext> = {}): CsContext => ({ tabId: 7, frameId: 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe("passkey request routing", () => {
-  it("falls back when no passkey of OnePass matches", async () => {
+  it("falls back when no passkey of Cleon matches", async () => {
     const t = setup({ passkeys: [] });
     expect(await t.pk.request(cs(), "r1", GET, true)).toEqual({ kind: "fallback" });
     expect(t.windows.created).toHaveLength(0);
@@ -500,7 +500,7 @@ describe("passkey creation", () => {
     });
   });
 
-  it("an excluded credential already in OnePass gives InvalidStateError after consent", async () => {
+  it("an excluded credential already in Cleon gives InvalidStateError after consent", async () => {
     const t = setup();
     const p = t.pk.request(cs(), "r1", { ...CREATE, exclude: [CRED] }, true);
     await flush();
@@ -512,7 +512,7 @@ describe("passkey creation", () => {
 });
 
 describe("passkey creation refused by the host", () => {
-  it("the host's excluded (a credential OnePass did not list) gives InvalidStateError", async () => {
+  it("the host's excluded (a credential Cleon did not list) gives InvalidStateError", async () => {
     const t = setup({
       passkeys: [],
       answer: (r) => (r.op === "passkey_create" ? toBgError(new BridgeAppError("excluded", "a credential of the exclude list is stored")) : undefined),

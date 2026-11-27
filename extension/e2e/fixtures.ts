@@ -298,7 +298,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
           const via = /^(.*) via (\S+)$/.exec(title);
           const provider = via ? (via[2] ?? "").toLowerCase() : null;
           const name = exact(via ? (via[1] ?? "") : title);
-          const titled = (sel: string) => overlay.locator(sel).filter({ has: overlay.locator(".t1", { hasText: name }) });
+          // The card's line names the account; the login's title is the line's `title` (the search lists it as text).
+          const titled = (sel: string) =>
+            overlay.locator(sel).filter({ has: overlay.locator(`.t1[title="${(via ? (via[1] ?? "") : title).replace(/"/g, '\\"')}"]`).or(overlay.locator(".t1", { hasText: name })) });
           await expect(overlay.locator(".ov-pill")).toHaveCount(1);
           await settle();
           // The pill's login: its "Sign in"; any other: from "Other logins".
@@ -307,8 +309,20 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
             await pill.locator(".ov-signin").click();
             return overlay;
           }
-          await overlay.locator(".ov-others").click();
+          // Exactly one other login: it hangs under the pill as its own row, one click signs in with it.
+          const other = titled(provider ? `.ov-other[data-provider="${provider}"]` : ".ov-other:not([data-provider])");
+          if ((await other.count()) === 1) {
+            await other.click();
+            return overlay;
+          }
+          await overlay.locator(".ov-others:not(.ov-other):not(.ov-never)").click();
           await settle();
+          // A few other logins open in the notch itself; more, in the search.
+          const row = titled(provider ? `.ov-notch-row[data-provider="${provider}"]` : ".ov-notch-row:not([data-provider])").first();
+          if ((await row.count()) === 1) {
+            await row.click();
+            return overlay;
+          }
           const opt = titled(provider ? `.ov-opt[data-provider="${provider}"]` : ".ov-opt:not([data-provider])").first();
           await expect(opt).toBeVisible();
           await opt.click();
