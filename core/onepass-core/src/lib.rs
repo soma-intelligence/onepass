@@ -41,6 +41,7 @@ pub mod reference;
 pub mod remote;
 pub mod remote_unlock;
 pub mod repo;
+pub mod scan;
 pub mod send;
 pub mod share;
 pub mod site_pack;

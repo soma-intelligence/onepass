@@ -95,6 +95,10 @@ struct BrowseRoot: View {
                 AddOtpSheet(request: request)
             }
             #if os(iOS)
+            // Scanner (new item sheet) and Scanner la puce (a passport's detail): camera, chip, save.
+            .fullScreenCover(item: $model.scanRequest, onDismiss: { model.scanCoverDismissed() }) { request in
+                ScanCover(request: request)
+            }
             .sheet(isPresented: $model.showOtpScanner) {
                 SecretKeyScannerSheet(title: "Code de vérification", accept: SecretKeyScanner.acceptOtpLink) { link in
                     Task { await model.presentOtpLink(link, source: .scan) }

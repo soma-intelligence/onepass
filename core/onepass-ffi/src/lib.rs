@@ -28,6 +28,7 @@ mod pairing;
 mod remote;
 mod rotation;
 mod rules;
+mod scan;
 mod session;
 mod sharing;
 #[cfg(feature = "dev-fast-kdf")]
@@ -76,6 +77,7 @@ pub use pairing::*;
 pub use remote::*;
 pub use rotation::*;
 pub use rules::{password_for_context, password_from_rules};
+pub use scan::*;
 pub use session::{Session, SyncStoreHandle};
 pub use sharing::*;
 pub use travel::{FfiTravelItemEntry, FfiTravelItemPlan, FfiTravelPlanEntry, FfiTravelStatus};

@@ -49,8 +49,16 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The scan-test-rng feature (fixed BAC/PACE randoms) is never on in a
+      # workspace build: lint the code it gates on its own.
+      - name: Clippy (scan-test-rng)
+        run: cargo clippy -p onepass-core --all-targets --features scan-test-rng -- -D warnings
       - name: Tests
         run: cargo test --workspace
+      # IcaoSession against the fake passport: needs scan-test-rng, so the
+      # workspace run above skips it.
+      - name: Chip read session (scan-test-rng)
+        run: cargo test -p onepass-core --features scan-test-rng --test scan_session
       - name: Differential tests (release)
         run: cargo test --release -p onepass-core --test differential
       - name: Licenses, bans and sources

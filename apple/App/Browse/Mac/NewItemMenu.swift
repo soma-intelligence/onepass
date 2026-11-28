@@ -169,6 +169,21 @@ struct NewItemSheet: View {
     private var header: some View {
         VStack(spacing: 0) {
             HStack {
+                #if os(iOS)
+                // iPhone: a passport's chip read (NFC documents spec 6.1).
+                if inPhoneSheet, UIDevice.current.userInterfaceIdiom == .phone {
+                    Button {
+                        model.perform(.scanDocument)
+                    } label: {
+                        Label("scan.newItem.scan", systemImage: "viewfinder")
+                            .font(.body.weight(.semibold))
+                            .padding(.horizontal, 4)
+                            .frame(height: 30)
+                    }
+                    .buttonStyle(.glass)
+                    .accessibilityIdentifier("newItem.scan")
+                }
+                #endif
                 Spacer()
                 Button {
                     close()

@@ -1756,18 +1756,23 @@ public final class VaultSession {
 
     /// Creates a passkey (key pair generated and kept by the core) in an existing Login or a new one,
     /// then reloads the lists and publishes the new identity. `.other` when the relying party already
-    /// holds one of `excludedCredentialIds` (`PasskeyExcluded`).
-    public func createPasskey(_ request: FfiPasskeyCreation) async throws -> FfiPasskeyRegistration {
-        try await write { try $0.createPasskey(request: request) }
+    /// holds one of `excludedCredentialIds` (`PasskeyExcluded`). The result always reports `prfEnabled`;
+    /// with `prf` salts it also carries their outputs.
+    public func createPasskey(_ request: FfiPasskeyCreation, prf: PrfInput? = nil) async throws
+        -> FfiPasskeyRegistration
+    {
+        try await write { try $0.createPasskey(request: request, prf: prf?.ffi) }
     }
 
     /// Signs a passkey assertion with the passkey `credentialID` of a live Login (signature by the core).
+    /// With `prf` salts the result also carries their WebAuthn PRF outputs.
     public func passkeyAssertion(
-        vaultID: String, itemID: String, credentialID: Data, clientDataHash: Data
+        vaultID: String, itemID: String, credentialID: Data, clientDataHash: Data, prf: PrfInput? = nil
     ) async throws -> FfiPasskeyAssertion {
         try await read {
             try $0.passkeyAssertion(
-                vaultId: vaultID, itemId: itemID, credentialId: credentialID, clientDataHash: clientDataHash)
+                vaultId: vaultID, itemId: itemID, credentialId: credentialID, clientDataHash: clientDataHash,
+                prf: prf?.ffi)
         }
     }
 

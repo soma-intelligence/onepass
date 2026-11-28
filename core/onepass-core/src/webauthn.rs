@@ -8,7 +8,8 @@
 use crate::crypto::random::{fill_random, random_array};
 use crate::model::PasskeyCredential;
 use crate::{Error, Result};
-use aws_lc_rs::digest::{SHA256, digest};
+use aws_lc_rs::digest::{self, SHA256, digest};
+use aws_lc_rs::hmac::{self, HMAC_SHA256};
 // aws-lc ignores this argument: its ECDSA nonce comes from its own DRBG,
 // hedged with the private key and the digest (inherited from BoringSSL).
 use aws_lc_rs::rand::SystemRandom;
@@ -181,6 +182,54 @@ pub fn assertion_with_uv(
         authenticator_data: auth,
         signature: sig.as_ref().to_vec(),
     })
+}
+
+/// HKDF info of the per-passkey PRF secret.
+const PRF_INFO: &[u8] = b"onepass webauthn prf v1";
+/// WebAuthn's domain separator for PRF salts (WebAuthn L3, prf extension).
+const PRF_SALT_LABEL: &[u8] = b"WebAuthn PRF\0";
+
+/// The WebAuthn PRF extension for a stored passkey: one 32-byte output for
+/// the relying party's `salt`, as a CTAP2 `hmac-secret` authenticator gives:
+///
+/// `HMAC-SHA256(secret, SHA-256("WebAuthn PRF" || 0x00 || salt))`, with
+/// `secret = HKDF-SHA256(private_key, salt "", info "onepass webauthn prf
+/// v1", 32)`.
+///
+/// The secret is derived from the stored private key (the PKCS#8 bytes
+/// as kept in `PasskeyCredential`), not drawn and stored: no new field, no
+/// migration, and every device holding the passkey gives the same output.
+/// The salt hashing is the WebAuthn client's step, done here because the
+/// system hands the extension the relying party's salts as they are.
+///
+/// An empty private key is refused (`InvalidFormat`): its secret would be
+/// a public constant shared by every such passkey.
+pub fn prf_eval(cred: &PasskeyCredential, salt: &[u8]) -> Result<[u8; 32]> {
+    if cred.private_key.is_empty() {
+        return Err(Error::InvalidFormat("passkey key"));
+    }
+    // HKDF-SHA256 with 32 output bytes is one extract and one expand
+    // block, written with HMAC so it cannot fail: an empty salt is the
+    // all-zero HMAC key (RFC 5869 2.2).
+    let prk = Zeroizing::new(
+        hmac::sign(&hmac::Key::new(HMAC_SHA256, &[0u8; 32]), &cred.private_key)
+            .as_ref()
+            .to_vec(),
+    );
+    let mut ctx = hmac::Context::with_key(&hmac::Key::new(HMAC_SHA256, &prk));
+    ctx.update(PRF_INFO);
+    ctx.update(&[1]);
+    let secret = Zeroizing::new(ctx.sign().as_ref().to_vec());
+
+    let mut hashed = digest::Context::new(&SHA256);
+    hashed.update(PRF_SALT_LABEL);
+    hashed.update(salt);
+    let hashed = hashed.finish();
+
+    let tag = hmac::sign(&hmac::Key::new(HMAC_SHA256, &secret), hashed.as_ref());
+    let mut out = [0u8; 32];
+    out.copy_from_slice(tag.as_ref());
+    Ok(out)
 }
 
 /// UP, BE and BS always; UV when the user was verified.
@@ -391,6 +440,50 @@ mod tests {
         );
         assert_eq!(
             public_key_cose(&c).unwrap_err(),
+            Error::InvalidFormat("passkey key")
+        );
+    }
+
+    /// Expected value computed independently (python3 -I, hashlib + hmac,
+    /// HKDF-SHA256 extract and expand written inline): private key bytes
+    /// 0x00..=0x42, salt "onepass prf test salt".
+    #[test]
+    fn prf_matches_webauthn_mapping() {
+        let mut c = cred();
+        c.private_key = Zeroizing::new((0u8..67).collect());
+        let out = prf_eval(&c, b"onepass prf test salt").unwrap();
+        let want = "eff7d1b2fd457a350ea75d71abb086fdb55bb746bc042eb93f49848e8da249c3";
+        let got: String = out.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn prf_is_per_credential() {
+        let (a, b) = (cred(), cred());
+        let salt = [3u8; 32];
+        assert_ne!(prf_eval(&a, &salt).unwrap(), prf_eval(&b, &salt).unwrap());
+        // And per salt.
+        assert_ne!(
+            prf_eval(&a, &salt).unwrap(),
+            prf_eval(&a, &[4u8; 32]).unwrap()
+        );
+    }
+
+    #[test]
+    fn prf_stable_across_copies() {
+        let a = cred();
+        let b = a.clone();
+        let salt = b"same salt on every device";
+        assert_eq!(prf_eval(&a, salt).unwrap(), prf_eval(&b, salt).unwrap());
+        assert_eq!(prf_eval(&a, salt).unwrap(), prf_eval(&a, salt).unwrap());
+    }
+
+    #[test]
+    fn prf_refuses_empty_private_key() {
+        let mut c = cred();
+        c.private_key = Zeroizing::new(Vec::new());
+        assert_eq!(
+            prf_eval(&c, b"any salt").unwrap_err(),
             Error::InvalidFormat("passkey key")
         );
     }
