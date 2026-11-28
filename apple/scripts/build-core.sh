@@ -13,7 +13,8 @@
 #                           Simulator app builds (device and visionOS builds
 #                           need shipped)
 #                           -> apple/build/OnePassFFI.xcframework
-#   build-core.sh test      macOS arm64 only, debug profile + dev-fast-kdf
+#   build-core.sh test      macOS arm64 only, debug profile + dev-fast-kdf +
+#                           scan-test-rng (replayable chip reads)
 #                           -> apple/build/test/OnePassFFI.xcframework
 #
 # Idempotent: nothing is rebuilt while the stamp next to the XCFramework
@@ -72,7 +73,7 @@ else
   OUT_DIR="$APPLE_DIR/build/test"
   TARGETS=(aarch64-apple-darwin)
   PROFILE_DIR=debug
-  CARGO_ARGS=(--features dev-fast-kdf)
+  CARGO_ARGS=(--features dev-fast-kdf,scan-test-rng)
 fi
 XCFRAMEWORK="$OUT_DIR/OnePassFFI.xcframework"
 STAMP="$OUT_DIR/.core-stamp"
@@ -112,13 +113,13 @@ stamp_content() {
 }
 CURRENT="$(stamp_content)"
 
-# dev and shipped must never carry the dev KDF floor, cached or not: checked
-# before the stamp, so even an up-to-date build is refused if the graph
-# changed underneath it.
+# dev and shipped must never carry the dev KDF floor nor the fixed chip read
+# randoms, cached or not: checked before the stamp, so even an up-to-date
+# build is refused if the graph changed underneath it.
 if [ "$MODE" != test ] \
   && (cd "$CORE_DIR" && cargo tree -p onepass-ffi -e features,no-dev -i onepass-core \
-        --target aarch64-apple-darwin) | grep -q 'feature "dev-fast-kdf"'; then
-  echo "core ($MODE): refusing to build, dev-fast-kdf is enabled in the dependency graph" >&2
+        --target aarch64-apple-darwin) | grep -qE 'feature "(dev-fast-kdf|scan-test-rng)"'; then
+  echo "core ($MODE): refusing to build, dev-fast-kdf or scan-test-rng is enabled in the dependency graph" >&2
   exit 1
 fi
 

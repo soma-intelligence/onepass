@@ -31,6 +31,10 @@ url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 [imports.zcash]
 url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
 
+[[exemptions.aes]]
+version = "0.9.4"
+criteria = "safe-to-deploy"
+
 [[exemptions.android_system_properties]]
 version = "0.1.6"
 criteria = "safe-to-deploy"
@@ -128,6 +132,10 @@ criteria = "safe-to-deploy"
 version = "0.12.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.block-padding]]
+version = "0.4.2"
+criteria = "safe-to-deploy"
+
 [[exemptions.blocking]]
 version = "1.7.0"
 criteria = "safe-to-deploy"
@@ -144,6 +152,18 @@ criteria = "safe-to-run"
 version = "1.8.1"
 criteria = "safe-to-run"
 
+[[exemptions.bp256]]
+version = "0.14.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.bp384]]
+version = "0.14.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.cbc]]
+version = "0.2.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.cc]]
 version = "1.10.0"
 criteria = "safe-to-deploy"
@@ -158,6 +178,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.clang-sys]]
 version = "1.9.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.cmac]]
+version = "0.8.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.cmov]]
@@ -202,7 +226,7 @@ version = "0.8.23"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-bigint]]
-version = "0.7.10"
+version = "0.7.11"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-common]]
@@ -213,8 +237,12 @@ criteria = "safe-to-deploy"
 version = "0.2.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.crypto-primes]]
+version = "0.7.2"
+criteria = "safe-to-deploy"
+
 [[exemptions.ctutils]]
-version = "0.4.6"
+version = "0.4.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.curve25519-dalek]]
@@ -229,6 +257,10 @@ criteria = "safe-to-deploy"
 version = "2.11.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.dbl]]
+version = "0.5.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.dbus-secret-service]]
 version = "4.1.0"
 criteria = "safe-to-deploy"
@@ -239,8 +271,16 @@ version = "0.8.3"
 criteria = "safe-to-deploy"
 notes = "DER codec under sec1 0.8, under k256 0.14 (watch-only crypto balances, spec 2026-11-02-crypto-watch). The core only uses compressed SEC1 points with it. Not audited here: exemption until an audit is imported or recorded."
 
+[[exemptions.der_derive]]
+version = "0.8.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.deranged]]
 version = "0.5.9"
+criteria = "safe-to-deploy"
+
+[[exemptions.des]]
+version = "0.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.digest]]
@@ -253,6 +293,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.displaydoc]]
 version = "0.2.7"
+criteria = "safe-to-deploy"
+
+[[exemptions.ecdsa]]
+version = "0.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.elliptic-curve]]
@@ -286,6 +330,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.fastrand]]
 version = "2.5.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.flagset]]
+version = "0.4.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.flate2]]
@@ -368,7 +416,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.hmac]]
 version = "0.13.0"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.http]]
 version = "1.5.0"
@@ -522,12 +570,24 @@ criteria = "safe-to-deploy"
 version = "0.2.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.p256]]
+version = "0.14.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.p384]]
+version = "0.14.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.password-hash]]
 version = "0.6.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.pbkdf2]]
 version = "0.13.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.pem-rfc7468]]
+version = "1.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.phc]]
@@ -542,9 +602,13 @@ criteria = "safe-to-deploy"
 version = "0.2.5"
 criteria = "safe-to-deploy"
 
+[[exemptions.pkcs1]]
+version = "0.8.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.pkcs8]]
 version = "0.11.0"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.plain]]
 version = "0.2.3"
@@ -608,6 +672,10 @@ criteria = "safe-to-deploy"
 version = "0.5.0"
 criteria = "safe-to-run"
 
+[[exemptions.rfc6979]]
+version = "0.6.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.ring]]
 version = "0.17.14"
 criteria = "safe-to-deploy"
@@ -620,6 +688,10 @@ notes = "RIPEMD-160 of HASH160, the Bitcoin address of a public key (watch-only 
 
 [[exemptions.rpassword]]
 version = "7.5.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.rsa]]
+version = "0.10.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rsqlite-vfs]]
@@ -723,7 +795,7 @@ criteria = "safe-to-deploy"
 
 [[exemptions.signature]]
 version = "3.0.0"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.simd-adler32]]
 version = "0.3.10"
@@ -766,7 +838,7 @@ notes = "Spin lock of flume (mdns-sd daemon channels, T-LAN pairing transport (o
 
 [[exemptions.spki]]
 version = "0.8.1"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
 
 [[exemptions.sqlite-wasm-rs]]
 version = "0.6.2"
@@ -797,7 +869,15 @@ version = "0.2.32"
 criteria = "safe-to-deploy"
 
 [[exemptions.tls_codec]]
+version = "0.4.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.tls_codec]]
 version = "0.5.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.tls_codec_derive]]
+version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.tls_codec_derive]]
@@ -875,6 +955,10 @@ notes = "Windowed NAF scalar multiplication under k256 0.14 (watch-only crypto b
 
 [[exemptions.writeable]]
 version = "0.6.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.x509-cert]]
+version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.zbus]]

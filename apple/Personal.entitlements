@@ -6,5 +6,9 @@
 	<array>
 		<string>$(AppIdentifierPrefix)$(ONEPASS_KEYCHAIN_GROUP)</string>
 	</array>
+	<key>com.apple.developer.nfc.readersession.formats</key>
+	<array>
+		<string>TAG</string>
+	</array>
 </dict>
 </plist>

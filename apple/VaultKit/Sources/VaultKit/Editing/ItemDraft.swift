@@ -138,6 +138,18 @@ public struct ItemDraft: Equatable, Sendable {
     /// A section the type's template does not have: renamable, movable and removable.
     public func isFreeSection(_ sectionID: String) -> Bool { !templateSectionIDs.contains(sectionID) }
 
+    /// A template section only a machine fills: the passport's `chip` section (`chip_status`,
+    /// `chip_read_on`, `document_code`), set by a chip read. The editor never shows it, so the
+    /// chip badge cannot be set by hand; the draft keeps its values as they are.
+    public static func isMachineSection(_ sectionID: String, of type: FfiItemType) -> Bool {
+        type == .passport && sectionID == "chip"
+    }
+
+    /// The template sections the editor shows, in the item's order: machine sections left out.
+    public var editableTemplateSections: [FfiSection] {
+        item.sections.filter { !isFreeSection($0.id) && !Self.isMachineSection($0.id, of: item.itemType) }
+    }
+
     /// The free sections, in the item's order.
     public var freeSectionIDs: [String] { item.sections.map(\.id).filter(isFreeSection) }
 

@@ -563,6 +563,18 @@ struct RXListRow: View {
         return summary.listSubtitle.isEmpty ? ItemCategory.of(summary.itemType).singular : summary.listSubtitle
     }
 
+    /// A passport without a chosen icon: its booklet family, from the issuing country the summary
+    /// carries ("FRA" from a chip read, "France" typed or imported).
+    private var passportFamily: DocumentFamily? {
+        guard summary.itemType == .passport, !showsCustomIcon else { return nil }
+        return DocumentFamily.passport(issuingCountry: summary.issuingCountry ?? "")
+    }
+
+    /// The colour of the item's vault: a generic booklet takes it (spec 2026-11-21 section 7.1).
+    private var vaultAccent: Color? {
+        model.session.allVaults.first { $0.id == summary.vaultId }.map { VaultBadge.color(named: $0.meta.color) }
+    }
+
     /// Travel Mode per item, before the value: what leaves or locks harder while travelling.
     private var trailing: Text? {
         guard summary.travelHidden || summary.travelGuard else { return value }
@@ -573,12 +585,19 @@ struct RXListRow: View {
     var body: some View {
         RXItemRow(title: Text(summary.title), subtitle: Text(secondLine), value: trailing,
                   valueColor: Theme.RX.Palette.textSecondary.color) {
-            ItemIcon(
-                type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.shownIcon(taskID, resolved: resolved),
-                size: Self.iconSize, brand: summary.cardBrand, useCategory: summary.usesCategoryIcon,
-                tint: ItemTint.color(named: summary.color), domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
-                .accessibilityIdentifier(showsCustomIcon ? "list.row.icon.custom" : "")
-                .favoriteBadge(summary.favorite, iconSize: Self.iconSize)
+            if let family = passportFamily {
+                // A passport is a closed booklet in the list (spec 2026-11-21 section 7.2).
+                PassportCoverThumbnail(family: family, size: Self.iconSize)
+                    .documentAccent(vaultAccent)
+                    .favoriteBadge(summary.favorite, iconSize: Self.iconSize)
+            } else {
+                ItemIcon(
+                    type: summary.itemType, title: summary.title, siteIcon: model.iconLoader.shownIcon(taskID, resolved: resolved),
+                    size: Self.iconSize, brand: summary.cardBrand, useCategory: summary.usesCategoryIcon,
+                    tint: ItemTint.color(named: summary.color), domain: ItemIconResolver.registrableDomain(summary.primaryUrl))
+                    .accessibilityIdentifier(showsCustomIcon ? "list.row.icon.custom" : "")
+                    .favoriteBadge(summary.favorite, iconSize: Self.iconSize)
+            }
         }
         .accessibilityValue(accessibilityValue)
         .accessibilityIdentifier("list.row.\(summary.title)")

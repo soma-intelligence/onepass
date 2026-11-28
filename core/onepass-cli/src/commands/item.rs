@@ -457,6 +457,7 @@ fn create(
     };
     let mut item = new_item(item_type, vaults[vi].id, title);
     apply_fields(&mut item, fields, from_stdin)?;
+    onepass_core::scan::to_item::guard_chip_status(None, &mut item);
     let id = item.id;
     stored(repo.save_item(&vaults[vi], item))?;
     if ctx.json {
@@ -476,7 +477,9 @@ fn edit(
 ) -> Result<(), CliError> {
     let vaults = all(repo)?;
     let (vi, mut item) = find_item(repo, &vaults, vault, key)?;
+    let before = item.clone();
     apply_fields(&mut item, fields, from_stdin)?;
+    onepass_core::scan::to_item::guard_chip_status(Some(&before), &mut item);
     item.updated_at = OffsetDateTime::now_utc();
     stored(repo.save_item(&vaults[vi], item))?;
     Ok(())

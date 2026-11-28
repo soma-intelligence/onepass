@@ -127,6 +127,10 @@ struct ItemDetailView: View {
         .onChange(of: session.externalChangeRevision) {
             Task { await remoteChanged() }
         }
+        // A chip read saved into this passport (Scanner la puce).
+        .onChange(of: model.scanRevision) {
+            Task { await reload(ref, keepOnFailure: true) }
+        }
         .alert(
             "Élément modifié entre-temps",
             isPresented: Binding(get: { remoteVersion != nil }, set: { if !$0 { remoteVersion = nil } })
@@ -236,6 +240,11 @@ struct ItemDetailView: View {
                         ForEach(DocumentCard.attachments(of: item), id: \.id) { attachment in
                             DocumentCard(attachment: attachment)
                         }
+                    }
+                    // A passport opens as a booklet above its fields (spec 2026-11-21 section 7).
+                    if item.itemType == .passport {
+                        PassportBooklet(item: item)
+                            .id(item.id)
                     }
                     content(item)
                     ItemAttachmentsSection(item: item, editable: item.trashedAt == nil && !standalone) {
@@ -772,6 +781,16 @@ struct ItemDetailView: View {
                     openWindow(id: ItemWindow.id, value: ItemWindow.key(item))
                 }
                 .accessibilityIdentifier("item.openWindow")
+                Divider()
+            }
+            #endif
+            #if os(iOS)
+            // A passport's chip read again: fills what is blank, keeps what the user typed (spec 6.1).
+            if item.itemType == .passport, !isReadOnly(item), !locked(item), !standalone,
+                UIDevice.current.userInterfaceIdiom == .phone
+            {
+                Button("scan.detail.scanChip", systemImage: "wave.3.right") { model.scanChip(of: item) }
+                    .accessibilityIdentifier("item.scanChip")
                 Divider()
             }
             #endif
@@ -1711,6 +1730,169 @@ struct DocumentCard: View {
             .editorRowPadding()
         }
         .accessibilityIdentifier("item.document")
+    }
+}
+
+// MARK: - Passport booklet
+
+/// A passport's booklet in the detail (iPhone, iPad, Mac): the DesignKit `PassportFace` closed, a
+/// touch opens it, a drag to the right closes it; the chip badge and a reveal button under it. The
+/// number and the MRZ follow the secrets' rules of `ValueRow`: masked by default, masked again
+/// after 30 s, on lock and when the scene leaves the foreground (`concealGeneration`), and while
+/// the screen is captured. No share, export, drag or print on the rendering (spec section 4): only
+/// the fields below share, as they always did.
+struct PassportBooklet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.itemUseRef) private var itemUseRef
+    #if os(iOS) || os(visionOS)
+    @Environment(\.isSceneCaptured) private var captured
+    #else
+    private let captured = false
+    #endif
+    let item: FfiItem
+
+    private let autoHideAfter: TimeInterval = 30
+    @State private var isOpen = false
+    @State private var revealed = false
+    @State private var revealedAt: Date?
+    /// The chip portrait, tagged with its attachment so a switch never shows another item's photo.
+    @State private var portrait: (id: String, image: Image)?
+
+    private static func field(_ id: String, in item: FfiItem) -> FfiFieldValue? {
+        item.sections.lazy.flatMap(\.fields).first { $0.id == id }?.value
+    }
+
+    private static func text(_ id: String, in item: FfiItem) -> String {
+        switch field(id, in: item) {
+        case .text(let v), .concealed(let v), .menu(let v): v.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .date(let d): FieldDates.long(d)
+        default: ""
+        }
+    }
+
+    /// The sex menu as the one letter of the data page.
+    static func sexLetter(_ value: String) -> String {
+        switch value {
+        case "Féminin": "F"
+        case "Masculin": "M"
+        case "Autre": "X"
+        default: value
+        }
+    }
+
+    static func family(of item: FfiItem) -> DocumentFamily {
+        DocumentFamily.passport(issuingCountry: text("issuing_country", in: item))
+    }
+
+    static func portraitAttachment(of item: FfiItem) -> FfiAttachment? {
+        if case .file(let a) = field("portrait", in: item) { a } else { nil }
+    }
+
+    static func data(of item: FfiItem, portrait: Image?) -> PassportData {
+        var readOn: Date?
+        if case .date(let d) = field("chip_read_on", in: item) { readOn = FieldDates.date(d) }
+        return PassportData(
+            surname: text("last_name", in: item), givenNames: text("first_names", in: item),
+            number: text("number", in: item), nationality: text("nationality", in: item),
+            birthDate: text("birth_date", in: item), expiryDate: text("expiry", in: item),
+            sex: sexLetter(text("sex", in: item)), mrz: text("mrz", in: item), portrait: portrait,
+            status: ChipBadge.Status(coreLabel: text("chip_status", in: item)), readOn: readOn)
+    }
+
+    private var attachment: FfiAttachment? { Self.portraitAttachment(of: item) }
+
+    private var data: PassportData {
+        let image = portrait.flatMap { $0.id == attachment?.id ? $0.image : nil }
+        return Self.data(of: item, portrait: image)
+    }
+
+    /// The colour of the item's vault: a generic booklet takes it (spec 2026-11-21 section 7.1).
+    private var vaultAccent: Color? {
+        model.session.allVaults.first { $0.id == item.vaultId }.map { VaultBadge.color(named: $0.meta.color) }
+    }
+
+    private var hasSecrets: Bool { !data.number.isEmpty || !data.mrz.isEmpty }
+
+    var body: some View {
+        let data = data
+        VStack(spacing: Theme.Space.m) {
+            PassportFace(
+                family: Self.family(of: item), data: data, isOpen: $isOpen,
+                secretsRevealed: revealed && !captured)
+                .documentAccent(vaultAccent)
+                .frame(maxWidth: 440)
+                .accessibilityIdentifier("item.passport.booklet")
+            if isOpen || data.status != nil {
+                HStack(alignment: .top, spacing: Theme.Space.m) {
+                    if let status = data.status, let readOn = data.readOn {
+                        ChipBadge(status: status, readOn: readOn)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
+                    if isOpen, hasSecrets, !captured {
+                        Button(revealed ? "Masquer" : "Révéler", systemImage: revealed ? "eye.slash" : "eye") {
+                            setRevealed(!revealed)
+                            noteReveal(shown: revealed)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("item.passport.reveal")
+                    }
+                }
+                .frame(maxWidth: 440)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .task(id: attachment?.id) { await loadPortrait() }
+        .task(id: revealedAt) {
+            guard let at = revealedAt else { return }
+            try? await Task.sleep(for: .seconds(autoHideAfter))
+            if !Task.isCancelled, revealed, Date().timeIntervalSince(at) >= autoHideAfter { setRevealed(false) }
+        }
+        .onChange(of: model.session.concealGeneration) { if revealed { setRevealed(false) } }
+        // Captured: masked now, and still masked once the capture ends.
+        .onChange(of: captured) { _, now in if now, revealed { setRevealed(false) } }
+        // Closing the booklet masks it too.
+        .onChange(of: isOpen) { _, open in if !open, revealed { setRevealed(false) } }
+        .onDisappear { if revealed { setRevealed(false) } }
+    }
+
+    private func setRevealed(_ on: Bool) {
+        revealed = on
+        revealedAt = on ? Date() : nil
+    }
+
+    /// As a secret `ValueRow` does: the touch is activity (it pushes back the auto-lock), and an
+    /// unmasking is a key use of each secret it shows (number, MRZ), never a use of the item.
+    private func noteReveal(shown: Bool) {
+        model.session.noteActivity()
+        guard shown, let itemUseRef else { return }
+        for id in Self.secretFieldIDs {
+            guard let field = item.sections.lazy.flatMap(\.fields).first(where: { $0.id == id }),
+                !Self.text(id, in: item).isEmpty
+            else { continue }
+            model.noteItemKeyUse(itemUseRef, action: .revealed, field: field.displayLabel)
+        }
+    }
+
+    /// The fields the booklet masks until "Révéler".
+    static let secretFieldIDs = ["number", "mrz"]
+
+    /// The portrait attachment (JPEG from the chip), read once per attachment. A missing or
+    /// unreadable file leaves the silhouette.
+    private func loadPortrait() async {
+        guard let attachment else {
+            portrait = nil
+            return
+        }
+        guard let bytes = try? await model.session.attachmentData(
+            itemID: item.id, vaultID: item.vaultId, attachmentID: attachment.id) else { return }
+        #if os(macOS)
+        guard let image = NSImage(data: bytes) else { return }
+        portrait = (attachment.id, Image(nsImage: image))
+        #else
+        guard let image = UIImage(data: bytes) else { return }
+        portrait = (attachment.id, Image(uiImage: image))
+        #endif
     }
 }
 

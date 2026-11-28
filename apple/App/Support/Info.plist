@@ -44,6 +44,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>Cleon lit la puce de tes documents et cartes pour les ranger dans ton coffre. Rien ne quitte ton téléphone sans chiffrement.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_onepass-pair._tcp</string>
@@ -121,6 +123,10 @@
 	<key>UISupportedInterfaceOrientations~iphone</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
+	<array>
+		<string>A0000002471001</string>
 	</array>
 </dict>
 </plist>
