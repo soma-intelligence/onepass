@@ -477,6 +477,71 @@ struct AutoFillModelTests {
         #expect(signed.credentialId == registration.credentialId)
     }
 
+    @Test func passkeyAssertionPicksPrfForTheChosenCredential() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        let registration = try await seed.createPasskey(FfiPasskeyCreation(
+            vaultId: login.vaultId, itemId: login.id, rpId: "example.com", userName: loginUser,
+            userHandle: Data([1, 2, 3, 4]), clientDataHash: Data(repeating: 9, count: 32),
+            excludedCredentialIds: []))
+        seed.lock()
+        let general = PrfInput(first: Data("general".utf8))
+        let own = PrfInput(first: Data("own".utf8))
+
+        func prfOutput(_ prf: PrfInput?, perCredential: [Data: PrfInput] = [:]) async throws -> FfiPrfOutput? {
+            let (model, _, done) = f.model(.credential(
+                recordID: "\(login.vaultId):\(login.id)", kind: .passkey,
+                passkey: PasskeyRequest(
+                    rpID: "example.com", clientDataHash: clientDataHash,
+                    allowedCredentialIDs: [registration.credentialId], prf: prf, perCredentialPrf: perCredential)))
+            await model.start()
+            await model.unlock(password: testPassword)
+            guard case .passkeyAssertion(let assertion, _, _) = try #require(done.results.first) else {
+                Issue.record("expected an assertion, got \(done.results)")
+                return nil
+            }
+            return assertion.prf
+        }
+
+        #expect(try await prfOutput(nil) == nil)
+        let general1 = try #require(try await prfOutput(general))
+        // The chosen credential's own salts beat the general ones.
+        let ownOnly = try #require(try await prfOutput(general, perCredential: [registration.credentialId: own]))
+        let ownAlone = try #require(try await prfOutput(own))
+        #expect(ownOnly.first == ownAlone.first && ownOnly.first != general1.first)
+        // Salts kept for another credential do not apply.
+        let other = try #require(try await prfOutput(general, perCredential: [Data([1]): own]))
+        #expect(other.first == general1.first)
+        // Per-credential salts alone also apply.
+        let alone = try #require(try await prfOutput(nil, perCredential: [registration.credentialId: own]))
+        #expect(alone.first == ownAlone.first)
+    }
+
+    @Test func passkeyRegistrationCarriesPrfOutput() async throws {
+        let f = try Fixture()
+        defer { f.cleanUp() }
+        let (seed, login) = try await f.seed()
+        seed.lock()
+        func created(_ prf: PrfInput?) async throws -> FfiPasskeyRegistration {
+            let (model, _, done) = f.model(.passkeyRegistration(PasskeyRegistrationRequest(
+                rpID: "example.com", userName: loginUser, userHandle: Data([1, 2, 3, 4]),
+                clientDataHash: clientDataHash, excludedCredentialIDs: [], supportsES256: true, prf: prf)))
+            await model.start()
+            await model.unlock(password: testPassword)
+            await model.registerPasskey(into: nil, vaultID: login.vaultId)
+            guard case .passkeyRegistration(let registration, _, _) = try #require(done.results.first) else {
+                throw VaultError.other("expected a registration, got \(done.results)")
+            }
+            return registration
+        }
+        let plain = try await created(nil)
+        #expect(plain.prfEnabled && plain.prf == nil)
+        let withSalt = try await created(PrfInput(first: Data("salt".utf8), second: Data("salt 2".utf8)))
+        #expect(withSalt.prfEnabled)
+        #expect(withSalt.prf?.first.count == 32 && withSalt.prf?.second?.count == 32)
+    }
+
     // MARK: - Save
 
     @Test func saveOwnAppIsSilent() async throws {

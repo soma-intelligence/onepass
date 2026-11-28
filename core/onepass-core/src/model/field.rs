@@ -71,6 +71,8 @@ pub struct PasskeyCredential {
     pub user_name: String,
     pub user_handle: Vec<u8>,
     pub credential_id: Vec<u8>,
+    /// PKCS#8 DER of the ES256 key. The bytes are never re-encoded: the
+    /// WebAuthn PRF secret (`webauthn::prf_eval`) depends on them exactly.
     pub private_key: Zeroizing<Vec<u8>>,
     pub created_at: OffsetDateTime,
 }

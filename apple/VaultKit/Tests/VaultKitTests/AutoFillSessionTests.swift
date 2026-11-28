@@ -370,6 +370,67 @@ struct AutoFillSessionTests {
         #expect(store.removeCount == 1)
     }
 
+    @Test func passkeyAssertionCarriesPrfOutputs() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = autofillSession(h, store: InMemoryIdentityStore())
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        let vaultID = session.allVaults[0].id
+        let registration = try await session.createPasskey(FfiPasskeyCreation(
+            vaultId: vaultID, itemId: nil, rpId: "example.com", userName: "camille",
+            userHandle: Data([1, 2, 3, 4]), clientDataHash: Data(repeating: 9, count: 32),
+            excludedCredentialIds: []))
+
+        func assert(_ prf: PrfInput?) async throws -> FfiPasskeyAssertion {
+            try await session.passkeyAssertion(
+                vaultID: vaultID, itemID: registration.itemId, credentialID: registration.credentialId,
+                clientDataHash: Data(repeating: 7, count: 32), prf: prf)
+        }
+        let one = Data("first salt".utf8), two = Data("second salt".utf8)
+
+        #expect(try await assert(nil).prf == nil)
+
+        let both = try #require(try await assert(PrfInput(first: one, second: two)).prf)
+        #expect(both.first.count == 32)
+        let second = try #require(both.second)
+        #expect(second.count == 32 && second != both.first)
+        // Each output is the one a single salt gives, and stays the same call after call.
+        let onlyOne = try #require(try await assert(PrfInput(first: one)).prf)
+        #expect(onlyOne.first == both.first && onlyOne.second == nil)
+        let swapped = try #require(try await assert(PrfInput(first: two)).prf)
+        #expect(swapped.first == second)
+    }
+
+    @Test func registrationReportsPrfEnabled() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = autofillSession(h, store: InMemoryIdentityStore())
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: .personal)
+        let vaultID = session.allVaults[0].id
+        func create(_ prf: PrfInput?) async throws -> FfiPasskeyRegistration {
+            try await session.createPasskey(
+                FfiPasskeyCreation(
+                    vaultId: vaultID, itemId: nil, rpId: "example.com", userName: "camille",
+                    userHandle: Data([1, 2, 3, 4]), clientDataHash: Data(repeating: 9, count: 32),
+                    excludedCredentialIds: []),
+                prf: prf)
+        }
+
+        let plain = try await create(nil)
+        #expect(plain.prfEnabled && plain.prf == nil)
+
+        let salt = Data("registration salt".utf8)
+        let evaluated = try await create(PrfInput(first: salt))
+        #expect(evaluated.prfEnabled)
+        let out = try #require(evaluated.prf)
+        #expect(out.first.count == 32 && out.second == nil)
+        // The same passkey answers the same salt at sign-in.
+        let assertion = try await session.passkeyAssertion(
+            vaultID: vaultID, itemID: evaluated.itemId, credentialID: evaluated.credentialId,
+            clientDataHash: Data(repeating: 7, count: 32), prf: PrfInput(first: salt))
+        #expect(assertion.prf?.first == out.first)
+    }
+
     @Test func passkeyRoundTripThroughSession() async throws {
         let h = try SessionHarness()
         defer { h.cleanUp() }

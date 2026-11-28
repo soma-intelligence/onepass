@@ -1022,6 +1022,7 @@ impl Session {
     pub fn create_passkey(
         &self,
         request: FfiPasskeyCreation,
+        prf: Option<FfiPrfInput>,
     ) -> Result<FfiPasskeyRegistration, OnePassError> {
         let vault_id = parse_id(&request.vault_id)?;
         let item_id = request.item_id.as_deref().map(parse_id).transpose()?;
@@ -1052,6 +1053,10 @@ impl Session {
                 now,
             )?;
             let reg = webauthn::registration(&cred, &request.client_data_hash)?;
+            let prf = prf
+                .as_ref()
+                .map(|input| prf_output(&cred, input))
+                .transpose()?;
             if item_id.is_none() {
                 item.record(now, onepass_core::model::EventKind::Created);
             }
@@ -1074,6 +1079,8 @@ impl Session {
                 item_id: id_hex(item_id),
                 credential_id: reg.credential_id,
                 attestation_object: reg.attestation_object,
+                prf_enabled: true,
+                prf,
             })
         })
     }
@@ -1087,6 +1094,7 @@ impl Session {
         item_id: String,
         credential_id: Vec<u8>,
         client_data_hash: Vec<u8>,
+        prf: Option<FfiPrfInput>,
     ) -> Result<FfiPasskeyAssertion, OnePassError> {
         let (vault_id, item_id) = (parse_id(&vault_id)?, parse_id(&item_id)?);
         self.with(|repo| {
@@ -1104,9 +1112,26 @@ impl Session {
                 authenticator_data: a.authenticator_data,
                 signature: a.signature,
                 credential_id: cred.credential_id.clone(),
+                prf: prf
+                    .as_ref()
+                    .map(|input| prf_output(cred, input))
+                    .transpose()?,
             })
         })
     }
+}
+
+/// The WebAuthn PRF outputs of `cred` for the relying party's salts: one
+/// per salt given (`webauthn::prf_eval`).
+fn prf_output(cred: &PasskeyCredential, input: &FfiPrfInput) -> Result<FfiPrfOutput, OnePassError> {
+    Ok(FfiPrfOutput {
+        first: webauthn::prf_eval(cred, &input.first)?.to_vec(),
+        second: input
+            .second
+            .as_ref()
+            .map(|salt| webauthn::prf_eval(cred, salt).map(|o| o.to_vec()))
+            .transpose()?,
+    })
 }
 
 #[cfg(test)]
