@@ -1,5 +1,5 @@
 // Helpers of the two-factor setup specs (setup-qr.spec.ts, security.spec.ts): the popup's
-// "Scan 2FA QR code" button, the setup card in the page, a stubbed tab capture and the
+// "Scan verification code QR" button, the setup card in the page, a stubbed tab capture and the
 // worker's host requests (e2e build only).
 import type { CDPSession, Frame, Page, Worker } from "@playwright/test";
 import { type Ext, expect } from "./fixtures";
@@ -10,7 +10,7 @@ export const ATLAS = "https://atlas-cloud.test";
 
 /** The card's words (the specs run with the browser in English). */
 export const L = {
-  scan: "Scan 2FA QR code",
+  scan: "Scan verification code QR",
   add: "Add",
   cancel: "Cancel",
   replace: "Replace",
@@ -18,8 +18,8 @@ export const L = {
   save: "Save",
   saved: "Saved. Press the site's button to confirm.",
   paste: "No QR code found. Paste the setup key.",
-  title: (item: string) => `Add the 2FA code to ${item}?`,
-  replaceTitle: (item: string) => `${item} already has a 2FA code. Replace it?`,
+  title: (item: string) => `Add the verification code to ${item}?`,
+  replaceTitle: (item: string) => `${item} already has a verification code. Replace it?`,
   mismatch: (account: string, username: string) => `The code is for ${account}. This login is ${username}.`,
   codesTitle: (count: number, item: string) => `Save ${count} recovery codes on ${item}?`,
 } as const;
