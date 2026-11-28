@@ -1,4 +1,4 @@
-// "Scan 2FA QR code" (spec section 1): the page first, one capture when it shows nothing, the
+// "Scan verification code QR" (spec section 1): the page first, one capture when it shows nothing, the
 // paste card last; never on a plain http page or in a private window; no network request.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Filler } from "../../../src/background/fill";

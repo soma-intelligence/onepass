@@ -314,6 +314,52 @@ describe("popup", () => {
     expect(button(r, "Réessayer")).toBeTruthy();
   });
 
+  it("host missing: Ouvrir Cleon asks the app to come forward, then the popup loads", async () => {
+    let up = false;
+    const w = worker((m) => {
+      if (m.type === "popup_status") return up ? null : { err: "host_missing" };
+      if (m.type === "popup_unlock") {
+        up = true;
+        return { ok: { locked: false } };
+      }
+      return null;
+    });
+    const { r, handle } = setup(w);
+    await handle.ready;
+    button(r, "Ouvrir Cleon").click();
+    await handle.settled();
+    expect(w.types()).toContain("popup_unlock");
+    expect(text(r)).toContain("Suggestions pour atlas-cloud.test");
+  });
+
+  it("app not responding: says what to check, offers Ouvrir Cleon and Réessayer", async () => {
+    const { r, handle, w } = setup(worker((m) => (m.type === "popup_status" ? { err: "timeout" } : m.type === "popup_unlock" ? { ok: { locked: true } } : null)));
+    await handle.ready;
+    expect(text(r)).toContain("L'app Cleon ne répond pas.");
+    expect(text(r)).toContain("Vérifie que l'app Cleon est ouverte et déverrouillée, puis réessaie.");
+    expect(button(r, "Réessayer")).toBeTruthy();
+    button(r, "Ouvrir Cleon").click();
+    await handle.settled();
+    expect(w.types()).toContain("popup_unlock");
+    expect(text(r)).toContain("Déverrouille Cleon pour continuer");
+  });
+
+  it("version mismatch: names the side to update", async () => {
+    const cases: [string, string][] = [
+      ["version_update_extension", "mets à jour l'extension depuis la boutique de ton navigateur"],
+      ["version_update_app", "mets à jour l'app Cleon, puis réessaie."],
+      ["version", "Mets à jour l'app Cleon et l'extension, puis réessaie."],
+    ];
+    for (const [code, help] of cases) {
+      const { r, handle } = setup(worker((m) => (m.type === "popup_status" ? { err: code } : null)));
+      await handle.ready;
+      expect(text(r)).toContain("L'extension et l'app Cleon ne sont pas à la même version.");
+      expect(text(r)).toContain(help);
+      expect(button(r, "Réessayer")).toBeTruthy();
+      expect(r.querySelector("button.btn-primary")!.textContent).toBe("Réessayer");
+    }
+  });
+
   it("suggestions for the domain with the site's icon, no extra note", async () => {
     const { r, handle } = setup();
     await handle.ready;

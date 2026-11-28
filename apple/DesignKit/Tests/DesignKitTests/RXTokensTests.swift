@@ -187,8 +187,9 @@ struct RXTokensTests {
         #expect(RX.Typography.lineSpacing(size: 22, lineHeight: 1.2) == 0)
     }
 
-    @Test func flagDefaultsOff() {
-        #expect(RXDesign.isOn(stored: nil, launchArgument: nil) == false)
+    @Test func flagDefaultsOn() {
+        #expect(RXDesign.isOn(stored: nil, launchArgument: nil) == true)
+        #expect(RXDesign.isOn(stored: nil, launchArgument: false) == false)
         #expect(RXDesign.isOn(stored: nil, launchArgument: true) == true)
         #expect(RXDesign.isOn(stored: false, launchArgument: true) == false)
         #expect(RXDesign.isOn(stored: true, launchArgument: nil) == true)

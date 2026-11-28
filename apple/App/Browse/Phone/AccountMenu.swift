@@ -4,22 +4,31 @@ import SwiftUI
 #if os(iOS)
 /// Account button of the iPhone navigation bars: the account's initials on the accent square and a
 /// small chevron, as the Mac account header. It opens the account panel.
+///
+/// In the iPhone tabs the panel is a glass panel of their own (`AccountPanelHost`), dropping from
+/// this button: a popover always drew its arrow and clipped the panel's corner, and its dimming
+/// took the system's slow fade to go. Elsewhere (no host) it stays a popover.
 struct AccountMenu: View {
     @Environment(AppModel.self) private var model
     @Environment(\.pushPhoneRoute) private var push
+    @Environment(\.accountPanelPresenter) private var presenter
     @State private var isOpen = false
-    /// What the panel asked for: run once the popover is gone, so a sheet never fights it.
-    /// "Gone" is the panel's `onDisappear`, at the end of the popover's dismissal: run as soon as
-    /// `isOpen` turns false, a sheet of the root (Réglages, Ajouter un compte) was refused by UIKit
-    /// ("already presenting" the popover) and only showed up at a later redraw, up to a minute on
-    /// device.
+    /// Where the button is on screen: the hosted panel drops from it.
+    @State private var frame: CGRect = .zero
+    /// Popover only: what the panel asked for, run once the popover is gone, so a sheet never
+    /// fights it. "Gone" is the panel's `onDisappear`, at the end of the popover's dismissal: run
+    /// as soon as `isOpen` turns false, a sheet of the root (Réglages, Ajouter un compte) was
+    /// refused by UIKit ("already presenting" the popover) and only showed up at a later redraw, up
+    /// to a minute on device. The hosted panel keeps the same rule: it runs the action once its
+    /// own fade has ended.
     @State private var pending: AccountPanelAction?
     @State private var creatingVault = false
 
+    /// The button's height (the tap target), so a page can keep its room when it is pinned.
+    static let height: CGFloat = 44
+
     var body: some View {
-        Button {
-            isOpen = true
-        } label: {
+        Button(action: open) {
             HStack(spacing: Theme.Space.xs) {
                 AccountBadgeAvatar(
                     initials: model.initials, photo: model.profileImage, color: model.accountTint,
@@ -28,12 +37,13 @@ struct AccountMenu: View {
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: Self.height)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("browse.accountMenu"))
         .accessibilityIdentifier("account.menu")
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
         // Anchored at the chevron's end, not the button's middle: the arrow then clears the panel's
         // corner, so the top-left corner keeps the same radius as the other three.
         .popover(isPresented: $isOpen, attachmentAnchor: .point(.trailing), arrowEdge: .top) {
@@ -62,9 +72,17 @@ struct AccountMenu: View {
         .task {
             guard UserDefaults.standard.bool(forKey: "OnePassDemoAccountPanel") else { return }
             try? await Task.sleep(for: .milliseconds(600))
-            isOpen = true
+            open()
         }
         #endif
+    }
+
+    private func open() {
+        if let presenter {
+            presenter.open(from: frame) { run($0) }
+        } else {
+            isOpen = true
+        }
     }
 
     private func runPending() {
@@ -76,7 +94,7 @@ struct AccountMenu: View {
     private func run(_ action: AccountPanelAction) {
         switch action {
         case .settings:
-            SettingsTiming.mark("popover closed")
+            SettingsTiming.mark("account panel closed")
             model.showSettings = true
         case .profile: push(.profile)
         case .newVault: creatingVault = true
@@ -86,6 +104,128 @@ struct AccountMenu: View {
         case .lock: model.perform(.lock)
         case .account(let action): model.runAccountAction(action)
         }
+    }
+}
+
+extension EnvironmentValues {
+    /// Shows the account panel over the iPhone tabs (`AccountPanelHost`). Nil outside them: the
+    /// account button then opens a popover.
+    @Entry var accountPanelPresenter: AccountPanelPresenter?
+}
+
+/// The open account panel of the iPhone tabs: which button it drops from, and what to run once it
+/// is gone.
+@MainActor @Observable
+final class AccountPanelPresenter {
+    fileprivate struct Request {
+        /// The account button, in global coordinates.
+        var anchor: CGRect
+        var then: @MainActor (AccountPanelAction) -> Void
+    }
+
+    fileprivate var request: Request?
+    fileprivate var shown = false
+    /// Set by the host from the environment.
+    fileprivate var reduceMotion = false
+
+    /// The way out: quick, so a tap outside gives the screen back at once (the popover's dimming
+    /// took about half a second), and a sheet chosen in the panel follows without a wait.
+    fileprivate static let closeDuration: TimeInterval = 0.15
+
+    func open(from anchor: CGRect, then: @escaping @MainActor (AccountPanelAction) -> Void) {
+        request = Request(anchor: anchor, then: then)
+        withAnimation(reduceMotion ? .easeOut(duration: Self.closeDuration) : .spring(duration: 0.3, bounce: 0.18)) {
+            shown = true
+        }
+    }
+
+    /// Closes the panel, then runs `action` once it is gone (a sheet never presents over it).
+    fileprivate func close(running action: AccountPanelAction? = nil) {
+        guard shown else { return }
+        if case .settings = action { SettingsTiming.requested("account panel") }
+        let then = request?.then
+        withAnimation(.easeOut(duration: Self.closeDuration)) {
+            shown = false
+        } completion: { [weak self] in
+            // Opened again during the fade: that request stays.
+            if let self, !self.shown { self.request = nil }
+            if let action { then?(action) }
+        }
+    }
+}
+
+/// The account panel of the iPhone tabs, over the whole screen (tab bar included): a light dim
+/// that closes it on a tap, and the glass panel dropping from the account button, growing out of
+/// the avatar. Applied once, on the tab view.
+struct AccountPanelHost: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var presenter = AccountPanelPresenter()
+    /// The panel's natural height.
+    @State private var panelHeight: CGFloat = 0
+
+    /// Light enough that the page stays readable behind (the popover era's 0.4 read as a blackout).
+    private static let dim = 0.18
+    /// Between the button's bottom and the panel, and the panel and the screen's edges.
+    private static let gap = Theme.Space.xs
+    private static let margin = Theme.Space.s
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.accountPanelPresenter, presenter)
+            .overlay {
+                GeometryReader { proxy in
+                    layer(in: proxy)
+                }
+                .ignoresSafeArea()
+            }
+            .onChange(of: reduceMotion, initial: true) { _, reduce in presenter.reduceMotion = reduce }
+            .onChange(of: presenter.shown) { _, shown in
+                model.accountPanelsOpen = max(0, model.accountPanelsOpen + (shown ? 1 : -1))
+            }
+    }
+
+    @ViewBuilder private func layer(in proxy: GeometryProxy) -> some View {
+        ZStack(alignment: .topLeading) {
+            if presenter.shown, let request = presenter.request {
+                Color.black.opacity(Self.dim)
+                    .contentShape(.rect)
+                    .onTapGesture { presenter.close() }
+                    .accessibilityHidden(true)
+                    .transition(.opacity)
+                panel(request, in: proxy)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func panel(_ request: AccountPanelPresenter.Request, in proxy: GeometryProxy) -> some View {
+        let origin = proxy.frame(in: .global).origin
+        let anchor = request.anchor.offsetBy(dx: -origin.x, dy: -origin.y)
+        let width = AccountPanel.width
+        // Its leading edge on the avatar's, kept on screen.
+        let x = min(max(anchor.minX, Self.margin), max(Self.margin, proxy.size.width - width - Self.margin))
+        let y = anchor.maxY + Self.gap
+        // Room down to the home indicator: past it (large text sizes) the panel scrolls.
+        let room = max(0, proxy.size.height - y - proxy.safeAreaInsets.bottom - Self.margin * 4)
+        // It grows out of the avatar: the scale's anchor is the avatar's centre, on the top edge.
+        let grow = UnitPoint(x: min(max((anchor.minX + 16 - x) / width, 0), 1), y: 0)
+        return ScrollView {
+            AccountPanel { presenter.close(running: $0) }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.hidden)
+        // Its own height, as long as it fits: past the room (large text sizes) it scrolls. Before
+        // the first measure, the scroll view's ideal height (its content's) stands in.
+        .frame(width: width, height: panelHeight > 0 ? min(panelHeight, room) : nil)
+        .fixedSize(horizontal: false, vertical: panelHeight == 0)
+        .glassEffect(.regular, in: .rect(cornerRadius: AccountPanel.panelRadius, style: .continuous))
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) { presenter.close() }
+        .padding(.leading, x)
+        .padding(.top, y)
+        .transition(reduceMotion ? .opacity : .scale(scale: 0.4, anchor: grow).combined(with: .opacity))
     }
 }
 
@@ -101,8 +241,8 @@ enum AccountPanelAction {
     case account(AccountsPanelAction)
 }
 
-/// The account panel: a glass popover under the account button (iPhone), the same panel under the
-/// sidebar's account row (Mac). The accounts on this device on top (with several, each switches on
+/// The account panel: a glass panel under the account button (iPhone, `AccountPanelHost`), the same
+/// panel in a popover under the sidebar's account row (Mac). The accounts on this device on top (with several, each switches on
 /// tap), then the actions, each with its colored tile as in the sidebar, and Verrouiller apart at
 /// the bottom. On the Mac each action shows its shortcut, and Configurer un appareil takes the
 /// place of Scanner un code (no camera scanner there).
@@ -114,10 +254,15 @@ struct AccountPanel: View {
     /// iPhone: the cards keep clear of the glass popover's edge, their corners following its curve
     /// (8 pt read as cards pressed against the panel's side).
     static let inset: CGFloat = Theme.Space.m
-    static let cardRadius: CGFloat = 24
+    static let cardRadius: CGFloat = Theme.RX.Radius.card
+    /// The glass panel's corner: the cards' radius plus their inset, so both curves are concentric.
+    static let panelRadius: CGFloat = cardRadius + inset
+    static let width: CGFloat = 296
     #else
     static let inset: CGFloat = Theme.Space.s
     static let cardRadius: CGFloat = Theme.Radius.card
+    /// visionOS: the panel keeps the iPhone width (the Mac caps it at the sidebar column instead).
+    static let width: CGFloat = 296
     #endif
 
     var body: some View {
@@ -188,7 +333,7 @@ struct AccountPanel: View {
         // Never wider than the sidebar column (the panel was cut at its edge when it is narrow).
         .frame(maxWidth: 272)
         #else
-        .frame(width: 296)
+        .frame(width: AccountPanel.width)
         #endif
     }
 

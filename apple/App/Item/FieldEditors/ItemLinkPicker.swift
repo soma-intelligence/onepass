@@ -256,9 +256,16 @@ struct LoginUsernameRow<Field: View>: View {
     var message: String?
     @ViewBuilder var field: Field
     @State private var choosing: LoginProvider?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(alignment: .center, spacing: Theme.Space.m) {
+        // Accessibility text sizes: the menu goes under the field, which keeps the full width (side
+        // by side, the fixed-size menu left the username no room at all). One layout value, so the
+        // field keeps its identity and its focus when the size changes.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Space.s))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: Theme.Space.m))
+        layout {
             EditorRow(label: label, message: message) { field }
             if item.signInProvider == nil { providerMenu }
         }

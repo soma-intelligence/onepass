@@ -511,6 +511,50 @@ describe("inline menu", () => {
     expect(timers.timeouts.size).toBe(0);
   });
 
+  it("the app does not answer: what to check, Ouvrir Cleon, and Réessayer that loads again", async () => {
+    let silent = true;
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_init") return silent ? { err: "timeout" } : def();
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    expect(text(r)).toContain("L'app Cleon ne répond pas.");
+    expect(text(r)).toContain("Vérifie que l'app Cleon est ouverte et déverrouillée, puis réessaie.");
+    expect(button(r, "Ouvrir Cleon")).toBeTruthy();
+    silent = false;
+    clock.advance(300);
+    button(r, "Réessayer").click();
+    await flush();
+    expect(worker.types().filter((t) => t === "menu_init")).toHaveLength(2);
+    expect(r.querySelectorAll("[role=option]").length).toBeGreaterThan(0);
+  });
+
+  it("the app does not answer: Ouvrir Cleon asks it to come forward", async () => {
+    const { r, handle, worker, clock } = setup((m) => {
+      if (m.type === "menu_init") return { err: "timeout" };
+      if (m.type === "menu_unlock") return ok({ locked: true });
+      if (m.type === "menu_resume") return { err: "host_missing" };
+      return ok();
+    });
+    await handle.ready;
+    await flush();
+    clock.advance(300);
+    button(r, "Ouvrir Cleon").click();
+    await flush();
+    expect(worker.types()).toContain("menu_unlock");
+    expect(text(r)).toContain("Ouverture de Cleon…");
+  });
+
+  it("version mismatch: names the side to update, with Réessayer", async () => {
+    const { r, handle } = setup((m) => (m.type === "menu_init" ? { err: "version_update_app" } : ok()));
+    await handle.ready;
+    await flush();
+    expect(text(r)).toContain("L'extension et l'app Cleon ne sont pas à la même version.");
+    expect(text(r)).toContain("L'extension est plus récente : mets à jour l'app Cleon, puis réessaie.");
+    expect(button(r, "Réessayer")).toBeTruthy();
+  });
+
   it("the app cannot be opened: the button stays, with what to do", async () => {
     const { r, handle, clock } = setup((m) => {
       if (m.type === "menu_resume") return { err: "invalid" };

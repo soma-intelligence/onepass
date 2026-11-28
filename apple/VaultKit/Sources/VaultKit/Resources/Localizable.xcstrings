@@ -4695,6 +4695,53 @@
         }
       }
     },
+    "fill.error.appClosed" : {
+      "comment" : "Mac fill helper: the OnePass app is not running or its bridge is off.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öffne OnePass, um dieses Feld auszufüllen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open OnePass to fill this field."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre OnePass para rellenar este campo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre OnePass pour remplir ce champ."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri OnePass per compilare questo campo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 필드를 채우려면 OnePass를 여세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 OnePass 以填写此字段。"
+          }
+        }
+      }
+    },
     "keyUse.action.copied" : {
       "comment" : "Key-use log row: the secret was copied.",
       "extractionState" : "manual",
@@ -4979,6 +5026,54 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "一次性验证码"
+          }
+        }
+      }
+    },
+    "keyUse.channel.desktopFill" : {
+      "comment" : "Key-use log row: the channel of a login filled by the OnePass helper in another Mac app.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac-Ausfüllen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac fill"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Relleno en Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplissage Mac"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Compilazione Mac"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac 채우기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mac 填充"
           }
         }
       }
@@ -11273,6 +11368,54 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "此 Secret Key 存在输入错误。请对照你的 Emergency Kit 检查每个字符。"
+          }
+        }
+      }
+    },
+    "session.secretKeyNotInICloud" : {
+      "comment" : "Join from iCloud: the Secret Key is not in iCloud Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dein Secret Key ist nicht im iCloud-Schlüsselbund. Verwende dein Emergency Kit oder dein anderes Gerät."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Secret Key isn't in iCloud Keychain. Use your Emergency Kit or your other device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Secret Key no está en el llavero de iCloud. Usa tu Emergency Kit o tu otro dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ta Secret Key n'est pas dans le trousseau iCloud. Utilise ton Emergency Kit ou ton autre appareil."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La tua Secret Key non è nel portachiavi iCloud. Usa il tuo Emergency Kit o l'altro dispositivo."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Secret Key가 iCloud 키체인에 없습니다. Emergency Kit나 다른 기기를 사용하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你的 Secret Key 不在 iCloud 钥匙串中。请使用 Emergency Kit 或你的另一台设备。"
           }
         }
       }

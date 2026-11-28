@@ -241,8 +241,8 @@ struct BrowseRoot: View {
 }
 
 extension View {
-    /// "Abandonner les modifications ?" before a guarded action (`AppModel.perform`) drops an edited
-    /// draft. `active` false leaves it to another presenter (a sheet on screen above this view).
+    /// "Enregistrer les modifications ?" before a guarded action (`AppModel.perform`) drops an edited
+    /// draft: save then go on, discard, or keep editing. `active` false leaves it to another presenter (a sheet on screen above this view).
     func discardConfirmation(active: Bool = true) -> some View {
         modifier(DiscardConfirmation(active: active))
     }
@@ -254,13 +254,16 @@ private struct DiscardConfirmation: ViewModifier {
 
     func body(content: Content) -> some View {
         content.confirmationDialog(
-            "Abandonner les modifications ?", isPresented: presented, titleVisibility: .visible
+            "editor.unsaved.title", isPresented: presented, titleVisibility: .visible
         ) {
-            Button(model.pendingDiscard == .lock ? "Abandonner et verrouiller" : "Abandonner", role: .destructive) {
+            Button("editor.unsaved.save") { model.saveThenContinue() }
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("discard.save")
+            Button(model.discardButtonTitle, role: .destructive) {
                 model.confirmDiscard()
             }
             .accessibilityIdentifier("discard.confirm")
-            Button("app.keepEditing", role: .cancel) { model.pendingDiscard = nil }
+            Button("app.keepEditing", role: .cancel) { model.keepEditing() }
         } message: {
             Text("browse.changesToItemArent")
         }
@@ -269,7 +272,7 @@ private struct DiscardConfirmation: ViewModifier {
     private var presented: Binding<Bool> {
         Binding(
             get: { active && model.pendingDiscard != nil },
-            set: { if !$0 { model.pendingDiscard = nil } })
+            set: { if !$0 { model.keepEditing() } })
     }
 }
 
@@ -436,7 +439,9 @@ private struct RXReadableWidth: ViewModifier {
         GeometryReader { proxy in
             let side = sizeClass == .regular ? max(0, (proxy.size.width - Self.column) / 2) : 0
             content
-                .contentMargins(.horizontal, side, for: .scrollContent)
+                // Nil on a compact width: the system margins stay. A 0 here reached the sheets
+                // opened from Réglages too (the vault editor drew its rows edge to edge).
+                .contentMargins(.horizontal, side > 0 ? side : nil, for: .scrollContent)
                 .environment(\.rxSettingsSideMargin, side)
         }
     }

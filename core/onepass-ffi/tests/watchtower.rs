@@ -128,16 +128,14 @@ fn breach_lookup_runs_in_two_passes_with_prefixes_only() {
     assert!(second.score < first.score);
 }
 
-/// The core's signed site-pack vector. `ONEPASS_CORE_FIXTURES` points at a
-/// copy of the core's `tests/fixtures` when the test runs away from the
-/// source tree (the Android emulator run).
+/// The signed site pack vectors of onepass-core. `ONEPASS_CORE_FIXTURES`
+/// points at a copy of its `tests/fixtures` when the test runs away from the
+/// source tree (the Android emulator, see android/scripts/test-core-emulator.sh).
 fn signed(name: &str) -> Vec<u8> {
     let root = std::env::var_os("ONEPASS_CORE_FIXTURES").map_or_else(
         || {
-            std::path::PathBuf::from(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../onepass-core/tests/fixtures"
-            ))
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../onepass-core/tests/fixtures")
         },
         std::path::PathBuf::from,
     );

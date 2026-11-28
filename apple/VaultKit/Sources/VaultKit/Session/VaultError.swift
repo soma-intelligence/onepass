@@ -75,6 +75,9 @@ public enum VaultError: Error, Equatable, Sendable {
             case .OrgPinMismatch:
                 // Same value the generic integrity arm gave before the variant existed.
                 self = .integrity(kind: "org_pin_mismatch")
+            // The Mac fill helper (spec 2026-11-23-mac-fill-anywhere): the app is not reachable.
+            case .AppClosed:
+                self = .other(String(localized: "fill.error.appClosed", bundle: VaultKitStrings.bundle))
             // Guarded Kit (spec 2026-11-20, sections 7.2 and 9). `GuardRequired` reaches the screens
             // from a password check without a current kept `G` (renewed on another device): a
             // password unlock brings it, the check never asks the realms.

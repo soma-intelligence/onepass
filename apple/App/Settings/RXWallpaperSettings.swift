@@ -9,14 +9,16 @@ import AppKit
 import SwiftUI
 
 #if os(iOS) || os(macOS)
-/// The wallpaper behind the Accueil hero: the default art (light or dark with the appearance), one
-/// of the bundled themes (`Assets.xcassets/Wallpapers`, made by penpot-lab/wallpapers/generate.py),
-/// or a photo the user imported (iPhone and iPad). The choice is one string in the browse defaults.
+/// The wallpaper behind the Accueil hero: the default art (Soma Brume, which follows the
+/// appearance), one of the bundled pictures (`Assets.xcassets/Wallpapers`) or a photo the user
+/// imported (iPhone and iPad). The choice is one string in the browse defaults, so every stored
+/// name stays valid across releases: "auto", "upload" and "wp-<theme>-<n>[-noir|-clair]".
 /// The Mac has no default art nor imported photo: nothing stored, or either of them, is Lava 3.
 @MainActor
 enum RXWallpaper {
     static let storageKey = "rx.home.wallpaper"
-    /// The default art, which follows the appearance.
+    /// The default art, which follows the appearance. Since 2026-11-25 it is Soma Brume
+    /// (`wp-soma-1`): the former near black art (`RXHero.home`) read as too heavy behind the hero.
     static let automatic = "auto"
     /// What the hero shows when nothing is stored: the default art on iPhone and iPad, Lava 3 (a
     /// warm one) on the Mac.
@@ -30,6 +32,9 @@ enum RXWallpaper {
     private static let uploadLightKey = "rx.home.wallpaper.uploadLight"
     /// Whether the wallpaper drifts (`RXLiveWallpaper`), on Accueil and the lock screen. On by default.
     static let liveKey = "rx.home.wallpaper.live"
+
+    /// The picture behind "auto": the first Soma wallpaper.
+    static let automaticArt = "wp-soma-1"
 
     /// The tones of a theme: its own colours, a low key one and a high key one (generate.py `tone`).
     enum Tone: String, CaseIterable, Identifiable {
@@ -57,16 +62,42 @@ enum RXWallpaper {
         let count: Int
         /// Lava, Lights, Silk, Glass and Landscape also come in Noir and Clair.
         var hasTones: Bool { ["lava", "lights", "silk", "glass", "landscape"].contains(id) }
+        /// Soma pictures carry a light and a dark image in one asset: they follow the appearance
+        /// on their own, so they need no tone and their words follow the appearance too.
+        var followsAppearance: Bool { id == "soma" }
 
         /// An interpolated literal would look up "rx.wallpaper.category.%@": the key is a plain String.
         var title: LocalizedStringKey { LocalizedStringKey("rx.wallpaper.category." + id) }
         var names: [String] { (1...count).map { "wp-\(id)-\($0)" } }
     }
 
-    /// The picker's themes, in chip order.
-    static let categories: [Category] = [
-        "landscape", "glass", "silk", "metal", "lights", "lava", "velvet", "horizon", "particles",
+    /// The groups of the iPhone picker, in segment order. Soma first: calm, made for the hero.
+    enum Group: String, CaseIterable, Identifiable {
+        case soma, gradients, photos, mine
+        var id: String { rawValue }
+        var title: LocalizedStringKey { LocalizedStringKey("rx.wallpaper.group." + rawValue) }
+    }
+
+    static let soma = Category(id: "soma", count: 6)
+    /// Drawn themes, grouped as "Dégradés" on iPhone.
+    static let gradientThemes: [Category] = [
+        "silk", "lava", "glass", "lights", "horizon", "velvet", "metal", "particles",
     ].map { Category(id: $0, count: 6) }
+    /// Photographs, grouped as "Photos" on iPhone.
+    static let photoThemes: [Category] = [Category(id: "landscape", count: 6)]
+
+    /// Every theme, in chip order on the Mac.
+    static let categories: [Category] = [soma] + gradientThemes + photoThemes
+
+    /// The group a stored name belongs to, so the picker opens where the choice is.
+    static func group(of name: String) -> Group {
+        if name == automatic || name.hasPrefix("wp-soma-") { return .soma }
+        if name == uploaded { return .mine }
+        let base = baseName(name)
+        if photoThemes.contains(where: { $0.names.contains(base) }) { return .photos }
+        if gradientThemes.contains(where: { $0.names.contains(base) }) { return .gradients }
+        return .soma
+    }
 
     /// Bundled wallpapers whose top half is light, so the hero keeps dark words over them
     /// (generate.py's manifest, `isLight`).
@@ -93,13 +124,20 @@ enum RXWallpaper {
         if id == uploaded, let photo = UploadCache.image() {
             return Resolved(image: Image(uiImage: photo), isLight: AppModel.browseDefaults.bool(forKey: uploadLightKey), flows: false)
         }
+        if id == automatic, isBundled(automaticArt) {
+            return Resolved(image: Image(automaticArt), isLight: colorScheme == .light)
+        }
         #endif
         if id.hasPrefix("wp-"), isBundled(id) {
-            // A Clair picture is light, a Noir one dark unless its sky stays pale (misty photos).
-            let light = switch Tone.of(id) {
-            case .clair: true
-            case .noir: lightNames.contains(id)
-            case .natural: lightNames.contains(id)
+            // Soma pictures swap with the appearance, so their words do too. A Clair picture is
+            // light, a Noir one dark unless its sky stays pale (misty photos).
+            let light = if id.hasPrefix("wp-soma-") {
+                colorScheme == .light
+            } else {
+                switch Tone.of(id) {
+                case .clair: true
+                case .noir, .natural: lightNames.contains(id)
+                }
             }
             return Resolved(image: Image(id), isLight: light, flows: !id.hasPrefix("wp-landscape-"))
         }
@@ -185,6 +223,15 @@ enum RXWallpaper {
 
         static func reset() { cached = nil }
     }
+
+    /// Width over height of the window the hero fills, so every preview has the screen's shape.
+    /// Clamped: a split iPad window can be almost square, and a tile that wide breaks the grid.
+    static var screenRatio: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let size = scene?.keyWindow?.bounds.size ?? scene?.screen.bounds.size ?? CGSize(width: 402, height: 874)
+        let ratio = min(size.width, size.height) / max(max(size.width, size.height), 1)
+        return min(max(ratio, 0.42), 0.75)
+    }
     #endif
 }
 #endif
@@ -205,6 +252,10 @@ struct WallpaperSection: View {
     }()
     @Environment(\.colorScheme) private var colorScheme
 
+    private typealias RX = Theme.RX
+    /// The row's thumbnail: a small screen, as tall as two lines of a row.
+    private static let thumbHeight: CGFloat = 64
+
     /// The RX look only: the classic Accueil has no hero to dress.
     var body: some View {
         if rxDesign { section }
@@ -215,12 +266,16 @@ struct WallpaperSection: View {
             Button {
                 picking = true
             } label: {
-                HStack(spacing: Theme.Space.m) {
+                HStack(spacing: RX.Space.m) {
                     RXWallpaper.resolve(selection, colorScheme: colorScheme).image
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 44, height: 64)
-                        .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                        .frame(width: Self.thumbHeight * RXWallpaper.screenRatio, height: Self.thumbHeight)
+                        .clipShape(.rect(cornerRadius: Theme.Radius.chip, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous)
+                                .strokeBorder(RX.Palette.separator.color, lineWidth: 0.5)
+                        }
                         .accessibilityHidden(true)
                     Text("rx.wallpaper.title")
                         .foregroundStyle(.primary)
@@ -242,64 +297,78 @@ struct WallpaperSection: View {
     }
 }
 
-/// The wallpaper picker: one chip per theme, a grid of its pictures; a tap applies at once.
-/// Import takes a photo from the library (no access to the whole library: the system picker).
+/// The wallpaper picker. From the top: a live preview of Accueil with the choice, the four groups
+/// (Soma, Dégradés, Photos, Tes photos), then the group's pictures as small screens on one card.
+/// A tap applies at once; the preview shows it before the sheet closes.
 struct RXWallpaperPicker: View {
     @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var selection = RXWallpaper.automatic
+    @AppStorage(RXWallpaper.liveKey, store: AppModel.browseDefaults) private var live = true
     @Environment(\.dismiss) private var dismiss
-    @State private var category: String
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var group: RXWallpaper.Group
+    /// The theme shown in Dégradés.
+    @State private var theme: String
+    @State private var tone: RXWallpaper.Tone
     @State private var photoItem: PhotosPickerItem?
+    @State private var choosingPhoto = false
     @State private var hasUpload = RXWallpaper.hasUpload
     @State private var importFailed = false
-    @State private var tone: RXWallpaper.Tone
-    @AppStorage(RXWallpaper.liveKey, store: AppModel.browseDefaults) private var live = true
 
     private typealias RX = Theme.RX
-    private static let defaultChip = "default"
-    private static let uploadedChip = "uploaded"
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: Theme.RX.Space.m), count: 3)
+    private let ratio = RXWallpaper.screenRatio
+
+    /// The grid sits on a card with `cardPadding` around it, so a tile's corner is the card's
+    /// minus that padding: the two curves stay concentric.
+    private static let cardPadding = RX.Space.m
+    private static var tileRadius: CGFloat { RX.Radius.card - cardPadding }
+    /// The selection ring floats this far outside the tile, less than the grid gap, so two rings
+    /// never touch and the picture itself is never covered.
+    private static let ringGap: CGFloat = 4
+    private static let previewHeight: CGFloat = 300
 
     init() {
         let stored = AppModel.browseDefaults.string(forKey: RXWallpaper.storageKey) ?? RXWallpaper.automatic
-        let owner = RXWallpaper.categories.first { $0.names.contains(RXWallpaper.baseName(stored)) }
-        _tone = State(initialValue: RXWallpaper.Tone.of(stored))
-        var initial = owner?.id ?? (stored == RXWallpaper.uploaded ? Self.uploadedChip : Self.defaultChip)
+        var group = RXWallpaper.group(of: stored)
+        let base = RXWallpaper.baseName(stored)
+        var theme = RXWallpaper.gradientThemes.first { $0.names.contains(base) }?.id ?? "silk"
         #if DEBUG
-        if let demo = UserDefaults.standard.string(forKey: "OnePassDemoWallpaperChip") { initial = demo }
+        // Captures: `-OnePassDemoWallpaperChip <group or theme>` opens that group or theme.
+        if let demo = UserDefaults.standard.string(forKey: "OnePassDemoWallpaperChip") {
+            if let picked = RXWallpaper.Group(rawValue: demo) {
+                group = picked
+            } else if RXWallpaper.gradientThemes.contains(where: { $0.id == demo }) {
+                group = .gradients
+                theme = demo
+            }
+        }
         #endif
-        _category = State(initialValue: initial)
+        _group = State(initialValue: group)
+        _theme = State(initialValue: theme)
+        _tone = State(initialValue: RXWallpaper.Tone.of(stored))
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                chips
-                ScrollView {
+            ScrollView {
+                VStack(spacing: RX.Space.xl) {
+                    preview
                     VStack(spacing: RX.Space.l) {
-                        if currentTheme?.hasTones == true {
-                            Picker(selection: $tone) {
-                                ForEach(RXWallpaper.Tone.allCases) { tone in
-                                    Text(tone.title).tag(tone)
-                                }
-                            } label: {
-                                Text("rx.wallpaper.tone")
+                        Picker(selection: $group.animation(.snappy)) {
+                            ForEach(RXWallpaper.Group.allCases) { group in
+                                Text(group.title).tag(group)
                             }
-                            .pickerStyle(.segmented)
-                            .accessibilityIdentifier("rx.wallpaper.tone")
+                        } label: {
+                            Text("rx.wallpaper.title")
                         }
-                        LazyVGrid(columns: columns, spacing: RX.Space.m) {
-                            tiles
-                        }
-                        Toggle(isOn: $live) {
-                            Text("rx.wallpaper.live")
-                            Text("rx.wallpaper.live.detail")
-                        }
-                        .padding(.top, RX.Space.s)
-                        .accessibilityIdentifier("rx.wallpaper.live")
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("rx.wallpaper.group")
+                        .padding(.horizontal, RX.Space.gutter)
+                        groupContent
                     }
-                    .padding(.horizontal, RX.Space.gutter)
-                    .padding(.vertical, RX.Space.l)
+                    liveCard
+                        .padding(.horizontal, RX.Space.gutter)
                 }
+                .padding(.vertical, RX.Space.l)
             }
             .background(RX.Palette.pageBackground.color)
             .navigationTitle(Text("rx.wallpaper.title"))
@@ -309,13 +378,8 @@ struct RXWallpaperPicker: View {
                     Button(role: .close) { dismiss() }
                         .accessibilityIdentifier("rx.wallpaper.close")
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        Text("rx.wallpaper.upload")
-                    }
-                    .accessibilityIdentifier("rx.wallpaper.upload")
-                }
             }
+            .photosPicker(isPresented: $choosingPhoto, selection: $photoItem, matching: .images)
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 Task { await importPhoto(item) }
@@ -324,118 +388,311 @@ struct RXWallpaperPicker: View {
                 Button("OK", role: .cancel) {}
             }
             .sensoryFeedback(.selection, trigger: selection)
-            // A new tone applies at once to the picture chosen in this theme.
+            // A new tone applies at once to the picture chosen in the theme on screen.
             .onChange(of: tone) { _, tone in
                 let base = RXWallpaper.baseName(selection)
-                if let theme = currentTheme, theme.hasTones, theme.names.contains(base) {
+                if let shown = toneTheme, shown.names.contains(base) {
                     selection = base + tone.suffix
                 }
             }
         }
     }
 
-    private var currentTheme: RXWallpaper.Category? {
-        RXWallpaper.categories.first { $0.id == category }
+    // MARK: Preview
+
+    /// Accueil in miniature with the choice: the wallpaper (moving when Fond animé is on), the
+    /// greeting in the colour the hero would use over it, and the first card of the list. It
+    /// answers "how will it look" before the sheet closes.
+    private var preview: some View {
+        let resolved = RXWallpaper.resolve(selection, colorScheme: colorScheme)
+        let width = Self.previewHeight * ratio
+        // A phone's corner is about 14% of its width; the inner card keeps the same centre.
+        let radius = width * 0.14
+        let inset = RX.Space.s
+        let ink: Color = resolved.isLight ? .black.opacity(0.72) : .white.opacity(0.92)
+        return ZStack(alignment: .top) {
+            resolved.image
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: Self.previewHeight)
+                .rxLiveWallpaper(active: live, flow: resolved.flows)
+                .clipped()
+            VStack(spacing: RX.Space.s) {
+                Capsule()
+                    .fill(.black)
+                    .frame(width: width * 0.3, height: RX.Space.s + RX.Space.xs)
+                    .padding(.top, RX.Space.s)
+                Spacer().frame(height: RX.Space.xl)
+                Capsule().fill(ink.opacity(0.7)).frame(width: width * 0.3, height: RX.Space.xs + 1)
+                Capsule().fill(ink).frame(width: width * 0.55, height: RX.Space.s + 2)
+                HStack(spacing: RX.Space.m) {
+                    ForEach(0 ..< 3, id: \.self) { _ in
+                        Circle().fill(.ultraThinMaterial).frame(width: RX.Space.l + RX.Space.xs)
+                    }
+                }
+                .padding(.top, RX.Space.s)
+                Spacer(minLength: 0)
+                UnevenRoundedRectangle(topLeadingRadius: radius - inset, bottomLeadingRadius: radius - inset,
+                                       bottomTrailingRadius: radius - inset, topTrailingRadius: radius - inset,
+                                       style: .continuous)
+                    .fill(RX.Palette.cardBackground.color)
+                    .overlay(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: RX.Space.s) {
+                            ForEach(0 ..< 3, id: \.self) { row in
+                                HStack(spacing: RX.Space.s) {
+                                    Circle().fill(RX.Palette.field.color).frame(width: RX.Space.m)
+                                    Capsule().fill(RX.Palette.field.color)
+                                        .frame(width: width * (row == 1 ? 0.35 : 0.45), height: RX.Space.xs + 1)
+                                }
+                            }
+                        }
+                        .padding(RX.Space.m)
+                    }
+                    .frame(height: Self.previewHeight * 0.36)
+                    .padding(inset)
+            }
+            .frame(width: width, height: Self.previewHeight)
+        }
+        .frame(width: width, height: Self.previewHeight)
+        .clipShape(.rect(cornerRadius: radius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(RX.Palette.separator.color, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.12), radius: RX.Space.l, y: RX.Space.s)
+        .animation(.smooth(duration: 0.35), value: selection)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement()
+        .accessibilityLabel(Text("rx.wallpaper.preview"))
+        .accessibilityIdentifier("rx.wallpaper.preview")
     }
 
-    private var chipIDs: [String] {
-        [Self.defaultChip] + (hasUpload ? [Self.uploadedChip] : []) + RXWallpaper.categories.map(\.id)
-    }
+    // MARK: Groups
 
-    private func chipTitle(_ id: String) -> Text {
-        switch id {
-        case Self.defaultChip: Text("rx.wallpaper.default")
-        case Self.uploadedChip: Text("rx.wallpaper.uploaded")
-        default: Text(LocalizedStringKey("rx.wallpaper.category." + id))
+    /// The theme whose tone control shows: the Dégradés theme on screen, or Paysage in Photos.
+    private var toneTheme: RXWallpaper.Category? {
+        switch group {
+        case .gradients: RXWallpaper.gradientThemes.first { $0.id == theme && $0.hasTones }
+        case .photos: RXWallpaper.photoThemes.first
+        case .soma, .mine: nil
         }
     }
 
-    private var chips: some View {
+    @ViewBuilder private var groupContent: some View {
+        switch group {
+        case .soma:
+            VStack(alignment: .leading, spacing: RX.Space.s) {
+                card { somaTiles }
+                footer(Text("rx.wallpaper.soma.footer"))
+            }
+            .padding(.horizontal, RX.Space.gutter)
+        case .gradients:
+            VStack(spacing: RX.Space.l) {
+                themeChips
+                VStack(spacing: RX.Space.l) {
+                    toneControl
+                    card { themeTiles(RXWallpaper.gradientThemes.first { $0.id == theme }) }
+                }
+                .padding(.horizontal, RX.Space.gutter)
+            }
+        case .photos:
+            VStack(spacing: RX.Space.l) {
+                toneControl
+                card { themeTiles(RXWallpaper.photoThemes.first) }
+            }
+            .padding(.horizontal, RX.Space.gutter)
+        case .mine:
+            VStack(alignment: .leading, spacing: RX.Space.s) {
+                card { importTiles }
+                footer(Text("rx.wallpaper.import.footer"))
+            }
+            .padding(.horizontal, RX.Space.gutter)
+        }
+    }
+
+    /// One card holding a grid of small screens, three across on a phone.
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: RX.Space.m)], spacing: RX.Space.l) {
+            content()
+        }
+        .padding(Self.cardPadding)
+        .background(RX.Palette.cardBackground.color,
+                    in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
+    }
+
+    private func footer(_ text: Text) -> some View {
+        text
+            .rxFont(.footnote)
+            .foregroundStyle(RX.Palette.textSecondary.color)
+            .padding(.horizontal, RX.Space.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private var toneControl: some View {
+        if toneTheme != nil {
+            Picker(selection: $tone) {
+                ForEach(RXWallpaper.Tone.allCases) { tone in
+                    Text(tone.title).tag(tone)
+                }
+            } label: {
+                Text("rx.wallpaper.tone")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("rx.wallpaper.tone")
+        }
+    }
+
+    private var themeChips: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: RX.Space.s) {
-                    ForEach(chipIDs, id: \.self) { id in
+                    ForEach(RXWallpaper.gradientThemes) { item in
                         Button {
-                            withAnimation(.snappy) { category = id }
+                            withAnimation(.snappy) { theme = item.id }
                         } label: {
-                            RXChip(chipTitle(id), selected: category == id)
+                            RXChip(Text(item.title), selected: theme == item.id)
                         }
                         .buttonStyle(.plain)
-                        .id(id)
-                        .accessibilityIdentifier("rx.wallpaper.chip.\(id)")
+                        .id(item.id)
+                        .accessibilityIdentifier("rx.wallpaper.chip.\(item.id)")
                     }
                 }
                 .padding(.horizontal, RX.Space.gutter)
-                .padding(.vertical, RX.Space.s)
             }
-            .onAppear { proxy.scrollTo(category, anchor: .center) }
-            .onChange(of: category) { _, id in
+            .onAppear { proxy.scrollTo(theme, anchor: .center) }
+            .onChange(of: theme) { _, id in
                 withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
             }
         }
     }
 
-    @ViewBuilder private var tiles: some View {
-        switch category {
-        case Self.defaultChip:
-            tile(id: RXWallpaper.automatic, image: Image(RXHero.home), badge: "circle.lefthalf.filled")
-        case Self.uploadedChip:
-            if let photo = RXWallpaper.UploadCache.image() {
-                tile(id: RXWallpaper.uploaded, image: Image(uiImage: photo), badge: nil)
-            }
-        default:
-            if let theme = currentTheme {
-                let suffix = theme.hasTones ? tone.suffix : ""
-                ForEach(theme.names.map { $0 + suffix }, id: \.self) { name in
-                    tile(id: name, image: Image(RXWallpaper.thumbnail(name)), badge: nil)
-                }
+    // MARK: Tiles
+
+    /// Soma: the default art (Brume, stored as "auto" as before) then the five others. Each
+    /// carries its own light and dark picture, hence no tone control here.
+    @ViewBuilder private var somaTiles: some View {
+        let selected = selection == RXWallpaper.automaticArt ? RXWallpaper.automatic : selection
+        ForEach(Array(RXWallpaper.soma.names.enumerated()), id: \.offset) { index, name in
+            let id = index == 0 ? RXWallpaper.automatic : name
+            tile(id: id, isSelected: selected == id, image: Image(RXWallpaper.thumbnail(name)),
+                 label: Text(LocalizedStringKey("rx.wallpaper.soma." + String(index + 1))), showsCaption: true)
+        }
+    }
+
+    @ViewBuilder private func themeTiles(_ category: RXWallpaper.Category?) -> some View {
+        if let category {
+            let suffix = category.hasTones ? tone.suffix : ""
+            ForEach(Array(category.names.enumerated()), id: \.offset) { index, base in
+                let name = base + suffix
+                tile(id: name, isSelected: selection == name, image: Image(RXWallpaper.thumbnail(name)),
+                     label: Text(category.title) + Text(verbatim: " \(index + 1)"), showsCaption: false)
             }
         }
     }
 
-    private func tile(id: String, image: Image, badge: String?) -> some View {
-        let selected = selection == id
-        return Button {
+    /// Tes photos: the system photo picker (no access to the whole library) as the first tile,
+    /// then the photo already imported, if any.
+    @ViewBuilder private var importTiles: some View {
+        // A button plus `.photosPicker`, not `PhotosPicker { label }`: that label closure is
+        // nonisolated and cannot build this main actor tile.
+        Button {
+            choosingPhoto = true
+        } label: {
+            VStack(spacing: RX.Space.s) {
+                screen {
+                    RoundedRectangle(cornerRadius: Self.tileRadius, style: .continuous)
+                        .fill(RX.Palette.field.color)
+                        .overlay {
+                            Image(systemName: "photo.badge.plus")
+                                .font(.title2)
+                                .foregroundStyle(RX.Palette.accent.color)
+                        }
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: Self.tileRadius, style: .continuous)
+                        .strokeBorder(RX.Palette.separator.color, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                }
+                Text("rx.wallpaper.upload")
+                    .rxFont(.footnote)
+                    .foregroundStyle(RX.Palette.textPrimary.color)
+                    .lineLimit(1)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("rx.wallpaper.upload")
+        if hasUpload, let photo = RXWallpaper.UploadCache.image() {
+            tile(id: RXWallpaper.uploaded, isSelected: selection == RXWallpaper.uploaded, image: Image(uiImage: photo),
+                 label: Text("rx.wallpaper.uploaded"), showsCaption: true)
+        }
+    }
+
+    /// A small screen: the screen's own shape, the concentric corner.
+    private func screen<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        Color.clear
+            .aspectRatio(ratio, contentMode: .fit)
+            .overlay { content() }
+            .clipShape(.rect(cornerRadius: Self.tileRadius, style: .continuous))
+    }
+
+    private func tile(id: String, isSelected: Bool, image: Image, label: Text, showsCaption: Bool) -> some View {
+        Button {
             selection = id
         } label: {
-            Color.clear
-                .aspectRatio(0.66, contentMode: .fit)
-                .overlay {
+            VStack(spacing: RX.Space.s) {
+                screen {
                     image
                         .resizable()
                         .scaledToFill()
                 }
-                .clipShape(.rect(cornerRadius: RX.Radius.card, style: .continuous))
-                .overlay(alignment: .bottomTrailing) {
-                    if let badge {
-                        Image(systemName: badge)
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.35), radius: 3)
-                            .padding(RX.Space.s)
-                            .accessibilityHidden(true)
-                    }
-                }
+                // A hairline, so a pale picture never melts into the white card.
                 .overlay {
-                    RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous)
-                        .strokeBorder(selected ? RX.Palette.accent.color : .clear, lineWidth: 3)
+                    RoundedRectangle(cornerRadius: Self.tileRadius, style: .continuous)
+                        .strokeBorder(RX.Palette.separator.color, lineWidth: 0.5)
                 }
-                .overlay(alignment: .topTrailing) {
-                    if selected {
+                .overlay(alignment: .bottomTrailing) {
+                    if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.title3)
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.white, RX.Palette.accent.color)
                             .padding(RX.Space.s)
+                            .transition(.scale.combined(with: .opacity))
                             .accessibilityHidden(true)
                     }
                 }
-                .contentShape(.rect(cornerRadius: RX.Radius.card))
+                // The ring sits outside the picture, its corner the tile's plus the gap.
+                .padding(Self.ringGap)
+                .overlay {
+                    RoundedRectangle(cornerRadius: Self.tileRadius + Self.ringGap, style: .continuous)
+                        .strokeBorder(isSelected ? RX.Palette.accent.color : .clear, lineWidth: 2.5)
+                }
+                .padding(-Self.ringGap)
+                if showsCaption {
+                    label
+                        .rxFont(isSelected ? .footnoteBold : .footnote)
+                        .foregroundStyle(isSelected ? RX.Palette.accentText.color : RX.Palette.textPrimary.color)
+                        .lineLimit(1)
+                }
+            }
+            .animation(.snappy, value: isSelected)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("rx.wallpaper.title"))
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("rx.wallpaper.\(id)")
+    }
+
+    private var liveCard: some View {
+        Toggle(isOn: $live) {
+            Text("rx.wallpaper.live")
+            Text("rx.wallpaper.live.detail")
+        }
+        .padding(RX.Space.l)
+        .background(RX.Palette.cardBackground.color,
+                    in: RoundedRectangle(cornerRadius: RX.Radius.card, style: .continuous))
+        .accessibilityIdentifier("rx.wallpaper.live")
     }
 
     private func importPhoto(_ item: PhotosPickerItem) async {
@@ -444,7 +701,7 @@ struct RXWallpaperPicker: View {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
             try RXWallpaper.storeUpload(data)
             hasUpload = true
-            category = Self.uploadedChip
+            group = .mine
             selection = RXWallpaper.uploaded
         } catch {
             Logger(subsystem: "me.somalabs.onepass", category: "wallpaper").error("Import failed: \(error.localizedDescription, privacy: .public)")
@@ -456,8 +713,8 @@ struct RXWallpaperPicker: View {
 
 #if os(macOS)
 /// Réglages > Général on the Mac (the RX popup): the wallpaper of the Accueil hero as one card.
-/// The themes as small chips that wrap, the tone of the themes that have one, then the theme's
-/// pictures as landscape tiles (the hero's shape); a click applies at once.
+/// The themes as small chips that wrap (Soma first), the tone of the themes that have one, then
+/// the theme's pictures as landscape tiles (the hero's shape); a click applies at once.
 struct MacWallpaperSection: View {
     @AppStorage(RXWallpaper.storageKey, store: AppModel.browseDefaults) private var selection = RXWallpaper.platformDefault
     @State private var category: String
@@ -465,7 +722,9 @@ struct MacWallpaperSection: View {
 
     private typealias RX = Theme.RX
     private static let tileSize = CGSize(width: 120, height: 68)
-    private static let tileRadius: CGFloat = 12
+    /// The section's rows round at 12 with no inset around the grid: tiles match that corner.
+    private static let tileRadius: CGFloat = RX.Space.m
+    private static let ringGap: CGFloat = 3
 
     init() {
         let stored = AppModel.browseDefaults.string(forKey: RXWallpaper.storageKey) ?? RXWallpaper.platformDefault
@@ -505,6 +764,11 @@ struct MacWallpaperSection: View {
                 }
             }
             .padding(.vertical, RX.Space.xs)
+            if currentTheme?.followsAppearance == true {
+                Text("rx.wallpaper.soma.footer")
+                    .rxFont(.footnote)
+                    .foregroundStyle(RX.Palette.textSecondary.color)
+            }
         } header: {
             SettingsHeader("rx.wallpaper.title")
         }
@@ -553,11 +817,8 @@ struct MacWallpaperSection: View {
                         .scaledToFill()
                 }
                 .clipShape(shape)
-                .overlay {
-                    shape.strokeBorder(selected ? RX.Palette.accent.color : RX.Palette.separator.color,
-                                       lineWidth: selected ? 3 : 1)
-                }
-                .overlay(alignment: .topTrailing) {
+                .overlay { shape.strokeBorder(RX.Palette.separator.color, lineWidth: 0.5) }
+                .overlay(alignment: .bottomTrailing) {
                     if selected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.title3)
@@ -567,6 +828,13 @@ struct MacWallpaperSection: View {
                             .accessibilityHidden(true)
                     }
                 }
+                // Same ring as on iPhone: outside the picture, concentric with it.
+                .padding(Self.ringGap)
+                .overlay {
+                    RoundedRectangle(cornerRadius: Self.tileRadius + Self.ringGap, style: .continuous)
+                        .strokeBorder(selected ? RX.Palette.accent.color : .clear, lineWidth: 2.5)
+                }
+                .padding(-Self.ringGap)
                 .contentShape(shape)
         }
         .buttonStyle(.plain)

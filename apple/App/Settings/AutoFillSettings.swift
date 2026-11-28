@@ -8,6 +8,10 @@ import VaultKit
 struct AutoFillSettings: View {
     @Environment(AppModel.self) private var model
     @State private var requesting = false
+    #if os(macOS) && !ONEPASS_APP_STORE
+    /// Remplir partout, pushed by `onepass://settings/fill-anywhere` (`FillAnywhereLink`).
+    @State private var showFillAnywhere = false
+    #endif
 
     private var settings: VaultSettings { model.settings }
 
@@ -21,6 +25,20 @@ struct AutoFillSettings: View {
             #if os(macOS)
             if let bridge = model.browserBridge {
                 BrowserBridgeSection(bridge: bridge)
+            }
+            #endif
+            #if os(macOS) && !ONEPASS_APP_STORE
+            if FillAnywhereHelper.isPresent {
+                Section {
+                    NavigationLink {
+                        FillAnywhereSettings()
+                    } label: {
+                        Label("fillAnywhere.title", systemImage: "macwindow.badge.plus")
+                    }
+                    .accessibilityIdentifier("autofill.fillAnywhere")
+                } footer: {
+                    SettingsFootnote("fillAnywhere.link.footer")
+                }
             }
             #endif
             Section {
@@ -64,7 +82,21 @@ struct AutoFillSettings: View {
         .rxSettingsSkin()
         .settingsPage("Remplissage automatique")
         .task { await model.refreshAutoFillStatus() }
+        #if os(macOS) && !ONEPASS_APP_STORE
+        .navigationDestination(isPresented: $showFillAnywhere) { FillAnywhereSettings() }
+        .onAppear(perform: takeFocusRequest)
+        .onChange(of: model.settingsFocusRequest) { takeFocusRequest() }
+        #endif
     }
+
+    #if os(macOS) && !ONEPASS_APP_STORE
+    /// `onepass://settings/fill-anywhere`: Remplir partout on top, when this build has the helper.
+    private func takeFocusRequest() {
+        guard model.settingsFocusRequest == FillAnywhereLink.focus else { return }
+        model.settingsFocusRequest = nil
+        if FillAnywhereHelper.isPresent { showFillAnywhere = true }
+    }
+    #endif
 
     @ViewBuilder private var providerSection: some View {
         let enabled = model.autofillEnabled

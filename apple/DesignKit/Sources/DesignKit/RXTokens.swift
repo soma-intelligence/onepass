@@ -435,18 +435,19 @@ extension View {
     }
 }
 
-/// The switch of the RX look: a per-device preference, off by default. Debug builds also take the
-/// launch argument `-OnePassRX YES` (screenshots, demo data), which sets the default only: a stored
-/// choice still wins.
+/// The switch of the RX look: a per-device preference, on by default since the pre-release audit of
+/// 2026-11-25 (the classic look stays one switch away in Réglages > Général). Debug builds also take
+/// the launch argument `-OnePassRX YES|NO` (screenshots, demo data, UI tests of the classic look),
+/// which sets the default only: a stored choice still wins.
 public enum RXDesign {
     /// The defaults key of the choice.
     public static let storageKey = "onepass.design.rx"
     /// The launch argument of Debug builds.
     public static let launchArgument = "OnePassRX"
 
-    /// Whether the look is on: the stored choice, else the launch argument, else off.
+    /// Whether the look is on: the stored choice, else the launch argument, else on.
     public static func isOn(stored: Bool?, launchArgument: Bool?) -> Bool {
-        stored ?? launchArgument ?? false
+        stored ?? launchArgument ?? true
     }
 
     /// The default value of the stored choice for this launch.
@@ -458,7 +459,7 @@ public enum RXDesign {
             stored: nil,
             launchArgument: defaults.object(forKey: launchArgument) == nil ? nil : defaults.bool(forKey: launchArgument))
         #else
-        return false
+        return true
         #endif
     }
 }

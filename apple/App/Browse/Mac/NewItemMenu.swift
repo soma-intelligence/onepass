@@ -65,6 +65,7 @@ struct NewItemSheet: View {
     /// iPhone: height of the floating header, where the scrolled tiles fade out.
     @State private var headerHeight: CGFloat = 160
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// iPhone: the sheet stays up after a pick, the editor takes its place (`PhoneNewItemSheet`).
     private let inPhoneSheet: Bool
 
@@ -218,7 +219,7 @@ struct NewItemSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.m) {
                 if trimmed.isEmpty {
-                    LazyVGrid(columns: Self.columns, spacing: Theme.Space.m) {
+                    LazyVGrid(columns: Self.columns(for: dynamicTypeSize), spacing: Theme.Space.m) {
                         ForEach(Self.featured, id: \.self) { type in
                             BigTypeTile(type: type) { pick(type) }
                         }
@@ -252,7 +253,16 @@ struct NewItemSheet: View {
         .scrollBounceBehavior(.basedOnSize)
     }
 
-    private static let columns = Array(repeating: GridItem(.flexible(), spacing: Theme.Space.m), count: 3)
+    /// Three tiles a row; two from the largest standard text size, one at the accessibility sizes,
+    /// so a type name always breaks between words ("Connexion" never splits).
+    static func columnCount(for size: DynamicTypeSize) -> Int {
+        if size.isAccessibilitySize { return 1 }
+        return size >= .xxLarge ? 2 : 3
+    }
+
+    private static func columns(for size: DynamicTypeSize) -> [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: Theme.Space.m), count: columnCount(for: size))
+    }
 
     private var searchField: some View {
         HStack(spacing: Theme.Space.s) {
@@ -282,7 +292,7 @@ struct NewItemSheet: View {
             HStack {
                 Text(showAll ? "Moins de catégories" : "Plus de catégories")
                     .font(Self.moreFont)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                 Spacer(minLength: 4)
                 ZStack {
                     ForEach(Array(Self.fanTypes.enumerated()), id: \.offset) { i, type in

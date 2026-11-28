@@ -24,7 +24,7 @@ final class NoSaveSheetUITests: XCTestCase {
 
     /// Debug: the app's own test store, defaults suite and keychain service, never the real ones.
     /// In French whatever the simulator's language: the steps look for French button labels.
-    private static let isolated = ["-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR"]
+    private static let isolated = ["-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR", "-OnePassRX", "NO"]
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -142,7 +142,6 @@ final class NoSaveSheetUITests: XCTestCase {
 
     private func createAccount(_ app: XCUIApplication) {
         tap(app.buttons["onboarding.create"])
-        tap(app.buttons["onboarding.primary"])
         // Return moves to the confirmation (905c8d41): with the keyboard up the confirmation sits
         // below the fold, and a drag from 70 % of the screen lands on the keyboard, not the form.
         type(Self.password + "\n", into: secretField(app, "onboarding.password"))

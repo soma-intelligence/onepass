@@ -127,7 +127,10 @@ struct KeychainGroupSettingTests {
         #expect(withGroups >= 10)
     }
 
-    @Test(arguments: ["App/Support/Info.plist", "AutoFill/Support/Info.plist", "Widgets/Info.plist", "NotificationService/Info.plist"])
+    @Test(arguments: [
+        "App/Support/Info.plist", "AutoFill/Support/Info.plist", "Widgets/Info.plist", "NotificationService/Info.plist",
+        "Fill/Support/Info.plist",
+    ])
     func infoPlistHandsTheAppGroupToTheCode(path: String) throws {
         let data = try Data(contentsOf: Self.appleDir.appendingPathComponent(path))
         let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
@@ -137,7 +140,9 @@ struct KeychainGroupSettingTests {
     @Test func shippedBundleIdsDeriveFromTheBuildSetting() throws {
         let yml = try String(contentsOf: Self.appleDir.appendingPathComponent("project.yml"), encoding: .utf8)
         #expect(yml.contains("ONEPASS_BUNDLE_ID_PREFIX: me.somalabs.onepass\n"))
-        for suffix in ["", ".autofill", ".safari", ".widgets", ".notifications", ".watchkitapp", ".watchkitapp.widgets"] {
+        for suffix in [
+            "", ".autofill", ".safari", ".fill", ".widgets", ".notifications", ".watchkitapp", ".watchkitapp.widgets",
+        ] {
             #expect(yml.contains("PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX)\(suffix)\n"), "\(suffix)")
             #expect(!yml.contains("PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass\(suffix)\n"), "\(suffix)")
         }
@@ -155,7 +160,7 @@ struct KeychainGroupSettingTests {
         #expect(pbxproj.contains("ONEPASS_KEYCHAIN_GROUP = \(VaultEnvironment.defaultKeychainGroup);"))
     }
 
-    @Test(arguments: ["App/Support/Info.plist", "AutoFill/Support/Info.plist"])
+    @Test(arguments: ["App/Support/Info.plist", "AutoFill/Support/Info.plist", "Fill/Support/Info.plist"])
     func infoPlistHandsTheSettingToTheCode(path: String) throws {
         let data = try Data(contentsOf: Self.appleDir.appendingPathComponent(path))
         let plist = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])

@@ -17,7 +17,7 @@ final class ItemEditorCardsUITests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchArguments += [
-            "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO",
+            "-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoBiometrics", "NO",
             "-OnePassDemoItem", "Forge Atlas", "-OnePassDebugEdit", "YES",
         ]
         app.launch()

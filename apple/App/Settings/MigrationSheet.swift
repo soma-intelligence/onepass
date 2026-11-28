@@ -31,7 +31,7 @@ struct MigrationSheet: View {
             .navigationTitle("settings.sync.migrate.button")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("common.close") { dismiss() }.disabled(running)
+                    Button("Fermer") { dismiss() }.disabled(running)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("common.continue") { Task { await migrate() } }

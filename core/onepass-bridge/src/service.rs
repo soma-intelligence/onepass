@@ -13,6 +13,9 @@ use onepass_core::Id;
 use onepass_core::autofill_history::{
     AutofillAction, AutofillEvent, BrowserKind, ClientContext, EventSource, MAX_SHOWN,
 };
+use onepass_core::fill_plan::app_entry::{
+    APP_SCHEME, add_app_entry, is_known_browser, valid_bundle_id,
+};
 use onepass_core::fill_plan::compose::PRIORITY;
 use onepass_core::fill_plan::context::{FieldRole, FrameKind, MAX_FIELDS, PageContext};
 use onepass_core::fill_plan::intent::{Intent, intent_of};
@@ -25,6 +28,7 @@ use onepass_core::model::{
     Address, EventKind, Field, FieldType, FieldValue, Item, ItemType, ItemUrl, LoginMethod,
     MatchRule, PENDING_TAG, PasswordHistoryEntry, Section, WEAK_BY_SITE_TAG, new_item, validate,
 };
+use onepass_core::model::{KeyUseAction, KeyUseChannel};
 use onepass_core::site_password::{GenerationReport, PasswordContext, Profile, generate_for};
 use onepass_core::totp::{OtpAttach, attach_otp, parse_otpauth};
 use onepass_core::webauthn;
@@ -41,11 +45,11 @@ use crate::api::{
 use crate::audit::{AuditEvent, AuditSink, PlanAudit};
 use crate::origin::{MatchQuality, Origin};
 use crate::policy::{
-    add_passkey, associated_document, card_values, direct_match, eligible, identity_values,
-    is_provider_account, item_match, license_values, login_identifier, login_secrets,
-    loyalty_values, otp_field, passkeys, passport_values, plan_candidates, plan_quality,
-    provider_url_matches, reveal_value, site_loyalty, stored_password, summarize, summary_kind,
-    to_candidate, totp_now,
+    add_passkey, app_candidates, associated_document, card_values, direct_match, eligible,
+    identity_values, is_provider_account, item_match, license_values, login_identifier,
+    login_secrets, loyalty_values, otp_field, passkeys, passport_values, plan_candidates,
+    plan_quality, provider_url_matches, reveal_value, site_loyalty, stored_password, summarize,
+    summary_kind, to_candidate, totp_now,
 };
 use crate::provider::{ProviderId, from_host};
 use crate::quirks::quirk_rules;
@@ -83,7 +87,7 @@ const MAX_STEPS: usize = 16;
 /// Longest site `forget_site` takes (a DNS name).
 const MAX_SITE_LEN: usize = 253;
 /// The journal operations that record a secret served to the client.
-const SERVED: [&str; 9] = [
+const SERVED: [&str; 10] = [
     "fill_login",
     "fill_card",
     "fill_identity",
@@ -93,7 +97,10 @@ const SERVED: [&str; 9] = [
     "totp",
     "reveal",
     "passkey_get",
+    "fill_for_app",
 ];
+/// Longest window title `list_for_app` takes, in characters.
+const MAX_WINDOW_TITLE: usize = 1024;
 /// Initial capacity of a reply buffer. Replies with a secret are far
 /// smaller, so the buffer never reallocates (which would leave an
 /// unwiped copy behind).
@@ -181,7 +188,7 @@ pub trait VaultAccess {
     /// A secret was served to the client, after every check: `kind` is the
     /// journal's operation (`fill_login`, `fill_card`, `fill_identity`,
     /// `fill_document`, `fill_loyalty`, `fill_provider`, `totp`, `reveal`,
-    /// `passkey_get`), `account` the item's account key when the host
+    /// `passkey_get`, `fill_for_app`), `account` the item's account key when the host
     /// serves several. Never for a plan, a note, a save, a refusal or an
     /// agent fill.
     fn secret_served(&mut self, kind: &'static str, item_id: Id, account: Option<&str>) {
@@ -221,6 +228,23 @@ pub trait VaultAccess {
     /// Forget `site` in every item (`Repository::forget_site_usage`): how
     /// many items were rewritten.
     fn forget_site_usage(&mut self, site: &str) -> Result<usize>;
+    /// Note one use of an item's secret in its key usage log
+    /// (`Repository::record_key_use`), best effort: the caller ignores the
+    /// error. `client` is a short app name and `field` a field label (empty
+    /// when the use covers the item); the core sanitizes both. A host
+    /// without a log records nothing.
+    fn record_key_use(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        channel: KeyUseChannel,
+        action: KeyUseAction,
+        client: &str,
+        field: &str,
+    ) -> Result<()> {
+        let _ = (vault_id, item_id, channel, action, client, field);
+        Ok(())
+    }
     /// Keep one event in the device's autofill history
     /// (`Repository::record_autofill_event`): `false` when the history is
     /// off or not kept. A host without a history keeps nothing.
@@ -429,10 +453,26 @@ fn generator_recipe(r: &Recipe) -> OpResult<generator::Recipe> {
     })
 }
 
+/// Who is at the other end of a session, as the host established it when
+/// it admitted the connection (on the Mac, by code signature), never as
+/// the client says. It binds the contexts the session may speak.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClientKind {
+    /// A browser extension (Safari, the relay for Chrome and Firefox, the
+    /// development native host): every context but `desktop`.
+    #[default]
+    Browser,
+    /// The Mac fill helper (spec 2026-11-23-mac-fill-anywhere): the
+    /// `desktop` context only, plus `status` and `unlock`, which take none.
+    FillHelper,
+}
+
 /// The request service of one session.
 pub struct Service<V: VaultAccess> {
     vault: V,
     audit: Box<dyn AuditSink>,
+    /// Set by the host from the connection, before the first request.
+    kind: ClientKind,
     seen: HashSet<u64>,
     secret_times: VecDeque<u64>,
     /// Drawn at the first `fill_salt` or `plan_fill`, gone with the
@@ -505,6 +545,7 @@ impl<V: VaultAccess> Service<V> {
         Self {
             vault,
             audit,
+            kind: ClientKind::Browser,
             seen: HashSet::new(),
             secret_times: VecDeque::new(),
             salt: None,
@@ -521,6 +562,14 @@ impl<V: VaultAccess> Service<V> {
     /// and the `agent` context.
     pub fn with_agent_hub(mut self, hub: Arc<AgentHub>) -> Self {
         self.agent = Some(hub.listener());
+        self
+    }
+
+    /// Serves a client the host admitted as `kind` (a browser unless
+    /// told). The host decides it from the connection, never from a
+    /// request.
+    pub fn with_client_kind(mut self, kind: ClientKind) -> Self {
+        self.kind = kind;
         self
     }
 
@@ -630,7 +679,8 @@ impl<V: VaultAccess> Service<V> {
     /// served in this session: `not_allowed` otherwise, whatever the
     /// extension knows of the tier.
     fn login_match(&self, item: &Item, page: &Origin, ctx: Ctx) -> OpResult<MatchQuality> {
-        if matches!(ctx, Ctx::Menu | Ctx::Popup | Ctx::Agent) {
+        // The helper's picker is the user's pick, as the popup.
+        if matches!(ctx, Ctx::Menu | Ctx::Popup | Ctx::Agent | Ctx::Desktop) {
             return item_match(item, page).ok_or(AppErrorCode::OriginMismatch);
         }
         self.followed_match(item, page)
@@ -748,6 +798,21 @@ impl<V: VaultAccess> Service<V> {
     }
 
     fn dispatch(&mut self, req: &Request, now: u64) -> OpResult<Response> {
+        // The client binds the context, before any other rule: the fill
+        // helper speaks `desktop` only (its status and unlock take none),
+        // and no other client ever speaks it.
+        match self.kind {
+            ClientKind::FillHelper
+                if req.ctx() != Some(Ctx::Desktop)
+                    && !matches!(req, Request::Status { .. } | Request::Unlock { .. }) =>
+            {
+                return Err(AppErrorCode::NotAllowed);
+            }
+            ClientKind::Browser if req.ctx() == Some(Ctx::Desktop) => {
+                return Err(AppErrorCode::NotAllowed);
+            }
+            _ => {}
+        }
         // The agent context opens fills and plans only, each for a named
         // agent request; `agent_request` means nothing elsewhere.
         match (req.ctx(), req.agent_request()) {
@@ -773,6 +838,26 @@ impl<V: VaultAccess> Service<V> {
             )
         {
             return Err(AppErrorCode::NotAllowed);
+        }
+        // The desktop context opens the two app requests, the list and the
+        // login fill of a page (a browser without the extension gives its
+        // URL, checked like the extension's) and the picker's search; the
+        // app requests take no other context.
+        let app_op = matches!(req, Request::ListForApp { .. } | Request::FillForApp { .. });
+        match req.ctx() {
+            Some(Ctx::Desktop)
+                if !app_op
+                    && !matches!(
+                        req,
+                        Request::ListForOrigin { .. }
+                            | Request::Search { .. }
+                            | Request::FillLogin { .. }
+                    ) =>
+            {
+                return Err(AppErrorCode::NotAllowed);
+            }
+            Some(c) if app_op && c != Ctx::Desktop => return Err(AppErrorCode::NotAllowed),
+            _ => {}
         }
         match req {
             Request::Status { .. } => {
@@ -858,6 +943,7 @@ impl<V: VaultAccess> Service<V> {
                 | Request::LinkProvider { .. }
                 | Request::PasskeyGet { .. }
                 | Request::PasskeyCreate { .. }
+                | Request::FillForApp { .. }
         ) {
             self.take_secret_slot(now)?;
         }
@@ -871,6 +957,28 @@ impl<V: VaultAccess> Service<V> {
             | Request::TakeSignIn { .. } => Err(AppErrorCode::Internal),
             Request::Vaults { origin: o, .. } => self.vaults(o.as_deref()),
             Request::ListForOrigin { origin: o, .. } => self.list_for_origin(o),
+            Request::ListForApp {
+                bundle_id,
+                window_title,
+                ..
+            } => self.list_for_app(bundle_id, window_title.as_deref()),
+            Request::FillForApp {
+                ctx,
+                item_id,
+                bundle_id,
+                fields,
+                remember,
+                app_name,
+                ..
+            } => self.fill_for_app(
+                *ctx,
+                item_id,
+                bundle_id,
+                fields,
+                *remember,
+                app_name.as_deref(),
+                now,
+            ),
             Request::Search { ctx, query, .. } => self.search(*ctx, query),
             Request::ListFillable {
                 origin: o, kind, ..
@@ -881,8 +989,17 @@ impl<V: VaultAccess> Service<V> {
                 item_id,
                 origin: o,
                 fields,
+                app_name,
                 ..
-            } => self.fill_login(*ctx, *agent_request, item_id, o, fields, now),
+            } => self.fill_login(
+                *ctx,
+                *agent_request,
+                item_id,
+                o,
+                fields,
+                app_name.as_deref(),
+                now,
+            ),
             Request::FillCard {
                 ctx,
                 agent_request,
@@ -1298,13 +1415,99 @@ impl<V: VaultAccess> Service<V> {
         Ok(Response::Items { items })
     }
 
+    /// `list_for_app`: the logins `app_candidates` picks, app entries
+    /// (`exact_host`) before title matches (no match). The bundle id is
+    /// checked before any read.
+    fn list_for_app(&mut self, bundle_id: &str, title: Option<&str>) -> OpResult<Response> {
+        if !valid_bundle_id(bundle_id)
+            || title.is_some_and(|t| t.chars().count() > MAX_WINDOW_TITLE)
+        {
+            return Err(AppErrorCode::Invalid);
+        }
+        let all = self.items()?;
+        let items: Vec<Item> = all.iter().map(|(_, i)| i.clone()).collect();
+        let picked: HashMap<Id, PlanQuality> = app_candidates(&items, bundle_id, title)
+            .into_iter()
+            .map(|c| (c.item_id, c.quality))
+            .collect();
+        drop(items);
+        let items = Self::summaries(&all, |i| {
+            picked
+                .get(&i.id)
+                .map(|q| (*q == PlanQuality::Exact).then_some(MatchQuality::ExactHost))
+        });
+        Ok(Response::Items { items })
+    }
+
+    /// `fill_for_app`: the `fields` of a login the user picked for the app,
+    /// whatever its URLs (the pick is the user's; only the fill helper
+    /// speaks the desktop context). Reprompt as `fill_login`. `remember`
+    /// adds an app entry for `bundle_id` first, written as other bridge
+    /// writes, unless `bundle_id` is a known browser; the fill goes to the
+    /// key usage log as a desktop fill.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_for_app(
+        &mut self,
+        ctx: Ctx,
+        item_id: &str,
+        bundle_id: &str,
+        fields: &[FillField],
+        remember: bool,
+        app_name: Option<&str>,
+        now: u64,
+    ) -> OpResult<Response> {
+        if !valid_bundle_id(bundle_id) {
+            return Err(AppErrorCode::Invalid);
+        }
+        // The name the helper read from the app: cut to the label cap, not
+        // refused, since a long one is no fault of the user's.
+        let name = match app_name {
+            Some(n) => field_label(&capped(n.trim(), MAX_FIELD_LABEL), bundle_id)?,
+            None => bundle_id.to_owned(),
+        };
+        let (_, mut item) = self.eligible_item(item_id)?;
+        if item.item_type != ItemType::Login {
+            return Err(AppErrorCode::NotFound);
+        }
+        self.reprompt(&item, None)?;
+        let entry = format!("{APP_SCHEME}://{bundle_id}");
+        let (id, vault_id) = (item.id, item.vault_id);
+        // A browser whose page gave no URL still fills, but is never
+        // remembered: its entry would match every page it shows.
+        let remember = remember && !is_known_browser(bundle_id);
+        if remember && add_app_entry(&mut item, bundle_id, &name) {
+            item.updated_at = unix(now);
+            validate(&item).map_err(|_| AppErrorCode::Invalid)?;
+            self.save(vault_id, item.clone())?;
+            self.record("add_app_entry", id, Some(&entry), ctx, now);
+        }
+        let out = login_secrets(&item, fields, now);
+        self.record("fill_for_app", id, Some(&entry), ctx, now);
+        let _ = self.vault.record_key_use(
+            vault_id,
+            id,
+            KeyUseChannel::DesktopFill,
+            KeyUseAction::Filled,
+            &name,
+            "",
+        );
+        Ok(out)
+    }
+
+    /// The popup's free search; in the desktop context (the fill helper's
+    /// picker), the same rows restricted to logins, the only items it
+    /// fills.
     fn search(&mut self, ctx: Ctx, query: &str) -> OpResult<Response> {
-        if ctx != Ctx::Popup {
+        if !matches!(ctx, Ctx::Popup | Ctx::Desktop) {
             return Err(AppErrorCode::NotAllowed);
         }
+        let logins_only = ctx == Ctx::Desktop;
         let q = query.trim().to_lowercase();
         let all = self.items()?;
         let items = Self::summaries(&all, |i| {
+            if logins_only && i.item_type != ItemType::Login {
+                return None;
+            }
             let hit = q.is_empty()
                 || i.title.to_lowercase().contains(&q)
                 || (i.item_type == ItemType::Login
@@ -1382,6 +1585,12 @@ impl<V: VaultAccess> Service<V> {
         })
     }
 
+    /// The page's login. In the desktop context (the fill helper, on the
+    /// page of a browser without the extension) the same checks as the
+    /// extension's pick (match, reprompt for the page), and the fill goes
+    /// to the key usage log as a desktop fill under `app_name` (the page's
+    /// host when left out).
+    #[allow(clippy::too_many_arguments)]
     fn fill_login(
         &mut self,
         ctx: Ctx,
@@ -1389,13 +1598,25 @@ impl<V: VaultAccess> Service<V> {
         item_id: &str,
         o: &str,
         fields: &[FillField],
+        app_name: Option<&str>,
         now: u64,
     ) -> OpResult<Response> {
         // The setup card fills the code it just saved, nothing more.
         if ctx == Ctx::Setup && fields != [FillField::Totp] {
             return Err(AppErrorCode::NotAllowed);
         }
+        if app_name.is_some() && ctx != Ctx::Desktop {
+            return Err(AppErrorCode::Invalid);
+        }
         let page = origin(o)?;
+        let desktop_name = match (ctx, app_name) {
+            (Ctx::Desktop, Some(n)) => Some(field_label(
+                &capped(n.trim(), MAX_FIELD_LABEL),
+                page.host(),
+            )?),
+            (Ctx::Desktop, None) => Some(page.host().to_owned()),
+            _ => None,
+        };
         let (_, item) = self.eligible_item(item_id)?;
         if item.item_type != ItemType::Login {
             return Err(AppErrorCode::NotFound);
@@ -1413,6 +1634,18 @@ impl<V: VaultAccess> Service<V> {
         let out = login_secrets(&item, &fields, now);
         self.note_pick(&item, &page, q, ctx);
         self.record("fill_login", item.id, Some(o), ctx, now);
+        // The extension reports its fills with `note_fill`; the helper has
+        // no such report, so its fill is logged here.
+        if let Some(name) = desktop_name {
+            let _ = self.vault.record_key_use(
+                item.vault_id,
+                item.id,
+                KeyUseChannel::DesktopFill,
+                KeyUseAction::Filled,
+                &name,
+                "",
+            );
+        }
         Ok(out)
     }
 
@@ -3103,6 +3336,11 @@ fn setup_ctx(ctx: Ctx) -> OpResult<()> {
         return Err(AppErrorCode::NotAllowed);
     }
     Ok(())
+}
+
+/// The first `max` characters of `s` (never cuts inside one).
+fn capped(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
 }
 
 /// A label the extension sends for a field it writes: `default` when

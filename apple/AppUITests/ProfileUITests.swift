@@ -21,7 +21,7 @@ final class ProfileUITests: XCTestCase {
     private func launch(_ extra: [String] = []) {
         app = XCUIApplication()
         app.launchArguments += [
-            "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO", "-OnePassDemoCrypto", "NO",
+            "-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoBiometrics", "NO", "-OnePassDemoCrypto", "NO",
         ] + extra
         app.launch()
         XCTAssertTrue(element("account.menu").waitForExistence(timeout: Self.seedTimeout), "demo vault not shown")

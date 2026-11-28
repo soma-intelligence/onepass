@@ -64,7 +64,7 @@ struct SplitBrowseView: View {
     private var sidebar: some View {
         Sidebar()
             #if os(macOS)
-            .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 320)
+            .navigationSplitViewColumnWidth(min: 280, ideal: 290, max: 360)
             #else
             .navigationSplitViewColumnWidth(min: 290, ideal: 300, max: 360)
             #endif

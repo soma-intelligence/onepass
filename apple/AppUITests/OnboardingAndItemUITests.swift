@@ -19,7 +19,7 @@ final class OnboardingAndItemUITests: XCTestCase {
     /// localized: the labels below are checked in French, its source language, whatever the
     /// language of the simulator.
     private static let isolated = [
-        "-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR",
+        "-OnePassTestIsolation", "YES", "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR", "-OnePassRX", "NO",
     ]
 
     override func setUp() async throws {
@@ -40,9 +40,8 @@ final class OnboardingAndItemUITests: XCTestCase {
         app.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES"]
         app.launch()
 
-        // Bienvenue, then "Cet appareil est-il à toi ?" (personal, the default).
+        // Bienvenue (personal is assumed: no device question).
         tap(app.buttons["onboarding.create"])
-        tap(app.buttons["onboarding.primary"])
 
         // Mot de passe maître: the button stays off, and says why, until every rule is met.
         let primary = app.buttons["onboarding.primary"]
@@ -105,7 +104,7 @@ final class OnboardingAndItemUITests: XCTestCase {
         if let sheet = SaveSheetWatch.firstSighting(in: app) {
             XCTFail("system \"Save Password?\" sheet after the Login was saved: \(sheet)")
         }
-        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        let search = app.searchFields.firstMatch // Home's header search, the only one since the search tab left
         tap(search)
         XCTAssertTrue(row(app).waitForExistence(timeout: Self.uiTimeout), "row missing after save")
 
@@ -178,7 +177,7 @@ final class OnboardingAndItemUITests: XCTestCase {
         app.launchArguments += Self.isolated + ["-OnePassUITestReset", "YES", "-OnePassDebugItem", "none"]
         app.launch()
 
-        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        let search = app.searchFields.firstMatch // Home's header search, the only one since the search tab left
         XCTAssertTrue(search.waitForExistence(timeout: Self.kdfTimeout), "debug account not unlocked")
         let seeded = app.descendants(matching: .any)["list.row.Forge Atlas"].firstMatch
         tap(search)
@@ -269,7 +268,7 @@ final class OnboardingAndItemUITests: XCTestCase {
     /// screen (`-OnePassDemoList crypto`) shows the demo wallets' balance from recorded answers.
     func testDemoDataOpensTheVaultWithCryptoBalances() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassDemoList", "crypto", "-OnePassDemoBiometrics", "NO"]
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoList", "crypto", "-OnePassDemoBiometrics", "NO"]
         app.launch()
 
         let welcome = app.buttons["onboarding.create"]
@@ -295,7 +294,7 @@ final class OnboardingAndItemUITests: XCTestCase {
         let app = XCUIApplication()
         // Demo data (fictional); `-OnePassDemoVaultPassage` locks the demo vault once, then
         // unlocks it through the session (Face ID simulated), so the vault door plays for real.
-        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassFoldLayout", "YES", "-OnePassDemoVaultPassage", "YES"]
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassFoldLayout", "YES", "-OnePassDemoVaultPassage", "YES"]
         app.launch()
         try XCTSkipUnless(app.windows.firstMatch.frame.width >= 600, "needs a wide simulator")
         let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'list.row.'"))
@@ -351,7 +350,7 @@ final class OnboardingAndItemUITests: XCTestCase {
 
     /// Rechercher, then "atlas" typed unless the row already shows (a query kept from before).
     private func searchAtlas(_ app: XCUIApplication) {
-        let search = tabButton(app, id: "tab.search", label: "Rechercher")
+        let search = app.searchFields.firstMatch // Home's header search, the only one since the search tab left
         tap(search)
         if row(app).waitForExistence(timeout: 2) { return }
         let field = app.searchFields.firstMatch

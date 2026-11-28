@@ -58,7 +58,11 @@ export type BgErrorCode =
   /** No form of the needed kind in the active tab (popup fill). */
   | "no_form"
   /** The page's `pattern` refused every generated password (spec 6.3). */
-  | "site_refused";
+  | "site_refused"
+  /** Protocol mismatch, the app is newer: update the extension. */
+  | "version_update_extension"
+  /** Protocol mismatch, the app is older: update the app. */
+  | "version_update_app";
 
 const APP_CODE_SET: ReadonlySet<string> = new Set(APP_CODES);
 
@@ -92,9 +96,12 @@ export function toBgError(e: unknown): BgError {
         return new BgError("expired");
       case "refused":
         return new BgError("refused");
+      case "version":
+        if (e.peer === "newer") return new BgError("version_update_extension");
+        if (e.peer === "older") return new BgError("version_update_app");
+        return new BgError("version");
       case "bad_mac":
       case "bad_frame":
-      case "version":
         return new BgError(e.code);
       default:
         return new BgError("internal");

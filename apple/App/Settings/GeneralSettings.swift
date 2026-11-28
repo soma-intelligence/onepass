@@ -192,7 +192,8 @@ private struct AppearanceSection: View {
 }
 
 /// Nouveau design: the RX look (photo heroes, grouped cards, glass buttons) on Réglages, Watchtower,
-/// the item detail and Accueil. A preview, off by default, stored on this device only.
+/// the item detail and Accueil. The default look; turning it off brings the classic look back, on
+/// this device only.
 private struct RXDesignSection: View {
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var isOn = RXDesign.launchDefault
 

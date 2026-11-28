@@ -12,6 +12,7 @@ use onepass_core::model::{
     Address, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasskeyCredential,
     Provider, new_item,
 };
+use onepass_core::model::{KeyUseAction, KeyUseChannel};
 use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
 
@@ -84,6 +85,8 @@ pub struct FakeVault {
     pub fail_status: Option<AppErrorCode>,
     /// Open and sign in: pending sign-ins, when a test sets a directory.
     pub pending: Option<PendingStore>,
+    /// Key usage log writes: item, channel, action, client, field.
+    pub key_uses: Vec<(Id, KeyUseChannel, KeyUseAction, String, String)>,
 }
 
 /// Account key and label of the fixture's second account (`two_accounts`).
@@ -322,6 +325,7 @@ impl FakeVault {
         };
         let vault = FakeVault {
             pending: None,
+            key_uses: Vec::new(),
             locked: false,
             approve_reprompt: false,
             history: Vec::new(),
@@ -577,6 +581,25 @@ impl VaultAccess for FakeVault {
             .find(|i| i.id == item_id)
             .ok_or(BridgeError::App(AppErrorCode::NotFound))?;
         Ok(item.note_usage_with(u, now, force || forced))
+    }
+
+    fn record_key_use(
+        &mut self,
+        _vault_id: Id,
+        item_id: Id,
+        channel: KeyUseChannel,
+        action: KeyUseAction,
+        client: &str,
+        field: &str,
+    ) -> Result<()> {
+        self.key_uses.push((
+            item_id,
+            channel,
+            action,
+            client.to_owned(),
+            field.to_owned(),
+        ));
+        Ok(())
     }
 
     fn forget_site_usage(&mut self, site: &str) -> Result<usize> {

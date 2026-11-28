@@ -83,7 +83,7 @@ final class RXBridgeUITests: DBUITestCase {
     }
 
     func testSettings() throws {
-        launch(["-OnePassDemoSettings", "YES"], ready: "rx.settings.plan")
+        launch(["-OnePassDemoSettings", "YES"], ready: "settings.general")
         assertNoDuplicateActions()
         saveScreenshot(named: captureName("settings"))
         assertLastRowReachable()

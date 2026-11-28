@@ -132,6 +132,16 @@ mod tests {
     }
 
     #[test]
+    fn icon_never_for_an_app_entry() {
+        let mut it = new_item(ItemType::Login, Id::new(), "Slack");
+        it.urls = vec![url("macapp://com.tinyspeck.slackmacgap", true)];
+        let h = hint(&it);
+        assert_eq!(h.host, None);
+        assert!(h.candidates.is_empty());
+        assert_eq!(h.letter, 'S');
+    }
+
+    #[test]
     fn icon_never_http() {
         let mut it = new_item(ItemType::Login, Id::new(), "x");
         it.urls = vec![url("http://example.com", true)];

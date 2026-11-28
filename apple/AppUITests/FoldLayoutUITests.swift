@@ -16,7 +16,7 @@ final class FoldLayoutUITests: XCTestCase {
         guard UIDevice.current.userInterfaceIdiom == .phone else {
             throw XCTSkip("The unfolded layout is iPhone only.")
         }
-        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO"]
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoBiometrics", "NO"]
         app.launch()
 
         let fold = app.descendants(matching: .any)["fold.split"].firstMatch

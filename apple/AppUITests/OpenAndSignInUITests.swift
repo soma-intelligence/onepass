@@ -57,6 +57,7 @@ final class OpenAndSignInUITests: XCTestCase {
 
     /// The app unlocked (Face ID by itself, else the master password), the Login opened from search.
     private func openItem() {
+        onePass.launchArguments += ["-OnePassRX", "NO"]
         onePass.launch()
         let home = onePass.buttons["items.new"]
         let field = onePass.secureTextFields["lock.password"]
@@ -67,9 +68,9 @@ final class OpenAndSignInUITests: XCTestCase {
             field.typeText(Self.masterPassword + "\n")
         }
         XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
-        let byID = onePass.buttons["tab.search"]
-        let search = byID.exists ? byID : onePass.buttons["Rechercher"]
-        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search tab")
+        // Home's header search field, the only search since the search tab left.
+        let search = onePass.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search field")
         search.tap()
         let query = onePass.searchFields.firstMatch
         if !query.waitForExistence(timeout: 3) { search.tap() }

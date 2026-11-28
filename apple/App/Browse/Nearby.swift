@@ -60,6 +60,9 @@ final class LocationAccess: NSObject, CLLocationManagerDelegate {
         return manager
     }
 
+    /// The permission as CoreLocation sees it (logs only).
+    var authorizationStatus: CLAuthorizationStatus { makeManager().authorizationStatus }
+
     /// The last fix CoreLocation holds, only when the user already allowed it: never prompts (the
     /// detail shows "à 350 m" with it when known).
     var knownLocation: CLLocation? {
@@ -199,10 +202,15 @@ final class NearbyLoader {
             items = try await session.nearbyItems(from: point, within: radius)
             phase = .ready
             let fix = located - start, index = clock.now - located
-            Self.log.info("nearby: fix \(fix, privacy: .public), index \(index, privacy: .public), \(self.items.count) items")
+            // The fix's accuracy and age say nothing of the place; they tell a Mac's coarse fix apart.
+            let accuracy = Int(location.horizontalAccuracy), age = Int(-location.timestamp.timeIntervalSinceNow)
+            Self.log.info("nearby: fix \(fix, privacy: .public) (±\(accuracy, privacy: .public) m, \(age, privacy: .public) s old), index \(index, privacy: .public), \(self.items.count) items")
         } catch let failure as LocationAccess.Failure {
             items = []
             phase = .failed(failure)
+            // Which failure and the permission seen, never a place: tells a refusal from no fix.
+            let status = LocationAccess.shared.authorizationStatus.rawValue
+            Self.log.info("nearby: failed \(String(describing: failure), privacy: .public) after \(clock.now - start, privacy: .public), authorization \(status, privacy: .public)")
         } catch {
             // Locked during the read: the list goes away with the session.
             items = []
@@ -222,16 +230,32 @@ struct NearbyTile: View {
 }
 
 /// What "À proximité" shows instead of rows: looking for the position, refused permission (with a
-/// button to the settings), no fix, or nothing around.
+/// button to the settings), no fix, or nothing around. Every state sits on the same drawn map, its
+/// text and button in the same place, so the column never jumps from one state to the next.
 struct NearbyStatusView: View {
     let phase: NearbyLoader.Phase
     let retry: () -> Void
 
+    private typealias RX = Theme.RX
+
     var body: some View {
+        content
+            .padding(.horizontal, RX.Space.gutter)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background { NearbyMapBackdrop() }
+    }
+
+    @ViewBuilder private var content: some View {
         switch phase {
         case .idle, .locating:
-            ProgressView("browse.findingLocation")
-                .accessibilityIdentifier("list.nearby.locating")
+            VStack(spacing: RX.Space.m) {
+                ProgressView()
+                Text("browse.findingLocation")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("list.nearby.locating")
         case .failed(.denied):
             ContentUnavailableView {
                 Label("app.locationNotAllowed", systemImage: "location.slash")
@@ -249,45 +273,54 @@ struct NearbyStatusView: View {
             } description: {
                 Text("browse.cantTellWhereRight")
             } actions: {
+                // The same place and shape as "Ouvrir les Réglages": one action per state.
                 Button("Réessayer", action: retry)
+                    .buttonStyle(.glassProminent)
                     .accessibilityIdentifier("list.nearby.retry")
             }
+            .accessibilityIdentifier("list.nearby.unavailable")
         case .ready:
             EmptyState(
                 title: String(localized: "browse.nothingNearby"), systemImage: "mappin.slash",
                 message: String(localized: "browse.addPlaceToItem"))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background { NearbyMapBackdrop() }
             .accessibilityIdentifier("list.nearby.empty")
         }
     }
 }
 
-/// Behind "Rien à proximité": a drawn city plan (streets, a river, a park) in fine lines, tinted
-/// with the secondary text color and fading out towards the edges. A fixed image bundled with the
-/// app, the same for everyone: it shows no real place and needs no position. Decoration only,
-/// hidden from VoiceOver.
+/// Behind the "À proximité" states: a drawn city plan (streets, a river, a park) in fine lines, tinted
+/// with the secondary text color and fading out towards the edges of the space it is given (a narrow
+/// Mac list column as well as a full iPhone screen: never a hard cut at a column edge). A fixed image
+/// bundled with the app, the same for everyone: it shows no real place and needs no position.
+/// Decoration only, hidden from VoiceOver.
 struct NearbyMapBackdrop: View {
+    /// A fixed scale, whatever the window: streets keep the size of a city plan.
+    private static let side: CGFloat = 520
+
     var body: some View {
-        Image("nearby-map")
-            .resizable()
-            .interpolation(.high)
-            // A fixed scale, whatever the window: streets keep the size of a city plan.
-            .frame(width: 520, height: 520)
-            .foregroundStyle(.secondary)
-            .opacity(0.45)
-            .mask {
-                EllipticalGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black.opacity(0.6), location: 0.5),
-                        .init(color: .clear, location: 1),
-                    ],
-                    center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        GeometryReader { proxy in
+            // The fade spans the smaller of the plan and the space, so it ends inside both.
+            let width = min(proxy.size.width, Self.side), height = min(proxy.size.height, Self.side)
+            Image("nearby-map")
+                .resizable()
+                .interpolation(.high)
+                .frame(width: Self.side, height: Self.side)
+                .foregroundStyle(.secondary)
+                .opacity(0.45)
+                .frame(width: width, height: height)
+                .clipped()
+                .mask {
+                    EllipticalGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black.opacity(0.6), location: 0.5),
+                            .init(color: .clear, location: 1),
+                        ],
+                        center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
+                }
+                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

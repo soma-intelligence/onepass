@@ -51,6 +51,21 @@ describe("wire envelopes", () => {
     expect(code(() => parseEnvelope({ ...pv.pair_ok, v: "1" }))).toBe("version");
   });
 
+  it("a numeric version says which side is behind; anything else says nothing", () => {
+    const peer = (v: unknown) => {
+      try {
+        parseEnvelope({ ...pv.pair_ok, v });
+      } catch (e) {
+        return e instanceof BridgeError ? e.peer : "other";
+      }
+      return "none";
+    };
+    expect(peer(2)).toBe("newer");
+    expect(peer(0)).toBe("older");
+    expect(peer("1")).toBeUndefined();
+    expect(peer(undefined)).toBeUndefined();
+  });
+
   it("malformed envelopes are bad_frame", () => {
     const offer = pv.pair_offer;
     const cases: unknown[] = [

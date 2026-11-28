@@ -49,6 +49,7 @@ struct SecuritySettings: View {
                 Group {
                     unlockSection
                     autofillReuseSection
+                    secretKeyInICloudSection
                     if guardVisible {
                         KitProtectionSection()
                     }
@@ -148,8 +149,11 @@ struct SecuritySettings: View {
                 .accessibilityIdentifier("settings.watch")
                 #endif
             }
-            LabeledContent("Mot de passe maître") {
+            // Every row of the card carries a symbol, so the titles share one leading edge.
+            LabeledContent {
                 Text("settings.security.passwordReminder")
+            } label: {
+                Label("Mot de passe maître", systemImage: "calendar.badge.clock")
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.passwordReminder")
@@ -169,16 +173,39 @@ struct SecuritySettings: View {
     @ViewBuilder private var autofillReuseSection: some View {
         if settings.deviceMode.biometricsAllowed, hardwareAvailable {
             Section {
-                Toggle("settings.security.autofillReuse", isOn: Binding(
+                Toggle(isOn: Binding(
                     get: { settings.autofillUnlockReuse },
                     set: { on in model.updateSettings { $0.autofillUnlockReuse = on } }
-                ))
+                )) {
+                    Label("settings.security.autofillReuse", systemImage: "timer")
+                }
                 .accessibilityIdentifier("settings.autofillReuse")
             } header: {
                 // The long rule (90 seconds, same site, passkeys excluded) behind the info button.
                 SettingsHeader(
                     "Remplissage automatique", info: Text("settings.security.autofillReuse.footer \(biometry)"),
                     id: "settings.autofillReuse.info")
+            }
+        }
+    }
+
+    /// The copy of the Secret Key in iCloud Keychain (spec 2026-11-25), personal devices only. Off
+    /// deletes it from every device of the Apple ID.
+    @ViewBuilder private var secretKeyInICloudSection: some View {
+        if settings.deviceMode == .personal, session.environment.syncedSecretKeys != nil {
+            Section {
+                Toggle(isOn: Binding(
+                    get: { settings.secretKeyInICloud },
+                    set: { on in
+                        session.setSecretKeyInICloud(on)
+                        model.settingsChanged()
+                    }
+                )) {
+                    Label("settings.security.secretKeyInICloud", systemImage: "key.icloud")
+                }
+                .accessibilityIdentifier("settings.secretKeyInICloud")
+            } footer: {
+                SettingsFootnote("settings.security.secretKeyInICloud.footer")
             }
         }
     }
@@ -246,7 +273,7 @@ struct SecuritySettings: View {
         Section {
             // The label beside the menu, so the RX cards of the Mac put the menu on the trailing
             // edge (the grouped form draws it the same).
-            LabeledContent("settings.device") {
+            LabeledContent {
                 Picker("settings.device", selection: Binding(
                     get: { settings.deviceMode },
                     set: { mode in
@@ -259,14 +286,18 @@ struct SecuritySettings: View {
                 .labelsHidden()
                 .fixedSize()
                 .accessibilityIdentifier("settings.deviceMode")
+            } label: {
+                Label("settings.device", systemImage: settings.deviceMode == .shared ? "person.2" : "iphone")
             }
             .id(Self.deviceModeAnchor)
             if settings.deviceMode == .shared {
                 NavigationLink {
                     VisibleVaultsView()
                 } label: {
-                    LabeledContent("Coffres visibles") {
+                    LabeledContent {
                         Text(visibleSummary)
+                    } label: {
+                        Label("Coffres visibles", systemImage: "eye")
                     }
                 }
                 .accessibilityIdentifier("settings.visibleVaults")
@@ -274,7 +305,12 @@ struct SecuritySettings: View {
             Button("settings.lockNow", systemImage: "lock") {
                 // The discard confirmation of an edited draft belongs to the main screen.
                 model.showSettings = false
+                #if os(macOS)
+                // The Réglages window: the main window comes forward with the confirmation.
+                model.lockFromMenuBar()
+                #else
                 model.perform(.lock)
+                #endif
             }
             .accessibilityIdentifier("settings.lockNow")
         } footer: {

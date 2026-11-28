@@ -35,7 +35,10 @@ jobs:
   core:
     name: core (Android API 29 emulator)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # The build takes about 25 minutes and the emulator run over 65 (the
+    # rotation_v2 and share_vaults suites alone take about 15 each): 90 cut
+    # the run short on every branch.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # Hardware acceleration for the x86_64 emulator.

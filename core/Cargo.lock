@@ -2326,6 +2326,7 @@ dependencies = [
  "postcard",
  "psl",
  "rustls",
+ "serde",
  "serde_json",
  "tempfile",
  "time",

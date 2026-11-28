@@ -14,6 +14,9 @@ struct EditorHeader: View {
     /// "Choisir une icône…": the icon library sheet.
     @State private var choosingIcon = false
     @Environment(\.editorAdvance) private var advance
+    /// The title's design size, scaled with Dynamic Type.
+    @ScaledMetric(relativeTo: .title) private var titleSize: CGFloat = 26
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     #if os(iOS)
     private static let titleHairline = Color.primary.opacity(0.06)
@@ -30,8 +33,12 @@ struct EditorHeader: View {
     }
 
     var body: some View {
+        // Accessibility text sizes: the icon above the title, which keeps the full width.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Space.m))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: Theme.Space.l))
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            HStack(alignment: .center, spacing: Theme.Space.l) {
+            layout {
                 IconMenu(
                     item: $editor.draft.item, hasCustomIcon: editor.hasCustomIcon,
                     onChoose: { choosingIcon = true }, onReset: { editor.resetIcon() }
@@ -101,7 +108,7 @@ struct EditorHeader: View {
         let focused = titleFocused.wrappedValue
         return TextField("app.title", text: $editor.draft.item.title, prompt: Text(ItemCategory.of(item.itemType).singular))
             .textFieldStyle(.plain)
-            .font(.system(size: 26, weight: .bold))
+            .font(.system(size: titleSize, weight: .bold))
             .focused(titleFocused)
             // Return goes on to the first field (iOS keyboard chain).
             .submitLabel(advance != nil ? .next : .done)

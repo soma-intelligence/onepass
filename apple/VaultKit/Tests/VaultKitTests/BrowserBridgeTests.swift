@@ -559,6 +559,69 @@ struct BrowserBridgeTests {
         #expect(keyring.prompts.last == usual)
     }
 
+    /// An unlocked session on a device whose biometry is `available` or absent.
+    func unlocked(_ h: SessionHarness, biometry available: Bool, mode: DeviceMode = .personal) async throws -> VaultSession {
+        var environment = h.environment
+        environment.biometrics = BiometricUnlock(
+            keyring: FakeEnclaveKeyring(available: available), keychain: h.keychain, clock: h.clock)
+        let session = VaultSession(environment: environment)
+        _ = try await session.createAccount(password: testPassword, displayName: "", mode: mode)
+        return session
+    }
+
+    /// A Mac with no Touch ID approves a code pairing with the Mac password (the device owner check);
+    /// reprompted items still need biometric unlock enrolled.
+    @Test func aMacWithoutTouchIDApprovesWithItsPassword() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = try await unlocked(h, biometry: false)
+        let bridge = bridge(h, session)
+        #expect(bridge.canApprove)
+        #expect(bridge.approvesWithMacPassword)
+        #expect(await session.confirmOwnerPresence(prompt: "pair"))
+        #expect(try presence(session).prompts == 1)
+        #expect(try presence(session).biometricPrompts == 0)
+        // Cancelled: refused.
+        try presence(session).answer(false)
+        #expect(await session.confirmOwnerPresence(prompt: "pair") == false)
+        // Not a way around the reprompt rule.
+        #expect(await session.confirmUserPresence(prompt: "item") == false)
+        #expect(try presence(session).prompts == 2)
+        // Locked: nothing is asked.
+        session.lock()
+        #expect(bridge.canApprove == false)
+        #expect(await session.confirmOwnerPresence(prompt: "pair") == false)
+        #expect(try presence(session).prompts == 2)
+    }
+
+    /// A Mac that has Touch ID keeps asking for it to be on in OnePass: no password fallback there.
+    @Test func aMacWithTouchIDOffStillRefuses() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = try await unlocked(h, biometry: true)
+        let bridge = bridge(h, session)
+        #expect(bridge.canApprove == false)
+        #expect(bridge.approvesWithMacPassword == false)
+        #expect(await session.confirmOwnerPresence(prompt: "pair") == false)
+        #expect(try presence(session).prompts == 0)
+        // Enrolled: Touch ID as before, not the password wording.
+        try await session.enrollBiometrics(password: testPassword)
+        #expect(bridge.canApprove)
+        #expect(bridge.approvesWithMacPassword == false)
+        #expect(await session.confirmOwnerPresence(prompt: "pair"))
+        #expect(try presence(session).prompts == 1)
+    }
+
+    /// A shared Mac never takes the Mac password in place of the vault's own checks.
+    @Test func aSharedMacWithoutTouchIDGetsNoFallback() async throws {
+        let h = try SessionHarness()
+        defer { h.cleanUp() }
+        let session = try await unlocked(h, biometry: false, mode: .shared)
+        #expect(session.ownerCheckWithoutBiometry == false)
+        #expect(bridge(h, session).canApprove == false)
+        #expect(await session.confirmOwnerPresence(prompt: "pair") == false)
+    }
+
     /// An account with biometrics enrolled, locked.
     func lockedWithBiometrics(_ h: SessionHarness) async throws -> VaultSession {
         let session = h.makeSession()

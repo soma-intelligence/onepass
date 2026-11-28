@@ -32,6 +32,7 @@ final class SafariAutofillUITests: XCTestCase {
 
     override func setUp() async throws {
         continueAfterFailure = false
+        onePass.launchArguments += ["-OnePassRX", "NO"]
     }
 
     // MARK: - Preparation
@@ -54,7 +55,6 @@ final class SafariAutofillUITests: XCTestCase {
 
     private func createAccount() {
         tap(onePass.buttons["onboarding.create"], in: onePass)
-        tap(onePass.buttons["onboarding.primary"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.password"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.confirm"], in: onePass)
         tap(onePass.buttons["onboarding.primary"], in: onePass)
@@ -68,16 +68,14 @@ final class SafariAutofillUITests: XCTestCase {
             taps += 1
         } while !waitEnabled(next, 3) && taps < 4
         tap(next, in: onePass)
-        // Face ID offered during onboarding: turned on (the simulator is enrolled by the runner).
-        // The biometrics step: "Activer Face ID" is the primary button (the runner posts the match).
-        let offerCard = onePass.descendants(matching: .any)["onboarding.biometricsOffer"].firstMatch
-        if offerCard.waitForExistence(timeout: 5) {
-            tap(onePass.buttons["onboarding.primary"], in: onePass)
-            let on = onePass.descendants(matching: .any)["onboarding.biometricsOn"].firstMatch
+        // Face ID offered on the last step: turned on (the simulator is enrolled by the runner,
+        // which posts the match).
+        let turnOn = onePass.buttons["onboarding.enableBiometrics"]
+        if turnOn.waitForExistence(timeout: 5) {
+            tap(turnOn, in: onePass)
+            let on = onePass.descendants(matching: .any)["onboarding.enableBiometrics.on"].firstMatch
             print("Face ID turned on in onboarding: \(on.waitForExistence(timeout: 20))")
         }
-        let later = onePass.buttons["onboarding.skip"]
-        if later.waitForExistence(timeout: 3) { tap(later, in: onePass) }
         let open = onePass.buttons["onboarding.primary"]
         if open.waitForExistence(timeout: Self.uiTimeout) { tap(open, in: onePass) }
     }
@@ -117,8 +115,9 @@ final class SafariAutofillUITests: XCTestCase {
             tap(more, in: onePass)
             let search = onePass.textFields["editor.addField.search"]
             if search.waitForExistence(timeout: 5) {
-                search.typeText("totp")
-                let row = onePass.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'TOTP'")).firstMatch
+                search.typeText("code")
+                let row = onePass.buttons.matching(NSPredicate(
+                    format: "label CONTAINS[c] 'vérification' OR label CONTAINS[c] 'verification'")).firstMatch
                 if row.waitForExistence(timeout: 3) { row.tap() } else { print("Add field popover:\n\(onePass.debugDescription)") }
             }
             let totp = onePass.descendants(matching: .any)["editor.field.totp"].firstMatch
@@ -868,9 +867,9 @@ final class SafariAutofillUITests: XCTestCase {
             field.typeText(Self.masterPassword + "\n")
         }
         XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
-        let byID = onePass.buttons["tab.search"]
-        let search = byID.exists ? byID : onePass.buttons["Rechercher"]
-        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search tab")
+        // Home's header search field, the only search since the search tab left.
+        let search = onePass.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search field")
         search.tap()
         let query = onePass.searchFields.firstMatch
         if !query.waitForExistence(timeout: 3) { search.tap() }

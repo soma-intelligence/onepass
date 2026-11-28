@@ -1399,11 +1399,9 @@ fn create_account_v2_bytes_starts_on_v2() {
         created.session.lineage_status().unwrap().state,
         FfiLineageState::Current
     );
+    let session = &created.session;
     assert_eq!(
-        created
-            .session
-            .migrate_to_v2(keys.c(), keys.half())
-            .unwrap(),
+        session.migrate_to_v2(keys.c(), keys.half()).unwrap(),
         FfiMigration::Already
     );
 }

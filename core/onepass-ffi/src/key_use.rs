@@ -18,6 +18,7 @@ pub enum FfiKeyUseChannel {
     Cli,
     Mcp,
     SshAgent,
+    DesktopFill,
 }
 
 /// What was done with the secret.
@@ -58,6 +59,7 @@ impl From<KeyUseChannel> for FfiKeyUseChannel {
             KeyUseChannel::Cli => Self::Cli,
             KeyUseChannel::Mcp => Self::Mcp,
             KeyUseChannel::SshAgent => Self::SshAgent,
+            KeyUseChannel::DesktopFill => Self::DesktopFill,
         }
     }
 }

@@ -28,7 +28,7 @@ final class RunThroughUITests: XCTestCase {
     /// Debug: the app's own test store, defaults suite and keychain service
     /// (`me.somalabs.onepass.uitest`), never the real ones. The store is in the App Group container
     /// and the extension follows the isolated launch (`UITestIsolation`).
-    private static let isolated = ["-OnePassTestIsolation", "YES"]
+    private static let isolated = ["-OnePassTestIsolation", "YES", "-OnePassRX", "NO"]
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -226,7 +226,6 @@ final class RunThroughUITests: XCTestCase {
     /// Same steps as `OnboardingAndItemUITests`.
     private func createAccount() {
         tap(onePass.buttons["onboarding.create"], in: onePass)
-        tap(onePass.buttons["onboarding.primary"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.password"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.confirm"], in: onePass)
         tap(onePass.buttons["onboarding.primary"], in: onePass)

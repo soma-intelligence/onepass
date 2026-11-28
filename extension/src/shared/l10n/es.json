@@ -338,12 +338,12 @@
   "popup.pillNeverSites": "Nunca en estos sitios",
   "popup.removeSite": "Quitar {site}",
   "setup.previousCode": "Código anterior",
-  "popup.scanQr": "Escanear código QR de 2FA",
-  "setup.title": "¿Añadir el código 2FA a {item}?",
+  "popup.scanQr": "Escanear código QR de verificación",
+  "setup.title": "¿Añadir el código de verificación a {item}?",
   "setup.from": "{issuer}, {account}",
   "setup.mismatch": "El código es para {account}. Este inicio de sesión es {username}.",
   "setup.add": "Añadir",
-  "setup.replaceTitle": "{item} ya tiene un código 2FA. ¿Reemplazarlo?",
+  "setup.replaceTitle": "{item} ya tiene un código de verificación. ¿Reemplazarlo?",
   "setup.replaceNote": "El código anterior se queda en el inicio de sesión.",
   "setup.replace": "Reemplazar",
   "setup.cancel": "Cancelar",
@@ -357,5 +357,9 @@
     "other": "¿Guardar {count} códigos de recuperación en {item}?"
   },
   "setup.codesSave": "Guardar",
-  "setup.recoveryLabel": "Códigos de recuperación"
+  "setup.recoveryLabel": "Códigos de recuperación",
+  "ui.checkOnepassOpenUnlocked": "Comprueba que la app Cleon está abierta y desbloqueada y vuelve a intentarlo.",
+  "ui.updateExtensionThenRetry": "La app Cleon es más reciente: actualiza la extensión desde la tienda de tu navegador y vuelve a intentarlo.",
+  "ui.updateOnepassThenRetry": "La extensión es más reciente: actualiza la app Cleon y vuelve a intentarlo.",
+  "ui.updateBothThenRetry": "Actualiza la app Cleon y la extensión y vuelve a intentarlo."
 }

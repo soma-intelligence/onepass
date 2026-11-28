@@ -1,6 +1,7 @@
 //! Smart one-click fill plan: value-free page context, intent rules, ranking
 //! and one composed plan for the page.
 
+pub mod app_entry;
 pub mod compose;
 pub mod context;
 pub mod intent;

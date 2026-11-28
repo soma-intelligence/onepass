@@ -3,11 +3,20 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
+/// The Plus offer of Réglages: the plan card on the iPhone and everything it opens (the plan page,
+/// the "Get more from Plus" perk carousel). OnePass sells no plan today, so the card stays hidden;
+/// turn this on once a paid subscription exists and the card, its page and its carousel come back
+/// as they were, on iPhone and Mac.
+enum RXPlus {
+    static let offered = false
+}
+
 #if os(iOS)
 
 /// Réglages in the RX look, frosted (spec 2026-11-17-settings-frosted-design): the wallpaper blurred
 /// behind the page, the account big in the middle (the line under it opens the profile QR), the
-/// Plus plan card, then every page of Réglages in frosted cards. Each row pushes the same page as
+/// Plus plan card while a plan is offered (`RXPlus.offered`), then every page of Réglages in
+/// frosted cards, grouped and ordered as the Mac's column (`RXMacSettingsColumn`). Each row pushes the same page as
 /// the classic list (`SettingsPage`), so nothing is lost. Every pushed page zooms out of its row.
 ///
 /// Every row and card pushes by value (`SettingsRoute`) through the path of the stack in
@@ -28,17 +37,20 @@ struct RXSettingsHome: View {
         } header: {
             header
         } content: {
-            // The plan card opens its page and scrolls with the rest.
-            NavigationLink(value: SettingsRoute.plan) {
-                PlanCard(
-                    // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
-                    title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
-                    perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"],
-                    frosted: true)
+            // The plan card opens its page and scrolls with the rest. Hidden while no paid plan
+            // exists (`RXPlus.offered`): a card that sells nothing would promise what is not there.
+            if RXPlus.offered {
+                NavigationLink(value: SettingsRoute.plan) {
+                    PlanCard(
+                        // swiftlint:disable:next db_unlocalized_string - plan name, the same in every language
+                        title: Text(verbatim: "Plus"), subtitle: Text("rx.plan.cardSubtitle"), art: Image("rx-plan-lux"),
+                        perks: ["key.fill", "person.3.fill", "airplane", "chevron.right"],
+                        frosted: true)
+                }
+                .rxPress(haptic: .selection)
+                .zoomSource(Self.planZoomID)
+                .accessibilityIdentifier("rx.settings.plan")
             }
-            .rxPress(haptic: .selection)
-            .zoomSource(Self.planZoomID)
-            .accessibilityIdentifier("rx.settings.plan")
             RXFrostedCard {
                 menu(.general)
                 pushRow(Text("rx.settings.homeCards"), systemImage: "house.fill", id: "rx.settings.homeCards",
@@ -103,6 +115,14 @@ struct RXSettingsHome: View {
         }
         .accessibilityIdentifier("rx.settings")
         .sheet(isPresented: $showsFeatureRequest) { FeatureRequestSheet() }
+        #if DEBUG
+        // Captures: `-OnePassDemoFeatureRequest YES` opens Suggérer une fonctionnalité.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "OnePassDemoFeatureRequest") else { return }
+            try? await Task.sleep(for: .milliseconds(600))
+            showsFeatureRequest = true
+        }
+        #endif
     }
 
     static let planZoomID = "rx.plan"

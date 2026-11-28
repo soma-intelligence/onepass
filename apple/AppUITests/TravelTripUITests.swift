@@ -21,7 +21,7 @@ final class TravelTripUITests: XCTestCase {
     private func launch(seedTrip: String? = nil) {
         app = XCUIApplication()
         app.launchArguments += [
-            "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO", "-OnePassDemoCrypto", "NO",
+            "-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoBiometrics", "NO", "-OnePassDemoCrypto", "NO",
             "-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR",
         ]
         if let seedTrip { app.launchArguments += ["-travel-seed-trip", seedTrip] }

@@ -26,7 +26,7 @@ use std::str::FromStr;
 use onepass_bridge::framing::write_frame;
 use onepass_bridge::host::{Conn, Frame, Limits, spawn_reader};
 use onepass_bridge::pending::PendingStore;
-use onepass_bridge::service::VaultAccess;
+use onepass_bridge::service::{ClientKind, VaultAccess};
 
 use crate::config::{Approval, Config, HostError, Reprompt, Source, Unlock, extension_id};
 use crate::host::{APPROVED_FILE, DevApprover};
@@ -218,6 +218,8 @@ fn run_host(cfg: &Config, positional: &[String]) -> Result<(), HostError> {
         // The development host proves nothing about its caller: never a
         // pairing without the configured approval.
         vouched: None,
+        // A browser extension: never the desktop context.
+        kind: ClientKind::Browser,
         extension_id: extension_id.unwrap_or_default(),
         journal: &log,
         clock: &clock,

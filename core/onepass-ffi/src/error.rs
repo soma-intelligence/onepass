@@ -86,6 +86,9 @@ pub enum OnePassError {
     /// Organization: the organization does not match the fingerprint this
     /// device pinned.
     OrgPinMismatch,
+    /// The Mac fill helper: the app is not running, its bridge is off, or
+    /// the connection to it was lost. The helper offers "Open OnePass".
+    AppClosed,
     /// Guarded Kit: the account is guarded and this call got no guard. On a
     /// device that kept none, unlock through the realms
     /// (`GuardRestore`).
@@ -141,6 +144,7 @@ impl fmt::Display for OnePassError {
             Self::OrgPinMismatch => {
                 f.write_str("the organisation does not match its pinned fingerprint")
             }
+            Self::AppClosed => f.write_str("the OnePass app is not reachable"),
             Self::GuardRequired => f.write_str("the account needs its guard"),
             Self::GuardWrongPassword { remaining } => {
                 write!(f, "wrong password, {remaining} attempts left")

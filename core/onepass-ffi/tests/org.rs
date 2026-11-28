@@ -196,7 +196,7 @@ fn loopback_http_only_when_allowed() {
 #[test]
 #[cfg_attr(
     target_os = "android",
-    ignore = "reads the repository's mailbox config, not pushed to the device"
+    ignore = "reads the repository's mailbox/supabase/config.toml, which only the host has"
 )]
 fn loopback_is_the_local_stack_of_this_repo() {
     let config = std::fs::read_to_string(concat!(

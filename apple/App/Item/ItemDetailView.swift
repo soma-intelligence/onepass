@@ -118,6 +118,9 @@ struct ItemDetailView: View {
         .onChange(of: model.editRequest) {
             if !standalone, let item, model.selectedItem == ref { startEditing(item) }
         }
+        // Leaving the detail ends its editor. Every way out the user takes while the draft has
+        // unsaved changes (sidebar, another item, lock, quit) asks first (`AppModel.perform`), so
+        // nothing dirty is left here by then.
         .onDisappear { if !standalone { model.editing = false } }
         // A remote change set was applied: show the stored item, or warn the editor (spec 8).
         .onChange(of: model.remoteRevision) {
@@ -132,7 +135,7 @@ struct ItemDetailView: View {
             Task { await reload(ref, keepOnFailure: true) }
         }
         .alert(
-            "Élément modifié entre-temps",
+            "item.changedMeanwhile.title",
             isPresented: Binding(get: { remoteVersion != nil }, set: { if !$0 { remoteVersion = nil } })
         ) {
             Button("item.reload", role: .destructive) {
@@ -195,6 +198,10 @@ struct ItemDetailView: View {
 
     /// Gap between the header, the cards and the footer: the scale's section gap everywhere.
     private static let sectionSpacing: CGFloat = Theme.Space.betweenSections
+
+    /// Mac: the widest the detail's column gets (header and cards), whatever the pane's width.
+    /// The editor uses it too, so switching to edit keeps every card in place.
+    static let macReadableWidth: CGFloat = 600
 
     private func detail(_ item: FfiItem) -> some View {
         ScrollView {
@@ -266,12 +273,14 @@ struct ItemDetailView: View {
                 footer(item)
             }
             #if os(macOS)
+            // One readable column, centred in the pane: the header and every card share it.
+            .frame(maxWidth: Self.macReadableWidth)
             .padding(.horizontal, 28)
             #else
             .padding(.horizontal, Theme.Space.gutter(regularWidth: sizeClass == .regular))
+            .frame(maxWidth: 760, alignment: .leading)
             #endif
             .padding(.vertical, Theme.Space.xl)
-            .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.top)
@@ -431,6 +440,9 @@ struct ItemDetailView: View {
         if item.itemType == .router, let payload = WifiQR.payload(for: item) {
             WifiQRCard(item: item, ssid: WifiQR.ssid(of: item), payload: payload)
                 .frame(maxWidth: .infinity)
+                // Slow waves leave the 260 pt code plate (radius 22, see `qrSquare`) in the item's colour.
+                .signalAmbience(tint: ItemCategory.of(item.itemType).color, source: CGSize(width: 260, height: 260),
+                    sourceRadius: 22)
             if WifiAutoController.canJoinByHand, !standalone {
                 WifiJoinButton(itemID: item.id).frame(maxWidth: .infinity)
             }
@@ -1209,7 +1221,8 @@ private struct WifiQRCard: View {
                         .font(.body.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
-                        .contentShape(.rect)
+                        // 28 pt drawn (the square keeps its room on a 375 pt screen), 44 pt to touch.
+                        .contentShape(Rectangle().inset(by: -8))
                 }
                 .menuStyle(.button)
                 .buttonStyle(.borderless)
@@ -1261,8 +1274,9 @@ private struct WifiQRCard: View {
                 Image(systemName: "eye.slash").font(.title).foregroundStyle(Color(red: 0.07, green: 0.12, blue: 0.27))
             }
         }
-        // QRSquare's plate radius (side * 0.085 at 260 pt): geometry, not the radius scale.
-        .clipShape(.rect(cornerRadius: 22))
+        // QRSquare's own plate: the same radius and the same continuous curve, so the blur
+        // never shows a corner of another shape.
+        .clipShape(.rect(cornerRadius: QRSquare.radius(side: 260), style: .continuous))
         .contentShape(.rect)
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { shown.toggle() } }
         .accessibilityAddTraits(.isButton)
@@ -1312,9 +1326,12 @@ private struct QRSquare: View {
     let payload: String
     let side: CGFloat
 
+    /// The plate's corner, in proportion to its side.
+    static func radius(side: CGFloat) -> CGFloat { side * 0.085 }
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: side * 0.085, style: .continuous).fill(.white)
+            RoundedRectangle(cornerRadius: Self.radius(side: side), style: .continuous).fill(.white)
             if let image = WifiQR.image(for: payload) {
                 Image(decorative: image, scale: 1)
                     .interpolation(.none)

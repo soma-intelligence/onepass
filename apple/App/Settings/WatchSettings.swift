@@ -98,7 +98,7 @@ struct WatchSettings: View {
 
     private static func relative(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.locale = .current
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date, relativeTo: .now)
     }

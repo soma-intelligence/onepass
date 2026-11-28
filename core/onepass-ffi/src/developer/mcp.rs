@@ -79,6 +79,10 @@ pub(crate) fn is_relay(peer: &CodeIdentity, relay: &CodeIdentity) -> bool {
             },
         ) => a == b && x == y,
         (CodeIdentity::AdHoc { cdhash: a, .. }, CodeIdentity::AdHoc { cdhash: b, .. }) => a == b,
+        // Linux and Android: the running image's hash against the relay file's.
+        (CodeIdentity::Unsigned { sha256: a, .. }, CodeIdentity::Unsigned { sha256: b, .. }) => {
+            a == b
+        }
         _ => false,
     }
 }
@@ -1685,6 +1689,14 @@ mod tests {
         assert!(!is_relay(&adhoc("ab"), &relay));
         assert!(is_relay(&adhoc("ab"), &adhoc("ab")));
         assert!(!is_relay(&adhoc("ab"), &adhoc("cd")));
+        let unsigned = |h: &str| CodeIdentity::Unsigned {
+            path: "/x".into(),
+            sha256: h.into(),
+        };
+        assert!(is_relay(&unsigned("ab"), &unsigned("ab")));
+        assert!(!is_relay(&unsigned("ab"), &unsigned("cd")));
+        assert!(!is_relay(&unsigned("ab"), &adhoc("ab")));
+        assert!(!is_relay(&unsigned("ab"), &relay));
         let platform = CodeIdentity::Platform {
             identifier: "com.apple.sh".into(),
         };

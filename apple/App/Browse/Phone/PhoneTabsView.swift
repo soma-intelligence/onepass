@@ -17,6 +17,9 @@ enum PhoneRoute: Hashable {
     case duplicates
     /// Accueil > Profil: the main identity and payment card.
     case profile
+    /// Watchtower pushed from Accueil (its score or tile): it zooms out of what was tapped, where a
+    /// tab switch only slid the page in. The Watchtower tab still shows the same page at its root.
+    case watchtowerPage
 
     var itemRef: ItemRef? {
         if case .item(let ref) = self { return ref }
@@ -25,7 +28,7 @@ enum PhoneRoute: Hashable {
 }
 
 enum PhoneTab: String, Hashable {
-    case home, items, watchtower, search
+    case home, items, watchtower
 }
 
 extension EnvironmentValues {
@@ -35,6 +38,9 @@ extension EnvironmentValues {
     @Entry var openPhoneTab: @MainActor (PhoneTab) -> Void = { _ in }
     /// The iPhone search is presented: Accueil keeps its banners for when it is really on screen.
     @Entry var phoneSearchActive = false
+    /// Watchtower is a page pushed on Accueil (`PhoneRoute.watchtowerPage`), not the tab's root:
+    /// it keeps the back button and leaves the account menu to the root pages.
+    @Entry var watchtowerPushed = false
     /// Pushes a screen on the visible tab's stack (Profil > "Modifier l'identité").
     @Entry var pushPhoneRoute: @MainActor (PhoneRoute) -> Void = { _ in }
     /// Closes the Profil sheet of the unfolded iPhone, then runs the closure (Réglages present
@@ -46,8 +52,9 @@ extension EnvironmentValues {
 }
 
 /// iPhone, and iPad in compact width (spec 6.2, mockups `PhoneHome`, `PhoneItems`, `PhoneSearch`):
-/// Liquid Glass tab bar with three tabs, Accueil, Éléments and Watchtower, and the search tab (role
-/// `.search`) as the separate button on its right, each tab in its own navigation stack. Réglages
+/// Liquid Glass tab bar with three tabs, Accueil, Éléments and Watchtower, each in its own
+/// navigation stack. The search is the field under Accueil's large title (`HomeTab`), the one way
+/// into it: the tab bar's round search button opened the same search, so it is gone. Réglages
 /// opens from the account menu, as a sheet (`BrowseRoot`). The item shown on top of the visible tab's stack is
 /// `AppModel.selectedItem`, so the detail's own actions (trash, move, save under a new vault)
 /// pop or follow it here. The tab bar hides while an editor is open.
@@ -59,10 +66,9 @@ struct PhoneTabsView: View {
     @State private var scrollToTop: [PhoneTab: Int] = [:]
     /// The item rows and the item detail share it: an item opens by zooming out of its row.
     @Namespace private var itemZoom
+    /// Accueil's search (`HomeTab`): here so a deep link or a capture argument can open it.
     @State private var searchQuery = ""
     @State private var searching = false
-    /// Choosing Rechercher opens its field (off for the demo captures of the list).
-    @State private var openSearchOnSelect = true
     /// Set by the unfolded layout, where these tabs fill the left half.
     @Environment(\.itemDragStarted) private var foldDrag
     /// The unfolded iPhone: an item opens in the detail half beside the tabs, never in a tab's
@@ -89,7 +95,7 @@ struct PhoneTabsView: View {
             // One family: outline symbols of the same weight, filled only on the selected tab (the
             // bar's own fill variant is turned off so the unselected ones stay light).
             Tab(value: PhoneTab.home) {
-                stack(.home) { HomeTab() }
+                stack(.home) { HomeTab(query: $searchQuery, isSearching: $searching) }
             } label: {
                 tabLabel("Accueil", "house", .home)
             }
@@ -106,21 +112,11 @@ struct PhoneTabsView: View {
                 tabLabel("Watchtower", "shield.lefthalf.filled", .watchtower)
             }
             .accessibilityIdentifier("tab.watchtower")
-            Tab("common.search", systemImage: "magnifyingglass", value: PhoneTab.search, role: .search) {
-                stack(.search) { SearchTab(query: $searchQuery, isSearching: $searching) }
-            }
-            .accessibilityIdentifier("tab.search")
         }
-        // On the tab view, not in the search tab's stack: the `.search` tab then turns into the
-        // search field of the tab bar (a `searchable` inside the tab showed no field at all).
-        // Toolbar placement and search tab activation: the search tab is the separate round
-        // button on the right of the three tabs, and its field opens at the bottom.
-        .searchable(text: $searchQuery, isPresented: $searching, placement: .toolbar, prompt: Text("browse.searchItems"))
-        .tabViewSearchActivation(.searchTabSelection)
         .tabBarMinimizeBehavior(.onScrollDown)
-        // A search is only ever shown on its own tab, whatever presented it.
+        // The search field belongs to Accueil's root: whatever presents it shows that page.
         .onChange(of: searching) { _, presented in
-            if presented, tab != .search { tab = .search }
+            if presented { showSearchPage() }
         }
         .environment(\.phoneSearchActive, searching)
         // RX: logos fill their tiles (rows, tiles and the item header).
@@ -132,12 +128,9 @@ struct PhoneTabsView: View {
         }
         // The top of the visible stack is the selection: a tab switch selects that tab's item.
         .onChange(of: tab) { _, newTab in
-            // The search field shows only while presented: choosing Rechercher opens it.
-            if newTab == .search, openSearchOnSelect, paths[.search]?.isEmpty ?? true { searching = true }
-            // Leaving the search tab (the tab button beside the field) does not write
-            // `isPresented` back: a search still "presented" here came back later over the other
-            // tab (field and keyboard over Accueil, tab bar hidden). It ends with its tab.
-            if newTab != .search, searching { searching = false }
+            // A search left open on Accueil would come back over it later, keyboard up: it ends
+            // with its tab.
+            if newTab != .home, searching { searching = false }
             if !besideDetail {
                 let ref = paths[newTab]?.last?.itemRef
                 if model.selectedItem != ref { model.perform(.select(ref)) }
@@ -156,17 +149,9 @@ struct PhoneTabsView: View {
             model.phoneBrowsedVault = vault
         }
         .onDisappear { model.phoneBrowsedVault = nil }
-        // The account panel's glass over the busy Home read as one mess: the whole screen, tab bar
-        // included, dims evenly behind it (the panel itself is its own presentation, above this).
-        .overlay {
-            if model.accountPanelsOpen > 0 {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: model.accountPanelsOpen > 0)
+        // The account panel, over the whole screen (tab bar included): a light dim behind its
+        // glass, closing on a tap in 0.15 s.
+        .modifier(AccountPanelHost())
         // A deep link (widget, Control): the item in Éléments, or the search tab. Also on appear,
         // when the link was waiting for the unlock.
         .onChange(of: model.browseReveal, initial: true) { _, reveal in
@@ -181,9 +166,8 @@ struct PhoneTabsView: View {
                 }
                 tab = .items
             case .search:
-                paths[.search] = []
-                tab = .search
                 searching = true
+                showSearchPage()
             }
         }
         #if DEBUG
@@ -213,6 +197,9 @@ struct PhoneTabsView: View {
                             DuplicatesReviewView()
                         case .profile:
                             ProfileView()
+                        case .watchtowerPage:
+                            WatchtowerTab()
+                                .environment(\.watchtowerPushed, true)
                         case .item(let ref):
                             ItemDetailView(ref: ref)
                                 .id(ref)
@@ -222,7 +209,7 @@ struct PhoneTabsView: View {
                     }
                     .headerFade()
                     .toolbar(systemBar(which, editing: model.isEditing), for: .tabBar)
-                    .modifier(RouteZoomDestination(route: route, namespace: itemZoom))
+                    .modifier(RouteZoomDestination(route: route))
                 }
         }
         .environment(\.itemZoomNamespace, itemZoom)
@@ -244,21 +231,23 @@ struct PhoneTabsView: View {
                 if newTab == tab {
                     reselect(newTab)
                 } else {
-                    // The search opens in the same transaction as its tab, not a pass later from
-                    // `onChange(of: tab)`, which moved the page after it showed (jank audit J06).
-                    if newTab == .search, openSearchOnSelect, paths[.search]?.isEmpty ?? true { searching = true }
                     tab = newTab
                 }
             })
     }
 
     private func reselect(_ which: PhoneTab) {
-        guard which != .search else { return }
         if paths[which]?.isEmpty ?? true {
             scrollToTop[which, default: 0] += 1
         } else {
             path(which).wrappedValue = []
         }
+    }
+
+    /// Accueil at its root, where the search field lives.
+    private func showSearchPage() {
+        if tab != .home { tab = .home }
+        if !(paths[.home]?.isEmpty ?? true) { paths[.home] = [] }
     }
 
     private func path(_ which: PhoneTab) -> Binding<[PhoneRoute]> {
@@ -313,7 +302,8 @@ struct PhoneTabsView: View {
     }
 
     #if DEBUG
-    /// Captures: `-OnePassDemoTab items|watchtower|search` opens that tab (`settings` opens Réglages),
+    /// Captures: `-OnePassDemoTab items|watchtower` opens that tab (`search` opens Accueil's search,
+    /// `settings` opens Réglages),
     /// `-OnePassDemoQuery <text>` fills the search, `-OnePassDemoNewItem YES` opens the add sheet,
     /// `-OnePassDemoList <vault|category|cards|tag|archive|trash>` pushes a list in Éléments, `crypto[:<coin>]` the
     /// Crypto screen. Debug builds only.
@@ -321,8 +311,9 @@ struct PhoneTabsView: View {
         let defaults = UserDefaults.standard
         if let name = defaults.string(forKey: "OnePassDemoTab") {
             if let demoTab = PhoneTab(rawValue: name) {
-                openSearchOnSelect = false
                 tab = demoTab
+            } else if name == "search" {
+                searching = true
             } else if name == "settings" {
                 model.showSettings = true
             }
@@ -358,6 +349,7 @@ struct PhoneTabsView: View {
             case "favorites": .favorites
             case "passkeys": .passkeys
             case "all": .all
+            case "nearby": .nearby
             case "category": model.session.summaries.first.map { .category($0.itemType) }
             case "cards": .category(.creditCard)
             case "tag": model.session.counts().byTag.keys.sorted().first.map { .tag($0) }
@@ -604,16 +596,16 @@ struct PhoneItemLink<Label: View>: View {
 }
 
 /// Every pushed page but an item (which zooms from its own row) zooms out of the row or tile that
-/// pushed it, when that row marked itself with `routeZoomSource`.
+/// pushed it, when that row marked itself with `routeZoomSource`. Through `zoomDestination`, so
+/// Reduce Motion keeps the plain push here too.
 private struct RouteZoomDestination: ViewModifier {
     let route: PhoneRoute
-    let namespace: Namespace.ID
 
     func body(content: Content) -> some View {
         if case .item = route {
             content
         } else {
-            content.navigationTransition(.zoom(sourceID: route, in: namespace))
+            content.zoomDestination(route)
         }
     }
 }

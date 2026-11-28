@@ -22,7 +22,7 @@ use onepass_bridge::framing::{read_frame, write_frame};
 use onepass_peer::{CodeIdentity, PeerError};
 
 use crate::preamble::Preamble;
-use crate::rendezvous::{Client, SAFARI_EXTENSION_ID, classify_client, is_app};
+use crate::rendezvous::{Client, FILL_EXTENSION_ID, SAFARI_EXTENSION_ID, classify_client, is_app};
 
 /// Stack of each connection thread.
 pub const CONNECTION_STACK: usize = 16 << 20;
@@ -40,7 +40,8 @@ pub type Note = Arc<dyn Fn(&str) + Send + Sync>;
 /// A client that passed the checks.
 pub struct Accepted {
     pub client: Client,
-    /// `safari` for Safari, the browser-given id for the relay.
+    /// `safari` for Safari, `fill` for the fill helper, the browser-given
+    /// id for the relay.
     pub extension_id: String,
     /// The relay's verified parent (`team:<team>:<identifier>`), if any;
     /// always `None` for Safari.
@@ -52,8 +53,8 @@ pub struct ServerConfig {
     pub path: PathBuf,
     /// The team the clients must be signed by (the app's own).
     pub team: String,
-    /// The app's own code-signing identifier: clients are `<app>.safari`
-    /// and `<app>.relay`.
+    /// The app's own code-signing identifier: clients are `<app>.safari`,
+    /// `<app>.relay` and `<app>.fill`.
     pub app: String,
     pub max_connections: usize,
     pub opening_timeout: Duration,
@@ -137,6 +138,7 @@ fn admit(stream: UnixStream, cfg: &ServerConfig) -> Result<Accepted, &'static st
     let p = Preamble::parse(&first).ok_or("bad opening frame")?;
     let (extension_id, launcher) = match (client, p.extension, p.launcher) {
         (Client::Safari, None, None) => (SAFARI_EXTENSION_ID.to_owned(), None),
+        (Client::Fill, None, None) => (FILL_EXTENSION_ID.to_owned(), None),
         (Client::Relay, Some(id), launcher) => (id, launcher),
         _ => return Err("opening frame does not fit the client"),
     };
@@ -277,7 +279,7 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::mpsc::channel;
 
-    use crate::rendezvous::{APP_ID, RELAY_ID, SAFARI_ID};
+    use crate::rendezvous::{APP_ID, FILL_EXTENSION_ID, FILL_ID, RELAY_ID, SAFARI_ID};
 
     const TEAM: &str = "ABCDE12345";
 
@@ -383,6 +385,29 @@ mod tests {
             (client, ext.as_str(), launcher),
             (Client::Safari, SAFARI_EXTENSION_ID, None)
         );
+    }
+
+    #[test]
+    fn fill_helper_is_admitted_as_fill() {
+        let rig = rig(team(FILL_ID), 8);
+        let _s = connect(&rig.path, TEAM, APP_ID, &app(), &Preamble::new(None)).unwrap();
+        let (client, ext, launcher) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            (client, ext.as_str(), launcher),
+            (Client::Fill, FILL_EXTENSION_ID, None)
+        );
+    }
+
+    #[test]
+    fn fill_helper_names_no_extension_and_no_launcher() {
+        refused(&rig(team(FILL_ID), 8), &Preamble::new(Some("abc".into())));
+        refused(
+            &rig(team(FILL_ID), 8),
+            &Preamble::new(Some(SAFARI_EXTENSION_ID.into())),
+        );
+        let mut fill = Preamble::new(None);
+        fill.launcher = Some("team:EQHXZ8M8AV:com.google.Chrome".into());
+        refused(&rig(team(FILL_ID), 8), &fill);
     }
 
     #[test]
