@@ -22,7 +22,7 @@ use onepass_bridge::framing::{read_frame, write_frame};
 use onepass_peer::{CodeIdentity, PeerError};
 
 use crate::preamble::Preamble;
-use crate::rendezvous::{Client, SAFARI_EXTENSION_ID, classify_client, is_app};
+use crate::rendezvous::{Client, FILL_EXTENSION_ID, SAFARI_EXTENSION_ID, classify_client, is_app};
 
 /// Stack of each connection thread.
 pub const CONNECTION_STACK: usize = 16 << 20;
@@ -40,7 +40,8 @@ pub type Note = Arc<dyn Fn(&str) + Send + Sync>;
 /// A client that passed the checks.
 pub struct Accepted {
     pub client: Client,
-    /// `safari` for Safari, the browser-given id for the relay.
+    /// `safari` for Safari, `fill` for the fill helper, the browser-given
+    /// id for the relay.
     pub extension_id: String,
     /// The relay's verified parent (`team:<team>:<identifier>`), if any;
     /// always `None` for Safari.
@@ -52,8 +53,8 @@ pub struct ServerConfig {
     pub path: PathBuf,
     /// The team the clients must be signed by (the app's own).
     pub team: String,
-    /// The app's own code-signing identifier: clients are `<app>.safari`
-    /// and `<app>.relay`.
+    /// The app's own code-signing identifier: clients are `<app>.safari`,
+    /// `<app>.relay` and `<app>.fill`.
     pub app: String,
     pub max_connections: usize,
     pub opening_timeout: Duration,
@@ -118,7 +119,12 @@ fn refused_note(id: &CodeIdentity) -> String {
 
 /// Identify, classify and read the opening frame of `stream`.
 fn admit(stream: UnixStream, cfg: &ServerConfig) -> Result<Accepted, &'static str> {
-    let id = (cfg.identify)(&stream).map_err(|_| "client not identified")?;
+    let id = (cfg.identify)(&stream).map_err(|e| {
+        // The failed step (fixed text, never a path): a sandboxed app that cannot read a client
+        // installed under a protected folder reads differently from a client already gone.
+        (cfg.note)(&format!("client not identified: {e}"));
+        "client not identified"
+    })?;
     let Some(client) = classify_client(&id, &cfg.team, &cfg.app) else {
         (cfg.note)(&refused_note(&id));
         return Err("client refused by code signature");
@@ -132,6 +138,7 @@ fn admit(stream: UnixStream, cfg: &ServerConfig) -> Result<Accepted, &'static st
     let p = Preamble::parse(&first).ok_or("bad opening frame")?;
     let (extension_id, launcher) = match (client, p.extension, p.launcher) {
         (Client::Safari, None, None) => (SAFARI_EXTENSION_ID.to_owned(), None),
+        (Client::Fill, None, None) => (FILL_EXTENSION_ID.to_owned(), None),
         (Client::Relay, Some(id), launcher) => (id, launcher),
         _ => return Err("opening frame does not fit the client"),
     };
@@ -272,7 +279,7 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::mpsc::channel;
 
-    use crate::rendezvous::{APP_ID, RELAY_ID, SAFARI_ID};
+    use crate::rendezvous::{APP_ID, FILL_EXTENSION_ID, FILL_ID, RELAY_ID, SAFARI_ID};
 
     const TEAM: &str = "ABCDE12345";
 
@@ -299,6 +306,11 @@ mod tests {
     /// A server whose clients all look like `client`; each accepted
     /// connection echoes frames back until its end.
     fn rig(client: CodeIdentity, max: usize) -> Rig {
+        rig_with(fixed(client), max)
+    }
+
+    /// `rig` with any identification, a failing one included.
+    fn rig_with(identify: Identify, max: usize) -> Rig {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("b.sock");
         let (tx, accepted) = channel();
@@ -312,7 +324,7 @@ mod tests {
                 app: APP_ID.into(),
                 max_connections: max,
                 opening_timeout: Duration::from_millis(300),
-                identify: fixed(client),
+                identify,
                 note: Arc::new(move |m| n.lock().unwrap().push(m.to_owned())),
             },
             Arc::new(move |a: Accepted| {
@@ -376,6 +388,29 @@ mod tests {
     }
 
     #[test]
+    fn fill_helper_is_admitted_as_fill() {
+        let rig = rig(team(FILL_ID), 8);
+        let _s = connect(&rig.path, TEAM, APP_ID, &app(), &Preamble::new(None)).unwrap();
+        let (client, ext, launcher) = rig.accepted.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            (client, ext.as_str(), launcher),
+            (Client::Fill, FILL_EXTENSION_ID, None)
+        );
+    }
+
+    #[test]
+    fn fill_helper_names_no_extension_and_no_launcher() {
+        refused(&rig(team(FILL_ID), 8), &Preamble::new(Some("abc".into())));
+        refused(
+            &rig(team(FILL_ID), 8),
+            &Preamble::new(Some(SAFARI_EXTENSION_ID.into())),
+        );
+        let mut fill = Preamble::new(None);
+        fill.launcher = Some("team:EQHXZ8M8AV:com.google.Chrome".into());
+        refused(&rig(team(FILL_ID), 8), &fill);
+    }
+
+    #[test]
     fn relay_launcher_reaches_the_handler() {
         let rig = rig(team(RELAY_ID), 8);
         let chrome = "team:EQHXZ8M8AV:com.google.Chrome".to_owned();
@@ -425,6 +460,23 @@ mod tests {
             assert!(notes[0].starts_with("refused client: "));
             assert_eq!(notes[1], "client refused by code signature");
         }
+    }
+
+    #[test]
+    fn a_client_that_cannot_be_identified_is_closed_and_the_failed_step_noted() {
+        let rig = rig_with(Arc::new(|_| Err(PeerError::Unreadable("code lookup"))), 8);
+        refused(&rig, &Preamble::new(None));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while rig.notes.lock().unwrap().len() < 2 {
+            assert!(std::time::Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(5));
+        }
+        let notes = rig.notes.lock().unwrap();
+        assert_eq!(
+            notes[0],
+            "client not identified: cannot identify the client: code lookup"
+        );
+        assert_eq!(notes[1], "client not identified");
     }
 
     #[test]

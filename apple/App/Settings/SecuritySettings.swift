@@ -2,8 +2,9 @@ import SwiftUI
 import VaultKit
 
 /// Sécurité: biometric unlock (asks the master password to turn on), Apple Watch (Mac), the
-/// 14 day password reminder, the 90 second AutoFill unlock, device mode, visible vaults (shared mode),
-/// lock now, delete the account (App Review 5.1.1(v): this device and iCloud).
+/// 14 day password reminder, the 90 second AutoFill unlock, the Emergency Kit protection (Guarded
+/// Kit), device mode, visible vaults (shared mode), lock now, delete the account (App Review
+/// 5.1.1(v): this device and iCloud).
 struct SecuritySettings: View {
     @Environment(AppModel.self) private var model
 
@@ -27,6 +28,9 @@ struct SecuritySettings: View {
     @State private var changingPassword = false
     @State private var confirmingDelete = false
     @State private var deletingAccount = false
+    /// The Emergency Kit protection shows only once this build pins its realms (or it is already
+    /// on): no "coming soon" control in a release (App Review 2.1).
+    @State private var guardVisible = false
 
     private var session: VaultSession { model.session }
     private var settings: VaultSettings { model.settings }
@@ -45,6 +49,10 @@ struct SecuritySettings: View {
                 Group {
                     unlockSection
                     autofillReuseSection
+                    secretKeyInICloudSection
+                    if guardVisible {
+                        KitProtectionSection()
+                    }
                     deviceModeSection
                     Section {
                         Button("settings.deleteAccount", systemImage: "trash", role: .destructive) { confirmingDelete = true }
@@ -63,6 +71,9 @@ struct SecuritySettings: View {
                 .rxSettingsRows()
             }
             .rxSettingsSkin()
+            .task {
+                if let state = try? await session.guardState() { guardVisible = state.available || state.on }
+            }
             .onAppear { focus(proxy) }
             .onChange(of: model.settingsFocusRequest) { focus(proxy) }
         }
@@ -138,8 +149,11 @@ struct SecuritySettings: View {
                 .accessibilityIdentifier("settings.watch")
                 #endif
             }
-            LabeledContent("Mot de passe maître") {
+            // Every row of the card carries a symbol, so the titles share one leading edge.
+            LabeledContent {
                 Text("settings.security.passwordReminder")
+            } label: {
+                Label("Mot de passe maître", systemImage: "calendar.badge.clock")
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("settings.passwordReminder")
@@ -159,16 +173,39 @@ struct SecuritySettings: View {
     @ViewBuilder private var autofillReuseSection: some View {
         if settings.deviceMode.biometricsAllowed, hardwareAvailable {
             Section {
-                Toggle("settings.security.autofillReuse", isOn: Binding(
+                Toggle(isOn: Binding(
                     get: { settings.autofillUnlockReuse },
                     set: { on in model.updateSettings { $0.autofillUnlockReuse = on } }
-                ))
+                )) {
+                    Label("settings.security.autofillReuse", systemImage: "timer")
+                }
                 .accessibilityIdentifier("settings.autofillReuse")
             } header: {
                 // The long rule (90 seconds, same site, passkeys excluded) behind the info button.
                 SettingsHeader(
                     "Remplissage automatique", info: Text("settings.security.autofillReuse.footer \(biometry)"),
                     id: "settings.autofillReuse.info")
+            }
+        }
+    }
+
+    /// The copy of the Secret Key in iCloud Keychain (spec 2026-11-25), personal devices only. Off
+    /// deletes it from every device of the Apple ID.
+    @ViewBuilder private var secretKeyInICloudSection: some View {
+        if settings.deviceMode == .personal, session.environment.syncedSecretKeys != nil {
+            Section {
+                Toggle(isOn: Binding(
+                    get: { settings.secretKeyInICloud },
+                    set: { on in
+                        session.setSecretKeyInICloud(on)
+                        model.settingsChanged()
+                    }
+                )) {
+                    Label("settings.security.secretKeyInICloud", systemImage: "key.icloud")
+                }
+                .accessibilityIdentifier("settings.secretKeyInICloud")
+            } footer: {
+                SettingsFootnote("settings.security.secretKeyInICloud.footer")
             }
         }
     }
@@ -236,7 +273,7 @@ struct SecuritySettings: View {
         Section {
             // The label beside the menu, so the RX cards of the Mac put the menu on the trailing
             // edge (the grouped form draws it the same).
-            LabeledContent("settings.device") {
+            LabeledContent {
                 Picker("settings.device", selection: Binding(
                     get: { settings.deviceMode },
                     set: { mode in
@@ -249,14 +286,18 @@ struct SecuritySettings: View {
                 .labelsHidden()
                 .fixedSize()
                 .accessibilityIdentifier("settings.deviceMode")
+            } label: {
+                Label("settings.device", systemImage: settings.deviceMode == .shared ? "person.2" : "iphone")
             }
             .id(Self.deviceModeAnchor)
             if settings.deviceMode == .shared {
                 NavigationLink {
                     VisibleVaultsView()
                 } label: {
-                    LabeledContent("Coffres visibles") {
+                    LabeledContent {
                         Text(visibleSummary)
+                    } label: {
+                        Label("Coffres visibles", systemImage: "eye")
                     }
                 }
                 .accessibilityIdentifier("settings.visibleVaults")
@@ -264,7 +305,12 @@ struct SecuritySettings: View {
             Button("settings.lockNow", systemImage: "lock") {
                 // The discard confirmation of an edited draft belongs to the main screen.
                 model.showSettings = false
+                #if os(macOS)
+                // The Réglages window: the main window comes forward with the confirmation.
+                model.lockFromMenuBar()
+                #else
                 model.perform(.lock)
+                #endif
             }
             .accessibilityIdentifier("settings.lockNow")
         } footer: {
@@ -286,7 +332,7 @@ struct SecuritySettings: View {
 
     private var modeDialogMessage: LocalizedStringKey {
         if pendingMode == .shared {
-            "\(biometry) est désactivé sur cet appareil, OnePass se verrouille après 5 minutes au plus et le mot de passe maître est demandé à chaque déverrouillage. Tu choisis ensuite les coffres visibles."
+            "\(biometry) est désactivé sur cet appareil, Cleon se verrouille après 5 minutes au plus et le mot de passe maître est demandé à chaque déverrouillage. Tu choisis ensuite les coffres visibles."
         } else {
             "Tous les coffres redeviennent visibles. \(biometry) reste désactivé jusqu'à ce que tu le réactives avec ton mot de passe maître."
         }
@@ -397,6 +443,246 @@ struct PasswordPromptSheet: View {
                 errorMessage = VaultError(error).localizedMessage
                 focused = true
             }
+        }
+    }
+}
+
+// MARK: - Protection du kit d'urgence
+
+/// "Protection du kit d'urgence" (Guarded Kit, spec 2026-11-20, section 9). Opt-in: on, a restore
+/// from the Emergency Kit also needs two of three realms run by Soma, which allow 15 attempts in
+/// all. Hidden behind "Bientôt disponible" while this build pins no realm. Turning it on goes
+/// through a confirmation sheet (the loss case of spec 8.4), the master password, then the offer
+/// of a new kit; off and renew ask the master password. The Secret Key comes from this device.
+struct KitProtectionSection: View {
+    @Environment(AppModel.self) private var model
+
+    private enum Sheet: String, Identifiable {
+        case enable, disable, renew
+        var id: String { rawValue }
+    }
+
+    @State private var state: FfiGuardState?
+    @State private var health: FfiGuardHealth?
+    @State private var sheet: Sheet?
+
+    private var session: VaultSession { model.session }
+
+    private var needsRenewal: Bool {
+        guard let state, state.on, state.available else { return false }
+        return !state.realmSetCurrent || health?.needsRenewal == true
+    }
+
+    var body: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { state?.on ?? false },
+                set: { on in sheet = on ? .enable : .disable }
+            )) {
+                Label("settings.guard.title", systemImage: "lock.shield")
+            }
+            .disabled(state?.available != true)
+            .accessibilityIdentifier("settings.guard")
+            if needsRenewal {
+                Button("settings.guard.renew", systemImage: "arrow.triangle.2.circlepath") { sheet = .renew }
+                    .accessibilityIdentifier("settings.guard.renew")
+            }
+            if let health, !health.failures.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("settings.guard.failures", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    ForEach(Array(VaultSession.guardFailureDates(health).enumerated()), id: \.offset) { _, date in
+                        Text(verbatim: date.formatted(date: .long, time: .shortened))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("settings.guard.failures")
+            }
+        } footer: {
+            footer
+        }
+        .task { await load() }
+        .sheet(item: $sheet) { current in
+            switch current {
+            case .enable:
+                GuardEnableSheet { await load() }
+            case .disable:
+                PasswordPromptSheet(title: "settings.guard.disable", footer: "settings.guard.disable.footer") { password in
+                    try await change(.disable, password: password)
+                }
+            case .renew:
+                PasswordPromptSheet(title: "settings.guard.renew", footer: "settings.guard.renew.footer") { password in
+                    try await change(.renew, password: password)
+                }
+            }
+        }
+    }
+
+    /// Off or renew, after the master password; the sheet shows a refusal.
+    private func change(_ kind: Sheet, password: SecretBytes) async throws {
+        switch kind {
+        case .disable: try await session.disableGuard(password: password)
+        case .renew: try await session.renewGuard(password: password)
+        case .enable: return
+        }
+        await load()
+        model.settingsChanged()
+    }
+
+    @ViewBuilder private var footer: some View {
+        if let state, !state.available {
+            SettingsFootnote("settings.guard.soon")
+                .accessibilityIdentifier("settings.guard.soon")
+        } else if needsRenewal {
+            SettingsFootnote("settings.guard.renew.due")
+        } else if state?.on == true {
+            SettingsFootnote("settings.guard.on")
+        } else {
+            SettingsFootnote("settings.guard.off")
+        }
+    }
+
+    /// The state from the store, then (guard on) the realms' report of failed restores. A poll
+    /// that cannot reach the realms shows nothing more.
+    private func load() async {
+        guard let current = try? await session.guardState() else { return }
+        state = current
+        guard current.on, current.available else {
+            health = nil
+            return
+        }
+        health = try? await session.guardHealth()
+    }
+}
+
+/// Turning the Emergency Kit protection on: what it changes and the one case where the account is
+/// lost (spec 8.4), then the master password, then the offer to print a new kit (spec 8.1: the old
+/// one still works, with the password and the realms).
+struct GuardEnableSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    /// Run once the guard is on.
+    let enabled: () async -> Void
+
+    @State private var password = ""
+    @State private var focused = false
+    @State private var busy = false
+    @State private var done = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if done {
+                    Section {
+                        Label("settings.guard.enabled", systemImage: "checkmark.shield")
+                    } footer: {
+                        Text("settings.guard.newKit.footer")
+                    }
+                    Section {
+                        Button("settings.guard.printKit", systemImage: "printer", action: printKit)
+                            .accessibilityIdentifier("settings.guard.printKit")
+                    }
+                } else {
+                    Section {
+                        Text("settings.guard.explain")
+                    }
+                    Section {
+                        Text("settings.guard.loss")
+                    } header: {
+                        Text("settings.guard.loss.header")
+                    }
+                    Section {
+                        SecretInputField(
+                            title: String(localized: "Mot de passe maître"), text: $password, focused: $focused,
+                            onSubmit: run, identifier: "settings.guard.password")
+                            .privacySensitive()
+                    } footer: {
+                        Text("settings.guard.enable.footer")
+                    }
+                }
+                if let errorMessage {
+                    Section {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("settings.guard.error")
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("settings.guard.enable")
+            #if os(iOS) || os(visionOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                if done {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("settings.guard.done") { dismiss() }
+                            .accessibilityIdentifier("settings.guard.done")
+                    }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Annuler") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("settings.guard.enable.confirm", action: run)
+                            .disabled(password.isEmpty || busy)
+                            .accessibilityIdentifier("settings.guard.confirm")
+                    }
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 440, minHeight: 420)
+        #endif
+        .interactiveDismissDisabled(busy)
+        .onDisappear { password = "" }
+    }
+
+    private func run() {
+        guard !password.isEmpty, !busy else { return }
+        busy = true
+        errorMessage = nil
+        // Emptied on submission: the password lives on in a wiped buffer only (R5).
+        let value = SecretBytes(utf8: password)
+        password = ""
+        Task {
+            defer {
+                value.wipe()
+                busy = false
+            }
+            do {
+                try await model.session.enableGuard(password: value)
+                done = true
+                model.settingsChanged()
+                await enabled()
+            } catch {
+                errorMessage = VaultError(error).localizedMessage
+                focused = true
+            }
+        }
+    }
+
+    /// The new kit, built from this device's Secret Key and printed from memory (`KitPrinter`).
+    private func printKit() {
+        errorMessage = nil
+        guard let accountID = model.settings.accountID,
+            let secretKey = try? SecretKeyVault(keychain: model.session.environment.keychain).load(accountID: accountID)
+        else {
+            errorMessage = String(localized: "onboarding.emergencyKitCouldntPrepared")
+            return
+        }
+        do {
+            let pdf = try EmergencyKit.pdf(
+                secretKey: secretKey, accountID: accountID, displayName: model.settings.displayName,
+                createdAt: Date(), server: model.emergencyKitServer(), guarded: true)
+            if !KitPrinter.print(pdf) {
+                errorMessage = String(localized: "onboarding.noPrinterAvailableOn")
+            }
+        } catch {
+            errorMessage = ErrorText.appending(error, to: String(localized: "onboarding.emergencyKitCouldntPrepared"))
         }
     }
 }

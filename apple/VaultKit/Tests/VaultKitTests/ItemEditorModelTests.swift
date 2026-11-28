@@ -24,6 +24,22 @@ private func ids(_ draft: ItemDraft, section: String = "main") -> [String] {
 
 @Suite("Item editor model")
 struct ItemEditorModelTests {
+    /// The passport's chip section (status, read date, document code) is the chip reader's: the
+    /// editor does not offer it, so the badge cannot be set by hand.
+    @Test func passportChipSectionIsNotEditable() {
+        let draft = ItemDraft(item: draftItem(.passport))
+        let shown = draft.editableTemplateSections.map(\.id)
+        #expect(draft.item.sections.contains { $0.id == "chip" })
+        #expect(!shown.contains("chip"))
+        #expect(shown.contains("main"))
+        let fields = Set(draft.editableTemplateSections.flatMap(\.fields).map(\.id))
+        #expect(fields.isDisjoint(with: ["chip_status", "chip_read_on", "document_code"]))
+        #expect(!draft.isFreeSection("chip"))
+        // Other types keep every template section.
+        let card = ItemDraft(item: draftItem(.creditCard))
+        #expect(card.editableTemplateSections.map(\.id) == card.item.sections.map(\.id))
+    }
+
     @Test func setValueMarksDirty() {
         var draft = ItemDraft(item: draftItem(.login))
         #expect(!draft.isDirty)

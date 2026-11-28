@@ -58,7 +58,7 @@ public final class BrowserBridge {
     public enum Attention: Sendable, Equatable {
         /// A pairing code to compare: the window comes forward and stays.
         case pairing
-        /// "Déverrouiller dans OnePass": the lock screen comes forward, then the browser again.
+        /// "Déverrouiller dans Cleon": the lock screen comes forward, then the browser again.
         case unlock
     }
 
@@ -200,28 +200,33 @@ public final class BrowserBridge {
         requests = []
     }
 
-    /// False when "Approuver" would be refused: the vault is locked or Touch ID is off in OnePass.
-    /// The pairing sheet says so before the user tries.
+    /// False when "Approuver" would be refused: the vault is locked, or this Mac has Touch ID and it
+    /// is off in Cleon. The pairing sheet says so before the user tries.
     public var canApprove: Bool {
-        session.state == .unlocked && session.canUseBiometrics
+        session.state == .unlocked && (session.canUseBiometrics || session.ownerCheckWithoutBiometry)
     }
 
-    /// "Approuver": Touch ID (or the watch) on an unlocked vault, then the code is accepted.
-    /// Touch ID refused or cancelled: the pairing is refused. Locked or Touch ID off (when the tap
-    /// comes, or by the time the check answers): nothing is answered, the request waits on its sheet
-    /// for the user to unlock or enroll, until the extension gives up.
+    /// A Mac with no Touch ID (nor Watch): "Approuver" asks the Mac password instead.
+    public var approvesWithMacPassword: Bool {
+        !session.canUseBiometrics && session.ownerCheckWithoutBiometry
+    }
+
+    /// "Approuver": Touch ID (or the watch) on an unlocked vault, then the code is accepted; on a Mac
+    /// with no biometry, the Mac password. Refused or cancelled: the pairing is refused. Locked or
+    /// Touch ID off (when the tap comes, or by the time the check answers): nothing is answered, the
+    /// request waits on its sheet for the user to unlock or enroll, until the extension gives up.
     public func approve(_ id: UInt64) async {
         guard let request = requests.first(where: { $0.id == id }) else { return }
         guard canApprove else { return }
         let prompt = String(
             localized: "bridge.pairWithOnepass \(request.browser)", bundle: VaultKitStrings.bundle)
-        let ok = await session.confirmUserPresence(prompt: prompt)
+        let ok = await session.confirmOwnerPresence(prompt: prompt)
         if !ok, session.state != .unlocked {
             // A lock during the check (sleep, the idle delay) is not the user's refusal.
             BridgeLog.note("pairing approval interrupted by a lock")
             return
         }
-        BridgeLog.note(ok ? "pairing approved" : "pairing refused: no user presence (locked or Touch ID off)")
+        BridgeLog.note(ok ? "pairing approved" : "pairing refused: no user presence (cancelled, locked or Touch ID off)")
         server?.answerPairing(requestId: id, approved: ok)
         requests.removeAll { $0.id == id }
     }
@@ -279,10 +284,10 @@ public final class BrowserBridge {
     /// The accounts the browsers may reach, primary first: the primary one, and each added account
     /// that is signed in (bound to its store) and that the user made available in browsers (off by
     /// default: a paired browser reads every account listed here). One account: its name stays
-    /// "OnePass", as before.
+    /// "Cleon", as before.
     private func roster() -> [Served] {
         guard let accounts, accounts.hasSeveralAccounts else {
-            return [Served(slot: Self.primarySlot, name: "OnePass", vault: session)]
+            return [Served(slot: Self.primarySlot, name: "Cleon", vault: session)]
         }
         return accounts.profiles.compactMap { profile in
             if profile.isPrimary {
@@ -298,7 +303,7 @@ public final class BrowserBridge {
     private static func name(_ profile: AccountProfile, _ vault: VaultSession?) -> String {
         if !profile.label.isEmpty { return profile.label }
         let shown = vault?.environment.settings.displayName ?? ""
-        return shown.isEmpty ? "OnePass" : shown
+        return shown.isEmpty ? "Cleon" : shown
     }
 
     /// The session of the account in `slot`, if it was made.
@@ -536,7 +541,7 @@ enum BridgeLog {
 }
 
 extension BrowserBridge {
-    /// "Déverrouiller dans OnePass": opened by the Safari extension's handler and by the relay of
+    /// "Déverrouiller dans Cleon": opened by the Safari extension's handler and by the relay of
     /// Chrome and Firefox through LaunchServices, from the process that served the user's click.
     /// Since macOS 14 the app cannot bring itself forward while the browser is in front; a link
     /// opened for it can, and launches it when it is not running. It carries nothing.

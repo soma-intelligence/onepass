@@ -235,6 +235,40 @@ impl Http {
     }
 }
 
+/// One HTTPS POST of opaque bytes to a full URL, over the same TLS 1.3
+/// agent as the mailbox (web roots, no redirect, 30 s deadline): the
+/// Guarded Kit realms (`onepass_core::guarded_kit`), whose answers the core
+/// checks against the realm keys it pins. A status other than 200 is an
+/// error.
+pub struct OpaquePost(Http);
+
+/// Most bytes read from a realm answer.
+const OPAQUE_MAX: u64 = 64 * 1024;
+
+impl OpaquePost {
+    pub fn new() -> Result<OpaquePost, MailboxError> {
+        Ok(OpaquePost(Http::new(&Endpoint {
+            base_url: String::new(),
+            extra_ca_pem: None,
+        })?))
+    }
+
+    pub fn post(&self, url: &str, body: &[u8]) -> Result<Vec<u8>, MailboxError> {
+        check_url(url, false)?;
+        let resp = self.0.send(
+            Method::Post,
+            url,
+            &[("content-type", "application/octet-stream".to_string())],
+            body,
+            OPAQUE_MAX,
+        )?;
+        if resp.status != 200 {
+            return Err(MailboxError::Malformed("status"));
+        }
+        Ok(resp.body)
+    }
+}
+
 /// A `rustls::Error` anywhere in an error's chain: the handshake (or a
 /// record) failed, as opposed to the network.
 fn tls_cause(e: &(dyn std::error::Error + 'static)) -> Option<String> {

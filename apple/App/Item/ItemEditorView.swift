@@ -45,7 +45,8 @@ struct ItemEditorView: View {
                                 .editorRowPadding()
                         }
                     }
-                    ForEach(item.sections.filter { !editor.draft.isFreeSection($0.id) }, id: \.id) { section in
+                    // The chip section of a passport is the reader's, never edited by hand.
+                    ForEach(editor.draft.editableTemplateSections, id: \.id) { section in
                         TemplateSectionCard(editor: editor, section: section) { sectionID, key in
                             passkeyRemoval = PasskeyRemoval(sectionID: sectionID, key: key)
                         }
@@ -60,9 +61,15 @@ struct ItemEditorView: View {
                     }
                     optionsCard
                 }
+                #if os(macOS)
+                // The detail's readable column, so editing keeps every card in place.
+                .frame(maxWidth: ItemDetailView.macReadableWidth)
                 .padding(.horizontal, Theme.Space.xl)
-                .padding(.vertical, Theme.Space.xl)
+                #else
+                .padding(.horizontal, Theme.Space.xl)
                 .frame(maxWidth: 760)
+                #endif
+                .padding(.vertical, Theme.Space.xl)
                 .frame(maxWidth: .infinity)
                 #if os(macOS)
                 .textFieldStyle(.plain)
@@ -168,6 +175,7 @@ struct ItemEditorView: View {
         .onChange(of: editor.isDirty, initial: true) { _, dirty in model.editorDirty = dirty }
         .onDisappear {
             model.editorDirty = false
+            model.editorDisappeared()
             // A removed field's Undo holds its value (a password, a seed): it goes with the editor.
             model.dropToastActions(owner: editor)
         }
@@ -223,7 +231,7 @@ struct ItemEditorView: View {
                               ItemEditorModel.anchor(sectionID: section.id, fieldIndex: row.position)))
             }
         }
-        for section in item.sections where !editor.draft.isFreeSection(section.id) {
+        for section in editor.draft.editableTemplateSections {
             add(section, rows: editor.shownRows(section))
         }
         for slot in editor.slots {
@@ -411,7 +419,10 @@ struct ItemEditorView: View {
 
     private func save() {
         Task {
-            if let saved = await editor.save(with: model.session) { onDone(saved) }
+            let saved = await editor.save(with: model.session)
+            if let saved { onDone(saved) }
+            // "Enregistrer" of the unsaved changes confirmation: its action follows a saved draft.
+            model.editorSaveFinished(saved: saved != nil)
         }
     }
 }

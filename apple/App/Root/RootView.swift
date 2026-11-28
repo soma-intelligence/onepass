@@ -65,6 +65,7 @@ struct RootView: View {
             }
             #endif
             .onAppear { model.start() }
+            .whatsNewAfterUpdate()
             .onChange(of: model.session.state) { old, state in
                 model.sessionStateChanged(state, from: old)
             }
@@ -97,7 +98,7 @@ struct RootView: View {
             .onChange(of: model.primarySession.state) { _, state in
                 model.primaryStateChanged(state)
             }
-            // Passwords > Export Data to Another App > OnePass: the import sheet opens on what the
+            // Passwords > Export Data to Another App > Cleon: the import sheet opens on what the
             // other app sends (passkeys included) once the vault is unlocked.
             .onContinueUserActivity(ASCredentialExchangeActivity) { activity in
                 if let token = CredentialExchangeImport.token(of: activity) {
@@ -118,6 +119,14 @@ struct RootView: View {
                     model.showForUnlock()
                     return
                 }
+                #if !ONEPASS_APP_STORE
+                // OnePass Fill without Accessibility: Remplissage automatique > Remplir partout,
+                // after the unlock when locked.
+                if FillAnywhereLink.handles(url) {
+                    model.handle(.settings(.autofill, focus: FillAnywhereLink.focus))
+                    return
+                }
+                #endif
                 #endif
                 // An organisation invitation first: its link carries secrets the core reads only
                 // once the vault is open.

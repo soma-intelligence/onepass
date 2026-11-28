@@ -17,7 +17,7 @@
 // step just sent in this tab on the same site (`submitted_identifier`, kept
 // IDENTIFIER_TTL_MS in memory): identifier first, password on the next page.
 // Without one (spec 5.1) the card opens with an empty identifier field to
-// fill, never an automatic save; unless OnePass filled a login in this tab
+// fill, never an automatic save; unless Cleon filled a login in this tab
 // and site moments ago (the password is most likely its own).
 //
 // Change-password with a generated password (spec 5.2): `savePendingUpdate`
@@ -61,7 +61,7 @@
 // silently without a username; never a second save. The confirmation happens
 // at the submission: a signup the server then refuses stays confirmed.
 //
-// Every time (founder, 2026-11-04): each sign-in with credentials OnePass
+// Every time (founder, 2026-11-04): each sign-in with credentials Cleon
 // does not hold is offered, on any site, for any account: a site never
 // seen, a second account on a known site (`new`), a known account with
 // another password (`update`). A `new` login is saved at once (spec 4.1,
@@ -75,14 +75,14 @@
 // Cards and identities typed by hand (MS-04): a card, identity or address
 // form sent by the user (`submitted_form`, same trusted-gesture rule as a
 // sign-in) is followed the same way: once the page moved on without that
-// form, `check_card` or `check_identity` decides; one OnePass already holds
+// form, `check_card` or `check_identity` decides; one Cleon already holds
 // (filled from it, saved before) gets nothing. Its values live here at most
 // SUBMIT_TTL_MS, like a password. A locked vault offers nothing for them (the
 // check needs the vault). Cards and identities belong to no site, so a page
 // could fill a form with values of its choosing and watch whether a card
-// appears: the card stays quiet only for the very item OnePass filled in this
+// appears: the card stays quiet only for the very item Cleon filled in this
 // tab and site moments ago (`noteFilled`); any other `same` still shows the
-// card, whose Save then says it is already there. An identity OnePass filled
+// card, whose Save then says it is already there. An identity Cleon filled
 // in this tab and site keeps any later address of it quiet (the page often
 // reformats a phone or a country: never a duplicate offered).
 //
@@ -195,7 +195,7 @@ export function identityFromValues(v: SubmittedValues): IdentityValues | null {
   return out;
 }
 
-/** A card or identity OnePass filled keeps its own submission quiet this long. */
+/** A card or identity Cleon filled keeps its own submission quiet this long. */
 export const FILLED_TTL_MS = 10 * 60 * 1000;
 
 /** A generated password feeds the proposal of a submission this recent. */
@@ -307,7 +307,7 @@ export class SaveFlow {
   private readonly identifiers = new Map<number, Identifier>();
   /** Spec 5.2: the logins of a site with several, for the change-password card of a tab. */
   private readonly choices = new Map<number, { site: string; pendingItemId: string; logins: LoginChoice[] }>();
-  /** Login, card and identity items OnePass filled per tab, with their site and when. */
+  /** Login, card and identity items Cleon filled per tab, with their site and when. */
   private readonly filled = new Map<number, { site: string; kind: FilledKind; itemId: string; at: number }[]>();
   private readonly now: () => number;
   private readonly timers: Timers;
@@ -319,7 +319,7 @@ export class SaveFlow {
     this.timers = deps.timers ?? realTimers;
   }
 
-  /** A password OnePass generated and filled in `tabId` (menu or popup). */
+  /** A password Cleon generated and filled in `tabId` (menu or popup). */
   rememberGenerated(tabId: number, origin: string, password: string): void {
     const site = parseOrigin(origin)?.site;
     if (!site || password === "") return;
@@ -391,7 +391,7 @@ export class SaveFlow {
    * Spec 5.2: `password`, just generated and filled in a change-password
    * form of `tabId`, goes at once to the login being changed
    * (`update_password`, the old password to its history, tagged
-   * `onepass:pending`): the site's only login, or the one OnePass filled in
+   * `onepass:pending`): the site's only login, or the one Cleon filled in
    * this tab. The form's submission confirms it like a signup's pending
    * item (`confirm`, or the host's `pending` verdict). Several logins and none
    * filled here: the password goes at once to a pending Login of its own (no
@@ -517,13 +517,13 @@ export class SaveFlow {
     if (page?.https !== true) return;
     const username = m.username.trim() !== "" ? m.username : this.identifierFor(cs.tabId, cs.origin);
     const generated = this.takeGenerated(cs.tabId, cs.origin, m.password);
-    // The password OnePass generated and already saved: confirmed, nothing to ask; the card
+    // The password Cleon generated and already saved: confirmed, nothing to ask; the card
     // says it is saved once the sign-up worked.
     const confirmed = generated && (await this.confirm(cs.tabId, cs.origin, username));
     const pick = this.choices.get(cs.tabId);
     if (pick) this.choices.delete(cs.tabId);
     if (!confirmed) {
-      // No identifier (spec 5.1): the card asks for one, except right after OnePass filled a
+      // No identifier (spec 5.1): the card asks for one, except right after Cleon filled a
       // login here (a re-authentication with its own password).
       if (username.trim() === "" && !generated && this.filledHere(cs.tabId, cs.origin, "login")) return;
       if (await this.deps.chainRunning?.(cs.tabId)) return;
@@ -554,7 +554,7 @@ export class SaveFlow {
     this.pending.set(cs.tabId, p);
   }
 
-  /** OnePass filled the login, card or identity `itemId` in `tabId` (menu, popup, plan or chain). */
+  /** Cleon filled the login, card or identity `itemId` in `tabId` (menu, popup, plan or chain). */
   noteFilled(tabId: number, origin: string, kind: FilledKind, itemId: string): void {
     const site = parseOrigin(origin)?.site;
     if (!site) return;
@@ -570,12 +570,12 @@ export class SaveFlow {
     return (this.filled.get(tabId) ?? []).some((f) => f.site === site && f.kind === kind && now - f.at <= FILLED_TTL_MS && (itemId === undefined || f.itemId === itemId));
   }
 
-  /** The login OnePass last filled in `tabId` on the site of `origin`, if still recent (the setup card's target). */
+  /** The login Cleon last filled in `tabId` on the site of `origin`, if still recent (the setup card's target). */
   lastLoginFilled(tabId: number, origin: string): string | null {
     return this.lastFilled(tabId, origin, "login");
   }
 
-  /** The last item of `kind` OnePass filled in `tabId` on the site of `origin`, if still recent. */
+  /** The last item of `kind` Cleon filled in `tabId` on the site of `origin`, if still recent. */
   private lastFilled(tabId: number, origin: string, kind: FilledKind): string | null {
     const site = parseOrigin(origin)?.site;
     const now = this.now();
@@ -805,11 +805,11 @@ export class SaveFlow {
     return (await this.deps.saves.recentlyDismissed?.(origin, key).catch(() => false)) === true;
   }
 
-  /** A card or identity sent by hand: offered unless OnePass holds it or it was just put away. */
+  /** A card or identity sent by hand: offered unless Cleon holds it or it was just put away. */
   private async checkForm(tabId: number, origin: string, card: CardDraft | undefined, identity: IdentityValues | undefined): Promise<void> {
     const key = card ? cardQuietKey(card.number, card.exp_month, card.exp_year) : identity ? identityQuietKey(identity) : null;
     if (key === null || (await this.quiet(origin, key))) return;
-    // An identity OnePass filled here: what was sent is that identity, maybe reformatted by the page.
+    // An identity Cleon filled here: what was sent is that identity, maybe reformatted by the page.
     if (identity && this.filledHere(tabId, origin, "identity")) return;
     if (!(await this.verifiedTop(tabId, origin))) return;
     let r: { status: "new" | "same" | "update"; item_id?: string; title?: string };
@@ -821,7 +821,7 @@ export class SaveFlow {
       // Locked, refused, an older host without these checks: nothing offered.
       return;
     }
-    // The very card OnePass filled here: nothing to ask. Any other card or identity it holds: the
+    // The very card Cleon filled here: nothing to ask. Any other card or identity it holds: the
     // card shows anyway (no oracle for the page), its Save says it is already there.
     if (r.status === "same" && card && r.item_id !== undefined && this.filledHere(tabId, origin, "card", r.item_id)) return;
     const top = await this.verifiedTop(tabId, origin);
@@ -860,7 +860,7 @@ export class SaveFlow {
     }
   }
 
-  /** The toast, Edit only (spec 4.4): a generated password OnePass saved, confirmed by this sign-up. */
+  /** The toast, Edit only (spec 4.4): a generated password Cleon saved, confirmed by this sign-up. */
   private async showSaved(tabId: number, origin: string, username: string): Promise<void> {
     const top = await this.verifiedTop(tabId, origin);
     if (!top) return;

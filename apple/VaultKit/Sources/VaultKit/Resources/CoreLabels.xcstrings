@@ -6152,43 +6152,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "Bestätigungscode"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Verification code"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Código de verificación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Code de vérification"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Codice di verifica"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "확인 코드"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "验证码"
           }
         }
       }
@@ -8840,43 +8840,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA-Backup-Codes"
+            "value" : "Backup-Codes"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "2FA backup codes"
+            "value" : "Backup codes"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Códigos de recuperación 2FA"
+            "value" : "Códigos de recuperación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codes de secours 2FA"
+            "value" : "Codes de secours"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codici di backup 2FA"
+            "value" : "Codici di backup"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA 백업 코드"
+            "value" : "백업 코드"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA 备用验证码"
+            "value" : "备用验证码"
           }
         }
       }
@@ -9080,43 +9080,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Telefonnummer für 2FA"
+            "value" : "Telefonnummer zur Wiederherstellung"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "2FA phone"
+            "value" : "Recovery phone"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Teléfono para la 2FA"
+            "value" : "Teléfono de recuperación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Téléphone pour la 2FA"
+            "value" : "Téléphone de secours"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Telefono per la 2FA"
+            "value" : "Telefono di recupero"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA 전화번호"
+            "value" : "복구 전화번호"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "2FA 电话号码"
+            "value" : "恢复电话号码"
           }
         }
       }
@@ -9224,43 +9224,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "Bestätigungscode"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Verification code"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Código de verificación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Code de vérification"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Codice di verifica"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "확인 코드"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "验证码"
           }
         }
       }
@@ -10945,6 +10945,150 @@
         }
       }
     },
+    "field.passport.chip_read_on" : {
+      "comment" : "Field of the passport template (core id chip_read_on).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelesen am"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read on"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído el"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu le"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letto il"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "읽은 날짜"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取日期"
+          }
+        }
+      }
+    },
+    "field.passport.chip_status" : {
+      "comment" : "Field of the passport template (core id chip_status).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip-Status"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip status"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado del chip"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statut de la puce"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato del chip"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "칩 상태"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "芯片状态"
+          }
+        }
+      }
+    },
+    "field.passport.document_code" : {
+      "comment" : "Field of the passport template (core id document_code).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dokumentcode"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código del documento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code du document"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice del documento"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "문서 코드"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "证件代码"
+          }
+        }
+      }
+    },
     "field.passport.expiry" : {
       "comment" : "Field of the passport template (core id expiry).",
       "extractionState" : "manual",
@@ -11421,6 +11565,54 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "类型"
+          }
+        }
+      }
+    },
+    "field.passport.portrait" : {
+      "comment" : "Field of the passport template (core id portrait).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "사진"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "照片"
           }
         }
       }
@@ -14072,43 +14264,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "Bestätigungscode"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Verification code"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Código de verificación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Code de vérification"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TOTP"
+            "value" : "Codice di verifica"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "확인 코드"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "TOTP"
+            "value" : "验证码"
           }
         }
       }
@@ -17233,6 +17425,54 @@
         }
       }
     },
+    "menu.Authentifié par la puce" : {
+      "comment" : "Option of a menu field (stored value stays French).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durch den Chip authentifiziert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Authenticated by the chip"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autenticado por el chip"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Authentifié par la puce"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autenticato dal chip"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "칩으로 인증됨"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已通过芯片验证"
+          }
+        }
+      }
+    },
     "menu.Autre" : {
       "comment" : "Option of a menu field (stored value stays French).",
       "extractionState" : "manual",
@@ -17901,6 +18141,54 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "软件"
+          }
+        }
+      }
+    },
+    "menu.Lu sur la puce, signature non vérifiable" : {
+      "comment" : "Option of a menu field (stored value stays French).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vom Chip gelesen, Signatur nicht prüfbar"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read from the chip, signature not verifiable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído del chip, firma no verificable"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu sur la puce, signature non vérifiable"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letto dal chip, firma non verificabile"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "칩에서 읽음, 서명 확인 불가"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已从芯片读取，签名无法验证"
           }
         }
       }
@@ -18621,6 +18909,54 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "公务"
+          }
+        }
+      }
+    },
+    "menu.Signature invalide" : {
+      "comment" : "Option of a menu field (stored value stays French).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ungültige Signatur"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid signature"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma no válida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signature invalide"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firma non valida"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잘못된 서명"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名无效"
           }
         }
       }
@@ -20013,6 +20349,54 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "会员资格"
+          }
+        }
+      }
+    },
+    "section.passport.chip" : {
+      "comment" : "Section of the passport template (core id chip).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puce"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chip"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "칩"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "芯片"
           }
         }
       }

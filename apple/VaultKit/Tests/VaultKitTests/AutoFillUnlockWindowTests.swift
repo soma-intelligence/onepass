@@ -397,7 +397,7 @@ struct AutoFillUnlockWindowTests {
         #expect(stamps.latest(for: added) != nil)
         #expect(stamps.latest(for: h.settings) == stamp)
 
-        // A lock while already locked (the Lock control with OnePass locked) stamps again.
+        // A lock while already locked (the Lock control with Cleon locked) stamps again.
         app.lock()
         #expect(stamps.latest(for: h.settings)?.mark != stamp.mark)
     }

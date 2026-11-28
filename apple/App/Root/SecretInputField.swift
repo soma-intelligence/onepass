@@ -27,6 +27,9 @@ struct SecretInputField: View {
     var identifier: String
 
     @Environment(\.isEnabled) private var isEnabled
+    /// Read so the UIKit field follows the SwiftUI text size (an override included), not only the
+    /// system setting.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var plainFocused: Bool
 
     var body: some View {
@@ -81,7 +84,9 @@ struct SecretInputField: View {
 
     #if os(iOS) || os(visionOS)
     private var uiFont: UIFont {
-        let base = fontSize.map { UIFont.systemFont(ofSize: $0) } ?? .preferredFont(forTextStyle: .body)
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize))
+        let base = fontSize.map { UIFont.systemFont(ofSize: $0) }
+            ?? .preferredFont(forTextStyle: .body, compatibleWith: traits)
         guard monospaced else { return base }
         return .monospacedSystemFont(ofSize: base.pointSize, weight: .regular)
     }

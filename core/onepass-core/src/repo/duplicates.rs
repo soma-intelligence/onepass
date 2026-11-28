@@ -276,6 +276,8 @@ impl<S: RecordStore> Repository<S> {
             self.delete_chunks(pv.zone(), &written);
             return Err(e);
         }
+        // Fields taken from another copy may not be what the chip read.
+        crate::scan::to_item::guard_chip_status(Some(&before), &mut merged);
         record_edit(Some(&before), &mut merged, now);
         if let Err(e) = self.save_item(pv, merged.clone()) {
             self.delete_chunks(pv.zone(), &written);

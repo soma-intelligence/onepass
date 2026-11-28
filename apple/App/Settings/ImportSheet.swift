@@ -146,13 +146,18 @@ struct ImportSheet: View {
     @State private var vaultID = ""
     @State private var busy = false
     @State private var errorMessage: String?
-    /// A OnePass archive was chosen: it goes to the restore sheet.
+    /// A Cleon archive was chosen: it goes to the restore sheet.
     @State private var restoreRequest: RestoreRequest?
     /// What the import wrote, shown before the sheet closes.
     @State private var done: FfiImportSummary?
     @State private var doneVaultName = ""
+    /// The guided "passkeys restées dans 1Password" screen is shown over the result (or, from the
+    /// sources, over them): `PasskeyMigrationView`.
+    @State private var passkeyGuide = false
+    /// How many of the import's keyless passkeys were paired with their item (`PasskeyMigration`).
+    @State private var passkeysIdentified = 0
     /// Credentials another app handed over through the system's Credential Exchange (Passwords >
-    /// Export to OnePass): read with this one-time token when the sheet opens, then previewed and
+    /// Export to Cleon): read with this one-time token when the sheet opens, then previewed and
     /// imported like a CXF file (passkeys included).
     private let credentialExchange: UUID?
 
@@ -164,7 +169,10 @@ struct ImportSheet: View {
 
     var body: some View {
         ZStack {
-            if let done {
+            if passkeyGuide {
+                passkeyGuideStep
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if let done {
                 doneStep(done)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             } else if let preview, let format {
@@ -181,6 +189,7 @@ struct ImportSheet: View {
             if busy { busyOverlay.transition(.opacity) }
         }
         .animation(.easeInOut(duration: 0.25), value: preview != nil)
+        .animation(.easeInOut(duration: 0.25), value: passkeyGuide)
         .animation(.easeInOut(duration: 0.2), value: busy)
         .animation(.easeInOut(duration: 0.2), value: errorMessage)
         .fileImporter(isPresented: $picking, allowedContentTypes: [.data]) { result in
@@ -209,6 +218,10 @@ struct ImportSheet: View {
             await load(url)
             if UserDefaults.standard.bool(forKey: "OnePassDebugImportConfirm"), preview != nil {
                 await runImport()
+                // `-OnePassDebugPasskeyGuide YES`: screenshots of the guided passkey screen.
+                if UserDefaults.standard.bool(forKey: "OnePassDebugPasskeyGuide"), done != nil {
+                    passkeyGuide = true
+                }
             }
         }
         #endif
@@ -295,6 +308,9 @@ struct ImportSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Space.xl) {
                         if let errorMessage { errorCallout(errorMessage) }
+                        // Passkeys an earlier 1PUX import could not bring: their guided screen
+                        // stays reachable here while one is left to recreate.
+                        PasskeyMigrationEntry(boxed: true) { passkeyGuide = true }
                         dropZone
                         sourcePicker
                         privacyNote
@@ -509,6 +525,9 @@ struct ImportSheet: View {
                             .padding(.horizontal, Theme.Space.xs)
                             .accessibilityIdentifier("import.duplicates.done")
                     }
+                    if PasskeyMigration.keylessCount(d) > 0 {
+                        passkeyCallout(PasskeyMigration.keylessCount(d))
+                    }
                     contentSection(d, done: true)
                 }
                 .padding(20)
@@ -525,6 +544,87 @@ struct ImportSheet: View {
                 .tint(Theme.accent)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("import.finish")
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, Theme.Space.l)
+        }
+    }
+
+    // MARK: - Step 4: passkeys left in 1Password
+
+    /// After a 1PUX import with keyless passkeys: the count, why, and the button to the guided
+    /// screen. Orange, not red: the logins are imported, only their passkeys wait.
+    private func passkeyCallout(_ n: Int) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
+                Image(systemName: "person.badge.key.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                    Text(PasskeyMigrationText.title(n))
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("passkeyMigration.callout.body")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack {
+                Spacer()
+                Button {
+                    passkeyGuide = true
+                } label: {
+                    Label("passkeyMigration.callout.action", systemImage: "arrow.right")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .accessibilityIdentifier("import.passkeys.guide")
+            }
+        }
+        .padding(Theme.Space.l)
+        .background(Color.orange.opacity(0.1), in: .rect(cornerRadius: Theme.Radius.card))
+        .overlay { RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Color.orange.opacity(0.3)) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("import.passkeys")
+    }
+
+    /// The guided screen inside the sheet: back to the result (or the sources), or done.
+    private var passkeyGuideStep: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Button {
+                    passkeyGuide = false
+                } label: {
+                    Label("common.back", systemImage: "chevron.backward")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("passkeyMigration.back")
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, Theme.Space.l)
+            Divider()
+            ScrollView {
+                PasskeyMigrationView(
+                    importedCount: done.map(PasskeyMigration.keylessCount),
+                    identified: done == nil || passkeysIdentified > 0,
+                    onLeave: { dismiss() })
+                    .padding(20)
+            }
+            Divider()
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Text("common.done").frame(minWidth: 64)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.accent)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("passkeyMigration.finish")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, Theme.Space.l)
@@ -705,8 +805,10 @@ struct ImportSheet: View {
     }
 
     @ViewBuilder private func contentSection(_ p: FfiImportSummary, done: Bool = false) -> some View {
+        // After the import, the passkeys left in 1Password have their own callout (`passkeyCallout`).
         let notes: [(symbol: String, text: String)] =
-            p.warnings.map { ("info.circle", Self.warningLine($0)) }
+            p.warnings.filter { !done || $0.code != PasskeyMigration.warningCode }
+                .map { ("info.circle", Self.warningLine($0)) }
             + (p.skipped > 0 ? [("arrow.uturn.right", Self.skippedLine(p.skipped))] : [])
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             sectionTitle("Contenu")
@@ -740,7 +842,7 @@ struct ImportSheet: View {
             if done || duplicateChoices.isEmpty {
                 Text(done
                     ? "Les éléments rangés autrement que dans la source sont dans la section « Importé » de chaque élément."
-                    : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans OnePass n'est remplacé. Le dossier d'origine devient un tag.")
+                    : "Chaque élément est ajouté avec un nouvel identifiant : rien de ce qui est déjà dans Cleon n'est remplacé. Le dossier d'origine devient un tag.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -893,7 +995,7 @@ struct ImportSheet: View {
         let name = url.lastPathComponent
         let detected = await VaultSession.detectImportFormat(fileName: name, data: buffer.data)
         if detected == "onepass" {
-            // An encrypted OnePass backup or export: restored, not imported. The restore sheet owns
+            // An encrypted Cleon backup or export: restored, not imported. The restore sheet owns
             // the bytes from here (and wipes them); the buffer's copy is wiped now.
             restoreRequest = RestoreRequest(data: buffer.data, fileName: name)
             buffer.wipe()
@@ -978,10 +1080,28 @@ struct ImportSheet: View {
         busy = true
         defer { busy = false }
         let vaultName = model.session.vaults.first { $0.id == vaultID }?.meta.name ?? ""
+        // Passkeys a 1PUX export holds without their key: the entries are read now, while the bytes
+        // are still here, and paired with the items once written (`PasskeyMigration`).
+        let keyless: [PasskeyMigration.Entry]
+        if let preview, PasskeyMigration.keylessCount(preview) > 0 {
+            let data = buffer.data
+            keyless = await Task.detached { PasskeyMigration.scan(format: format, data: data) }.value
+        } else {
+            keyless = []
+        }
+        let before = PasskeyMigration.snapshot(model.session.summaries, vaultID: vaultID)
         do {
             let written = try await model.session.importItems(
                 format: format, data: buffer.data, vaultID: vaultID, decisions: duplicateChoices.decisions)
             buffer.wipe()
+            if !keyless.isEmpty {
+                let vault = vaultID
+                let after = model.session.summaries.filter { $0.vaultId == vault }.map(PasskeyMigration.Candidate.init)
+                let ids = PasskeyMigration.match(keyless, before: before, after: after)
+                passkeysIdentified = ids.count
+                PasskeyMigrationTracking.store(model.session)
+                    .add(ids.map { PasskeyMigrationStore.Ref(vaultID: vault, itemID: $0) })
+            }
             model.showToast(written.updated > 0 || written.archivedDuplicates > 0
                 ? Self.outcomeLine(written)
                 : Self.doneLine(written.items, vault: vaultName))
@@ -1225,5 +1345,307 @@ private struct ImportSourceTile: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint(source.hint)
         .accessibilityIdentifier("import.source.\(source.id)")
+    }
+}
+
+// MARK: - Passkeys restées dans 1Password
+
+/// Reads and prunes the device's list of items imported with a passkey to recreate
+/// (`PasskeyMigrationStore`), for the account of the session shown. One place so the import sheet,
+/// the guided screen and any entry point (Watchtower, Réglages) read the same list.
+@MainActor
+enum PasskeyMigrationTracking {
+    static func store(_ session: VaultSession) -> PasskeyMigrationStore {
+        PasskeyMigrationStore(accountID: session.environment.settings.accountID)
+    }
+
+    /// The items still waiting for a passkey; drops the ones that now hold one on the way.
+    static func pending(_ session: VaultSession) -> [FfiItemSummary] {
+        let store = store(session)
+        store.prune(session.summaries)
+        return store.pending(in: session.summaries)
+    }
+}
+
+/// The counted lines of the passkey screens, typed as keys so a literal never ends up verbatim.
+enum PasskeyMigrationText {
+    static func title(_ n: Int) -> LocalizedStringKey {
+        n == 1 ? "passkeyMigration.title.one" : "passkeyMigration.title.other \(n)"
+    }
+
+    static func entry(_ n: Int) -> LocalizedStringKey {
+        n == 1 ? "passkeyMigration.entry.one" : "passkeyMigration.entry.other \(n)"
+    }
+
+    /// The list is empty: every passkey is back (after an import), or no item could be identified.
+    static func empty(identified: Bool) -> LocalizedStringKey {
+        identified ? "passkeyMigration.recreate.allDone" : "passkeyMigration.recreate.none"
+    }
+}
+
+/// "3 passkeys sont restées dans 1Password": why (a 1PUX file never carries a passkey's private
+/// key) and the two ways out: the app-to-app export of 1Password (Credential Exchange) to OnePass,
+/// which brings the real passkeys, or recreating each passkey on its site. The list under the
+/// second way is live: an item leaves it as soon as it holds a real passkey.
+///
+/// Embedded by the import sheet after a 1PUX import, and by `PasskeyMigrationSheet` for any later
+/// entry point. `onLeave` closes what holds the screen before an item opens in the main window.
+struct PasskeyMigrationView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
+    /// The count the import reported (`passkey_needs_cxf`), shown in the title when the screen
+    /// follows an import; nil later, when the title counts the list.
+    var importedCount: Int?
+    /// False when the import could not tell which items hold the passkeys (none matched): an empty
+    /// list then says so instead of "all done".
+    var identified = true
+    var onLeave: () -> Void = {}
+
+    private var pending: [FfiItemSummary] {
+        // Read on every change of the summaries (`@Observable`): a passkey saved elsewhere, or a
+        // Credential Exchange import, drops its row at once.
+        _ = model.session.summariesRevision
+        return PasskeyMigrationTracking.pending(model.session)
+    }
+
+    var body: some View {
+        let list = pending
+        let count = importedCount ?? list.count
+        VStack(alignment: .leading, spacing: Theme.Space.xl) {
+            hero(count: count)
+            transferSection
+            recreateSection(list)
+        }
+        .animation(.easeInOut(duration: 0.25), value: list.map(\.id))
+    }
+
+    private func hero(count: Int) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            Image(systemName: "person.badge.key.fill")
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(.orange)
+                .frame(width: 52, height: 52)
+                .background(Color.orange.opacity(0.14), in: .circle)
+                .accessibilityHidden(true)
+            Text(PasskeyMigrationText.title(count))
+                .font(.title3.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text("passkeyMigration.why")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("passkeyMigration.hero")
+    }
+
+    /// The first way: 1Password hands the real passkeys over through the system's Credential
+    /// Exchange. Worded as a possibility: not every 1Password version offers it.
+    private var transferSection: some View {
+        let steps: [LocalizedStringKey] = [
+            "passkeyMigration.transfer.step1", "passkeyMigration.transfer.step2", "passkeyMigration.transfer.step3",
+        ]
+        return VStack(alignment: .leading, spacing: Theme.Space.s) {
+            sectionTitle("passkeyMigration.transfer.title")
+            EditorCard {
+                VStack(alignment: .leading, spacing: Theme.Space.m) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                        HStack(alignment: .top, spacing: Theme.Space.m) {
+                            Text(index + 1, format: .number)
+                                .font(.caption2.weight(.bold))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                                .frame(width: 20, height: 20)
+                                .background(Theme.accent, in: .circle)
+                            Text(step)
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                                // Centers the first line on the 20 pt step circle.
+                                .padding(.top, 1)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                .padding(Theme.Space.l)
+            }
+            .accessibilityIdentifier("passkeyMigration.transfer")
+            footnote("passkeyMigration.transfer.note")
+        }
+    }
+
+    private func recreateSection(_ pending: [FfiItemSummary]) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            sectionTitle("passkeyMigration.recreate.title")
+            footnote("passkeyMigration.recreate.how")
+            EditorCard {
+                if pending.isEmpty {
+                    Label(
+                        PasskeyMigrationText.empty(identified: identified),
+                        systemImage: identified ? "checkmark.circle.fill" : "questionmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(identified ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .editorRowPadding()
+                        .accessibilityIdentifier("passkeyMigration.empty")
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(pending.enumerated()), id: \.element.id) { n, item in
+                            if n > 0 { CardDivider() }
+                            row(item)
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
+                        }
+                    }
+                }
+            }
+            .accessibilityIdentifier("passkeyMigration.list")
+            if !pending.isEmpty {
+                footnote("passkeyMigration.recreate.live")
+            }
+        }
+    }
+
+    /// The item (opens it), its site, the "Passkey à recréer" mark, and "Ouvrir le site".
+    private func row(_ item: FfiItemSummary) -> some View {
+        let site = PasskeyMigration.siteURL(item.primaryUrl)
+        return HStack(spacing: Theme.Space.m) {
+            Button {
+                onLeave()
+                model.perform(.reveal(ItemRef(vaultID: item.vaultId, itemID: item.id)))
+            } label: {
+                HStack(spacing: Theme.Space.m) {
+                    ItemIconSource(item) { icon in
+                        ItemIcon(type: item.itemType, title: item.title, siteIcon: icon, size: 34,
+                            domain: ItemIconResolver.registrableDomain(item.primaryUrl))
+                    }
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                        Text(item.title.isEmpty ? (PasskeyMigration.host(item.primaryUrl) ?? "") : item.title)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text("passkeyMigration.badge")
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, Theme.Space.s)
+                            .padding(.vertical, Theme.Space.xxs)
+                            .background(Color.orange.opacity(0.14), in: .capsule)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(Text("passkeyMigration.openItem.hint"))
+            .accessibilityIdentifier("passkeyMigration.item.\(item.id)")
+            if let site {
+                Button {
+                    openURL(site)
+                } label: {
+                    Label("passkeyMigration.openSite", systemImage: "safari")
+                        .lineLimit(1)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(site.host() ?? "")
+                .accessibilityIdentifier("passkeyMigration.site.\(item.id)")
+            }
+        }
+        .editorRowPadding()
+    }
+
+    private func sectionTitle(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.leading, Theme.Space.xs)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func footnote(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Theme.Space.xs)
+    }
+}
+
+/// The guided screen on its own, for an entry point outside the import (Watchtower, Réglages):
+/// a navigation stack with "Terminé".
+struct PasskeyMigrationSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                PasskeyMigrationView(onLeave: { dismiss() })
+                    .padding(20)
+            }
+            .navigationTitle("passkeyMigration.navTitle")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("common.done") { dismiss() }
+                        .accessibilityIdentifier("passkeyMigration.done")
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(width: 560, height: 600)
+        #endif
+    }
+}
+
+/// A row for an entry point ("2 passkeys à recréer"), shown only while the list is not empty.
+/// `action` opens the guided screen; without one, the row presents `PasskeyMigrationSheet` itself.
+struct PasskeyMigrationEntry: View {
+    @Environment(AppModel.self) private var model
+    /// Drawn as its own orange card (the import sheet); false for a row inside a list or card.
+    var boxed = false
+    var action: (() -> Void)?
+    @State private var presenting = false
+
+    var body: some View {
+        _ = model.session.summariesRevision
+        let count = PasskeyMigrationTracking.pending(model.session).count
+        return Group {
+            if count > 0 {
+                Button {
+                    if let action { action() } else { presenting = true }
+                } label: {
+                    HStack(spacing: Theme.Space.m) {
+                        Image(systemName: "person.badge.key.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.orange)
+                            .frame(width: 32, height: 32)
+                            .background(Color.orange.opacity(0.14), in: .rect(cornerRadius: Theme.Radius.chip))
+                        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                            Text(PasskeyMigrationText.entry(count))
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text("passkeyMigration.entry.subtitle")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(.rect)
+                    .padding(boxed ? Theme.Space.l : 0)
+                    .background(
+                        Color.orange.opacity(boxed ? 0.08 : 0), in: .rect(cornerRadius: Theme.Radius.card))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("passkeyMigration.entry")
+                .sheet(isPresented: $presenting) { PasskeyMigrationSheet() }
+            }
+        }
     }
 }

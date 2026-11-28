@@ -10,7 +10,7 @@ struct TypeCodeStep: View {
     var body: some View {
         StepTitle(
             title: "Saisis le code",
-            subtitle: "Sur ton Mac : Fichier > Configurer un appareil… Le code à 8 caractères s'affiche sous le QR code.")
+            subtitle: "pairing.type.whereToFindCode")
         OnboardingField(
             label: "Code d'appairage", prompt: "K7QM-4XPR", text: $model.joinCode, monospaced: true,
             secretKey: true, identifier: "pairing.joinCode")
@@ -36,14 +36,14 @@ struct TypeCodeStep: View {
 }
 
 #if os(iOS)
-/// "Scanner un QR code": OnePass's own scanner, which takes only an `OPPAIR2:` text.
+/// "Scanner un QR code": Cleon's own scanner, which takes only an `OPPAIR2:` text.
 struct ScanCodeStep: View {
     @Bindable var model: OnboardingModel
 
     var body: some View {
         StepTitle(
             title: "Scanne le QR code",
-            subtitle: "Sur ton Mac : Fichier > Configurer un appareil… Place le QR code dans le cadre.")
+            subtitle: "pairing.scan.whereToFindCode")
         Label {
             Text("pairing.neverScanQrCode")
                 .font(.subheadline.weight(.semibold))
@@ -51,11 +51,27 @@ struct ScanCodeStep: View {
         } icon: {
             Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.orange)
         }
-        SecretKeyScanner(onKey: { text in model.joinPairing(code: text) }, accept: RendezvousQR.accept)
+        // Both codes of the unlocked device: the invite of Réglages > Appareils and the code of
+        // Fichier > Configurer un appareil… Anything else says so under the camera.
+        SecretKeyScanner(
+            onKey: { text in model.joinScanned(text) },
+            accept: { payload in
+                let routed = PairingScanText.route(payload)
+                if routed == nil { model.scanRejected = true }
+                return routed == nil ? nil : payload
+            }
+        )
             .frame(maxWidth: .infinity)
             .frame(height: 320)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .accessibilityIdentifier("pairing.scanner")
+        if model.scanRejected {
+            Label("pairing.scan.notOnePassCode", systemImage: "exclamationmark.triangle.fill")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("pairing.scan.rejected")
+        }
         Button("pairing.typeCodeInstead") { model.pairMethod = .type }
             .buttonStyle(.plain)
             .font(.subheadline.weight(.semibold))
@@ -65,15 +81,6 @@ struct ScanCodeStep: View {
     }
 }
 
-/// The rendezvous QR text: `OPPAIR2:` and nothing else (no URL, the system camera never opens it).
-enum RendezvousQR {
-    static let prefix = "OPPAIR2:"
-
-    static func accept(_ payload: String) -> String? {
-        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.hasPrefix(prefix) ? trimmed : nil
-    }
-}
 #else
 /// The Mac and the Vision Pro have no QR scanner: `pairMethod` never selects `.scan` there.
 struct ScanCodeStep: View {

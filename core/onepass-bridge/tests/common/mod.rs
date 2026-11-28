@@ -12,6 +12,7 @@ use onepass_core::model::{
     Address, FieldValue, Item, ItemType, ItemUrl, LoginMethod, MatchRule, PasskeyCredential,
     Provider, new_item,
 };
+use onepass_core::model::{KeyUseAction, KeyUseChannel};
 use time::{Date, Month, OffsetDateTime};
 use zeroize::Zeroizing;
 
@@ -80,8 +81,12 @@ pub struct FakeVault {
     pub client: Option<[u8; 16]>,
     /// `delete` of this item fails (a host write error), nothing deleted.
     pub fail_delete: Option<Id>,
+    /// `status` fails with this error (a store read that failed), not locked.
+    pub fail_status: Option<AppErrorCode>,
     /// Open and sign in: pending sign-ins, when a test sets a directory.
     pub pending: Option<PendingStore>,
+    /// Key usage log writes: item, channel, action, client, field.
+    pub key_uses: Vec<(Id, KeyUseChannel, KeyUseAction, String, String)>,
 }
 
 /// Account key and label of the fixture's second account (`two_accounts`).
@@ -320,6 +325,7 @@ impl FakeVault {
         };
         let vault = FakeVault {
             pending: None,
+            key_uses: Vec::new(),
             locked: false,
             approve_reprompt: false,
             history: Vec::new(),
@@ -329,6 +335,7 @@ impl FakeVault {
             served: Vec::new(),
             client: None,
             fail_delete: None,
+            fail_status: None,
             vaults: vec![perso, pro],
             items: vec![
                 atlas,
@@ -450,6 +457,13 @@ impl VaultAccess for FakeVault {
         self.pending.as_ref()?.take(origin, top_origin, now)
     }
 
+    fn checked_status(&self) -> Result<VaultStatus> {
+        match self.fail_status {
+            Some(code) => Err(BridgeError::App(code)),
+            None => Ok(self.status()),
+        }
+    }
+
     fn status(&self) -> VaultStatus {
         VaultStatus {
             locked: self.locked,
@@ -567,6 +581,25 @@ impl VaultAccess for FakeVault {
             .find(|i| i.id == item_id)
             .ok_or(BridgeError::App(AppErrorCode::NotFound))?;
         Ok(item.note_usage_with(u, now, force || forced))
+    }
+
+    fn record_key_use(
+        &mut self,
+        _vault_id: Id,
+        item_id: Id,
+        channel: KeyUseChannel,
+        action: KeyUseAction,
+        client: &str,
+        field: &str,
+    ) -> Result<()> {
+        self.key_uses.push((
+            item_id,
+            channel,
+            action,
+            client.to_owned(),
+            field.to_owned(),
+        ));
+        Ok(())
     }
 
     fn forget_site_usage(&mut self, site: &str) -> Result<usize> {

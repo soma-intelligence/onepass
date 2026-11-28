@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pair-cancel"
+description = "Enables the pair_cancel command without any pre-configured scope."
+commands.allow = ["pair_cancel"]
+
+[[permission]]
+identifier = "deny-pair-cancel"
+description = "Denies the pair_cancel command without any pre-configured scope."
+commands.deny = ["pair_cancel"]

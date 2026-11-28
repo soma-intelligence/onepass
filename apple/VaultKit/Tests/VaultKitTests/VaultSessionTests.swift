@@ -21,7 +21,10 @@ final class SessionHarness {
     /// Fast Argon2id parameters, accepted by the dev-fast-kdf test core only.
     static let fastKdf = FfiKdfParams(mKib: 8192, t: 1, p: 1)
 
-    init(dir: URL? = nil, keychain: any KeychainStore = InMemoryKeychain()) throws {
+    init(
+        dir: URL? = nil, keychain: any KeychainStore = InMemoryKeychain(),
+        syncedSecretKeys: (any SyncedSecretKeyStore)? = nil
+    ) throws {
         self.keychain = keychain
         let dir = dir ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("onepass-session-\(UUID().uuidString)")
@@ -29,7 +32,7 @@ final class SessionHarness {
         self.dir = dir
         suite = "onepass.tests.\(UUID().uuidString)"
         settings = VaultSettings(defaults: UserDefaults(suiteName: suite)!)
-        environment = VaultEnvironment(
+        var environment = VaultEnvironment(
             databaseURL: dir.appendingPathComponent("vault.sqlite"),
             keychain: keychain,
             biometrics: BiometricUnlock(keyring: keyring, keychain: keychain, clock: clock),
@@ -39,6 +42,8 @@ final class SessionHarness {
             pasteboard: pasteboard,
             accountKdf: Self.fastKdf,
             presence: presence)
+        environment.syncedSecretKeys = syncedSecretKeys
+        self.environment = environment
     }
 
     func makeSession() -> VaultSession { VaultSession(environment: environment) }

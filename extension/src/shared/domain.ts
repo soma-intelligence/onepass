@@ -8,7 +8,7 @@ export interface ParsedOrigin {
   site: string;
   https: boolean;
   /**
-   * A page OnePass may list, plan or fill on: `https`, or `http` on a loopback host (`LOOPBACK_HOSTS`,
+   * A page Cleon may list, plan or fill on: `https`, or `http` on a loopback host (`LOOPBACK_HOSTS`,
    * a local development server). The mirror of `onepass_bridge::origin::Origin::parse_page`.
    * Passkeys, saves and provider pages stay `https` only.
    */

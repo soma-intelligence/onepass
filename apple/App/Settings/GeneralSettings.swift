@@ -162,7 +162,7 @@ struct ProfileSettings: View {
 }
 
 #if os(iOS)
-/// Apparence: follow the system, or keep OnePass light or dark. Three small screens to pick from,
+/// Apparence: follow the system, or keep Cleon light or dark. Three small screens to pick from,
 /// as in the system's Display settings. Stored on this device only.
 private struct AppearanceSection: View {
     @AppStorage(Appearance.storageKey, store: AppModel.browseDefaults) private var stored = Appearance.system.rawValue
@@ -192,7 +192,8 @@ private struct AppearanceSection: View {
 }
 
 /// Nouveau design: the RX look (photo heroes, grouped cards, glass buttons) on Réglages, Watchtower,
-/// the item detail and Accueil. A preview, off by default, stored on this device only.
+/// the item detail and Accueil. The default look; turning it off brings the classic look back, on
+/// this device only.
 private struct RXDesignSection: View {
     @AppStorage(RXDesign.storageKey, store: AppModel.browseDefaults) private var isOn = RXDesign.launchDefault
 

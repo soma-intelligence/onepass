@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>OnePass</string>
+	<string>Cleon</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Cleon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -44,21 +44,23 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>Cleon lit la puce de tes documents et cartes pour les ranger dans ton coffre. Rien ne quitte ton téléphone sans chiffrement.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_onepass-pair._tcp</string>
 		<string>_onepass-contact._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification.</string>
+	<string>Cleon utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître.</string>
+	<string>Cleon utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur.</string>
+	<string>Cleon utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur.</string>
 	<key>NSLocationUsageDescription</key>
-	<string>OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.</string>
+	<string>Cleon utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
+	<string>Cleon utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>ASCredentialExchangeActivity</string>
@@ -121,6 +123,10 @@
 	<key>UISupportedInterfaceOrientations~iphone</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
+	<array>
+		<string>A0000002471001</string>
 	</array>
 </dict>
 </plist>

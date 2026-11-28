@@ -1,0 +1,18 @@
+(* formal-lib: guard_core.pvl *)
+(* Negative witness of G3: kit stolen and T = 2 realms compromised. The
+   insiders combine their key shares and evaluate the OPRF offline, so they
+   test password guesses offline (expected: attack found). That is today's
+   level without the guard (Secret Key public plus offline Argon2id), never
+   below. *)
+
+free pw: password [private].
+
+query attacker(evalb(guard_oprf_key, late)).
+
+process
+  new sk: key; new salt: nonce;
+  new rsk1: skey; new rsk2: skey; new rsk3: skey;
+  out(c, (sk, salt, pk(rsk1), pk(rsk2), pk(rsk3)));
+  ( Guarded(pw, sk, n2b(salt), guard_oprf_key, rsk1, rsk2, rsk3, yes, yes)
+  | ! Restore(pw, sk, n2b(salt), pk(rsk1), pk(rsk2))
+  | phase 1; out(c, late) )

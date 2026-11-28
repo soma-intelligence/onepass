@@ -120,6 +120,7 @@ struct KeyUseSection: View {
         case .cli: "terminal"
         case .mcp: "sparkles"
         case .sshAgent: "key.horizontal"
+        case .desktopFill: "macwindow"
         }
     }
 }

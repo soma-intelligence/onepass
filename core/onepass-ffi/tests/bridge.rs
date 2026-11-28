@@ -1,6 +1,10 @@
 //! The production bridge over a real unlocked session: the extension role
 //! played in Rust with `onepass-bridge`, the app's delegate scripted.
 //! Run with `--features dev-fast-kdf`.
+//!
+//! Unix only: these tests drive the socket hosts (SSH agent, MCP, bridge),
+//! whose Windows named pipes come with milestone X3.
+#![cfg(unix)]
 
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -1348,4 +1352,169 @@ fn key_use_of_a_bridge_fill_names_the_browser() {
             ""
         )
     );
+}
+
+// The Mac fill helper (spec 2026-11-23-mac-fill-anywhere): admitted by its
+// code signature, it pairs without a code and speaks the desktop context
+// only; no browser ever speaks it.
+
+#[cfg(target_os = "macos")]
+const SLACK: &str = "com.tinyspeck.slackmacgap";
+
+#[cfg(target_os = "macos")]
+fn vault_of(rig: &Rig) -> String {
+    rig.session.vaults().unwrap()[0].id.clone()
+}
+
+/// One connection admitted as the socket admits the fill helper.
+#[cfg(target_os = "macos")]
+fn admitted_fill(rig: &Rig) -> Ext {
+    let (ext, app) = UnixStream::pair().unwrap();
+    ext.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+    let server = rig.server.clone();
+    let done = thread::spawn(move || serve_fill_for_tests(&server, app));
+    Ext { s: ext, done }
+}
+
+#[cfg(target_os = "macos")]
+fn code_of(v: &Value) -> &str {
+    v["err"]["code"]
+        .as_str()
+        .unwrap_or_else(|| panic!("unexpected success: {v}"))
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn desktop_fill_helper_pairs_without_a_code_and_fills_for_an_app() {
+    let rig = rig();
+    let item = atlas_login(&rig.session, "Slack", "alex@atlas.dev", HOME_PASSWORD).id;
+    let mut ext = admitted_fill(&rig);
+    let record = auto_pair(&mut ext).unwrap();
+    let Event::Stored(_, ext_id, verified) = next(&rig.events) else {
+        panic!("stored")
+    };
+    assert_eq!(
+        (ext_id.as_str(), verified.as_str()),
+        ("fill", "OnePass Fill")
+    );
+
+    let mut ch = ext.open(&record);
+    let st = ext.request(&mut ch, json!({"id": 1, "op": "status"}));
+    assert_eq!(st["ok"]["locked"], false, "{st}");
+    let v = ext.request(
+        &mut ch,
+        json!({"id": 2, "op": "search", "ctx": "desktop", "query": "slack"}),
+    );
+    assert_eq!(v["ok"]["items"][0]["title"], "Slack", "{v}");
+    let v = ext.request(
+        &mut ch,
+        json!({"id": 3, "op": "fill_for_app", "ctx": "desktop", "item_id": hyphenated(&item),
+               "bundle_id": SLACK, "fields": ["password"], "remember": true,
+               "app_name": "Slack"}),
+    );
+    assert_eq!(v["ok"]["password"], HOME_PASSWORD, "{v}");
+    let v = ext.request(
+        &mut ch,
+        json!({"id": 4, "op": "list_for_app", "ctx": "desktop", "bundle_id": SLACK}),
+    );
+    assert_eq!(v["ok"]["items"][0]["match"], "exact_host", "{v}");
+    ext.end();
+    assert!(
+        rig.events
+            .try_iter()
+            .all(|e| !matches!(e, Event::Requested(_))),
+        "no pairing sheet"
+    );
+    let vault = rig.session.vaults().unwrap()[0].id.clone();
+    let log = rig.session.item_key_uses(vault, item).unwrap();
+    assert_eq!(log.len(), 1, "{log:?}");
+    assert_eq!(
+        (log[0].channel, log[0].client.as_str()),
+        (FfiKeyUseChannel::DesktopFill, "Slack")
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn desktop_fill_helper_gets_not_allowed_outside_the_desktop_context() {
+    let rig = rig();
+    let item = atlas_login(&rig.session, "Atlas", "alex@atlas.dev", HOME_PASSWORD).id;
+    let mut ext = admitted_fill(&rig);
+    let record = auto_pair(&mut ext).unwrap();
+    let mut ch = ext.open(&record);
+    let mut id = 0;
+    for req in [
+        json!({"op": "list_for_origin", "ctx": "popup", "origin": ATLAS}),
+        json!({"op": "search", "ctx": "popup", "query": "atlas"}),
+        json!({"op": "fill_login", "ctx": "menu", "item_id": hyphenated(&item),
+               "origin": ATLAS, "fields": ["password"]}),
+        json!({"op": "list_for_app", "ctx": "popup", "bundle_id": SLACK}),
+        json!({"op": "fill_for_app", "ctx": "popup", "item_id": hyphenated(&item),
+               "bundle_id": SLACK, "fields": ["password"], "remember": false}),
+        json!({"op": "vaults"}),
+    ] {
+        id += 1;
+        let mut req = req;
+        req["id"] = json!(id);
+        let v = ext.request(&mut ch, req.clone());
+        assert_eq!(code_of(&v), "not_allowed", "{req}");
+    }
+    ext.end();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn desktop_fill_helper_revoked_needs_the_code() {
+    let rig = rig();
+    rig.server.set_blocked_auto(vec!["fill".into()]);
+    let mut ext = admitted_fill(&rig);
+    assert_eq!(auto_pair(&mut ext).unwrap_err(), "not_allowed");
+    ext.end();
+    assert_eq!(rig.server.pairings().len(), 1);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn desktop_ctx_refused_for_safari_and_the_relay() {
+    let rig = rig();
+    let item = atlas_login(&rig.session, "Slack", "alex@atlas.dev", HOME_PASSWORD).id;
+    let desktop = |id: u64| {
+        [
+            json!({"id": id, "op": "list_for_app", "ctx": "desktop", "bundle_id": SLACK}),
+            json!({"id": id + 1, "op": "fill_for_app", "ctx": "desktop",
+                   "item_id": hyphenated(&item), "bundle_id": SLACK,
+                   "fields": ["password"], "remember": true, "app_name": "Slack"}),
+            json!({"id": id + 2, "op": "search", "ctx": "desktop", "query": "slack"}),
+            json!({"id": id + 3, "op": "list_for_origin", "ctx": "desktop", "origin": ATLAS}),
+        ]
+    };
+    for safari in [true, false] {
+        let mut ext = if safari {
+            admitted(&rig, None, None)
+        } else {
+            admitted(&rig, Some(CHROME_EXT), Some(CHROME))
+        };
+        let record = auto_pair(&mut ext).unwrap();
+        let mut ch = ext.open(&record);
+        for req in desktop(1) {
+            let v = ext.request(&mut ch, req.clone());
+            assert_eq!(code_of(&v), "not_allowed", "safari {safari}: {req}");
+        }
+        // Its own context still serves.
+        let v = ext.request(
+            &mut ch,
+            json!({"id": 9, "op": "search", "ctx": "popup", "query": "slack"}),
+        );
+        assert_eq!(v["ok"]["items"][0]["title"], "Slack", "{v}");
+        ext.end();
+    }
+    // Nothing filled, nothing remembered.
+    assert!(
+        rig.session
+            .item_key_uses(vault_of(&rig), item.clone())
+            .unwrap()
+            .is_empty()
+    );
+    let saved = rig.session.item(vault_of(&rig), item).unwrap();
+    assert!(saved.urls.iter().all(|u| !u.url.starts_with("macapp://")));
 }

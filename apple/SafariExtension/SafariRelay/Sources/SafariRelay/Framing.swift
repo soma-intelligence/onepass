@@ -4,7 +4,7 @@ import Foundation
 /// little-endian length, then that many bytes of UTF-8 JSON. The same frames
 /// the Chrome and Firefox native host reads on stdin and writes on stdout.
 public enum Framing {
-    /// OnePass cap, both directions (spec 5): 1 MiB.
+    /// Cleon cap, both directions (spec 5): 1 MiB.
     public static let maxFrame = 1 << 20
 
     /// The frame for `body`: length prefix, then the body.

@@ -75,6 +75,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let siteIcons = "onepass.siteIconsEnabled"
         static let wanted = "onepass.biometricsWanted"
         static let allowWatch = "onepass.allowWatchUnlock"
+        static let secretKeyInICloud = "onepass.secretKeyInICloud"
         static let failed = "onepass.failedUnlocks"
         static let lockout = "onepass.lockoutUntil"
         static let accountID = "onepass.accountID"
@@ -96,7 +97,7 @@ public final class VaultSettings: @unchecked Sendable {
         static let orgInviteDomain = "onepass.org.inviteDomain"
     }
 
-    // MARK: - Managed account (OnePass Business)
+    // MARK: - Managed account (Cleon Business)
 
     /// The org mailbox (32 hex) of this managed account's organisation, known once the org is created
     /// or the join link is read.
@@ -214,6 +215,13 @@ public final class VaultSettings: @unchecked Sendable {
     public var siteIconsEnabled: Bool {
         get { defaults.object(forKey: Key.siteIcons) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.siteIcons) }
+    }
+
+    /// A copy of the Secret Key goes to iCloud Keychain on a personal device, so another device of
+    /// this Apple ID joins with the master password only. On unless turned off in Sécurité.
+    public var secretKeyInICloud: Bool {
+        get { defaults.object(forKey: Key.secretKeyInICloud) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.secretKeyInICloud) }
     }
 
     public var allowWatchUnlock: Bool {

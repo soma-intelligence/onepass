@@ -9,6 +9,9 @@ struct AuditLogView: View {
     @Environment(AppModel.self) private var model
     @State private var report: FfiAuditReport?
     @State private var errorMessage: String?
+    /// Pushed inside the Réglages popup, where the window's toolbar (and its back button) is hidden.
+    @Environment(\.rxMacSettingsPage) private var inRXPage
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Group {
@@ -47,6 +50,10 @@ struct AuditLogView: View {
             }
         }
         .navigationTitle("developer.auditLog")
+        // The popup hides the window's toolbar: without this bar the log had no way back.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if inRXPage { RXMacSettingsBackBar { dismiss() } }
+        }
         .safeAreaInset(edge: .bottom) {
             if let report, report.unsealedTail {
                 Label("developer.lastLinesNotSealed", systemImage: "info.circle")

@@ -310,7 +310,10 @@ struct ItemListColumn: View {
                 // A toolbar item keeps the width it asks for: the search field asks for the row
                 // less what the bar's other items take (`ToolbarRowProbe`).
                 searchField
-                    .frame(width: titleBarRoom.map { max(180, $0 - rowReserved) } ?? 210)
+                    .frame(width: titleBarRoom.map { max(180, $0 - rowReserved - Self.searchLeadingGap) } ?? 210)
+                    // Air between the field and the sidebar button, which sits right against it
+                    // once the sidebar is closed.
+                    .padding(.leading, Self.searchLeadingGap)
                     // When the bar's other items change (a deleted item has fewer), the field eases
                     // to its new width instead of jumping.
                     .animation(.easeInOut(duration: 0.2), value: rowReserved)
@@ -499,6 +502,9 @@ struct ItemListColumn: View {
         .help("browse.sort")
         .accessibilityIdentifier("items.sort")
     }
+
+    /// Space before the title bar's search field (the sidebar button or the list's edge).
+    private static let searchLeadingGap: CGFloat = 10
 
     /// "Rechercher", or "Rechercher dans Logins" once a type is chosen.
     private var searchPrompt: String {
@@ -808,7 +814,7 @@ struct ItemListColumn: View {
         var items: [FfiItemSummary]
     }
 
-    /// Consecutive months of a list sorted by date, newest first: "OCTOBRE 2026".
+    /// Consecutive months of a list sorted by date, newest first: "OCTOBRE 2026", in the app's language.
     static func months(_ items: [FfiItemSummary], calendar: Calendar = .current) -> [Month] {
         var result: [Month] = []
         for item in items {
@@ -818,8 +824,8 @@ struct ItemListColumn: View {
             if result.last?.id == id {
                 result[result.count - 1].items.append(item)
             } else {
-                let title = date.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: "fr_FR")))
-                result.append(Month(id: id, title: title.uppercased(with: Locale(identifier: "fr_FR")), items: [item]))
+                let title = date.formatted(.dateTime.month(.wide).year())
+                result.append(Month(id: id, title: title.uppercased(with: .current), items: [item]))
             }
         }
         return result

@@ -13,8 +13,7 @@ struct OnboardingStepContent: View {
             case .device: DeviceStep(model: model)
             case .password: PasswordStep(model: model)
             case .secretKey: SecretKeyStep(model: model)
-            case .biometrics: BiometricsStep(model: model)
-            case .autoFill: AutoFillStep(model: model)
+            case .iCloudJoin: ICloudJoinStep(model: model)
             case .visibleVaults: VisibleVaultsStep(model: model)
             case .restore: RestoreStep(model: model)
             case .done: DoneStep(model: model)
@@ -29,7 +28,9 @@ struct OnboardingStepContent: View {
                 }
                 .font(.subheadline)
             }
-            if let error = model.errorMessage {
+            // iPhone and iPad: the error sits in the bottom bar, above the keyboard and the primary
+            // button, where it is always seen (under the fields it was hidden by the keyboard).
+            if Platform.isMac, let error = model.errorMessage {
                 OnboardingErrorCard(message: error, model: model)
                     .transition(.opacity.combined(with: .offset(y: 6)))
             }
@@ -37,11 +38,16 @@ struct OnboardingStepContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.smooth(duration: 0.3), value: model.errorMessage)
         .disabled(model.busy)
+        // VoiceOver hears every new error, wherever its focus is.
+        .onChange(of: model.errorPulse) {
+            guard let error = model.errorMessage else { return }
+            AccessibilityNotification.Announcement(error).post()
+        }
     }
 }
 
 /// An error where it happened, with its next step as a button: never only an alert.
-private struct OnboardingErrorCard: View {
+struct OnboardingErrorCard: View {
     let message: String
     let model: OnboardingModel
 
@@ -197,10 +203,13 @@ struct OnboardingField: View {
     /// keep their callers' `.onSubmit`.
     var submitNext = false
     var onSubmit: () -> Void = {}
+    /// Room kept for the trailing check or cross, scaled with the text so the two never overlap.
+    @ScaledMetric(relativeTo: .body) private var markRoom: CGFloat = 38
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label).font(.subheadline).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Group {
                 if secure {
                     // Emptied as it leaves the screen: iOS never offers to save the master password.
@@ -222,8 +231,10 @@ struct OnboardingField: View {
             .privacySensitive(secretKey || secure)
             .accessibilityIdentifier(identifier)
             .padding(.leading, 14)
-            .padding(.trailing, mismatch || valid ? 8 : 14)
-            .frame(height: Platform.isMac ? 40 : 52)
+            .padding(.trailing, mismatch || valid ? markRoom : 14)
+            // Grows with Dynamic Type (accessibility sizes included): a minimum, never a fixed height.
+            .padding(.vertical, Platform.isMac ? 8 : 12)
+            .frame(minHeight: Platform.isMac ? 40 : 52)
             .overlay(alignment: .trailing) {
                 if mismatch || valid {
                     Image(systemName: valid ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -315,35 +326,121 @@ private struct WelcomeStep: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         VStack(spacing: 14) {
-            createButton
-            VStack(spacing: 0) {
-                row(
-                    "onboarding.welcome.restore", "onboarding.welcome.restoreDetail", symbol: "doc.text",
-                    identifier: "onboarding.restore"
-                ) { model.choose(.restore) }
-                Divider().padding(.leading, 62)
-                row(
+            switch model.iCloudVault {
+            case .joinable:
+                // The account and its key are in iCloud: one tap, then the master password.
+                mainButton(
+                    "onboarding.welcome.iCloudJoin", "onboarding.welcome.iCloudJoinDetail", symbol: "icloud",
+                    identifier: "onboarding.iCloudJoin"
+                ) { model.choose(.iCloud) }
+                otherChoices(pairFirst: true)
+            case .needsKey:
+                // An account in iCloud whose key this device cannot get from iCloud Keychain:
+                // creating would be refused; the other device hands the key over.
+                Label("onboarding.welcome.vaultInICloudNeedsKey", systemImage: "icloud")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("onboarding.vaultInICloud")
+                mainButton(
                     "onboarding.welcome.pair", "onboarding.welcome.pairDetail", symbol: "qrcode",
                     identifier: "onboarding.pair"
                 ) { model.choose(.pair) }
+                VStack(spacing: 0) {
+                    row(
+                        "onboarding.welcome.restore", "onboarding.welcome.restoreDetail", symbol: "doc.text",
+                        identifier: "onboarding.restore"
+                    ) { model.choose(.restore) }
+                }
+                .card()
+            case .unknown where model.lookingInICloudFirst, .checking where model.lookingInICloudFirst:
+                // A few seconds at most: a found account replaces this screen (spec 2026-11-25).
+                Label {
+                    Text("onboarding.welcome.lookingInICloud")
+                } icon: {
+                    ProgressView().controlSize(.small)
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 24)
+                .accessibilityIdentifier("onboarding.lookingInICloud")
+            default:
+                mainButton(
+                    "onboarding.welcome.create", "onboarding.welcome.createDetail", symbol: "plus",
+                    identifier: "onboarding.create"
+                ) { model.choose(.create) }
+                otherChoices(pairFirst: false)
+                if model.iCloudVault == .checking {
+                    Label {
+                        Text("onboarding.welcome.lookingInICloud")
+                    } icon: {
+                        ProgressView().controlSize(.small)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("onboarding.lookingInICloudSlow")
+                } else {
+                    Button("onboarding.welcome.sharedDevice") { model.chooseSharedDevice() }
+                        .buttonStyle(.borderless)
+                        .font(.footnote)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("onboarding.sharedDevice")
+                }
             }
-            .card()
         }
         .padding(.top, 10)
+        .animation(.smooth(duration: 0.3), value: model.iCloudVault)
+        .animation(.smooth(duration: 0.3), value: model.iCloudLookupSlow)
     }
 
-    /// The first-time path, the one most people take: full width, in the accent wash.
-    private var createButton: some View {
-        Button { model.choose(.create) } label: {
+    /// Restore with the Emergency Kit and pair with another device, in one card.
+    private func otherChoices(pairFirst: Bool) -> some View {
+        VStack(spacing: 0) {
+            if pairFirst {
+                pairRow
+                Divider().padding(.leading, 62)
+                restoreRow
+            } else {
+                restoreRow
+                Divider().padding(.leading, 62)
+                pairRow
+            }
+        }
+        .card()
+    }
+
+    private var restoreRow: some View {
+        row(
+            "onboarding.welcome.restore", "onboarding.welcome.restoreDetail", symbol: "doc.text",
+            identifier: "onboarding.restore"
+        ) { model.choose(.restore) }
+    }
+
+    private var pairRow: some View {
+        row(
+            "onboarding.welcome.pair", "onboarding.welcome.pairDetail", symbol: "qrcode",
+            identifier: "onboarding.pair"
+        ) { model.choose(.pair) }
+    }
+
+    /// The path most people take here: full width, in the accent wash.
+    private func mainButton(
+        _ title: LocalizedStringResource, _ subtitle: LocalizedStringResource, symbol: String,
+        identifier: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
             HStack(spacing: 14) {
-                Image(systemName: "plus")
+                Image(systemName: symbol)
                     .font(.system(size: 17, weight: .bold))
                     .frame(width: 34, height: 34)
                     .background(.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("onboarding.welcome.create")
+                    Text(title)
                         .font(.system(size: Platform.isMac ? 16 : 17, weight: .semibold))
-                    Text("onboarding.welcome.createDetail")
+                    Text(subtitle)
                         .font(.system(size: 13.5))
                         .opacity(0.85)
                 }
@@ -364,7 +461,7 @@ private struct WelcomeStep: View {
         }
         .onboardingPressable()
         .visionHoverEffect()
-        .accessibilityIdentifier("onboarding.create")
+        .accessibilityIdentifier(identifier)
     }
 
     private func row(
@@ -403,7 +500,7 @@ private struct DeviceStep: View {
     var body: some View {
         StepTitle(
             title: Platform.isMac ? "Ce Mac est-il à toi ?" : "Cet appareil est-il à toi ?",
-            subtitle: "La réponse règle ce que OnePass garde sur cet appareil.")
+            subtitle: "La réponse règle ce que Cleon garde sur cet appareil.")
         VStack(spacing: 10) {
             option(
                 .personal, "Oui, il est à moi",
@@ -411,15 +508,6 @@ private struct DeviceStep: View {
             option(
                 .shared, "Il est partagé",
                 "Appareil de la famille ou du bureau. Pas de \(model.biometryName), verrouillage après 5 min, coffres visibles au choix.")
-        }
-        if model.mailboxSignupEnabled {
-            Button("onboarding.syncChoice.link") { model.showSyncChoice = true }
-                .buttonStyle(.borderless)
-                .font(.footnote)
-                .accessibilityIdentifier("onboarding.syncChoice")
-                .sheet(isPresented: $model.showSyncChoice) {
-                    SyncChoiceSheet(choice: $model.syncChoice)
-                }
         }
     }
 
@@ -492,6 +580,15 @@ private struct PasswordStep: View {
             label: "Ton prénom (affiché seulement sur tes appareils)", prompt: "Camille",
             text: $model.displayName, identifier: "onboarding.name")
         #endif
+        if model.mailboxSignupEnabled {
+            Button("onboarding.syncChoice.link") { model.showSyncChoice = true }
+                .buttonStyle(.borderless)
+                .font(.footnote)
+                .accessibilityIdentifier("onboarding.syncChoice")
+                .sheet(isPresented: $model.showSyncChoice) {
+                    SyncChoiceSheet(choice: $model.syncChoice)
+                }
+        }
         VStack(alignment: .leading, spacing: 10) {
             OnboardingField(
                 label: "Mot de passe maître",
@@ -656,16 +753,18 @@ private struct SecretKeyStep: View {
         }
         StepTitle(
             title: "Range ta Secret Key",
-            subtitle: Platform.text(
-                mac: "onboarding.itWasCreatedOn",
-                phone: "Créée sur cet \(Platform.deviceName), elle ne le quitte jamais. Il te la faudra pour un nouvel appareil si aucun autre n'est à côté."))
+            subtitle: model.kitBackedUpInICloud
+                ? "onboarding.secretKey.alsoInICloud"
+                : Platform.text(
+                    mac: "onboarding.itWasCreatedOn",
+                    phone: "Créée sur cet \(Platform.deviceName), elle ne le quitte jamais. Il te la faudra pour un nouvel appareil si aucun autre n'est à côté."))
         VStack(alignment: .leading, spacing: 8) {
             Text("onboarding.secretKey")
-                .font(.system(size: 12, weight: .bold))
+                .font(.caption.weight(.bold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
             Text(verbatim: model.secretKey ?? "")
-                .font(.system(size: 16, design: .monospaced))
+                .font(.system(.body, design: .monospaced))
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
                 .privacySensitive()
@@ -699,23 +798,32 @@ private struct SecretKeyStep: View {
         }
         #endif
 
-        if model.kitData != nil {
-            Button {
-                model.printKit()
-            } label: {
-                Label("onboarding.printKit", systemImage: "printer")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(maxWidth: Platform.isMac ? nil : .infinity)
-                    .frame(height: Platform.isMac ? 28 : 40)
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(Platform.isMac ? .large : .regular)
-            .accessibilityIdentifier("onboarding.printKit")
+        // Always shown, as the text above asks for them: a kit that cannot be built says so below,
+        // with "Réessayer" and the Secret Key to copy instead.
+        Button {
+            model.printKit()
+        } label: {
+            Label("onboarding.printKit", systemImage: "printer")
+                .font(.headline)
+                .frame(maxWidth: Platform.isMac ? nil : .infinity)
+                .frame(minHeight: Platform.isMac ? 28 : 40)
+        }
+        .buttonStyle(.glassProminent)
+        .controlSize(Platform.isMac ? .large : .regular)
+        .accessibilityIdentifier("onboarding.printKit")
 
-            Button("app.saveFile") { saveWarning = true }
-                .buttonStyle(.borderless)
-                .font(.subheadline)
-                .accessibilityIdentifier("onboarding.saveKit")
+        Button("app.saveFile") {
+            if model.prepareKit() { saveWarning = true }
+        }
+        .buttonStyle(.borderless)
+        .font(.subheadline)
+        .accessibilityIdentifier("onboarding.saveKit")
+
+        if let problem = model.kitProblem {
+            KitProblemCard(message: problem, model: model)
+                // A new card per attempt: "Réessayer" visibly answers, and its announcement repeats.
+                .id(model.kitAttempts)
+                .transition(.opacity)
         }
         KitStoredRow(isOn: $model.kitStoredOffline)
             .accessibilityIdentifier("onboarding.kitStored")
@@ -754,6 +862,63 @@ private struct SecretKeyStep: View {
     }
 }
 
+/// The Emergency Kit could not be built: why, "Réessayer", and the Secret Key to copy so it can
+/// still be written down. Announced to VoiceOver as it appears.
+private struct KitProblemCard: View {
+    let message: String
+    let model: OnboardingModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.red)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(message)
+                    .font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("onboarding.kitProblem")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) { buttons }
+                    VStack(alignment: .leading, spacing: 10) { buttons }
+                }
+                if model.secretKeyCopied {
+                    Text("onboarding.kit.copied")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("onboarding.kitCopied")
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: Platform.isMac ? 12 : 16, style: .continuous)
+            shape.fill(Color.red.opacity(0.08))
+                .overlay(shape.strokeBorder(Color.red.opacity(0.22), lineWidth: 1))
+        }
+        .accessibilityElement(children: .contain)
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
+    }
+
+    @ViewBuilder private var buttons: some View {
+        Button("Réessayer") { model.retryKit() }
+            .font(.subheadline.weight(.semibold))
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("onboarding.kitRetry")
+        Button {
+            model.copySecretKey()
+        } label: {
+            Label("onboarding.kit.copySecretKey", systemImage: "doc.on.doc")
+        }
+        .font(.subheadline.weight(.semibold))
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("onboarding.kitCopy")
+    }
+}
+
 /// "Je l'ai rangée hors ligne": a checkbox on Mac; on iPhone and iPad a card whose circle draws a
 /// green check, the card turning green with it.
 private struct KitStoredRow: View {
@@ -781,7 +946,7 @@ private struct KitStoredRow: View {
                 .frame(width: 28, height: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Je l'ai rangée hors ligne")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
                     Text(isOn ? "C'est noté. Garde-la loin de tes écrans." : "Imprimée, ou sur un support hors ligne.")
                         .font(.footnote)
@@ -811,108 +976,6 @@ private struct SharedKitFile: Identifiable {
     var id: URL { url }
 }
 #endif
-
-// MARK: - Biométrie
-
-private struct BiometricsStep: View {
-    @Bindable var model: OnboardingModel
-
-    var body: some View {
-        let enabled = model.biometricsEnabled
-        VStack(spacing: 18) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Platform.isMac ? 48 : 32, style: .continuous)
-                    .fill(enabled ? AnyShapeStyle(Color.green.opacity(0.12)) : AnyShapeStyle(.fill.tertiary))
-                if enabled {
-                    CalmCheckmark(size: Platform.isMac ? 64 : 80)
-                        .transition(.opacity)
-                } else {
-                    Image(systemName: OnboardingModel.biometrySymbol)
-                        .font(.system(size: Platform.isMac ? 46 : 60, weight: .light))
-                        .foregroundStyle(Theme.accent)
-                        .symbolEffect(.pulse, options: .repeating, isActive: model.busy)
-                        .transition(.opacity)
-                }
-            }
-            .frame(width: Platform.isMac ? 96 : 128, height: Platform.isMac ? 96 : 128)
-            .padding(.top, Platform.isMac ? 0 : 28)
-            .animation(.smooth(duration: 0.35), value: enabled)
-            .accessibilityHidden(true)
-            StepTitle(
-                title: enabled ? "\(model.biometryName) est activé" : "Déverrouiller avec \(model.biometryName)",
-                subtitle: enabled
-                    ? "Ton coffre s'ouvre maintenant d'un regard ou d'un doigt."
-                    : Platform.text(
-                        mac: "onboarding.unlockKeyStaysIn",
-                        phone: "La clé reste dans la Secure Enclave. Le mot de passe maître est redemandé tous les 14 jours et si \(model.biometryName) change."),
-                centered: !Platform.isMac)
-                .contentTransition(.opacity)
-                .accessibilityIdentifier(enabled ? "onboarding.biometricsOn" : "onboarding.biometricsOffer")
-            if !enabled, !Platform.isMac {
-                Text("onboarding.laterCanTurnIt")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
-        #if os(macOS)
-        Toggle("onboarding.alsoAllowAppleWatch", isOn: $model.allowWatch)
-            .toggleStyle(.checkbox)
-            .disabled(enabled)
-        #endif
-    }
-}
-
-// MARK: - Remplissage automatique
-
-/// Once the account exists: asks the system to make OnePass the AutoFill provider (the system
-/// prompt, the system settings when it does not show). "Plus tard" goes on without it: the tip
-/// card of Accueil offers it again. Never among the steps when the provider is already on.
-private struct AutoFillStep: View {
-    let model: OnboardingModel
-
-    var body: some View {
-        let enabled = model.autoFillEnabled
-        VStack(spacing: 18) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Platform.isMac ? 48 : 32, style: .continuous)
-                    .fill(enabled ? AnyShapeStyle(Color.green.opacity(0.12)) : AnyShapeStyle(.fill.tertiary))
-                if enabled {
-                    CalmCheckmark(size: Platform.isMac ? 64 : 80)
-                        .transition(.opacity)
-                } else {
-                    Image(systemName: "key.viewfinder")
-                        .font(.system(size: Platform.isMac ? 46 : 60, weight: .light))
-                        .foregroundStyle(Theme.accent)
-                        .symbolEffect(.pulse, options: .repeating, isActive: model.autoFillRequesting)
-                        .transition(.opacity)
-                }
-            }
-            .frame(width: Platform.isMac ? 96 : 128, height: Platform.isMac ? 96 : 128)
-            .padding(.top, Platform.isMac ? 0 : 28)
-            .animation(.smooth(duration: 0.35), value: enabled)
-            .accessibilityHidden(true)
-            StepTitle(
-                title: enabled ? "onboarding.autoFill.onTitle" : "browse.fillPasswordsWithOnepass",
-                subtitle: enabled ? "onboarding.autoFill.onDetail" : "browse.loginsCodesAndPasskeys",
-                centered: !Platform.isMac)
-                .contentTransition(.opacity)
-                .accessibilityIdentifier(enabled ? "onboarding.autoFillOn" : "onboarding.autoFillOffer")
-            if !enabled {
-                // Asked and still off: the system settings are where it is turned on.
-                let note: LocalizedStringResource =
-                    model.autoFillAsked ? "onboarding.autoFill.settingsHint" : "onboarding.laterCanTurnIt"
-                Text(note)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(Platform.isMac ? .leading : .center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: Platform.isMac ? .leading : .center)
-    }
-}
 
 // MARK: - Coffres visibles (mode partagé)
 
@@ -1069,6 +1132,77 @@ private struct RestoreStep: View {
     }
 }
 
+// MARK: - Coffre iCloud
+
+/// "Ton coffre iCloud": the account came from iCloud, its Secret Key from iCloud Keychain. Only the
+/// master password is typed (spec 2026-11-25).
+private struct ICloudJoinStep: View {
+    @Bindable var model: OnboardingModel
+
+    var body: some View {
+        StepTitle(title: "onboarding.iCloudJoin.welcomeBack", subtitle: "onboarding.iCloudJoin.found")
+        // The account found in iCloud, its owner named when the copy carries the name.
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().fill(Theme.accent.opacity(0.16))
+                if let initial = model.iCloudOwner?.first {
+                    Text(String(initial).uppercased())
+                        .font(.system(size: Platform.isMac ? 20 : 22, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                } else {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: Platform.isMac ? 18 : 20))
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .frame(width: Platform.isMac ? 44 : 48, height: Platform.isMac ? 44 : 48)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Group {
+                    if let owner = model.iCloudOwner {
+                        Text(owner)
+                    } else {
+                        Text("onboarding.iCloudJoin.yourVault")
+                    }
+                }
+                .font(Platform.isMac ? .system(size: 15, weight: .semibold) : .headline)
+                Label("onboarding.iCloudJoin.accountDetail", systemImage: "icloud.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .card()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("onboarding.iCloudAccount")
+        #if os(macOS)
+        if !model.restoreOnly, model.iCloudOwner == nil {
+            OnboardingField(
+                label: "Ton prénom (affiché seulement sur tes appareils)", prompt: "Camille",
+                text: $model.displayName, identifier: "onboarding.name")
+        }
+        #endif
+        OnboardingField(
+            label: "Mot de passe maître", prompt: "Mot de passe maître", text: $model.restorePassword,
+            secure: true, identifier: "onboarding.iCloudPassword",
+            onSubmit: { Task { await model.primary() } })
+        Menu {
+            Button("onboarding.iCloudJoin.useQRCode", systemImage: "qrcode") { model.pairInstead() }
+            Button("onboarding.iCloudJoin.useKit", systemImage: "doc.text") { model.switchToRestore() }
+        } label: {
+            Text("onboarding.iCloudJoin.otherMethod")
+        }
+        #if os(macOS)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        #endif
+        .font(.footnote)
+        .accessibilityIdentifier("onboarding.otherMethod")
+    }
+}
+
 // MARK: - Terminé
 
 private struct DoneStep: View {
@@ -1114,6 +1248,23 @@ private struct DoneStep: View {
                 .padding(.vertical, 13)
                 .accessibilityElement(children: .combine)
             }
+            // Face ID (Touch ID) and AutoFill: one button each, both optional (spec 2026-11-25).
+            if model.biometricsOffered {
+                Divider().padding(.leading, 52)
+                actionRow(
+                    symbol: OnboardingModel.biometrySymbol, label: model.biometryName,
+                    done: model.biometricsEnabled, working: model.busy && !model.biometricsEnabled,
+                    identifier: "onboarding.enableBiometrics"
+                ) { Task { await model.enrollBiometrics() } }
+            }
+            if model.autoFillOffered {
+                Divider().padding(.leading, 52)
+                actionRow(
+                    symbol: "key.viewfinder", label: String(localized: "term.autofill"),
+                    done: model.autoFillEnabled, working: model.autoFillRequesting,
+                    identifier: "onboarding.enableAutoFill"
+                ) { Task { await model.turnOnAutoFill() } }
+            }
         }
         .card()
         .opacity(settled ? 1 : 0)
@@ -1125,6 +1276,18 @@ private struct DoneStep: View {
                 withAnimation(.spring(duration: 0.6, bounce: 0).delay(0.55)) { settled = true }
             }
         }
+        if model.autoFillAsked, !model.autoFillEnabled {
+            Text("onboarding.autoFill.settingsHint")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        #if os(macOS)
+        if model.biometricsOffered, !model.biometricsEnabled {
+            Toggle("onboarding.alsoAllowAppleWatch", isOn: Bindable(model).allowWatch)
+                .toggleStyle(.checkbox)
+        }
+        #endif
         #if os(macOS)
         Button("app.openOnepass") { Task { await model.primary() } }
             .buttonStyle(.glassProminent)
@@ -1134,29 +1297,68 @@ private struct DoneStep: View {
         #endif
     }
 
+    /// A setting turned on from here: "Activer", a spinner while asking, then a green check.
+    private func actionRow(
+        symbol: String, label: String, done: Bool, working: Bool, identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.body.weight(.medium))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            Text(label)
+            Spacer()
+            if done {
+                Label("app.on", systemImage: "checkmark.circle.fill")
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(.green)
+                    .transition(.opacity)
+                    .accessibilityIdentifier(identifier + ".on")
+            } else if working {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("onboarding.done.turnOn", action: action)
+                    .buttonStyle(.glass)
+                    .controlSize(Platform.isMac ? .regular : .small)
+                    .accessibilityIdentifier(identifier)
+            }
+        }
+        .font(Platform.isMac ? .system(size: 14) : .body)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .animation(.smooth(duration: 0.3), value: done)
+    }
+
     private var title: String {
         let first = model.displayName.split(separator: " ").first.map(String.init) ?? ""
         return Platform.isMac && !first.isEmpty
             ? String(localized: "onboarding.youreAllSet \(first)") : String(localized: "onboarding.youreAllSet")
     }
 
+    /// What is set, read only. Face ID (Touch ID) gets its own button row when it can be turned on.
     private var rows: [(symbol: String, label: String, value: String)] {
-        let biometrics: String
-        if model.biometricsEnabled {
-            biometrics = String(localized: "app.on")
-        } else if model.mode == .shared {
-            biometrics = String(localized: "onboarding.offSharedDevice")
-        } else if !model.biometricsOffered {
-            biometrics = String(localized: "onboarding.notAvailable")
-        } else {
-            biometrics = String(localized: "onboarding.laterInSettings")
-        }
-        return [
+        var rows: [(symbol: String, label: String, value: String)] = [
             ("icloud", String(localized: "onboarding.encryptedVaultInIcloud"),
              model.cloudKitEnabled ? String(localized: "app.yes") : String(localized: "onboarding.noLocalBuild")),
-            (OnboardingModel.biometrySymbol, model.biometryName, biometrics),
-            ("doc.text", "Emergency Kit", model.path == .create ? String(localized: "onboarding.stored") : String(localized: "onboarding.alreadyDone")),
         ]
+        if !model.biometricsOffered {
+            let biometrics = model.mode == .shared
+                ? String(localized: "onboarding.offSharedDevice") : String(localized: "onboarding.notAvailable")
+            rows.append((OnboardingModel.biometrySymbol, model.biometryName, biometrics))
+        }
+        let kit: String
+        switch model.path {
+        case .create:
+            kit = model.kitSkipped ? String(localized: "onboarding.done.kitLater") : String(localized: "onboarding.stored")
+        case .iCloud:
+            kit = String(localized: "onboarding.done.kitInICloudKeychain")
+        default:
+            kit = String(localized: "onboarding.alreadyDone")
+        }
+        rows.append(("doc.text", "Emergency Kit", kit))
+        return rows
     }
 }
 

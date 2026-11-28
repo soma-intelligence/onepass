@@ -1,5 +1,8 @@
 //! The built relay against a fake app: hello, MCP lines both ways, a
 //! command with an injected variable, and the checks of `fill_template`.
+//!
+//! Unix only: the relay talks to the app over a Unix socket.
+#![cfg(unix)]
 
 use onepass_mcp::MAX_LINE;
 use onepass_mcp_relay::wire::{

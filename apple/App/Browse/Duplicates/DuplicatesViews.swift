@@ -108,7 +108,7 @@ struct DuplicatesBanner: View {
                                 Text("duplicates.banner.subtitle")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                                    .lineLimit(3)
                                     .minimumScaleFactor(0.85)
                             }
                             Spacer(minLength: 4)

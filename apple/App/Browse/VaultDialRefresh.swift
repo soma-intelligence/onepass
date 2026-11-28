@@ -1,3 +1,4 @@
+import DesignKit
 import SwiftUI
 
 extension View {
@@ -20,15 +21,15 @@ enum VaultDialPhase: Equatable {
     case pulling(progress: CGFloat)
     /// Released past the threshold: the screen reloads while the dial dials a combination.
     case refreshing(since: Date)
-    /// The reload is over: the dial goes back to 0, the handle turns, the drawing leaves.
+    /// The reload is over: the wheel goes back to 0, turns a last quarter to open, the drawing leaves.
     /// `refreshed` is when the reload began, so the dial carries on from where it was.
     case finishing(since: Date, refreshed: Date)
 }
 
 /// The app's pull to refresh: pulling turns a vault dial, one soft click every ten graduations;
 /// the reload holds `VaultDialHeader.height` open above the first row while the dial dials a
-/// combination (right, left, right); when it is done the dial comes back to 0, the handle beside it
-/// turns open, and the list springs back up.
+/// combination (right, left, right); when it is done the wheel comes back to 0, throws
+/// the bolts with a last quarter turn while the keyhole lights up, and the list springs back up.
 ///
 /// The system `refreshable` still runs it, its spinner made invisible: it keeps the gesture's
 /// priority over a sheet's swipe to dismiss (Réglages is a sheet) and decides when the reload starts.
@@ -153,9 +154,10 @@ struct VaultDialHeader: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
 
-    private static let dial: CGFloat = 92
-    private static let bezel: CGFloat = 116
-    private static let handle: CGFloat = 76
+    /// The door (`refresh-door`: bezel and face, still) and the six-spoke wheel (`refresh-wheel`)
+    /// that turns over it. Both have a light and a dark appearance in the catalog.
+    private static let door: CGFloat = 116
+    private static let wheel: CGFloat = 78
 
     /// The dial's turn, in degrees, for a pull at `k` (1 = threshold): most of a turn clockwise.
     static func pullAngle(_ k: CGFloat) -> CGFloat { max(0, k) * 300 }
@@ -165,57 +167,36 @@ struct VaultDialHeader: View {
     var body: some View {
         TimelineView(.animation(paused: !animating)) { timeline in
             let s = state(at: timeline.date)
-            ZStack {
-                HStack(spacing: 8) {
-                    lock(dialAngle: s.dial, open: s.open)
-                    handle(angle: s.handle)
-                }
-                .offset(x: 30)
-            }
-            .scaleEffect(s.scale)
-            .opacity(s.alpha)
-            .offset(y: s.lift)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            vault(wheelAngle: s.dial + s.handle, open: s.open)
+                .scaleEffect(s.scale)
+                .opacity(s.alpha)
+                .offset(y: s.lift)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .accessibilityHidden(true)
     }
 
     // MARK: Pieces
 
-    private func lock(dialAngle: CGFloat, open: CGFloat) -> some View {
+    private func vault(wheelAngle: CGFloat, open: CGFloat) -> some View {
         ZStack {
-            Image("refresh-bezel")
+            Image("refresh-door")
                 .resizable()
-                .frame(width: Self.bezel, height: Self.bezel)
-                .shadow(color: .black.opacity(scheme == .dark ? 0.6 : 0.28), radius: 7, y: 5)
-            ZStack {
-                Image("refresh-dial")
-                    .resizable()
-                    .frame(width: Self.dial, height: Self.dial)
-                VaultDialScale()
-                    .frame(width: Self.dial, height: Self.dial)
-            }
-            .rotationEffect(.degrees(dialAngle))
-            .shadow(color: .black.opacity(0.45), radius: 3, y: 2)
-            VaultDialLight()
-                .frame(width: Self.dial, height: Self.dial)
-                .allowsHitTesting(false)
-            // Round and lit from above, so it stays still while the dial turns under it.
-            Image("refresh-cap")
+                .frame(width: Self.door, height: Self.door)
+                .shadow(color: .black.opacity(scheme == .dark ? 0.55 : 0.18), radius: 10, y: 6)
+            // The keyhole's light as the lock opens: a soft indigo bloom under the wheel's hub.
+            Circle()
+                .fill(RadialGradient(colors: [Theme.accent.opacity(0.55), Theme.accent.opacity(0)],
+                                     center: .center, startRadius: 0, endRadius: Self.wheel * 0.42))
+                .frame(width: Self.wheel, height: Self.wheel)
+                .opacity(open)
+                .blendMode(scheme == .dark ? .plusLighter : .normal)
+            Image("refresh-wheel")
                 .resizable()
-                .frame(width: Self.dial * 0.2, height: Self.dial * 0.2)
-                .shadow(color: .black.opacity(0.5), radius: 1.5, y: 1)
-            VaultDialIndex(open: open)
-                .frame(width: Self.bezel, height: Self.bezel)
+                .frame(width: Self.wheel, height: Self.wheel)
+                .rotationEffect(.degrees(wheelAngle))
+                .shadow(color: .black.opacity(scheme == .dark ? 0.5 : 0.22), radius: 3, y: 2)
         }
-    }
-
-    private func handle(angle: CGFloat) -> some View {
-        Image("refresh-handle")
-            .resizable()
-            .frame(width: Self.handle, height: Self.handle)
-            .rotationEffect(.degrees(angle))
-            .shadow(color: .black.opacity(scheme == .dark ? 0.6 : 0.3), radius: 4, y: 3)
     }
 
     // MARK: Motion
@@ -278,96 +259,13 @@ struct VaultDialHeader: View {
             let home = (from / 360).rounded() * 360
             p.dial = from + (home - from) * C.settle(C.clamp(s / 0.36))
             p.open = C.clamp((s - 0.3) / 0.12)
-            p.handle = 70 * C.settle(C.clamp((s - 0.34) / 0.3))
+            p.handle = 90 * C.settle(C.clamp((s - 0.34) / 0.3))
             let leave = C.inOut(C.clamp((s - 0.68) / 0.32))
             p.alpha = 1 - leave
             p.lift = -leave * 18
             p.scale = 1 - leave * 0.06
         }
         return p
-    }
-}
-
-/// The dial's engraved graduations: 100 ticks, longer every 5, numbers every 10, filled white like
-/// paint in an engraving, with a dark lip on the side away from the light.
-private struct VaultDialScale: View {
-    var body: some View {
-        Canvas { ctx, size in
-            let r = min(size.width, size.height) / 2, c = CGPoint(x: size.width / 2, y: size.height / 2)
-            let outer = r * 0.80
-            for i in 0..<100 {
-                let a = CGFloat(i) / 100 * 2 * .pi - .pi / 2
-                let major = i % 10 == 0, mid = i % 5 == 0
-                let inner = outer - r * (major ? 0.15 : mid ? 0.10 : 0.06)
-                let w: CGFloat = major ? 1.1 : mid ? 0.8 : 0.5
-                var path = Path()
-                path.move(to: CGPoint(x: c.x + cos(a) * outer, y: c.y + sin(a) * outer))
-                path.addLine(to: CGPoint(x: c.x + cos(a) * inner, y: c.y + sin(a) * inner))
-                ctx.stroke(path.offsetBy(dx: 0, dy: -0.35), with: .color(.black.opacity(0.75)), lineWidth: w)
-                ctx.stroke(path, with: .color(Color(white: 0.93)), lineWidth: w)
-            }
-            for n in 0..<10 {
-                let a = CGFloat(n) / 10 * 2 * .pi - .pi / 2
-                let at = CGPoint(x: c.x + cos(a) * r * 0.50, y: c.y + sin(a) * r * 0.50)
-                var g = ctx
-                g.translateBy(x: at.x, y: at.y)
-                g.rotate(by: .radians(a + .pi / 2))
-                let label = Text(verbatim: "\(n * 10)").font(.system(size: r * 0.15, weight: .semibold, design: .rounded))
-                g.draw(label.foregroundStyle(.black.opacity(0.75)), at: CGPoint(x: 0, y: -0.35))
-                g.draw(label.foregroundStyle(Color(white: 0.93)), at: .zero)
-            }
-        }
-    }
-}
-
-/// The fixed light over the turning dial: the two bright wedges brushed steel throws under a top
-/// light, a soft hot spot on the upper left, and a darker rim.
-private struct VaultDialLight: View {
-    var body: some View {
-        ZStack {
-            Circle().fill(AngularGradient(stops: [
-                .init(color: .white.opacity(0), location: 0),
-                .init(color: .white.opacity(0.20), location: 0.12),
-                .init(color: .white.opacity(0), location: 0.26),
-                .init(color: .white.opacity(0), location: 0.5),
-                .init(color: .white.opacity(0.13), location: 0.62),
-                .init(color: .white.opacity(0), location: 0.76),
-                .init(color: .white.opacity(0), location: 1),
-            ], center: .center, angle: .degrees(-90)))
-            .blendMode(.plusLighter)
-            Circle().fill(RadialGradient(colors: [.white.opacity(0.14), .white.opacity(0)],
-                                         center: UnitPoint(x: 0.32, y: 0.26), startRadius: 0, endRadius: 46))
-            .blendMode(.plusLighter)
-            Circle().fill(RadialGradient(colors: [.black.opacity(0), .black.opacity(0.28)],
-                                         center: .center, startRadius: 30, endRadius: 47))
-        }
-        .compositingGroup()
-    }
-}
-
-/// Green enamel laid over the bezel's red index (at 12 o'clock in `refresh-bezel`) as the lock opens,
-/// with a small glow.
-private struct VaultDialIndex: View {
-    var open: CGFloat
-
-    var body: some View {
-        Canvas { ctx, size in
-            guard open > 0 else { return }
-            // Where the art's red wedge sits, as fractions of the bezel.
-            let x = size.width * 0.5076, top = size.height * 0.019, bottom = size.height * 0.061
-            let w = size.width * 0.054
-            var tri = Path()
-            tri.move(to: CGPoint(x: x - w / 2, y: top))
-            tri.addLine(to: CGPoint(x: x + w / 2, y: top))
-            tri.addLine(to: CGPoint(x: x, y: bottom))
-            tri.closeSubpath()
-            let green = Color(red: 0.18, green: 0.80, blue: 0.42)
-            ctx.opacity = open
-            var glow = ctx
-            glow.addFilter(.blur(radius: 3))
-            glow.fill(tri, with: .color(green.opacity(0.8)))
-            ctx.fill(tri, with: .color(green))
-        }
     }
 }
 

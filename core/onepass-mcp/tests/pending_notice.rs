@@ -250,6 +250,9 @@ fn approved_on_reaches_the_audit_entry() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn the_request_asks_for_strong_where_the_tool_needs_it() {
     let a = Arc::new(ScriptedApprover::new(vec![
         Decision::AllowOnce,

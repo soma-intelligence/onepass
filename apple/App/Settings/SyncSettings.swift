@@ -164,11 +164,11 @@ struct SyncSettings: View {
         }
     }
 
-    /// "Synchronisé il y a 3 minutes" (French, whatever the device language).
+    /// "Synchronisé il y a 3 minutes", in the app's language.
     static func agoText(since date: Date, now: Date) -> String {
         if now.timeIntervalSince(date) < 45 { return String(localized: "settings.syncedJustNow") }
         let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.locale = .current
         formatter.unitsStyle = .full
         return String(localized: "settings.synced \(formatter.localizedString(for: date, relativeTo: now))")
     }

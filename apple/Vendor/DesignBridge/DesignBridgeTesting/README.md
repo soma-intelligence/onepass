@@ -172,6 +172,6 @@ xcodebuild test -scheme DesignBridgeTesting-Package -destination 'platform=iOS S
 ## Not done yet
 
 - **`TruncationProbe`:** truncation is covered by the audit's `.textClipped` check and by the pseudo-locale snapshots. `TruncationProbe` belongs in DesignBridgeKit, and `DBUITestCase` has no assertion on it yet.
-- **UI test runs:** `DBUITestCase` compiles for iOS but has not run against a real app. The first consumer (OnePass RX) will be the real test.
+- **UI test runs:** `DBUITestCase` compiles for iOS but has not run against a real app. The first consumer (Cleon RX) will be the real test.
 - **Text weighting:** text is not masked or down-weighted in the visual diff. Use masks per board until Penpot and Core Text rasterise closer.
 - **CI template:** not run on GitHub yet.

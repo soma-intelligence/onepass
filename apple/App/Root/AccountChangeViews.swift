@@ -3,7 +3,7 @@ import SwiftUI
 import VaultKit
 
 /// "Utiliser ce compte iCloud" (spec 14, ruling E23): checks the new account's zone first. Another
-/// OnePass vault there is refused; our own vault is accepted at once; an empty zone asks before the
+/// Cleon vault there is refused; our own vault is accepted at once; an empty zone asks before the
 /// encrypted vault is uploaded there.
 struct UseICloudAccountButton: View {
     @Environment(AppModel.self) private var model
@@ -179,7 +179,7 @@ struct IgnoredDeletionsView: View {
 
     static func date(_ unix: Int64) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.locale = .current
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(unix)))

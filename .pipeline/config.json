@@ -1,0 +1,33 @@
+{
+  "project": "onepass",
+  "mainBranch": "main",
+  "knowledgePath": "~/.native-pipeline/knowledge",
+  "areas": {
+    "core":         { "paths": ["core/"], "affects": ["ios", "macos", "android", "desktop"] },
+    "apple-shared": { "paths": ["apple/"], "affects": ["ios", "macos"] },
+    "ios":          { "paths": ["apple/AutoFillHost/", "apple/AppUITests/", "apple/Widgets/", "apple/NotificationService/", "apple/Watch/", "apple/WatchWidgets/"] },
+    "android":      { "paths": ["android/"] },
+    "desktop":      { "paths": ["desktop/"], "target": true },
+    "extension":    { "paths": ["extension/"], "target": true },
+    "mailbox":      { "paths": ["mailbox/"], "target": true },
+    "site-data":    { "paths": ["data/"], "affects": ["ios", "macos", "android", "extension"] },
+    "formal":       { "paths": ["formal/"], "target": false },
+    "ml":           { "paths": ["ml/"], "target": false },
+    "bench":        { "paths": ["bench/"], "target": false },
+    "tooling":      { "paths": ["scripts/", ".github/", "Makefile", ".gitignore"], "target": false }
+  },
+  "ignore": ["docs/", "*.md", "LICENSE", "NOTICE", "pipeline/", ".pipeline/"],
+  "env": {
+    "minFreeDiskGB": 20,
+    "penpot": {
+      "url": "http://localhost:9001",
+      "dbContainer": "penpot-penpot-postgres-1",
+      "backupDir": "design"
+    },
+    "android": { "avd": "onepass-api37" },
+    "rustTargets": {
+      "android": ["aarch64-linux-android", "x86_64-linux-android"],
+      "apple": ["aarch64-apple-ios", "aarch64-apple-ios-sim", "aarch64-apple-darwin"]
+    }
+  }
+}

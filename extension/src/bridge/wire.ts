@@ -86,7 +86,11 @@ export function parseEnvelope(input: unknown): Envelope {
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) bad("not an object");
   const obj = value as Record<string, unknown>;
-  if (obj.v !== VERSION) throw new BridgeError("version");
+  if (obj.v !== VERSION) {
+    // A numeric version says which side is behind: the UI names what to update.
+    const peer = typeof obj.v === "number" && Number.isFinite(obj.v) ? (obj.v > VERSION ? "newer" : "older") : undefined;
+    throw new BridgeError("version", undefined, undefined, peer);
+  }
   const t = obj.t;
   if (typeof t !== "string" || !Object.hasOwn(SHAPES, t)) bad("unknown type");
   const shape = SHAPES[t as EnvelopeType];

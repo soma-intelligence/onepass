@@ -1,13 +1,17 @@
 import SwiftUI
 import VaultKit
 
-/// Remplissage automatique (spec 6): provider state, "Activer OnePass" (system prompt, with the system
+/// Remplissage automatique (spec 6): provider state, "Activer Cleon" (system prompt, with the system
 /// settings as fallback), verification code app, QuickType suggestions, and what the system sees.
 /// The state is read again when the page appears, after the prompt, and on every return to the
 /// foreground (`AppModel.scenePhaseChanged`).
 struct AutoFillSettings: View {
     @Environment(AppModel.self) private var model
     @State private var requesting = false
+    #if os(macOS) && !ONEPASS_APP_STORE
+    /// Remplir partout, pushed by `onepass://settings/fill-anywhere` (`FillAnywhereLink`).
+    @State private var showFillAnywhere = false
+    #endif
 
     private var settings: VaultSettings { model.settings }
 
@@ -21,6 +25,20 @@ struct AutoFillSettings: View {
             #if os(macOS)
             if let bridge = model.browserBridge {
                 BrowserBridgeSection(bridge: bridge)
+            }
+            #endif
+            #if os(macOS) && !ONEPASS_APP_STORE
+            if FillAnywhereHelper.isPresent {
+                Section {
+                    NavigationLink {
+                        FillAnywhereSettings()
+                    } label: {
+                        Label("fillAnywhere.title", systemImage: "macwindow.badge.plus")
+                    }
+                    .accessibilityIdentifier("autofill.fillAnywhere")
+                } footer: {
+                    SettingsFootnote("fillAnywhere.link.footer")
+                }
             }
             #endif
             Section {
@@ -64,12 +82,26 @@ struct AutoFillSettings: View {
         .rxSettingsSkin()
         .settingsPage("Remplissage automatique")
         .task { await model.refreshAutoFillStatus() }
+        #if os(macOS) && !ONEPASS_APP_STORE
+        .navigationDestination(isPresented: $showFillAnywhere) { FillAnywhereSettings() }
+        .onAppear(perform: takeFocusRequest)
+        .onChange(of: model.settingsFocusRequest) { takeFocusRequest() }
+        #endif
     }
+
+    #if os(macOS) && !ONEPASS_APP_STORE
+    /// `onepass://settings/fill-anywhere`: Remplir partout on top, when this build has the helper.
+    private func takeFocusRequest() {
+        guard model.settingsFocusRequest == FillAnywhereLink.focus else { return }
+        model.settingsFocusRequest = nil
+        if FillAnywhereHelper.isPresent { showFillAnywhere = true }
+    }
+    #endif
 
     @ViewBuilder private var providerSection: some View {
         let enabled = model.autofillEnabled
         Section {
-            LabeledContent("OnePass") {
+            LabeledContent("Cleon") {
                 Group {
                     switch enabled {
                     case true?: Label("app.on", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
@@ -80,7 +112,7 @@ struct AutoFillSettings: View {
             }
             // UI tests read the value: "Activé", "Désactivé", or empty while the state is read.
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("OnePass"))
+            .accessibilityLabel(Text("Cleon"))
             .accessibilityValue(statusValue(enabled))
             .accessibilityIdentifier("autofill.status")
             if enabled == false {

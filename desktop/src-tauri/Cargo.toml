@@ -1,0 +1,111 @@
+[package]
+name = "onepass-desktop"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+default-run = "onepass-desktop"
+rust-version = "1.99"
+description = "Cleon for Windows and Linux (Tauri 2), milestone X2"
+
+# Its own workspace: Tauri and its tree stay out of core/Cargo.lock, which
+# the Apple and Android builds share.
+[workspace]
+
+[[bin]]
+name = "onepass-desktop"
+path = "src/main.rs"
+
+# The test mailbox server (debug builds with `--features test-mailbox`
+# only): the fake of onepass-mailbox over loopback TLS on a fixed port, for
+# the sync end-to-end test and the cross-device test with Android.
+[[bin]]
+name = "test-mailbox"
+path = "src/bin/test-mailbox.rs"
+required-features = ["test-mailbox"]
+
+[features]
+# Debug builds only (a release build with it fails to compile): the test
+# mailbox server, in its own binary and, with ONEPASS_TEST_MAILBOX=1, inside
+# the app. Never part of the installer.
+test-mailbox = [
+    "onepass-mailbox/testing",
+    "dep:onepass-mailbox-proto",
+    "dep:rustls",
+    "dep:aws-lc-rs",
+]
+
+[build-dependencies]
+tauri-build = { version = "2", features = ["isolation"] }
+
+[dependencies]
+# The same Rust API the Apple apps reach through UniFFI, linked directly
+# (spec 2026-10-30 section 3.2: no FFI on the desktop).
+onepass-ffi = { path = "../../core/onepass-ffi" }
+onepass-core = { path = "../../core/onepass-core" }
+# The mailbox client and, with `test-mailbox`, its fake server.
+onepass-mailbox = { path = "../../core/onepass-mailbox" }
+onepass-mailbox-proto = { path = "../../core/onepass-mailbox-proto", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"], optional = true }
+aws-lc-rs = { version = "1.18", optional = true }
+# `isolation`: the isolation pattern of tauri.conf.json (spec 3.2).
+tauri = { version = "2", features = ["isolation"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+postcard = { version = "1", default-features = false, features = ["alloc", "use-std"] }
+zeroize = { version = "1.9", features = ["derive", "serde"] }
+time = { version = "0.3", default-features = false, features = ["std", "local-offset"] }
+# Copy without the secret crossing the IPC (section 3.2), kept out of the
+# Windows clipboard history and cloud clipboard.
+arboard = { version = "3", default-features = false }
+# A website opens only once parsed as http(s) (shell.rs).
+url = "2"
+# The native open and save dialogs (dialog.rs): a path chosen there never
+# crosses the IPC, the backend reads or writes the file itself.
+rfd = { version = "0.15", default-features = false }
+# Watchtower's downloads (breach.rs): HIBP ranges and the site catalogs.
+ureq = "3"
+qrcode = { version = "0.14", default-features = false }
+# The Emergency Kit's QR code read from an image (sync_cmds.rs).
+rqrr = "0.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Security_Cryptography",
+    "Win32_System_Memory",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_SystemInformation",
+] }
+# Windows Hello (hello.rs): UserConsentVerifier and its window interop.
+windows = { version = "0.62", features = [
+    "Foundation",
+    "Security_Credentials_UI",
+    "Win32_Foundation",
+    "Win32_System_WinRT",
+] }
+windows-future = "0.3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+# Same reasoning as core/Cargo.toml: the crypto dominates a debug run.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.slh-dsa]
+opt-level = 3
+[profile.dev.package.aws-lc-sys]
+opt-level = 3
+[profile.dev.package.aws-lc-rs]
+opt-level = 3
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

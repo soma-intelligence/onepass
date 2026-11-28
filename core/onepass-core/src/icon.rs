@@ -27,8 +27,26 @@ pub struct IconHint {
     pub candidates: Vec<String>,
     /// Brand of the card number of a credit card.
     pub card_brand: Option<CardBrand>,
+    /// Issuing country of a passport as stored ("FRA" from a chip read,
+    /// "France" typed or imported), so a list can draw the booklet's family.
+    pub issuing_country: Option<String>,
     /// First alphanumeric character of the title, upper-cased, else `#`.
     pub letter: char,
+}
+
+/// Issuing country of a passport, trimmed; `None` for other types or a blank
+/// value.
+pub fn issuing_country(item: &Item) -> Option<String> {
+    if item.item_type != ItemType::Passport {
+        return None;
+    }
+    match item.field("issuing_country").map(|f| &f.value) {
+        Some(FieldValue::Text(v) | FieldValue::Menu(v)) => {
+            let v = v.trim();
+            (!v.is_empty()).then(|| v.to_owned())
+        }
+        _ => None,
+    }
 }
 
 /// Icon hint of an item.
@@ -63,6 +81,7 @@ pub fn hint(item: &Item) -> IconHint {
         host,
         candidates,
         card_brand: brand,
+        issuing_country: issuing_country(item),
         letter,
     }
 }
@@ -113,6 +132,16 @@ mod tests {
     }
 
     #[test]
+    fn icon_never_for_an_app_entry() {
+        let mut it = new_item(ItemType::Login, Id::new(), "Slack");
+        it.urls = vec![url("macapp://com.tinyspeck.slackmacgap", true)];
+        let h = hint(&it);
+        assert_eq!(h.host, None);
+        assert!(h.candidates.is_empty());
+        assert_eq!(h.letter, 'S');
+    }
+
+    #[test]
     fn icon_never_http() {
         let mut it = new_item(ItemType::Login, Id::new(), "x");
         it.urls = vec![url("http://example.com", true)];
@@ -130,6 +159,28 @@ mod tests {
         assert_eq!(hint(&it).card_brand, Some(CardBrand::Visa));
         let login = new_item(ItemType::Login, Id::new(), "L");
         assert_eq!(hint(&login).card_brand, None);
+    }
+
+    #[test]
+    fn icon_passport_issuing_country() {
+        let mut it = new_item(ItemType::Passport, Id::new(), "Passeport");
+        assert_eq!(hint(&it).issuing_country, None);
+        for (stored, want) in [(" FRA ", "FRA"), ("France", "France"), ("", "")] {
+            if let Some(f) = it.field_mut("issuing_country") {
+                f.value = FieldValue::Text(stored.into());
+            }
+            let got = hint(&it).issuing_country;
+            if want.is_empty() {
+                assert_eq!(got, None);
+            } else {
+                assert_eq!(got.as_deref(), Some(want));
+            }
+        }
+        let mut id = new_item(ItemType::IdCard, Id::new(), "CNI");
+        if let Some(f) = id.field_mut("country") {
+            f.value = FieldValue::Text("FRA".into());
+        }
+        assert_eq!(hint(&id).issuing_country, None);
     }
 
     #[test]

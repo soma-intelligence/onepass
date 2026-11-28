@@ -82,7 +82,7 @@ public final class AppUpdater {
     }
 }
 
-/// Sparkle delegate: OnePass's own downgrade guard on the item Sparkle chose.
+/// Sparkle delegate: Cleon's own downgrade guard on the item Sparkle chose.
 @MainActor
 final class UpdateGuard: NSObject, SPUUpdaterDelegate {
     let installedVersion: String
@@ -108,7 +108,7 @@ final class UpdateGuard: NSObject, SPUUpdaterDelegate {
             throw NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue), userInfo: [
                 NSLocalizedDescriptionKey: String(
                     localized: "updates.refused.notNewer",
-                    defaultValue: "This update is not newer than the installed version: OnePass refused it.",
+                    defaultValue: "This update is not newer than the installed version: Cleon refused it.",
                     bundle: .module),
             ])
         }

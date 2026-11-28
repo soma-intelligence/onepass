@@ -35,6 +35,15 @@ android {
         create("fdroid") { dimension = "distribution" }
     }
 
+    // The brand icon pack is memory mapped from the assets: kept uncompressed.
+    androidResources {
+        noCompress += listOf("bin")
+    }
+
+    // The site pack (docs/site-pack.md) shipped with the iPhone and Mac apps:
+    // one copy in the repository, read by Watchtower's 2FA and passkey checks.
+    sourceSets["main"].assets.srcDir(rootProject.file("../apple/SitePack"))
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -44,4 +53,6 @@ android {
 dependencies {
     implementation(project(":vaultkit-android"))
     implementation(project(":wifi"))
+    implementation(project(":autofill"))
+    implementation(project(":credentials"))
 }

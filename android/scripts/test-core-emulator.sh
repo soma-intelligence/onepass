@@ -40,13 +40,19 @@ triple_upper="$(printf '%s' "$triple_env" | tr '[:lower:]' '[:upper:]')"
 # (core/.cargo/config.toml) as build-core.sh; its own target directory keeps
 # both caches warm.
 bin="$(ndk_bin)"
+# The Windows NDK ships the per-API linker wrappers as .cmd scripts, which
+# CreateProcess finds only with their extension.
+linker_ext=""
+case "$bin" in
+  */windows-x86_64/*) linker_ext=".cmd" ;;
+esac
 export "CC_$triple_env=$bin/clang"
 export "CXX_$triple_env=$bin/clang++"
 export "CFLAGS_$triple_env=--target=$triple$ANDROID_MIN_API"
 export "CXXFLAGS_$triple_env=--target=$triple$ANDROID_MIN_API"
 export "AR_$triple_env=$bin/llvm-ar"
 export "RANLIB_$triple_env=$bin/llvm-ranlib"
-export "CARGO_TARGET_${triple_upper}_LINKER=$bin/$triple$ANDROID_MIN_API-clang"
+export "CARGO_TARGET_${triple_upper}_LINKER=$bin/$triple$ANDROID_MIN_API-clang$linker_ext"
 export "CARGO_TARGET_${triple_upper}_AR=$bin/llvm-ar"
 export CARGO_TARGET_DIR="$repo_root/core/target/android-tests"
 

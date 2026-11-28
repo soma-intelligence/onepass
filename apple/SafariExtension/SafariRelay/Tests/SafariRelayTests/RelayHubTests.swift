@@ -108,6 +108,57 @@ struct RelayHubTests {
         for n in [7, 9] { _ = request(hub, "close", id(n)) }
     }
 
+    @Test func pollInProgressIsNeverEvicted() async {
+        // The live session sits in its long poll; newer connections that nobody polls go first.
+        let hub = RelayHub(launcher: Self.cat, pollTimeout: 1, maxConnections: 2)
+        let live = id(20)
+        _ = request(hub, "open", live)
+        let waiting = Task.detached { request(hub, "poll", live) }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        _ = request(hub, "open", id(21))
+        _ = request(hub, "send", id(21), frame: "{}")
+        _ = request(hub, "open", id(22))
+        #expect(hub.openConnections == 2)
+        #expect(await waiting.value == .ok(frames: [], closed: false))
+        #expect(request(hub, "send", live, frame: "{}") == .ok(frames: [], closed: false))
+        #expect(request(hub, "send", id(21), frame: "{}") == .failure(.unknownConn))
+        for n in [20, 22] { _ = request(hub, "close", id(n)) }
+    }
+
+    @Test func threeProfilesKeepTheirSessionsThroughReconnects() async {
+        // Three Safari profiles, each with a session in its long poll; a fourth profile pairs and a
+        // worker reconnects twice. No live session is cut.
+        let hub = RelayHub(launcher: Self.cat, pollTimeout: 1)
+        let live = [40, 41, 42].map(id)
+        var polls: [Task<RelayResponse, Never>] = []
+        for c in live {
+            _ = request(hub, "open", c)
+            polls.append(Task.detached { request(hub, "poll", c) })
+        }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        for n in 43...47 { _ = request(hub, "open", id(n)) }
+        for p in polls { #expect(await p.value == .ok(frames: [], closed: false)) }
+        for c in live { #expect(request(hub, "send", c, frame: "{}") == .ok(frames: [], closed: false)) }
+        for n in 40...47 { _ = request(hub, "close", id(n)) }
+    }
+
+    @Test func idleOrphanIsReapedOnOpen() {
+        // A worker the browser stopped never says `close`: past two poll timeouts its connection
+        // goes at the next open, even with room left.
+        final class Clock: @unchecked Sendable { var t = Date(timeIntervalSince1970: 1_000) }
+        let clock = Clock()
+        let hub = RelayHub(launcher: Self.cat, pollTimeout: 5, maxConnections: 4, now: { clock.t })
+        _ = request(hub, "open", id(30))
+        _ = request(hub, "open", id(31))
+        clock.t += 6
+        _ = request(hub, "send", id(31), frame: "{}")
+        clock.t += 6
+        _ = request(hub, "open", id(32))
+        #expect(hub.openConnections == 2)
+        #expect(request(hub, "send", id(30), frame: "{}") == .failure(.unknownConn))
+        for n in [31, 32] { _ = request(hub, "close", id(n)) }
+    }
+
     @Test func oversizedHostFrameCloses() throws {
         // A host announcing more than 1 MiB is cut off, nothing delivered.
         let script = "printf '\\001\\000\\020\\000'; sleep 5"

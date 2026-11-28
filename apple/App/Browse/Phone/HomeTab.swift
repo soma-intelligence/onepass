@@ -4,17 +4,28 @@ import SwiftUI
 import MapKit
 import VaultKit
 
-/// Accueil (spec 6.2, mockup `PhoneHome`): an inline title, the account name as a large secondary
-/// heading, then cards: À proximité (asks for the position only once the card is opened, radius
+/// Accueil (spec 6.2, mockup `PhoneHome`): the large title with the app's one search field under
+/// it, then cards: À proximité (asks for the position only once the card is opened, radius
 /// and map in its header), the profile (the main identity, opens the Profil page), Favoris,
 /// Fréquemment utilisés and Récemment utilisés (in-app uses: a password or code copied, a website
 /// opened; stored with the vault, so they survive a lock), each foldable. The options button of
 /// the navigation bar picks the cards shown. An empty vault shows "Créer ton premier élément".
+///
+/// The search lives here, in the header (owner request 2026-11-25), and nowhere else on the
+/// iPhone: the tab bar lost its search button so the app keeps one way in. While the field is
+/// active the page gives its place to the search screen (`SearchTab`: recent searches, opened
+/// items, categories, then ranked results), so the search behaves as it did in its own tab.
 struct HomeTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.phoneSearchActive) private var searchActive
-    @Environment(\.openPhoneTab) private var openTab
+    /// A tap on the selected Accueil tab at its root: back to the top, the large title unfolded.
+    @Environment(\.phoneTabScrollToTop) private var scrollToTop
+    /// The search text and whether its field is active: owned by the tabs, so a deep link or a
+    /// capture argument can open the search.
+    @Binding var query: String
+    @Binding var isSearching: Bool
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("onepass.home.favoritesOpen", store: AppModel.browseDefaults) private var favoritesOpen = true
     @AppStorage("onepass.home.recentsOpen", store: AppModel.browseDefaults) private var recentsOpen = true
     @AppStorage("onepass.home.frequentOpen", store: AppModel.browseDefaults) private var frequentOpen = true
@@ -40,7 +51,9 @@ struct HomeTab: View {
         let frequent = session.frequentlyUsed(limit: Self.usedLimit).filter { $0.trashedAt == nil }
         let recents = session.recentlyUsed(limit: Self.usedLimit).filter { $0.trashedAt == nil }
         Group {
-            if counts.all == 0 {
+            if isSearching {
+                SearchTab(query: $query, isSearching: $isSearching)
+            } else if counts.all == 0 {
                 firstItemState
             } else if rxDesign {
                 RXHomePage(itemCount: counts.all, recents: recents, favorites: favorites) {
@@ -103,21 +116,41 @@ struct HomeTab: View {
                 .task(id: session.summariesRevision) { await duplicates.load(session) }
             }
         }
-        // "Bonjour Camille", large, above the four tiles.
-        .navigationTitle(rxDesign ? "" : greeting)
-        // RX hides the bar: a hidden large title still pads the scroll inset, so the page came
-        // to rest about 55 pt low after a pull, then snapped (jank audit J03).
-        .navigationBarTitleDisplayMode(rxDesign ? .inline : .large)
+        // The large title shows unfolded at launch and after a tap on the selected tab (UIKit
+        // starts a tab root with an always shown search field folded, see `expandsLargeTitle`).
+        .expandsLargeTitle(scrollToTop: scrollToTop, enabled: !isSearching)
+        // RX: "Accueil", large, over the hero's art; classic: "Bonjour Camille" above the tiles.
+        .navigationTitle(rxDesign ? String(localized: "Accueil") : greeting)
+        .navigationBarTitleDisplayMode(.large)
+        // Under the large title, the native iOS 26 glass field. Always shown: it is the only search
+        // of the app, so it never hides behind a pull; the title still folds into the bar on scroll.
+        .searchable(
+            text: $query, isPresented: $isSearching,
+            placement: .navigationBarDrawer(displayMode: .always), prompt: Text("browse.searchItems"))
         .toolbar {
-            PhoneRootToolbar {
-                Section("browse.showOnHome") {
-                    Toggle("À proximité", systemImage: "location", isOn: $showsNearby)
-                    Toggle("Profil", systemImage: "person.crop.circle", isOn: $showsProfile)
-                    Toggle("Favoris", systemImage: "star", isOn: $showsFavorites)
-                    Toggle("home.frequentlyUsed", systemImage: "chart.bar", isOn: $showsFrequent)
-                    Toggle("home.recentlyUsed", systemImage: "clock.arrow.circlepath", isOn: $showsRecents)
-                    Toggle("crypto.title", systemImage: "bitcoinsign.circle", isOn: $showsCrypto)
+            if rxDesign {
+                // RX: only the account menu. A new item is the hero's first quick action
+                // (D-HOME-ACTIONS). As a bar item it stays pinned above the header fade, on the
+                // title's leading edge, where a copy drawn in the hero washed out then jumped.
+                ToolbarItem(placement: .topBarLeading) {
+                    AccountMenu()
                 }
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                classicToolbar
+            }
+        }
+    }
+
+    @ToolbarContentBuilder private var classicToolbar: some ToolbarContent {
+        PhoneRootToolbar {
+            Section("browse.showOnHome") {
+                Toggle("À proximité", systemImage: "location", isOn: $showsNearby)
+                Toggle("Profil", systemImage: "person.crop.circle", isOn: $showsProfile)
+                Toggle("Favoris", systemImage: "star", isOn: $showsFavorites)
+                Toggle("home.frequentlyUsed", systemImage: "chart.bar", isOn: $showsFrequent)
+                Toggle("home.recentlyUsed", systemImage: "clock.arrow.circlepath", isOn: $showsRecents)
+                Toggle("crypto.title", systemImage: "bitcoinsign.circle", isOn: $showsCrypto)
             }
         }
     }
@@ -160,40 +193,56 @@ struct HomeTab: View {
 
     private func tiles(all: Int, favorites: Int) -> some View {
         let score = model.watchtower.report.map { Int($0.score) }
-        return Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-            GridRow {
-                NavigationLink(value: PhoneRoute.list(.all)) {
-                    HomeTile(title: "Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent) {
-                        Text(all, format: .number)
-                    }
-                }
-                .accessibilityIdentifier("home.all")
-                NavigationLink(value: PhoneRoute.list(.favorites)) {
-                    HomeTile(title: "Favoris", symbol: "star.fill", color: .orange) {
-                        Text(favorites, format: .number)
-                    }
-                }
-                .accessibilityIdentifier("home.favoritesTile")
+        let allTile = NavigationLink(value: PhoneRoute.list(.all)) {
+            HomeTile(title: "Tous les éléments", symbol: "square.grid.2x2.fill", color: Theme.accent) {
+                Text(all, format: .number)
             }
-            GridRow {
-                Button {
-                    openTab(.watchtower)
-                } label: {
-                    HomeTile(title: "Watchtower", symbol: "shield.lefthalf.filled", color: Sidebar.watchtowerColor) {
-                        if let score {
-                            Text(score, format: .number).foregroundStyle(ScoreGauge.color(score))
-                        } else {
-                            Image(systemName: "chevron.forward").font(.body.weight(.semibold)).foregroundStyle(.tertiary)
-                        }
+        }
+        .accessibilityIdentifier("home.all")
+        let favoritesTile = NavigationLink(value: PhoneRoute.list(.favorites)) {
+            HomeTile(title: "Favoris", symbol: "star.fill", color: .orange) {
+                Text(favorites, format: .number)
+            }
+        }
+        .accessibilityIdentifier("home.favoritesTile")
+        // Pushed on Accueil's stack, zooming out of the tile (as the RX score does).
+        let watchtowerTile = NavigationLink(value: PhoneRoute.watchtowerPage) {
+            HomeTile(title: "Watchtower", symbol: "shield.lefthalf.filled", color: Sidebar.watchtowerColor) {
+                if let score {
+                    Text(score, format: .number).foregroundStyle(ScoreGauge.color(score))
+                } else {
+                    Image(systemName: "chevron.forward").font(.body.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .routeZoomSource(.watchtowerPage)
+        .accessibilityIdentifier("home.watchtower")
+        let nearbyTile = NavigationLink(value: PhoneRoute.list(.nearby)) {
+            HomeTile(title: "À proximité", symbol: "location.fill", color: Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)) {
+                Text("browse.n2Km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityIdentifier("home.nearby")
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // Accessibility text sizes: one tile a row, so every name reads in full.
+                VStack(spacing: 12) {
+                    allTile
+                    favoritesTile
+                    watchtowerTile
+                    nearbyTile
+                }
+            } else {
+                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                    GridRow {
+                        allTile
+                        favoritesTile
+                    }
+                    GridRow {
+                        watchtowerTile
+                        nearbyTile
                     }
                 }
-                .accessibilityIdentifier("home.watchtower")
-                NavigationLink(value: PhoneRoute.list(.nearby)) {
-                    HomeTile(title: "À proximité", symbol: "location.fill", color: Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)) {
-                        Text("browse.n2Km").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                    }
-                }
-                .accessibilityIdentifier("home.nearby")
             }
         }
         .buttonStyle(PressableButtonStyle())
@@ -259,7 +308,7 @@ private struct HomeCardHeader<Controls: View>: View {
                             Text(verbatim: subtitle)
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
-                                .lineLimit(1)
+                                .lineLimit(2)
                                 .minimumScaleFactor(0.85)
                                 .contentTransition(.numericText())
                         }
@@ -823,7 +872,7 @@ private struct HomeTile<Value: View>: View {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
                 .minimumScaleFactor(0.85)
         }
         .padding(Theme.Space.l)

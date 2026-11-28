@@ -12,6 +12,7 @@
       "apple/App/Resources/AppShortcuts.xcstrings": ["apple/App"],
       "apple/AutoFill/Support/Localizable.xcstrings": ["apple/AutoFill"],
       "apple/DesignKit/Sources/DesignKit/Resources/Localizable.xcstrings": ["apple/DesignKit/Sources"],
+      "apple/Fill/Localizable.xcstrings": ["apple/Fill"],
       "apple/NotificationService/Localizable.xcstrings": ["apple/NotificationService"],
       "apple/VaultKit/Sources/VaultKit/Resources/Localizable.xcstrings": ["apple/VaultKit/Sources"],
       "apple/Watch/Localizable.xcstrings": ["apple/Watch"],

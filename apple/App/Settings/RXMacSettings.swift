@@ -53,7 +53,22 @@ struct RXMacSettingsPopupHost: ViewModifier {
                 }
             }
             .animation(reduceMotion ? .easeOut(duration: 0.15) : .snappy(duration: 0.25), value: shown)
+            #if DEBUG
+            // Captures: `-OnePassDemoSettings YES [-OnePassDemoSettingsPage developer]` opens the
+            // popup once the demo account is unlocked, as the iPhone opens its sheet (DemoData).
+            .task(id: model.session.state == .unlocked) {
+                guard model.session.state == .unlocked, !Self.demoShown,
+                    UserDefaults.standard.bool(forKey: "OnePassDemoSettings") else { return }
+                Self.demoShown = true
+                model.showSettings = true
+            }
+            #endif
     }
+
+    #if DEBUG
+    /// The demo popup opens once per launch, so closing it sticks.
+    @MainActor private static var demoShown = false
+    #endif
 }
 
 /// Réglages on the Mac in the RX look: a popup inside the main window (never a separate window).
@@ -171,7 +186,8 @@ struct RXMacSettingsPopup: View {
             .navigationDestination(for: SettingsRoute.self) { route in
                 switch route {
                 case .page(let page): page.content
-                case .plan: RXPlanPage()
+                // Nothing pushes the plan page while no plan is offered (`RXPlus.offered`).
+                case .plan: if RXPlus.offered { RXPlanPage() }
                 }
             }
         }
@@ -235,6 +251,14 @@ struct RXMacSettingsBackBar: View {
 /// The left pane of Réglages: Profil (the account's photo and name), the categories, then
 /// Verrouiller. Rows as the RX sidebar's: a 20 pt glyph, Callout, 34 pt high, the selected one in
 /// the accent on a soft pill.
+///
+/// The same groups, order, names and glyphs as the iPhone's frosted Réglages (`RXSettingsHome`),
+/// so a person who knows one finds the other: the app's own settings; then what the account holds
+/// and the places it reaches (Appareils with them, as on the iPhone; Développeur in the slot of
+/// the iPhone's Apple Watch and Agents, the Mac side of the same agents); then À propos and
+/// Suggérer une fonctionnalité; Verrouiller apart at the bottom. The iPhone's Personnaliser
+/// l'accueil, Apple Watch and Agents have no Mac page. Coffres and Appareils show their count, as
+/// on the iPhone.
 private struct RXMacSettingsColumn: View {
     @Environment(AppModel.self) private var model
     @Binding var selection: RXMacSettingsSelection
@@ -253,27 +277,31 @@ private struct RXMacSettingsColumn: View {
                 } glyph: {
                     RXAvatar(initials: model.initials, photo: model.profileImage, size: RX.Metrics.macRowGlyph, ring: false)
                 }
-                group([.general, .security, .autofill, .sync, .devices])
-                group([.accounts, .vaults, .contacts, .family, .organisation, .travel, .crypto, .developer])
-                #if DEBUG
-                group([.about, .iconCheck])
-                #else
+                group([.general, .security, .autofill, .sync])
+                group([.accounts, .vaults, .contacts, .family, .organisation, .devices, .travel, .crypto, .developer])
                 group([.about])
-                #endif
                 row(Text("featureRequest.title", tableName: FeatureRequestSheet.table), selected: false,
                     id: "settings.featureRequest") {
                     showsFeatureRequest = true
                 } glyph: {
                     symbol("lightbulb")
                 }
+                #if DEBUG
+                pageRow(.iconCheck)
+                #endif
                 // The account menu's words; through `perform`, which asks first when an edit is
-                // not saved.
+                // not saved. Apart, as its own card on the iPhone.
+                separator
                 row(Text("Verrouiller"), selected: false, id: "rx.settings.lock") {
+                    #if os(macOS)
+                    // The confirmation lives in the main window: it comes forward.
+                    model.lockFromMenuBar()
+                    #else
                     model.perform(.lock)
+                    #endif
                 } glyph: {
                     symbol("lock.fill")
                 }
-                .padding(.top, RX.Space.m)
             }
             .padding(.horizontal, RX.Space.m)
             .padding(.vertical, RX.Space.l)
@@ -284,18 +312,36 @@ private struct RXMacSettingsColumn: View {
     }
 
     @ViewBuilder private func group(_ pages: [SettingsPage]) -> some View {
+        separator
+        ForEach(pages) { page in
+            pageRow(page)
+        }
+    }
+
+    private var separator: some View {
         Rectangle()
             .fill(RX.Palette.separator.color)
             .frame(height: 1)
             .padding(.horizontal, RX.Space.s)
             .padding(.vertical, RX.Space.s)
             .accessibilityHidden(true)
-        ForEach(pages) { page in
-            row(Text(page.title), selected: selection == .page(page), id: "settings.\(page.rawValue)") {
-                selection = .page(page)
-            } glyph: {
-                symbol(page.symbol)
-            }
+    }
+
+    private func pageRow(_ page: SettingsPage) -> some View {
+        row(Text(page.title), selected: selection == .page(page), id: "settings.\(page.rawValue)",
+            value: count(of: page)) {
+            selection = .page(page)
+        } glyph: {
+            symbol(page.symbol)
+        }
+    }
+
+    /// The count a row shows on its trailing edge, as the iPhone's rows do.
+    private func count(of page: SettingsPage) -> Int? {
+        switch page {
+        case .vaults: model.session.vaults.count
+        case .devices: model.session.devices.isEmpty ? nil : model.session.devices.count
+        default: nil
         }
     }
 
@@ -305,16 +351,24 @@ private struct RXMacSettingsColumn: View {
     }
 
     private func row<Glyph: View>(
-        _ title: Text, selected: Bool, id: String, action: @escaping () -> Void, @ViewBuilder glyph: () -> Glyph
+        _ title: Text, selected: Bool, id: String, value: Int? = nil, action: @escaping () -> Void,
+        @ViewBuilder glyph: () -> Glyph
     ) -> some View {
         Button(action: action) {
             HStack(spacing: RX.Space.m) {
                 glyph()
                     .frame(width: RX.Metrics.macRowGlyph, height: RX.Metrics.macRowGlyph)
                     .accessibilityHidden(true)
+                // Two lines: "Remplissage automatique" does not fit the column on one, and was cut.
                 title
-                    .dbText(maxLines: 1)
+                    .dbText(maxLines: 2)
                 Spacer(minLength: 0)
+                if let value {
+                    Text(value, format: .number)
+                        .rxFont(.callout)
+                        .monospacedDigit()
+                        .foregroundStyle(RX.Palette.textSecondary.color)
+                }
             }
             .rxFont(selected ? .calloutMedium : .callout)
             .foregroundStyle(selected ? RX.Palette.accentText.color : RX.Palette.textPrimary.color)

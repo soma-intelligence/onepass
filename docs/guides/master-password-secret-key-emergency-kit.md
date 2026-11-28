@@ -1,6 +1,6 @@
-# OnePass master password, Secret Key and Emergency Kit: what each one does
+# Cleon master password, Secret Key and Emergency Kit: what each one does
 
-OnePass unlocks your vault with two secrets: your **master password** and a **256-bit Secret Key** generated on your device when you create the account. Both go into the key derivation, so a stolen copy of the sync data is useless without both. The **Emergency Kit** is a PDF generated on the device that holds your Secret Key (in clear and as a QR code); you need it, together with your master password, to restore the account on a device that has neither.
+Cleon unlocks your vault with two secrets: your **master password** and a **256-bit Secret Key** generated on your device when you create the account. Both go into the key derivation, so a stolen copy of the sync data is useless without both. The **Emergency Kit** is a PDF generated on the device that holds your Secret Key (in clear and as a QR code); you need it, together with your master password, to restore the account on a device that has neither.
 
 ## How the unlock key is derived
 
@@ -48,7 +48,7 @@ The repository documents no recovery path without your master password and Secre
 
 ## Related
 
-- [Post-quantum cryptography in OnePass](post-quantum-encryption.md)
+- [Post-quantum cryptography in Cleon](post-quantum-encryption.md)
 - [Add a new device](add-a-device.md)
 - [Export or back up a vault](export-and-backup.md)
 - [README](../../README.md)

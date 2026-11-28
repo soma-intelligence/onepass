@@ -80,6 +80,9 @@ packages:
     path: SafariExtension/SafariRelay
   UpdateKit:
     path: UpdateKit
+  # Fill anywhere on the Mac: pure field logic of the OnePass Fill helper.
+  FillKit:
+    path: FillKit
   # Shared DesignBridge primitives and UI test base, vendored in Vendor/DesignBridge (see its README).
   DesignBridgeKit:
     path: Vendor/DesignBridge/DesignBridgeKit
@@ -95,6 +98,8 @@ targets:
         excludes:
           - "Support/Info.plist"
           - "Support/*.entitlements"
+          # Provenance of the CSCA master list (the .ml next to it ships as a resource).
+          - "Resources/csca-masterlist.README.md"
       # Site icon pack (docs/icon-pack.md), shipped once in the app: the AutoFill extension reads it
       # from the containing app, or from the copy the app puts in the App Group.
       - path: IconPack/onepass-icons.bin
@@ -105,6 +110,13 @@ targets:
         buildPhase: resources
       - path: SitePack/site-pack-manifest.json
         buildPhase: resources
+      # The OnePass Fill settings names and defaults, shared with the helper (which compiles the
+      # same file from its `Fill` sources): the "Remplir partout" page writes what the helper reads.
+      - path: Fill/FillDefaults.swift
+        destinationFilters: [macOS]
+      # The Mac browsers, one list for the helper (FillKit) and this page's default excluded list.
+      - path: FillKit/Sources/FillKit/KnownBrowsers.swift
+        destinationFilters: [macOS]
     dependencies:
       - package: VaultKit
         product: VaultKit
@@ -140,6 +152,15 @@ targets:
       - package: UpdateKit
         product: UpdateKit
         destinationFilters: [macOS]
+      # OnePass Fill (spec 2026-11-23-mac-fill-anywhere), the login item that fills outside the
+      # browsers, in Contents/Library/LoginItems, every configuration. Not sandboxed, so never in
+      # the App Store project (scripts/make-app-store-project.sh drops this dependency).
+      - target: OnePassFill
+        destinationFilters: [macOS]
+        embed: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Library/LoginItems
     # Entitlements and code share ONEPASS_KEYCHAIN_GROUP and ONEPASS_APP_GROUP: a hardcoded group
     # fails the build.
     preBuildScripts:
@@ -162,7 +183,8 @@ targets:
     info:
       path: App/Support/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Cleon
+        CFBundleName: Cleon
         CFBundleDevelopmentRegion: en
         LSApplicationCategoryType: public.app-category.productivity
         AppIdentifierPrefix: $(AppIdentifierPrefix)
@@ -192,17 +214,23 @@ targets:
         # The app ships its own cryptography. No ITSAppUsesNonExemptEncryption key: without an
         # export compliance code the store refuses the upload, so each build answers it in App Store
         # Connect until the classification is settled.
-        NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
-        NSCameraUsageDescription: "OnePass utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
+        NSFaceIDUsageDescription: "Cleon utilise Face ID pour déverrouiller ton coffre sans retaper ton mot de passe maître."
+        NSCameraUsageDescription: "Cleon utilise la caméra pour lire le QR code de ton Emergency Kit, celui d'un nouvel appareil ou celui d'un code de vérification."
+        # Passport chip (NFC documents P1): Core NFC on iPhone (the NFC Tag Reading capability is
+        # `com.apple.developer.nfc.readersession.formats` = TAG in the iOS entitlements). P1 selects
+        # the eMRTD applet only; the payment card AIDs of spec 5.3 arrive with the cards phase.
+        # Translated in App/Support/InfoPlist.xcstrings.
+        NFCReaderUsageDescription: "Cleon lit la puce de tes documents et cartes pour les ranger dans ton coffre. Rien ne quitte ton téléphone sans chiffrement."
+        com.apple.developer.nfc.readersession.iso7816.select-identifiers: [A0000002471001]
         # Pairing (milestone 2b): the new device publishes a Bonjour service, the approver finds it.
-        NSLocalNetworkUsageDescription: "OnePass utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
+        NSLocalNetworkUsageDescription: "Cleon utilise le réseau local pour ajouter un appareil à ton compte, sans passer par un serveur."
         NSBonjourServices: [_onepass-pair._tcp, _onepass-contact._tcp]
         # Asked only on "Utiliser ma position" or when "À proximité" opens. iOS reads
         # NSLocationWhenInUseUsageDescription, macOS reads NSLocationUsageDescription, which also
         # names Wi-Fi automatique (macOS gives the network name only with it). Translated in
         # App/Support/InfoPlist.xcstrings.
-        NSLocationWhenInUseUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
-        NSLocationUsageDescription: "OnePass utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
+        NSLocationWhenInUseUsageDescription: "Cleon utilise ta position pour placer un lieu sur un élément et pour lister les éléments à proximité. Elle reste sur cet appareil."
+        NSLocationUsageDescription: "Cleon utilise ta position pour placer un lieu sur un élément, pour lister les éléments à proximité et pour lire le nom du réseau Wi-Fi de ce Mac (Wi-Fi automatique). Elle reste sur cet appareil."
         # The launch screen: the RX page colour and the bare mark tile; RXSplash carries on from it.
         UILaunchScreen:
           UIColorName: LaunchBackground
@@ -267,6 +295,8 @@ targets:
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-CloudKit-macOS.entitlements
           # Overrides the base iOS file (the CloudKit file carries the App Group too).
           "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-CloudKit.entitlements
+          # visionOS: the same without NFC Tag Reading (no NFC on Vision Pro).
+          "CODE_SIGN_ENTITLEMENTS[sdk=xr*]": App/Support/OnePass-CloudKit-visionOS.entitlements
         Release-Signed:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
@@ -274,7 +304,8 @@ targets:
           DEVELOPMENT_TEAM: ""
           "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/Support/OnePass-Signed-macOS.entitlements
           "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/Support/OnePass-Signed-iOS.entitlements
-          "CODE_SIGN_ENTITLEMENTS[sdk=xr*]": App/Support/OnePass-Signed-iOS.entitlements
+          # visionOS: the iOS file without NFC Tag Reading (no NFC on Vision Pro).
+          "CODE_SIGN_ENTITLEMENTS[sdk=xr*]": App/Support/OnePass-Signed-visionOS.entitlements
 
   # AutoFill credential provider (spec 5), embedded in OnePass.app/PlugIns. Links its own static
   # copy of the Rust core through VaultKit (ruling A15). Entitlements: iOS, every configuration:
@@ -296,7 +327,7 @@ targets:
     info:
       path: AutoFill/Support/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Cleon
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -304,7 +335,7 @@ targets:
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
         OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
-        NSFaceIDUsageDescription: "OnePass utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
+        NSFaceIDUsageDescription: "Cleon utilise Face ID pour remplir tes mots de passe sans retaper ton mot de passe maître."
         NSExtension:
           NSExtensionPointIdentifier: com.apple.authentication-services-credential-provider-ui
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).CredentialProviderViewController
@@ -380,7 +411,7 @@ targets:
     info:
       path: SafariExtension/Support/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Cleon
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -446,7 +477,7 @@ targets:
     info:
       path: SafariExtension/Support/Info-iOS.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Cleon
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -454,7 +485,7 @@ targets:
         OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
         OnePassMailboxURL: $(ONEPASS_MAILBOX_URL)
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
-        NSFaceIDUsageDescription: "OnePass utilise Face ID pour déverrouiller ton coffre et remplir tes mots de passe dans Safari."
+        NSFaceIDUsageDescription: "Cleon utilise Face ID pour déverrouiller ton coffre et remplir tes mots de passe dans Safari."
         NSExtension:
           NSExtensionPointIdentifier: com.apple.Safari.web-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
@@ -489,6 +520,99 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: ""
 
+  # OnePass Fill (spec 2026-11-23-mac-fill-anywhere-design): an agent app (LSUIElement), embedded
+  # in OnePass.app/Contents/Library/LoginItems, a client of the app's bridge.sock through the Rust
+  # DesktopFillClient (OnePassCore). The app admits it on its code signature: same team, identifier
+  # exactly <app bundle id>.fill, so the bundle id follows ONEPASS_BUNDLE_ID_PREFIX like the
+  # extensions. Not sandboxed (Accessibility and the listener's signature check need it), hardened
+  # runtime. Entitlements: Debug and Release none (an ad hoc build cannot carry the restricted ones,
+  # and an ad hoc helper reaches no bridge); Release-CloudKit and Release-Signed: App Group and the
+  # shared keychain group (its pairing record).
+  OnePassFill:
+    type: application
+    platform: macOS
+    sources:
+      - path: Fill
+        excludes:
+          - "Support/Info.plist"
+          - "Support/*.entitlements"
+    dependencies:
+      - package: FillKit
+        product: FillKit
+      - package: VaultKit
+        product: OnePassCore
+      # The core's Touch ID code (onepass-guard) needs it; nothing autolinks it here.
+      - sdk: LocalAuthentication.framework
+    info:
+      path: Fill/Support/Info.plist
+      properties:
+        CFBundleDisplayName: Cleon Fill
+        CFBundleDevelopmentRegion: en
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        NSPrincipalClass: NSApplication
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        OnePassKeychainGroup: $(ONEPASS_KEYCHAIN_GROUP)
+        OnePassAppGroup: $(ONEPASS_APP_GROUP)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).fill
+        PRODUCT_NAME: OnePass Fill
+        PRODUCT_MODULE_NAME: OnePassFill
+        "ARCHS[sdk=macosx*]": arm64
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+      configs:
+        Release-CloudKit:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: Fill/Support/OnePassFill.entitlements
+        Release-Signed:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: ""
+          CODE_SIGN_ENTITLEMENTS: Fill/Support/OnePassFill.entitlements
+
+  # FillLab (spec 2026-11-23-mac-fill-anywhere-design, Testing): the Debug-only Mac test app with
+  # hostile login fields that FillAnywhereUITests fills through OnePass Fill. Never embedded in
+  # OnePass.app, never built in a Release configuration (the script below fails it), never in the
+  # App Store project (scripts/make-app-store-project.sh drops it).
+  FillLab:
+    type: application
+    platform: macOS
+    sources:
+      - path: FillLab
+    dependencies:
+      - sdk: WebKit.framework
+    preBuildScripts:
+      - name: Debug only
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "${CONFIGURATION}" != "Debug" ]; then
+            echo "error: FillLab is a Debug-only test app (configuration ${CONFIGURATION})" >&2
+            exit 1
+          fi
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(ONEPASS_BUNDLE_ID_PREFIX).filllab
+        PRODUCT_NAME: FillLab
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: FillLab
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        "ARCHS[sdk=macosx*]": arm64
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SKIP_INSTALL: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+
   # Test host for the AutoFill UI test (ruling A16): a sign-in form with username, password and
   # one-time code fields. iOS only, never embedded in OnePass, never shipped.
   AutoFillHost:
@@ -521,6 +645,8 @@ targets:
           - "AutoFillUITests.swift"
           - "SafariAutofillUITests.swift"
           - "OpenAndSignInUITests.swift"
+          - "MacSettingsUITests.swift"
+          - "FillAnywhereUITests.swift"
     dependencies:
       - target: OnePass
       - package: DesignBridgeTesting
@@ -530,6 +656,28 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.uitests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1,2"
+        TEST_TARGET_NAME: OnePass
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+
+  # XCUITest of the Mac app (scheme `OnePassMacUITests`): Réglages pages that exist only on the Mac,
+  # such as Remplir partout (spec 2026-11-23-mac-fill-anywhere). Demo data only.
+  OnePassMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: AppUITests/MacSettingsUITests.swift
+      - path: AppUITests/FillAnywhereUITests.swift
+    dependencies:
+      - target: OnePass
+      # The hostile fields of FillAnywhereUITests, built next to the runner, not embedded.
+      - target: FillLab
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.somalabs.onepass.macuitests
+        GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: OnePass
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
@@ -555,7 +703,7 @@ targets:
     info:
       path: Watch/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Cleon
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -596,7 +744,7 @@ targets:
     info:
       path: WatchWidgets/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Cleon
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -640,7 +788,7 @@ targets:
     info:
       path: Widgets/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Cleon
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -682,7 +830,7 @@ targets:
     info:
       path: NotificationService/Info.plist
       properties:
-        CFBundleDisplayName: OnePass
+        CFBundleDisplayName: Cleon
         OnePassAppGroup: $(ONEPASS_APP_GROUP)
         CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -778,6 +926,38 @@ schemes:
         - OnePassUITests
     archive:
       config: Release
+  # The Mac UI tests: `xcodebuild test -scheme OnePassMacUITests -destination 'platform=macOS,arch=arm64'`.
+  OnePassMacUITests:
+    build:
+      targets:
+        OnePass: all
+        OnePassMacUITests: [test]
+      preActions:
+        - name: Build Rust core
+          settingsTarget: OnePass
+          script: |
+            if [ ! -d "${PROJECT_DIR}/build/OnePassFFI.xcframework" ]; then
+              make -C "${PROJECT_DIR}" core
+            fi
+    test:
+      config: Debug
+      targets:
+        - OnePassMacUITests
+  # FillLab, Debug only: `xcodebuild build -scheme FillLab -configuration Debug`.
+  FillLab:
+    build:
+      targets:
+        FillLab: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Debug
+    analyze:
+      config: Debug
+    archive:
+      config: Debug
   OnePassWatch:
     build:
       targets:

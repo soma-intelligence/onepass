@@ -22,6 +22,31 @@ struct OnboardingCredentialsTests {
         #expect(c.secretKey == nil && c.enrollmentPassword == nil)
     }
 
+    @Test func failedCreationGivesThePasswordBackUnlessThePasswordIsTheCause() {
+        var c = OnboardingCredentials()
+        c.password = Self.password
+        c.confirmation = Self.password
+        let typed = c.submitCreation()
+        defer { typed.wipe() }
+        // A keychain or storage failure: both fields are filled again for "Réessayer".
+        let refilled = c.creationFailed(.other("keychain"), submitted: typed)
+        #expect(refilled)
+        #expect(c.password == Self.password && c.confirmation == Self.password)
+        #expect(c.secretKey == nil && c.enrollmentPassword == nil)
+
+        var refused = OnboardingCredentials()
+        refused.password = Self.password
+        refused.confirmation = Self.password
+        let again = refused.submitCreation()
+        defer { again.wipe() }
+        // The password itself is the cause: the fields stay empty.
+        let refilledAfterRefusal = refused.creationFailed(.validation(field: "password", reason: "weak"), submitted: again)
+        #expect(!refilledAfterRefusal)
+        #expect(refused.password.isEmpty && refused.confirmation.isEmpty)
+        #expect(OnboardingCredentials.concernsPassword(.wrongPassword))
+        #expect(!OnboardingCredentials.concernsPassword(.accountExists))
+    }
+
     @Test func creationKeepsThePasswordOnlyForTheBiometricStep() {
         var kept = OnboardingCredentials()
         kept.accountCreated(secretKey: Self.keyBytes, password: Self.passwordBytes, keepPasswordForBiometrics: true)

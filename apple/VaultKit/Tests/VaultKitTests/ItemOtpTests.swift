@@ -30,4 +30,26 @@ struct ItemOtpTests {
         #expect(firstOtpValue(of: draftItem(.login)) == nil)
         #expect(firstOtpValue(of: draftItem(.secureNote)) == nil)
     }
+
+    @Test func firstPasswordFieldSkipsEmpty() {
+        var login = draftItem(.login)
+        #expect(firstPasswordField(of: login) == nil)
+        login.sections.append(
+            FfiSection(
+                id: "custom", label: "Autre", fields: [
+                    FfiField(
+                        id: "pin", label: "Code du portail", kind: .password,
+                        value: .password(value: "4321"), required: false, repeatable: false,
+                        autofill: false)
+                ]))
+        #expect(firstPasswordField(of: login)?.id == "pin")
+
+        // The main password, once filled, comes first.
+        let main = login.sections.firstIndex { $0.id == "main" }!
+        let password = login.sections[main].fields.firstIndex { $0.kind == .password }!
+        login.sections[main].fields[password].value = .password(value: "hunter2")
+        #expect(firstPasswordField(of: login)?.value == .password(value: "hunter2"))
+
+        #expect(firstPasswordField(of: draftItem(.secureNote)) == nil)
+    }
 }

@@ -64,7 +64,7 @@ public final class PairingNewcomerFlow {
     public static let grantLifetime: Duration = .seconds(300)
 
     public private(set) var state: State = .idle
-    /// The mode asked for (first question of "J'ai déjà OnePass sur un autre appareil").
+    /// The mode asked for (first question of "J'ai déjà Cleon sur un autre appareil").
     public let mode: FfiDeviceMode
     /// The last error of `importAndUnlock` (wrong password), the grant stays for a retry.
     public private(set) var importError: VaultError?

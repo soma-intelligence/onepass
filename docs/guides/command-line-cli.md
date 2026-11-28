@@ -1,6 +1,6 @@
-# OnePass command line (`onepass` CLI): commands and limits
+# Cleon command line (`onepass` CLI): commands and limits
 
-`onepass` is the command line of OnePass, built from `core/onepass-cli` in this repository. It creates accounts and vaults, reads secrets by `onepass://` reference, prints TOTP codes, generates passwords, imports and exports, runs Watchtower, makes signed backups, and serves the MCP server and SSH agent. **It is a development tool**: it prints a `DEV MODE` banner, has no auto-lock, no biometrics and no sync, and the README says not to put real secrets in a development account. The apps are the way to use OnePass day to day.
+`onepass` is the command line of Cleon, built from `core/onepass-cli` in this repository. It creates accounts and vaults, reads secrets by `onepass://` reference, prints TOTP codes, generates passwords, imports and exports, runs Watchtower, makes signed backups, and serves the MCP server and SSH agent. **It is a development tool**: it prints a `DEV MODE` banner, has no auto-lock, no biometrics and no sync, and the README says not to put real secrets in a development account. The apps are the way to use Cleon day to day.
 
 ## Get it
 
@@ -62,7 +62,7 @@ Global options: `--data-dir <dir>` (default `~/.onepass-dev`) and `--json`.
 
 - [Import from another password manager](import-from-other-password-managers.md)
 - [Let an AI agent use a password without seeing it](mcp-server-ai-agents.md)
-- [Use OnePass as an SSH agent](ssh-agent.md)
+- [Use Cleon as an SSH agent](ssh-agent.md)
 - [Travel Mode](travel-mode.md)
-- [Is OnePass on Android, Windows or Linux?](android-windows-linux.md)
+- [Is Cleon on Android, Windows or Linux?](android-windows-linux.md)
 - [README](../../README.md)

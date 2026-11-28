@@ -74,12 +74,18 @@ struct TotpFieldView: View {
     @Environment(\.rxCards) private var rxCards
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// RX: the template's "TOTP" label reads "Code de vérification"; a label the person typed stays.
+    /// A bare "TOTP" or "OTP" label (an import, an older item) reads "Code de vérification" in both
+    /// looks; any other label stays as typed.
     private var label: String {
-        if rxCards, field.displayLabel.caseInsensitiveCompare("TOTP") == .orderedSame {
-            return String(localized: "rx.item.verificationCode")
+        Self.label(of: field)
+    }
+
+    static func label(of field: FfiField) -> String {
+        let shown = field.displayLabel
+        if shown.caseInsensitiveCompare("TOTP") == .orderedSame || shown.caseInsensitiveCompare("OTP") == .orderedSame {
+            return String(localized: "rx.item.verificationCode").detailLabelCase
         }
-        return field.displayLabel.detailLabelCase
+        return shown.detailLabelCase
     }
 
     var body: some View {

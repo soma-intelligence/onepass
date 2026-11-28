@@ -23,12 +23,15 @@ export class BridgeError extends Error {
   readonly code: BridgeErrorCode;
   /** Code of the host error frame, when `code` is `"host"`. */
   readonly hostCode: string | undefined;
+  /** For `"version"`: whether the app speaks a newer or an older protocol, when its frame says. */
+  readonly peer: "newer" | "older" | undefined;
 
-  constructor(code: BridgeErrorCode, detail?: string, hostCode?: string) {
+  constructor(code: BridgeErrorCode, detail?: string, hostCode?: string, peer?: "newer" | "older") {
     super(detail ? `${code}: ${detail}` : code);
     this.name = "BridgeError";
     this.code = code;
     this.hostCode = hostCode;
+    this.peer = peer;
   }
 }
 

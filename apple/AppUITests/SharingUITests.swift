@@ -17,7 +17,7 @@ final class SharingUITests: XCTestCase {
 
     private func launch(_ extra: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO", "-OnePassDemoSharing", "YES"]
+        app.launchArguments += ["-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoBiometrics", "NO", "-OnePassDemoSharing", "YES"]
         app.launchArguments += extra
         app.launch()
         return app

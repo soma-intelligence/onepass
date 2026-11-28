@@ -43,6 +43,7 @@ pub enum KeyUseChannel {
     Cli,
     Mcp,
     SshAgent,
+    DesktopFill,
 }
 
 /// What was done with the secret. Only append, as `KeyUseChannel`.

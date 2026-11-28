@@ -646,6 +646,7 @@ pub(crate) fn summary(i: &Item) -> FfiItemSummary {
         }),
         card_brand: card_brand_of(i),
         card_last4: card_number_of(i).and_then(onepass_core::model::checks::card_last4),
+        issuing_country: onepass_core::icon::issuing_country(i),
         passkey_count: count(
             i.sections
                 .iter()

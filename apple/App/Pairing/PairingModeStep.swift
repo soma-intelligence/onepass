@@ -2,7 +2,7 @@ import DesignKit
 import SwiftUI
 import VaultKit
 
-/// First question of "J'ai déjà OnePass sur un autre appareil" (spec 2b section 6): personal, shared
+/// First question of "J'ai déjà Cleon sur un autre appareil" (spec 2b section 6): personal, shared
 /// or public. Public is a guest session: a few items lent for a while, nothing kept here.
 struct PairingModeStep: View {
     @Bindable var model: OnboardingModel
@@ -31,12 +31,12 @@ struct PairingModeStep: View {
                 if OnboardingModel.PairMethod.scanAvailable {
                     method(
                         .scan, "Scanner un QR code",
-                        "Sur ton Mac : Fichier > Configurer un appareil… Cet appareil scanne le QR code qui s'affiche.",
+                        "pairing.method.scan.detail",
                         symbol: "qrcode.viewfinder")
                 }
                 method(
                     .type, "Saisir un code",
-                    "Sur ton Mac : Fichier > Configurer un appareil… Tape le code à 8 caractères qui s'affiche.",
+                    "pairing.method.type.detail",
                     symbol: "keyboard")
                 method(
                     .showCode, "Afficher un QR code",

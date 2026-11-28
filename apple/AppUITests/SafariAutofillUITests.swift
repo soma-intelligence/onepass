@@ -1,7 +1,7 @@
 import XCTest
 
 /// Safari autofill on iPhone, end to end (spec 2026-11-03-ios-safari-autofill), on the agent's own
-/// simulator. `test1Prepare`: a OnePass account and a Login for the local test page, Face ID turned
+/// simulator. `test1Prepare`: a Cleon account and a Login for the local test page, Face ID turned
 /// on, the vault locked, the Safari extension turned on for every website. `test2SafariFlow`: the
 /// local sign-in page (identifier, then password, then code) filled from the page, the vault
 /// unlocked from the unlock sheet. The page is served at https://localhost:8443 by the test's own
@@ -32,12 +32,13 @@ final class SafariAutofillUITests: XCTestCase {
 
     override func setUp() async throws {
         continueAfterFailure = false
+        onePass.launchArguments += ["-OnePassRX", "NO"]
     }
 
     // MARK: - Preparation
 
     func test1Prepare() throws {
-        // OnePass turned on as the AutoFill provider first: the identities the app publishes
+        // Cleon turned on as the AutoFill provider first: the identities the app publishes
         // while it is off are dropped by the system store.
         enableAutoFillProvider()
         onePass.launch()
@@ -54,7 +55,6 @@ final class SafariAutofillUITests: XCTestCase {
 
     private func createAccount() {
         tap(onePass.buttons["onboarding.create"], in: onePass)
-        tap(onePass.buttons["onboarding.primary"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.password"], in: onePass)
         type(Self.masterPassword, into: onePass.secureTextFields["onboarding.confirm"], in: onePass)
         tap(onePass.buttons["onboarding.primary"], in: onePass)
@@ -68,16 +68,14 @@ final class SafariAutofillUITests: XCTestCase {
             taps += 1
         } while !waitEnabled(next, 3) && taps < 4
         tap(next, in: onePass)
-        // Face ID offered during onboarding: turned on (the simulator is enrolled by the runner).
-        // The biometrics step: "Activer Face ID" is the primary button (the runner posts the match).
-        let offerCard = onePass.descendants(matching: .any)["onboarding.biometricsOffer"].firstMatch
-        if offerCard.waitForExistence(timeout: 5) {
-            tap(onePass.buttons["onboarding.primary"], in: onePass)
-            let on = onePass.descendants(matching: .any)["onboarding.biometricsOn"].firstMatch
+        // Face ID offered on the last step: turned on (the simulator is enrolled by the runner,
+        // which posts the match).
+        let turnOn = onePass.buttons["onboarding.enableBiometrics"]
+        if turnOn.waitForExistence(timeout: 5) {
+            tap(turnOn, in: onePass)
+            let on = onePass.descendants(matching: .any)["onboarding.enableBiometrics.on"].firstMatch
             print("Face ID turned on in onboarding: \(on.waitForExistence(timeout: 20))")
         }
-        let later = onePass.buttons["onboarding.skip"]
-        if later.waitForExistence(timeout: 3) { tap(later, in: onePass) }
         let open = onePass.buttons["onboarding.primary"]
         if open.waitForExistence(timeout: Self.uiTimeout) { tap(open, in: onePass) }
     }
@@ -117,8 +115,9 @@ final class SafariAutofillUITests: XCTestCase {
             tap(more, in: onePass)
             let search = onePass.textFields["editor.addField.search"]
             if search.waitForExistence(timeout: 5) {
-                search.typeText("totp")
-                let row = onePass.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'TOTP'")).firstMatch
+                search.typeText("code")
+                let row = onePass.buttons.matching(NSPredicate(
+                    format: "label CONTAINS[c] 'vérification' OR label CONTAINS[c] 'verification'")).firstMatch
                 if row.waitForExistence(timeout: 3) { row.tap() } else { print("Add field popover:\n\(onePass.debugDescription)") }
             }
             let totp = onePass.descendants(matching: .any)["editor.field.totp"].firstMatch
@@ -148,33 +147,33 @@ final class SafariAutofillUITests: XCTestCase {
         if byLabel.waitForExistence(timeout: 5) { byLabel.tap() }
     }
 
-    /// Settings > General > AutoFill & Passwords: OnePass on (the switch flipped when off).
+    /// Settings > General > AutoFill & Passwords: Cleon on (the switch flipped when off).
     private func enableAutoFillProvider() {
         preferences.launch()
         let any = preferences.descendants(matching: .any)
-        let toggle = preferences.switches.matching(NSPredicate(format: "label CONTAINS 'OnePass'")).firstMatch
+        let toggle = preferences.switches.matching(NSPredicate(format: "label CONTAINS 'Cleon'")).firstMatch
         if !toggle.waitForExistence(timeout: 3) {
             tap(any.matching(NSPredicate(format: "label IN %@", ["General", "Général"])).firstMatch, in: preferences)
             tap(any.matching(NSPredicate(format: "label IN %@",
                 ["AutoFill & Passwords", "Remplissage automatique et mots de passe"])).firstMatch, in: preferences)
         }
-        XCTAssertTrue(toggle.waitForExistence(timeout: Self.uiTimeout), "no OnePass switch in AutoFill & Passwords")
+        XCTAssertTrue(toggle.waitForExistence(timeout: Self.uiTimeout), "no Cleon switch in AutoFill & Passwords")
         if toggle.value as? String == "0" {
             toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
         }
         // iOS may ask which provider fills by default (or to confirm): accepted.
-        for label in ["Use OnePass", "Utiliser OnePass", "OK", "Turn On", "Activer"] {
+        for label in ["Use Cleon", "Utiliser Cleon", "OK", "Turn On", "Activer"] {
             let b = any.matching(NSPredicate(format: "label == %@ AND elementType == %d", label, XCUIElement.ElementType.button.rawValue)).firstMatch
             if b.waitForExistence(timeout: 1) { b.tap(); break }
         }
         let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: toggle)
-        XCTAssertEqual(XCTWaiter().wait(for: [on], timeout: Self.uiTimeout), .completed, "OnePass not on as the AutoFill provider")
+        XCTAssertEqual(XCTWaiter().wait(for: [on], timeout: Self.uiTimeout), .completed, "Cleon not on as the AutoFill provider")
         attachScreenshot("autofill-provider-on")
         print("AutoFill settings after:\n\(preferences.debugDescription)")
         preferences.terminate()
     }
 
-    /// Settings > Apps > Safari > Extensions > OnePass: on, and allowed on every website.
+    /// Settings > Apps > Safari > Extensions > Cleon: on, and allowed on every website.
     private func enableSafariExtension() {
         preferences.launch()
         let any = preferences.descendants(matching: .any)
@@ -189,7 +188,7 @@ final class SafariAutofillUITests: XCTestCase {
         open(["Apps", "Applications", "Apps"])
         open(["Safari"])
         open(["Extensions"])
-        open(["OnePass"])
+        open(["Cleon"])
         let toggle = preferences.switches.firstMatch
         if toggle.waitForExistence(timeout: 5), toggle.value as? String == "0" {
             toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
@@ -221,11 +220,11 @@ final class SafariAutofillUITests: XCTestCase {
         attachScreenshot("icon-and-label")
 
         let icon = safari.descendants(matching: .any)
-            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"])).firstMatch
+            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu Cleon", "Open the Cleon menu"])).firstMatch
         if !icon.waitForExistence(timeout: Self.uiTimeout) {
-            print("Safari without the OnePass icon:\n\(safari.debugDescription)")
+            print("Safari without the Cleon icon:\n\(safari.debugDescription)")
             attachScreenshot("no-icon")
-            XCTFail("no OnePass icon in the field")
+            XCTFail("no Cleon icon in the field")
             return
         }
         icon.tap()
@@ -282,7 +281,7 @@ final class SafariAutofillUITests: XCTestCase {
             again.tap()
             Thread.sleep(forTimeInterval: 3)
             attachScreenshot("quicktype")
-            // Only the keyboard's bar counts (the OnePass menu row names the account too).
+            // Only the keyboard's bar counts (the Cleon menu row names the account too).
             let suggestion = safari.keyboards.descendants(matching: .any)
                 .matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@", Self.username, Self.title)).firstMatch
             print("QuickType suggestion shown: \(suggestion.exists)")
@@ -290,7 +289,7 @@ final class SafariAutofillUITests: XCTestCase {
     }
 
     /// The app unlocked once (Face ID, else the master password), then locked: it publishes the
-    /// AutoFill identities on unlock, and they stay for the keyboard while OnePass is locked.
+    /// AutoFill identities on unlock, and they stay for the keyboard while Cleon is locked.
     func test2bPublishIdentities() throws {
         onePass.launch()
         let field = onePass.secureTextFields["lock.password"]
@@ -313,7 +312,7 @@ final class SafariAutofillUITests: XCTestCase {
 
     // MARK: - Keyboard (QuickType) and save, vault locked
 
-    /// The identifier page, vault locked: the QuickType suggestion published by OnePass, then our
+    /// The identifier page, vault locked: the QuickType suggestion published by Cleon, then our
     /// unlock screen (Face ID once by itself; the runner posts the match), then the fill.
     func test3KeyboardFillLocked() throws {
         openPage("/")
@@ -349,7 +348,7 @@ final class SafariAutofillUITests: XCTestCase {
             fillFromKeyboard(field: code, step: "code")
         }
         let welcome = safari.staticTexts["Bienvenue"]
-        // OnePass sends the code step once filled; else the page's own button.
+        // Cleon sends the code step once filled; else the page's own button.
         if !welcome.waitForExistence(timeout: 3) {
             XCTAssertTrue(waitValue(code, matching: "^[0-9]{6}$"), "code not filled")
             submitPage(["Vérifier"])
@@ -359,9 +358,9 @@ final class SafariAutofillUITests: XCTestCase {
         attachScreenshot("multistep-done")
     }
 
-    /// An account OnePass does not know, typed by hand: after the sign-in, our card offers Save.
+    /// An account Cleon does not know, typed by hand: after the sign-in, our card offers Save.
     func test4SaveNewLogin() throws {
-        // A new address each run: a login saved by an earlier run would only be "already in OnePass".
+        // A new address each run: a login saved by an earlier run would only be "already in Cleon".
         let run = Int(Date().timeIntervalSince1970) % 100_000
         typeSignIn(username: "nouveau.compte.\(run)@exemple.fr", password: "Nouveau-2026-test")
         decideOnCard(["Save", "Enregistrer"], expect: ["Save login for", "Enregistrer le login pour"])
@@ -379,23 +378,23 @@ final class SafariAutofillUITests: XCTestCase {
             outcome: ["updated", "mis à jour"])
     }
 
-    /// iOS 27's own "Save Password?" sheet, OnePass chosen: our provider unlocks, then saves.
+    /// iOS 27's own "Save Password?" sheet, Cleon chosen: our provider unlocks, then saves.
     func test7SystemSaveSheet() throws {
         let run = Int(Date().timeIntervalSince1970) % 100_000
         typeSignIn(username: "systeme.\(run)@exemple.fr", password: "Systeme-2026-test")
-        let onePass = safari.buttons["OnePass"]
+        let onePass = safari.buttons["Cleon"]
         var found = false
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline, !found {
-            for app in [safari, springboard] where app.buttons["OnePass"].exists && app.buttons["Not Now"].exists {
+            for app in [safari, springboard] where app.buttons["Cleon"].exists && app.buttons["Not Now"].exists {
                 found = true
                 attachScreenshot("system-save-sheet")
-                app.buttons["OnePass"].tap()
+                app.buttons["Cleon"].tap()
                 break
             }
             if !found { Thread.sleep(forTimeInterval: 0.5) }
         }
-        XCTAssertTrue(found, "no system save sheet offering OnePass")
+        XCTAssertTrue(found, "no system save sheet offering Cleon")
         _ = onePass
         unlockProviderIfAsked(step: "system-save")
         let provider = XCUIApplication(bundleIdentifier: "me.somalabs.onepass.autofill")
@@ -449,7 +448,7 @@ final class SafariAutofillUITests: XCTestCase {
             "Save login for", "Enregistrer le login pour", "Update password for", "Mettre à jour le mot de passe pour")).firstMatch
         let until = Date().addingTimeInterval(12)
         while Date() < until {
-            XCTAssertFalse(card.exists, "a OnePass card after a refused sign-in")
+            XCTAssertFalse(card.exists, "a Cleon card after a refused sign-in")
             Thread.sleep(forTimeInterval: 0.5)
         }
         attachScreenshot("refused-no-card")
@@ -466,7 +465,7 @@ final class SafariAutofillUITests: XCTestCase {
     private static let saveQuestion = ["Save login for", "Enregistrer le login pour"]
     private static let updateQuestion = ["Update password for", "Mettre à jour le mot de passe pour"]
 
-    /// Three sites OnePass never saw, each with an unknown account: the card each time, Save. Then a
+    /// Three sites Cleon never saw, each with an unknown account: the card each time, Save. Then a
     /// second unknown account on one of them (a new login, not an update), the first account there
     /// with a new password (Update), and on a fourth site "Not now" followed by another new account
     /// (the card again). The logins are then found in the app.
@@ -581,7 +580,7 @@ final class SafariAutofillUITests: XCTestCase {
         type(value + "\n", into: field, in: onePass)
     }
 
-    /// A create-account page OnePass never saw: the OnePass menu creates the account (identity, a
+    /// A create-account page Cleon never saw: the Cleon menu creates the account (identity, a
     /// username handle the field's pattern accepts, and a generated password in both password
     /// fields), the form is sent by hand, the card shows the login saved, and the app has it.
     func test13ProofSignup() throws {
@@ -616,14 +615,14 @@ final class SafariAutofillUITests: XCTestCase {
         let row = safari.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@",
             "Create the account with a strong password", "Créer le compte avec un mot de passe fort")).firstMatch
         let icon = safari.descendants(matching: .any)
-            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"])).firstMatch
+            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu Cleon", "Open the Cleon menu"])).firstMatch
         if !row.waitForExistence(timeout: 3) {
-            XCTAssertTrue(icon.waitForExistence(timeout: Self.uiTimeout), "no OnePass icon in the field")
+            XCTAssertTrue(icon.waitForExistence(timeout: Self.uiTimeout), "no Cleon icon in the field")
             // The page has one icon per field: the one on screen (the password field's) is tapped.
             let icons = safari.descendants(matching: .any)
-                .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"]))
+                .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu Cleon", "Open the Cleon menu"]))
             let visible = (0..<icons.count).map { icons.element(boundBy: $0) }.last { $0.isHittable }
-            XCTAssertNotNil(visible, "no OnePass icon on screen")
+            XCTAssertNotNil(visible, "no Cleon icon on screen")
             visible?.tap()
         }
         let deadline = Date().addingTimeInterval(Self.kdfTimeout)
@@ -641,7 +640,7 @@ final class SafariAutofillUITests: XCTestCase {
         attachScreenshot("signup-menu")
         guard row.exists else {
             print("Safari without the signup row:\n\(safari.debugDescription)")
-            XCTFail("no signup row in the OnePass menu")
+            XCTFail("no signup row in the Cleon menu")
             return
         }
         Thread.sleep(forTimeInterval: 1)
@@ -663,9 +662,9 @@ final class SafariAutofillUITests: XCTestCase {
         showInApp(handle)
     }
 
-    /// MS-04: a shipping address and a card typed by hand on a site OnePass never saw: our card offers
+    /// MS-04: a shipping address and a card typed by hand on a site Cleon never saw: our card offers
     /// to save each (the card shows the last four digits only), Save, then the same card typed again
-    /// by hand: the card shows (no oracle for the page) and Save says it is already in OnePass.
+    /// by hand: the card shows (no oracle for the page) and Save says it is already in Cleon.
     func test15ProofAddressAndCard() throws {
         let run = Int(Date().timeIntervalSince1970) % 100_000
         safari.launch()
@@ -703,7 +702,7 @@ final class SafariAutofillUITests: XCTestCase {
         typeCard()
         decideOnCard(["Save", "Enregistrer"], expect: ["Save this card", "Enregistrer cette carte"])
         typeCard()
-        decideOnCard(["Save", "Enregistrer"], expect: ["Save this card", "Enregistrer cette carte"], outcome: ["Already in OnePass", "Déjà dans OnePass"])
+        decideOnCard(["Save", "Enregistrer"], expect: ["Save this card", "Enregistrer cette carte"], outcome: ["Already in Cleon", "Déjà dans Cleon"])
     }
 
     /// The card that only says a login is saved (a generated signup password, already confirmed).
@@ -722,7 +721,7 @@ final class SafariAutofillUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
     }
 
-    /// AutoFill in an app that is not Safari (AutoFillHost): the keyboard's Passwords key, OnePass,
+    /// AutoFill in an app that is not Safari (AutoFillHost): the keyboard's Passwords key, Cleon,
     /// Face ID, the account, both fields filled; then a new account typed by hand and iOS's own
     /// "Save Password?" offer, if the simulator shows it.
     func test14ProofOtherApp() throws {
@@ -750,7 +749,7 @@ final class SafariAutofillUITests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 2)
         for app in [host, springboard] {
-            let choice = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'OnePass' OR label BEGINSWITH 'OnePass'"))
+            let choice = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Cleon' OR label BEGINSWITH 'Cleon'"))
                 .allElementsBoundByIndex.first { $0.isHittable && $0.elementType != .secureTextField }
             if let choice { choice.tap(); break }
         }
@@ -771,7 +770,7 @@ final class SafariAutofillUITests: XCTestCase {
         attachScreenshot("host-candidates")
         guard let found else {
             print("No candidate:\n\(host.debugDescription)")
-            XCTFail("the OnePass list did not show \(Self.title)")
+            XCTFail("the Cleon list did not show \(Self.title)")
             return
         }
         Thread.sleep(forTimeInterval: 1)
@@ -788,7 +787,7 @@ final class SafariAutofillUITests: XCTestCase {
         XCTAssertTrue(report.label.contains("mot de passe : \(Self.password.count) caractères"), report.label)
         Thread.sleep(forTimeInterval: 3)
 
-        // A new account typed by hand: iOS's own "Save Password?" offer, OnePass chosen, if shown.
+        // A new account typed by hand: iOS's own "Save Password?" offer, Cleon chosen, if shown.
         host.terminate()
         host.launch()
         let run = Int(Date().timeIntervalSince1970) % 100_000
@@ -802,11 +801,11 @@ final class SafariAutofillUITests: XCTestCase {
         var sheet = false
         let until = Date().addingTimeInterval(15)
         while Date() < until, !sheet {
-            for app in [host, springboard] where app.buttons["OnePass"].exists {
+            for app in [host, springboard] where app.buttons["Cleon"].exists {
                 sheet = true
                 attachScreenshot("host-system-save-sheet")
                 Thread.sleep(forTimeInterval: 1.5)
-                app.buttons["OnePass"].tap()
+                app.buttons["Cleon"].tap()
                 break
             }
             if !sheet { Thread.sleep(forTimeInterval: 0.5) }
@@ -868,9 +867,9 @@ final class SafariAutofillUITests: XCTestCase {
             field.typeText(Self.masterPassword + "\n")
         }
         XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
-        let byID = onePass.buttons["tab.search"]
-        let search = byID.exists ? byID : onePass.buttons["Rechercher"]
-        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search tab")
+        // Home's header search field, the only search since the search tab left.
+        let search = onePass.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search field")
         search.tap()
         let query = onePass.searchFields.firstMatch
         if !query.waitForExistence(timeout: 3) { search.tap() }
@@ -893,30 +892,30 @@ final class SafariAutofillUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.5)
     }
 
-    /// Focuses `field`, taps the OnePass suggestion of the keyboard bar, unlocks if asked.
+    /// Focuses `field`, taps the Cleon suggestion of the keyboard bar, unlocks if asked.
     private func fillFromKeyboard(field: XCUIElement, step: String) {
         XCTAssertTrue(field.waitForExistence(timeout: 20), "\(step): no field")
         field.tap()
         _ = safari.keyboards.firstMatch.waitForExistence(timeout: Self.uiTimeout)
         Thread.sleep(forTimeInterval: 2)
         attachScreenshot("quicktype-\(step)")
-        // The suggestion OnePass published (user name, or the code's label), never our in-page menu.
-        let wanted = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] 'OnePass'",
+        // The suggestion Cleon published (user name, or the code's label), never our in-page menu.
+        let wanted = NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] 'Cleon'",
                                  Self.username, Self.title)
         var suggestion: XCUIElement?
         let deadline = Date().addingTimeInterval(Self.uiTimeout)
         repeat {
             for app in [safari, springboard, inputUI] {
                 let found = app.descendants(matching: .any).matching(wanted).allElementsBoundByIndex
-                    .first { $0.isHittable && $0.frame.minY > 400 && $0.elementType != .textField && $0.elementType != .secureTextField && !$0.label.hasPrefix("Ouvrir") && !$0.label.hasPrefix("Open") && $0.label != "OnePass" }
+                    .first { $0.isHittable && $0.frame.minY > 400 && $0.elementType != .textField && $0.elementType != .secureTextField && !$0.label.hasPrefix("Ouvrir") && !$0.label.hasPrefix("Open") && $0.label != "Cleon" }
                 if let found { suggestion = found; break }
             }
             if suggestion == nil { Thread.sleep(forTimeInterval: 0.5) }
         } while suggestion == nil && Date() < deadline
         guard let suggestion else {
-            // No OnePass identity in the bar (the iOS 27.0 Simulator cannot reach the system
-            // identity store): the bar's "Passwords" key, then OnePass, then the account.
-            print("Keyboard without a OnePass suggestion (\(step)):\n\(safari.keyboards.firstMatch.debugDescription)")
+            // No Cleon identity in the bar (the iOS 27.0 Simulator cannot reach the system
+            // identity store): the bar's "Passwords" key, then Cleon, then the account.
+            print("Keyboard without a Cleon suggestion (\(step)):\n\(safari.keyboards.firstMatch.debugDescription)")
             attachScreenshot("no-suggestion-\(step)")
             fillFromPasswordsKey(step: step)
             return
@@ -937,15 +936,15 @@ final class SafariAutofillUITests: XCTestCase {
     /// Our icon in the focused field, the unlock sheet if locked (Face ID once), then the account.
     private func fillFromInPageMenu(step: String) {
         let icon = safari.descendants(matching: .any)
-            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"])).firstMatch
-        XCTAssertTrue(icon.waitForExistence(timeout: Self.uiTimeout), "\(step): no OnePass icon in the field")
+            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu Cleon", "Open the Cleon menu"])).firstMatch
+        XCTAssertTrue(icon.waitForExistence(timeout: Self.uiTimeout), "\(step): no Cleon icon in the field")
         icon.tap()
         let row = safari.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", Self.title, Self.username)).firstMatch
         let filled = safari.webViews.textFields.firstMatch
         let deadline = Date().addingTimeInterval(Self.kdfTimeout)
         var typed = false
-        // Filled, or filled and sent: OnePass submits the code step by itself.
+        // Filled, or filled and sent: Cleon submits the code step by itself.
         let welcome = safari.staticTexts["Bienvenue"]
         while Date() < deadline {
             if welcome.exists { return }
@@ -969,10 +968,10 @@ final class SafariAutofillUITests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.5)
         }
-        XCTFail("\(step): the OnePass menu did not fill")
+        XCTFail("\(step): the Cleon menu did not fill")
     }
 
-    /// The key of the keyboard bar, OnePass among the providers, our unlock, then the account.
+    /// The key of the keyboard bar, Cleon among the providers, our unlock, then the account.
     private func fillFromPasswordsKey(step: String) {
         let keyLabels = ["Passwords", "Mots de passe", "Password", "Mot de passe", "Codes", "Passwords and codes"]
         var key: XCUIElement?
@@ -996,10 +995,10 @@ final class SafariAutofillUITests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 2)
         attachScreenshot("passwords-key-\(step)")
-        // A provider chooser when Passwords and OnePass are both on.
+        // A provider chooser when Passwords and Cleon are both on.
         for app in [safari, springboard] {
             let choice = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label == 'OnePass' OR label BEGINSWITH 'OnePass'")).allElementsBoundByIndex
+                .matching(NSPredicate(format: "label == 'Cleon' OR label BEGINSWITH 'Cleon'")).allElementsBoundByIndex
                 .first { $0.isHittable && $0.elementType != .secureTextField }
             if let choice {
                 print("Provider chooser (\(step)): \(choice)")
@@ -1021,7 +1020,7 @@ final class SafariAutofillUITests: XCTestCase {
         attachScreenshot("provider-list-\(step)")
         guard let candidate else {
             print("Safari without our list (\(step)):\n\(safari.debugDescription)")
-            XCTFail("\(step): the OnePass list did not show \(Self.title)")
+            XCTFail("\(step): the Cleon list did not show \(Self.title)")
             return
         }
         // The list can still be settling: tapped again while it stays.
@@ -1092,7 +1091,7 @@ final class SafariAutofillUITests: XCTestCase {
     }
 
     /// Our in-page sheet can open on focus: put away, typing goes on in the page.
-    /// Every OnePass icon on the screen sits on a page field (its centre inside the field's frame),
+    /// Every Cleon icon on the screen sits on a page field (its centre inside the field's frame),
     /// and the focused field, when given, carries one. Catches icons drawn off their fields when
     /// iOS scrolls the page for the keyboard.
     private func assertIconsOnFields(_ tag: String, focused: XCUIElement?, needOne: Bool = true) {
@@ -1100,7 +1099,7 @@ final class SafariAutofillUITests: XCTestCase {
         let fields = (safari.webViews.textFields.allElementsBoundByIndex + safari.webViews.secureTextFields.allElementsBoundByIndex)
             .map(\.frame).filter { !$0.isEmpty }
         let icons = safari.descendants(matching: .any)
-            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu OnePass", "Open the OnePass menu"]))
+            .matching(NSPredicate(format: "label IN %@", ["Ouvrir le menu Cleon", "Open the Cleon menu"]))
             .allElementsBoundByIndex.map(\.frame)
             .filter { !$0.isEmpty && screen.contains(CGPoint(x: $0.midX, y: $0.midY)) }
         for f in icons {
@@ -1135,7 +1134,7 @@ final class SafariAutofillUITests: XCTestCase {
     private func dismissStrongPasswordOffer() {
         let other = safari.buttons.matching(NSPredicate(format: "label IN %@", ["Other Options…", "Choose My Own Password", "Choisir mon mot de passe"])).firstMatch
         if other.waitForExistence(timeout: 1), other.isHittable { other.tap(); return }
-        // iOS 27 "Use Strong Password?" sheet: closed with its X (the OnePass menu is what is proved).
+        // iOS 27 "Use Strong Password?" sheet: closed with its X (the Cleon menu is what is proved).
         let sheet = safari.staticTexts.matching(NSPredicate(format: "label IN %@", ["Use Strong Password?", "Utiliser un mot de passe fort ?"])).firstMatch
         if sheet.exists {
             let close = safari.buttons.matching(NSPredicate(format: "label IN %@ OR identifier IN %@", ["Close", "Fermer"], ["Close", "xmark"])).firstMatch
@@ -1170,7 +1169,7 @@ final class SafariAutofillUITests: XCTestCase {
         attachScreenshot("save-card")
         guard title.exists else {
             print("Safari without our card:\n\(safari.debugDescription)")
-            XCTFail("no OnePass save card (\(question[0]))")
+            XCTFail("no Cleon save card (\(question[0]))")
             return
         }
         print("Card: \(title.label)")

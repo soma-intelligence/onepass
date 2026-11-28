@@ -39,6 +39,25 @@ zip = { version = "9.1.1", default-features = false, features = ["deflate"] }
 k256 = { version = "0.14", default-features = false, features = ["arithmetic"] }
 ripemd = "0.1"
 sha3 = "0.10"
+# Guarded Kit threshold OPRF (RFC 9497, ristretto255-SHA512, written in
+# guarded_kit::oprf): the group, Shamir shares of the OPRF key and the
+# Lagrange combination of the realms' evaluations.
+curve25519-dalek = { version = "4.1", default-features = false, features = ["alloc", "zeroize"] }
+
+# Chip reading (scan module): BAC/PACE secure messaging, DG decoding and
+# passive authentication of an eMRTD. Verify-side only.
+des = { version = "0.9", features = ["zeroize"] }
+aes = { version = "0.9", features = ["zeroize"] }
+cmac = { version = "0.8", features = ["zeroize"] }
+x509-cert = "0.3"
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
+p384 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
+bp256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
+bp384 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
+ecdsa = { version = "0.17", default-features = false, features = ["algorithm", "digest"] }
+rsa = { version = "0.10", default-features = false, features = ["std", "pkcs1v15"] }
+sha1 = "0.11"
+sha2 = "0.11"
 
 # mlock for the page-locked key slots (crypto::locked).
 [target.'cfg(unix)'.dependencies]
@@ -49,6 +68,10 @@ libc = "0.2"
 # assertions only (a release build ignores it). For the dev CLI and the
 # integration tests: never enable it in a shipped build.
 dev-fast-kdf = []
+# Exposes `IcaoSession::with_rng`, which injects the BAC and PACE randoms so
+# a chip read can be replayed byte for byte (tests/scan_session.rs). Never on
+# by default and never in a shipped build: a fixed random breaks BAC/PACE.
+scan-test-rng = []
 
 # Unlocks accounts made with fast KDF parameters: needs the dev floor.
 [[test]]
@@ -82,6 +105,11 @@ required-features = ["dev-fast-kdf"]
 name = "profile_sync"
 required-features = ["dev-fast-kdf"]
 
+# IcaoSession against a fake passport, randoms injected.
+[[test]]
+name = "scan_session"
+required-features = ["scan-test-rng"]
+
 [dev-dependencies]
 # The integration tests make fast-KDF accounts (tests/common): the crate's own
 # dev floor is on for every test build, so a plain `cargo test -p onepass-core`
@@ -99,6 +127,9 @@ onepass-mailbox-proto = { path = "../onepass-mailbox-proto" }
 # Differential test only (tests/slh_dsa_differential.rs): the release
 # candidate the identity key moves to once it is stable (Ruling 13).
 slh-dsa-next = { package = "slh-dsa", version = "=0.2.0-rc.5" }
+# Reference CBC for the secure messaging tests (scan/icao/sm.rs): the channel
+# itself uses hand-rolled CBC over `des` and `aes`.
+cbc = "0.2"
 
 # Two devices over fast-KDF accounts: needs the dev floor.
 [[test]]

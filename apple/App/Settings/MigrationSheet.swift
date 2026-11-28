@@ -1,7 +1,7 @@
 import SwiftUI
 import VaultKit
 
-/// "Passer au serveur OnePass" (cross-platform spec D.5): what happens, then the migration, then
+/// "Passer au serveur Cleon" (cross-platform spec D.5): what happens, then the migration, then
 /// where the vault syncs now. Started only on the user's gesture, on an unlocked device.
 struct MigrationSheet: View {
     @Environment(AppModel.self) private var model
@@ -31,7 +31,7 @@ struct MigrationSheet: View {
             .navigationTitle("settings.sync.migrate.button")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("common.close") { dismiss() }.disabled(running)
+                    Button("Fermer") { dismiss() }.disabled(running)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("common.continue") { Task { await migrate() } }

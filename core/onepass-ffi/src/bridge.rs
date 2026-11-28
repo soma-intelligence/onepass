@@ -2,8 +2,9 @@
 //! `docs/superpowers/specs/2026-10-27-release-bridge-design.md`).
 //!
 //! `BridgeServer` listens on `bridge.sock` in the App Group container and
-//! serves each admitted client (the Safari extension or `onepass-relay`,
-//! same team, checked by code signature in `onepass-relay`) with the host
+//! serves each admitted client (the Safari extension, `onepass-relay` or
+//! the Mac fill helper, same team, checked by code signature in
+//! `onepass-relay`) with the host
 //! loop of `onepass-bridge`: the same pairing, session, envelope and
 //! disclosure rules as everywhere else, over the session the user unlocked
 //! in the app. Locking the app locks the bridge: it is the same `Session`.
@@ -23,13 +24,18 @@
 //! confirm a `reprompt` item with Touch ID, bring the app forward to
 //! unlock, reload after a write. Pairing keys cross the FFI like the Secret
 //! Key does (spec P-06); vault keys never do.
+// The servers that use this code listen on Unix sockets; their Windows
+// named pipes come with milestone X3 (spec 2026-10-30).
+#![cfg_attr(not(unix), allow(dead_code))]
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
+
+use onepass_guard::private::private;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -37,15 +43,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use onepass_bridge::agent::AgentHub;
 use onepass_bridge::audit::{AuditEvent, AuditSink};
-use onepass_bridge::host::{Approval, Approver, Conn, Journal, Limits, PairingStore, spawn_reader};
+use onepass_bridge::host::{Approval, Approver, Journal, PairingStore};
+#[cfg(unix)]
+use onepass_bridge::host::{Conn, Limits, spawn_reader};
 use onepass_bridge::pairing::PairingRecord;
 use onepass_bridge::pending::{PENDING_TTL, PendingStore};
-use onepass_bridge::service::{AccountTag, VaultAccess, VaultInfo, VaultStatus};
+use onepass_bridge::service::{AccountTag, ClientKind, VaultAccess, VaultInfo, VaultStatus};
 use onepass_bridge::{AppErrorCode, BridgeError};
 use onepass_core::Id;
 use onepass_core::autofill_history::{AutofillEvent, ClientContext};
-use onepass_core::model::Item;
 use onepass_core::model::usage::SiteUsage;
+use onepass_core::model::{Item, KeyUseAction, KeyUseChannel};
 use onepass_core::profiles::{AccountDirectory, Slot};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
@@ -396,12 +404,7 @@ impl AuditSink for FileAudit {
         if let (Some(a), Some(obj)) = (e.account, line.as_object_mut()) {
             obj.insert("account".into(), serde_json::json!(a));
         }
-        if let Ok(mut f) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(0o600)
-            .open(&self.0)
-        {
+        if let Ok(mut f) = private(OpenOptions::new().create(true).append(true)).open(&self.0) {
             let _ = writeln!(f, "{line}");
         }
     }
@@ -641,6 +644,23 @@ impl<'a> AppVault<'a> {
 }
 
 impl VaultAccess for AppVault<'_> {
+    fn checked_status(&self) -> onepass_bridge::Result<VaultStatus> {
+        let account = self.shared.primary_name();
+        match self.vaults() {
+            Ok(v) => Ok(VaultStatus {
+                locked: false,
+                account,
+                vaults: v.len(),
+            }),
+            Err(BridgeError::App(AppErrorCode::Locked)) => Ok(VaultStatus {
+                locked: true,
+                account,
+                vaults: 0,
+            }),
+            Err(e) => Err(e),
+        }
+    }
+
     fn status(&self) -> VaultStatus {
         let account = self.shared.primary_name();
         match self.vaults() {
@@ -819,6 +839,30 @@ impl VaultAccess for AppVault<'_> {
         Ok(written)
     }
 
+    fn record_key_use(
+        &mut self,
+        vault_id: Id,
+        item_id: Id,
+        channel: KeyUseChannel,
+        action: KeyUseAction,
+        client: &str,
+        field: &str,
+    ) -> onepass_bridge::Result<()> {
+        let (owner, _) = self.owner(vault_id)?;
+        let written = owner
+            .session
+            .with(|repo| {
+                let vault = find_vault(repo, vault_id)?;
+                let u = repo.this_device_key_use(channel, action, client, field);
+                Ok(repo.record_key_use(&vault, item_id, u, OffsetDateTime::now_utc())?)
+            })
+            .map_err(bridge_error)?;
+        if written {
+            self.changed(&owner, Some(vault_id));
+        }
+        Ok(())
+    }
+
     fn forget_site_usage(&mut self, site: &str) -> onepass_bridge::Result<usize> {
         // Vaults hidden from the extension keep their memory, as they are
         // never read nor written from here.
@@ -932,14 +976,20 @@ pub fn clear_pending_sign_in(dir: String) {
 }
 
 /// Serve one admitted connection until it ends. `allowed`: the caller's
-/// extension id passed the app's list (Safari always does). `vouched`: the
-/// browser the app vouches for, which may then pair without a code.
+/// extension id passed the app's list (Safari and the fill helper always
+/// do). `vouched`: the client the app vouches for, which may then pair
+/// without a code. `kind`: what the socket admitted it as, by code
+/// signature, which binds the contexts its session may speak.
+/// Unix sockets only: the Windows bridge (named pipe, milestone X3) will
+/// serve its own stream type.
+#[cfg(unix)]
 fn serve_stream(
     shared: &Shared,
     stream: UnixStream,
     extension_id: String,
     allowed: bool,
     vouched: Option<String>,
+    kind: ClientKind,
 ) {
     let Ok(reader) = stream.try_clone() else {
         return;
@@ -954,6 +1004,7 @@ fn serve_stream(
     let mut conn = Conn {
         allowed,
         vouched,
+        kind,
         extension_id,
         journal: shared,
         clock: &clock,
@@ -1187,21 +1238,12 @@ impl BridgeServer {
     /// so the connection is admitted as Safari and may pair without a code
     /// (ruling I2), unless the user revoked it.
     pub fn connect_in_process(&self) -> Result<i32, OnePassError> {
-        use std::os::fd::IntoRawFd;
-
-        let (ours, theirs) = UnixStream::pair().map_err(|_| invalid("socket pair"))?;
-        let shared = self.shared.clone();
-        let blocked = lock(&shared.blocked_auto).contains(&SAFARI_EXTENSION_ID.to_owned());
-        let vouched = (!blocked).then(|| SAFARI_BROWSER.to_owned());
-        std::thread::Builder::new()
-            .name("onepass-bridge-safari".into())
-            // SLH-DSA signing needs a deep stack (spec P-14).
-            .stack_size(16 << 20)
-            .spawn(move || {
-                serve_stream(&shared, ours, SAFARI_EXTENSION_ID.to_owned(), true, vouched);
-            })
-            .map_err(|_| invalid("bridge thread"))?;
-        Ok(theirs.into_raw_fd())
+        #[cfg(not(unix))]
+        {
+            Err(invalid("in-process bridge: Apple only"))
+        }
+        #[cfg(unix)]
+        self.connect_in_process_unix()
     }
 
     /// Current pairings, without their keys' bytes (for the settings list).
@@ -1217,6 +1259,35 @@ impl BridgeServer {
 }
 
 impl BridgeServer {
+    /// The socket pair of [`BridgeServer::connect_in_process`].
+    #[cfg(unix)]
+    fn connect_in_process_unix(&self) -> Result<i32, OnePassError> {
+        use std::os::fd::IntoRawFd;
+
+        let (ours, theirs) = UnixStream::pair().map_err(|_| invalid("socket pair"))?;
+        let shared = self.shared.clone();
+        let blocked = lock(&shared.blocked_auto).contains(&SAFARI_EXTENSION_ID.to_owned());
+        let vouched = (!blocked).then(|| SAFARI_BROWSER.to_owned());
+        std::thread::Builder::new()
+            .name("onepass-bridge-safari".into())
+            // SLH-DSA signing needs a deep stack (spec P-14).
+            .stack_size(16 << 20)
+            .spawn(move || {
+                serve_stream(
+                    &shared,
+                    ours,
+                    SAFARI_EXTENSION_ID.to_owned(),
+                    true,
+                    vouched,
+                    ClientKind::Browser,
+                );
+            })
+            .map_err(|_| invalid("bridge thread"))?;
+        Ok(theirs.into_raw_fd())
+    }
+}
+
+impl BridgeServer {
     /// The hub the sessions of this server serve agent fills through: the
     /// process's one, shared with the MCP host. One hub per process is
     /// safe because the agent servers stay on the primary account
@@ -1228,8 +1299,12 @@ impl BridgeServer {
 }
 
 /// What the app decides for a client the socket admitted (code signature
-/// checked): whether it may use the bridge at all, and whether it may pair
-/// without a code (spec 2026-11-02-browser-auto-pairing 3).
+/// checked): whether it may use the bridge at all, whether it may pair
+/// without a code (spec 2026-11-02-browser-auto-pairing 3), and which
+/// contexts its session speaks. `client` comes from the signature alone:
+/// only a `Client::Fill` connection is the fill helper (the desktop context,
+/// nothing else, and a pairing without a code unless revoked); every other
+/// one is a browser, which never speaks the desktop context.
 #[cfg(target_os = "macos")]
 fn serve_admitted(
     shared: &Shared,
@@ -1241,8 +1316,12 @@ fn serve_admitted(
     use onepass_relay::Client;
     use onepass_relay::launcher::vouch;
 
-    let allowed =
-        matches!(client, Client::Safari) || shared.allowed_extensions.contains(&extension_id);
+    let allowed = matches!(client, Client::Safari | Client::Fill)
+        || shared.allowed_extensions.contains(&extension_id);
+    let kind = match client {
+        Client::Fill => ClientKind::FillHelper,
+        Client::Safari | Client::Relay => ClientKind::Browser,
+    };
     let vouched = if allowed {
         let blocked = lock(&shared.blocked_auto).clone();
         vouch(
@@ -1269,11 +1348,13 @@ fn serve_admitted(
         extension_id,
         allowed,
         vouched.map(str::to_owned),
+        kind,
     );
 }
 
 /// Test entry: serve one connection on `stream` as an admitted client
 /// (the socket admission is tested in `onepass-relay`).
+#[cfg(unix)]
 #[doc(hidden)]
 pub fn serve_for_tests(
     server: &BridgeServer,
@@ -1287,6 +1368,7 @@ pub fn serve_for_tests(
         extension_id.to_owned(),
         allowed,
         None,
+        ClientKind::Browser,
     );
 }
 
@@ -1318,6 +1400,19 @@ pub fn serve_safari_for_tests(server: &BridgeServer, stream: UnixStream) {
         stream,
         onepass_relay::Client::Safari,
         onepass_relay::SAFARI_EXTENSION_ID.to_owned(),
+        None,
+    );
+}
+
+/// Test entry: a connection the socket admitted as the fill helper.
+#[cfg(target_os = "macos")]
+#[doc(hidden)]
+pub fn serve_fill_for_tests(server: &BridgeServer, stream: UnixStream) {
+    serve_admitted(
+        &server.shared,
+        stream,
+        onepass_relay::Client::Fill,
+        onepass_relay::FILL_EXTENSION_ID.to_owned(),
         None,
     );
 }

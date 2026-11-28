@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-accept-received-item"
+description = "Enables the accept_received_item command without any pre-configured scope."
+commands.allow = ["accept_received_item"]
+
+[[permission]]
+identifier = "deny-accept-received-item"
+description = "Denies the accept_received_item command without any pre-configured scope."
+commands.deny = ["accept_received_item"]

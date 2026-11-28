@@ -3,7 +3,7 @@ import SwiftUI
 import VaultKit
 
 /// Lock screen: one centered column (on the window's glass on Mac): the app glyph, "Déverrouille
-/// OnePass", the account (badge and name), ONE master password field (show or hide button, accent
+/// Cleon", the account (badge and name), ONE master password field (show or hide button, accent
 /// focus ring, shakes on a wrong password) and below it the main action: "Déverrouiller avec
 /// Touch ID" (Face ID, Optic ID) while the field is empty and biometric unlock is on, otherwise
 /// "Déverrouiller". Return unlocks. The Secret Key is never asked here: it stays in this device's
@@ -58,17 +58,25 @@ struct LockView: View {
     private var session: VaultSession { model.session }
     private var unlocking: Bool { session.state == .unlocking }
     private var biometrics: Bool { session.canUseBiometrics }
+    /// Dynamic Type: the title, the password field (its text, height and glyphs) grow with the
+    /// rest of the screen instead of staying at their design size.
+    @ScaledMetric(relativeTo: .title) private var titleSize: CGFloat = Platform.isMac ? 22 : 26
+    @ScaledMetric(relativeTo: .body) private var fieldFontSize: CGFloat = Platform.isMac ? 15 : 17
+    @ScaledMetric(relativeTo: .body) private var fieldHeight: CGFloat = LockView.baseFieldHeight
+    @ScaledMetric(relativeTo: .body) private var revealGlyph: CGFloat = Platform.isMac ? 14 : 17
+    @ScaledMetric(relativeTo: .body) private var biometricGlyph: CGFloat = Platform.isMac ? 18 : 22
+    @ScaledMetric(relativeTo: .body) private var arrowGlyph: CGFloat = Platform.isMac ? 22 : 28
 
     #if os(macOS)
     private static let glyphSize: CGFloat = 72
-    private static let fieldHeight: CGFloat = 40
+    private static let baseFieldHeight: CGFloat = 40
     private static let buttonHeight: CGFloat = 30
     private static let columnWidth: CGFloat = 300
     #else
     private static let glyphSize: CGFloat = 84
     /// Also where the launch splash lands its mark (`RXSplash`): the dial's hub is half of it.
     static let dialSize: CGFloat = 120
-    private static let fieldHeight: CGFloat = 50
+    private static let baseFieldHeight: CGFloat = 50
     private static let buttonHeight: CGFloat = 36
     private static let columnWidth: CGFloat = 340
     #endif
@@ -158,7 +166,7 @@ struct LockView: View {
             AppGlyph(size: Self.glyphSize)
             #endif
             Text("lock.unlockOnepass")
-                .font(.system(size: Platform.isMac ? 22 : 26, weight: .semibold))
+                .font(.system(size: titleSize, weight: .semibold))
                 .multilineTextAlignment(.center)
                 .padding(.top, 20)
                 .accessibilityAddTraits(.isHeader)
@@ -250,7 +258,7 @@ struct LockView: View {
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
-            .frame(height: Self.fieldHeight)
+            .frame(height: fieldHeight)
             .accessibilityIdentifier("lock.biometricWaiting")
             Button("lock.usePassword") { usePassword() }
                 .buttonStyle(.plain)
@@ -363,7 +371,7 @@ struct LockView: View {
             SecretInputField(
                 title: String(localized: "Mot de passe maître"), text: $password, revealed: revealed,
                 focused: $fieldFocused, submitGo: true, onSubmit: { Task { await unlockWithPassword() } },
-                fontSize: Platform.isMac ? 15 : 17, identifier: "lock.password")
+                fontSize: fieldFontSize, identifier: "lock.password")
             .labelsHidden()
             .textFieldStyle(.plain)
             #if os(macOS)
@@ -378,10 +386,10 @@ struct LockView: View {
                 fieldFocused = true
             } label: {
                 Image(systemName: revealed ? "eye.slash" : "eye")
-                    .font(.system(size: Platform.isMac ? 14 : 17))
+                    .font(.system(size: revealGlyph))
                     .foregroundStyle(.secondary)
                     // 44 pt wide on touch screens (minimum hit area), 32 pt on the Mac.
-                    .frame(width: Platform.isMac ? 32 : Theme.RX.Metrics.minTapTarget, height: Self.fieldHeight)
+                    .frame(width: Platform.isMac ? 32 : Theme.RX.Metrics.minTapTarget, height: fieldHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -399,7 +407,7 @@ struct LockView: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 6)
-        .frame(height: Self.fieldHeight)
+        .frame(height: fieldHeight)
         .background {
             #if os(iOS)
             shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
@@ -439,7 +447,7 @@ struct LockView: View {
         if message == nil, model.biometricOfferDue {
             // Face ID is not set up on this device yet: it needs one password unlock first.
             Label(
-                "Déverrouille une fois avec ton mot de passe : OnePass te proposera \(OnboardingModel.biometryName).",
+                "Déverrouille une fois avec ton mot de passe : Cleon te proposera \(OnboardingModel.biometryName).",
                 systemImage: "faceid")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -491,11 +499,11 @@ struct LockView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: OnboardingModel.biometrySymbol)
-                        .font(.system(size: Platform.isMac ? 18 : 22, weight: .regular))
+                        .font(.system(size: biometricGlyph, weight: .regular))
                         .foregroundStyle(Theme.accent)
                 }
             }
-            .frame(width: Platform.isMac ? 32 : 40, height: Self.fieldHeight)
+            .frame(width: Platform.isMac ? 32 : 40, height: fieldHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -524,12 +532,12 @@ struct LockView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: Platform.isMac ? 22 : 28))
+                        .font(.system(size: arrowGlyph))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(ready ? Theme.accent : Color.secondary.opacity(0.5))
                 }
             }
-            .frame(width: Platform.isMac ? 30 : 40, height: Self.fieldHeight)
+            .frame(width: Platform.isMac ? 30 : 40, height: fieldHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -597,6 +605,10 @@ struct LockView: View {
                 message = left > 0
                     ? String(localized: "lock.wrongPasswordLeft \(left)")
                     : String(localized: "lock.incorrectPassword")
+                withAnimation(.linear(duration: 0.42)) { refusals += 1 }
+            case .guardWrongPassword:
+                // Guarded Kit: the realms counted the attempt; their count is the one that matters.
+                message = failure.localizedMessage
                 withAnimation(.linear(duration: 0.42)) { refusals += 1 }
             case .lockedOut:
                 message = nil

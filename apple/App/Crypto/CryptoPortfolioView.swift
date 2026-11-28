@@ -630,6 +630,7 @@ struct CryptoSplitPage: View {
                     WatchtowerItemsList(title: title, itemIDs: itemIDs, check: check)
                 case .duplicates: DuplicatesReviewView()
                 case .profile: ProfileView()
+                case .watchtowerPage: WatchtowerTab().environment(\.watchtowerPushed, true)
                 }
             }
             #else

@@ -1,0 +1,293 @@
+{
+  "created": "2026-11-04T15:24:00+00:00",
+  "domains": 5024,
+  "format": 1,
+  "icons": 4212,
+  "pack": {
+    "file": "onepass-icons-2026110401.bin",
+    "sha256": "f2db04b2bd9691c6f4ef785b93a0d480b9c55fd4d37a597061a82a6561eae9cf",
+    "size": 11369425
+  },
+  "pixels": 256,
+  "sources": {
+    "2fa-directory": {
+      "commit": "9b39477ccf259f022f694b4f14ed79c529b1039d",
+      "license": "MIT",
+      "repository": "2factorauth/twofactorauth"
+    },
+    "brand-sites": {
+      "icons": {
+        "aesop.com": {
+          "fetched": "2026-11-04",
+          "license": "public domain (Wikimedia Commons, PD-textlogo), trademark of its owner",
+          "sha256": "0e173e22e574e46ac9aa3809b2402a1d23402a4d5b0c95520268ff8f9c4df24a",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/4/4d/Aesop_logo_2013.svg"
+        },
+        "blablacar.fr": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "f1700ceca1209b031fe62938c2820741e26ca06c042cc257c2541d16d2b9dd2c",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/da/a4/ce/daa4ce12-18e4-731d-e553-b10b42d9261d/AppIcon-0-0-1x_U007ephone-0-1-85-220.png/256x256bb.png"
+        },
+        "butterflynetwork.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "61be467e31bb00be3b7642a0633ad69a17523c6d69c7043a9c1da76d11959c40",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/dd/f3/8f/ddf38f57-ba86-3819-e9df-43f0130a0998/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.png"
+        },
+        "cdiscount.com": {
+          "fetched": "2026-11-03",
+          "pixels": 180,
+          "sha256": "26c4e5fe5b888521bc84ba897f99d1a7416063e9c218997efa4d786487dd90c1",
+          "url": "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https%3A%2F%2Fwww.cdiscount.com%2F&size=256"
+        },
+        "classpass.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "9895ef1d8693afa46487c56b22c8f7180db511f5d9e51f9ac3b8d0137a962343",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/fb/f5/9c/fbf59c58-0719-32a5-4445-54eea86c95ec/AppIcon-0-0-1x_U007ephone-0-1-85-220.png/256x256bb.png"
+        },
+        "cosmos.so": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "33386ddf10b0bf5ee8f95fa804f24504a0ac8697ca410d896fbf68095895b6a4",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/b2/c3/de/b2c3de76-412f-ab80-903f-2f50a54d6c57/AppIcon-0-0-1x_U007epad-0-1-0-85-220.png/256x256bb.png"
+        },
+        "cozy.io": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "6370cafbb45fd80d34e964d65cf7bd419d7c5eedcaa8bf5e16d06a0703e92c99",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/8b/9b/b4/8b9bb481-1272-8238-f8f6-574fc5365f3e/AppIcon-0-0-1x_U007emarketing-0-6-0-0-85-220.png/256x256bb.png"
+        },
+        "craigslist.org": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "3aa22c37454814bb58d4950e9885c9980378cbe09bfac356f1b77b43a614dd17",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/22/a5/4b/22a54ba2-6d7c-2670-23c4-feeb175ca8de/AppIcon-0-0-1x_U007epad-0-1-85-220.png/256x256bb.png"
+        },
+        "decathlon.fr": {
+          "fetched": "2026-11-03",
+          "pixels": 180,
+          "sha256": "f45f7c757bf8e490ba3de9eafcf45c39db6be05448b06114503ef0b3c8ed5bd0",
+          "url": "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https%3A%2F%2Fwww.decathlon.fr%2F&size=256"
+        },
+        "dontdrivedirty.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "205cfe1f154bc7f29d10a77cf951cfc196026d315919fcd2e385a8b3701c5600",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/89/45/22/894522d5-6db8-ed23-61e9-38901b763404/AppIcon-0-0-1x_U007emarketing-0-0-0-8-0-0-85-220.png/256x256bb.png"
+        },
+        "durolabs.co": {
+          "fetched": "2026-11-03",
+          "pixels": 192,
+          "sha256": "d3a0245170d0fe2d729fd7a358a085c7cb37a1b1991c34f74738e5bafd1ef3ef",
+          "url": "https://durolabs.co/wp-content/uploads/2024/06/cropped-duro-192x192.png"
+        },
+        "erasmus-plus.ec.europa.eu": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "1e974d862ec4afcd4d1b1e6ec6f71bfba4677da4cb275514cc3c0c0202028d80",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/ff/cc/0d/ffcc0da9-2317-4749-84a0-525d3f633eea/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.png"
+        },
+        "filoli.org": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "9cac500936a0913be2e41b623e0cfb927d3babb5d4cd5f03763d3d13b4e77663",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/97/62/86/97628617-2869-dc8e-6a28-7fa9c7c3ffd3/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.png"
+        },
+        "getdex.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "ecb6166cccd8d2485fb1448fbb5d76f9d295c9f2f77951a01067c8716f7640da",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/5d/5e/15/5d5e15f8-3e0e-976a-fe8a-b806db827429/AppIcon-0-0-1x_U007epad-0-1-85-220.png/256x256bb.png"
+        },
+        "getzep.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "719e26d8c61d712c521697e14b9784e3b2b7272fd370173955e23939380c4bce",
+          "url": "https://www.getzep.com/apple-touch-icon.png"
+        },
+        "gopro.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "28473eafa71b05a064026ace9446595bb51cc880e9aa7549b682fdd8c2f8744b",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/1b/a5/d5/1ba5d556-ce38-8b24-f75c-6be1d564449c/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.png"
+        },
+        "grabcad.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "c0bc7cc5bc14f91666f03e2fe8e9c20522a201d3ac6e4233539e3f66d6593fac",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple116/v4/d2/38/78/d2387816-5fd0-b9eb-06a7-c756b9cf36e9/AppIcon-1x_U007emarketing-0-9-0-85-220.png/256x256bb.png"
+        },
+        "gurushots.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "f40e4712b88896c7c3ef1393da2cb92e519b866c5cbc78d86d078124c9e33321",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/f2/54/f8/f254f8d0-d50e-c8ed-20c3-39eb36e83d1d/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.png"
+        },
+        "homie.com": {
+          "fetched": "2026-11-03",
+          "pixels": 192,
+          "sha256": "85521fff533fda7ead47788e8e43bc9eb9624342eef34c8dc8acc6fdcf9eb485",
+          "url": "https://www.homie.com/wp-content/uploads/2025/10/cropped-favicon-192x192.png"
+        },
+        "immersivelabs.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "271f61fcdb83c79c5f7df01a9b1b24c227f983255bc8fdda56a0f84db9836867",
+          "url": "https://cdn.prod.website-files.com/6735fba9a631272fb4513263/67445c8ae1bfcd6cb4106bdc_Immersive%20Webclip.png"
+        },
+        "incogni.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "98a4db1d280b95c9576ad809a4db06929213ac0123bfa1752511be70cc0210dd",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/21/fa/97/21fa97d7-feda-ca99-a0cf-68a490ab332a/AppIcon-0-0-1x_U007ephone-0-1-85-220.png/256x256bb.png"
+        },
+        "ine.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "6530030f66389fb3b8876c16da9a9c38963097878966d28729284711273ac331",
+          "url": "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https%3A%2F%2Fine.com%2F&size=256"
+        },
+        "intuit.com": {
+          "fetched": "2026-11-03",
+          "pixels": 192,
+          "sha256": "f9b2708d27b5391bfbdc5cb337f58a315e27a37cdbe8625b2644c47a0c887af5",
+          "url": "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https%3A%2F%2Fintuit.com%2F&size=256"
+        },
+        "ipstack.com": {
+          "fetched": "2026-11-03",
+          "pixels": 512,
+          "sha256": "54d840e154821bfddfb9969722f0107a3c51d5309b598f8d9edb8da23e3d84b4",
+          "url": "https://ipstack.com/wp-content/uploads/2025/10/ipstack_ico.png"
+        },
+        "jobright.ai": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "01ccdc48770d5732a0a5d13533ebcf6a0722f583b26b8b42c5da93f670a52e8b",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d0/24/75/d024752a-376c-5630-44d8-858b27166a67/AppIcon-0-0-1x_U007emarketing-0-11-0-85-220.png/256x256bb.png"
+        },
+        "laposte.fr": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "a613dfed3004aa9020292eaceb237721ef83042b9ffe64c4b2197dac0683829a",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/9e/72/e8/9e72e8a3-5974-ec82-4588-d8fced7e61b1/AppIcon-0-0-1x_U007emarketing-0-8-0-sRGB-85-220.png/256x256bb.png"
+        },
+        "mabanque.bnpparibas": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "32055d61ea9a54b69b945529dccee62ed6025d71e734b41e27e6c61495a899e8",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/fd/7b/91/fd7b9185-8aa8-f599-e851-f16cc67dee12/AppIcon-0-0-1x_U007epad-0-1-0-0-0-85-220.png/256x256bb.png"
+        },
+        "marmiton.org": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "479fe57ef1d226db98263611ebcab9b0918acf43adc9b7815b2b7b814d1ef677",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/69/83/87/698387a0-9bc4-62e6-a25a-90b5997fdb4c/AppIcon-0-0-1x_U007epad-0-9-0-85-220.png/256x256bb.png"
+        },
+        "mimi.io": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "482b1483ccd08737261a0401f0142cddfc036021def2748be70e7d06930c09dc",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/85/3b/38/853b3880-14b4-08a1-0c76-fcb5428b8e1c/AppIcon-0-0-1x_U007emarketing-0-0-0-11-0-0-85-220.png/256x256bb.png"
+        },
+        "netgear.com": {
+          "fetched": "2026-11-03",
+          "pixels": 512,
+          "sha256": "d22f5b75e7489f030fc19e361cd0d28e5bdc5d3839451960fabe4dc3eefb3609",
+          "url": "https://www.netgear.com/mobify/bundle/5578/static/img/global/app-icon-512.png"
+        },
+        "planoly.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "53b7084d2a26b8ca86f8163fca0b8ba38f7de5ebbeb5c180c6a4db0a53a7dd02",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/c4/48/3c/c4483cf1-b720-4afb-58ed-41def35f6af4/AppIcon-0-0-1x_U007epad-0-1-85-220.png/256x256bb.png"
+        },
+        "plaud.ai": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "1a71813e542c789d1d24928f1cc97956230b4fd696d98d8417039bae1a3da98a",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/8d/07/2a/8d072a91-924a-596f-e9f7-021e2428c48f/AppIcon-0-0-1x_U007epad-0-1-0-0-85-220.png/256x256bb.png"
+        },
+        "pnp.co.za": {
+          "fetched": "2026-11-03",
+          "pixels": 180,
+          "sha256": "6f2e1e0ec7891dcac824aa5bbf5d0c9ba1306b5284f78d5eec6ed95799031a8f",
+          "url": "https://www.pnp.co.za/assets/icons/apple-touch-icon.png"
+        },
+        "pornhub.com": {
+          "fetched": "2026-11-03",
+          "pixels": 1240,
+          "sha256": "cfa624839547ab93920630cbb5e805adb3dd3704b4c0f9e244722f5dc374f98a",
+          "url": "https://www.pornhub.com/manifest-icons/windows11/LargeTile.scale-400.png"
+        },
+        "shodan.io": {
+          "fetched": "2026-11-03",
+          "pixels": 192,
+          "sha256": "2503cd1e0f08e6665ea61f71cc90675dd5ecd8aa0aedb1adf62708bb08ab293b",
+          "url": "https://www.shodan.io/static/img/apple-touch-icon-192.png"
+        },
+        "suno.com": {
+          "fetched": "2026-11-03",
+          "pixels": 512,
+          "sha256": "8c7be49db4624961bbf8ca829511925ebb38ea62d2f0685977ee3419e9cd6590",
+          "url": "https://cdn-o.suno.com/favicon-512x512.png"
+        },
+        "uscis.gov": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "f1f35ead5b554364dcedd3baaf79519b7907395952bf04b9dcd2a7dc0fb1143e",
+          "url": "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https%3A%2F%2Fmy.uscis.gov%2F&size=256"
+        },
+        "vanta.com": {
+          "fetched": "2026-11-03",
+          "pixels": 512,
+          "sha256": "7bef7602280eced6de1c5d89f492886ac9364ddfd4848f2c4b1781497c1ea245",
+          "url": "https://cdn.prod.website-files.com/64009032676f24f376f002fc/6a8611e09c52a5b089945a8d_ilma-favicon.png"
+        },
+        "vivino.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "980098cc4a60c61d3f8bb9c6fbcbb2f30f4383ff34fba7559c8d6cce42f65851",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/0f/46/94/0f46946b-0350-0eca-b523-0dd133b78bfc/AppIcon-0-0-1x_U007ephone-0-1-0-sRGB-85-220.png/256x256bb.png"
+        },
+        "voyage-prive.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "c76c5b2df359d0a24999ae87fccfd18714e34656c47b7f97e88f833dc07d8f08",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/67/6e/15/676e15ab-554e-5371-fbec-5b48993dfda7/AppIcon-0-0-1x_U007epad-0-1-85-220.png/256x256bb.png"
+        },
+        "wallet.coinbase.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "9a53ced5ad9a480755bab5d66ab88e8c7fa8400eca717dabeb34a6922f40466c",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/c3/aa/92/c3aa92b6-b217-cb5e-ab82-d8a0d8be2f34/AppIcon-0-0-1x_U007ephone-0-1-0-sRGB-85-220.png/256x256bb.png"
+        },
+        "withings.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "1178668c5e06b64a5b93e6f4e98e4b305010e76085790b57fa9d231f5a20ca1d",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/33/d3/9e/33d39e14-0c27-3e33-86dc-d8f84d1ac235/AppIcon-Release-0-0-1x_U007epad-0-1-85-220.png/256x256bb.png"
+        },
+        "yonosbi.com": {
+          "fetched": "2026-11-03",
+          "pixels": 256,
+          "sha256": "34e3f3f3d49ac7a00ba6260bd0a80d04268d1b0d4eac64d1afc6f6f0d3888bc9",
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/94/f5/b7/94f5b74c-27a9-47d7-b597-273e8c05e544/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.png"
+        }
+      },
+      "license": "trademark of its owner, the brand's own icon (app or site) as a browser or the App Store shows it"
+    },
+    "logos": {
+      "commit": "22f03ffc4a652309d1fea4ade70f46e9e1d6602c",
+      "license": "CC0-1.0",
+      "repository": "gilbarbara/logos"
+    },
+    "simple-icons": {
+      "commit": "b45ca1f11d9d013a7c462944d90a049bc613ad4f",
+      "license": "CC0-1.0",
+      "repository": "simple-icons/simple-icons"
+    }
+  },
+  "version": 2026110401
+}

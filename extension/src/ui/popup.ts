@@ -27,6 +27,7 @@ import {
   type Send,
   type Timers,
   call,
+  errorHelp,
   errorText,
   h,
   icon,
@@ -93,7 +94,7 @@ const MASK = "••••••••••••";
 const TOAST_MS = 1600;
 /**
  * A copied password or one-time code leaves the clipboard this long after the copy: the rule of
- * the OnePass app itself (VaultKit `Clipboard`, 90 s, cleared only if unchanged). The clipboard is
+ * the Cleon app itself (VaultKit `Clipboard`, 90 s, cleared only if unchanged). The clipboard is
  * never read (that needs a permission and makes browsers prompt): while the timer lives, the popup
  * is the only writer it knows of, so it clears only when its own last copy is still that secret.
  * Any later copy from the popup, a username included, cancels the clear. Limit: the timer lives in the
@@ -294,7 +295,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   /**
-   * "Pair with OnePass": first without a code (the app vouches for this browser by its
+   * "Pair with Cleon": first without a code (the app vouches for this browser by its
    * signature), then the code comparison when the app cannot.
    */
   async function connect(): Promise<void> {
@@ -416,7 +417,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
   /**
    * Locked. iOS (IOSSAF-01): the native vault of the Safari handler answers, and the popup turns
-   * into the unlock sheet (the menu's). Elsewhere it has none: "Déverrouiller dans OnePass".
+   * into the unlock sheet (the menu's). Elsewhere it has none: "Déverrouiller dans Cleon".
    */
   function renderLocked(): Promise<void> {
     return track(
@@ -540,36 +541,46 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "actions" },
-        button(t("menu.unlockInOnepass"), "btn btn-primary", () =>
-          void track(
-            call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
-              if (r.ok && !r.value.locked) return load();
-              if (r.ok) waitForUnlock();
-              else toast(errorText(r.code), "error");
-              return undefined;
-            }),
-          ),
-        ),
+        button(t("menu.unlockInOnepass"), "btn btn-primary", openOnepass),
       ),
       forgetButton(),
     );
   }
+
+  /**
+   * Brings the app forward, launching it when it does not answer, and asks it to unlock
+   * (`popup_unlock`). Open: the popup loads. On its lock screen: the popup waits.
+   */
+  function openOnepass(): void {
+    void track(
+      call(deps.send, { type: "popup_unlock" }, parseLocked).then((r) => {
+        if (r.ok && !r.value.locked) return load();
+        if (r.ok) waitForUnlock();
+        else toast(errorText(r.code), "error");
+        return undefined;
+      }),
+    );
+  }
+
+  const retry = (cls = "btn btn-primary") => button(t("popup.tryAgain"), cls, () => void track(load()));
 
   function renderHostMissing(): void {
     center(
       mark("l"),
       h("h1", null, t("ui.onepassAppNotFound")),
       h("p", null, t("popup.installOrOpenOnepass")),
-      h("div", { class: "actions" }, button(t("popup.tryAgain"), "btn btn-primary", () => void track(load()))),
+      h("div", { class: "actions" }, button(t("menu.openOnepass"), "btn btn-primary", openOnepass), retry("btn")),
     );
   }
 
   function renderError(code: string): void {
-    center(
-      mark("l"),
-      h("h1", null, errorText(code)),
-      h("div", { class: "actions" }, button(t("popup.tryAgain"), "btn btn-primary", () => void track(load()))),
-    );
+    const help = errorHelp(code);
+    // Silent app: it may be stuck or asleep, the same button as when it is missing.
+    const actions =
+      code === "timeout"
+        ? h("div", { class: "actions" }, button(t("menu.openOnepass"), "btn btn-primary", openOnepass), retry("btn"))
+        : h("div", { class: "actions" }, retry());
+    center(mark("l"), h("h1", null, errorText(code)), help ? h("p", null, help) : null, actions);
   }
 
   // ---- main view ----
@@ -619,7 +630,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
       h(
         "div",
         { class: "pp-head" },
-        h("span", { class: "brand" }, mark("m"), "OnePass"),
+        h("span", { class: "brand" }, mark("m"), "Cleon"),
         h("label", { class: "search glass" }, icon("search", 14), input),
         genBtn,
         // The account chip also holds "Oublier cet appairage", out of the way.
@@ -812,7 +823,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
   }
 
   /**
-   * "Scan 2FA QR code": the worker scans the active tab. A card is then in the page (the code
+   * "Scan verification code QR": the worker scans the active tab. A card is then in the page (the code
    * read, or `none`: the card asks for the setup key), so the popup leaves it the page.
    */
   async function scanQr(): Promise<void> {

@@ -6,6 +6,11 @@ OVERRIDE = {
     ("Base", "database"): "Database",
 }
 LABEL = {
+    "Puce": "Chip",
+    "Photo": "Foto",
+    "Statut de la puce": "Stato del chip",
+    "Lu le": "Letto il",
+    "Code du document": "Codice del documento",
     "Numéro de TVA": "Partita IVA",
     "Immatriculation (SIRET, RCS)": "Numero di iscrizione al registro delle imprese",
     "Abonnement": "Abbonamento",
@@ -292,6 +297,9 @@ LABEL = {
 }
 # Menu options (stored value stays French).
 MENU = {
+    "Authentifié par la puce": "Autenticato dal chip",
+    "Lu sur la puce, signature non vérifiable": "Letto dal chip, firma non verificabile",
+    "Signature invalide": "Firma non valida",
     "2,4 GHz": "2,4 GHz",
     "Alarme": "Allarme",
     "Annuel": "Annuale",

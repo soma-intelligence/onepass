@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-rename-device"
+description = "Enables the rename_device command without any pre-configured scope."
+commands.allow = ["rename_device"]
+
+[[permission]]
+identifier = "deny-rename-device"
+description = "Denies the rename_device command without any pre-configured scope."
+commands.deny = ["rename_device"]

@@ -29,6 +29,7 @@ postcard = { version = "1", default-features = false, features = ["alloc"] }
 # Decodes an Ed25519 point (a join request's mailbox credential, plan C R17):
 # neither the mailbox crate nor aws-lc checks a raw public key.
 num-bigint = "0.4"
+serde.workspace = true
 serde_json.workspace = true
 data-encoding.workspace = true
 uniffi = { version = "=0.32.2" }
@@ -59,6 +60,10 @@ onepass-relay = { path = "../onepass-relay" }
 [features]
 # The Swift binding generator (`cargo run --features bindgen --bin uniffi-bindgen`).
 bindgen = ["uniffi/cli"]
+# `FfiIcaoSession::new_replayable`: fixed BAC and PACE randoms so the Swift
+# tests replay a recorded chip read (onepass-core tests/fixtures/icao). The
+# test XCFramework only (build-core.sh test), never a shipped build.
+scan-test-rng = ["onepass-core/scan-test-rng"]
 # Lowers the Argon2id floor in debug builds only (see onepass-core): for the
 # tests and the Swift test framework, never for a shipped build.
 dev-fast-kdf = [

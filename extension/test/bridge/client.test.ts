@@ -296,7 +296,7 @@ describe("BridgeClient pairing", () => {
     const host = new FakeHost(record(), () => undefined);
     const client = new BridgeClient(host);
     let shown = "";
-    const rec = await client.pair("OnePass", "Chromium", async (sas) => {
+    const rec = await client.pair("Cleon", "Chromium", async (sas) => {
       shown = sas;
       return true;
     });
@@ -309,7 +309,7 @@ describe("BridgeClient pairing", () => {
     const client = new BridgeClient(host);
     let asked = false;
     const rec = await client.pair(
-      "OnePass",
+      "Cleon",
       "Chrome",
       async () => {
         asked = true;
@@ -325,7 +325,7 @@ describe("BridgeClient pairing", () => {
   it("an automatic pairing the app refuses ends with not_allowed", async () => {
     const host = new FakeHost(record(), () => undefined, { vouch: false });
     const client = new BridgeClient(host);
-    const e = (await rejection(client.pair("OnePass", "Chrome", async () => true, { auto: true }))) as BridgeError;
+    const e = (await rejection(client.pair("Cleon", "Chrome", async () => true, { auto: true }))) as BridgeError;
     expect(e.code).toBe("host");
     expect(e.hostCode).toBe("not_allowed");
   });
@@ -336,7 +336,7 @@ describe("BridgeClient pairing", () => {
     let asked = false;
     const e = (await rejection(
       client.pair(
-        "OnePass",
+        "Cleon",
         "Chrome",
         async () => {
           asked = true;
@@ -351,7 +351,7 @@ describe("BridgeClient pairing", () => {
 
   it("a code pairing never sends auto", async () => {
     const host = new FakeHost(record(), () => undefined, { vouch: true });
-    await new BridgeClient(host).pair("OnePass", "Chrome", async () => true);
+    await new BridgeClient(host).pair("Cleon", "Chrome", async () => true);
     expect(host.helloAuto).toBe(false);
   });
 
@@ -360,7 +360,7 @@ describe("BridgeClient pairing", () => {
     const onDone = vi.spyOn(ExtPairing.prototype, "onDone");
     const abort = vi.spyOn(ExtPairing.prototype, "abort");
     const client = new BridgeClient(host);
-    const p = client.pair("OnePass", "Chromium", () => new Promise<boolean>(() => undefined));
+    const p = client.pair("Cleon", "Chromium", () => new Promise<boolean>(() => undefined));
     const outcome = p.then(
       () => "resolved",
       (e: unknown) => e,
@@ -403,7 +403,7 @@ describe("BridgeClient pairing", () => {
     const first = client.open(host.record);
     const second = (await rejection(client.open(host.record))) as BridgeError;
     expect(second.code).toBe("busy");
-    const third = (await rejection(client.pair("OnePass", "Chromium", async () => true))) as BridgeError;
+    const third = (await rejection(client.pair("Cleon", "Chromium", async () => true))) as BridgeError;
     expect(third.code).toBe("busy");
     await first;
     expect(client.isOpen).toBe(true);

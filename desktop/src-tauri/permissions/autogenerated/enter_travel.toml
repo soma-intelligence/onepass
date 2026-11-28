@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-enter-travel"
+description = "Enables the enter_travel command without any pre-configured scope."
+commands.allow = ["enter_travel"]
+
+[[permission]]
+identifier = "deny-enter-travel"
+description = "Denies the enter_travel command without any pre-configured scope."
+commands.deny = ["enter_travel"]

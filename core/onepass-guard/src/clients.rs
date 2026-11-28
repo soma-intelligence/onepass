@@ -254,6 +254,7 @@ impl ClientRegistryLoader {
 mod tests {
     use super::*;
     use crate::testutil::TestSigner;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     fn record(id: &str, surface: Surface) -> ClientRecord {
@@ -302,8 +303,11 @@ mod tests {
             back.find(Surface::Mcp, "platform:com.example.other")
                 .is_none()
         );
-        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
+        #[cfg(unix)]
+        {
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
     }
 
     #[test]

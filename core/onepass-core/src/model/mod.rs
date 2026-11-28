@@ -54,7 +54,7 @@ mod wire_tests {
     fn key_use_indexes() {
         use KeyUseAction::*;
         use KeyUseChannel::*;
-        check(&[App, AutoFill, Cli, Mcp, SshAgent]);
+        check(&[App, AutoFill, Cli, Mcp, SshAgent, DesktopFill]);
         check(&[Revealed, Copied, Injected, Totp, Signed, Filled]);
     }
 

@@ -25,7 +25,7 @@ describe.skipIf(!RELAY)("app relay to the bridge socket", () => {
       const t = connect();
       const client = new BridgeClient(t);
       let shown = "";
-      const record = await client.pair("OnePass", "Chrome", async (sas) => {
+      const record = await client.pair("Cleon", "Chrome", async (sas) => {
         shown = sas;
         return true;
       });

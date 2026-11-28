@@ -46,10 +46,11 @@ struct Sidebar: View {
             set: { destination in
                 switch destination {
                 case .filter(let filter):
-                    // Also clears a Watchtower list shown on the same filter.
-                    model.showItems(filter)
+                    // Also clears a Watchtower list shown on the same filter. Like a page, it asks
+                    // first when an edited item would be dropped.
+                    model.perform(.showItems(filter))
                 case .page(let page):
-                    model.page = page
+                    model.perform(.page(page))
                 case nil:
                     break
                 }
@@ -298,7 +299,7 @@ struct Sidebar: View {
             }
         }
         #if os(iOS) || os(visionOS)
-        .navigationTitle("OnePass")
+        .navigationTitle("Cleon")
         #endif
     }
 
@@ -529,7 +530,7 @@ struct AccountHeader: View {
         Menu {
             AccountsMenuItems()
             Section {
-                Button("Profil", systemImage: "person.crop.circle") { model.page = .profile }
+                Button("Profil", systemImage: "person.crop.circle") { model.perform(.page(.profile)) }
                     .accessibilityIdentifier("account.profile")
                 Button("Nouveau coffre…", systemImage: "plus.rectangle.on.rectangle") { creatingVault = true }
                     .accessibilityIdentifier("account.newVault")
@@ -611,7 +612,7 @@ struct AccountMenuPanel: View {
                 if !model.openSettingsInWindow() { openSettings() }
             case .profile:
                 close()
-                model.page = .profile
+                model.perform(.page(.profile))
             case .importItems:
                 close()
                 model.showImport = true

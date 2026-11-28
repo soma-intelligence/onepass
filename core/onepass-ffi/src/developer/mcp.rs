@@ -43,24 +43,11 @@ use zeroize::Zeroizing;
 use super::admin::{PairingState, app_policy, audit_admin, exposed_vaults, guard_state, pair};
 use super::browser::{HubBrowser, agent_hub};
 use super::{
-    AUDIT_FILE, CLIENTS_FILE, FfiDeveloperUi, SERVER_STACK, SessionSigner, UiApprover, UiStrong,
-    data_dir, guard_account_id, remove_socket, socket_identity, socket_path,
+    AUDIT_FILE, CLIENTS_FILE, FfiDeveloperUi, FfiMcpClient, SERVER_STACK, SessionSigner,
+    UiApprover, UiStrong, data_dir, guard_account_id, remove_socket, socket_identity, socket_path,
 };
 use crate::error::{OnePassError, invalid};
 use crate::session::Session;
-
-/// An MCP client as its relay identified it (spec 3.2).
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct FfiMcpClient {
-    /// Stable client id (`team:<team>:<identifier>`, `adhoc:<cdhash>`...).
-    pub id: String,
-    /// Display label (sanitized).
-    pub label: String,
-    /// The system vouches for its code (platform or team identity).
-    pub signed: bool,
-    /// The client ids walked from the relay's parent up to the client.
-    pub chain: Vec<String>,
-}
 
 /// How the app runs its MCP server.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -92,6 +79,10 @@ pub(crate) fn is_relay(peer: &CodeIdentity, relay: &CodeIdentity) -> bool {
             },
         ) => a == b && x == y,
         (CodeIdentity::AdHoc { cdhash: a, .. }, CodeIdentity::AdHoc { cdhash: b, .. }) => a == b,
+        // Linux and Android: the running image's hash against the relay file's.
+        (CodeIdentity::Unsigned { sha256: a, .. }, CodeIdentity::Unsigned { sha256: b, .. }) => {
+            a == b
+        }
         _ => false,
     }
 }
@@ -1698,6 +1689,14 @@ mod tests {
         assert!(!is_relay(&adhoc("ab"), &relay));
         assert!(is_relay(&adhoc("ab"), &adhoc("ab")));
         assert!(!is_relay(&adhoc("ab"), &adhoc("cd")));
+        let unsigned = |h: &str| CodeIdentity::Unsigned {
+            path: "/x".into(),
+            sha256: h.into(),
+        };
+        assert!(is_relay(&unsigned("ab"), &unsigned("ab")));
+        assert!(!is_relay(&unsigned("ab"), &unsigned("cd")));
+        assert!(!is_relay(&unsigned("ab"), &adhoc("ab")));
+        assert!(!is_relay(&unsigned("ab"), &relay));
         let platform = CodeIdentity::Platform {
             identifier: "com.apple.sh".into(),
         };

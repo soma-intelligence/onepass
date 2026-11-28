@@ -15,6 +15,7 @@ import VaultKit
 struct SearchTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Binding var query: String
     @Binding var isSearching: Bool
     @State private var category: FfiItemType?
@@ -160,10 +161,13 @@ struct SearchTab: View {
     }
 
     /// The categories present, two to a row: the type's artwork, its name and its count. A tile
-    /// shows that category; typing then searches inside it.
+    /// shows that category; typing then searches inside it. At accessibility text sizes one to a
+    /// row, so a name such as "Connexions" is never cut inside a word.
     private func browseGrid(_ all: [FfiItemSummary]) -> some View {
         let present = scopes(in: all)
-        return LazyVGrid(columns: [GridItem(.flexible(), spacing: space.m), GridItem(.flexible(), spacing: space.m)], spacing: space.m) {
+        let columns = Array(
+            repeating: GridItem(.flexible(), spacing: space.m), count: typeSize.isAccessibilitySize ? 1 : 2)
+        return LazyVGrid(columns: columns, spacing: space.m) {
             ForEach(present, id: \.type) { scope in
                 Button {
                     withAnimation(Motion.fold(reduceMotion: reduceMotion)) { category = scope.type }
@@ -171,20 +175,24 @@ struct SearchTab: View {
                     HStack(spacing: space.m) {
                         CategoryArtwork(type: scope.type, size: 30)
                         VStack(alignment: .leading, spacing: space.xxs) {
-                            Text(ItemCategory.of(scope.type).plural)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
+                            // One line when the name fits, two when it does not ("Cartes
+                            // bancaires", "Bases de données"), never cut with "…".
+                            ViewThatFits(in: .horizontal) {
+                                categoryName(scope.type).lineLimit(1)
+                                categoryName(scope.type).lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                             Text(scope.count, format: .number)
                                 .font(.caption)
                                 .monospacedDigit()
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, space.m)
-                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                    .padding(.vertical, space.s)
+                    // Both tiles of a row take the taller one's height.
+                    .frame(maxWidth: .infinity, minHeight: 56, maxHeight: .infinity, alignment: .leading)
                     .phoneCard()
                     .contentShape(.rect(cornerRadius: PhoneCard.radius))
                 }
@@ -193,6 +201,12 @@ struct SearchTab: View {
                 .accessibilityIdentifier("search.browse.\(NewItemMenu.key(scope.type))")
             }
         }
+    }
+
+    private func categoryName(_ type: FfiItemType) -> some View {
+        Text(ItemCategory.of(type).plural)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
     }
 
     // MARK: Results

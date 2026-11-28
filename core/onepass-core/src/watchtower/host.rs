@@ -2,6 +2,8 @@
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+use crate::fill_plan::app_entry::APP_SCHEME;
+
 /// Longest host name kept (DNS limit), the domain cap shared with import.
 pub const MAX_HOST_LEN: usize = crate::import::limits::MAX_DOMAIN_LEN;
 
@@ -18,10 +20,13 @@ pub(crate) fn scheme_of(url: &str) -> Option<&str> {
 /// Lower-cased host of a URL, without scheme, credentials or port. A
 /// missing scheme is allowed. IPv6 literals keep their brackets; IDN hosts
 /// are left as written. `None` when no host remains or it is longer than
-/// [`MAX_HOST_LEN`].
+/// [`MAX_HOST_LEN`], or when the URL is an app entry (`macapp://<bundle
+/// id>`, [`APP_SCHEME`]): a bundle id is no host, so no icon request, site
+/// check or duplicate match is made on it.
 pub fn host_of(url: &str) -> Option<String> {
     let s = url.trim();
     let rest = match scheme_of(s) {
+        Some(scheme) if scheme.eq_ignore_ascii_case(APP_SCHEME) => return None,
         Some(scheme) => s.get(scheme.len() + 3..)?,
         None => s,
     };
@@ -130,6 +135,22 @@ mod tests {
         );
         let long = format!("https://{}.com", "a".repeat(MAX_HOST_LEN));
         assert_eq!(host_of(&long), None);
+    }
+
+    #[test]
+    fn an_app_entry_has_no_host() {
+        // `macapp://<bundle id>` names a Mac app, not a site: no icon
+        // request, no site or duplicate check on the bundle id.
+        for u in [
+            "macapp://com.foo.app",
+            "MacApp://com.tinyspeck.slackmacgap/",
+        ] {
+            assert_eq!(host_of(u), None, "{u}");
+        }
+        assert_eq!(
+            host_of("https://macapp.example").as_deref(),
+            Some("macapp.example")
+        );
     }
 
     #[test]

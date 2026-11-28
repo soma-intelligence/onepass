@@ -3,7 +3,7 @@ import XCTest
 /// Open and sign in on iPhone, end to end (spec 2026-11-04-open-and-sign-in), on the agent's own
 /// simulator after `SafariAutofillUITests/test1Prepare` (account, the "Atlas Cloud" Login of the local
 /// test page with its one-time code, Face ID on, the Safari extension on for every website). In the
-/// app, the Login's website is tapped; Safari opens the page and OnePass signs in by itself:
+/// app, the Login's website is tapped; Safari opens the page and Cleon signs in by itself:
 /// identifier, password, then the code, with no tap in Safari. The extension's vault is locked: Face ID
 /// runs once (the runner posts the match), else the test fails. Fictional data only.
 @MainActor
@@ -57,6 +57,7 @@ final class OpenAndSignInUITests: XCTestCase {
 
     /// The app unlocked (Face ID by itself, else the master password), the Login opened from search.
     private func openItem() {
+        onePass.launchArguments += ["-OnePassRX", "NO"]
         onePass.launch()
         let home = onePass.buttons["items.new"]
         let field = onePass.secureTextFields["lock.password"]
@@ -67,9 +68,9 @@ final class OpenAndSignInUITests: XCTestCase {
             field.typeText(Self.masterPassword + "\n")
         }
         XCTAssertTrue(home.waitForExistence(timeout: Self.kdfTimeout), "app not unlocked")
-        let byID = onePass.buttons["tab.search"]
-        let search = byID.exists ? byID : onePass.buttons["Rechercher"]
-        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search tab")
+        // Home's header search field, the only search since the search tab left.
+        let search = onePass.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: Self.uiTimeout), "no search field")
         search.tap()
         let query = onePass.searchFields.firstMatch
         if !query.waitForExistence(timeout: 3) { search.tap() }

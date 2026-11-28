@@ -21,6 +21,7 @@ import {
   accountNotes,
   autosize,
   call,
+  errorHelp,
   errorText,
   h,
   hostOf,
@@ -66,6 +67,8 @@ function methodOf(it: Summary): string {
 
 /** An empty `menu_keys` answer sooner than this: ask again only after it. */
 const KEYS_BACKOFF_MS = 1000;
+/** No answer from the worker this long after opening: "Connexion à OnePass…" instead of a bare header. */
+export const MENU_PLACEHOLDER_MS = 250;
 
 
 export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
@@ -160,13 +163,13 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
   };
   document.addEventListener("keydown", keydown);
 
-  /** The OnePass mark and the site on the left, how many logins it has on the right. */
+  /** The Cleon mark and the site on the left, how many logins it has on the right. */
   const header = (origin: string | null, logins?: number) =>
     h(
       "h1",
       { class: "menu-head" },
       mark("s"),
-      h("span", { class: "menu-host" }, origin ? hostOf(origin) : "OnePass"),
+      h("span", { class: "menu-host" }, origin ? hostOf(origin) : "Cleon"),
       logins ? h("span", { class: "menu-count" }, tn("menu.loginCount", logins, { n: logins })) : null,
     );
   const glyphTile = (name: IconName, size: number) => h("span", { class: "glyph-wrap", attrs: { "aria-hidden": "true" } }, icon(name, size));
@@ -311,6 +314,18 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
         },
       },
       label,
+    );
+
+  /** "Réessayer": the menu asks the worker again from the start. */
+  const retryButton = (primary = false): HTMLButtonElement =>
+    h(
+      "button",
+      {
+        class: primary ? "btn btn-primary" : "btn",
+        attrs: { type: "button", "data-opt": "" },
+        on: { click: guard.wrap(() => void load()) },
+      },
+      t("popup.tryAgain"),
     );
 
   /** Face ID ran once by itself in this menu: never again without a tap (no loop). */
@@ -467,8 +482,18 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       body = messageBlock(t("popup.onepassNotPaired"), undefined, btn);
     } else if (code === "host_missing" || code === "host_missing_plain") {
       body = messageBlock(t("ui.onepassAppNotFound"), t("menu.openOnepassAppOn"), askButton(t("menu.openOnepass"), "host_missing", origin));
-    } else {
+    } else if (code === "timeout") {
+      // The app may be stuck or asleep: bring it forward (as when missing), or ask again.
+      body = messageBlock(
+        errorText(code),
+        errorHelp(code),
+        h("div", { class: "actions" }, askButton(t("menu.openOnepass"), "host_missing", origin), retryButton()),
+      );
+    } else if (code === "invalid") {
+      // No token, or a page that changed under the menu: asking again cannot help.
       body = messageBlock(errorText(code));
+    } else {
+      body = messageBlock(errorText(code), errorHelp(code), retryButton(true));
     }
     mount(container, header(origin), body);
     active = -1;
@@ -803,7 +828,14 @@ export function mountMenu(root: HTMLElement, deps: FrameDeps): MenuHandle {
       renderState("invalid", null);
       return;
     }
+    // The worker answers at once when the app is there. Slower (the app is being looked for):
+    // the menu says so instead of a bare header, until the answer replaces it.
+    const slow = timers.setTimeout(() => {
+      mount(container, header(null), messageBlock(t("popup.connecting")));
+      remeasure();
+    }, MENU_PLACEHOLDER_MS);
     const r = await call(deps.send, { type: "menu_init", token }, parseMenuInit);
+    timers.clearTimeout(slow);
     if (r.ok) {
       suggestion = null;
       if (NEW_PASSWORD_FORMS.has(r.value.formKind)) {

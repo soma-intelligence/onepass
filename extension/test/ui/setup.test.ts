@@ -59,7 +59,7 @@ describe("setup card", () => {
     const { r, handle, worker, click } = setup(state());
     await handle.ready;
     expect(worker.sent[0]).toEqual({ type: "setup_init", token: TOKEN });
-    expect(text(r)).toContain("Add the 2FA code to Atlas Cloud?");
+    expect(text(r)).toContain("Add the verification code to Atlas Cloud?");
     expect(text(r)).toContain("Atlas, alex@atlas.dev");
     // One item: no list.
     expect(r.querySelector('[role="listbox"]')).toBeNull();
@@ -86,7 +86,7 @@ describe("setup card", () => {
     );
     await handle.ready;
     await click("Add");
-    expect(text(r)).toContain("Atlas Cloud already has a 2FA code. Replace it?");
+    expect(text(r)).toContain("Atlas Cloud already has a verification code. Replace it?");
     expect(text(r)).toContain("The old code stays on the login.");
     expect(focused()).toBe("Cancel");
     expect(saves(worker)).toEqual([{ type: "setup_save", token: TOKEN, itemId: "it_01" }]);
@@ -138,7 +138,7 @@ describe("setup card", () => {
     expect(worker.sent.filter((m) => m.type === "setup_paste")).toEqual([{ type: "setup_paste", token: TOKEN, key: KEY }]);
     // The key is gone from the page; the confirmation follows.
     expect(r.querySelector("input.sc-key")).toBeNull();
-    expect(text(r)).toContain("Add the 2FA code to Atlas Cloud?");
+    expect(text(r)).toContain("Add the verification code to Atlas Cloud?");
     expect(saves(worker)).toEqual([]);
   });
 
@@ -158,8 +158,8 @@ describe("setup card", () => {
     const { r, handle, worker, click } = setup(state(), (m) => (m.type === "setup_save" ? { ok: { status: n++ === 0 ? "locked" : "saved" } } : null));
     await handle.ready;
     await click("Add");
-    expect(button(r, "Unlock OnePass")).toBeTruthy();
-    await click("Unlock OnePass");
+    expect(button(r, "Unlock Cleon")).toBeTruthy();
+    await click("Unlock Cleon");
     expect(saves(worker)).toEqual([
       { type: "setup_save", token: TOKEN, itemId: "it_01" },
       { type: "setup_save", token: TOKEN, itemId: "it_01" },
@@ -175,8 +175,8 @@ describe("setup card", () => {
     await handle.ready;
     await click("Add");
     await click("Replace");
-    expect(button(r, "Unlock OnePass")).toBeTruthy();
-    await click("Unlock OnePass");
+    expect(button(r, "Unlock Cleon")).toBeTruthy();
+    await click("Unlock Cleon");
     expect(saves(worker)).toEqual([
       { type: "setup_save", token: TOKEN, itemId: "it_01" },
       { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
@@ -197,7 +197,7 @@ describe("setup card", () => {
     await handle.ready;
     await click("Add");
     await click("Replace");
-    await click("Unlock OnePass");
+    await click("Unlock Cleon");
     expect(saves(worker).slice(1)).toEqual([
       { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
       { type: "setup_save", token: TOKEN, itemId: "it_01", replace: true },
@@ -218,11 +218,11 @@ describe("setup card", () => {
     let locked = true;
     const { r, handle, worker, click } = setup(state(), (m) => (m.type === "setup_init" && locked ? { err: "locked" } : null));
     await handle.ready;
-    expect(button(r, "Unlock OnePass")).toBeTruthy();
+    expect(button(r, "Unlock Cleon")).toBeTruthy();
     locked = false;
-    await click("Unlock OnePass");
+    await click("Unlock Cleon");
     expect(worker.sent.filter((m) => m.type === "setup_init")).toHaveLength(2);
-    expect(text(r)).toContain("Add the 2FA code to Atlas Cloud?");
+    expect(text(r)).toContain("Add the verification code to Atlas Cloud?");
   });
 
   it("closes on Escape and SAVED_CLOSE_MS after Saved", async () => {
@@ -340,7 +340,7 @@ describe("popup scan button", () => {
   it("closes the popup once the card shows", async () => {
     const p = popup({ ok: { status: "card" } });
     await p.handle.ready;
-    button(p.r, "Scan 2FA QR code").click();
+    button(p.r, "Scan verification code QR").click();
     await p.handle.settled();
     expect(p.w.sent.filter((m) => m.type === "popup_scan_qr")).toHaveLength(1);
     expect(p.closed()).toBe(1);
@@ -349,7 +349,7 @@ describe("popup scan button", () => {
   it("closes the popup when nothing was read: the paste card is in the page", async () => {
     const p = popup({ ok: { status: "none" } });
     await p.handle.ready;
-    button(p.r, "Scan 2FA QR code").click();
+    button(p.r, "Scan verification code QR").click();
     await p.handle.settled();
     expect(p.closed()).toBe(1);
   });
@@ -359,6 +359,6 @@ describe("popup scan button", () => {
     const r = root();
     const handle = mountPopup(r, { send: w.send, timers: new ManualTimers() });
     await handle.ready;
-    expect(text(r)).not.toContain("Scan 2FA QR code");
+    expect(text(r)).not.toContain("Scan verification code QR");
   });
 });

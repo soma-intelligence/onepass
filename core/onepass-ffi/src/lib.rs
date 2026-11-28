@@ -12,11 +12,13 @@ mod bridge;
 mod companion;
 mod contacts;
 mod convert;
+mod desktop_fill;
 mod developer;
 mod devices;
 mod duplicates;
 mod error;
 mod family;
+mod guard;
 mod hardening;
 mod import;
 mod key_use;
@@ -26,6 +28,7 @@ mod pairing;
 mod remote;
 mod rotation;
 mod rules;
+mod scan;
 mod session;
 mod sharing;
 #[cfg(feature = "dev-fast-kdf")]
@@ -57,12 +60,14 @@ pub use bridge::*;
 pub use companion::*;
 pub use contacts::*;
 use convert::{sections_to_ffi, type_label};
+pub use desktop_fill::*;
 pub use developer::*;
 pub use devices::*;
 pub use duplicates::*;
 pub use error::OnePassError;
 use error::invalid;
 pub use family::*;
+pub use guard::*;
 pub use hardening::*;
 pub use import::*;
 pub use key_use::*;
@@ -72,6 +77,7 @@ pub use pairing::*;
 pub use remote::*;
 pub use rotation::*;
 pub use rules::{password_for_context, password_from_rules};
+pub use scan::*;
 pub use session::{Session, SyncStoreHandle};
 pub use sharing::*;
 pub use travel::{FfiTravelItemEntry, FfiTravelItemPlan, FfiTravelPlanEntry, FfiTravelStatus};
@@ -81,7 +87,7 @@ pub use zones::*;
 
 uniffi::setup_scaffolding!();
 
-fn open_store(db_path: &str) -> Result<SyncStore, OnePassError> {
+pub(crate) fn open_store(db_path: &str) -> Result<SyncStore, OnePassError> {
     Ok(SyncStore::open(Path::new(db_path))?)
 }
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pending-archive"
+description = "Enables the pending_archive command without any pre-configured scope."
+commands.allow = ["pending_archive"]
+
+[[permission]]
+identifier = "deny-pending-archive"
+description = "Denies the pending_archive command without any pre-configured scope."
+commands.deny = ["pending_archive"]

@@ -23,7 +23,7 @@ use crate::agent::AgentHub;
 use crate::audit::AuditSink;
 use crate::framing::{read_frame, write_frame};
 use crate::pairing::{HostPairing, PAIRING_TIMEOUT_SECS, PairingRecord};
-use crate::service::{Service, VaultAccess};
+use crate::service::{ClientKind, Service, VaultAccess};
 use crate::session::host_accept;
 use crate::wire::{self, Envelope, Hello, PairHello};
 use crate::{AppErrorCode, BridgeError};
@@ -176,6 +176,9 @@ pub struct Conn<'a, W: Write> {
     /// 2026-11-02-browser-auto-pairing): a `pair_hello` with `auto` then
     /// pairs without the approver. `None`: only the code flow.
     pub vouched: Option<String>,
+    /// What the host admitted the caller as (its code signature on the
+    /// Mac): the contexts its session may speak. Never read from the wire.
+    pub kind: ClientKind,
     /// Stored with a new pairing.
     pub extension_id: String,
     pub journal: &'a dyn Journal,
@@ -442,7 +445,7 @@ impl<W: Write> Conn<'_, W> {
             self.journal.line("no audit journal");
             return Err(Close);
         };
-        let mut service = Service::new(vault, audit);
+        let mut service = Service::new(vault, audit).with_client_kind(self.kind);
         if let Some(hub) = self.agent.clone() {
             service = service.with_agent_hub(hub);
         }
@@ -719,6 +722,7 @@ mod tests {
             let mut conn = Conn {
                 allowed,
                 vouched: vouched.map(str::to_owned),
+                kind: ClientKind::Browser,
                 extension_id: "ext".into(),
                 journal: &Quiet,
                 clock: &clock_fn,

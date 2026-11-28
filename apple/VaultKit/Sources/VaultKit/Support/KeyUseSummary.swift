@@ -56,7 +56,7 @@ public enum KeyUseSummary {
             .joined(separator: " · ")
     }
 
-    /// Product names, the same in every language.
+    /// Product names, the same in every language (except the Mac fill label).
     public static func channelName(_ channel: FfiKeyUseChannel) -> String {
         switch channel {
         case .app: "App"
@@ -64,6 +64,7 @@ public enum KeyUseSummary {
         case .cli: "CLI"
         case .mcp: "MCP"
         case .sshAgent: "SSH"
+        case .desktopFill: String(localized: "keyUse.channel.desktopFill", bundle: VaultKitStrings.bundle)
         }
     }
 

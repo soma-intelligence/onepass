@@ -2,7 +2,7 @@ import DesignBridgeKit
 import SwiftUI
 
 // The building blocks of the RX look, one per main component of the Penpot file (page
-// "OnePass RX · Components"): glass button, colour disc, item row, menu row, card, quick actions,
+// "Cleon RX · Components"): glass button, colour disc, item row, menu row, card, quick actions,
 // plan card and perk tile. They draw only; the screens wrap them in their own Button,
 // NavigationLink, ShareLink or Menu, so the actions stay where they are today.
 
@@ -394,6 +394,7 @@ public struct QuickActionLabel: View {
     let systemImage: String
     let title: Text
     let onPhoto: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init(_ title: Text, systemImage: String, onPhoto: Bool = false) {
         self.title = title
@@ -402,7 +403,13 @@ public struct QuickActionLabel: View {
     }
 
     public var body: some View {
-        VStack(spacing: RX.Space.s) {
+        // Accessibility text sizes: the disc beside its label, one action a line
+        // (`QuickActionRow`), so "Générer" is never cut inside the word.
+        let stacked = !dynamicTypeSize.isAccessibilitySize
+        let layout = stacked
+            ? AnyLayout(VStackLayout(spacing: RX.Space.s))
+            : AnyLayout(HStackLayout(spacing: RX.Space.m))
+        layout {
             if onPhoto {
                 RXGlassGlyph(systemImage: systemImage, diameter: RX.Metrics.actionDisc, glyph: RX.Glyph.action, onPhoto: true)
             } else {
@@ -416,10 +423,11 @@ public struct QuickActionLabel: View {
             title
                 .rxFont(.calloutMedium)
                 .foregroundStyle(onPhoto ? Color.white : RX.Palette.textPrimary.color)
-                .multilineTextAlignment(.center)
-                .dbText(maxLines: 2, minimumScale: 0.8)
+                .multilineTextAlignment(stacked ? .center : .leading)
+                .dbText(maxLines: stacked ? 2 : nil, minimumScale: 0.8)
+            if !stacked { Spacer(minLength: 0) }
         }
-        .frame(maxWidth: RX.Metrics.actionWidth)
+        .frame(maxWidth: stacked ? RX.Metrics.actionWidth : .infinity)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
     }
@@ -449,8 +457,14 @@ public struct QuickActionRow<Content: View>: View {
         self.content = content()
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     public var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        // Accessibility text sizes: one action a line, each label on the full width.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: RX.Space.s))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+        layout {
             content
         }
         .frame(maxWidth: .infinity)
@@ -895,6 +909,8 @@ public struct RXHeroPage<Hero: View, Sheet: View>: View {
     /// The colours of a drawn wallpaper flow too; a photo only gets the slow camera move.
     let flowPhoto: Bool
     /// Each change scrolls the page back to its top (a tap on the tab that is already selected).
+    /// A page under a large title leaves it at 0 and uses `expandsLargeTitle(scrollToTop:)`, which
+    /// also unfolds the title.
     let scrollToTop: Int
 
     public init(

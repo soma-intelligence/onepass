@@ -61,7 +61,7 @@ final class AppModel {
     @ObservationIgnored var accountTasks: [String: [Task<Void, Never>]] = [:]
     /// The iCloud coordinator, for an account that syncs with iCloud (nil on the mailbox).
     @ObservationIgnored let coordinator: SyncCoordinator?
-    /// The mailbox coordinator, for an account on a OnePass server (cross-platform spec D.3).
+    /// The mailbox coordinator, for an account on a Cleon server (cross-platform spec D.3).
     @ObservationIgnored private(set) var mailbox: MailboxSyncCoordinator?
     /// The primary account's zone transport (shared vaults, contacts, family), handed to its sync
     /// coordinators; nil without a sync store, with demo data, in UI tests, or without a hosted
@@ -69,7 +69,7 @@ final class AppModel {
     @ObservationIgnored let zones: AccountZones?
     /// What the session's sync goes through: the current coordinator of either kind.
     @ObservationIgnored let router: SyncRouter?
-    /// "Serveur OnePass", the host of a self-host, or "iCloud" (Réglages > Sync).
+    /// "Serveur Cleon", the host of a self-host, or "iCloud" (Réglages > Sync).
     private(set) var syncBackendName: String
     /// The sync store and its database, for the mailbox setup.
     @ObservationIgnored private let syncStore: SyncStoreHandle?
@@ -108,7 +108,7 @@ final class AppModel {
     /// onboarding model).
     var onboardingStart: OnboardingPath?
 
-    /// The onboarding stays on screen until "Ouvrir OnePass", even though the account creation
+    /// The onboarding stays on screen until "Ouvrir Cleon", even though the account creation
     /// already unlocked the session.
     var onboardingInProgress = false
     #if DEBUG
@@ -144,6 +144,17 @@ final class AppModel {
     var editing = false
     /// A new item's editor, shown in place of the detail until saved or cancelled.
     var newItemDraft: ItemDraft?
+    /// iPhone: the passport scan flow on screen (camera, NFC read, reveal), for a new passport or
+    /// to read the chip of one the vault holds (NFC documents spec 6.1).
+    var scanRequest: ScanRequest?
+    /// Bumped when a scan saved an item, so its detail reads it again.
+    private(set) var scanRevision = 0
+    /// "Scanner" in the new item sheet: the scan flow, presented once that sheet has gone
+    /// (`newItemSheetDismissed`).
+    private var scanAfterSheet: ScanRequest?
+    /// "Garder les données de la MRZ": the passport for the editor, opened once the scan flow has
+    /// gone (`scanCoverDismissed`).
+    private var draftAfterScan: FfiItem?
     /// What the main window shows right of the sidebar: the item list and detail, or a full page
     /// (Watchtower, Développeur). Choosing an item filter in the sidebar goes back to `.items`.
     var page: BrowsePage = .items
@@ -151,6 +162,17 @@ final class AppModel {
     var editorDirty = false
     /// An action that would drop a dirty draft, waiting for "Abandonner les modifications ?".
     var pendingDiscard: GuardedAction?
+    /// "Enregistrer" in that confirmation: the action runs once the editor's save succeeds
+    /// (`editorSaveFinished`), and is dropped if the save fails (the editor shows why).
+    private(set) var afterSave: GuardedAction?
+    #if os(macOS)
+    /// Set once the user chose to quit from the unsaved changes confirmation: the next
+    /// `applicationShouldTerminate` lets the app go.
+    private(set) var quitConfirmed = false
+    /// `applicationShouldTerminate` answered `.terminateLater`: AppKit waits for
+    /// `reply(toApplicationShouldTerminate:)`, sent once the user chose (`answerQuit`).
+    private var quitReplyPending = false
+    #endif
     /// iPhone and iPad: the settings sheet (the Mac has its own `Settings` window).
     var showSettings = false
     /// iPhone: how many account panels are open (each tab has its own account button); the tabs dim
@@ -187,8 +209,9 @@ final class AppModel {
     var editOnOpen: ItemRef?
     var saveRequest = 0
     var searchFocusRequest = 0 {
-        // ⌘F searches the items: a full page gives way to the list.
-        didSet { page = .items }
+        // ⌘F searches the items: a full page gives way to the list, except Home (Mac), which has
+        // its own search field.
+        didSet { if page != .home { page = .items } }
     }
     /// Bumped after each remote change set is applied: an open item detail reloads (or warns its
     /// editor) on it.
@@ -202,7 +225,7 @@ final class AppModel {
     @ObservationIgnored private var toastActionOrder: [UUID] = []
     /// RX look: the last toast handed to the host, so a bridge that appears again never sends it twice.
     @ObservationIgnored private var forwardedToastID: UUID?
-    /// OnePass is the system AutoFill provider; nil until the first read. Read again on every return
+    /// Cleon is the system AutoFill provider; nil until the first read. Read again on every return
     /// to the foreground and after an activation request.
     private(set) var autofillEnabled: Bool?
 
@@ -237,7 +260,7 @@ final class AppModel {
         case search
     }
 
-    /// "Verrouiller OnePass" Control: shared with the widget extension through the App Group.
+    /// "Verrouiller Cleon" Control: shared with the widget extension through the App Group.
     @ObservationIgnored private let lockSignal = LockSignal(
         defaults: UserDefaults(suiteName: AppGroup.identifier) ?? .standard)
     @ObservationIgnored private var lockObservation: LockSignalObservation?
@@ -486,7 +509,7 @@ final class AppModel {
     /// Moves the milestone 2 store and settings into the shared container (ruling A3). If the move
     /// fails, the migration has put back every file it moved (database, `-wal` and `-shm` together),
     /// and this launch keeps the legacy store and settings: the vault stays usable in the app. The
-    /// AutoFill extension finds no shared store and never creates one (it shows "open OnePass"), so a
+    /// AutoFill extension finds no shared store and never creates one (it shows "open Cleon"), so a
     /// later launch completes the move; an empty shared store left by an older extension is set aside.
     /// Nil when the files could not be put back either (store split between the two folders): no store
     /// is opened this launch, the session shows "Données refusées".
@@ -510,7 +533,7 @@ final class AppModel {
 
     /// Shown on "Données refusées" when the store is split between the two folders.
     static var storeSplitMessage: String { String(localized:
-        "Le déplacement du stockage vers le dossier partagé avec l'extension AutoFill a échoué et n'a pas pu être annulé. Aucune donnée n'est ouverte pour éviter toute perte. Quitte puis relance OnePass : le déplacement reprend au lancement suivant.") }
+        "Le déplacement du stockage vers le dossier partagé avec l'extension AutoFill a échoué et n'a pas pu être annulé. Aucune donnée n'est ouverte pour éviter toute perte. Quitte puis relance Cleon : le déplacement reprend au lancement suivant.") }
 
     /// Starts listening to the sync layer and runs a first round. Called once by the root view.
     func start() {
@@ -537,7 +560,7 @@ final class AppModel {
         }
         #endif
         #if os(iOS)
-        // A "Verrouiller OnePass" Control while the app runs: the Darwin notification locks now.
+        // A "Verrouiller Cleon" Control while the app runs: the Darwin notification locks now.
         lockObservation = LockSignal.observe { [weak self] in
             Task { @MainActor in self?.lockIfRequested() }
         }
@@ -555,7 +578,7 @@ final class AppModel {
         let phoneApprovals = self.phoneApprovals
         tasks.append(Task { await phoneApprovals.start() })
         if let browserBridge {
-            // "Déverrouiller dans OnePass" from an extension: the app comes forward on its lock screen.
+            // "Déverrouiller dans Cleon" from an extension: the app comes forward on its lock screen.
             // Set before the socket listens, so what a waiting browser asks at launch is not lost.
             browserBridge.attentionRequested = { [weak self] attention in
                 guard let self else { return }
@@ -616,7 +639,7 @@ final class AppModel {
         syncBackendName = SyncBackendState.pendingSetup(choice).displayName(hosted: MailboxEndpoints.hosted())
     }
 
-    /// Where the account of `secretKey` lives (spec D.4): the kit's server, the OnePass server,
+    /// Where the account of `secretKey` lives (spec D.4): the kit's server, the Cleon server,
     /// then iCloud.
     func locateAccount(secretKey: SecretBytes, kitServer: URL?) async -> RestoreSource {
         let restore = MailboxRestore(
@@ -668,7 +691,7 @@ final class AppModel {
         return MailboxMigration(store: syncStore, parts: parts)
     }
 
-    /// "Passer au serveur OnePass": the migration of this account, on its gesture.
+    /// "Passer au serveur Cleon": the migration of this account, on its gesture.
     func migrateToMailbox(choice: SyncChoice) async -> MailboxMigration.Outcome {
         guard let migration = mailboxMigration() else { return .failed(String(localized: "settings.sync.migrate.unavailable")) }
         if let blocker = await session.migrationBlocker(migration, status: syncStatus) { return .blocked(blocker) }
@@ -758,7 +781,7 @@ final class AppModel {
         return outcome
     }
 
-    /// The mailbox client of an account on a OnePass server, signed by this device's credential.
+    /// The mailbox client of an account on a Cleon server, signed by this device's credential.
     /// Without its seed (Keychain restored elsewhere, item deleted) nothing syncs and the log says so.
     /// `zones`: the account's zone transport, set to make its zones under this mailbox and run after
     /// each private round.
@@ -857,7 +880,7 @@ final class AppModel {
     /// that, a background wake (remote notification) or the return locks first.
     private func lockWhileBackgroundTimeLasts() {
         guard accounts.anyUnlocked, backgroundLock == nil else { return }
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "OnePass auto-lock") { [weak self] in
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Cleon auto-lock") { [weak self] in
             MainActor.assumeIsolated { self?.endBackgroundLock() }
         }
         backgroundLock = Task { [weak self] in
@@ -1147,6 +1170,15 @@ final class AppModel {
         return !cloudKitEnabled && session.state == .unlocked
     }
 
+    /// The sync server a new Emergency Kit names: a self-hosted mailbox, as the onboarding kit does.
+    /// Nil for iCloud and the OnePass server.
+    func emergencyKitServer() -> URL? {
+        guard let syncStore, case .mailbox(let home) = try? SyncBackendState.readNow(store: syncStore) else {
+            return nil
+        }
+        return home.baseURL == MailboxEndpoints.hosted() ? nil : home.baseURL
+    }
+
     // MARK: - Account missing
 
     /// "Restaurer avec mon Emergency Kit" on "Le compte a disparu du stockage", confirmed: the
@@ -1221,7 +1253,7 @@ final class AppModel {
         session.lock()
     }
 
-    /// Locks when a "Verrouiller OnePass" request is newer than the last unlock, this launch and
+    /// Locks when a "Verrouiller Cleon" request is newer than the last unlock, this launch and
     /// any request already seen while locked. iOS only (the Controls exist only there).
     func lockIfRequested() {
         #if os(iOS)
@@ -1390,8 +1422,11 @@ final class AppModel {
     /// Bumped to show the main window (reopened if it was closed): the menu bar label observes it,
     /// being the one view that lives while no window is open.
     var mainWindowRequest = 0
+    /// Bumped to open the classic `Settings` window on `settingsPageRequest` (a route from outside
+    /// while the RX look is off): the menu bar label observes it, as `mainWindowRequest`.
+    var settingsWindowRequest = 0
 
-    /// "Déverrouiller dans OnePass" (`onepass://unlock` or the bridge's request): the main window
+    /// "Déverrouiller dans Cleon" (`onepass://unlock` or the bridge's request): the main window
     /// comes forward on the lock screen, which then asks for biometrics once. The activation alone
     /// is not enough since macOS 14 while the browser is in front; the link, opened through
     /// LaunchServices by the extension's process, is what brings the app forward.
@@ -1475,6 +1510,14 @@ final class AppModel {
     func mainWindowClosed() {
         publicSession?.end()
         dropPendingOtpLink()
+        // The editor's draft lived in the window's views: it is gone with them. A lock or a quit
+        // must not wait on a confirmation that no window shows.
+        editing = false
+        newItemDraft = nil
+        editorDirty = false
+        pendingDiscard = nil
+        dropAfterSave()
+        answerQuit(false)
         if settings.autoLockDelay.locksInBackground { lock() }
         for entry in accounts.openSessions
         where entry.session !== session && entry.session.state == .unlocked
@@ -1482,6 +1525,32 @@ final class AppModel {
         {
             entry.session.lock()
         }
+    }
+
+    /// "Verrouiller" of the menu bar icon. Never silent: with unsaved changes the window comes
+    /// forward on "Abandonner les modifications ?" (it says why the vault is still open); if the
+    /// vault is still open for any other reason, the window says so in a notification.
+    func lockFromMenuBar() {
+        perform(.lock)
+        if pendingDiscard == .lock {
+            mainWindowRequest &+= 1
+            NSApplication.shared.activate()
+        } else if session.state == .unlocked {
+            showToast(String(localized: "lock.notLocked"), kind: .error)
+            mainWindowRequest &+= 1
+            NSApplication.shared.activate()
+        }
+    }
+
+    /// ⌘Q (`applicationShouldTerminate`): false keeps the app open while an edited item waits for
+    /// "Enregistrer", "Abandonner" or "Continuer l'édition" in the main window.
+    func shouldQuitNow() -> Bool {
+        if quitConfirmed || !(isEditing && editorDirty) { return true }
+        perform(.quit)
+        quitReplyPending = true
+        mainWindowRequest &+= 1
+        NSApplication.shared.activate()
+        return false
     }
 
     /// An extension asks to pair: the window comes forward for the sheet with its code, and stays.
@@ -1575,7 +1644,7 @@ final class AppModel {
             case .orgJoin:
                 showToast(String(localized: "org.join.linkExpired"), kind: .error)
                 return
-            case .link:
+            case .link, .settings:
                 break
             }
         }
@@ -1607,7 +1676,26 @@ final class AppModel {
             Task { await presentOtpLink(link, source: .link) }
         case .orgJoin(let link):
             Task { await openOrgJoinLink(link) }
+        case .settings(let page, let focus):
+            openSettingsPage(page, focus: focus)
         }
+    }
+
+    /// Réglages on `page`, scrolled or pushed to `focus` by the page. Mac: the RX popup in the main
+    /// window, else the `Settings` window (opened by the menu bar label, `settingsWindowRequest`).
+    /// iPhone and iPad: the settings sheet.
+    private func openSettingsPage(_ page: SettingsPage, focus: String?) {
+        settingsFocusRequest = focus
+        #if os(macOS)
+        if !openSettingsInWindow(page, bringWindow: true) {
+            settingsPageRequest = page
+            settingsWindowRequest &+= 1
+        }
+        NSApplication.shared.activate()
+        #else
+        settingsPageRequest = page
+        showSettings = true
+        #endif
     }
 
     /// The "Ajouter un code" sheet for a verification code link, or a message when the link is not
@@ -1682,7 +1770,7 @@ final class AppModel {
         }
     }
 
-    /// Copies the item's current one-time code with the OnePass clipboard (90 s, local only).
+    /// Copies the item's current one-time code with the Cleon clipboard (90 s, local only).
     func copyTotpCode(_ ref: ItemRef) async {
         guard session.state == .unlocked else { return }
         let noCode = String(localized: "root.itemHasNoOne")
@@ -1705,7 +1793,7 @@ final class AppModel {
         // Travel Mode: an item behind extra protection is read in its detail only, after the
         // password and Face ID (spec 2026-11-02).
         guard !(item.travelGuard && session.isTravelling) else {
-            showToast(String(localized: "Protégé en voyage : ouvre l'élément pour le lire."), kind: .error)
+            showToast(String(localized: "copy.command.travelGuarded"), kind: .error)
             return
         }
         let totp: FfiTotpCode
@@ -1722,6 +1810,71 @@ final class AppModel {
         }?.label ?? ""
         noteItemUse(ref, action: .totp, field: otpLabel)
         showToast(String(localized: "root.codeCopied"))
+    }
+
+    /// What the "Copier le mot de passe" (⌘C) and "Copier le code de vérification" (⌘⇧C) commands
+    /// copy from the selected item.
+    enum SelectedSecret {
+        case password, verificationCode
+    }
+
+    /// The copy commands of the Élément menu act on the selected item, outside its editor.
+    var canCopyFromSelection: Bool {
+        session.state == .unlocked && page == .items && selectedItem != nil && !isEditing
+    }
+
+    /// ⌘C / ⌘⇧C on the selected item: the same clipboard as the Copier buttons (local only,
+    /// concealed, cleared after 90 s and on lock), the same toast and use counting. A `reprompt`
+    /// item asks Face ID / Touch ID first, as its detail does; an item protected in Travel Mode is
+    /// read in its detail only. Every refusal says why.
+    func copyFromSelection(_ secret: SelectedSecret) async {
+        guard canCopyFromSelection, let ref = selectedItem else { return }
+        let item: FfiItem
+        do {
+            item = try await session.loadItem(vaultID: ref.vaultID, itemID: ref.itemID)
+        } catch {
+            Self.log.error("copy command: item not loaded")
+            showToast(String(localized: "copy.command.nothing"), kind: .error)
+            return
+        }
+        guard item.trashedAt == nil, !session.hiddenVaultIDs.contains(ref.vaultID) else {
+            showToast(String(localized: "copy.command.nothing"), kind: .error)
+            return
+        }
+        guard !(item.travelGuard && session.isTravelling) else {
+            showToast(String(localized: "copy.command.travelGuarded"), kind: .error)
+            return
+        }
+        switch secret {
+        case .password:
+            guard let field = firstPasswordField(of: item), case .password(let value) = field.value else {
+                showToast(String(localized: "copy.command.noPassword"), kind: .error)
+                return
+            }
+            if item.reprompt {
+                guard await session.confirmUserPresence(prompt: String(localized: "copy.command.password"))
+                else {
+                    showToast(String(localized: "copy.command.openToCopy"), kind: .error)
+                    return
+                }
+            }
+            session.copy(value, concealed: true)
+            noteItemUse(ref, action: .copied, field: field.label)
+            showToast(String(localized: "app.copiedClearedIn90"))
+        case .verificationCode:
+            guard firstOtpValue(of: item) != nil else {
+                showToast(String(localized: "root.itemHasNoOne"), kind: .error)
+                return
+            }
+            if item.reprompt {
+                guard await session.confirmUserPresence(prompt: String(localized: "copy.command.code"))
+                else {
+                    showToast(String(localized: "copy.command.openToCopy"), kind: .error)
+                    return
+                }
+            }
+            await copyTotpCode(ref)
+        }
     }
 
     /// An in-app use of an item (password or one-time code copied, website opened): it feeds
@@ -1763,8 +1916,14 @@ final class AppModel {
         editing = false
         editOnOpen = nil
         newItemDraft = nil
+        // The scan holds the MRZ and the read: never kept past a lock.
+        scanRequest = nil
+        scanAfterSheet = nil
+        draftAfterScan = nil
         editorDirty = false
         pendingDiscard = nil
+        dropAfterSave()
+        answerQuit(false)
         showNewItemPicker = false
         showImport = false
         showDeviceSetup = false
@@ -1836,7 +1995,7 @@ final class AppModel {
         UserDefaults.standard.set(true, forKey: Self.safariSetupCardDismissedKey)
     }
 
-    /// "Activer OnePass": the system prompt, then the state is read again.
+    /// "Activer Cleon": the system prompt, then the state is read again.
     func requestAutoFillActivation() async {
         #if DEBUG
         // Demo data: the in-memory store stands for the system, nothing is asked.
@@ -1886,8 +2045,18 @@ final class AppModel {
         case revealInAccount(String, ItemRef)
         case select(ItemRef?)
         case newItem(FfiItemType)
+        /// "Scanner" in the new item sheet: the passport scan flow, for a new item.
+        case scanDocument
         /// A deep link to an item: shown in the full list (iPhone: the Éléments tab).
         case reveal(ItemRef)
+        /// A full page of the sidebar (Watchtower, Doublons, Profil...), in place of list and detail.
+        case page(BrowsePage)
+        /// An item filter of the sidebar: the list (and detail) of that filter.
+        case showItems(ItemFilter)
+        /// An item opened from a page (Mac Home's favorites): the full list, then the item.
+        case open(ItemRef)
+        /// Quit the app (Mac, ⌘Q).
+        case quit
     }
 
     /// An item editor (existing or new item) is on screen.
@@ -1895,12 +2064,26 @@ final class AppModel {
 
     /// Runs the action, or asks first when it would drop a dirty draft (rule of Task 13).
     func perform(_ action: GuardedAction) {
+        // A save asked by an earlier confirmation no longer decides what happens next.
+        dropAfterSave()
         if isEditing, editorDirty {
             if case .select(let ref) = action, ref == selectedItem, newItemDraft == nil { return }
+            if case .page(let target) = action, target == page { return }
+            if case .showItems(let filter) = action, page == .items, filter == selection, watchtowerFilter == nil {
+                return
+            }
             pendingDiscard = action
             return
         }
         apply(action)
+    }
+
+    /// "Continuer l'édition" in the confirmation (or the dialog dismissed): nothing happens, and a
+    /// waiting ⌘Q is cancelled.
+    func keepEditing() {
+        guard let action = pendingDiscard else { return }
+        pendingDiscard = nil
+        if action == .quit { answerQuit(false) }
     }
 
     /// "Abandonner" in the confirmation.
@@ -1908,6 +2091,59 @@ final class AppModel {
         guard let action = pendingDiscard else { return }
         pendingDiscard = nil
         apply(action)
+    }
+
+    /// "Enregistrer" in the confirmation: asks the editor on screen to save; the action follows a
+    /// successful save (`editorSaveFinished`).
+    func saveThenContinue() {
+        guard let action = pendingDiscard else { return }
+        pendingDiscard = nil
+        afterSave = action
+        saveRequest &+= 1
+    }
+
+    /// The editor's save ended. Saved: the action waiting on it runs; failed: it is dropped and the
+    /// user stays in the editor, which shows the error.
+    func editorSaveFinished(saved: Bool) {
+        guard let action = afterSave else { return }
+        afterSave = nil
+        if saved {
+            editorDirty = false
+            apply(action)
+        } else if action == .quit {
+            answerQuit(false)
+        }
+    }
+
+    /// The editor left the screen: a save it was asked for no longer leads anywhere.
+    func editorDisappeared() {
+        dropAfterSave()
+    }
+
+    /// Forgets the action waiting on a save; a waiting ⌘Q is cancelled.
+    private func dropAfterSave() {
+        guard let action = afterSave else { return }
+        afterSave = nil
+        if action == .quit { answerQuit(false) }
+    }
+
+    /// Answers a ⌘Q left waiting (`.terminateLater`); does nothing when none waits.
+    private func answerQuit(_ quit: Bool) {
+        #if os(macOS)
+        guard quitReplyPending else { return }
+        quitReplyPending = false
+        if quit { quitConfirmed = true }
+        NSApplication.shared.reply(toApplicationShouldTerminate: quit)
+        #endif
+    }
+
+    /// What a guarded action waits on, for the confirmation's destructive button.
+    var discardButtonTitle: LocalizedStringKey {
+        switch pendingDiscard {
+        case .lock, .lockAll: "Abandonner et verrouiller"
+        case .quit: "editor.unsaved.discardAndQuit"
+        default: "editor.unsaved.discard"
+        }
     }
 
     private func apply(_ action: GuardedAction) {
@@ -1931,6 +2167,8 @@ final class AppModel {
             selectedItem = ref
         case .newItem(let type):
             startNewItem(type)
+        case .scanDocument:
+            startScan()
         case .reveal(let ref):
             newItemDraft = nil
             showNewItemPicker = false
@@ -1947,6 +2185,31 @@ final class AppModel {
             watchtowerFilter = nil
             browseReveal = .item(ref)
             selectedItem = ref
+        case .page(let target):
+            newItemDraft = nil
+            editing = false
+            editorDirty = false
+            page = target
+        case .showItems(let filter):
+            newItemDraft = nil
+            editing = false
+            editorDirty = false
+            showItems(filter)
+        case .open(let ref):
+            newItemDraft = nil
+            editing = false
+            editorDirty = false
+            showItems(.all)
+            selectedItem = ref
+        case .quit:
+            #if os(macOS)
+            if quitReplyPending {
+                answerQuit(true)
+            } else {
+                quitConfirmed = true
+                NSApplication.shared.terminate(nil)
+            }
+            #endif
         }
     }
 
@@ -1996,6 +2259,62 @@ final class AppModel {
         } catch {
             Self.log.error("new item not created")
         }
+    }
+
+    /// "Scanner": the scan flow opens once the new item sheet it came from has gone.
+    private func startScan() {
+        guard let vaultID = vaultForNewItem else { return }
+        let fromSheet = showNewItemPicker || newItemDraft != nil
+        showNewItemPicker = false
+        newItemDraft = nil
+        editing = false
+        editorDirty = false
+        page = .items
+        let request = ScanRequest(target: .new(vaultID: vaultID))
+        if fromSheet {
+            scanAfterSheet = request
+        } else {
+            scanRequest = request
+        }
+    }
+
+    /// The iPhone's new item sheet has gone: the scan it asked for comes up now.
+    func newItemSheetDismissed() {
+        guard let request = scanAfterSheet else { return }
+        scanAfterSheet = nil
+        guard session.state == .unlocked else { return }
+        scanRequest = request
+    }
+
+    /// "Scanner la puce" in a passport's detail: the scan flow merges the read into it.
+    func scanChip(of item: FfiItem) {
+        guard item.itemType == .passport, scanRequest == nil else { return }
+        scanRequest = ScanRequest(target: .merge(item))
+    }
+
+    /// The scan flow closed: shows the saved item, if any.
+    func finishScan(_ saved: FfiItem?) {
+        scanRequest = nil
+        guard let saved else { return }
+        scanRevision &+= 1
+        selectedItem = ItemRef(vaultID: saved.vaultId, itemID: saved.id)
+    }
+
+    /// "Garder les données de la MRZ" (no chip, or no NFC): the passport made from the MRZ opens in
+    /// the new item editor, once the scan has gone.
+    func editScannedDraft(_ item: FfiItem) {
+        draftAfterScan = item
+        scanRequest = nil
+    }
+
+    /// The scan flow has gone: the MRZ-only passport it handed over opens in the editor now.
+    func scanCoverDismissed() {
+        guard let item = draftAfterScan else { return }
+        draftAfterScan = nil
+        guard session.state == .unlocked else { return }
+        editing = false
+        editorDirty = false
+        newItemDraft = ItemDraft(item: item)
     }
 
     /// The new item's editor closed: shows the saved item, or what was shown before.

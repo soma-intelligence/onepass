@@ -7,7 +7,7 @@ import Testing
 /// coordinator to the other.
 @Suite struct SyncRouterTests {
     private func mailboxCoordinator(_ fake: FakeMailboxSync) -> MailboxSyncCoordinator {
-        MailboxSyncCoordinator(sync: fake, serverName: "Serveur OnePass", sleep: { _ in try await Task.sleep(for: .seconds(3600)) })
+        MailboxSyncCoordinator(sync: fake, serverName: "Serveur Cleon", sleep: { _ in try await Task.sleep(for: .seconds(3600)) })
     }
 
     private func tempStore() throws -> (SyncStoreHandle, URL) {
@@ -104,7 +104,7 @@ import Testing
         #expect(try await SyncBackendState.read(store: store) == .mailbox(home))
         try await SyncBackendState.write(.pendingSetup(.hosted), store: store)
         #expect(try await SyncBackendState.read(store: store) == .pendingSetup(.hosted))
-        #expect(SyncBackendState.mailbox(home).displayName(hosted: home.baseURL) == "Serveur OnePass")
+        #expect(SyncBackendState.mailbox(home).displayName(hosted: home.baseURL) == "Serveur Cleon")
         let selfHost = MailboxHome(baseURL: URL(string: "https://coffre.exemple.fr/mailbox")!, mailboxID: home.mailboxID)
         #expect(SyncBackendState.mailbox(selfHost).displayName(hosted: home.baseURL) == "coffre.exemple.fr")
         #expect(SyncBackendState.iCloud.displayName(hosted: nil) == "iCloud")

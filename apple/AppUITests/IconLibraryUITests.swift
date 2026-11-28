@@ -20,7 +20,7 @@ final class IconLibraryUITests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchArguments += [
-            "-OnePassDemoData", "YES", "-OnePassDemoBiometrics", "NO", "-OnePassDemoList", "all",
+            "-OnePassDemoData", "YES", "-OnePassRX", "NO", "-OnePassDemoBiometrics", "NO", "-OnePassDemoList", "all",
             "-OnePassDemoItem", Self.title, "-OnePassDebugEdit", "YES",
         ]
         app.launch()

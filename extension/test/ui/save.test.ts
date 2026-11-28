@@ -96,10 +96,10 @@ describe("save prompt", () => {
     // Locked: Save is offered (it unlocks first in the worker).
     expect(button(s.r, "Enregistrer").disabled).toBe(false);
     await s.click("Enregistrer");
-    expect(text(s.r)).toContain("Déjà dans OnePass");
+    expect(text(s.r)).toContain("Déjà dans Cleon");
   });
 
-  it("several OnePass accounts: the chip names the account too", async () => {
+  it("several Cleon accounts: the chip names the account too", async () => {
     const { r, handle } = setup({
       ...base,
       vaults: [
@@ -213,7 +213,7 @@ describe("save prompt", () => {
     expect(text(r)).toContain("Modifier avant d'enregistrer");
     await click("Ne jamais proposer pour ce site");
     expect(worker.sent.at(-1)).toEqual({ type: "save_decide", token: TOKEN, decision: "never" });
-    expect(text(r)).toContain("OnePass ne proposera plus rien ici");
+    expect(text(r)).toContain("Cleon ne proposera plus rien ici");
   });
 
   it("Plus tard folds the card into the pill at once (no decision)", async () => {
@@ -470,7 +470,7 @@ describe("save prompt", () => {
   it("errors are French sentences", async () => {
     let s = setup({ err: "locked" });
     await s.handle.ready;
-    expect(text(s.r)).toContain("OnePass est verrouillé");
+    expect(text(s.r)).toContain("Cleon est verrouillé");
     s = setup(base, (m) => (m.type === "save_decide" ? { err: "rate_limited" } : null));
     await s.handle.ready;
     await s.click("Enregistrer");

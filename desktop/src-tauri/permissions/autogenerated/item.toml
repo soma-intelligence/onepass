@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-item"
+description = "Enables the item command without any pre-configured scope."
+commands.allow = ["item"]
+
+[[permission]]
+identifier = "deny-item"
+description = "Denies the item command without any pre-configured scope."
+commands.deny = ["item"]

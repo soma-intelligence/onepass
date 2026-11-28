@@ -3,7 +3,7 @@ import SwiftUI
 import VaultKit
 
 /// "Ajouter une passkey", the last row of a login's card (editor and detail). A passkey cannot be
-/// typed in: the site creates it, and OnePass, as the AutoFill provider, saves it into this login.
+/// typed in: the site creates it, and Cleon, as the AutoFill provider, saves it into this login.
 /// So the row opens the page where the site enrolls a passkey: the `enroll` address the site
 /// publishes at /.well-known/passkey-endpoints when it has one, else the site itself. That request
 /// goes to the login's own site, and only on a tap.
@@ -15,6 +15,7 @@ struct AddPasskeyRow: View {
     /// No website on the login: what the row does instead (the editor adds a website row).
     let onNoWebsite: () -> Void
     @State private var opening = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var host: String? { PasskeyEnrollment.host(of: item) }
 
@@ -28,12 +29,16 @@ struct AddPasskeyRow: View {
                 openURL(url)
             }
         } label: {
-            // Same "+" row as the editor's other add rows; the site it opens sits at the end.
-            HStack(spacing: Theme.Space.s) {
+            // Same "+" row as the editor's other add rows; the site it opens sits at the end, or
+            // under the label at the accessibility text sizes (side by side, both broke mid-word).
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Space.xxs))
+                : AnyLayout(HStackLayout(spacing: Theme.Space.s))
+            layout {
                 Label(editing ? "item.addPasskeyRow" : "item.addPasskey", systemImage: "plus")
                     .font(.body.weight(.medium))
                     .foregroundStyle(Theme.accent)
-                Spacer(minLength: 8)
+                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
                 if opening {
                     ProgressView().controlSize(.small)
                 } else {

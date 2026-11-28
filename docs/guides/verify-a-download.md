@@ -1,6 +1,6 @@
-# How to verify a OnePass download (checksums, provenance, reproducible builds)
+# How to verify a Cleon download (checksums, provenance, reproducible builds)
 
-Every GitHub release of OnePass ships a `SHA256SUMS` file and a SLSA build provenance attestation signed through Sigstore with the identity of the release workflow. Check the hashes with `shasum -a 256 -c SHA256SUMS`, then the provenance with `gh attestation verify`, and for the Mac app also its Developer ID signature and notarization. The browser extension zips and the CLI are built to be reproducible, so you can rebuild them from the tagged commit and compare the bytes.
+Every GitHub release of Cleon ships a `SHA256SUMS` file and a SLSA build provenance attestation signed through Sigstore with the identity of the release workflow. Check the hashes with `shasum -a 256 -c SHA256SUMS`, then the provenance with `gh attestation verify`, and for the Mac app also its Developer ID signature and notarization. The browser extension zips and the CLI are built to be reproducible, so you can rebuild them from the tagged commit and compare the bytes.
 
 ## 1. Check the hashes
 
@@ -13,7 +13,7 @@ shasum -a 256 -c SHA256SUMS --ignore-missing      # Linux: sha256sum -c SHA256SU
 ## 2. Check the provenance (GitHub CLI 2.49 or later)
 
 ```bash
-gh attestation verify OnePass-<version>-mac.zip \
+gh attestation verify Cleon-<version>-mac.zip \
   --repo soma-intelligence/onepass \
   --signer-workflow soma-intelligence/onepass/.github/workflows/release.yml
 ```
@@ -23,7 +23,7 @@ The output must say "Verification succeeded" and name `refs/tags/v<version>`. A 
 ## 3. For the Mac app, check signature and notarization
 
 ```bash
-ditto -x -k OnePass-<version>-mac.zip .
+ditto -x -k Cleon-<version>-mac.zip .
 codesign --verify --deep --strict --verbose=2 OnePass.app
 spctl --assess --type execute --verbose=2 OnePass.app     # "source=Notarized Developer ID"
 xcrun stapler validate OnePass.app
@@ -35,11 +35,11 @@ The Mac app then updates itself from the latest release, and installs an update 
 
 | Release file | Reproducible? |
 |---|---|
-| `OnePass-<v>-chrome.zip`, `OnePass-<v>-firefox.zip` | Yes, on the same system. CI rebuilds them on another runner at another path and blocks the release on any difference |
+| `Cleon-<v>-chrome.zip`, `Cleon-<v>-firefox.zip` | Yes, on the same system. CI rebuilds them on another runner at another path and blocks the release on any difference |
 | `onepass-<v>-aarch64-apple-darwin` (CLI) | Yes, with the same Xcode and Rust toolchain; not yet compared across two machines |
 | `onepass-<v>-x86_64-unknown-linux-gnu` (CLI) | Compared by the `rebuild` job at each release |
-| `OnePass-<v>-mac.zip` | No: the Developer ID signature and notarization ticket cannot be reproduced by a third party |
-| `OnePass-<v>-sbom.zip` | No: SBOM tools write a timestamp and random serial number |
+| `Cleon-<v>-mac.zip` | No: the Developer ID signature and notarization ticket cannot be reproduced by a third party |
+| `Cleon-<v>-sbom.zip` | No: SBOM tools write a timestamp and random serial number |
 
 With the tag checked out (`git checkout vX.Y.Z`), `rustup`, Node 22 and Python 3 installed:
 
@@ -57,6 +57,6 @@ The script sets `SOURCE_DATE_EPOCH` to the commit date, `TZ=UTC`, `LC_ALL=C`, st
 
 ## Related
 
-- [Has OnePass been audited?](security-audit-status.md)
-- [OnePass command line (CLI)](command-line-cli.md)
+- [Has Cleon been audited?](security-audit-status.md)
+- [Cleon command line (CLI)](command-line-cli.md)
 - [README: Install](../../README.md#install)
