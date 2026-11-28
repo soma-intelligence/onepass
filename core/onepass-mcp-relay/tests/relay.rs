@@ -233,24 +233,176 @@ fn relays_lines_runs_commands_and_checks_files() {
 }
 
 #[test]
-fn usage_and_unreachable_app() {
+fn usage_error() {
     let out = Command::new(RELAY).output().unwrap();
     assert_eq!(out.status.code(), Some(64));
     assert!(out.stdout.is_empty());
     assert!(String::from_utf8_lossy(&out.stderr).contains("usage: onepass-mcp --socket <path>"));
+}
 
+fn json_line(out: &mut BufReader<ChildStdout>) -> serde_json::Value {
+    serde_json::from_str(&stdout_line(out)).unwrap()
+}
+
+fn line_to(stdin: &mut std::process::ChildStdin, line: &str) {
+    writeln!(stdin, "{line}").unwrap();
+    stdin.flush().unwrap();
+}
+
+const INIT: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#;
+const INITIALIZED: &str = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+
+#[test]
+fn without_the_app_the_relay_answers_and_waits() {
     let dir = tempfile::tempdir().unwrap();
-    let out = Command::new(RELAY)
-        .arg("--socket")
-        .arg(dir.path().join("none.sock"))
-        .output()
-        .unwrap();
-    assert_ne!(out.status.code(), Some(0));
-    assert!(out.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&out.stderr),
-        "onepass-mcp: OnePass is not running or the MCP server is off in its settings\n"
+    let socket = dir.path().join("mcp.sock");
+    let mut child = spawn(&socket);
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+
+    line_to(&mut stdin, INIT);
+    let init = json_line(&mut stdout);
+    assert_eq!(init["id"], 1);
+    assert_eq!(init["result"]["protocolVersion"], "2025-06-18");
+    assert_eq!(init["result"]["capabilities"]["tools"]["listChanged"], true);
+    line_to(&mut stdin, INITIALIZED);
+    line_to(
+        &mut stdin,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
     );
+    assert_eq!(
+        json_line(&mut stdout)["result"]["tools"],
+        serde_json::json!([])
+    );
+    line_to(
+        &mut stdin,
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"x"}}"#,
+    );
+    let call = json_line(&mut stdout);
+    assert_eq!(call["result"]["isError"], true);
+    line_to(&mut stdin, r#"{"jsonrpc":"2.0","id":4,"method":"ping"}"#);
+    assert_eq!(json_line(&mut stdout)["result"], serde_json::json!({}));
+
+    // The app starts: the relay connects, replays the handshake and tells
+    // the client the tools changed.
+    let listener = UnixListener::bind(&socket).unwrap();
+    let app = accept(&listener);
+    let mut reader = LineReader::new(app.try_clone().unwrap(), MAX_WIRE_LINE);
+    assert!(matches!(next(&mut reader), RelayToApp::Hello { .. }));
+    let RelayToApp::Mcp { line } = next(&mut reader) else {
+        panic!("replayed initialize expected");
+    };
+    assert_eq!(*line, INIT);
+    let RelayToApp::Mcp { line } = next(&mut reader) else {
+        panic!("replayed initialized expected");
+    };
+    assert_eq!(*line, INITIALIZED);
+    let changed = json_line(&mut stdout);
+    assert_eq!(changed["method"], "notifications/tools/list_changed");
+
+    drop(stdin);
+    assert!(reader.next_line().unwrap().is_none());
+    drop(reader);
+    drop(app);
+    assert_eq!(child.wait().unwrap().code(), Some(0));
+}
+
+#[test]
+fn a_lock_keeps_the_client_and_the_unlock_reconnects() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("mcp.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let mut child = spawn(&socket);
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut app = accept(&listener);
+    let mut reader = LineReader::new(app.try_clone().unwrap(), MAX_WIRE_LINE);
+    assert!(matches!(next(&mut reader), RelayToApp::Hello { .. }));
+
+    // The handshake goes to the app; its reply gains tools.listChanged.
+    line_to(&mut stdin, INIT);
+    assert!(matches!(next(&mut reader), RelayToApp::Mcp { .. }));
+    let reply = r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"onepass","version":"0"}}}"#;
+    send(
+        &mut app,
+        &AppToRelay::Mcp {
+            line: Zeroizing::new(reply.into()),
+        },
+    );
+    let init = json_line(&mut stdout);
+    assert_eq!(init["result"]["capabilities"]["tools"]["listChanged"], true);
+    assert_eq!(init["result"]["serverInfo"]["name"], "onepass");
+    line_to(&mut stdin, INITIALIZED);
+    assert!(matches!(next(&mut reader), RelayToApp::Mcp { .. }));
+
+    // A tool call is on its way when the app locks and closes the socket.
+    line_to(
+        &mut stdin,
+        r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"x"}}"#,
+    );
+    assert!(matches!(next(&mut reader), RelayToApp::Mcp { .. }));
+    // The lock stops the server: no listener, no socket file.
+    drop(listener);
+    fs::remove_file(&socket).unwrap();
+    drop(reader);
+    drop(app);
+    let pending = json_line(&mut stdout);
+    assert_eq!(pending["id"], 7);
+    assert_eq!(pending["result"]["isError"], true);
+
+    // Locked: the relay is still there.
+    line_to(&mut stdin, r#"{"jsonrpc":"2.0","id":8,"method":"ping"}"#);
+    assert_eq!(json_line(&mut stdout)["id"], 8);
+    assert!(child.try_wait().unwrap().is_none());
+
+    // Unlocked: a new connection, the handshake replayed, its reply kept
+    // from the client, which hears that the tools changed.
+    let listener = UnixListener::bind(&socket).unwrap();
+    let mut app = accept(&listener);
+    let mut reader = LineReader::new(app.try_clone().unwrap(), MAX_WIRE_LINE);
+    assert!(matches!(next(&mut reader), RelayToApp::Hello { .. }));
+    let RelayToApp::Mcp { line } = next(&mut reader) else {
+        panic!()
+    };
+    assert_eq!(*line, INIT);
+    let RelayToApp::Mcp { line } = next(&mut reader) else {
+        panic!()
+    };
+    assert_eq!(*line, INITIALIZED);
+    assert_eq!(
+        json_line(&mut stdout)["method"],
+        "notifications/tools/list_changed"
+    );
+    send(
+        &mut app,
+        &AppToRelay::Mcp {
+            line: Zeroizing::new(reply.into()),
+        },
+    );
+    line_to(
+        &mut stdin,
+        r#"{"jsonrpc":"2.0","id":9,"method":"tools/list"}"#,
+    );
+    let RelayToApp::Mcp { line } = next(&mut reader) else {
+        panic!()
+    };
+    assert!(line.contains(r#""id":9"#));
+    let tools = r#"{"jsonrpc":"2.0","id":9,"result":{"tools":[{"name":"vault_list"}]}}"#;
+    send(
+        &mut app,
+        &AppToRelay::Mcp {
+            line: Zeroizing::new(tools.into()),
+        },
+    );
+    // The replayed initialize reply never reached stdout: the next line is
+    // the tool list.
+    assert_eq!(stdout_line(&mut stdout), format!("{tools}\n"));
+
+    drop(stdin);
+    assert!(reader.next_line().unwrap().is_none());
+    drop(reader);
+    drop(app);
+    assert_eq!(child.wait().unwrap().code(), Some(0));
 }
 
 #[test]
