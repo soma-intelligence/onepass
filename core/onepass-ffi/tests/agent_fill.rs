@@ -7,6 +7,10 @@
 //!
 //! The hub is one per process: every test here that uses it (any bridge
 //! session or MCP fill) must hold [`one_at_a_time`] for its whole run.
+//!
+//! Unix only: these tests drive the socket hosts (SSH agent, MCP, bridge),
+//! whose Windows named pipes come with milestone X3.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -806,6 +810,13 @@ fn cdp_card_never_clicks() {
     assert_eq!(audit[1]["field"], "filled");
     assert_eq!(audit[1]["destination"], ATLAS);
     let line = audit[1].to_string();
-    assert!(!line.contains(CARD_NUMBER) && !line.contains(CVV), "{line}");
+    assert!(!line.contains(CARD_NUMBER), "{line}");
+    // The CVV is three digits: random ids, the chain hash and the timestamp
+    // can hold "737" by chance, so it is looked for in the other values.
+    let mut rest = audit[1].as_object().unwrap().clone();
+    for random in ["item_id", "vault_id", "prev", "ts"] {
+        rest.remove(random);
+    }
+    assert!(!Value::Object(rest).to_string().contains(CVV), "{line}");
     rig.host.stop();
 }

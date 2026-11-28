@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-wifi-qr"
+description = "Enables the wifi_qr command without any pre-configured scope."
+commands.allow = ["wifi_qr"]
+
+[[permission]]
+identifier = "deny-wifi-qr"
+description = "Denies the wifi_qr command without any pre-configured scope."
+commands.deny = ["wifi_qr"]

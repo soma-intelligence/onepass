@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-check-breaches"
+description = "Enables the set_check_breaches command without any pre-configured scope."
+commands.allow = ["set_check_breaches"]
+
+[[permission]]
+identifier = "deny-set-check-breaches"
+description = "Denies the set_check_breaches command without any pre-configured scope."
+commands.deny = ["set_check_breaches"]

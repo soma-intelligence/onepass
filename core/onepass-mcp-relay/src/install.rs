@@ -39,7 +39,6 @@ use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 const SKILL: &str = include_str!("../assets/SKILL.md");
@@ -810,7 +809,11 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
         .parent()
         .ok_or_else(|| Error::failed("the file has no directory"))?;
     fs::create_dir_all(dir)?;
-    let mode = fs::metadata(&path).map_or(0o600, |m| m.permissions().mode() & 0o7777);
+    #[cfg(unix)]
+    let mode = {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(&path).map_or(0o600, |m| m.permissions().mode() & 0o7777)
+    };
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -821,12 +824,14 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
         // the name is random, and a collision picks another one.
         let mut f = None;
         for _ in 0..8 {
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(mode)
-                .open(&tmp)
+            let mut opts = fs::OpenOptions::new();
+            opts.write(true).create_new(true);
+            #[cfg(unix)]
             {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(mode);
+            }
+            match opts.open(&tmp) {
                 Ok(file) => {
                     f = Some(file);
                     break;
@@ -840,8 +845,14 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
         let mut f = f.ok_or_else(|| io::Error::from(io::ErrorKind::AlreadyExists))?;
         f.write_all(data)?;
         // The umask may have narrowed the mode at creation.
-        f.set_permissions(fs::Permissions::from_mode(mode))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            f.set_permissions(fs::Permissions::from_mode(mode))?;
+        }
         f.sync_all()?;
+        // Windows refuses to rename a file that is still open.
+        drop(f);
         fs::rename(&tmp, &path)
     })();
     if result.is_err() {

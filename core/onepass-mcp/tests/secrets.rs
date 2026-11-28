@@ -1,10 +1,11 @@
 //! Secret tools: injection and masking, session grants, templates, item
 //! creation, generation, one-time codes and reveal.
+// Helpers of the Unix-only tests below are unused on Windows.
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
 
 mod common;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
 use common::*;
@@ -27,6 +28,9 @@ fn sh(script: &str) -> Value {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn run_with_secrets_injects_and_masks() {
     let a = approver(vec![Decision::AllowOnce]);
     let (mut t, audit) = tools_with_audit(default_policy(), a.clone());
@@ -80,6 +84,9 @@ fn run_with_secrets_injects_and_masks() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn run_with_secrets_reports_exit_code_and_stderr() {
     let a = approver(vec![Decision::AllowOnce]);
     let mut t = tools(default_policy(), a);
@@ -96,6 +103,9 @@ fn run_with_secrets_reports_exit_code_and_stderr() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn run_with_secrets_files() {
     let a = approver(vec![Decision::AllowOnce]);
     let mut t = tools(default_policy(), a);
@@ -153,6 +163,9 @@ fn run_with_secrets_invalid_names() {
 /// at the same path (a shim dropped in `PATH`, a binary replaced), nor the
 /// same program reading an edited file.
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn session_grant_is_bound_to_the_program_and_its_files() {
     let a = approver(vec![
         Decision::AllowFor(std::time::Duration::from_secs(300));
@@ -191,6 +204,9 @@ fn session_grant_is_bound_to_the_program_and_its_files() {
 /// A bare name runs the program `PATH` named when it was approved, shown in
 /// the prompt; a program the workspace cannot pin is never remembered.
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn run_with_secrets_resolves_the_program_before_approval() {
     let a = approver(vec![Decision::AllowOnce, Decision::AllowOnce]);
     let mut t = tools(default_policy(), a.clone());
@@ -224,6 +240,9 @@ fn run_with_secrets_resolves_the_program_before_approval() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn session_grant_reused_for_identical_request() {
     let a = approver(vec![Decision::AllowFor(std::time::Duration::from_secs(
         300,
@@ -241,6 +260,9 @@ fn session_grant_reused_for_identical_request() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn session_grant_not_reused_for_different_command() {
     let a = approver(vec![
         Decision::AllowFor(std::time::Duration::from_secs(300)),
@@ -295,8 +317,12 @@ fn fill_template_writes_0600_and_never_returns_content() {
         written,
         format!("USER={GITHUB_USER}\nPW={GITHUB_PW}\nKEEP={{{{ not a ref }}}}\n")
     );
-    let mode = fs::metadata(&output).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o600);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&output).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
     let req = &a.calls()[0];
     assert_eq!(req.action, "fill_template");
     assert_eq!(req.targets.len(), 2);
@@ -353,15 +379,33 @@ fn fill_template_refuses_overwrite_and_data_dir() {
     invalid(out);
     assert!(a.calls().is_empty());
 
-    ok(call(
-        &mut t,
-        "fill_template",
-        json!({"template_path": template, "output_path": existing, "overwrite": true}),
-    ));
-    assert_eq!(fs::read_to_string(&existing).unwrap(), GITHUB_PW);
-    let mode = fs::metadata(&existing).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o600);
-    assert_eq!(a.calls().len(), 1);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        ok(call(
+            &mut t,
+            "fill_template",
+            json!({"template_path": template, "output_path": existing, "overwrite": true}),
+        ));
+        assert_eq!(fs::read_to_string(&existing).unwrap(), GITHUB_PW);
+        let mode = fs::metadata(&existing).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(a.calls().len(), 1);
+    }
+    // Windows: an existing file is never overwritten (no stable link count).
+    #[cfg(not(unix))]
+    {
+        let m = refused(call(
+            &mut t,
+            "fill_template",
+            json!({"template_path": template, "output_path": existing, "overwrite": true}),
+        ));
+        assert_eq!(
+            m,
+            "overwriting an existing output file is not available on this system yet"
+        );
+        assert!(a.calls().is_empty());
+    }
 }
 
 #[test]
@@ -602,6 +646,9 @@ fn reveal_secret_with_scope_and_approval() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn fill_template_session_grant_follows_the_placeholders() {
     let dir = tempfile::tempdir().unwrap();
     let template = dir.path().join("t.tpl");
@@ -630,6 +677,9 @@ fn fill_template_session_grant_follows_the_placeholders() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn fill_template_reprompt_item_is_never_remembered() {
     let dir = tempfile::tempdir().unwrap();
     let template = dir.path().join("t.tpl");
@@ -650,6 +700,9 @@ fn fill_template_reprompt_item_is_never_remembered() {
 }
 
 #[test]
+// Unix only: runs a command or overwrites a file, both refused on Windows
+// until milestone X3 (see onepass-mcp runner and workspace).
+#[cfg(unix)]
 fn fill_template_guards_paths() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");

@@ -5,6 +5,9 @@
 //! object per process ([`guard_state`]), shared with the running MCP
 //! server: a revocation or an unpairing made here applies to the server's
 //! memory at once, even if a file is later restored (spec section 4.3).
+// The servers that use this code listen on Unix sockets; their Windows
+// named pipes come with milestone X3 (spec 2026-10-30).
+#![cfg_attr(not(unix), allow(dead_code))]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};

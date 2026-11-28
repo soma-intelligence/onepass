@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pair-host-approve"
+description = "Enables the pair_host_approve command without any pre-configured scope."
+commands.allow = ["pair_host_approve"]
+
+[[permission]]
+identifier = "deny-pair-host-approve"
+description = "Denies the pair_host_approve command without any pre-configured scope."
+commands.deny = ["pair_host_approve"]

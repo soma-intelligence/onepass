@@ -487,9 +487,15 @@ mod tests {
         assert!(run(json!({"command": ["ls"]})).is_err());
         assert!(run(json!({"command": ["ls"], "env": {}})).is_err());
         let fill = |v: Value| validate_args("fill_template", &args(v));
-        assert!(fill(json!({"template_path": "/a", "output_path": "/b"})).is_ok());
-        assert!(fill(json!({"template_path": "a", "output_path": "/b"})).is_err());
-        assert!(fill(json!({"template_path": "/a", "output_path": "./b"})).is_err());
+        // An absolute path on this system.
+        let (a, b) = if cfg!(windows) {
+            (r"C:\a", r"C:\b")
+        } else {
+            ("/a", "/b")
+        };
+        assert!(fill(json!({"template_path": a, "output_path": b})).is_ok());
+        assert!(fill(json!({"template_path": "a", "output_path": b})).is_err());
+        assert!(fill(json!({"template_path": a, "output_path": "./b"})).is_err());
         let generate = |v: Value| validate_args("generate_password", &args(v));
         assert!(generate(json!({"words": 4})).is_ok());
         assert!(generate(json!({"words": 4, "pin_digits": 6})).is_err());

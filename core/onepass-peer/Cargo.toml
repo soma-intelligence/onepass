@@ -21,5 +21,14 @@ security-framework-sys = { version = "2.17", default-features = false }
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 
+# Parent pids, liveness and image paths of processes on Windows (spec
+# 2026-10-30 section 9: the Windows branch of onepass-peer).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 tempfile = "3"

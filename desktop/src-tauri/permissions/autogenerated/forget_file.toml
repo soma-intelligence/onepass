@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-forget-file"
+description = "Enables the forget_file command without any pre-configured scope."
+commands.allow = ["forget_file"]
+
+[[permission]]
+identifier = "deny-forget-file"
+description = "Denies the forget_file command without any pre-configured scope."
+commands.deny = ["forget_file"]

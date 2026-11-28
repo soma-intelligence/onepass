@@ -1,0 +1,4 @@
+[toolchain]
+# Same compiler as core/rust-toolchain.toml.
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
