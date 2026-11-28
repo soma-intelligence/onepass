@@ -35,6 +35,12 @@
 //!   who renames the socket and relays to it from the original path keeps
 //!   pings flowing while dropping notifications; the relay itself is then
 //!   the server's only entrance, which this check cannot tell apart.
+//!
+//! Windows: no Unix socket in std. The channel will be a named pipe with an
+//! ACL for the current user only (spec 2026-10-30, milestone X3). Until
+//! then no server can start there ([`ControlServer::bind`] fails), so
+//! [`notify_servers`] has nobody to reach and says so.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
 use crate::clients::Unpaired;
 use crate::grants::{RevokeSelector, RevokedGrant};
@@ -44,7 +50,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
 use std::io::{ErrorKind, Read, Write};
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -271,6 +279,7 @@ fn remaining(deadline: Instant) -> Option<Duration> {
 }
 
 /// Writes all of `data` before `deadline` (total budget, not per call).
+#[cfg(unix)]
 fn write_deadline(s: &UnixStream, data: &[u8], deadline: Instant) -> bool {
     let mut off = 0;
     while off < data.len() {
@@ -292,6 +301,7 @@ fn write_deadline(s: &UnixStream, data: &[u8], deadline: Instant) -> bool {
 
 /// Reads one line (at most `MAX_LINE` bytes) before `deadline` (total
 /// budget, not per call).
+#[cfg(unix)]
 fn read_line_deadline(s: &UnixStream, deadline: Instant) -> Option<String> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
@@ -320,11 +330,13 @@ fn read_line_deadline(s: &UnixStream, deadline: Instant) -> Option<String> {
 }
 
 #[derive(Default)]
+#[cfg(unix)]
 struct PingState {
     expected: Option<String>,
     last_ok: Option<Instant>,
 }
 
+#[cfg(unix)]
 struct Shared {
     account_id: String,
     signer: SharedSigner,
@@ -335,6 +347,7 @@ struct Shared {
     lost: Arc<AtomicBool>,
 }
 
+#[cfg(unix)]
 impl Shared {
     fn ping_state(&self) -> std::sync::MutexGuard<'_, PingState> {
         self.ping.lock().unwrap_or_else(|e| e.into_inner())
@@ -349,6 +362,7 @@ impl Shared {
 }
 
 /// The listening side of the control channel of one server.
+#[cfg(unix)]
 pub struct ControlServer {
     path: PathBuf,
     /// Identity of the bound socket, only to remove it on drop.
@@ -358,6 +372,7 @@ pub struct ControlServer {
     threads: Vec<JoinHandle<()>>,
 }
 
+#[cfg(unix)]
 impl std::fmt::Debug for ControlServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ControlServer")
@@ -367,6 +382,7 @@ impl std::fmt::Debug for ControlServer {
     }
 }
 
+#[cfg(unix)]
 impl ControlServer {
     /// Binds `<run_dir>/<pid>.sock` and starts serving (see [`Self::bind`]).
     pub fn start(
@@ -468,6 +484,7 @@ impl ControlServer {
     }
 }
 
+#[cfg(unix)]
 impl Drop for ControlServer {
     fn drop(&mut self) {
         self.shared.stop.store(true, Ordering::SeqCst);
@@ -485,6 +502,7 @@ impl Drop for ControlServer {
 }
 
 /// Sends one signed self-ping with a fresh nonce to `path`.
+#[cfg(unix)]
 fn ping_once(shared: &Shared, path: &Path) {
     let Ok(nonce) = new_nonce() else {
         return;
@@ -505,6 +523,7 @@ fn ping_once(shared: &Shared, path: &Path) {
     }
 }
 
+#[cfg(unix)]
 fn watchdog(shared: &Shared, path: &Path, on_lost: Option<LostFn>) {
     loop {
         let wake = Instant::now() + WATCHDOG_PERIOD;
@@ -533,14 +552,17 @@ fn watchdog(shared: &Shared, path: &Path, on_lost: Option<LostFn>) {
 }
 
 /// Decrements the count of active connections when a handler ends.
+#[cfg(unix)]
 struct ActiveGuard(Arc<Shared>);
 
+#[cfg(unix)]
 impl Drop for ActiveGuard {
     fn drop(&mut self) {
         self.0.active.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
+#[cfg(unix)]
 fn accept_loop(listener: UnixListener, shared: Arc<Shared>) {
     while !shared.stop.load(Ordering::SeqCst) {
         match listener.accept() {
@@ -563,6 +585,7 @@ fn accept_loop(listener: UnixListener, shared: Arc<Shared>) {
 
 /// Serves one connection within `SERVER_CONN_DEADLINE`: a self-ping, or one
 /// verified notification and its acknowledgement.
+#[cfg(unix)]
 fn handle(stream: &UnixStream, shared: &Shared) {
     let deadline = Instant::now() + SERVER_CONN_DEADLINE;
     if stream.set_nonblocking(false).is_err() {
@@ -628,6 +651,7 @@ fn handle(stream: &UnixStream, shared: &Shared) {
 /// descriptor opened without following a symlink) and binds the socket at
 /// `path`. A live socket at `path` is never replaced (`AddrInUse`), a stale
 /// one is, anything else is left alone (`AlreadyExists`).
+#[cfg(unix)]
 fn bind_control_socket(path: &Path) -> Result<UnixListener, GuardError> {
     let parent = match path.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
@@ -701,6 +725,7 @@ fn socket_pid(name: &str) -> Option<u32> {
 /// can hold it on some systems); its thread is then abandoned and may
 /// outlive the call, which is acceptable for the one-shot command that
 /// calls this, not for a long-running process.
+#[cfg(unix)]
 pub fn notify_servers(
     run_dir: &Path,
     account_id: &str,
@@ -795,6 +820,81 @@ pub fn notify_servers(
     Ok(out)
 }
 
+#[cfg(not(unix))]
+const NO_CONTROL_CHANNEL: &str = "control channel not available on this system yet";
+
+/// Windows: the listening side cannot be bound yet (see the module
+/// documentation). Same API as on Unix, so callers compile unchanged.
+#[cfg(not(unix))]
+pub struct ControlServer {
+    path: PathBuf,
+    lost: Arc<AtomicBool>,
+}
+
+#[cfg(not(unix))]
+impl std::fmt::Debug for ControlServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ControlServer")
+            .field("path", &self.path)
+            .finish()
+    }
+}
+
+#[cfg(not(unix))]
+impl ControlServer {
+    /// Always `GuardError::Config`: no control channel on this system yet.
+    pub fn start(
+        run_dir: &Path,
+        account_id: &str,
+        signer: SharedSigner,
+        on_notify: NotifyFn,
+        on_lost: Option<LostFn>,
+    ) -> Result<Self, GuardError> {
+        let path = run_dir.join(format!("{}.sock", std::process::id()));
+        Self::bind(&path, account_id, signer, on_notify, on_lost)
+    }
+
+    /// Always `GuardError::Config`: no control channel on this system yet.
+    pub fn bind(
+        _path: &Path,
+        _account_id: &str,
+        _signer: SharedSigner,
+        _on_notify: NotifyFn,
+        _on_lost: Option<LostFn>,
+    ) -> Result<Self, GuardError> {
+        Err(GuardError::Config(NO_CONTROL_CHANNEL))
+    }
+
+    /// The socket path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Never true: no server runs.
+    pub fn alive(&self) -> bool {
+        false
+    }
+
+    /// Set from the start: no server runs.
+    pub fn lost_flag(&self) -> Arc<AtomicBool> {
+        self.lost.clone()
+    }
+}
+
+/// Windows: no server can run (see [`ControlServer::bind`]), so nobody is
+/// reached and nothing fails. Same signature as on Unix.
+#[cfg(not(unix))]
+pub fn notify_servers(
+    _run_dir: &Path,
+    _account_id: &str,
+    _signer: &dyn LocalSigner,
+    _change: &ControlChange,
+    _deadline: Duration,
+    _pid_alive: &dyn Fn(u32) -> bool,
+) -> Result<NotifyOutcome, GuardError> {
+    Ok(NotifyOutcome::default())
+}
+
 fn verify_ack(
     signer: &dyn LocalSigner,
     line: &str,
@@ -820,7 +920,7 @@ fn verify_ack(
         .is_ok()
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::approval::Surface;

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-travel-status"
+description = "Enables the travel_status command without any pre-configured scope."
+commands.allow = ["travel_status"]
+
+[[permission]]
+identifier = "deny-travel-status"
+description = "Denies the travel_status command without any pre-configured scope."
+commands.deny = ["travel_status"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-move-item"
+description = "Enables the move_item command without any pre-configured scope."
+commands.allow = ["move_item"]
+
+[[permission]]
+identifier = "deny-move-item"
+description = "Denies the move_item command without any pre-configured scope."
+commands.deny = ["move_item"]

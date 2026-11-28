@@ -12,6 +12,9 @@
 //! The hub is one per process ([`agent_hub`]): the bridge server and the
 //! MCP host are separate objects the app creates on its own, so neither
 //! owns the other, and both must see the same queue.
+// The servers that use this code listen on Unix sockets; their Windows
+// named pipes come with milestone X3 (spec 2026-10-30).
+#![cfg_attr(not(unix), allow(dead_code))]
 
 use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};

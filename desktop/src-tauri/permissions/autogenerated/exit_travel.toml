@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-exit-travel"
+description = "Enables the exit_travel command without any pre-configured scope."
+commands.allow = ["exit_travel"]
+
+[[permission]]
+identifier = "deny-exit-travel"
+description = "Denies the exit_travel command without any pre-configured scope."
+commands.deny = ["exit_travel"]

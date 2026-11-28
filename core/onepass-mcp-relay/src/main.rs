@@ -12,6 +12,9 @@
 //!
 //! [`wire`]: onepass_mcp_relay::wire
 #![deny(unsafe_code)]
+// The relay itself is Unix only until the named pipe of milestone X3;
+// `install` and `uninstall` work everywhere.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
 use onepass_mcp::{LocalWorkspace, MAX_LINE, Workspace};
 use onepass_mcp_relay::install;
@@ -23,6 +26,7 @@ use serde_json::json;
 use std::ffi::OsString;
 use std::io::{self, Write};
 use std::net::Shutdown;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -81,22 +85,36 @@ fn main() -> ExitCode {
     // client's executable, which can take seconds for a large binary on a
     // busy machine, and the app waits only a few seconds for the hello.
     let hello = hello();
-    let Ok(stream) = UnixStream::connect(&socket) else {
-        eprintln!("onepass-mcp: OnePass is not running or the MCP server is off in its settings");
-        return ExitCode::from(EXIT_UNAVAILABLE);
-    };
-    match relay(stream, &hello) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(m) => {
-            eprintln!("onepass-mcp: {m}");
-            ExitCode::FAILURE
+    #[cfg(not(unix))]
+    {
+        // The app's socket is a named pipe on Windows (milestone X3).
+        let _ = (socket, hello);
+        eprintln!("onepass-mcp: the relay is not available on this system yet");
+        ExitCode::from(EXIT_UNAVAILABLE)
+    }
+    #[cfg(unix)]
+    {
+        let Ok(stream) = UnixStream::connect(&socket) else {
+            eprintln!(
+                "onepass-mcp: OnePass is not running or the MCP server is off in its settings"
+            );
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        };
+        match relay(stream, &hello) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(m) => {
+                eprintln!("onepass-mcp: {m}");
+                ExitCode::FAILURE
+            }
         }
     }
 }
 
 /// The write half of the socket, shared by every thread that answers.
+#[cfg(unix)]
 struct Writer(Mutex<UnixStream>);
 
+#[cfg(unix)]
 impl Writer {
     fn lock(&self) -> std::sync::MutexGuard<'_, UnixStream> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
@@ -136,6 +154,7 @@ fn hello() -> RelayToApp {
 }
 
 /// Relays until the app closes the socket.
+#[cfg(unix)]
 fn relay(stream: UnixStream, hello: &RelayToApp) -> Result<(), String> {
     let lost = |_| "connection to OnePass lost".to_owned();
     let writer = Arc::new(Writer(Mutex::new(stream.try_clone().map_err(lost)?)));
@@ -191,6 +210,7 @@ fn to_stdout(line: &str) -> io::Result<()> {
 /// Copies stdin lines to the app until the end of stdin, then shuts down
 /// the write half. A line too long or not UTF-8 gets the server's parse
 /// error on stdout, as `onepass mcp` would answer.
+#[cfg(unix)]
 fn pump_stdin(writer: &Writer) {
     let mut input = LineReader::new(io::stdin(), MAX_LINE);
     loop {
@@ -220,6 +240,7 @@ fn pump_stdin(writer: &Writer) {
 }
 
 /// Runs one request of the app and sends its result.
+#[cfg(unix)]
 fn answer(writer: &Writer, msg: AppToRelay) {
     let Some((id, reply)) = run(msg) else {
         return;

@@ -1,6 +1,10 @@
 //! The SSH agent served by the app, SSH Key items, the MCP policy, grants
 //! and the audit log, through the UniFFI surface with a scripted app UI.
 //! Run with `--features dev-fast-kdf`.
+//!
+//! Unix only: these tests drive the socket hosts (SSH agent, MCP, bridge),
+//! whose Windows named pipes come with milestone X3.
+#![cfg(unix)]
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;

@@ -3,7 +3,6 @@ package me.somalabs.onepass.vaultkit.core
 import java.nio.file.Path
 import me.somalabs.onepass.core.FfiKdfParams
 import me.somalabs.onepass.core.FfiPasswordRecipe
-import me.somalabs.onepass.core.FfiTestRealmNet
 import me.somalabs.onepass.core.OnePassException
 import me.somalabs.onepass.core.createAccountWithKdf
 import me.somalabs.onepass.core.createAccountWithKdfBytes
@@ -97,22 +96,23 @@ class CoreBindingsTest {
     @Test
     fun theGuardedKitTurnsOnUnlocksThroughTheRealmsAndTurnsOff() {
         // Three realms in this process (dev-fast-kdf builds only).
-        val net = FfiTestRealmNet()
-        val dbPath = dir.resolve("guarded.db").toString()
-        val created = createAccountWithKdf(dbPath, "pw", FAST_KDF)
-        val sk = created.secretKey
-        val on = created.session.enableGuard("pw", sk, net.transport())
-        assertEquals(32, on.guard.size)
-        assertTrue(created.session.guardState().on)
-        created.session.close()
+        TestRealmNet().use { net ->
+            val dbPath = dir.resolve("guarded.db").toString()
+            val created = createAccountWithKdf(dbPath, "pw", FAST_KDF)
+            val sk = created.secretKey
+            val on = created.session.enableGuard("pw", sk, net.transport())
+            assertEquals(32, on.guard.size)
+            assertTrue(created.session.guardState().on)
+            created.session.close()
 
-        assertThrows<OnePassException.GuardRequired> { unlockWithPassword(dbPath, "pw", sk) }
-        val restored = unlockWithPasswordGuarded(dbPath, "pw", sk, null, net.transport())
-        restored.session.use { s ->
-            assertTrue(restored.guard!!.contentEquals(on.guard))
-            s.disableGuard("pw", sk, net.transport())
-            assertTrue(!s.guardState().on)
+            assertThrows<OnePassException.GuardRequired> { unlockWithPassword(dbPath, "pw", sk) }
+            val restored = unlockWithPasswordGuarded(dbPath, "pw", sk, null, net.transport())
+            restored.session.use { s ->
+                assertTrue(restored.guard!!.contentEquals(on.guard))
+                s.disableGuard("pw", sk, net.transport())
+                assertTrue(!s.guardState().on)
+            }
+            unlockWithPassword(dbPath, "pw", sk).session.close()
         }
-        unlockWithPassword(dbPath, "pw", sk).session.close()
     }
 }

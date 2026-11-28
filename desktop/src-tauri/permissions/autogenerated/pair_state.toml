@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pair-state"
+description = "Enables the pair_state command without any pre-configured scope."
+commands.allow = ["pair_state"]
+
+[[permission]]
+identifier = "deny-pair-state"
+description = "Denies the pair_state command without any pre-configured scope."
+commands.deny = ["pair_state"]

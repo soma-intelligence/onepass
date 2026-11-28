@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-claim-only-device"
+description = "Enables the claim_only_device command without any pre-configured scope."
+commands.allow = ["claim_only_device"]
+
+[[permission]]
+identifier = "deny-claim-only-device"
+description = "Denies the claim_only_device command without any pre-configured scope."
+commands.deny = ["claim_only_device"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-accept-share-invite"
+description = "Enables the accept_share_invite command without any pre-configured scope."
+commands.allow = ["accept_share_invite"]
+
+[[permission]]
+identifier = "deny-accept-share-invite"
+description = "Denies the accept_share_invite command without any pre-configured scope."
+commands.deny = ["accept_share_invite"]

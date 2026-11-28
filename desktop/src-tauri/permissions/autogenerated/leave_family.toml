@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-leave-family"
+description = "Enables the leave_family command without any pre-configured scope."
+commands.allow = ["leave_family"]
+
+[[permission]]
+identifier = "deny-leave-family"
+description = "Denies the leave_family command without any pre-configured scope."
+commands.deny = ["leave_family"]

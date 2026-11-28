@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-remove-attachment"
+description = "Enables the remove_attachment command without any pre-configured scope."
+commands.allow = ["remove_attachment"]
+
+[[permission]]
+identifier = "deny-remove-attachment"
+description = "Denies the remove_attachment command without any pre-configured scope."
+commands.deny = ["remove_attachment"]

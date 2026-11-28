@@ -16,8 +16,15 @@ use serde_json::{Value, json};
 const SEED: &str = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
 const PUBLIC: &str = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
 
+/// `ONEPASS_CORE_FIXTURES` points at a copy of `tests/fixtures` when the test
+/// runs away from the source tree (the Android emulator run).
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/site-pack")
+    std::env::var_os("ONEPASS_CORE_FIXTURES")
+        .map_or_else(
+            || Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures"),
+            PathBuf::from,
+        )
+        .join("site-pack")
 }
 
 fn recipe_files(kind: &str) -> Vec<PathBuf> {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-new-item"
+description = "Enables the new_item command without any pre-configured scope."
+commands.allow = ["new_item"]
+
+[[permission]]
+identifier = "deny-new-item"
+description = "Denies the new_item command without any pre-configured scope."
+commands.deny = ["new_item"]
